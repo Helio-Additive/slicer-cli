@@ -8,27 +8,168 @@
 //! grow organic branch structures from overhang points down to the build plate,
 //! using per-layer 2D collision avoidance.
 //!
-//! PORTING STATUS (partial): the standalone geometry helpers, math primitives,
-//! data structures (SupportNode/LayerHeightData/OverhangType/...), and the branch
-//! radius calculations are faithfully ported. The `TreeSupport` *class methods*
-//! (detect_overhangs, draw_circles, drop_nodes, generate_contact_points,
-//! plan_layer_heights, generate_toolpaths, get_trim_support_regions,
-//! create_tree_support_layers, move_bounds_to_contact_nodes, generate) are blocked:
-//! they require `PrintObject`/`Layer`/`Print`/`LayerRegion`, `SlicingParameters`,
-//! `SupportParameters`, `FillLightning::Generator`, `TreeSupport3D`, and the
-//! TBB parallel pipeline to be threaded through as usable Rust APIs, none of which
-//! are available yet. See the bottom of the file for the blocked-symbol list.
+//! PORTING STATUS (partial): the standalone geometry helpers, the node and layer
+//! height structures, `TreeSupportData` (the collision / avoidance caches and the
+//! node arena), the profiler, and the `TreeSupport` members that work on the
+//! object's layers and the node graph are ported in C++ order. What is left is
+//! listed at the bottom of the file with what blocks it.
 //!
-//! NOTE: This file is not currently wired into the module tree. The active
-//! tree support implementation lives in `support/mod.rs` and `support/tree_support_3d.rs`.
+//! The node graph. C++ links `SupportNode`s by raw pointers into
+//! `TreeSupportData::contact_nodes` (`std::vector<std::unique_ptr<SupportNode>>`),
+//! which owns every node. Here that vector owns the nodes by value and a
+//! `SupportNode*` is the index of the node in it (`NodeId`); `nullptr` is `None`.
+//! Nodes are never removed from the arena before `clear_nodes()`, so an index
+//! stays valid exactly as long as the C++ pointer does.
+//!
+//! NOTE: no live code path calls into this file yet; the slicing pipeline still
+//! runs `support/mod.rs` (`PrintObject::generate_support_material`).
 
+use crate::clipper_utils::OffsetJoinType;
 use crate::ex_polygon::projection_onto;
 use crate::geometry::{
     get_extents_expoly, turn90_ccw, BoundingBox, ExPolygon, ExPolygons, Line, Lines, Point, Polygon,
+    Polygons,
 };
 use crate::minimum_spanning_tree::MinimumSpanningTree;
-use crate::{scale, unscale, Coord, CoordF};
-use std::collections::HashSet;
+use crate::{Coord, CoordF};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+/// `SupportNode*`: the index of the node in `TreeSupportData::contact_nodes`.
+pub type NodeId = usize;
+
+// libslic3r.h:23 `static constexpr double SCALING_FACTOR = 0.000001;` as BambuStudio
+// defines it (0.00001), not the crate's inverse `crate::SCALING_FACTOR`.
+const SCALING_FACTOR: f64 = crate::libslic3r::SCALING_FACTOR;
+// libslic3r.h:24 `static constexpr double EPSILON = 1e-4;`
+const EPSILON: f64 = crate::libslic3r::EPSILON;
+// ClipperLib::pftNonZero
+const PFT_NON_ZERO: i32 = 1;
+
+// ============================================================================
+// ClipperUtils.hpp entry points used by this translation unit, over the
+// vendored ClipperLib (the `*_clib` functions of clipper_utils). Deltas are the
+// scaled `float` the C++ signature takes.
+// ============================================================================
+
+// ClipperUtils.hpp `ExPolygons union_ex(const ExPolygons &subject)`
+fn union_ex(subject: &[ExPolygon]) -> ExPolygons {
+    crate::clipper_utils::union_ex_clib(&to_polygons(subject), PFT_NON_ZERO)
+}
+
+// ClipperUtils.hpp `ExPolygons union_ex(const Polygons &subject)`
+fn union_ex_polygons(subject: &[Polygon]) -> ExPolygons {
+    crate::clipper_utils::union_ex_clib(subject, PFT_NON_ZERO)
+}
+
+// ClipperUtils.hpp `ExPolygons diff_ex(const ExPolygons &subject, const ExPolygons &clip)`
+fn diff_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    crate::clipper_utils::difference_clib(subject, clip)
+}
+
+// ClipperUtils.hpp `ExPolygons diff_ex(const ExPolygons &subject, const Polygons &clip)`
+fn diff_ex_polygons(subject: &[ExPolygon], clip: &[Polygon]) -> ExPolygons {
+    crate::clipper_utils::difference_clib(subject, &crate::clipper_utils::polygons_as_paths(clip))
+}
+
+// ClipperUtils.hpp `ExPolygons intersection_ex(const ExPolygons &subject, const ExPolygons &clip)`
+fn intersection_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+    crate::clipper_utils::intersection_clib(subject, clip)
+}
+
+// ClipperUtils.hpp `ExPolygons intersection_ex(const ExPolygons &subject, const Polygons &clip)`
+fn intersection_ex_polygons(subject: &[ExPolygon], clip: &[Polygon]) -> ExPolygons {
+    crate::clipper_utils::intersection_clib(subject, &crate::clipper_utils::polygons_as_paths(clip))
+}
+
+// ClipperUtils.hpp `ExPolygons offset_ex(const ExPolygons &expolygons, const float delta,
+// ClipperLib::JoinType joinType = DefaultJoinType, double miterLimit = DefaultMiterLimit)`
+fn offset_ex(expolygons: &[ExPolygon], delta: f32) -> ExPolygons {
+    offset_ex_jt(expolygons, delta, OffsetJoinType::Miter, 3.0)
+}
+
+fn offset_ex_jt(expolygons: &[ExPolygon], delta: f32, join_type: OffsetJoinType, miter_limit: f64) -> ExPolygons {
+    crate::clipper_utils::offset_ex_expolygons_clib_ml(expolygons, delta as f64, join_type, miter_limit)
+}
+
+// ClipperUtils.hpp `Polygons offset(const ExPolygons &expolygons, const float delta, ...)`:
+// each expolygon offset on its own, the paths concatenated.
+fn offset_expolygons_jt(expolygons: &[ExPolygon], delta: f32, join_type: OffsetJoinType) -> Polygons {
+    crate::clipper_utils::offset_expolygons_clib_raw_scaled(expolygons, delta as f64, join_type)
+}
+
+// ClipperUtils.hpp `Polygons offset(const Polygon &polygon, const float delta, ...)`
+fn offset_polygon(polygon: &Polygon, delta: f32) -> Polygons {
+    crate::clipper_utils::offset_polygons_clib(std::slice::from_ref(polygon), delta as f64, OffsetJoinType::Miter)
+}
+
+// ClipperUtils.hpp `ExPolygons offset2_ex(const ExPolygons &expolygons, const float delta1,
+// const float delta2, ...)`. offset2_ex_clib takes the deltas in mm and truncates
+// `mm / SCALING_FACTOR` to float, which gives back the scaled float handed in here.
+fn offset2_ex(expolygons: &[ExPolygon], delta1: f32, delta2: f32) -> ExPolygons {
+    crate::clipper_utils::offset2_ex_clib(
+        expolygons,
+        delta1 as f64 * SCALING_FACTOR,
+        delta2 as f64 * SCALING_FACTOR,
+        OffsetJoinType::Miter,
+    )
+}
+
+// ClipperUtils.hpp `ExPolygons opening_ex(const ExPolygons &src, const float delta)`
+// = offset2_ex(src, -delta, delta).
+fn opening_ex(src: &[ExPolygon], delta: f32) -> ExPolygons {
+    offset2_ex(src, -delta, delta)
+}
+
+// Polygon.hpp `Polygons to_polygons(const ExPolygons &src)`
+fn to_polygons(src: &[ExPolygon]) -> Polygons {
+    let mut out: Polygons = Vec::new();
+    for expoly in src {
+        out.push(expoly.contour.clone());
+        for hole in &expoly.holes {
+            out.push(hole.clone());
+        }
+    }
+    out
+}
+
+// ExPolygon.hpp `void append(ExPolygons &dst, const ExPolygons &src)`
+fn append(dst: &mut ExPolygons, src: ExPolygons) {
+    dst.extend(src);
+}
+
+// ExPolygon.cpp:231-251 `Polygons ExPolygon::simplify_p(double tolerance) const`,
+// tolerance scaled: Douglas-Peucker on the closed contour and holes, then
+// `simplify_polygons(pp)` (ClipperLib::SimplifyPolygons, pftNonZero).
+fn expolygon_simplify_p(expoly: &ExPolygon, tolerance: f64) -> Polygons {
+    crate::clipper_utils::simplify_polygons_clib(&expoly.simplify_p_dp_rings_faithful(tolerance), PFT_NON_ZERO)
+}
+
+// ExPolygon.hpp:451-458 `ExPolygons expolygons_simplify(const ExPolygons &expolys, double tolerance)`:
+// `exp.simplify(tolerance, &out)` = `append(out, union_ex(exp.simplify_p(tolerance)))`.
+fn expolygons_simplify(expolys: &[ExPolygon], tolerance: f64) -> ExPolygons {
+    let mut out: ExPolygons = Vec::with_capacity(expolys.len());
+    for exp in expolys {
+        append(&mut out, union_ex_polygons(&expolygon_simplify_p(exp, tolerance)));
+    }
+    out
+}
+
+// BoundingBox.hpp `double radius() const { return 0.5 * (max - min).cast<double>().norm(); }`
+// Eigen's norm() sums the squares in its reduction functor, a separate expression
+// from the products, so nothing is contracted.
+fn bbox_radius(bbox: &BoundingBox) -> f64 {
+    let dx = (bbox.max.x - bbox.min.x) as f64;
+    let dy = (bbox.max.y - bbox.min.y) as f64;
+    0.5 * (dx * dx + dy * dy).sqrt()
+}
+
+// Eigen `(v).cast<double>().norm()` of a Point.
+fn point_norm(v: Point) -> f64 {
+    let x = v.x as f64;
+    let y = v.y as f64;
+    (x * x + y * y).sqrt()
+}
 
 // ExPolygon.hpp: const Polygon& contour_or_hole(int i) const
 // Returns the contour for i==0, otherwise holes[i-1]. (Mirrors BambuStudio's helper.)
@@ -87,24 +228,27 @@ const MIN_BRANCH_RADIUS_FIRST_LAYER: CoordF = 2.0;
 // #define unscale_(val) ((val) * SCALING_FACTOR)
 #[inline]
 fn unscale_(val: Coord) -> f64 {
-    unscale(val)
+    val as f64 * SCALING_FACTOR
 }
 
-// scale_(): mirrors libslic3r's scale_ macro.
+// libslic3r.h:81 `#define scale_(val) ((val) / SCALING_FACTOR)`: a double; the
+// call site converts it where the C++ does.
 #[inline]
-fn scale_(val: f64) -> Coord {
-    scale(val)
+fn scale_(val: f64) -> f64 {
+    val / SCALING_FACTOR
 }
 
-// Point.hpp:200,255-258: `Point operator*(const double &rhs)` returns
-// `{ coord_t(x*r), coord_t(y*r) }` — `static_cast<coord_t>` TRUNCATES toward zero.
-// The crate-wide `impl Mul<CoordF> for Point` uses `round_ties_even()` instead, so we
-// reproduce the C++ truncation locally here for fidelity.
-// FIDELITY-NOTE(F2): coord_t is int32_t; the truncation is reproduced at i64 width since
-// the operand magnitudes here stay within scaled coord range.
+// Point.hpp:200 `Point operator*(const double &rhs) { return Point(this->x() * rhs, this->y() * rhs); }`,
+// the member chosen for a non-const Point: Point(double, double) rounds with lrint.
 #[inline]
-fn point_mul_trunc(pt: Point, r: f64) -> Point {
-    Point::new((pt.x as f64 * r) as Coord, (pt.y as f64 * r) as Coord)
+fn point_mul(pt: Point, r: f64) -> Point {
+    Point::new((pt.x as f64 * r).round_ties_even() as Coord, (pt.y as f64 * r).round_ties_even() as Coord)
+}
+
+// Point.hpp:179 `Point(double x, double y) : Vec2crd(coord_t(lrint(x)), coord_t(lrint(y)))`
+#[inline]
+fn point_from_f64(x: f64, y: f64) -> Point {
+    Point::new(x.round_ties_even() as Coord, y.round_ties_even() as Coord)
 }
 
 // ============================================================================
@@ -188,91 +332,113 @@ impl Default for OverhangType {
     }
 }
 
-/// TreeSupport.hpp:49-192: struct SupportNode
+/// TreeSupport.hpp:47-218: struct SupportNode
 ///
-/// Represents the metadata of a node in the tree.
-///
-/// In C++ the tree topology is built from raw pointers (`parent`, `parents`,
-/// `child`, `merged_neighbours`). Because Rust cannot faithfully represent the
-/// self-referential pointer graph without an arena, the topology fields are
-/// retained here as the original scalar/value metadata; the linkage fields are
-/// reproduced as indices/placeholders so that callers (the not-yet-ported
-/// `TreeSupportData::create_node`/`drop_nodes`) can wire them through an arena.
+/// Represents the metadata of a node in the tree. The pointers of the C++ struct
+/// (`parent`, `parents`, `child`, `merged_neighbours`) are `NodeId`s into the arena
+/// `TreeSupportData::contact_nodes`, see the module documentation.
 #[derive(Debug, Clone)]
 pub struct SupportNode {
-    /// TreeSupport.hpp:107-111
+    /// TreeSupport.hpp:110-114
     /// The number of layers to go to the top of this branch.
-    /// Negative value means it's a virtual node between support and overhang.
+    /// Negative value means it's a virtual node between support and overhang, which doesn't need to be extruded.
     pub distance_to_top: i32,
-    // TreeSupport.hpp:112: coordf_t dist_mm_to_top = 0; // dist to bottom contact in mm
+    // TreeSupport.hpp:115 coordf_t dist_mm_to_top = 0;  // dist to bottom contact in mm
     pub dist_mm_to_top: CoordF,
 
-    // TreeSupport.hpp:120: Point position;
+    // TreeSupport.hpp:123 Point position;
     pub position: Point,
-    // TreeSupport.hpp:121: Point movement;
+    // TreeSupport.hpp:124 Point movement; // movement towards neighbor center or outline
     pub movement: Point,
-    // TreeSupport.hpp:122: Point orig_pos;
+    // TreeSupport.hpp:125 Point orig_pos;
     pub orig_pos: Point,
-    // TreeSupport.hpp:123: mutable double radius = 0.0;
+    // TreeSupport.hpp:126 mutable double radius = 0.0;
     pub radius: f64,
-    // TreeSupport.hpp:124: mutable double max_move_dist = 0.0;
+    // TreeSupport.hpp:127 mutable double max_move_dist = 0.0;
     pub max_move_dist: f64,
-    // TreeSupport.hpp:125: TreeNodeType type = eCircle;
+    // TreeSupport.hpp:128 TreeNodeType type = eCircle;
     pub type_: TreeNodeType,
-    // TreeSupport.hpp:126: bool is_corner = false;
+    // TreeSupport.hpp:129 bool is_corner = false;
     pub is_corner: bool,
-    // TreeSupport.hpp:127: bool is_processed = false;
+    // TreeSupport.hpp:130 bool is_processed = false;
     pub is_processed: bool,
-    // TreeSupport.hpp:128: bool need_extra_wall = false;
+    // TreeSupport.hpp:131 bool need_extra_wall = false;
     pub need_extra_wall: bool,
-    // TreeSupport.hpp:129: bool is_sharp_tail = false;
+    // TreeSupport.hpp:132 bool is_sharp_tail = false;
     pub is_sharp_tail: bool,
-    // TreeSupport.hpp:130: bool valid = true;
+    // TreeSupport.hpp:133 bool valid = true;
     pub valid: bool,
-    // TreeSupport.hpp:131: bool fading = false;
+    // TreeSupport.hpp:134 float carried_mass = 0.0;  // Virtual carried mass (supported overhang area)
+    // used to prioritize light-to-heavy branch merging
+    pub carried_mass: f32,
+
+    // TreeSupport.hpp:144-148 BBS multi-diameter: set by fold_nodes_multi_diameter(). slab_height > 0 marks
+    // a node that carries a whole slab: its disk is one extrusion spanning [print_z - slab_height, print_z].
+    pub slab_height: CoordF,
+    // TreeSupport.hpp:149-150 Lowest object layer the slab covers, for the span collision lookup.
+    pub slab_bottom_obj_layer: usize,
+    // TreeSupport.hpp:151-153 Position of this node on the folded grid, counted from the bed.
+    pub slab_index: i32,
+    // TreeSupport.hpp:154-156 BBS multi-diameter: wall line width of this base node when it sits next to a
+    // nozzle change, set by smooth_line_width_multi_diameter(). 0 keeps the layer's default support line width.
+    pub line_width: CoordF,
+    // TreeSupport.hpp:157 bool fading = false;
     pub fading: bool,
-    // TreeSupport.hpp:132: double overhang_degree = 0.0;
+    // TreeSupport.hpp:158 double overhang_degree = 0.0;  // overhang degree for cooling just like perimeter
     pub overhang_degree: f64,
-    // TreeSupport.hpp:133: ExPolygon overhang;
+    // TreeSupport.hpp:159 ExPolygon overhang; // when type==ePolygon, set this value to get original overhang area
     pub overhang: ExPolygon,
-    // TreeSupport.hpp:134: coordf_t origin_area;
+    // TreeSupport.hpp:160 coordf_t origin_area;
     pub origin_area: CoordF,
-    // TreeSupport.hpp:135: coordf_t target_radius = -1.;
+    // TreeSupport.hpp:161 coordf_t target_radius = -1.;
     pub target_radius: CoordF,
 
-    // TreeSupport.hpp:143: Point skin_direction;
+    // TreeSupport.hpp:169 Point skin_direction;
     pub skin_direction: Point,
 
-    // TreeSupport.hpp:153: int support_roof_layers_below;
+    // TreeSupport.hpp:179 int support_roof_layers_below;
     pub support_roof_layers_below: i32,
-    // TreeSupport.hpp:154: int obj_layer_nr;
+    // TreeSupport.hpp:180 int obj_layer_nr;
     pub obj_layer_nr: i32,
 
-    // TreeSupport.hpp:163: bool to_buildplate;
+    // TreeSupport.hpp:189 bool to_buildplate;
     pub to_buildplate: bool,
 
-    // TreeSupport.hpp:172: SupportNode* parent;
-    // Represented as an arena index (None == NO_PARENT == nullptr).
-    pub parent: Option<usize>,
-    // TreeSupport.hpp:173: std::vector<SupportNode*> parents;
-    pub parents: Vec<usize>,
-    // TreeSupport.hpp:174: SupportNode* child = nullptr;
-    pub child: Option<usize>,
+    // TreeSupport.hpp:198 SupportNode* parent;
+    pub parent: Option<NodeId>,
+    // TreeSupport.hpp:199 std::vector<SupportNode*> parents;
+    pub parents: Vec<NodeId>,
+    // TreeSupport.hpp:200 SupportNode* child = nullptr;
+    pub child: Option<NodeId>,
 
-    // TreeSupport.hpp:183: std::list<SupportNode*> merged_neighbours;
-    pub merged_neighbours: Vec<usize>,
+    // TreeSupport.hpp:209 std::list<SupportNode*> merged_neighbours;
+    pub merged_neighbours: Vec<NodeId>,
 
-    // TreeSupport.hpp:185: coordf_t print_z;
+    // TreeSupport.hpp:211 coordf_t print_z;
     pub print_z: CoordF,
-    // TreeSupport.hpp:186: coordf_t height;
+    // TreeSupport.hpp:212 coordf_t height;
     pub height: CoordF,
 }
 
-impl SupportNode {
-    // TreeSupport.hpp:51: static constexpr SupportNode* NO_PARENT = nullptr;
-    pub const NO_PARENT: Option<usize> = None;
+// TreeSupport.hpp:118 `static double diameter_angle_scale_factor;` (defined TreeSupport.cpp:5101,
+// set by drop_nodes() TreeSupport.cpp:5162). A process-wide static as in C++, kept as the bits of the double.
+static SUPPORT_NODE_DIAMETER_ANGLE_SCALE_FACTOR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-    // TreeSupport.hpp:53-63: SupportNode() default constructor
+impl SupportNode {
+    // TreeSupport.hpp:52 static constexpr SupportNode* NO_PARENT = nullptr;
+    pub const NO_PARENT: Option<NodeId> = None;
+
+    /// `SupportNode::diameter_angle_scale_factor`
+    pub fn diameter_angle_scale_factor() -> f64 {
+        f64::from_bits(SUPPORT_NODE_DIAMETER_ANGLE_SCALE_FACTOR.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// `SupportNode::diameter_angle_scale_factor = value;`
+    pub fn set_diameter_angle_scale_factor(value: f64) {
+        SUPPORT_NODE_DIAMETER_ANGLE_SCALE_FACTOR.store(value.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // TreeSupport.hpp:54-64: SupportNode() default constructor
     pub fn new() -> Self {
         Self {
             distance_to_top: 0,
@@ -288,6 +454,11 @@ impl SupportNode {
             need_extra_wall: false,
             is_sharp_tail: false,
             valid: true,
+            carried_mass: 0.0,
+            slab_height: 0.0,
+            slab_bottom_obj_layer: 0,
+            slab_index: -1,
+            line_width: 0.0,
             fading: false,
             overhang_degree: 0.0,
             overhang: ExPolygon::default(),
@@ -306,29 +477,25 @@ impl SupportNode {
         }
     }
 
-    /// TreeSupport.hpp:66-97: full SupportNode constructor.
+    /// TreeSupport.hpp:66-100: the full SupportNode constructor.
     ///
-    /// `nodes` is the arena holding all already-created SupportNodes; `parent`
-    /// is the arena index of the parent node (or None for NO_PARENT). The
-    /// `diameter_angle_scale_factor` is the static member (TreeSupport.hpp:115)
-    /// passed in explicitly. Returns the new node; the caller is responsible for
-    /// pushing it onto the arena and updating `parent->child` linkage as C++ does
-    /// (which it cannot do here because it would mutate `nodes`).
+    /// `nodes` is the arena the new node will be pushed onto at index `self_idx`
+    /// (`this`); the constructor writes `parent->child` and the merged neighbours'
+    /// `child` there, as the C++ does through the pointers.
     #[allow(clippy::too_many_arguments)]
     pub fn with_parent(
         nodes: &mut [SupportNode],
+        self_idx: NodeId,
         position: Point,
         distance_to_top: i32,
         obj_layer_nr: i32,
         support_roof_layers_below: i32,
         to_buildplate: bool,
-        parent: Option<usize>,
+        parent: Option<NodeId>,
         print_z_: CoordF,
         height_: CoordF,
         dist_mm_to_top_: CoordF,
         radius_: CoordF,
-        diameter_angle_scale_factor: f64,
-        self_idx: usize,
     ) -> Self {
         let mut node = SupportNode {
             distance_to_top,
@@ -342,26 +509,10 @@ impl SupportNode {
             height: height_,
             dist_mm_to_top: dist_mm_to_top_,
             radius: radius_,
-            movement: Point::new(0, 0),
-            max_move_dist: 0.0,
-            type_: TreeNodeType::ECircle,
-            is_corner: false,
-            is_processed: false,
-            need_extra_wall: false,
-            is_sharp_tail: false,
-            valid: true,
-            fading: false,
-            overhang_degree: 0.0,
-            overhang: ExPolygon::default(),
-            origin_area: 0.0,
-            target_radius: -1.0,
-            skin_direction: Point::new(0, 0),
-            parents: Vec::new(),
-            child: None,
-            merged_neighbours: Vec::new(),
+            ..SupportNode::new()
         };
 
-        // TreeSupport.hpp:80-96
+        // TreeSupport.hpp:81-99
         if let Some(parent_idx) = parent {
             // parents.push_back(parent);
             node.parents.push(parent_idx);
@@ -371,6 +522,8 @@ impl SupportNode {
             node.overhang = nodes[parent_idx].overhang.clone();
             // orig_pos = parent->orig_pos;
             node.orig_pos = nodes[parent_idx].orig_pos;
+            // carried_mass = parent->carried_mass;
+            node.carried_mass = nodes[parent_idx].carried_mass;
             // if (dist_mm_to_top == 0) dist_mm_to_top = parent->dist_mm_to_top + parent->height;
             if node.dist_mm_to_top == 0.0 {
                 node.dist_mm_to_top = nodes[parent_idx].dist_mm_to_top + nodes[parent_idx].height;
@@ -378,17 +531,18 @@ impl SupportNode {
             // if (radius == 0 && parent->radius>0)
             //     radius = parent->radius + (dist_mm_to_top - parent->dist_mm_to_top) * diameter_angle_scale_factor;
             if node.radius == 0.0 && nodes[parent_idx].radius > 0.0 {
-                node.radius = nodes[parent_idx].radius
-                    + (node.dist_mm_to_top - nodes[parent_idx].dist_mm_to_top)
-                        * diameter_angle_scale_factor;
+                node.radius = (node.dist_mm_to_top - nodes[parent_idx].dist_mm_to_top)
+                    .mul_add(Self::diameter_angle_scale_factor(), nodes[parent_idx].radius);
             }
             // parent->child = this;
             nodes[parent_idx].child = Some(self_idx);
-            // for (auto& neighbor : parent->merged_neighbours) { neighbor->child = this; parents.push_back(neighbor); }
+            // for (auto& neighbor : parent->merged_neighbours) {
+            //     neighbor->child = this; parents.push_back(neighbor); carried_mass += neighbor->carried_mass; }
             let neighbours = nodes[parent_idx].merged_neighbours.clone();
             for neighbor in neighbours {
                 nodes[neighbor].child = Some(self_idx);
                 node.parents.push(neighbor);
+                node.carried_mass += nodes[neighbor].carried_mass;
             }
             // is_sharp_tail = parent->is_sharp_tail;
             node.is_sharp_tail = nodes[parent_idx].is_sharp_tail;
@@ -399,7 +553,16 @@ impl SupportNode {
         node
     }
 
-    // TreeSupport.hpp:188-191: bool operator==(const SupportNode& other) const { return position == other.position; }
+    /// TreeSupport.hpp:136-142 `float total_carried_mass() const`
+    pub fn total_carried_mass(&self, nodes: &[SupportNode]) -> f32 {
+        let mut mass = self.carried_mass;
+        for &neighbor in &self.merged_neighbours {
+            mass += nodes[neighbor].carried_mass;
+        }
+        mass
+    }
+
+    // TreeSupport.hpp:214-217 bool operator==(const SupportNode& other) const { return position == other.position; }
     pub fn eq_position(&self, other: &SupportNode) -> bool {
         self.position == other.position
     }
@@ -412,7 +575,7 @@ impl Default for SupportNode {
 }
 
 impl PartialEq for SupportNode {
-    // TreeSupport.hpp:188-191
+    // TreeSupport.hpp:214-217
     fn eq(&self, other: &Self) -> bool {
         self.position == other.position
     }
@@ -473,6 +636,184 @@ impl RadiusLayerPair {
     }
 }
 
+impl RadiusLayerPair {
+    /// The part of the key the cache compares (RadiusLayerPairEquality): the radius and the layer.
+    fn cache_key(&self) -> (u64, usize) {
+        (self.radius.to_bits(), self.layer_nr)
+    }
+}
+
+/// TreeSupport.hpp:225-379 `class TreeSupportData`: lazily generates tree guidance volumes.
+///
+/// The caches are `mutable tbb::concurrent_unordered_map`s filled from const methods in C++;
+/// here they are `RefCell`s, and a lookup hands back a copy of the cached areas.
+#[derive(Debug)]
+pub struct TreeSupportData {
+    // TreeSupport.hpp:284 std::vector<LayerHeightData> layer_heights;
+    pub layer_heights: Vec<LayerHeightData>,
+    // TreeSupport.hpp:286 std::vector<std::unique_ptr<SupportNode>> contact_nodes;
+    pub contact_nodes: Vec<SupportNode>,
+    // TreeSupport.hpp:336 bool is_slim = false;
+    pub is_slim: bool,
+    // TreeSupport.hpp:340 coordf_t m_xy_distance;
+    pub m_xy_distance: CoordF,
+    // TreeSupport.hpp:342 double branch_scale_factor = 1.0; // tan(45 degrees)
+    pub branch_scale_factor: f64,
+    // TreeSupport.hpp:351 coordf_t m_radius_sample_resolution;
+    pub m_radius_sample_resolution: CoordF,
+    // TreeSupport.hpp:356 std::vector<ExPolygons> m_layer_outlines;
+    pub m_layer_outlines: Vec<ExPolygons>,
+    // TreeSupport.hpp:359 std::vector<ExPolygons> m_layer_outlines_below; // union contours of all layers below
+    pub m_layer_outlines_below: Vec<ExPolygons>,
+    // TreeSupport.hpp:361 std::vector<double> m_max_move_distances;
+    pub m_max_move_distances: Vec<f64>,
+    // TreeSupport.hpp:375-376 the collision and avoidance caches, keyed by (radius, layer_nr).
+    pub m_collision_cache: RefCell<HashMap<(u64, usize), ExPolygons>>,
+    pub m_avoidance_cache: RefCell<HashMap<(u64, usize), ExPolygons>>,
+}
+
+impl Default for TreeSupportData {
+    // TreeSupport.hpp:228 TreeSupportData() = default;
+    fn default() -> Self {
+        TreeSupportData {
+            layer_heights: Vec::new(),
+            contact_nodes: Vec::new(),
+            is_slim: false,
+            m_xy_distance: 0.0,
+            branch_scale_factor: 1.0,
+            m_radius_sample_resolution: 0.0,
+            m_layer_outlines: Vec::new(),
+            m_layer_outlines_below: Vec::new(),
+            m_max_move_distances: Vec::new(),
+            m_collision_cache: RefCell::new(HashMap::new()),
+            m_avoidance_cache: RefCell::new(HashMap::new()),
+        }
+    }
+}
+
+// TreeSupport.cpp:70-83 enum TreeSupportStage
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum TreeSupportStage {
+    StageDetectOverhangs = 0,
+    StageGenerateContactNodes,
+    StageDropDownNodes,
+    StageDrawCircles,
+    StageGenerateToolpaths,
+    StageMinimumSpanningTree,
+    StageGetAvoidance,
+    StageProjectionOntoEx,
+    StageGetCollision,
+    StageIntersectionLn,
+    StageTotal,
+    NumStages,
+}
+
+const NUM_STAGES: usize = TreeSupportStage::NumStages as usize;
+
+/// TreeSupport.cpp:87-150 `class TreeSupportProfiler`. The boost local clock is
+/// `std::time::Instant`; the durations are whole milliseconds as `total_milliseconds()`.
+#[derive(Debug, Clone)]
+pub struct TreeSupportProfiler {
+    pub stage_durations: [u32; NUM_STAGES],
+    pub stage_index: u32,
+    pub tic_time: Option<std::time::Instant>,
+    pub toc_time: Option<std::time::Instant>,
+    m_stage_start_times: [Option<std::time::Instant>; NUM_STAGES],
+}
+
+impl TreeSupportProfiler {
+    // TreeSupport.cpp:96-101
+    pub const fn new() -> Self {
+        TreeSupportProfiler {
+            stage_durations: [0; NUM_STAGES],
+            stage_index: 0,
+            tic_time: None,
+            toc_time: None,
+            m_stage_start_times: [None; NUM_STAGES],
+        }
+    }
+
+    // TreeSupport.cpp:103-109
+    pub fn stage_start(&mut self, stage: TreeSupportStage) {
+        if stage > TreeSupportStage::NumStages {
+            return;
+        }
+        // TreeSupport.cpp:108 (NUM_STAGES itself passes the check and indexes one past the
+        // array in C++; it is never passed)
+        if let Some(slot) = self.m_stage_start_times.get_mut(stage as usize) {
+            *slot = Some(std::time::Instant::now());
+        }
+    }
+
+    // TreeSupport.cpp:111-118
+    pub fn stage_finish(&mut self, stage: TreeSupportStage) {
+        if stage > TreeSupportStage::NumStages {
+            return;
+        }
+        let time = std::time::Instant::now();
+        let idx = stage as usize;
+        if idx < NUM_STAGES {
+            let start = self.m_stage_start_times[idx].unwrap_or(time);
+            self.stage_durations[idx] = time.duration_since(start).as_millis() as u32;
+        }
+    }
+
+    // TreeSupport.cpp:120
+    pub fn tic(&mut self) {
+        self.tic_time = Some(std::time::Instant::now());
+    }
+
+    // TreeSupport.cpp:121-124
+    pub fn toc(&mut self) -> u32 {
+        let now = std::time::Instant::now();
+        self.toc_time = Some(now);
+        now.duration_since(self.tic_time.unwrap_or(now)).as_millis() as u32
+    }
+
+    // TreeSupport.cpp:125-130
+    pub fn stage_add(&mut self, stage: TreeSupportStage) {
+        if stage > TreeSupportStage::NumStages {
+            return;
+        }
+        let elapsed = self.toc();
+        if let Some(d) = self.stage_durations.get_mut(stage as usize) {
+            *d = d.wrapping_add(elapsed);
+        }
+    }
+
+    // TreeSupport.cpp:132-147
+    pub fn report(&self) -> String {
+        format!(
+            "total overhange cost: {}; STAGE_DETECT_OVERHANGS: {}; STAGE_GENERATE_CONTACT_NODES: {}; STAGE_DROP_DOWN_NODES: {}; STAGE_DRAW_CIRCLES: {}; STAGE_GENERATE_TOOLPATHS: {}; STAGE_MinimumSpanningTree: {}; STAGE_GET_AVOIDANCE: {}; STAGE_projection_onto_ex: {}; STAGE_get_collision: {}; STAGE_intersection_ln: {}",
+            self.stage_durations[TreeSupportStage::StageTotal as usize],
+            self.stage_durations[TreeSupportStage::StageDetectOverhangs as usize],
+            self.stage_durations[TreeSupportStage::StageGenerateContactNodes as usize],
+            self.stage_durations[TreeSupportStage::StageDropDownNodes as usize],
+            self.stage_durations[TreeSupportStage::StageDrawCircles as usize],
+            self.stage_durations[TreeSupportStage::StageGenerateToolpaths as usize],
+            self.stage_durations[TreeSupportStage::StageMinimumSpanningTree as usize],
+            self.stage_durations[TreeSupportStage::StageGetAvoidance as usize],
+            self.stage_durations[TreeSupportStage::StageProjectionOntoEx as usize],
+            self.stage_durations[TreeSupportStage::StageGetCollision as usize],
+            self.stage_durations[TreeSupportStage::StageIntersectionLn as usize],
+        )
+    }
+}
+
+impl Default for TreeSupportProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// TreeSupport.cpp:152 `TreeSupportProfiler profiler;`
+static PROFILER: std::sync::Mutex<TreeSupportProfiler> = std::sync::Mutex::new(TreeSupportProfiler::new());
+
+fn profiler() -> std::sync::MutexGuard<'static, TreeSupportProfiler> {
+    PROFILER.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 // ============================================================================
 // TreeSupport.cpp free functions / static helpers
 // ============================================================================
@@ -482,7 +823,8 @@ impl RadiusLayerPair {
 // { return unscale_(a(0)) * unscale_(b(0)) + unscale_(a(1)) * unscale_(b(1)); }
 #[inline]
 pub fn dot_with_unscale(a: Point, b: Point) -> f64 {
-    unscale_(a.x) * unscale_(b.x) + unscale_(a.y) * unscale_(b.y)
+    // The left product is contracted with the sum (clang -ffp-contract=on).
+    unscale_(a.x).mul_add(unscale_(b.x), unscale_(a.y) * unscale_(b.y))
 }
 
 // TreeSupport.cpp:64-67
@@ -497,9 +839,10 @@ pub fn vsize2_with_unscale(pt: Point) -> f64 {
 // { double length = scale_(sqrt(vsize2_with_unscale(pt))); return pt * (scale / length); }
 #[inline]
 pub fn normal(pt: Point, scale_factor: f64) -> Point {
-    let length = scale_(vsize2_with_unscale(pt).sqrt()) as f64;
-    // C++: return pt * (scale / length); — coord_t() truncation (see point_mul_trunc).
-    point_mul_trunc(pt, scale_factor / length)
+    // double length = scale_(sqrt(vsize2_with_unscale(pt)));
+    let length = scale_(vsize2_with_unscale(pt).sqrt());
+    // return pt * (scale / length);  `pt` is a non-const Point: the member operator* (lrint).
+    point_mul(pt, scale_factor / length)
 }
 
 // TreeSupport.cpp:157-183
@@ -638,7 +981,7 @@ pub fn move_inside_expoly(
             // x is projected to a point properly on the line segment. The case which looks like | .
             projected_p_beyond_prev_segment = false;
             // Point x = a + ab * (dot_prod / ab_length2);
-            let x = a + point_mul_trunc(ab, dot_prod / ab_length2);
+            let x = a + point_mul(ab, dot_prod / ab_length2);
 
             // double dist2 = vsize2_with_unscale(p - x);
             let dist2 = vsize2_with_unscale(p - x);
@@ -777,7 +1120,7 @@ pub fn move_inside_expolys(
                 // x is projected to a point properly on the line segment. The case which looks like | .
                 projected_p_beyond_prev_segment = false;
                 // Point x = a + ab * (dot_prod / ab_length2);
-                let x = a + point_mul_trunc(ab, dot_prod / ab_length2);
+                let x = a + point_mul(ab, dot_prod / ab_length2);
 
                 // double dist2 = vsize2_with_unscale(p - x);
                 let dist2 = vsize2_with_unscale(p - x);
@@ -921,13 +1264,7 @@ pub fn move_out_expolys(
     // Point from0 = from;
     let _from0 = *from;
     // ExPolygons polys_dilated = union_ex(offset_ex(polygons, scale_(distance)));
-    // offset_ex default join type is ClipperLib::jtMiter (ClipperUtils.hpp:31,355).
-    // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib.
-    let polys_dilated = crate::clipper_utils::union_ex(&crate::clipper_utils::offset_expolygons(
-        polygons,
-        scale_(distance) as CoordF,
-        crate::clipper_utils::OffsetJoinType::Miter,
-    ));
+    let polys_dilated = union_ex(&offset_ex(polygons, scale_(distance) as f32));
     // Point pt = projection_onto(polys_dilated, from);
     let mut pt = projection_onto(&polys_dilated, from);
     // Point outward_dir = pt - from;
@@ -980,7 +1317,7 @@ pub fn is_stable(height: f32, overhang: &ExPolygon, _strength_z: f32) -> bool {
     let _props =
         crate::brim::comp_second_moment_expolygons(&vec![overhang.clone()], &mut ixx, &mut iyy);
     // double moment = std::min(Ixx * pow(SCALING_FACTOR, 4), Iyy * pow(SCALING_FACTOR, 4));
-    let moment = (ixx * crate::SCALING_FACTOR.powi(4)).min(iyy * crate::SCALING_FACTOR.powi(4));
+    let moment = (ixx * SCALING_FACTOR.powf(4.0)).min(iyy * SCALING_FACTOR.powf(4.0));
     // return moment / stability > 3.;  (stability promoted float->double for the division)
     moment / stability as f64 > 3.0
 }
@@ -1078,10 +1415,7 @@ pub fn avoid_object_remove_extra_small_parts(
             false,
         );
     // auto expolys_avoid = diff_ex(expoly, clipped_avoid_region);
-    // C++ diff_ex(const ExPolygon&, const Polygons&) (ClipperUtils.hpp:452): re-assemble
-    // the clip Polygons into ExPolygons (recovering holes from winding) before differencing.
-    let clip_ex = crate::clipper_utils::union_polygons_ex(&clipped_avoid_region);
-    let expolys_avoid = crate::clipper_utils::difference(&[expoly.clone()], &clip_ex);
+    let expolys_avoid = diff_ex_polygons(std::slice::from_ref(expoly), &clipped_avoid_region);
     // int idx_max_area = -1;
     let mut idx_max_area: i32 = -1;
     // float max_area = 0;

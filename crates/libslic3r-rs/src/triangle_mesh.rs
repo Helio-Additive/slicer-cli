@@ -128,10 +128,10 @@ impl RepairedMeshErrors {
 }
 
 // ============================================================================
-// TriangleMesh.hpp:47-85 — TriangleMeshStats
+// TriangleMesh.hpp:47-93 — TriangleMeshStats
 // ============================================================================
 
-/// TriangleMesh.hpp:47-85
+/// TriangleMesh.hpp:47-93
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TriangleMeshStats {
     // Mesh metrics.
@@ -151,9 +151,15 @@ pub struct TriangleMeshStats {
     // Mesh errors, remaining.
     /// TriangleMesh.hpp:57
     pub open_edges: i32,
+    /// TriangleMesh.hpp:58
+    pub non_manifold_edges: i32,
+    /// TriangleMesh.hpp:59
+    pub non_manifold_vertices: i32,
+    /// TriangleMesh.hpp:60
+    pub has_reversed_faces: bool,
 
     // Mesh errors, fixed.
-    /// TriangleMesh.hpp:60
+    /// TriangleMesh.hpp:63
     pub repaired_errors: RepairedMeshErrors,
 }
 
@@ -168,6 +174,9 @@ impl Default for TriangleMeshStats {
             volume: -1.0,             // TriangleMesh.hpp:53: -1.f
             number_of_parts: 0,
             open_edges: 0,
+            non_manifold_edges: 0,     // TriangleMesh.hpp:58
+            non_manifold_vertices: 0,  // TriangleMesh.hpp:59
+            has_reversed_faces: false, // TriangleMesh.hpp:60
             repaired_errors: RepairedMeshErrors::default(),
         }
     }
@@ -200,19 +209,35 @@ impl TriangleMeshStats {
             out.size = out.max - out.min;
             out.number_of_parts = self.number_of_parts + rhs.number_of_parts;
             out.open_edges = self.open_edges + rhs.open_edges;
+            // TriangleMesh.hpp:78-80
+            out.non_manifold_edges = self.non_manifold_edges + rhs.non_manifold_edges;
+            out.non_manifold_vertices = self.non_manifold_vertices + rhs.non_manifold_vertices;
+            out.has_reversed_faces = self.has_reversed_faces || rhs.has_reversed_faces;
             out.volume = self.volume + rhs.volume;
             out.repaired_errors.merge(&rhs.repaired_errors);
             out
         }
     }
 
-    /// TriangleMesh.hpp:83
-    /// C++: `bool manifold() const { return open_edges == 0; }`
+    /// TriangleMesh.hpp:89
+    /// C++: `bool manifold() const { return non_manifold_edges == 0 && non_manifold_vertices == 0; }`
     pub fn manifold(&self) -> bool {
-        self.open_edges == 0
+        self.non_manifold_edges == 0 && self.non_manifold_vertices == 0
     }
 
-    /// TriangleMesh.hpp:84
+    /// TriangleMesh.hpp:90
+    /// C++: `bool has_open_edges() const { return open_edges > 0; }`
+    pub fn has_open_edges(&self) -> bool {
+        self.open_edges > 0
+    }
+
+    /// TriangleMesh.hpp:91
+    /// C++: `bool has_any_issue() const { return !manifold() || has_open_edges() || has_reversed_faces; }`
+    pub fn has_any_issue(&self) -> bool {
+        !self.manifold() || self.has_open_edges() || self.has_reversed_faces
+    }
+
+    /// TriangleMesh.hpp:92
     /// C++: `bool repaired() const { return repaired_errors.repaired(); }`
     pub fn repaired(&self) -> bool {
         self.repaired_errors.repaired()
@@ -235,22 +260,76 @@ pub fn update_bounding_box(its: &indexed_triangle_set, out: &mut TriangleMeshSta
     out.size = out.max - out.min;
 }
 
-/// TriangleMesh.cpp:45-54
+/// TriangleMesh.cpp:46-77
 /// C++: `static void fill_initial_stats(const indexed_triangle_set &its, TriangleMeshStats &out)`
+///
+/// Gate `TRIANGLE_MESH_STATS_PIN` (on by default): the pin's body, the edge statistics and the
+/// face neighbours of `its_quick_diagnostics` (MeshDiagnostics.cpp:321-326). Off: the earlier
+/// arm, the neighbours of `its_face_neighbors` and the open edges counted on them, the
+/// non-manifold counts and the reversed-face flag left at zero. Neither arm reaches the G-code:
+/// the statistics are read by the mesh reports only.
 pub fn fill_initial_stats(its: &indexed_triangle_set, out: &mut TriangleMeshStats) {
-    // TriangleMesh.cpp:47
-    out.number_of_facets = its.indices.len() as u32;
     // TriangleMesh.cpp:48
-    out.volume = its_volume(its);
+    out.number_of_facets = its.indices.len() as u32;
     // TriangleMesh.cpp:49
+    out.volume = its_volume(its);
+    // TriangleMesh.cpp:50
     update_bounding_box(its, out);
 
-    // TriangleMesh.cpp:51
-    let face_neighbors = its_face_neighbors(its);
-    // TriangleMesh.cpp:52
+    if !crate::faithful_gate("TRIANGLE_MESH_STATS_PIN") {
+        // The earlier arm.
+        let face_neighbors = its_face_neighbors(its);
+        out.number_of_parts = its_number_of_patches_neighbors(its, &face_neighbors) as i32;
+        out.open_edges = its_num_open_edges_neighbors(&face_neighbors) as i32;
+        return;
+    }
+
+    // TriangleMesh.cpp:52-53
+    let mut face_neighbors: Vec<Vec3i> = Vec::new();
+    // mesh_diagnostics.rs takes the `indexed_triangle_set` of triangle_set_sampling.rs (the same
+    // two vectors under another type): a copy of them.
+    let its_diag = crate::triangle_set_sampling::indexed_triangle_set {
+        vertices: its.vertices.clone(),
+        indices: its.indices.clone(),
+    };
+    let nm_stats = crate::mesh_diagnostics::its_quick_diagnostics(&its_diag, Some(&mut face_neighbors));
+    // TriangleMesh.cpp:54
     out.number_of_parts = its_number_of_patches_neighbors(its, &face_neighbors) as i32;
-    // TriangleMesh.cpp:53
-    out.open_edges = its_num_open_edges_neighbors(&face_neighbors) as i32;
+    // TriangleMesh.cpp:55 assert(... <= INT_MAX)
+    debug_assert!(
+        nm_stats.open_edges <= i32::MAX as usize
+            && nm_stats.non_manifold_edges <= i32::MAX as usize
+            && nm_stats.non_manifold_vertices <= i32::MAX as usize
+    );
+    // TriangleMesh.cpp:56-59
+    out.open_edges = nm_stats.open_edges as i32;
+    out.non_manifold_edges = nm_stats.non_manifold_edges as i32;
+    out.non_manifold_vertices = nm_stats.non_manifold_vertices as i32;
+    out.has_reversed_faces = nm_stats.has_reversed_faces;
+    // TriangleMesh.cpp:60-68 BOOST_LOG_TRIVIAL(info)
+    log::info!(
+        "reversed-faces: mesh-stats faces={} verts={} parts={} volume={} open_edges={} nm_edges={} nm_verts={} has_reversed_faces={}",
+        out.number_of_facets,
+        its.vertices.len(),
+        out.number_of_parts,
+        out.volume,
+        out.open_edges,
+        out.non_manifold_edges,
+        out.non_manifold_vertices,
+        if out.has_reversed_faces { 1 } else { 0 }
+    );
+    // TriangleMesh.cpp:69-76
+    if out.has_reversed_faces {
+        log::info!(
+            "reversed-faces: FLAG mesh-stats faces={} verts={} parts={} volume={} open_edges={} nm_edges={}",
+            out.number_of_facets,
+            its.vertices.len(),
+            out.number_of_parts,
+            out.volume,
+            out.open_edges,
+            out.non_manifold_edges
+        );
+    }
 }
 
 // ============================================================================
@@ -411,97 +490,112 @@ pub fn its_face_edge_ids(its: &indexed_triangle_set) -> Vec<Vec3i> {
     its_face_edge_ids_impl(its, |_| true, || {})
 }
 
-/// TriangleMesh.cpp:675-678
-pub fn its_face_edge_ids_cb(
-    its: &indexed_triangle_set,
-    throw_on_cancel_callback: impl Fn(),
-) -> Vec<Vec3i> {
-    its_face_edge_ids_impl(its, |_| true, throw_on_cancel_callback)
+/// TriangleMesh.cpp:706-709, the overload of `its_face_edge_ids` with a cancel callback
+/// (TriangleMesh.hpp:202).
+pub mod its_face_edge_ids_with_cancel {
+    use super::*;
+    /// TriangleMesh.cpp:706-709
+    pub fn its_face_edge_ids(its: &indexed_triangle_set, throw_on_cancel_callback: impl Fn()) -> Vec<Vec3i> {
+        its_face_edge_ids_impl(its, |_| true, throw_on_cancel_callback)
+    }
 }
+pub use its_face_edge_ids_with_cancel::its_face_edge_ids as its_face_edge_ids_cb;
 
-/// TriangleMesh.cpp:680-683
-pub fn its_face_edge_ids_mask(its: &indexed_triangle_set, face_mask: &[bool]) -> Vec<Vec3i> {
-    its_face_edge_ids_impl(its, |idx| face_mask[idx as usize], || {})
+/// TriangleMesh.cpp:711-714, the overload of `its_face_edge_ids` with a face mask
+/// (TriangleMesh.hpp:203).
+pub mod its_face_edge_ids_with_mask {
+    use super::*;
+    /// TriangleMesh.cpp:711-714
+    pub fn its_face_edge_ids(its: &indexed_triangle_set, face_mask: &[bool]) -> Vec<Vec3i> {
+        its_face_edge_ids_impl(its, |idx| face_mask[idx as usize], || {})
+    }
 }
+pub use its_face_edge_ids_with_mask::its_face_edge_ids as its_face_edge_ids_mask;
 
-/// Having the face neighbors available, assign unique edge IDs to face edges for chaining of polygons over slices.
-/// TriangleMesh.cpp:686-725
-/// C++: `std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, std::vector<Vec3i> &face_neighbors, bool assign_unbound_edges, int *num_edges)`
-pub fn its_face_edge_ids_neighbors(
-    its: &indexed_triangle_set,
-    face_neighbors: &[Vec3i],
-    assign_unbound_edges: bool,
-    num_edges: Option<&mut i32>,
-) -> Vec<Vec3i> {
-    // TriangleMesh.cpp:689 — out elements are not initialized!
-    let mut out: Vec<Vec3i> = vec![Vec3i::zeros(); face_neighbors.len()];
-    // TriangleMesh.cpp:690
-    let mut last_edge_id: i32 = 0;
-    // TriangleMesh.cpp:691
-    for i in 0..face_neighbors.len() as i32 {
-        // TriangleMesh.cpp:692
-        let triangle = its.indices[i as usize];
-        // TriangleMesh.cpp:693
-        let neighbors = face_neighbors[i as usize];
-        // TriangleMesh.cpp:694
-        for j in 0..3 {
-            // TriangleMesh.cpp:695
-            let n = neighbors[j];
-            // TriangleMesh.cpp:696
-            if n > i {
-                // TriangleMesh.cpp:697
-                let triangle2 = its.indices[n as usize];
-                // TriangleMesh.cpp:698
-                let edge_id = last_edge_id;
-                last_edge_id += 1;
-                // TriangleMesh.cpp:699
-                let mut edge = its_triangle_edge(&triangle, j as i32);
-                // TriangleMesh.cpp:701 — First find an edge with opposite orientation.
-                let tmp = edge[0];
-                edge[0] = edge[1];
-                edge[1] = tmp;
-                // TriangleMesh.cpp:702
-                let mut k = its_triangle_edge_index(&triangle2, &edge);
-                //FIXME is the following realistic? Could face_neighbors contain such faces?
-                // And if it does, do we want to produce the same edge ID for those mutually incorrectly oriented edges?
-                // TriangleMesh.cpp:705
-                if k == -1 {
-                    // TriangleMesh.cpp:707 — Second find an edge with the same orientation (the neighbor triangle may be flipped).
-                    let tmp2 = edge[0];
-                    edge[0] = edge[1];
-                    edge[1] = tmp2;
-                    // TriangleMesh.cpp:708
-                    k = its_triangle_edge_index(&triangle2, &edge);
-                }
-                // TriangleMesh.cpp:710
-                debug_assert!(k >= 0);
-                // TriangleMesh.cpp:711
-                out[i as usize][j] = edge_id;
-                // TriangleMesh.cpp:712
-                out[n as usize][k as usize] = edge_id;
-            } else if n == -1 {
-                // TriangleMesh.cpp:714
-                out[i as usize][j] = if assign_unbound_edges {
-                    let v = last_edge_id;
+/// TriangleMesh.cpp:717-756, the overload of `its_face_edge_ids` over the face neighbours
+/// (TriangleMesh.hpp:205).
+pub mod its_face_edge_ids_with_neighbors {
+    use super::*;
+    /// Having the face neighbors available, assign unique edge IDs to face edges for chaining of polygons over slices.
+    /// TriangleMesh.cpp:686-725
+    /// C++: `std::vector<Vec3i> its_face_edge_ids(const indexed_triangle_set &its, std::vector<Vec3i> &face_neighbors, bool assign_unbound_edges, int *num_edges)`
+    pub fn its_face_edge_ids(
+        its: &indexed_triangle_set,
+        face_neighbors: &[Vec3i],
+        assign_unbound_edges: bool,
+        num_edges: Option<&mut i32>,
+    ) -> Vec<Vec3i> {
+        // TriangleMesh.cpp:689 — out elements are not initialized!
+        let mut out: Vec<Vec3i> = vec![Vec3i::zeros(); face_neighbors.len()];
+        // TriangleMesh.cpp:690
+        let mut last_edge_id: i32 = 0;
+        // TriangleMesh.cpp:691
+        for i in 0..face_neighbors.len() as i32 {
+            // TriangleMesh.cpp:692
+            let triangle = its.indices[i as usize];
+            // TriangleMesh.cpp:693
+            let neighbors = face_neighbors[i as usize];
+            // TriangleMesh.cpp:694
+            for j in 0..3 {
+                // TriangleMesh.cpp:695
+                let n = neighbors[j];
+                // TriangleMesh.cpp:696
+                if n > i {
+                    // TriangleMesh.cpp:697
+                    let triangle2 = its.indices[n as usize];
+                    // TriangleMesh.cpp:698
+                    let edge_id = last_edge_id;
                     last_edge_id += 1;
-                    v
+                    // TriangleMesh.cpp:699
+                    let mut edge = its_triangle_edge(&triangle, j as i32);
+                    // TriangleMesh.cpp:701 — First find an edge with opposite orientation.
+                    let tmp = edge[0];
+                    edge[0] = edge[1];
+                    edge[1] = tmp;
+                    // TriangleMesh.cpp:702
+                    let mut k = its_triangle_edge_index(&triangle2, &edge);
+                    //FIXME is the following realistic? Could face_neighbors contain such faces?
+                    // And if it does, do we want to produce the same edge ID for those mutually incorrectly oriented edges?
+                    // TriangleMesh.cpp:705
+                    if k == -1 {
+                        // TriangleMesh.cpp:707 — Second find an edge with the same orientation (the neighbor triangle may be flipped).
+                        let tmp2 = edge[0];
+                        edge[0] = edge[1];
+                        edge[1] = tmp2;
+                        // TriangleMesh.cpp:708
+                        k = its_triangle_edge_index(&triangle2, &edge);
+                    }
+                    // TriangleMesh.cpp:710
+                    debug_assert!(k >= 0);
+                    // TriangleMesh.cpp:711
+                    out[i as usize][j] = edge_id;
+                    // TriangleMesh.cpp:712
+                    out[n as usize][k as usize] = edge_id;
+                } else if n == -1 {
+                    // TriangleMesh.cpp:714
+                    out[i as usize][j] = if assign_unbound_edges {
+                        let v = last_edge_id;
+                        last_edge_id += 1;
+                        v
+                    } else {
+                        -1
+                    };
                 } else {
-                    -1
-                };
-            } else {
-                // TriangleMesh.cpp:716-718 — Triangle shall never be neighbor of itself.
-                debug_assert!(n < i);
-                // Don't do anything, the neighbor will assign us an edge ID in later iterations.
+                    // TriangleMesh.cpp:716-718 — Triangle shall never be neighbor of itself.
+                    debug_assert!(n < i);
+                    // Don't do anything, the neighbor will assign us an edge ID in later iterations.
+                }
             }
         }
+        // TriangleMesh.cpp:722-723
+        if let Some(ne) = num_edges {
+            *ne = last_edge_id;
+        }
+        // TriangleMesh.cpp:724
+        out
     }
-    // TriangleMesh.cpp:722-723
-    if let Some(ne) = num_edges {
-        *ne = last_edge_id;
-    }
-    // TriangleMesh.cpp:724
-    out
 }
+pub use its_face_edge_ids_with_neighbors::its_face_edge_ids as its_face_edge_ids_neighbors;
 
 // ============================================================================
 // TriangleMesh.cpp:727-839 — ITS cleanup helpers
@@ -684,56 +778,84 @@ pub fn its_shrink_to_fit(its: &mut indexed_triangle_set) {
 }
 
 // ============================================================================
-// TriangleMesh.cpp:889-937 — Mesh projection points / 2D convex hull above plane
+// TriangleMesh.cpp:920-968 — Mesh projection points / 2D convex hull above plane
 // ============================================================================
 
-/// TriangleMesh.cpp:889-909
-/// C++: `template<typename TransformVertex>
-///       void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z, Points &all_pts)`
-fn its_collect_mesh_projection_points_above_impl(
-    its: &indexed_triangle_set,
-    transform_fn: impl Fn(&Vec3f) -> Vec3f,
-    z: f32,
-    all_pts: &mut Vec<Point>,
-) {
-    // TriangleMesh.cpp:892
-    all_pts.reserve(its.indices.len() * 3);
-    // TriangleMesh.cpp:893-908
-    for tri in &its.indices {
-        // TriangleMesh.cpp:894
-        let pts: [Vec3f; 3] = [
-            transform_fn(&its.vertices[tri[0] as usize]),
-            transform_fn(&its.vertices[tri[1] as usize]),
-            transform_fn(&its.vertices[tri[2] as usize]),
-        ];
-        // TriangleMesh.cpp:895
-        let mut iprev = 2usize;
-        // TriangleMesh.cpp:896
-        for iedge in 0..3usize {
-            // TriangleMesh.cpp:897-898
-            let p1 = &pts[iprev];
-            let p2 = &pts[iedge];
-            // TriangleMesh.cpp:899
-            if (p1.z < z && p2.z > z) || (p2.z < z && p1.z > z) {
-                // TriangleMesh.cpp:900-901 — Edge crosses the z plane. Calculate intersection point with the plane.
-                let t = (z - p1.z) / (p2.z - p1.z);
-                // TriangleMesh.cpp:902
-                all_pts.push(Point::new(
-                    scaled_coord_f32(p1.x + (p2.x - p1.x) * t),
-                    scaled_coord_f32(p1.y + (p2.y - p1.y) * t),
-                ));
+/// `Matrix3f * Vec3f` as the C++ build evaluates it (Eigen 5.0.1, clang -O3 `-ffp-contract=on`,
+/// arm64 NEON): the lazy coefficient-based product (ProductEvaluators.h) over a 3-row float
+/// destination takes the half packet `Packet2f` (XprHelper.h `find_best_packet`: 3 is not a
+/// multiple of 4 nor of 2, the search stops at the smallest packet). Rows 0 and 1 are one packet,
+/// `pmul` then two `pmadd` (vfma_f32): `fma(m2, z, fma(m1, y, m0 * x))`; row 2 is `coeff()`, the
+/// unrolled redux `e0 + (e1 + e2)` (Redux.h `redux_novec_unroller`), unfused. The `f64`
+/// counterpart is `geometry::eigen::mat3_mul_vec`.
+pub fn eigen_mat3f_mul_vec(m: &nalgebra::Matrix3<f32>, p: &Vec3f) -> Vec3f {
+    let packet = |i: usize| m[(i, 2)].mul_add(p.z, m[(i, 1)].mul_add(p.y, m[(i, 0)] * p.x));
+    let coeff = |i: usize| m[(i, 0)] * p.x + (m[(i, 1)] * p.y + m[(i, 2)] * p.z);
+    Vec3f::new(packet(0), packet(1), coeff(2))
+}
+
+/// `Transform3f * Vec3f` as the C++ build evaluates it: Transform.h:1329-1350 (Eigen 5.0.1)
+/// multiplies the 4x4 matrix by `(x, y, z, 1)` into a 4-row float destination, one `Packet4f`:
+/// `pmul` then three `pmadd` (vfmaq_f32), `fma(m3, 1, fma(m2, z, fma(m1, y, m0 * x)))`, of which
+/// the first three rows are kept.
+pub fn eigen_transform3f_mul_vec(t: &nalgebra::Matrix4<f32>, p: &Vec3f) -> Vec3f {
+    let row = |i: usize| t[(i, 3)].mul_add(1.0, t[(i, 2)].mul_add(p.z, t[(i, 1)].mul_add(p.y, t[(i, 0)] * p.x)));
+    Vec3f::new(row(0), row(1), row(2))
+}
+
+/// TriangleMesh.cpp:920-940, the template `its_collect_mesh_projection_points_above` over a
+/// vertex transformation.
+pub mod its_collect_mesh_projection_points_above_template {
+    use super::*;
+    /// TriangleMesh.cpp:920-940
+    /// C++: `template<typename TransformVertex>
+    ///       void its_collect_mesh_projection_points_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z, Points &all_pts)`
+    pub fn its_collect_mesh_projection_points_above(
+        its: &indexed_triangle_set,
+        transform_fn: impl Fn(&Vec3f) -> Vec3f,
+        z: f32,
+        all_pts: &mut Vec<Point>,
+    ) {
+        // TriangleMesh.cpp:923
+        all_pts.reserve(its.indices.len() * 3);
+        // TriangleMesh.cpp:924-939
+        for tri in &its.indices {
+            // TriangleMesh.cpp:925
+            let pts: [Vec3f; 3] = [
+                transform_fn(&its.vertices[tri[0] as usize]),
+                transform_fn(&its.vertices[tri[1] as usize]),
+                transform_fn(&its.vertices[tri[2] as usize]),
+            ];
+            // TriangleMesh.cpp:926
+            let mut iprev = 2usize;
+            // TriangleMesh.cpp:927
+            for iedge in 0..3usize {
+                // TriangleMesh.cpp:928-929
+                let p1 = &pts[iprev];
+                let p2 = &pts[iedge];
+                // TriangleMesh.cpp:930
+                if (p1.z < z && p2.z > z) || (p2.z < z && p1.z > z) {
+                    // TriangleMesh.cpp:931-932 — Edge crosses the z plane. Calculate intersection point with the plane.
+                    let t = (z - p1.z) / (p2.z - p1.z);
+                    // TriangleMesh.cpp:933: `p1.x() + (p2.x() - p1.x()) * t` (the product and the sum fuse)
+                    all_pts.push(Point::new(
+                        scaled_coord_f32((p2.x - p1.x).mul_add(t, p1.x)),
+                        scaled_coord_f32((p2.y - p1.y).mul_add(t, p1.y)),
+                    ));
+                }
+                // TriangleMesh.cpp:935-936
+                if p2.z >= z {
+                    all_pts.push(Point::new(scaled_coord_f32(p2.x), scaled_coord_f32(p2.y)));
+                }
+                // TriangleMesh.cpp:937
+                iprev = iedge;
             }
-            // TriangleMesh.cpp:904-905
-            if p2.z >= z {
-                all_pts.push(Point::new(scaled_coord_f32(p2.x), scaled_coord_f32(p2.y)));
-            }
-            // TriangleMesh.cpp:906
-            iprev = iedge;
         }
     }
 }
+use its_collect_mesh_projection_points_above_template::its_collect_mesh_projection_points_above as its_collect_mesh_projection_points_above_impl;
 
-/// TriangleMesh.cpp:911-914
+/// TriangleMesh.cpp:942-945
 /// C++ matrix overload (`Matrix3f m`): `m * p`.
 pub fn its_collect_mesh_projection_points_above(
     its: &indexed_triangle_set,
@@ -741,33 +863,58 @@ pub fn its_collect_mesh_projection_points_above(
     z: f32,
     all_pts: &mut Vec<Point>,
 ) {
-    its_collect_mesh_projection_points_above_impl(its, |p| m * p, z, all_pts);
+    its_collect_mesh_projection_points_above_impl(its, |p| eigen_mat3f_mul_vec(m, p), z, all_pts);
 }
 
-/// TriangleMesh.cpp:921-927
-/// C++: `template<typename TransformVertex>
-///       Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z)`
-fn its_convex_hull_2d_above_impl(
-    its: &indexed_triangle_set,
-    transform_fn: impl Fn(&Vec3f) -> Vec3f,
-    z: f32,
-) -> Polygon {
-    // TriangleMesh.cpp:924
-    let mut all_pts: Vec<Point> = Vec::new();
-    // TriangleMesh.cpp:925
-    its_collect_mesh_projection_points_above_impl(its, transform_fn, z, &mut all_pts);
-    // TriangleMesh.cpp:926
-    convex_hull_points(all_pts)
+/// TriangleMesh.cpp:947-950, the overload over a `Transform3f`.
+pub mod its_collect_mesh_projection_points_above_transform {
+    use super::*;
+    /// TriangleMesh.cpp:947-950: `t * p`.
+    pub fn its_collect_mesh_projection_points_above(
+        its: &indexed_triangle_set,
+        t: &nalgebra::Matrix4<f32>,
+        z: f32,
+        all_pts: &mut Vec<Point>,
+    ) {
+        its_collect_mesh_projection_points_above_impl(its, |p| eigen_transform3f_mul_vec(t, p), z, all_pts);
+    }
 }
 
-/// TriangleMesh.cpp:929-932
+/// TriangleMesh.cpp:952-958, the template `its_convex_hull_2d_above` over a vertex
+/// transformation.
+pub mod its_convex_hull_2d_above_template {
+    use super::*;
+    /// TriangleMesh.cpp:952-958
+    /// C++: `template<typename TransformVertex>
+    ///       Polygon its_convex_hull_2d_above(const indexed_triangle_set &its, const TransformVertex &transform_fn, const float z)`
+    pub fn its_convex_hull_2d_above(its: &indexed_triangle_set, transform_fn: impl Fn(&Vec3f) -> Vec3f, z: f32) -> Polygon {
+        // TriangleMesh.cpp:955
+        let mut all_pts: Vec<Point> = Vec::new();
+        // TriangleMesh.cpp:956
+        its_collect_mesh_projection_points_above_impl(its, transform_fn, z, &mut all_pts);
+        // TriangleMesh.cpp:957
+        convex_hull_points(all_pts)
+    }
+}
+use its_convex_hull_2d_above_template::its_convex_hull_2d_above as its_convex_hull_2d_above_impl;
+
+/// TriangleMesh.cpp:960-963
 /// C++ matrix overload (`Matrix3f m`).
 pub fn its_convex_hull_2d_above(
     its: &indexed_triangle_set,
     m: &nalgebra::Matrix3<f32>,
     z: f32,
 ) -> Polygon {
-    its_convex_hull_2d_above_impl(its, |p| m * p, z)
+    its_convex_hull_2d_above_impl(its, |p| eigen_mat3f_mul_vec(m, p), z)
+}
+
+/// TriangleMesh.cpp:965-968, the overload over a `Transform3f`.
+pub mod its_convex_hull_2d_above_transform {
+    use super::*;
+    /// TriangleMesh.cpp:965-968
+    pub fn its_convex_hull_2d_above(its: &indexed_triangle_set, t: &nalgebra::Matrix4<f32>, z: f32) -> Polygon {
+        its_convex_hull_2d_above_impl(its, |p| eigen_transform3f_mul_vec(t, p), z)
+    }
 }
 
 // ============================================================================
@@ -1429,11 +1576,309 @@ pub fn its_make_snap(
     mesh
 }
 
-// FIDELITY-NOTE: `its_make_groove_plane` (TriangleMesh.cpp:1387-1705) is NOT ported.
-// It reads concrete fields of the C++ `Groove` struct (`depth`, `width`, `flaps`,
-// `angle`, `side_width`, ...) via `cur_groove`, but the crate's `cut_utils::Groove`
-// is still a field-less placeholder (cut_utils.rs:33). A faithful port is blocked on
-// the upstream CutUtils/Groove port; the function is unused elsewhere in the crate.
+/// CutUtils.hpp:63 `const float CUT_TOLERANCE = 0.1f;`
+pub const CUT_TOLERANCE: f32 = 0.1;
+
+/// CutUtils.hpp:64-76 `struct Groove`, which TriangleMesh.hpp:18 declares and
+/// `its_make_groove_plane` reads. (cut_utils.rs still carries a field-less placeholder of the
+/// name; this is the struct of the pin.)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Groove {
+    /// CutUtils.hpp:66
+    pub depth: f32,
+    /// CutUtils.hpp:67
+    pub width: f32,
+    /// CutUtils.hpp:68
+    pub flaps_angle: f32,
+    /// CutUtils.hpp:69
+    pub angle: f32,
+    /// CutUtils.hpp:70
+    pub depth_init: f32,
+    /// CutUtils.hpp:71
+    pub width_init: f32,
+    /// CutUtils.hpp:72
+    pub flaps_angle_init: f32,
+    /// CutUtils.hpp:73
+    pub angle_init: f32,
+    /// CutUtils.hpp:74
+    pub depth_tolerance: f32,
+    /// CutUtils.hpp:75
+    pub width_tolerance: f32,
+}
+
+impl Default for Groove {
+    fn default() -> Self {
+        Self {
+            depth: 0.0,
+            width: 0.0,
+            flaps_angle: 0.0,
+            angle: 0.0,
+            depth_init: 0.0,
+            width_init: 0.0,
+            flaps_angle_init: 0.0,
+            angle_init: 0.0,
+            depth_tolerance: CUT_TOLERANCE,
+            width_tolerance: CUT_TOLERANCE,
+        }
+    }
+}
+
+/// TriangleMesh.cpp:1418-1734
+/// C++: `indexed_triangle_set its_make_groove_plane(const Groove &cur_groove, float rotate_radius, std::vector<Vec3d> &cur_groove_vertices)`
+///
+/// `sin`, `cos` and `tan` of a `float` are the `float` overloads (`sinf`, `cosf`, `tanf`).
+pub fn its_make_groove_plane(cur_groove: &Groove, rotate_radius: f32, cur_groove_vertices: &mut Vec<crate::geometry::Vec3d>) -> indexed_triangle_set {
+    // TriangleMesh.cpp:1420 — is_approx<float>(flaps_angle, 0.f): |double(a) - double(b)| < double(float(EPSILON))
+    let side_width: f32 = if ((cur_groove.flaps_angle as f64) - 0.0).abs() < (crate::libslic3r::EPSILON as f32) as f64 {
+        cur_groove.depth
+    } else {
+        cur_groove.depth / cur_groove.flaps_angle.sin()
+    };
+    // TriangleMesh.cpp:1421
+    let flaps_width: f32 = 2.0f32 * side_width * cur_groove.flaps_angle.cos();
+
+    // TriangleMesh.cpp:1423-1424
+    let groove_half_width_upper: f32 = 0.5f32 * cur_groove.width;
+    let groove_half_width_lower: f32 = 0.5f32 * (cur_groove.width + flaps_width);
+
+    // TriangleMesh.cpp:1426-1427
+    let cut_plane_radius: f32 = 1.5f32 * rotate_radius;
+    let cut_plane_length: f32 = 1.5f32 * cut_plane_radius;
+
+    // TriangleMesh.cpp:1429
+    let groove_half_depth: f32 = 0.5f32 * cur_groove.depth;
+
+    // TriangleMesh.cpp:1431-1434
+    let x: f32 = 0.5f32 * cut_plane_radius;
+    let y: f32 = 0.5f32 * cut_plane_length;
+    let mut z_upper: f32 = groove_half_depth;
+    let mut z_lower: f32 = -groove_half_depth;
+
+    // TriangleMesh.cpp:1436
+    let proj: f32 = y * cur_groove.angle.tan();
+
+    // TriangleMesh.cpp:1438-1442
+    let mut ext_upper_x: f32 = groove_half_width_upper + proj; // upper_x extension
+    let mut ext_lower_x: f32 = groove_half_width_lower + proj; // lower_x extension
+
+    let mut nar_upper_x: f32 = groove_half_width_upper - proj; // upper_x narrowing
+    let mut nar_lower_x: f32 = groove_half_width_lower - proj; // lower_x narrowing
+
+    // TriangleMesh.cpp:1444
+    let cut_plane_thiknes: f32 = 0.02f32;
+
+    // TriangleMesh.cpp:1446-1462 — Vertices of the groove used to detection if groove is valid
+    {
+        let d = |v: Vec3f| crate::geometry::Vec3d::new(v.x as f64, v.y as f64, v.z as f64);
+        cur_groove_vertices.clear();
+        cur_groove_vertices.reserve(8);
+
+        cur_groove_vertices.push(d(Vec3f::new(-ext_lower_x, -y, z_lower)));
+        cur_groove_vertices.push(d(Vec3f::new(-nar_lower_x, y, z_lower)));
+        cur_groove_vertices.push(d(Vec3f::new(-ext_upper_x, -y, z_upper)));
+        cur_groove_vertices.push(d(Vec3f::new(-nar_upper_x, y, z_upper)));
+        cur_groove_vertices.push(d(Vec3f::new(ext_lower_x, -y, z_lower)));
+        cur_groove_vertices.push(d(Vec3f::new(nar_lower_x, y, z_lower)));
+        cur_groove_vertices.push(d(Vec3f::new(ext_upper_x, -y, z_upper)));
+        cur_groove_vertices.push(d(Vec3f::new(nar_upper_x, y, z_upper)));
+    }
+    // TriangleMesh.cpp:1463-1465 — Different cases of groove plane: groove is open
+    if groove_half_width_upper > proj && groove_half_width_lower > proj {
+        let mut mesh = indexed_triangle_set::default();
+
+        // TriangleMesh.cpp:1468-1483
+        let get_vertices = |z_upper: f32, z_lower: f32, nar_upper_x: f32, nar_lower_x: f32, ext_upper_x: f32, ext_lower_x: f32| -> Vec<StlVertex> {
+            vec![
+                // upper left part vertices
+                Vec3f::new(-x, -y, z_upper),
+                Vec3f::new(-x, y, z_upper),
+                Vec3f::new(-nar_upper_x, y, z_upper),
+                Vec3f::new(-ext_upper_x, -y, z_upper),
+                // lower part vertices
+                Vec3f::new(-ext_lower_x, -y, z_lower),
+                Vec3f::new(-nar_lower_x, y, z_lower),
+                Vec3f::new(nar_lower_x, y, z_lower),
+                Vec3f::new(ext_lower_x, -y, z_lower),
+                // upper right part vertices
+                Vec3f::new(ext_upper_x, -y, z_upper),
+                Vec3f::new(nar_upper_x, y, z_upper),
+                Vec3f::new(x, y, z_upper),
+                Vec3f::new(x, -y, z_upper),
+            ]
+        };
+
+        // TriangleMesh.cpp:1485-1486
+        mesh.vertices = get_vertices(z_upper, z_lower, nar_upper_x, nar_lower_x, ext_upper_x, ext_lower_x);
+        mesh.vertices.reserve(mesh.vertices.len());
+
+        // TriangleMesh.cpp:1488-1489
+        z_upper -= cut_plane_thiknes;
+        z_lower -= cut_plane_thiknes;
+
+        // TriangleMesh.cpp:1491
+        let under_x_shift: f32 = cut_plane_thiknes / (0.5f32 * cur_groove.flaps_angle).tan();
+
+        // TriangleMesh.cpp:1493-1496
+        nar_upper_x += under_x_shift;
+        nar_lower_x += under_x_shift;
+        ext_upper_x += under_x_shift;
+        ext_lower_x += under_x_shift;
+
+        // TriangleMesh.cpp:1498-1499
+        let vertices = get_vertices(z_upper, z_lower, nar_upper_x, nar_lower_x, ext_upper_x, ext_lower_x);
+        mesh.vertices.extend_from_slice(&vertices);
+
+        // TriangleMesh.cpp:1501-1549
+        mesh.indices = vec![
+        Vec3i::new(5, 4, 7), Vec3i::new(5, 7, 6), Vec3i::new(3, 4, 5), Vec3i::new(3, 5, 2),
+        Vec3i::new(9, 6, 8), Vec3i::new(8, 6, 7), Vec3i::new(1, 0, 2), Vec3i::new(2, 0, 3),
+        Vec3i::new(9, 8, 10), Vec3i::new(10, 8, 11), Vec3i::new(20, 21, 22), Vec3i::new(20, 22, 23),
+        Vec3i::new(12, 13, 14), Vec3i::new(12, 14, 15), Vec3i::new(18, 21, 20), Vec3i::new(18, 20, 19),
+        Vec3i::new(16, 15, 14), Vec3i::new(16, 14, 17), Vec3i::new(16, 17, 18), Vec3i::new(16, 18, 19),
+        Vec3i::new(1, 13, 0), Vec3i::new(0, 13, 12), Vec3i::new(0, 12, 3), Vec3i::new(3, 12, 15),
+        Vec3i::new(3, 15, 4), Vec3i::new(4, 15, 16), Vec3i::new(4, 16, 7), Vec3i::new(7, 16, 19),
+        Vec3i::new(7, 19, 20), Vec3i::new(7, 20, 8), Vec3i::new(8, 20, 11), Vec3i::new(11, 20, 23),
+        Vec3i::new(11, 23, 10), Vec3i::new(10, 23, 22), Vec3i::new(1, 13, 2), Vec3i::new(2, 13, 14),
+        Vec3i::new(2, 14, 17), Vec3i::new(2, 17, 5), Vec3i::new(5, 17, 6), Vec3i::new(6, 17, 18),
+        Vec3i::new(6, 18, 9), Vec3i::new(9, 18, 21), Vec3i::new(9, 21, 10), Vec3i::new(10, 21, 22),
+        ];
+        return mesh;
+    }
+
+    // TriangleMesh.cpp:1553
+    let mut cross_pt_upper_y: f32 = groove_half_width_upper / cur_groove.angle.tan();
+    // TriangleMesh.cpp:1554-1556 — groove is closed
+    if groove_half_width_upper < proj && groove_half_width_lower < proj {
+        // TriangleMesh.cpp:1557
+        let mut cross_pt_lower_y: f32 = groove_half_width_lower / cur_groove.angle.tan();
+
+        let mut mesh = indexed_triangle_set::default();
+
+        // TriangleMesh.cpp:1561-1574
+        let get_vertices = |z_upper: f32, z_lower: f32, cross_pt_upper_y: f32, cross_pt_lower_y: f32, ext_upper_x: f32, ext_lower_x: f32| -> Vec<StlVertex> {
+            vec![
+                // upper part vertices
+                Vec3f::new(-x, -y, z_upper),
+                Vec3f::new(-x, y, z_upper),
+                Vec3f::new(x, y, z_upper),
+                Vec3f::new(x, -y, z_upper),
+                Vec3f::new(ext_upper_x, -y, z_upper),
+                Vec3f::new(0.0f32, cross_pt_upper_y, z_upper),
+                Vec3f::new(-ext_upper_x, -y, z_upper),
+                // lower part vertices
+                Vec3f::new(-ext_lower_x, -y, z_lower),
+                Vec3f::new(0.0f32, cross_pt_lower_y, z_lower),
+                Vec3f::new(ext_lower_x, -y, z_lower),
+            ]
+        };
+
+        // TriangleMesh.cpp:1576-1577
+        mesh.vertices = get_vertices(z_upper, z_lower, cross_pt_upper_y, cross_pt_lower_y, ext_upper_x, ext_lower_x);
+        mesh.vertices.reserve(mesh.vertices.len());
+
+        // TriangleMesh.cpp:1579-1580
+        z_upper -= cut_plane_thiknes;
+        z_lower -= cut_plane_thiknes;
+
+        // TriangleMesh.cpp:1582
+        let under_x_shift: f32 = cut_plane_thiknes / (0.5f32 * cur_groove.flaps_angle).tan();
+
+        // TriangleMesh.cpp:1584-1587
+        cross_pt_upper_y += cut_plane_thiknes;
+        cross_pt_lower_y += cut_plane_thiknes;
+        ext_upper_x += under_x_shift;
+        ext_lower_x += under_x_shift;
+
+        // TriangleMesh.cpp:1589-1590
+        let vertices = get_vertices(z_upper, z_lower, cross_pt_upper_y, cross_pt_lower_y, ext_upper_x, ext_lower_x);
+        mesh.vertices.extend_from_slice(&vertices);
+
+        // TriangleMesh.cpp:1592-1634
+        mesh.indices = vec![
+        Vec3i::new(8, 7, 9), Vec3i::new(5, 8, 6), Vec3i::new(6, 8, 7), Vec3i::new(4, 9, 8),
+        Vec3i::new(4, 8, 5), Vec3i::new(1, 0, 6), Vec3i::new(1, 6, 5), Vec3i::new(1, 5, 2),
+        Vec3i::new(2, 5, 4), Vec3i::new(2, 4, 3), Vec3i::new(10, 11, 16), Vec3i::new(16, 11, 15),
+        Vec3i::new(15, 11, 12), Vec3i::new(15, 12, 14), Vec3i::new(14, 12, 13), Vec3i::new(18, 15, 14),
+        Vec3i::new(14, 18, 19), Vec3i::new(17, 16, 15), Vec3i::new(17, 15, 18), Vec3i::new(17, 18, 19),
+        Vec3i::new(1, 11, 0), Vec3i::new(0, 11, 10), Vec3i::new(0, 10, 6), Vec3i::new(6, 10, 16),
+        Vec3i::new(6, 17, 16), Vec3i::new(6, 7, 17), Vec3i::new(7, 17, 19), Vec3i::new(7, 19, 9),
+        Vec3i::new(4, 14, 19), Vec3i::new(4, 19, 9), Vec3i::new(4, 14, 13), Vec3i::new(4, 13, 3),
+        Vec3i::new(3, 13, 12), Vec3i::new(3, 12, 2), Vec3i::new(2, 12, 11), Vec3i::new(2, 11, 1),
+        ];
+
+        return mesh;
+    }
+
+    // TriangleMesh.cpp:1639-1653 — groove is closed from the roof
+    let mut mesh = indexed_triangle_set::default();
+    mesh.vertices = vec![
+        // upper part vertices
+        Vec3f::new(-x, -y, z_upper),
+        Vec3f::new(-x, y, z_upper),
+        Vec3f::new(x, y, z_upper),
+        Vec3f::new(x, -y, z_upper),
+        Vec3f::new(ext_upper_x, -y, z_upper),
+        Vec3f::new(0.0f32, cross_pt_upper_y, z_upper),
+        Vec3f::new(-ext_upper_x, -y, z_upper),
+        // lower part vertices
+        Vec3f::new(-ext_lower_x, -y, z_lower),
+        Vec3f::new(-nar_lower_x, y, z_lower),
+        Vec3f::new(nar_lower_x, y, z_lower),
+        Vec3f::new(ext_lower_x, -y, z_lower),
+    ];
+
+    // TriangleMesh.cpp:1655
+    mesh.vertices.reserve(mesh.vertices.len() + 1);
+
+    // TriangleMesh.cpp:1657-1658
+    z_upper -= cut_plane_thiknes;
+    z_lower -= cut_plane_thiknes;
+
+    // TriangleMesh.cpp:1660
+    let under_x_shift: f32 = cut_plane_thiknes / (0.5f32 * cur_groove.flaps_angle).tan();
+
+    // TriangleMesh.cpp:1662-1664
+    nar_lower_x += under_x_shift;
+    ext_upper_x += under_x_shift;
+    ext_lower_x += under_x_shift;
+
+    // TriangleMesh.cpp:1666-1679
+    let vertices: Vec<StlVertex> = vec![
+        // upper part vertices
+        Vec3f::new(-x, -y, z_upper),
+        Vec3f::new(-x, y, z_upper),
+        Vec3f::new(x, y, z_upper),
+        Vec3f::new(x, -y, z_upper),
+        Vec3f::new(ext_upper_x, -y, z_upper),
+        Vec3f::new(under_x_shift, cross_pt_upper_y, z_upper),
+        Vec3f::new(-under_x_shift, cross_pt_upper_y, z_upper),
+        Vec3f::new(-ext_upper_x, -y, z_upper),
+        // lower part vertices
+        Vec3f::new(-ext_lower_x, -y, z_lower),
+        Vec3f::new(-nar_lower_x, y, z_lower),
+        Vec3f::new(nar_lower_x, y, z_lower),
+        Vec3f::new(ext_lower_x, -y, z_lower),
+    ];
+    // TriangleMesh.cpp:1680
+    mesh.vertices.extend_from_slice(&vertices);
+    // TriangleMesh.cpp:1681-1731
+    mesh.indices = vec![
+        Vec3i::new(8, 7, 10), Vec3i::new(8, 10, 9), Vec3i::new(5, 8, 7), Vec3i::new(5, 7, 6),
+        Vec3i::new(4, 10, 9), Vec3i::new(4, 9, 5), Vec3i::new(1, 0, 6), Vec3i::new(1, 6, 5),
+        Vec3i::new(1, 5, 2), Vec3i::new(2, 5, 4), Vec3i::new(2, 4, 3), Vec3i::new(11, 12, 18),
+        Vec3i::new(18, 12, 17), Vec3i::new(17, 12, 16), Vec3i::new(16, 12, 13), Vec3i::new(16, 13, 15),
+        Vec3i::new(15, 13, 14), Vec3i::new(21, 16, 15), Vec3i::new(21, 15, 22), Vec3i::new(19, 18, 17),
+        Vec3i::new(19, 17, 20), Vec3i::new(19, 20, 21), Vec3i::new(19, 21, 22), Vec3i::new(1, 12, 11),
+        Vec3i::new(1, 11, 0), Vec3i::new(0, 11, 18), Vec3i::new(0, 18, 6), Vec3i::new(7, 19, 18),
+        Vec3i::new(7, 18, 6), Vec3i::new(7, 19, 22), Vec3i::new(7, 22, 10), Vec3i::new(10, 22, 15),
+        Vec3i::new(10, 15, 4), Vec3i::new(4, 15, 14), Vec3i::new(4, 14, 3), Vec3i::new(3, 14, 13),
+        Vec3i::new(3, 14, 2), Vec3i::new(2, 13, 12), Vec3i::new(2, 12, 1), Vec3i::new(5, 16, 21),
+        Vec3i::new(5, 21, 9), Vec3i::new(9, 21, 20), Vec3i::new(9, 20, 8), Vec3i::new(5, 17, 20),
+        Vec3i::new(5, 20, 8),
+    ];
+
+    mesh
+}
 
 // ============================================================================
 // TriangleMesh.cpp:1790-1945 — ITS merge / volume / neighbors / normals
@@ -1468,36 +1913,46 @@ pub fn its_merge(a: &mut indexed_triangle_set, b: &indexed_triangle_set) {
     }
 }
 
-/// TriangleMesh.cpp:1808-1816
-/// C++: `void its_merge(indexed_triangle_set &A, const std::vector<Vec3f> &triangles)`
-pub fn its_merge_triangles(a: &mut indexed_triangle_set, triangles: &[Vec3f]) {
-    // TriangleMesh.cpp:1810
-    let offs = a.vertices.len();
-    // TriangleMesh.cpp:1811
-    a.vertices.extend_from_slice(triangles);
-    // TriangleMesh.cpp:1812
-    a.indices.reserve(a.vertices.len() / 3);
+/// TriangleMesh.cpp:1839-1847, the overload of `its_merge` over a triangle soup (TriangleMesh.hpp:334).
+pub mod its_merge_triangles_overload {
+    use super::*;
+    /// TriangleMesh.cpp:1808-1816
+    /// C++: `void its_merge(indexed_triangle_set &A, const std::vector<Vec3f> &triangles)`
+    pub fn its_merge(a: &mut indexed_triangle_set, triangles: &[Vec3f]) {
+        // TriangleMesh.cpp:1810
+        let offs = a.vertices.len();
+        // TriangleMesh.cpp:1811
+        a.vertices.extend_from_slice(triangles);
+        // TriangleMesh.cpp:1812
+        a.indices.reserve(a.vertices.len() / 3);
 
-    // TriangleMesh.cpp:1814-1815
-    let mut i = offs as i32;
-    let end = a.vertices.len() as i32;
-    while i < end {
-        a.indices.push(Vec3i::new(i, i + 1, i + 2));
-        i += 3;
+        // TriangleMesh.cpp:1814-1815
+        let mut i = offs as i32;
+        let end = a.vertices.len() as i32;
+        while i < end {
+            a.indices.push(Vec3i::new(i, i + 1, i + 2));
+            i += 3;
+        }
     }
 }
+pub use its_merge_triangles_overload::its_merge as its_merge_triangles;
 
-/// TriangleMesh.cpp:1818-1825
-/// C++: `void its_merge(indexed_triangle_set &A, const Pointf3s &triangles)`
-pub fn its_merge_pointf3s(a: &mut indexed_triangle_set, triangles: &[Point3F]) {
-    // TriangleMesh.cpp:1820-1822
-    let mut trianglesf: Vec<Vec3f> = Vec::with_capacity(triangles.len());
-    for t in triangles {
-        trianglesf.push(Vec3f::new(t.x as f32, t.y as f32, t.z as f32));
+/// TriangleMesh.cpp:1849-1856, the overload of `its_merge` over `Pointf3s` (TriangleMesh.hpp:335).
+pub mod its_merge_pointf3s_overload {
+    use super::*;
+    /// TriangleMesh.cpp:1818-1825
+    /// C++: `void its_merge(indexed_triangle_set &A, const Pointf3s &triangles)`
+    pub fn its_merge(a: &mut indexed_triangle_set, triangles: &[Point3F]) {
+        // TriangleMesh.cpp:1820-1822
+        let mut trianglesf: Vec<Vec3f> = Vec::with_capacity(triangles.len());
+        for t in triangles {
+            trianglesf.push(Vec3f::new(t.x as f32, t.y as f32, t.z as f32));
+        }
+        // TriangleMesh.cpp:1824
+        its_merge_triangles(a, &trianglesf);
     }
-    // TriangleMesh.cpp:1824
-    its_merge_triangles(a, &trianglesf);
 }
+pub use its_merge_pointf3s_overload::its_merge as its_merge_pointf3s;
 
 /// TriangleMesh.cpp:1827-1846
 /// C++: `float its_volume(const indexed_triangle_set &its)`
@@ -1573,14 +2028,19 @@ pub fn its_number_of_patches(its: &indexed_triangle_set) -> usize {
     crate::mesh_split_impl::its_number_of_patches(its, &neighbor_index)
 }
 
-/// TriangleMesh.cpp:1873-1876
-pub fn its_number_of_patches_neighbors(
-    its: &indexed_triangle_set,
-    face_neighbors: &[Vec3i],
-) -> usize {
-    // TriangleMesh.cpp:1875 — its_number_of_patches<>(ItsNeighborsWrapper{ its, face_neighbors });
-    crate::mesh_split_impl::its_number_of_patches(its, face_neighbors)
+/// TriangleMesh.cpp:1904-1907, the overload of `its_number_of_patches` over the face neighbours.
+pub mod its_number_of_patches_with_neighbors {
+    use super::*;
+    /// TriangleMesh.cpp:1873-1876
+    pub fn its_number_of_patches(
+        its: &indexed_triangle_set,
+        face_neighbors: &[Vec3i],
+    ) -> usize {
+        // TriangleMesh.cpp:1875 — its_number_of_patches<>(ItsNeighborsWrapper{ its, face_neighbors });
+        crate::mesh_split_impl::its_number_of_patches(its, face_neighbors)
+    }
 }
+pub use its_number_of_patches_with_neighbors::its_number_of_patches as its_number_of_patches_neighbors;
 
 /// Same as its_number_of_patches(its) > 1, but faster.
 /// TriangleMesh.cpp:1879-1882
@@ -1590,14 +2050,20 @@ pub fn its_is_splittable(its: &indexed_triangle_set) -> bool {
     crate::mesh_split_impl::its_is_splittable(its, &neighbor_index)
 }
 
-/// TriangleMesh.cpp:1883-1886
-pub fn its_is_splittable_neighbors(its: &indexed_triangle_set, face_neighbors: &[Vec3i]) -> bool {
-    // TriangleMesh.cpp:1885
-    crate::mesh_split_impl::its_is_splittable(its, face_neighbors)
+/// TriangleMesh.cpp:1914-1917, the overload of `its_is_splittable` over the face neighbours.
+pub mod its_is_splittable_with_neighbors {
+    use super::*;
+    /// TriangleMesh.cpp:1883-1886
+    pub fn its_is_splittable(its: &indexed_triangle_set, face_neighbors: &[Vec3i]) -> bool {
+        // TriangleMesh.cpp:1885
+        crate::mesh_split_impl::its_is_splittable(its, face_neighbors)
+    }
 }
+pub use its_is_splittable_with_neighbors::its_is_splittable as its_is_splittable_neighbors;
 
-/// TriangleMesh.cpp:1888-1896
-/// C++: `size_t its_num_open_edges(const std::vector<Vec3i> &face_neighbors)`
+/// The open edges counted on a face neighbour index (an edge without a neighbour). Not a
+/// function of the pin, which counts the undirected edges referenced once
+/// ([`its_num_open_edges`]); kept for the earlier arm of `TRIANGLE_MESH_STATS_PIN`.
 pub fn its_num_open_edges_neighbors(face_neighbors: &[Vec3i]) -> usize {
     // TriangleMesh.cpp:1890
     let mut num_open_edges: usize = 0;
@@ -1613,11 +2079,41 @@ pub fn its_num_open_edges_neighbors(face_neighbors: &[Vec3i]) -> usize {
     num_open_edges
 }
 
-/// TriangleMesh.cpp:1898-1901
-/// C++: `size_t its_num_open_edges(const indexed_triangle_set &its)`
+/// TriangleMesh.cpp:1919-1942
+/// C++: `size_t its_num_open_edges(const indexed_triangle_set &its)`: the undirected edges
+/// referenced by exactly one half-edge.
 pub fn its_num_open_edges(its: &indexed_triangle_set) -> usize {
-    // TriangleMesh.cpp:1900
-    its_num_open_edges_neighbors(&its_face_neighbors(its))
+    // TriangleMesh.cpp:1921-1922
+    let mut edges: Vec<i64> = Vec::with_capacity(its.indices.len() * 3);
+    // TriangleMesh.cpp:1923-1930
+    for face in &its.indices {
+        for i in 0..3 {
+            let mut v0 = face[i];
+            let mut v1 = face[(i + 1) % 3];
+            if v0 > v1 {
+                std::mem::swap(&mut v0, &mut v1);
+            }
+            // (int64_t(v0) << 32) | int64_t(v1): the sign of v1 extends over the high word.
+            edges.push(((v0 as i64) << 32) | (v1 as i64));
+        }
+    }
+    // TriangleMesh.cpp:1931 std::sort (integers: the order of equal keys cannot be told apart)
+    edges.sort_unstable();
+
+    // TriangleMesh.cpp:1933-1941
+    let mut num_open: usize = 0;
+    let mut i = 0usize;
+    while i < edges.len() {
+        let mut j = i + 1;
+        while j < edges.len() && edges[j] == edges[i] {
+            j += 1;
+        }
+        if j - i == 1 {
+            num_open += 1;
+        }
+        i = j;
+    }
+    num_open
 }
 
 /// TriangleMesh.cpp:1928-1931
@@ -1795,18 +2291,20 @@ pub fn face_normal_normalized(vertex: &[StlVertex; 3]) -> Vec3f {
     face_normal(vertex).normalize()
 }
 
-/// TriangleMesh.hpp:333-334
-/// C++: `inline Vec3f its_face_normal(const indexed_triangle_set &its, const stl_triangle_vertex_indices face)`
-pub fn its_face_normal_indices(its: &indexed_triangle_set, face: &StlTriangleVertexIndices) -> Vec3f {
-    let vertices: [StlVertex; 3] = [
-        its.vertices[face[0] as usize],
-        its.vertices[face[1] as usize],
-        its.vertices[face[2] as usize],
-    ];
-    face_normal_normalized(&vertices)
+/// TriangleMesh.hpp:340-341, the overload of `its_face_normal` over the vertex indices of a face.
+pub mod its_face_normal_of_indices {
+    use super::*;
+    /// TriangleMesh.hpp:340-341
+    /// C++: `inline Vec3f its_face_normal(const indexed_triangle_set &its, const stl_triangle_vertex_indices face)`
+    pub fn its_face_normal(its: &indexed_triangle_set, face: &StlTriangleVertexIndices) -> Vec3f {
+        let vertices: [StlVertex; 3] =
+            [its.vertices[face[0] as usize], its.vertices[face[1] as usize], its.vertices[face[2] as usize]];
+        face_normal_normalized(&vertices)
+    }
 }
+pub use its_face_normal_of_indices::its_face_normal as its_face_normal_indices;
 
-/// TriangleMesh.hpp:335-336
+/// TriangleMesh.hpp:342-343
 /// C++: `inline Vec3f its_face_normal(const indexed_triangle_set &its, const int face_idx)`
 pub fn its_face_normal(its: &indexed_triangle_set, face_idx: i32) -> Vec3f {
     its_face_normal_indices(its, &its.indices[face_idx as usize])
@@ -1841,12 +2339,22 @@ pub fn bounding_box(its: &indexed_triangle_set) -> BoundingBox3F {
 // TriangleMesh.cpp:1947-2020 — STL writers
 // ============================================================================
 
-/// TriangleMesh.cpp:1947-1957
-/// On a little-endian host this is a no-op (the only target we build for).
+/// TriangleMesh.cpp:1990-1991 (`#if BOOST_ENDIAN_LITTLE_BYTE`): a no-op on a little-endian host.
+#[cfg(target_endian = "little")]
 #[inline]
-fn big_endian_reverse_quads(_buf: &mut [u8], _cnt: usize) {
-    // TriangleMesh.cpp:1948 — `#if BOOST_ENDIAN_LITTLE_BYTE` — empty body.
-    // (wasm and the desktop targets are little-endian.)
+fn big_endian_reverse_quads(_buf: &mut [u8], _cnt: usize) {}
+
+/// TriangleMesh.cpp:1992-1999 (the big-endian host): swap the bytes of every quad.
+#[cfg(target_endian = "big")]
+#[inline]
+fn big_endian_reverse_quads(buf: &mut [u8], cnt: usize) {
+    // TriangleMesh.cpp:1994-1997
+    let mut i = 0usize;
+    while i < cnt {
+        buf.swap(i, i + 3);
+        buf.swap(i + 1, i + 2);
+        i += 4;
+    }
 }
 
 /// TriangleMesh.cpp:1959-1984
@@ -2022,6 +2530,24 @@ pub fn its_write_stl_binary(
     fp.flush().is_ok()
 }
 
+/// TriangleMesh.hpp:368, the overload of `its_write_stl_ascii` over an `indexed_triangle_set`.
+pub mod its_write_stl_ascii_its {
+    use super::*;
+    /// TriangleMesh.hpp:368
+    pub fn its_write_stl_ascii(file: &str, label: &str, its: &indexed_triangle_set) -> bool {
+        super::its_write_stl_ascii(file, label, &its.indices, &its.vertices)
+    }
+}
+
+/// TriangleMesh.hpp:370, the overload of `its_write_stl_binary` over an `indexed_triangle_set`.
+pub mod its_write_stl_binary_its {
+    use super::*;
+    /// TriangleMesh.hpp:370
+    pub fn its_write_stl_binary(file: &str, label: &str, its: &indexed_triangle_set) -> bool {
+        super::its_write_stl_binary(file, label, &its.indices, &its.vertices)
+    }
+}
+
 /// View a `&mut u32` as a `&mut [u8]` for the (LE no-op) byte-swap call.
 #[inline]
 fn bytemuck_u32(v: &mut u32) -> &mut [u8] {
@@ -2116,6 +2642,402 @@ impl VertexFaceIndex {
         self.m_vertex_to_face_start[0] = 0;
     }
 }
+
+// ============================================================================
+// TriangleMesh.cpp:872-908 — store part of an indexed triangle set
+// ============================================================================
+
+/// admesh/shared.cpp:193-208 `bool its_write_obj(const indexed_triangle_set &its, const char *file)`,
+/// which `its_store_triangle(s)` and `TriangleMesh::WriteOBJFile` call: `v %f %f %f` lines (the
+/// `float` promoted to `double`, six decimals, the C locale) and 1-based `f %d %d %d` lines.
+fn its_write_obj(its: &indexed_triangle_set, file: &str) -> bool {
+    use std::io::Write;
+    // admesh/shared.cpp:196-200
+    let f = match std::fs::File::create(file) {
+        Ok(f) => f,
+        Err(_) => {
+            log::error!("stl_write_obj: Couldn't open {} for writing", file);
+            return false;
+        }
+    };
+    let mut fp = std::io::BufWriter::new(f);
+    // admesh/shared.cpp:202-203
+    for v in &its.vertices {
+        if write!(fp, "v {:.6} {:.6} {:.6}\n", v[0] as f64, v[1] as f64, v[2] as f64).is_err() {
+            return false;
+        }
+    }
+    // admesh/shared.cpp:204-205
+    for t in &its.indices {
+        if write!(fp, "f {} {} {}\n", t[0] + 1, t[1] + 1, t[2] + 1).is_err() {
+            return false;
+        }
+    }
+    // admesh/shared.cpp:206-207
+    fp.flush().is_ok()
+}
+
+/// TriangleMesh.cpp:872-883
+/// C++: `bool its_store_triangle(const indexed_triangle_set &its, const char *obj_filename, size_t triangle_index)`
+pub fn its_store_triangle(its: &indexed_triangle_set, obj_filename: &str, triangle_index: usize) -> bool {
+    // TriangleMesh.cpp:876
+    if its.indices.len() <= triangle_index {
+        return false;
+    }
+    // TriangleMesh.cpp:877
+    let t: Vec3i = its.indices[triangle_index];
+    // TriangleMesh.cpp:878-881
+    let mut its2 = indexed_triangle_set::default();
+    its2.indices = vec![Vec3i::new(0, 1, 2)];
+    its2.vertices = vec![its.vertices[t[0] as usize], its.vertices[t[1] as usize], its.vertices[t[2] as usize]];
+    // TriangleMesh.cpp:882
+    its_write_obj(&its2, obj_filename)
+}
+
+/// TriangleMesh.cpp:885-908
+/// C++: `bool its_store_triangles(const indexed_triangle_set &its, const char *obj_filename, const std::vector<size_t>& triangles)`
+pub fn its_store_triangles(its: &indexed_triangle_set, obj_filename: &str, triangles: &[usize]) -> bool {
+    // TriangleMesh.cpp:889-891
+    let mut its2 = indexed_triangle_set::default();
+    its2.vertices.reserve(triangles.len() * 3);
+    its2.indices.reserve(triangles.len());
+    // TriangleMesh.cpp:892
+    let mut vertex_map: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    // TriangleMesh.cpp:893-906
+    for &ti in triangles {
+        // TriangleMesh.cpp:894
+        if its.indices.len() <= ti {
+            return false;
+        }
+        // TriangleMesh.cpp:895-896
+        let t: Vec3i = its.indices[ti];
+        let mut new_t = Vec3i::zeros();
+        // TriangleMesh.cpp:897-904
+        for i in 0..3usize {
+            // size_t vi = t[i]: a negative index extends its sign
+            let vi = t[i] as isize as usize;
+            if let Some(&nv) = vertex_map.get(&vi) {
+                new_t[i] = nv as i32;
+                continue;
+            }
+            let new_vi = its2.vertices.len();
+            its2.vertices.push(its.vertices[vi]);
+            vertex_map.insert(vi, new_vi);
+            new_t[i] = new_vi as i32;
+        }
+        // TriangleMesh.cpp:905
+        its2.indices.push(new_t);
+    }
+    // TriangleMesh.cpp:907
+    its_write_obj(&its2, obj_filename)
+}
+
+// ============================================================================
+// TriangleMesh.hpp:360-365 — the TriangleMesh makers
+// ============================================================================
+
+/// TriangleMesh.hpp:360 `TriangleMesh make_cube(double x, double y, double z)`
+pub fn make_cube(x: f64, y: f64, z: f64) -> crate::model::ModelMesh {
+    crate::model::ModelMesh::from_its(its_make_cube(x, y, z))
+}
+
+/// TriangleMesh.hpp:361 `TriangleMesh make_prism(float width, float length, float height)`
+pub fn make_prism(width: f32, length: f32, height: f32) -> crate::model::ModelMesh {
+    crate::model::ModelMesh::from_its(its_make_prism(width, length, height))
+}
+
+/// TriangleMesh.hpp:362 `TriangleMesh make_cylinder(double r, double h, double fa=(2*PI/360))`
+pub fn make_cylinder(r: f64, h: f64, fa: f64) -> crate::model::ModelMesh {
+    crate::model::ModelMesh::from_its(its_make_cylinder(r, h, fa))
+}
+
+/// TriangleMesh.hpp:363 `TriangleMesh make_cone(double r, double h, double fa=(2*PI/360))`
+pub fn make_cone(r: f64, h: f64, fa: f64) -> crate::model::ModelMesh {
+    crate::model::ModelMesh::from_its(its_make_cone(r, h, fa))
+}
+
+/// TriangleMesh.hpp:364 `TriangleMesh make_pyramid(float base, float height)`
+pub fn make_pyramid(base: f32, height: f32) -> crate::model::ModelMesh {
+    crate::model::ModelMesh::from_its(its_make_pyramid(base, height))
+}
+
+/// TriangleMesh.hpp:365 `TriangleMesh make_sphere(double rho, double fa=(2*PI/360))`
+pub fn make_sphere(rho: f64, fa: f64) -> crate::model::ModelMesh {
+    crate::model::ModelMesh::from_its(its_make_sphere(rho, fa))
+}
+
+// ============================================================================
+// The TriangleMesh class: the methods `model::ModelMesh` (the crate's port of the class,
+// TriangleMesh.hpp:95-173) does not carry, written over its public interface.
+// ============================================================================
+
+/// admesh/util.cpp:150-157 `static void rotate_point_2d(float &x, float &y, const double c, const double s)`:
+/// `x = float(c * xold - s * yold); y = float(s * xold + c * yold);`, each the first product fused.
+fn rotate_point_2d(x: &mut f32, y: &mut f32, c: f64, s: f64) {
+    let xold = *x as f64;
+    let yold = *y as f64;
+    *x = c.mul_add(xold, -(s * yold)) as f32;
+    *y = s.mul_add(xold, c * yold) as f32;
+}
+
+/// admesh/util.cpp:180-187 `void its_rotate_z(indexed_triangle_set& its, float angle)`, the angle
+/// in degrees.
+fn its_rotate_z(its: &mut indexed_triangle_set, angle: f32) {
+    // admesh/util.cpp:182: (angle / 180.0) * M_PI
+    let radian_angle = (angle as f64 / 180.0) * std::f64::consts::PI;
+    let c = radian_angle.cos();
+    let s = radian_angle.sin();
+    for v in &mut its.vertices {
+        let (mut vx, mut vy) = (v[0], v[1]);
+        rotate_point_2d(&mut vx, &mut vy, c, s);
+        v[0] = vx;
+        v[1] = vy;
+    }
+}
+
+/// `sizeof(indexed_triangle_set)` at the pin (admesh/stl.h:220-266): three `std::vector`s
+/// (`indices`, `vertices`, `properties`) of 24 bytes each on a 64-bit libc++.
+const SIZEOF_INDEXED_TRIANGLE_SET: usize = 72;
+/// `sizeof(stl_triangle_vertex_indices)` (`Vec3i`).
+const SIZEOF_STL_TRIANGLE_VERTEX_INDICES: usize = 12;
+/// `sizeof(FaceProperty)` (admesh/stl.h:172-218: an `int` enum and a `double`).
+const SIZEOF_FACE_PROPERTY: usize = 16;
+/// `sizeof(stl_vertex)` (`Vec3f`).
+const SIZEOF_STL_VERTEX: usize = 12;
+/// `sizeof(TriangleMeshStats)` (TriangleMesh.hpp:47-93): 61 bytes of metrics and remaining
+/// errors, padded to 64, then `RepairedMeshErrors` (five `int`s).
+const SIZEOF_TRIANGLE_MESH_STATS: usize = 84;
+
+/// admesh/stl.h:230-232 `size_t indexed_triangle_set::memsize() const`; the crate's set has no
+/// `properties`, which the pin counts at one per face.
+pub fn its_memsize(its: &indexed_triangle_set) -> usize {
+    SIZEOF_INDEXED_TRIANGLE_SET
+        + (SIZEOF_STL_TRIANGLE_VERTEX_INDICES + SIZEOF_FACE_PROPERTY) * its.indices.len()
+        + SIZEOF_STL_VERTEX * its.vertices.len()
+}
+
+/// TriangleMesh.hpp:111 `void translate(float x, float y, float z)`, the overload of
+/// `translate` past `model::ModelMesh::translate(&Vec3f)`.
+pub trait TriangleMeshTranslateXyz {
+    fn translate(&mut self, x: f32, y: f32, z: f32);
+}
+
+impl TriangleMeshTranslateXyz for crate::model::ModelMesh {
+    /// TriangleMesh.cpp:306-309
+    fn translate(&mut self, x: f32, y: f32, z: f32) {
+        crate::model::ModelMesh::translate(self, &Vec3f::new(x, y, z));
+    }
+}
+
+/// TriangleMesh.hpp:109 `void scale(float factor)`, the overload of `scale` past
+/// `model::ModelMesh::scale(&Vec3f)`.
+pub trait TriangleMeshScaleUniform {
+    fn scale(&mut self, factor: f32);
+}
+
+impl TriangleMeshScaleUniform for crate::model::ModelMesh {
+    /// TriangleMesh.cpp:267-270
+    fn scale(&mut self, factor: f32) {
+        crate::model::ModelMesh::scale(self, &Vec3f::new(factor, factor, factor));
+    }
+}
+
+/// TriangleMesh.hpp:139 `BoundingBoxf3 transformed_bounding_box(const Transform3d& trafo, double world_min_z) const`,
+/// the overload past `model::ModelMesh::transformed_bounding_box(&Transform3d)`.
+pub trait TriangleMeshTransformedBoundingBoxAbove {
+    fn transformed_bounding_box(&self, trafod: &nalgebra::Matrix4<f64>, world_min_z: f64) -> crate::bounding_box::BoundingBoxf3;
+}
+
+impl TriangleMeshTransformedBoundingBoxAbove for crate::model::ModelMesh {
+    /// TriangleMesh.cpp:509-558
+    fn transformed_bounding_box(&self, trafod: &nalgebra::Matrix4<f64>, world_min_z: f64) -> crate::bounding_box::BoundingBoxf3 {
+        let its = &self.its;
+        // TriangleMesh.cpp:511-517 — 1) Allocate transformed vertices with their position with respect to print bed surface.
+        let mut sides: Vec<i8> = Vec::with_capacity(its.vertices.len());
+        let mut num_above: usize = 0;
+        // Eigen::AlignedBox<float, 3>: empty is (max float, lowest float).
+        let mut bbox_min = Vec3f::new(f32::MAX, f32::MAX, f32::MAX);
+        let mut bbox_max = Vec3f::new(f32::MIN, f32::MIN, f32::MIN);
+        let extend = |bmin: &mut Vec3f, bmax: &mut Vec3f, p: &Vec3f| {
+            // AlignedBox::extend: m_min = m_min.cwiseMin(p), m_max = m_max.cwiseMax(p)
+            for k in 0..3 {
+                bmin[k] = if p[k] < bmin[k] { p[k] } else { bmin[k] };
+                bmax[k] = if bmax[k] < p[k] { p[k] } else { bmax[k] };
+            }
+        };
+        // Transform3f trafo = trafod.cast<float>()
+        let trafo: nalgebra::Matrix4<f32> = trafod.map(|v| v as f32);
+        // TriangleMesh.cpp:518-527
+        for v in &its.vertices {
+            let pt = eigen_transform3f_mul_vec(&trafo, v);
+            // pt.z() > world_min_z: the float promoted to double
+            let sign: i8 = if (pt.z as f64) > world_min_z {
+                1
+            } else if (pt.z as f64) < world_min_z {
+                -1
+            } else {
+                0
+            };
+            sides.push(sign);
+            if sign >= 0 {
+                // Vertex above or on print bed surface. Test whether it is inside the build volume.
+                num_above += 1;
+                extend(&mut bbox_min, &mut bbox_max, &pt);
+            }
+        }
+
+        // TriangleMesh.cpp:529-549 — 2) Calculate intersections of triangle edges with the build surface.
+        if num_above < its.vertices.len() {
+            for tri in &its.indices {
+                let s: [i32; 3] = [sides[tri[0] as usize] as i32, sides[tri[1] as usize] as i32, sides[tri[2] as usize] as i32];
+                if s[0].min(s[1].min(s[2])) < 0 && s[0].max(s[1].max(s[2])) > 0 {
+                    // Some edge of this triangle intersects the build platform. Calculate the intersection.
+                    let mut iprev = 2usize;
+                    for iedge in 0..3usize {
+                        if s[iprev] * s[iedge] == -1 {
+                            // edge intersects the build surface. Calculate intersection point.
+                            let p1 = eigen_transform3f_mul_vec(&trafo, &its.vertices[tri[iprev] as usize]);
+                            let p2 = eigen_transform3f_mul_vec(&trafo, &its.vertices[tri[iedge] as usize]);
+                            // TriangleMesh.cpp:543: `(world_min_z - p1.z()) / (p2.z() - p1.z())`, double, stored as float
+                            let t: f32 = ((world_min_z - p1.z as f64) / ((p2.z - p1.z) as f64)) as f32;
+                            // TriangleMesh.cpp:544: `p1.x() + (p2.x() - p1.x()) * t` (fused), z = float(world_min_z)
+                            extend(
+                                &mut bbox_min,
+                                &mut bbox_max,
+                                &Vec3f::new((p2.x - p1.x).mul_add(t, p1.x), (p2.y - p1.y).mul_add(t, p1.y), world_min_z as f32),
+                            );
+                        }
+                        iprev = iedge;
+                    }
+                }
+            }
+        }
+
+        // TriangleMesh.cpp:551-557
+        let mut out = crate::bounding_box::BoundingBoxf3::new();
+        // AlignedBox::isEmpty(): (m_min.array() > m_max.array()).any()
+        let is_empty = (0..3).any(|k| bbox_min[k] > bbox_max[k]);
+        if !is_empty {
+            out.min = crate::geometry::Vec3d::new(bbox_min.x as f64, bbox_min.y as f64, bbox_min.z as f64);
+            out.max = crate::geometry::Vec3d::new(bbox_max.x as f64, bbox_max.y as f64, bbox_max.z as f64);
+            out.defined = true;
+        }
+        out
+    }
+}
+
+impl crate::model::ModelMesh {
+    /// TriangleMesh.hpp:119 `void mirror_x() { this->mirror(X); }`
+    pub fn mirror_x(&mut self) {
+        self.mirror(crate::geometry::geometry::Axis::X);
+    }
+
+    /// TriangleMesh.hpp:120 `void mirror_y() { this->mirror(Y); }`
+    pub fn mirror_y(&mut self) {
+        self.mirror(crate::geometry::geometry::Axis::Y);
+    }
+
+    /// TriangleMesh.hpp:121 `void mirror_z() { this->mirror(Z); }`
+    pub fn mirror_z(&mut self) {
+        self.mirror(crate::geometry::geometry::Axis::Z);
+    }
+
+    /// TriangleMesh.cpp:260-263 `void WriteOBJFile(const char* output_file) const`
+    pub fn write_obj_file(&self, output_file: &str) {
+        // The C++ discards the result of its_write_obj.
+        let _ = its_write_obj(&self.its, output_file);
+    }
+
+    /// TriangleMesh.cpp:401-404 `void align_to_origin()`
+    pub fn align_to_origin(&mut self) {
+        let min = self.stats().min;
+        TriangleMeshTranslateXyz::translate(self, -min[0], -min[1], -min[2]);
+    }
+
+    /// TriangleMesh.cpp:406-414 `void rotate(double angle, Point* center)`: about `center`, the
+    /// angle in degrees (admesh's `its_rotate_z`), the statistics left as they are past the two
+    /// translations.
+    pub fn rotate(&mut self, angle: f64, center: &crate::geometry::Point) {
+        if angle != 0.0 {
+            // Vec2f c = center->cast<float>()
+            let c = Vec2f::new(center.x() as f32, center.y() as f32);
+            TriangleMeshTranslateXyz::translate(self, -c[0], -c[1], 0.0);
+            its_rotate_z(&mut self.its, angle as f32);
+            TriangleMeshTranslateXyz::translate(self, c[0], c[1], 0.0);
+        }
+    }
+
+    /// TriangleMesh.cpp:480-490 `Polygon convex_hull() const`: the 2D convex hull of the mesh
+    /// projected into the Z=0 plane.
+    pub fn convex_hull(&self) -> Polygon {
+        // TriangleMesh.cpp:482-483
+        let mut pp: Vec<Point> = Vec::with_capacity(self.its.vertices.len());
+        // TriangleMesh.cpp:484-487 — Point::new_scale(v(0), v(1)): coord_t(double(v) / SCALING_FACTOR)
+        for v in &self.its.vertices {
+            pp.push(Point::new((v[0] as f64 / SCALING_FACTOR_PIN) as i64, (v[1] as f64 / SCALING_FACTOR_PIN) as i64));
+        }
+        // TriangleMesh.cpp:488
+        convex_hull_points(pp)
+    }
+
+    /// TriangleMesh.cpp:568-590 `void extract_son_mesh(TriangleMesh &temp_mesh, int face_start, int face_end) const`:
+    /// the faces `face_start..=face_end` as a triangle soup in `temp_mesh.its` (its statistics
+    /// are not touched).
+    pub fn extract_son_mesh(&self, temp_mesh: &mut crate::model::ModelMesh, face_start: i32, face_end: i32) {
+        let its = &self.its;
+        // TriangleMesh.cpp:570
+        let mut temp_its = indexed_triangle_set::default();
+        // TriangleMesh.cpp:571: `face_end < its.indices.size()` compares as size_t
+        if face_end > face_start && (face_end as isize as usize) < its.indices.len() {
+            // TriangleMesh.cpp:572-574
+            let new_face_count = (face_end - face_start + 1) as usize;
+            temp_its.vertices.reserve(new_face_count * 3);
+            temp_its.indices.reserve(new_face_count);
+
+            // TriangleMesh.cpp:576-587
+            for i in face_start..=face_end {
+                let face = its.indices[i as usize];
+                let v0 = its.vertices[face[0] as usize];
+                let v1 = its.vertices[face[1] as usize];
+                let v2 = its.vertices[face[2] as usize];
+                temp_its.vertices.push(v0);
+                temp_its.vertices.push(v1);
+                temp_its.vertices.push(v2);
+                let new_i = i - face_start;
+                let new_face = Vec3i::new(new_i * 3, new_i * 3 + 1, new_i * 3 + 2);
+                temp_its.indices.push(new_face);
+            }
+            // TriangleMesh.cpp:588
+            temp_mesh.its = temp_its;
+        }
+    }
+
+    /// TriangleMesh.cpp:592-597 `std::vector<ExPolygons> slice(const std::vector<double>& z) const`:
+    /// `slice_mesh_ex(its, z_f, 0.0004f)` (TriangleMeshSlicer.hpp:86-95, the closing radius).
+    pub fn slice(&self, z: &[f64]) -> Vec<crate::geometry::ExPolygons> {
+        // convert doubles to floats
+        let z_f: Vec<f32> = z.iter().map(|&v| v as f32).collect();
+        let mut params = crate::triangle_mesh_slicer::MeshSlicingParamsEx::default();
+        params.closing_radius = 0.0004f32;
+        crate::triangle_mesh_slicer::slice_mesh_ex_its(&self.its, &z_f, &params, &|| {})
+    }
+
+    /// TriangleMesh.cpp:599-603 `size_t memsize() const`: `8 + its.memsize() + sizeof(m_stats)`.
+    pub fn memsize(&self) -> usize {
+        8 + its_memsize(&self.its) + SIZEOF_TRIANGLE_MESH_STATS
+    }
+
+    /// TriangleMesh.hpp:162 `size_t release_optional() { return 0; }`: nothing is cached.
+    pub fn release_optional(&mut self) -> usize {
+        0
+    }
+
+    /// TriangleMesh.hpp:164 `void restore_optional() {}`
+    pub fn restore_optional(&mut self) {}
+}
+
+/// libslic3r.h:58 `static constexpr double SCALING_FACTOR = 0.00001;` (`scale_(v)` divides by it).
+const SCALING_FACTOR_PIN: f64 = 0.00001;
 
 // ============================================================================
 // DIVERGENCE: pre-existing application-wide TriangleMesh struct (see module doc).

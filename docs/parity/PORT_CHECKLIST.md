@@ -11,21 +11,21 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**63.7% of the named C++ functions are ported or verified (6103 of 9574); 56.2% by size of body.**
+**64.5% of the named C++ functions are ported or verified (6174 of 9574); 56.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 1041 | 10.9% | 19.6% |
-| partial `[~]` | 2430 | 25.4% | 24.2% |
-| ported `[x]` | 3869 | 40.4% | 27.8% |
+| not started `[ ]` | 984 | 10.3% | 19.3% |
+| partial `[~]` | 2416 | 25.2% | 24.0% |
+| ported `[x]` | 3940 | 41.2% | 28.4% |
 | verified `[v]` | 2234 | 23.3% | 28.3% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
 | no Rust file of that name | 4 |
-| partial | 241 |
-| every named function ported | 59 |
+| partial | 240 |
+| every named function ported | 60 |
 | every named function verified | 13 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
@@ -90,7 +90,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Arachne/utils/SquareGrid` | 1 | `arachne/utils/square_grid.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `Arachne/WallToolPaths` | 1 | `arachne/wall_tool_paths.rs` | partial | 16 | 1 | 7 | 8 | 0 |
 | `ArcFitter` | 1 | `arc_fitter.rs` | ported | 5 | 0 | 0 | 4 | 1 |
-| `Arrange` | 1 | `arrange.rs` | partial | 44 | 23 | 16 | 5 | 0 |
+| `Arrange` | 1 | `arrange.rs` | partial | 44 | 7 | 14 | 23 | 0 |
 | `AStar` | 3 | `a_star.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `BlacklistedLibraryCheck` | 1 | `blacklisted_library_check.rs` | partial | 5 | 0 | 1 | 4 | 0 |
 | `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 26 | 28 | 1 |
@@ -112,7 +112,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `clipper2/clipper.rectclip` | 1 | `clipper2/clipper_rectclip.rs` | partial | 31 | 0 | 1 | 0 | 30 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 3 | 9 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 32 | 163 | 30 | 2 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 25 | 170 | 30 | 2 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
@@ -129,7 +129,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `CurveAnalyzer` | 3 | `curve_analyzer.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `CustomGCode` | 1 | `custom_g_code.rs` | partial | 6 | 1 | 1 | 4 | 0 |
 | `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 77 | 8 | 7 | 0 |
-| `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 7 | 11 | 1 | 0 |
+| `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 6 | 12 | 1 | 0 |
 | `Debounce` | 3 | `debounce.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
 | `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 12 | 24 | 11 | 0 |
@@ -213,7 +213,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `GCode/ThumbnailData` | 1 | `gcode/thumbnail_data.rs` | ported | 9 | 0 | 0 | 9 | 0 |
 | `GCode/TimelapsePosPicker` | 1 | `gcode/timelapse_pos_picker.rs` | partial | 20 | 17 | 2 | 1 | 0 |
 | `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 1 | 4 | 41 | 39 |
-| `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | partial | 32 | 3 | 3 | 26 | 0 |
+| `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | ported | 32 | 0 | 0 | 32 | 0 |
 | `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 0 | 10 | 116 | 92 |
 | `GCodeReader` | 1 | `g_code_reader.rs` | partial | 71 | 0 | 8 | 63 | 0 |
 | `GCodeSender` | 3 | `gcode_sender.rs` | partial | 24 | 0 | 13 | 11 | 0 |
@@ -294,7 +294,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Print` | 1 | `print.rs` | partial | 236 | 15 | 50 | 135 | 36 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 0 | 8 | 20 | 16 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 0 | 4 | 11 | 62 |
-| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 11 | 20 | 15 | 91 |
+| `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 5 | 26 | 15 | 91 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 12 | 29 | 41 | 0 |
 | `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
@@ -336,7 +336,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Support/SupportMaterial` | 2 | `support/support_material.rs` | partial | 51 | 35 | 12 | 4 | 0 |
 | `Support/SupportParameters` | 2 | `support/support_parameters.rs` | partial | 13 | 7 | 0 | 6 | 0 |
 | `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 6 | 15 | 13 | 0 |
-| `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 49 | 10 | 13 | 0 |
+| `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 42 | 10 | 20 | 0 |
 | `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 44 | 15 | 17 | 0 |
 | `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 3 | 1 | 11 | 0 |
 | `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
@@ -358,7 +358,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Thread` | 1 | `thread.rs` | partial | 24 | 3 | 15 | 6 | 0 |
 | `Time` | 1 | `time.rs` | partial | 22 | 7 | 8 | 7 | 0 |
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
-| `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 22 | 52 | 52 | 10 |
+| `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 5 | 29 | 92 | 10 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 8 | 14 | 22 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 0 | 20 | 45 | 38 |
@@ -384,12 +384,12 @@ Rust file: `aabb_mesh.rs`. Status: **partial**. Not listed: 5 constructors, 1 de
 
 - [~] `init` (line 69) → `clipper2/clipper_core.rs, gcode/avoid_crossing_perimeters.rs, gcode/seam_placer.rs` — not in the paired file
 - [ ] `load_holes` (line 105) → `aabb_mesh.rs`
-- [~] `squared_distance` (line 124) → `sla/hollowing.rs, sla/indexed_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `squared_distance` (line 124) → `arrange.rs, sla/hollowing.rs, sla/indexed_mesh.rs` — not in the paired file
 - [x] `get_triangle_mesh` (line 133) → `aabb_mesh.rs:391`
 - [x] `normal_by_face_id` (line 145) → `aabb_mesh.rs:410`
 - [~] `query_ray_hit` (line 151) → `aabb_mesh.rs:416` — partial
 - [~] `query_ray_hits` (line 180) → `aabb_mesh.rs:472` — partial
-- [~] `squared_distance` (line 313) → `sla/hollowing.rs, sla/indexed_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `squared_distance` (line 313) → `arrange.rs, sla/hollowing.rs, sla/indexed_mesh.rs` — not in the paired file
 
 **class `AABBMesh::AABBImpl`**
 
@@ -1098,41 +1098,41 @@ Rust file: `arrange.rs`. Status: **partial**. Not listed: 5 constructors, 2 oper
 
 **free functions**
 
-- [~] `unscaled` (line 56) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [ ] `update_arrange_params` (line 84) → `arrange.rs`
-- [ ] `update_selected_items_inflation` (line 123) → `arrange.rs`
-- [ ] `update_unselected_items_inflation` (line 147) → `arrange.rs`
-- [ ] `get_shrink_bedpts` (line 171) → `arrange.rs`
-- [ ] `fill_config` (line 199) → `arrange.rs`
+- [~] `unscaled` (line 56) → `arrange.rs:90` — partial
+- [x] `update_arrange_params` (line 84) → `arrange.rs:2186`
+- [x] `update_selected_items_inflation` (line 123) → `arrange.rs:2233`
+- [x] `update_unselected_items_inflation` (line 147) → `arrange.rs:2266`
+- [x] `get_shrink_bedpts` (line 171) → `arrange.rs:2310`
+- [x] `fill_config` (line 199) → `arrange.rs:2364`
 - [~] `arrange` (line 219) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 220) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 221) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 222) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 223) → `geometry/geometry.rs` — not in the paired file
-- [ ] `fixed_overfit` (line 248) → `arrange.rs`
-- [ ] `fixed_overfit_topright_sliding` (line 260) → `arrange.rs`
-- [ ] `remove_large_items` (line 883) → `arrange.rs`
-- [ ] `min_area_boundingbox_rotation` (line 896) → `arrange.rs`
-- [ ] `fit_into_box_rotation` (line 910) → `arrange.rs`
+- [x] `fixed_overfit` (line 248) → `arrange.rs:2420`
+- [x] `fixed_overfit_topright_sliding` (line 260) → `arrange.rs:2432`
+- [x] `remove_large_items` (line 883) → `arrange.rs:2491`
+- [x] `min_area_boundingbox_rotation` (line 896) → `arrange.rs:2506`
+- [~] `fit_into_box_rotation` (line 910) → `arrange.rs:2519` — partial
 - [~] `_arrange` (line 916) → `geometry/geometry.rs` — not in the paired file
-- [ ] `to_nestbin` (line 1101) → `arrange.rs`
-- [ ] `to_nestbin` (line 1102) → `arrange.rs`
-- [ ] `to_nestbin` (line 1103) → `arrange.rs`
-- [ ] `to_nestbin` (line 1104) → `arrange.rs`
-- [x] `width` (line 1106) → `arrange.rs:62`
-- [x] `height` (line 1107) → `arrange.rs:72`
-- [x] `area` (line 1108) → `arrange.rs:82`
-- [x] `poly_area` (line 1109) → `arrange.rs:93`
-- [~] `distance_to` (line 1110) → `arrange.rs:105` — partial
-- [x] `to_circle` (line 1117) → `arrange.rs:122`
-- [ ] `process_arrangeable` (line 1143) → `arrange.rs`
-- [ ] `call_with_bed` (line 1176) → `arrange.rs`
+- [x] `to_nestbin` (line 1101) → `arrange.rs:2538`
+- [x] `to_nestbin` (line 1102) → `arrange.rs:2546`
+- [x] `to_nestbin` (line 1103) → `arrange.rs:2554`
+- [x] `to_nestbin` (line 1104) → `arrange.rs:2562`
+- [x] `width` (line 1106) → `arrange.rs:2574`
+- [x] `height` (line 1107) → `arrange.rs:2580`
+- [x] `area` (line 1108) → `arrange.rs:2586`
+- [x] `poly_area` (line 1109) → `arrange.rs:2610`
+- [x] `distance_to` (line 1110) → `arrange.rs:2617`
+- [x] `to_circle` (line 1117) → `arrange.rs:2627`
+- [x] `process_arrangeable` (line 1143) → `arrange.rs:2664`
+- [x] `call_with_bed` (line 1176) → `arrange.rs:2715`
 - [~] `arrange` (line 1197) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 1208) → `geometry/geometry.rs` — not in the paired file
 
 **class `ArrangeParams`**
 
-- [~] `to_json` (line 168) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [x] `to_json` (line 168) → `arrange.rs:1903`
 
 **class `ArrangePolygon`**
 
@@ -1153,7 +1153,7 @@ Rust file: `arrange.rs`. Status: **partial**. Not listed: 5 constructors, 2 oper
 
 **class `CircleBed`**
 
-- [~] `radius` (line 25) → `bounding_box.rs, circle.rs, model_arrange.rs` — not in the paired file
+- [x] `radius` (line 25) → `arrange.rs:467`
 
 ### `AStar` (.hpp)
 
@@ -1170,7 +1170,7 @@ Rust file: `a_star.rs`. Status: **partial**. Not listed: 1 constructors.
 **class `TracerTraits_`**
 
 - [~] `foreach_reachable` (line 24) → `jump_point_search.rs` — not in the paired file
-- [~] `distance` (line 28) → `aabb_mesh.rs, clipper2/clipper_h.rs, frustum.rs` — not in the paired file
+- [~] `distance` (line 28) → `aabb_mesh.rs, arrange.rs, clipper2/clipper_h.rs` — not in the paired file
 - [~] `goal_heuristic` (line 35) → `jump_point_search.rs` — not in the paired file
 - [~] `unique_id` (line 38) → `jump_point_search.rs` — not in the paired file
 
@@ -1196,8 +1196,8 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `empty` (line 255) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `scaled` (line 260) → `fill/fill_adaptive.rs, fill/fill_plane_path.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `scaled` (line 261) → `fill/fill_adaptive.rs, fill/fill_plane_path.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `unscaled` (line 262) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `unscaled` (line 263) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `unscaled` (line 262) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
+- [~] `unscaled` (line 263) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
 - [~] `cast` (line 266) → `geometry/voronoi_visual_utils.rs` — not in the paired file
 - [~] `cast` (line 273) → `geometry/voronoi_visual_utils.rs` — not in the paired file
 - [~] `serialize` (line 283) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
@@ -1213,7 +1213,7 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `rotated` (line 46) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [x] `scaled` (line 56) → `bounding_box.rs:487`
 - [x] `rotate` (line 205) → `bounding_box.rs:452`
-- [~] `rotate` (line 206) → `ex_polygon_collection.rs, fill/fill_adaptive.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `rotate` (line 206) → `arrange.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
 - [x] `inflated` (line 215) → `bounding_box.rs:1341`
 - [x] `align_to_grid` (line 257) → `bounding_box.rs:472`
 
@@ -2143,7 +2143,7 @@ Rust file: `clipper2_utils.rs`. Status: **partial**.
 - [x] `intersection_pl_2` (line 138) → `clipper2_utils.rs:349`
 - [x] `diff_pl_2` (line 140) → `clipper2_utils.rs:357`
 - [~] `union_ex_2` (line 143) → `clipper2_utils.rs:381` — divergent
-- [~] `union_ex_2` (line 158) → `clipper2_utils.rs` — another overload of the name is ported
+- [~] `union_ex_2` (line 158) → `support/support_common.rs` — not in the paired file
 - [x] `offset_ex_2` (line 174) → `clipper2_utils.rs:426`
 - [x] `offset2_ex_2` (line 186) → `clipper2_utils.rs:462`
 
@@ -2200,9 +2200,9 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `offset_ex` (line 358) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1048`
 - [x] `expand_paths` (line 367) → `clipper_utils.rs:1062`
-- [~] `union_safety_offset` (line 370) → `bridge_detector.rs` — not in the paired file
-- [~] `union_safety_offset` (line 371) → `bridge_detector.rs` — not in the paired file
-- [~] `union_safety_offset_ex` (line 372) → `clipper_utils.rs` — another overload of the name is ported
+- [~] `union_safety_offset` (line 370) → `bridge_detector.rs, support/support_common.rs` — not in the paired file
+- [~] `union_safety_offset` (line 371) → `bridge_detector.rs, support/support_common.rs` — not in the paired file
+- [~] `union_safety_offset_ex` (line 372) → `support/support_common.rs` — not in the paired file
 - [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:3689`
 - [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:817`
 - [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:837`
@@ -2211,29 +2211,29 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
 - [x] `shrink` (line 388) → `clipper_utils.rs:339`
-- [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs` — not in the paired file
-- [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs` — not in the paired file
+- [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs, support/support_common.rs` — not in the paired file
+- [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs, support/support_common.rs` — not in the paired file
 - [x] `offset_paths` (line 400) → `clipper_utils.rs:1125`
 - [x] `closing` (line 407) → `clipper_utils.rs:610`
-- [ ] `closing_ex` (line 410) → `clipper_utils.rs`
-- [~] `offset` (line 410) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [ ] `closing_ex` (line 412) → `clipper_utils.rs`
-- [~] `offset` (line 413) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [ ] `closing_ex` (line 414) → `clipper_utils.rs`
+- [~] `closing_ex` (line 410) → `support/support_common.rs` — not in the paired file
+- [~] `offset` (line 410) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `closing_ex` (line 412) → `support/support_common.rs` — not in the paired file
+- [~] `offset` (line 413) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `closing_ex` (line 414) → `support/support_common.rs` — not in the paired file
 - [~] `offset_ex` (line 415) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset` (line 418) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 420) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `opening` (line 422) → `clipper_utils.rs` — another overload of the name is ported
+- [~] `offset` (line 418) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 420) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `opening` (line 422) → `support/support_common.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
 - [x] `opening` (line 424) → `clipper_utils.rs:429`
-- [~] `opening` (line 426) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs` — not in the paired file
+- [~] `opening` (line 426) → `support/support_common.rs` — not in the paired file
+- [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs, support/tree_support.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
 - [x] `opening_ex` (line 430) → `clipper_utils.rs:444`
 - [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1193`
 - [~] `diff_ex` (line 470) → `clipper_utils.rs:461` — partial
-- [~] `diff_ex` (line 480) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 488) → `fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 480) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 488) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [ ] `diff_ln` (line 496) → `clipper_utils.rs`
 - [~] `offset_expolygon_inner` (line 508) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `offset_expolygon_inner` (line 510) → `clipper_utils.rs` — another overload of the name is ported
@@ -2243,48 +2243,48 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1325`
 - [~] `intersection_ln` (line 541) → `bridge_detector.rs, internal_bridge_detector.rs` — not in the paired file
 - [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:1347` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
-- [~] `offset` (line 559) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 561) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 563) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 565) → `bounding_box.rs, bridge_detector.rs, geometry/voronoi_offset.rs` — not in the paired file
+- [~] `offset` (line 559) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 561) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 563) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 565) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
 - [~] `offset_ex` (line 567) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 570) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 572) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset_ex` (line 574) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset2` (line 577) → `clipper_utils.rs:633` — divergent
-- [ ] `offset2_ex` (line 581) → `clipper_utils.rs`
-- [ ] `offset2_ex` (line 585) → `clipper_utils.rs`
-- [~] `closing` (line 592) → `clipper_utils.rs` — another overload of the name is ported
-- [ ] `closing_ex` (line 598) → `clipper_utils.rs`
-- [ ] `closing_ex` (line 604) → `clipper_utils.rs`
+- [~] `offset2_ex` (line 581) → `support/tree_support.rs` — not in the paired file
+- [~] `offset2_ex` (line 585) → `support/tree_support.rs` — not in the paired file
+- [~] `closing` (line 592) → `support/support_common.rs` — not in the paired file
+- [~] `closing_ex` (line 598) → `support/support_common.rs` — not in the paired file
+- [~] `closing_ex` (line 604) → `support/support_common.rs` — not in the paired file
 - [ ] `foreach_node` (line 604) → `clipper_utils.rs`
 - [ ] `traverse_pt` (line 612) → `clipper_utils.rs`
-- [~] `opening` (line 613) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `opening` (line 619) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `opening` (line 625) → `clipper_utils.rs` — another overload of the name is ported
+- [~] `opening` (line 613) → `support/support_common.rs` — not in the paired file
+- [~] `opening` (line 619) → `support/support_common.rs` — not in the paired file
+- [~] `opening` (line 625) → `support/support_common.rs` — not in the paired file
 - [ ] `traverse_pt` (line 625) → `clipper_utils.rs`
 - [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1426`
 - [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
 - [~] `clipper_do_polytree` (line 656) → `clipper_utils.rs` — another overload of the name is ported
 - [ ] `_clipper` (line 670) → `clipper_utils.rs`
-- [~] `diff` (line 675) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 677) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
+- [~] `diff` (line 675) → `config.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `diff` (line 677) → `config.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `diff_clipped` (line 679) → `support/tree_support_3d.rs` — not in the paired file
 - [~] `diff_clipped` (line 681) → `support/tree_support_3d.rs` — not in the paired file
 - [~] `diff_clipped` (line 683) → `support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 687) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 689) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 691) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 693) → `config.rs, support/tree_model_volumes.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `intersection` (line 695) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `diff` (line 687) → `config.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `diff` (line 689) → `config.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `diff` (line 691) → `config.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `diff` (line 693) → `config.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `intersection` (line 695) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
 - [ ] `intersection_clipped` (line 697) → `clipper_utils.rs`
-- [~] `intersection` (line 699) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `intersection` (line 701) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `intersection` (line 703) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `intersection` (line 705) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `intersection` (line 707) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `intersection` (line 709) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `intersection` (line 711) → `aabb_tree_lines.rs, enum_bitmask.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `intersection` (line 699) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 701) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 703) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 705) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 707) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 709) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 711) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
 - [x] `intersection` (line 714) → `clipper_utils.rs:135`
 - [~] `union_` (line 721) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [~] `union_` (line 723) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
@@ -2292,58 +2292,58 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `union_` (line 727) → `clipper_utils.rs:81` — divergent
 - [~] `union_` (line 735) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [v] `_clipper_ex` (line 738) → `clipper_utils.rs:1467` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
-- [~] `diff_ex` (line 741) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 743) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 745) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 747) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 749) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 751) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 753) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 755) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 757) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 759) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 761) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 763) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 765) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 767) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 770) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 778) → `fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 788) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 790) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 792) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 794) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 796) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 798) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 800) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 802) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 804) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 806) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 741) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 743) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 745) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 747) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 749) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 751) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 753) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 755) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 757) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 759) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 761) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 763) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 765) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 767) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 770) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `diff_ex` (line 778) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `intersection_ex` (line 788) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 790) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 792) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 794) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 796) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 798) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 800) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 802) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 804) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_ex` (line 806) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
 - [~] `intersection_ex` (line 808) → `clipper_utils.rs:549` — partial
-- [~] `intersection_ex` (line 810) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `union_ex` (line 813) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `union_ex` (line 815) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `intersection_ex` (line 810) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `union_ex` (line 813) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `union_ex` (line 815) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
 - [~] `union_ex` (line 817) → `clipper_utils.rs:99` — divergent
-- [~] `union_ex` (line 822) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
-- [~] `union_ex` (line 825) → `fill/fill_radial_zig_zag.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `union_ex` (line 822) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `union_ex` (line 825) → `fill/fill_radial_zig_zag.rs, support/support_common.rs, support/tree_model_volumes.rs` — not in the paired file
 - [ ] `xor_ex` (line 833) → `clipper_utils.rs`
 - [ ] `xor_ex` (line 836) → `clipper_utils.rs`
 - [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:1502`
 - [ ] `_clipper_pl_recombine` (line 854) → `clipper_utils.rs`
 - [ ] `_clipper_pl_closed` (line 890) → `clipper_utils.rs`
-- [~] `diff_pl` (line 909) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `diff_pl` (line 911) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `diff_pl` (line 913) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `diff_pl` (line 915) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `diff_pl` (line 917) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `diff_pl` (line 919) → `clipper_utils.rs` — another overload of the name is ported
+- [~] `diff_pl` (line 909) → `support/support_common.rs` — not in the paired file
+- [~] `diff_pl` (line 911) → `support/support_common.rs` — not in the paired file
+- [~] `diff_pl` (line 913) → `support/support_common.rs` — not in the paired file
+- [~] `diff_pl` (line 915) → `support/support_common.rs` — not in the paired file
+- [~] `diff_pl` (line 917) → `support/support_common.rs` — not in the paired file
+- [~] `diff_pl` (line 919) → `support/support_common.rs` — not in the paired file
 - [x] `diff_pl` (line 921) → `clipper_utils.rs:3232`
-- [~] `intersection_pl` (line 923) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_pl` (line 925) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_pl` (line 927) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_pl` (line 929) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_pl` (line 931) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_pl` (line 933) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_pl` (line 935) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_pl` (line 923) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_pl` (line 925) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_pl` (line 927) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_pl` (line 929) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_pl` (line 931) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_pl` (line 933) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
+- [~] `intersection_pl` (line 935) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
 - [x] `intersection_pl` (line 937) → `clipper_utils.rs:3262`
 - [ ] `_clipper_ln` (line 940) → `clipper_utils.rs`
 - [ ] `union_pt` (line 962) → `clipper_utils.rs`
@@ -3227,9 +3227,9 @@ Rust file: `cut_surface.rs`. Status: **partial**. Not listed: 2 constructors.
 - [ ] `choose_best_distance` (line 2218) → `cut_surface.rs`
 - [ ] `create_face_types` (line 2462) → `cut_surface.rs`
 - [ ] `clip_cut` (line 2559) → `cut_surface.rs`
-- [~] `bounding_box` (line 2610) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `bounding_box` (line 2626) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `bounding_box` (line 2640) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `bounding_box` (line 2610) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
+- [~] `bounding_box` (line 2626) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
+- [~] `bounding_box` (line 2640) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
 - [ ] `create_surface_patch` (line 2644) → `cut_surface.rs`
 - [ ] `create_bbs` (line 2843) → `cut_surface.rs`
 - [ ] `create_trees` (line 2863) → `cut_surface.rs`
@@ -3303,8 +3303,8 @@ Rust file: `cut_utils.rs`. Status: **partial**. Not listed: 2 constructors, 1 de
 
 **class `CutProgressRange`**
 
-- [~] `sub` (line 35) → `arachne/utils/extrusion_junction.rs, bin/generate-test-meshes.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `report` (line 43) → `cut_utils.rs`
+- [~] `sub` (line 35) → `arachne/utils/extrusion_junction.rs, arrange.rs, bin/generate-test-meshes.rs` — not in the paired file
+- [~] `report` (line 43) → `support/tree_support.rs` — not in the paired file
 - [~] `canceled` (line 49) → `print_base.rs` — not in the paired file
 - [ ] `map` (line 52) → `cut_utils.rs`
 
@@ -3664,7 +3664,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `to_expolygons` (line 352) → `sla/concave_hull.rs, surface.rs, surface_collection.rs` — not in the paired file
 - [~] `to_expolygons` (line 361) → `sla/concave_hull.rs, surface.rs, surface_collection.rs` — not in the paired file
 - [~] `to_points` (line 370) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `translate` (line 380) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 380) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `polygons_append` (line 385) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `polygons_append` (line 392) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `polygons_append` (line 401) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
@@ -3673,7 +3673,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `expolygons_append` (line 426) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_rotate` (line 437) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_contain` (line 443) → `geometry/expolygon.rs` — not in the paired file
-- [~] `expolygons_simplify` (line 451) → `geometry/expolygon.rs` — not in the paired file
+- [~] `expolygons_simplify` (line 451) → `geometry/expolygon.rs, support/tree_support.rs` — not in the paired file
 - [x] `get_expolygons_area` (line 455) → `ex_polygon.rs:563`
 - [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:572` — partial
 - [x] `expolygons_match` (line 480) → `ex_polygon.rs:612`
@@ -3693,13 +3693,13 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `ExPolygon`**
 
-- [~] `scale` (line 17) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
-- [~] `scale` (line 24) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
-- [~] `translate` (line 31) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `scale` (line 17) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `scale` (line 24) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `translate` (line 31) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `clear` (line 38) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `rotate` (line 38) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [~] `translate` (line 41) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `rotate` (line 45) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `rotate` (line 38) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 41) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
+- [~] `rotate` (line 45) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `empty` (line 46) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `area` (line 52) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `is_valid` (line 60) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
@@ -4038,8 +4038,8 @@ Rust file: `extrusion_simulator.rs`. Status: **partial**. Not listed: 1 construc
 
 **free functions**
 
-- [~] `dot` (line 143) → `gcode/spiral_vase.rs, gcode/wipe_tower.rs, geometry/aabb_tree.rs` — not in the paired file
-- [~] `dot` (line 151) → `gcode/spiral_vase.rs, gcode/wipe_tower.rs, geometry/aabb_tree.rs` — not in the paired file
+- [~] `dot` (line 143) → `arrange.rs, gcode/spiral_vase.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `dot` (line 151) → `arrange.rs, gcode/spiral_vase.rs, gcode/wipe_tower.rs` — not in the paired file
 - [x] `cross` (line 157) → `extrusion_simulator.rs:237`
 - [x] `l2` (line 166) → `extrusion_simulator.rs:244`
 - [x] `mag` (line 173) → `extrusion_simulator.rs:252`
@@ -6962,66 +6962,66 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 
 ### `GCode/ToolOrderUtils` (.cpp+.hpp)
 
-Rust file: `gcode/tool_order_utils.rs`. Status: **partial**. Not listed: 7 constructors, 3 destructors.
+Rust file: `gcode/tool_order_utils.rs`. Status: **ported**. Not listed: 7 constructors, 3 destructors.
 
 **free functions**
 
-- [x] `solve_extruder_order_with_greedy` (line 786) → `gcode/tool_order_utils.rs:1458`
-- [x] `solve_extruder_order_with_forcast` (line 826) → `gcode/tool_order_utils.rs:1534`
-- [x] `solve_extruder_order` (line 896) → `gcode/tool_order_utils.rs:1698`
-- [ ] `collect_filaments_in_groups` (line 968) → `gcode/tool_order_utils.rs`
-- [x] `get_extruders_order` (line 979) → `gcode/tool_order_utils.rs:1841`
-- [x] `reorder_filaments_for_minimum_flush_volume_base` (line 1012) → `gcode/tool_order_utils.rs:1902`
-- [x] `reorder_filaments_for_minimum_flush_volume` (line 1120) → `gcode/tool_order_utils.rs:2106`
-- [ ] `solve_extruder_order_with_MCMF` (line 1304) → `gcode/tool_order_utils.rs`
-- [~] `get_extruders_order` (line 1348) → `gcode/tool_order_utils.rs` — another overload of the name is ported
-- [ ] `get_nozzle_match_in_given_order` (line 1358) → `gcode/tool_order_utils.rs`
-- [~] `reorder_filaments_for_multi_nozzle_extruder` (line 1399) → `gcode/tool_order_utils.rs` — another overload of the name is ported
-- [x] `reorder_filaments_for_multi_nozzle_extruder` (line 1546) → `gcode/tool_order_utils.rs:2430`
+- [x] `solve_extruder_order_with_greedy` (line 786) → `gcode/tool_order_utils.rs:1485`
+- [x] `solve_extruder_order_with_forcast` (line 826) → `gcode/tool_order_utils.rs:1561`
+- [x] `solve_extruder_order` (line 896) → `gcode/tool_order_utils.rs:1725`
+- [x] `collect_filaments_in_groups` (line 968) → `gcode/tool_order_utils.rs:1866`
+- [x] `get_extruders_order` (line 979) → `gcode/tool_order_utils.rs:1889`
+- [x] `reorder_filaments_for_minimum_flush_volume_base` (line 1012) → `gcode/tool_order_utils.rs:1950`
+- [x] `reorder_filaments_for_minimum_flush_volume` (line 1120) → `gcode/tool_order_utils.rs:2169`
+- [x] `solve_extruder_order_with_MCMF` (line 1304) → `gcode/tool_order_utils.rs:2512`
+- [x] `get_extruders_order` (line 1348) → `gcode/tool_order_utils.rs:2581`
+- [x] `get_nozzle_match_in_given_order` (line 1358) → `gcode/tool_order_utils.rs:2593`
+- [x] `reorder_filaments_for_multi_nozzle_extruder` (line 1399) → `gcode/tool_order_utils.rs:2664`
+- [x] `reorder_filaments_for_multi_nozzle_extruder` (line 1546) → `gcode/tool_order_utils.rs:2925`
 
 **class `GeneralMinCostLowerBoundsSolver`**
 
-- [x] `solve` (line 390) → `gcode/tool_order_utils.rs:746`
-- [x] `build_feasible_graph` (line 418) → `gcode/tool_order_utils.rs:792`
-- [x] `build_graph_with_feasible_result` (line 492) → `gcode/tool_order_utils.rs:931`
-- [x] `add_edge_with_lower_bound` (line 530) → `gcode/tool_order_utils.rs:1004`
+- [x] `solve` (line 390) → `gcode/tool_order_utils.rs:773`
+- [x] `build_feasible_graph` (line 418) → `gcode/tool_order_utils.rs:819`
+- [x] `build_graph_with_feasible_result` (line 492) → `gcode/tool_order_utils.rs:958`
+- [x] `add_edge_with_lower_bound` (line 530) → `gcode/tool_order_utils.rs:1031`
 
 **class `GeneralMinCostSolver`**
 
-- [x] `solve` (line 364) → `gcode/tool_order_utils.rs:665`
+- [x] `solve` (line 364) → `gcode/tool_order_utils.rs:692`
 
 **class `GroupMinCostFlowSolver`**
 
-- [x] `get_flush_cost` (line 562) → `gcode/tool_order_utils.rs:1068`
-- [x] `build_graph` (line 570) → `gcode/tool_order_utils.rs:1082`
-- [x] `solve` (line 657) → `gcode/tool_order_utils.rs:1226`
+- [x] `get_flush_cost` (line 562) → `gcode/tool_order_utils.rs:1095`
+- [x] `build_graph` (line 570) → `gcode/tool_order_utils.rs:1109`
+- [x] `solve` (line 657) → `gcode/tool_order_utils.rs:1253`
 
 **class `MatchModeGroupSolver`**
 
-- [x] `solve` (line 780) → `gcode/tool_order_utils.rs:1449`
+- [x] `solve` (line 780) → `gcode/tool_order_utils.rs:1476`
 
 **class `MaxFlowSolver`**
 
-- [x] `add_edge` (line 267) → `gcode/tool_order_utils.rs:85`
-- [x] `solve` (line 276) → `gcode/tool_order_utils.rs:511`
+- [x] `add_edge` (line 267) → `gcode/tool_order_utils.rs:107`
+- [x] `solve` (line 276) → `gcode/tool_order_utils.rs:538`
 
 **class `MaxFlowWithLowerBounds`**
 
-- [x] `add_edge` (line 33) → `gcode/tool_order_utils.rs:498`
-- [x] `bfs` (line 42) → `gcode/tool_order_utils.rs:98`
-- [x] `dfs` (line 61) → `gcode/tool_order_utils.rs:128`
-- [x] `solve` (line 78) → `gcode/tool_order_utils.rs:163`
+- [x] `add_edge` (line 33) → `gcode/tool_order_utils.rs:525`
+- [x] `bfs` (line 42) → `gcode/tool_order_utils.rs:120`
+- [x] `dfs` (line 61) → `gcode/tool_order_utils.rs:150`
+- [x] `solve` (line 78) → `gcode/tool_order_utils.rs:185`
 
 **class `MinCostMaxFlow`**
 
-- [x] `solve` (line 120) → `gcode/tool_order_utils.rs:235`
-- [x] `add_edge` (line 138) → `gcode/tool_order_utils.rs:263`
-- [x] `spfa` (line 147) → `gcode/tool_order_utils.rs:276`
-- [~] `get_distance` (line 193) → `gcode/tool_order_utils.rs:351` — partial
+- [x] `solve` (line 120) → `gcode/tool_order_utils.rs:257`
+- [x] `add_edge` (line 138) → `gcode/tool_order_utils.rs:285`
+- [x] `spfa` (line 147) → `gcode/tool_order_utils.rs:298`
+- [x] `get_distance` (line 193) → `gcode/tool_order_utils.rs:373`
 
 **class `MinFlushFlowSolver`**
 
-- [x] `solve` (line 731) → `gcode/tool_order_utils.rs:1359`
+- [x] `solve` (line 731) → `gcode/tool_order_utils.rs:1386`
 
 ### `GCode/WipeTower` (.cpp+.hpp)
 
@@ -7226,7 +7226,7 @@ Rust file: `gcode/wipe_tower.rs`. Status: **partial**. Not listed: 8 constructor
 **class `WipeTower::box_coordinates`**
 
 - [x] `translate` (line 154) → `gcode/wipe_tower.rs:283`
-- [~] `translate` (line 158) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 158) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [x] `expand` (line 159) → `gcode/wipe_tower.rs:290`
 - [~] `expand` (line 165) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 
@@ -7686,11 +7686,11 @@ Rust file: `geometry/convex_hull.rs`. Status: **partial**. Not listed: 2 constru
 
 **free functions**
 
-- [~] `convex_hull` (line 11) → `build_volume.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `convex_hull` (line 40) → `build_volume.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `convex_hull` (line 56) → `build_volume.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `convex_hull` (line 114) → `build_volume.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `convex_hull` (line 123) → `build_volume.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `convex_hull` (line 11) → `build_volume.rs, ex_polygon_collection.rs, triangle_mesh.rs` — not in the paired file
+- [~] `convex_hull` (line 40) → `build_volume.rs, ex_polygon_collection.rs, triangle_mesh.rs` — not in the paired file
+- [~] `convex_hull` (line 56) → `build_volume.rs, ex_polygon_collection.rs, triangle_mesh.rs` — not in the paired file
+- [~] `convex_hull` (line 114) → `build_volume.rs, ex_polygon_collection.rs, triangle_mesh.rs` — not in the paired file
+- [~] `convex_hull` (line 123) → `build_volume.rs, ex_polygon_collection.rs, triangle_mesh.rs` — not in the paired file
 - [ ] `convex_hulll` (line 135) → `geometry/convex_hull.rs`
 - [~] `magnsq` (line 153) → `geometry/convex_hull.rs:266` — divergent
 - [~] `dot` (line 159) → `geometry/convex_hull.rs:274` — divergent
@@ -7834,7 +7834,7 @@ Rust file: `geometry/voronoi_offset.rs`. Status: **partial**.
 - [~] `annotate_inside_outside` (line 650) → `geometry/voronoi_offset.rs:1550` — partial
 - [x] `signed_vertex_distances` (line 969) → `geometry/voronoi_offset.rs:702`
 - [x] `edge_offset_contour_intersections` (line 1012) → `geometry/voronoi_offset.rs:791`
-- [~] `offset` (line 1329) → `bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 1329) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
 - [x] `offset` (line 1513) → `geometry/voronoi_offset.rs:1278`
 - [x] `skeleton_edges_rough` (line 1535) → `geometry/voronoi_offset.rs:1295`
 
@@ -7909,7 +7909,7 @@ Rust file: `i18n.rs`. Status: **partial**.
 
 - [x] `set_translate_callback` (line 17) → `i18n.rs:22`
 - [x] `translate` (line 18) → `i18n.rs:39`
-- [~] `translate` (line 19) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 19) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `L` (line 31) → `preset_bundle.rs, print_base.rs, print_config.rs` — not in the paired file
 - [ ] `L_CONTEXT` (line 32) → `i18n.rs`
 - [ ] `_u8L` (line 33) → `i18n.rs`
@@ -8238,12 +8238,12 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [x] `overlap` (line 79) → `geometry/line.rs:469`
 - [~] `perpendicular_to` (line 93) → `geometry/line.rs` — another overload of the name is ported
 - [x] `perpendicular_to` (line 98) → `geometry/line.rs:456` — read against the C++ in R872 (the estimate says partial)
-- [~] `intersection` (line 105) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 105) → `aabb_tree_lines.rs, arrange.rs, clipper_utils.rs` — not in the paired file
 - [x] `clip_with_bbox` (line 110) → `geometry/line.rs:520` — read against the C++ in R872 (the estimate says partial)
 - [x] `extend` (line 121) → `geometry/line.rs:493` — read against the C++ in R872 (the estimate says divergent)
-- [~] `scale` (line 158) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
+- [~] `scale` (line 158) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `translate` (line 159) → `geometry/line.rs:369`
-- [~] `translate` (line 160) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 160) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [x] `rotate` (line 161) → `geometry/line.rs:387`
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `clipper2/clipper_h.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — not in the paired file
@@ -8462,7 +8462,7 @@ Rust file: `measure.rs`. Status: **partial**. Not listed: 7 constructors, 1 dest
 - [x] `get_pt2` (line 106) → `measure.rs:616`
 - [x] `get_value` (line 108) → `measure.rs:622`
 - [x] `translate` (line 1356) → `measure.rs:497`
-- [~] `translate` (line 1384) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 1384) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 
 ### `MeasureUtils` (.hpp)
 
@@ -8619,7 +8619,7 @@ Rust file: `min_area_bounding_box.rs`. Status: **partial**. Not listed: 3 constr
 **free functions**
 
 - [x] `minAreaBoundigBox_` (line 32) → `min_area_bounding_box.rs:157`
-- [~] `remove_collinear_points` (line 97) → `geometry/simplify.rs` — not in the paired file
+- [~] `remove_collinear_points` (line 97) → `arrange.rs, geometry/simplify.rs` — not in the paired file
 - [x] `remove_collinear_points` (line 102) → `min_area_bounding_box.rs:416`
 
 **class `MinAreaBoundigBox`**
@@ -8890,7 +8890,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [x] `invalidate_bounding_box` (line 443) → `model.rs:5892`
 - [v] `translate` (line 478) → `model.rs:1058` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `scale` (line 481) → `model.rs:1032`
-- [~] `scale` (line 482) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
+- [~] `scale` (line 482) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
 - [v] `is_cut` (line 499) → `model.rs:6314` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `set_new_unique_id` (line 650) → `model.rs:5607`
 - [x] `set_model` (line 673) → `model.rs:5640`
@@ -8932,7 +8932,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [v] `translate_instance` (line 1914) → `model.rs:6134` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [v] `translate` (line 1922) → `model.rs:6148` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `scale` (line 1932) → `model.rs:6161`
-- [~] `rotate` (line 1940) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `rotate` (line 1940) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `rotate` (line 1949) → `model.rs:6186`
 - [x] `mirror` (line 1964) → `model.rs:6201`
 - [v] `scale_mesh_after_creation` (line 1973) → `model.rs:6209` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
@@ -8995,9 +8995,9 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [x] `is_support_modifier` (line 1033) → `model.rs:2155`
 - [x] `is_svg` (line 1034) → `model.rs:2159`
 - [v] `material_id` (line 1036) → `model.rs:2163` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [~] `translate` (line 1085) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `scale` (line 1088) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
-- [~] `scale` (line 1089) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
+- [~] `translate` (line 1085) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
+- [~] `scale` (line 1088) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
+- [~] `scale` (line 1089) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
 - [~] `scale_geometry_after_creation` (line 1096) → `model.rs` — another overload of the name is ported
 - [x] `set_convex_hull_shared_ptr` (line 1107) → `model.rs:2692`
 - [x] `invalidate_convex_hull_2d` (line 1110) → `model.rs:2687`
@@ -9060,7 +9060,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [v] `translate` (line 3832) → `model.rs:2932` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `scale` (line 3837) → `model.rs:2938`
 - [v] `assign_new_unique_ids_recursive` (line 3855) → `model.rs:2944` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [~] `rotate` (line 3865) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `rotate` (line 3865) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `rotate` (line 3876) → `model.rs:2963` — read against the C++ in R914 (the estimate says partial)
 - [x] `mirror` (line 3881) → `model.rs:2970`
 - [v] `scale_geometry_after_creation` (line 3895) → `model.rs:2982` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
@@ -9336,13 +9336,13 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 **class `MultiPoint`**
 
 - [x] `scale` (line 6) → `multi_point.rs:117`
-- [~] `scale` (line 12) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
+- [~] `scale` (line 12) → `arrange.rs, bounding_box.rs, clipper2/clipper_core.rs` — not in the paired file
 - [x] `translate` (line 21) → `multi_point.rs:136`
 - [x] `rotate` (line 27) → `multi_point.rs:144`
-- [~] `translate` (line 29) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `rotate` (line 31) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `translate` (line 29) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
+- [~] `rotate` (line 31) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `reverse` (line 34) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
-- [~] `rotate` (line 37) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `rotate` (line 37) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `size` (line 41) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 42) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `is_valid` (line 44) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
@@ -9368,7 +9368,7 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `cbegin` (line 107) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `cend` (line 108) → `mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `remove_colinear_points` (line 121) → `multi_point.rs:287`
-- [~] `intersection` (line 136) → `aabb_tree_lines.rs, clipper_utils.rs, enum_bitmask.rs` — not in the paired file
+- [~] `intersection` (line 136) → `aabb_tree_lines.rs, arrange.rs, clipper_utils.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
 - [~] `intersections` (line 168) → `clipper2_z_utils.rs, clipper_z_utils.rs, geometry/polygon.rs` — not in the paired file
 - [v] `_douglas_peucker` (line 179) → `multi_point.rs:22` — R867: tests/douglas_peucker_native_parity.rs: 400,000 polylines where rounding decides, equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced (the body reads as partial to the estimate)
@@ -9380,10 +9380,10 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [~] `append` (line 116) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
 - [~] `is_valid` (line 122) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
-- [~] `translate` (line 388) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `translate` (line 396) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `translate` (line 388) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
+- [~] `translate` (line 396) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `length` (line 401) → `clipper2/clipper_h.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — not in the paired file
-- [~] `bounding_box` (line 409) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `bounding_box` (line 409) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `remove_duplicate_points` (line 414) → `multi_point.rs:258` — partial
 
 ### `MutablePolygon` (.cpp+.hpp)
@@ -10167,16 +10167,16 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `cross2` (line 86) → `fill/fill_gyroid.rs, gcode/wipe_tower.rs, geometry/mod.rs` — not in the paired file
 - [~] `cross2` (line 92) → `fill/fill_gyroid.rs, gcode/wipe_tower.rs, geometry/mod.rs` — not in the paired file
 - [~] `perp` (line 99) → `geometry/point.rs:847` — divergent
-- [~] `perp` (line 103) → `geometry/mod.rs, min_area_bounding_box.rs, multi_material_segmentation.rs` — not in the paired file
+- [~] `perp` (line 103) → `arrange.rs, geometry/mod.rs, min_area_bounding_box.rs` — not in the paired file
 - [~] `angle` (line 111) → `extrusion_entity.rs, gcode/seam_placer.rs, geometry/line.rs` — not in the paired file
 - [~] `to_2d` (line 120) → `geometry/point.rs:1230` — divergent
 - [ ] `to_3d` (line 126) → `geometry/point.rs`
-- [~] `unscale` (line 131) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
-- [~] `unscale` (line 132) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
-- [~] `unscale` (line 133) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
-- [~] `unscale` (line 134) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
-- [~] `unscale` (line 135) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
-- [~] `unscale` (line 136) → `g_code.rs, lib.rs, libslic3r.rs` — not in the paired file
+- [~] `unscale` (line 131) → `arrange.rs, g_code.rs, lib.rs` — not in the paired file
+- [~] `unscale` (line 132) → `arrange.rs, g_code.rs, lib.rs` — not in the paired file
+- [~] `unscale` (line 133) → `arrange.rs, g_code.rs, lib.rs` — not in the paired file
+- [~] `unscale` (line 134) → `arrange.rs, g_code.rs, lib.rs` — not in the paired file
+- [~] `unscale` (line 135) → `arrange.rs, g_code.rs, lib.rs` — not in the paired file
+- [~] `unscale` (line 136) → `arrange.rs, g_code.rs, lib.rs` — not in the paired file
 - [~] `to_string` (line 138) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
 - [~] `to_string` (line 139) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
 - [~] `to_string` (line 140) → `arachne/beading_strategy/distributed_beading_strategy.rs, arachne/beading_strategy/limited_beading_strategy.rs, arachne/beading_strategy/outer_wall_contour_strategy.rs` — not in the paired file
@@ -10211,8 +10211,8 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `scaled` (line 527) → `bounding_box.rs, fill/fill_adaptive.rs, fill/fill_plane_path.rs` — not in the paired file
 - [~] `scaled` (line 537) → `bounding_box.rs, fill/fill_adaptive.rs, fill/fill_plane_path.rs` — not in the paired file
 - [~] `scaled` (line 549) → `bounding_box.rs, fill/fill_adaptive.rs, fill/fill_plane_path.rs` — not in the paired file
-- [~] `unscaled` (line 560) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `unscaled` (line 573) → `fill/fill_conformal.rs, fill/fill_conformal_chart.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `unscaled` (line 560) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
+- [~] `unscaled` (line 573) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
 - [x] `align_to_grid` (line 581) → `geometry/point.rs:1590`
 - [~] `align_to_grid` (line 591) → `bounding_box.rs` — not in the paired file
 - [~] `align_to_grid` (line 593) → `bounding_box.rs` — not in the paired file
@@ -10244,7 +10244,7 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 
 **class `Point`**
 
-- [~] `rotate` (line 48) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `rotate` (line 48) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `nearest_point_index` (line 60) → `geometry/point.rs` — another overload of the name is ported
 - [~] `nearest_point_index` (line 69) → `geometry/point.rs:331` — partial
 - [~] `nearest_point_index` (line 94) → `geometry/point.rs` — another overload of the name is ported
@@ -10300,7 +10300,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [~] `to_lines` (line 211) → `geometry/expolygon.rs, geometry/polyline.rs, jump_point_search.rs` — not in the paired file
 - [x] `to_polyline` (line 224) → `geometry/polygon.rs:1823`
 - [x] `to_polylines` (line 233) → `geometry/polygon.rs:1834`
-- [~] `to_polylines` (line 242) → `geometry/expolygon.rs, geometry/polyline.rs` — not in the paired file
+- [~] `to_polylines` (line 242) → `geometry/expolygon.rs, geometry/polyline.rs, support/support_common.rs` — not in the paired file
 - [x] `to_polygons` (line 257) → `geometry/polygon.rs:1847`
 - [x] `filter_points_by_vectors` (line 263) → `geometry/polygon.rs:1003`
 - [~] `to_polygons` (line 267) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
@@ -10404,7 +10404,7 @@ Rust file: `geometry/polyline.rs`. Status: **partial**. Not listed: 8 constructo
 - [x] `total_length` (line 163) → `geometry/polyline.rs:1453`
 - [x] `to_lines` (line 170) → `geometry/polyline.rs:1465`
 - [~] `to_lines` (line 181) → `geometry/expolygon.rs, geometry/polygon.rs, jump_point_search.rs` — not in the paired file
-- [~] `to_polylines` (line 197) → `geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `to_polylines` (line 197) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
 - [x] `to_polylines` (line 206) → `geometry/polyline.rs:1503`
 - [~] `polylines_append` (line 215) → `geometry/polyline.rs:1516` — partial
 - [~] `polylines_append` (line 220) → `geometry/polyline.rs` — another overload of the name is ported
@@ -10793,17 +10793,17 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [x] `print_instance_hull` (line 3912) → `print.rs:9863`
 - [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:9890`
 - [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:4899`
-- [~] `to_json` (line 4596) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4604) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4611) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4630) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4639) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4660) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4679) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4596) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4604) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4611) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4630) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4639) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4660) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4679) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [ ] `convert_extrusion_to_json` (line 4690) → `print.rs`
 - [ ] `adaptive_merge_patch_to_json` (line 4753) → `print.rs`
-- [~] `to_json` (line 4778) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 4882) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 4778) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
+- [~] `to_json` (line 4882) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `from_json` (line 4901) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [~] `from_json` (line 4912) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [~] `from_json` (line 4922) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
@@ -11319,13 +11319,13 @@ Rust file: `print_config.rs`. Status: **partial**. Not listed: 11 constructors, 
 - [~] `get_bed_shape` (line 11508) → `print_config.rs` — another overload of the name is ported
 - [~] `get_bed_shape` (line 11527) → `print_config.rs` — another overload of the name is ported
 - [ ] `get_bed_shape_with_excluded_area` (line 11529) → `print_config.rs`
-- [~] `has_skirt` (line 11558) → `print.rs` — not in the paired file
-- [ ] `skirt_expansion_params` (line 11568) → `print_config.rs`
-- [ ] `skirt_nozzle_diameter_for_filament` (line 11594) → `print_config.rs`
-- [ ] `skirt_flow_from_config` (line 11616) → `print_config.rs`
-- [ ] `get_real_skirt_dist` (line 11637) → `print_config.rs`
-- [ ] `get_real_skirt_dist` (line 11649) → `print_config.rs`
-- [ ] `get_real_skirt_dist` (line 11671) → `print_config.rs`
+- [~] `has_skirt` (line 11558) → `arrange.rs, print.rs` — not in the paired file
+- [~] `skirt_expansion_params` (line 11568) → `arrange.rs` — not in the paired file
+- [~] `skirt_nozzle_diameter_for_filament` (line 11594) → `arrange.rs` — not in the paired file
+- [~] `skirt_flow_from_config` (line 11616) → `arrange.rs` — not in the paired file
+- [~] `get_real_skirt_dist` (line 11637) → `arrange.rs` — not in the paired file
+- [~] `get_real_skirt_dist` (line 11649) → `arrange.rs` — not in the paired file
+- [~] `get_real_skirt_dist` (line 11671) → `arrange.rs` — not in the paired file
 
 **class `DynamicPrintAndCLIConfig`**
 
@@ -11966,7 +11966,7 @@ Rust file: `sla/indexed_mesh.rs`. Status: **partial**. Not listed: 5 constructor
 - [x] `query_ray_hit` (line 145) → `sla/indexed_mesh.rs:514`
 - [x] `query_ray_hits` (line 174) → `sla/indexed_mesh.rs:553`
 - [ ] `filter_hits` (line 211) → `sla/indexed_mesh.rs`
-- [~] `squared_distance` (line 308) → `aabb_mesh.rs, sla/hollowing.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `squared_distance` (line 308) → `aabb_mesh.rs, arrange.rs, sla/hollowing.rs` — not in the paired file
 
 **class `IndexedMesh::AABBImpl`**
 
@@ -12232,7 +12232,7 @@ Rust file: `sla/support_tree_builder.rs`. Status: **partial**. Not listed: 9 con
 **free functions**
 
 - [x] `distance` (line 53) → `sla/support_tree_builder.rs:77`
-- [~] `distance` (line 57) → `aabb_mesh.rs, clipper2/clipper_h.rs, frustum.rs` — not in the paired file
+- [~] `distance` (line 57) → `aabb_mesh.rs, arrange.rs, clipper2/clipper_h.rs` — not in the paired file
 
 **class `Bridge`**
 
@@ -12389,7 +12389,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 **class `SLAPrint::PrintLayer`**
 
 - [ ] `transformed_slices` (line 505) → `sla_print.rs`
-- [~] `add` (line 521) → `boost_polygon_voronoi.rs, clipper2/clipper_core.rs, clipper2/clipper_rectclip.rs` — not in the paired file
+- [~] `add` (line 521) → `arrange.rs, boost_polygon_voronoi.rs, clipper2/clipper_core.rs` — not in the paired file
 - [~] `level` (line 523) → `clipper2/clipper_engine.rs, zipper.rs` — not in the paired file
 - [ ] `slices` (line 525) → `sla_print.rs`
 
@@ -12748,22 +12748,22 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 
 **free functions**
 
-- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:484`
-- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:491`
-- [x] `normal` (line 66) → `support/tree_support.rs:499`
-- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:507`
+- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:825`
+- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:833`
+- [x] `normal` (line 66) → `support/tree_support.rs:841`
+- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:850`
 - [ ] `draw_contours_and_nodes_to_svg` (line 184) → `support/tree_support.rs`
 - [ ] `draw_layer_mst` (line 246) → `support/tree_support.rs`
-- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:555`
-- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:681`
-- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:850`
-- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:880`
+- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:898`
+- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1024`
+- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1193`
+- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1223`
 - [~] `is_inside_ex` (line 550) → `support/tree_support.rs` — another overload of the name is ported
-- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:902`
-- [~] `move_out_expolys` (line 569) → `support/tree_support.rs:915` — partial
-- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:967`
+- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1245`
+- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1258`
+- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1304`
 - [ ] `add_overhang` (line 779) → `support/tree_support.rs`
-- [x] `is_stable` (line 785) → `support/tree_support.rs:973`
+- [x] `is_stable` (line 785) → `support/tree_support.rs:1310`
 - [ ] `fill_expolygon_generate_paths` (line 1598) → `support/tree_support.rs`
 - [ ] `fill_expolygons_generate_paths` (line 1625) → `support/tree_support.rs`
 - [ ] `_make_loops` (line 1641) → `support/tree_support.rs`
@@ -12771,7 +12771,7 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 - [ ] `make_perimeter_and_infill` (line 1683) → `support/tree_support.rs`
 - [ ] `tree_support_node_disk` (line 1758) → `support/tree_support.rs`
 - [ ] `deleteDirectoryContents` (line 3498) → `support/tree_support.rs`
-- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1058`
+- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1395`
 - [ ] `carried_area` (line 4613) → `support/tree_support.rs`
 - [ ] `carried_area_ratio` (line 4628) → `support/tree_support.rs`
 - [ ] `smooth_filter` (line 5103) → `support/tree_support.rs`
@@ -12779,11 +12779,11 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 
 **class `LayerHeightData`**
 
-- [x] `bottom_z` (line 35) → `support/tree_support.rs:143`
+- [x] `bottom_z` (line 35) → `support/tree_support.rs:287`
 
 **class `SupportNode`**
 
-- [ ] `total_carried_mass` (line 136) → `support/tree_support.rs`
+- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:557`
 
 **class `TreeSupport`**
 
@@ -12829,12 +12829,12 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 
 **class `TreeSupportProfiler`**
 
-- [ ] `stage_start` (line 103) → `support/tree_support.rs`
-- [ ] `stage_finish` (line 111) → `support/tree_support.rs`
-- [ ] `tic` (line 120) → `support/tree_support.rs`
-- [ ] `toc` (line 121) → `support/tree_support.rs`
-- [ ] `stage_add` (line 125) → `support/tree_support.rs`
-- [ ] `report` (line 132) → `support/tree_support.rs`
+- [x] `stage_start` (line 103) → `support/tree_support.rs:738`
+- [x] `stage_finish` (line 111) → `support/tree_support.rs:750`
+- [x] `tic` (line 120) → `support/tree_support.rs:763`
+- [~] `toc` (line 121) → `support/tree_support.rs:768` — partial
+- [x] `stage_add` (line 125) → `support/tree_support.rs:775`
+- [x] `report` (line 132) → `support/tree_support.rs:786`
 
 ### `Support/TreeSupport3D` (.cpp+.hpp)
 
@@ -13139,13 +13139,13 @@ Rust file: `svg.rs`. Status: **partial**. Not listed: 9 constructors, 1 destruct
 
 - [x] `ParseSVGPath` (line 338) → `svg.rs:1090`
 - [x] `ConvertToExPolygon` (line 414) → `svg.rs:1204`
-- [~] `to_json` (line 545) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 545) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `from_json` (line 547) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 558) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 558) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `from_json` (line 566) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 578) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 578) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `from_json` (line 582) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
-- [~] `to_json` (line 595) → `debug/validation.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
+- [~] `to_json` (line 595) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `from_json` (line 603) → `custom_g_code.rs, format/assembly_steps_json.rs, gcode/thumbnail_data.rs` — not in the paired file
 - [~] `dumpExPolygonToJson` (line 617) → `svg.rs:1346` — partial
 - [~] `dumpExPolygonsToJson` (line 634) → `svg.rs:1369` — partial
@@ -13485,82 +13485,82 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 
 **free functions**
 
-- [x] `update_bounding_box` (line 38) → `triangle_mesh.rs:228`
-- [~] `fill_initial_stats` (line 46) → `triangle_mesh.rs:240` — partial
+- [x] `update_bounding_box` (line 38) → `triangle_mesh.rs:253`
+- [x] `fill_initial_stats` (line 46) → `triangle_mesh.rs:271`
 - [ ] `trianglemesh_repair_on_import` (line 102) → `triangle_mesh.rs`
-- [x] `its_triangle_vertex_index` (line 256) → `triangle_mesh.rs:1658`
-- [x] `its_triangle_edge` (line 263) → `triangle_mesh.rs:1676`
-- [x] `its_triangle_edge_index` (line 270) → `triangle_mesh.rs:1688`
-- [x] `its_triangle_vertex_the_same` (line 278) → `triangle_mesh.rs:1706`
-- [x] `its_triangle_vertices` (line 315) → `triangle_mesh.rs:1768`
-- [x] `its_unnormalized_normal` (line 323) → `triangle_mesh.rs:1779`
-- [x] `face_normal` (line 338) → `triangle_mesh.rs:1788`
-- [x] `face_normal_normalized` (line 339) → `triangle_mesh.rs:1794`
-- [~] `its_face_normal` (line 340) → `measure.rs, short_edge_collapse.rs` — not in the paired file
-- [x] `its_face_normal` (line 342) → `triangle_mesh.rs:1811`
+- [x] `its_triangle_vertex_index` (line 256) → `triangle_mesh.rs:2154`
+- [x] `its_triangle_edge` (line 263) → `triangle_mesh.rs:2172`
+- [x] `its_triangle_edge_index` (line 270) → `triangle_mesh.rs:2184`
+- [x] `its_triangle_vertex_the_same` (line 278) → `triangle_mesh.rs:2202`
+- [x] `its_triangle_vertices` (line 315) → `triangle_mesh.rs:2264`
+- [x] `its_unnormalized_normal` (line 323) → `triangle_mesh.rs:2275`
+- [x] `face_normal` (line 338) → `triangle_mesh.rs:2284`
+- [x] `face_normal_normalized` (line 339) → `triangle_mesh.rs:2290`
+- [x] `its_face_normal` (line 340) → `triangle_mesh.rs:2299`
+- [x] `its_face_normal` (line 342) → `triangle_mesh.rs:2309`
 - [~] `its_convex_hull` (line 358) → `model.rs` — not in the paired file
-- [~] `make_cube` (line 360) → `bin/generate-test-meshes.rs` — not in the paired file
-- [ ] `make_prism` (line 361) → `triangle_mesh.rs`
-- [~] `make_cylinder` (line 362) → `bin/generate-test-meshes.rs` — not in the paired file
-- [ ] `make_cone` (line 363) → `triangle_mesh.rs`
-- [ ] `make_pyramid` (line 364) → `triangle_mesh.rs`
-- [~] `make_sphere` (line 365) → `bin/generate-test-meshes.rs` — not in the paired file
-- [x] `its_write_stl_ascii` (line 368) → `triangle_mesh.rs:1854`
-- [x] `its_write_stl_binary` (line 370) → `triangle_mesh.rs:1953`
-- [x] `bounding_box` (line 372) → `triangle_mesh.rs:2395`
-- [x] `bounding_box` (line 373) → `triangle_mesh.rs:1817`
+- [x] `make_cube` (line 360) → `triangle_mesh.rs:2740`
+- [x] `make_prism` (line 361) → `triangle_mesh.rs:2745`
+- [x] `make_cylinder` (line 362) → `triangle_mesh.rs:2750`
+- [x] `make_cone` (line 363) → `triangle_mesh.rs:2755`
+- [x] `make_pyramid` (line 364) → `triangle_mesh.rs:2760`
+- [x] `make_sphere` (line 365) → `triangle_mesh.rs:2765`
+- [x] `its_write_stl_ascii` (line 368) → `triangle_mesh.rs:2537`
+- [x] `its_write_stl_binary` (line 370) → `triangle_mesh.rs:2546`
+- [x] `bounding_box` (line 372) → `triangle_mesh.rs:3317`
+- [x] `bounding_box` (line 373) → `triangle_mesh.rs:2315`
 - [~] `load` (line 394) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 398) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [x] `create_edge_map` (line 620) → `triangle_mesh.rs:290`
-- [x] `its_face_edge_ids_impl` (line 651) → `triangle_mesh.rs:339`
-- [x] `its_face_edge_ids` (line 701) → `triangle_mesh.rs:410`
-- [~] `its_face_edge_ids` (line 706) → `triangle_mesh.rs` — another overload of the name is ported
-- [~] `its_face_edge_ids` (line 711) → `triangle_mesh.rs` — another overload of the name is ported
-- [~] `its_face_edge_ids` (line 717) → `triangle_mesh.rs` — another overload of the name is ported
-- [x] `its_merge_vertices` (line 759) → `triangle_mesh.rs:512`
-- [x] `its_flip_triangles` (line 821) → `triangle_mesh.rs:605`
-- [x] `its_remove_degenerate_faces` (line 827) → `triangle_mesh.rs:616`
-- [x] `its_compactify_vertices` (line 842) → `triangle_mesh.rs:635`
-- [ ] `its_store_triangle` (line 872) → `triangle_mesh.rs`
-- [ ] `its_store_triangles` (line 885) → `triangle_mesh.rs`
-- [x] `its_shrink_to_fit` (line 914) → `triangle_mesh.rs:680`
-- [~] `its_collect_mesh_projection_points_above` (line 921) → `triangle_mesh.rs` — another overload of the name is ported
-- [x] `its_collect_mesh_projection_points_above` (line 942) → `triangle_mesh.rs:738`
-- [~] `its_collect_mesh_projection_points_above` (line 947) → `triangle_mesh.rs` — another overload of the name is ported
-- [~] `its_convex_hull_2d_above` (line 953) → `triangle_mesh.rs` — another overload of the name is ported
-- [x] `its_convex_hull_2d_above` (line 960) → `triangle_mesh.rs:765`
-- [~] `its_convex_hull_2d_above` (line 965) → `triangle_mesh.rs` — another overload of the name is ported
-- [v] `its_make_xoy_center_rect` (line 970) → `triangle_mesh.rs:794` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_cube` (line 985) → `triangle_mesh.rs:825` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_prism` (line 997) → `triangle_mesh.rs:845` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_cylinder` (line 1019) → `triangle_mesh.rs:870` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_thread` (line 1066) → `triangle_mesh.rs:929` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_cone` (line 1142) → `triangle_mesh.rs:1013` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_frustum_dowel` (line 1170) → `triangle_mesh.rs:1074` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_pyramid` (line 1223) → `triangle_mesh.rs:1155` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_sphere` (line 1246) → `triangle_mesh.rs:1171` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [v] `its_make_snap` (line 1300) → `triangle_mesh.rs:1250` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
-- [ ] `its_make_groove_plane` (line 1418) → `triangle_mesh.rs`
+- [x] `create_edge_map` (line 620) → `triangle_mesh.rs:369`
+- [x] `its_face_edge_ids_impl` (line 651) → `triangle_mesh.rs:418`
+- [x] `its_face_edge_ids` (line 701) → `triangle_mesh.rs:509`
+- [x] `its_face_edge_ids` (line 706) → `triangle_mesh.rs:498`
+- [~] `its_face_edge_ids` (line 711) → `triangle_mesh.rs:489` — partial
+- [x] `its_face_edge_ids` (line 717) → `triangle_mesh.rs:522`
+- [x] `its_merge_vertices` (line 759) → `triangle_mesh.rs:606`
+- [x] `its_flip_triangles` (line 821) → `triangle_mesh.rs:699`
+- [x] `its_remove_degenerate_faces` (line 827) → `triangle_mesh.rs:710`
+- [x] `its_compactify_vertices` (line 842) → `triangle_mesh.rs:729`
+- [x] `its_store_triangle` (line 872) → `triangle_mesh.rs:2682`
+- [x] `its_store_triangles` (line 885) → `triangle_mesh.rs:2699`
+- [x] `its_shrink_to_fit` (line 914) → `triangle_mesh.rs:774`
+- [x] `its_collect_mesh_projection_points_above` (line 921) → `triangle_mesh.rs:813`
+- [x] `its_collect_mesh_projection_points_above` (line 942) → `triangle_mesh.rs:860`
+- [x] `its_collect_mesh_projection_points_above` (line 947) → `triangle_mesh.rs:873`
+- [x] `its_convex_hull_2d_above` (line 953) → `triangle_mesh.rs:890`
+- [x] `its_convex_hull_2d_above` (line 960) → `triangle_mesh.rs:903`
+- [x] `its_convex_hull_2d_above` (line 965) → `triangle_mesh.rs:915`
+- [v] `its_make_xoy_center_rect` (line 970) → `triangle_mesh.rs:941` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_cube` (line 985) → `triangle_mesh.rs:972` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_prism` (line 997) → `triangle_mesh.rs:992` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_cylinder` (line 1019) → `triangle_mesh.rs:1017` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_thread` (line 1066) → `triangle_mesh.rs:1076` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_cone` (line 1142) → `triangle_mesh.rs:1160` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_frustum_dowel` (line 1170) → `triangle_mesh.rs:1221` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_pyramid` (line 1223) → `triangle_mesh.rs:1302` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_sphere` (line 1246) → `triangle_mesh.rs:1318` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [v] `its_make_snap` (line 1300) → `triangle_mesh.rs:1397` — R915: tests/triangle_mesh_makers_native_parity.rs: 32 meshes from 10 makers against the pin's TriangleMesh.cpp, every vertex bit for bit and every face (gate ITS_MAKE_FLOAT_STEP)
+- [x] `its_make_groove_plane` (line 1418) → `triangle_mesh.rs:1630`
 - [~] `its_convex_hull` (line 1737) → `model.rs` — not in the paired file
-- [x] `its_reverse_all_facets` (line 1821) → `triangle_mesh.rs:1444`
-- [x] `its_merge` (line 1827) → `triangle_mesh.rs:1455`
-- [~] `its_merge` (line 1839) → `paint_reproject.rs, slices_to_triangle_mesh.rs` — not in the paired file
-- [~] `its_merge` (line 1849) → `paint_reproject.rs, slices_to_triangle_mesh.rs` — not in the paired file
-- [x] `its_volume` (line 1858) → `triangle_mesh.rs:1504`
-- [x] `its_average_edge_length` (line 1879) → `triangle_mesh.rs:1539`
-- [x] `its_split` (line 1894) → `triangle_mesh.rs:1561`
-- [x] `its_number_of_patches` (line 1900) → `triangle_mesh.rs:1570`
-- [~] `its_number_of_patches` (line 1904) → `mesh_split_impl.rs` — not in the paired file
-- [x] `its_is_splittable` (line 1910) → `triangle_mesh.rs:1587`
-- [~] `its_is_splittable` (line 1914) → `mesh_split_impl.rs` — not in the paired file
-- [~] `its_num_open_edges` (line 1919) → `triangle_mesh.rs:1618` — divergent
-- [x] `its_face_neighbors` (line 1970) → `triangle_mesh.rs:1625`
-- [x] `its_face_neighbors_par` (line 1975) → `triangle_mesh.rs:1632`
-- [x] `its_face_normals` (line 1980) → `triangle_mesh.rs:1639`
-- [x] `big_endian_reverse_quads` (line 1990) → `triangle_mesh.rs:1847`
-- [~] `big_endian_reverse_quads` (line 1992) → `triangle_mesh.rs` — another overload of the name is ported
-- [~] `its_write_stl_ascii` (line 2001) → `triangle_mesh.rs` — another overload of the name is ported
-- [~] `its_write_stl_binary` (line 2028) → `triangle_mesh.rs` — another overload of the name is ported
+- [x] `its_reverse_all_facets` (line 1821) → `triangle_mesh.rs:1889`
+- [x] `its_merge` (line 1827) → `triangle_mesh.rs:1900`
+- [x] `its_merge` (line 1839) → `triangle_mesh.rs:1921`
+- [x] `its_merge` (line 1849) → `triangle_mesh.rs:1945`
+- [x] `its_volume` (line 1858) → `triangle_mesh.rs:1959`
+- [x] `its_average_edge_length` (line 1879) → `triangle_mesh.rs:1994`
+- [x] `its_split` (line 1894) → `triangle_mesh.rs:2016`
+- [x] `its_number_of_patches` (line 1900) → `triangle_mesh.rs:2025`
+- [x] `its_number_of_patches` (line 1904) → `triangle_mesh.rs:2035`
+- [x] `its_is_splittable` (line 1910) → `triangle_mesh.rs:2047`
+- [x] `its_is_splittable` (line 1914) → `triangle_mesh.rs:2057`
+- [x] `its_num_open_edges` (line 1919) → `triangle_mesh.rs:2085`
+- [x] `its_face_neighbors` (line 1970) → `triangle_mesh.rs:2121`
+- [x] `its_face_neighbors_par` (line 1975) → `triangle_mesh.rs:2128`
+- [x] `its_face_normals` (line 1980) → `triangle_mesh.rs:2135`
+- [x] `big_endian_reverse_quads` (line 1990) → `triangle_mesh.rs:2345`
+- [x] `big_endian_reverse_quads` (line 1992) → `triangle_mesh.rs:2350`
+- [x] `its_write_stl_ascii` (line 2001) → `triangle_mesh.rs:2362`
+- [x] `its_write_stl_binary` (line 2028) → `triangle_mesh.rs:2461`
 
 **class `RepairedMeshErrors`**
 
@@ -13570,69 +13570,69 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 
 **class `TriangleMesh`**
 
-- [x] `clear` (line 103) → `triangle_mesh.rs:2700`
+- [x] `clear` (line 103) → `triangle_mesh.rs:3622`
 - [ ] `rotate_x` (line 116) → `triangle_mesh.rs`
 - [ ] `rotate_y` (line 117) → `triangle_mesh.rs`
 - [~] `rotate_z` (line 118) → `geometry/transform.rs` — not in the paired file
-- [ ] `mirror_x` (line 120) → `triangle_mesh.rs`
-- [ ] `mirror_y` (line 121) → `triangle_mesh.rs`
-- [ ] `mirror_z` (line 122) → `triangle_mesh.rs`
-- [x] `size` (line 141) → `triangle_mesh.rs:2484`
-- [x] `center` (line 143) → `triangle_mesh.rs:2479`
+- [x] `mirror_x` (line 120) → `triangle_mesh.rs:2931`
+- [x] `mirror_y` (line 121) → `triangle_mesh.rs:2936`
+- [x] `mirror_z` (line 122) → `triangle_mesh.rs:2941`
+- [x] `size` (line 141) → `triangle_mesh.rs:3406`
+- [x] `center` (line 143) → `triangle_mesh.rs:3401`
 - [~] `facets_count` (line 149) → `model.rs, texture_to_color/tri_mesh.rs` — not in the paired file
 - [~] `empty` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `release_optional` (line 159) → `triangle_mesh.rs`
-- [ ] `restore_optional` (line 161) → `triangle_mesh.rs`
+- [x] `release_optional` (line 159) → `triangle_mesh.rs:3031`
+- [x] `restore_optional` (line 161) → `triangle_mesh.rs:3036`
 - [~] `set_init_shift` (line 165) → `model.rs, texture_painting.rs` — not in the paired file
 - [~] `get_init_shift` (line 166) → `model.rs` — not in the paired file
 - [ ] `from_stl` (line 204) → `triangle_mesh.rs`
 - [~] `ReadSTLFile` (line 237) → `stl.rs` — not in the paired file
 - [~] `write_ascii` (line 245) → `stl.rs` — not in the paired file
 - [~] `write_binary` (line 250) → `stl.rs` — not in the paired file
-- [~] `volume` (line 255) → `triangle_mesh.rs:2515` — divergent
-- [ ] `WriteOBJFile` (line 262) → `triangle_mesh.rs`
-- [x] `scale` (line 267) → `triangle_mesh.rs:2586`
-- [~] `scale` (line 272) → `bounding_box.rs, clipper2/clipper_core.rs, clipper2/clipper_engine.rs` — not in the paired file
-- [~] `translate` (line 296) → `triangle_mesh.rs:2529` — divergent
-- [~] `translate` (line 306) → `bounding_box.rs, emboss.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `rotate` (line 311) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [~] `rotate` (line 325) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `volume` (line 255) → `triangle_mesh.rs:3437` — divergent
+- [x] `WriteOBJFile` (line 262) → `triangle_mesh.rs:2946`
+- [x] `scale` (line 267) → `triangle_mesh.rs:2840`
+- [~] `scale` (line 272) → `triangle_mesh.rs:3508` — divergent
+- [~] `translate` (line 296) → `triangle_mesh.rs:3451` — divergent
+- [x] `translate` (line 306) → `triangle_mesh.rs:2827`
+- [~] `rotate` (line 311) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `rotate` (line 325) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `mirror` (line 336) → `model.rs` — not in the paired file
 - [~] `transform` (line 362) → `brim_ears_point.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [~] `transform` (line 374) → `triangle_mesh.rs:2448` — divergent
+- [~] `transform` (line 374) → `triangle_mesh.rs:3370` — divergent
 - [~] `flip_triangles` (line 386) → `model.rs` — not in the paired file
-- [ ] `align_to_origin` (line 401) → `triangle_mesh.rs`
-- [~] `rotate` (line 406) → `bounding_box.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [x] `align_to_origin` (line 401) → `triangle_mesh.rs:2952`
+- [x] `rotate` (line 406) → `triangle_mesh.rs:2960`
 - [~] `is_splittable` (line 419) → `model.rs` — not in the paired file
 - [~] `split` (line 424) → `clipper2/clipper_engine.rs, model.rs` — not in the paired file
 - [~] `split_and_save_relationship` (line 443) → `model.rs` — not in the paired file
-- [x] `merge` (line 467) → `triangle_mesh.rs:2459`
+- [x] `merge` (line 467) → `triangle_mesh.rs:3381`
 - [ ] `horizontal_projection` (line 475) → `triangle_mesh.rs`
-- [~] `convex_hull` (line 481) → `build_volume.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `bounding_box` (line 492) → `build_volume.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [x] `convex_hull` (line 481) → `triangle_mesh.rs:2972`
+- [~] `bounding_box` (line 492) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `transformed_bounding_box` (line 501) → `model.rs` — not in the paired file
-- [~] `transformed_bounding_box` (line 509) → `model.rs` — not in the paired file
+- [x] `transformed_bounding_box` (line 509) → `triangle_mesh.rs:2853`
 - [~] `convex_hull_3d` (line 560) → `geometry/convex_hull.rs, model.rs` — not in the paired file
-- [ ] `extract_son_mesh` (line 568) → `triangle_mesh.rs`
-- [~] `slice` (line 592) → `print_object.rs, sla/support_tree.rs, slicer.rs` — not in the paired file
-- [ ] `memsize` (line 599) → `triangle_mesh.rs`
+- [x] `extract_son_mesh` (line 568) → `triangle_mesh.rs:2986`
+- [x] `slice` (line 592) → `triangle_mesh.rs:3017`
+- [~] `memsize` (line 599) → `triangle_mesh.rs:3026` — partial
 
 **class `TriangleMeshStats`**
 
-- [x] `clear` (line 65) → `triangle_mesh.rs:179`
-- [x] `merge` (line 67) → `triangle_mesh.rs:185`
-- [x] `manifold` (line 89) → `triangle_mesh.rs:211`
-- [ ] `has_open_edges` (line 90) → `triangle_mesh.rs`
-- [ ] `has_any_issue` (line 91) → `triangle_mesh.rs`
-- [x] `repaired` (line 92) → `triangle_mesh.rs:217`
+- [x] `clear` (line 65) → `triangle_mesh.rs:188`
+- [x] `merge` (line 67) → `triangle_mesh.rs:194`
+- [x] `manifold` (line 89) → `triangle_mesh.rs:224`
+- [x] `has_open_edges` (line 90) → `triangle_mesh.rs:230`
+- [x] `has_any_issue` (line 91) → `triangle_mesh.rs:236`
+- [x] `repaired` (line 92) → `triangle_mesh.rs:242`
 
 **class `VertexFaceIndex`**
 
-- [x] `clear` (line 185) → `triangle_mesh.rs:2058`
-- [x] `begin` (line 188) → `triangle_mesh.rs:2065`
-- [x] `end` (line 189) → `triangle_mesh.rs:2068`
-- [x] `count` (line 191) → `triangle_mesh.rs:2074`
-- [x] `create` (line 1945) → `triangle_mesh.rs:2086`
+- [x] `clear` (line 185) → `triangle_mesh.rs:2584`
+- [x] `begin` (line 188) → `triangle_mesh.rs:2591`
+- [x] `end` (line 189) → `triangle_mesh.rs:2594`
+- [x] `count` (line 191) → `triangle_mesh.rs:2600`
+- [x] `create` (line 1945) → `triangle_mesh.rs:2612`
 
 ### `TriangleMeshDeal` (.cpp+.hpp)
 

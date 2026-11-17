@@ -10,8 +10,9 @@
 //! - Graph node addressing is index-based: left nodes are `0..L`, right nodes
 //!   `L..L+R`, then group/source/sink nodes; this matches the C++ layout exactly.
 //! - `boost::multiprecision::uint128_t` -> Rust native `u128`.
-//! - The `#if DEBUG_MULTI_NOZZLE_MCMF 0` block in the C++ is NOT compiled, so it
-//!   is intentionally omitted here.
+//! - The `#if DEBUG_MULTI_NOZZLE_MCMF` block (0 in the hpp, so not compiled in
+//!   C++) is ported in the module `debug_multi_nozzle_mcmf`, which the engine
+//!   never calls.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -26,6 +27,27 @@ pub mod max_flow_graph {
     pub const INF: i32 = i32::MAX;
     // ToolOrderUtils.hpp:21  const int INVALID_ID = -1;
     pub const INVALID_ID: i32 = -1;
+    // ToolOrderUtils.hpp:22  // Upper bound for MCMF edge cost to prevent int overflow in SPFA causing infinite loops
+    // ToolOrderUtils.hpp:23  constexpr int MCMF_MAX_EDGE_COST = 10000000;
+    pub const MCMF_MAX_EDGE_COST: i32 = 10000000;
+}
+
+/// R917: `TOOL_ORDER_UTILS_PIN` (faithful, on unless `=0`) brings this file to
+/// ToolOrderUtils.cpp at the pin (56a57d0): the MCMF edge-cost bound in
+/// `get_distance` (:193-201), `use_forcast = false` in
+/// `reorder_filaments_for_minimum_flush_volume_base` (:1095), `int += float`
+/// cost accumulation (the sum is taken in float, then truncated), and the
+/// guards of `reorder_filaments_for_multi_nozzle_extruder` (:1546-1749). The
+/// off arm is the port of the earlier source, kept byte for byte.
+fn tool_order_utils_pin() -> bool {
+    crate::faithful_gate("TOOL_ORDER_UTILS_PIN")
+}
+
+/// C++ `int cost; cost += float_value;` (usual arithmetic conversions): the int
+/// is converted to float, the sum is taken in float and truncated back to int.
+#[inline]
+fn int_add_assign_float(cost: &mut i32, value: f32) {
+    *cost = (*cost as f32 + value) as i32;
 }
 
 // Re-export for callers that referenced the crate-level alias historically.
@@ -353,11 +375,16 @@ impl MinCostMaxFlow {
         if self.l_nodes[idx_in_left as usize] == -1 {
             // ToolOrderUtils.cpp:196  return 0;
             return 0;
-            // ToolOrderUtils.cpp:197-202  //TODO: test more here (dead code after the return above)
-            // (intentionally not ported: unreachable in C++)
         }
 
-        // ToolOrderUtils.cpp:205  return matrix[l_nodes[idx_in_left]][r_nodes[idx_in_right]];
+        if tool_order_utils_pin() {
+            // ToolOrderUtils.cpp:199  float val = matrix[l_nodes[idx_in_left]][r_nodes[idx_in_right]];
+            let val: f32 = self.matrix[self.l_nodes[idx_in_left as usize] as usize]
+                [self.r_nodes[idx_in_right as usize] as usize];
+            // ToolOrderUtils.cpp:200  return std::min(static_cast<int>(val), MaxFlowGraph::MCMF_MAX_EDGE_COST);
+            return std::cmp::min(val as i32, max_flow_graph::MCMF_MAX_EDGE_COST);
+        }
+        // Earlier source: return matrix[l_nodes[idx_in_left]][r_nodes[idx_in_right]];
         self.matrix[self.l_nodes[idx_in_left as usize] as usize]
             [self.r_nodes[idx_in_right as usize] as usize] as i32
     }
@@ -1818,22 +1845,43 @@ fn solve_extruder_order(
     path
 }
 
-// ToolOrderUtils.cpp:972  template<class T> static std::vector<T> collect_filaments_in_groups(...)
-fn collect_filaments_in_groups_u32(group: &HashSet<u32>, filament_list: &[u32]) -> Vec<u32> {
-    // ToolOrderUtils.cpp:974  std::vector<T>ret;
-    let mut ret: Vec<u32> = Vec::new();
-    // ToolOrderUtils.cpp:975  ret.reserve(group.size());
+/// The `static_cast<T>(f)` of `collect_filaments_in_groups<T>`, for the two
+/// instantiations the file uses (`unsigned int` and `int`).
+trait FilamentIdCast {
+    fn from_filament_id(f: u32) -> Self;
+}
+impl FilamentIdCast for u32 {
+    fn from_filament_id(f: u32) -> Self {
+        f
+    }
+}
+impl FilamentIdCast for i32 {
+    fn from_filament_id(f: u32) -> Self {
+        f as i32
+    }
+}
+
+// ToolOrderUtils.cpp:967  template<class T>
+// ToolOrderUtils.cpp:968  static std::vector<T> collect_filaments_in_groups(const std::unordered_set<unsigned int>& group, const std::vector<unsigned int>& filament_list) {
+fn collect_filaments_in_groups<T: FilamentIdCast>(group: &HashSet<u32>, filament_list: &[u32]) -> Vec<T> {
+    // ToolOrderUtils.cpp:969  std::vector<T>ret;
+    let mut ret: Vec<T> = Vec::new();
+    // ToolOrderUtils.cpp:970  ret.reserve(group.size());
     ret.reserve(group.len());
-    // ToolOrderUtils.cpp:976  for (auto& f : filament_list)
+    // ToolOrderUtils.cpp:971  for (auto& f : filament_list) {
     for &f in filament_list {
-        // ToolOrderUtils.cpp:977  if (auto iter = group.find(f); iter != group.end())
+        // ToolOrderUtils.cpp:972  if (auto iter = group.find(f); iter != group.end())
         if group.contains(&f) {
-            // ToolOrderUtils.cpp:978  ret.emplace_back(static_cast<T>(f));
-            ret.push(f);
+            // ToolOrderUtils.cpp:973  ret.emplace_back(static_cast<T>(f));
+            ret.push(T::from_filament_id(f));
         }
     }
-    // ToolOrderUtils.cpp:980  return ret;
+    // ToolOrderUtils.cpp:975  return ret;
     ret
+}
+
+fn collect_filaments_in_groups_u32(group: &HashSet<u32>, filament_list: &[u32]) -> Vec<u32> {
+    collect_filaments_in_groups::<u32>(group, filament_list)
 }
 
 // ToolOrderUtils.cpp:983  // get best filament order of single nozzle
@@ -1907,7 +1955,8 @@ fn reorder_filaments_for_minimum_flush_volume_base(
     filament_sequences: Option<&mut Vec<Vec<u32>>>,
     initial_filament_id: Option<u32>,
 ) -> i32 {
-    // ToolOrderUtils.cpp:1024  constexpr int max_n_with_forcast = 5;
+    let pin = tool_order_utils_pin();
+    // ToolOrderUtils.cpp:1019  constexpr int max_n_with_forcast = 5;
     const MAX_N_WITH_FORCAST: usize = 5;
     // ToolOrderUtils.cpp:1025  using uint128_t = boost::multiprecision::uint128_t; -> u128
 
@@ -2014,8 +2063,12 @@ fn reorder_filaments_for_minimum_flush_volume_base(
             for &f in &sequence_in_group {
                 // ToolOrderUtils.cpp:1080  if(prev)
                 if let Some(p) = prev {
-                    // ToolOrderUtils.cpp:1081  cost += flush_matrix[*prev][f];
-                    cost += flush_matrix[p as usize][f as usize] as i32;
+                    // ToolOrderUtils.cpp:1076  cost += flush_matrix[*prev][f];
+                    if pin {
+                        int_add_assign_float(&mut cost, flush_matrix[p as usize][f as usize]);
+                    } else {
+                        cost += flush_matrix[p as usize][f as usize] as i32;
+                    }
                 }
                 // ToolOrderUtils.cpp:1082  prev = f;
                 prev = Some(f);
@@ -2048,9 +2101,15 @@ fn reorder_filaments_for_minimum_flush_volume_base(
         // ToolOrderUtils.cpp:1098  std::vector<unsigned int> filament_used_next_layer = collect_filaments_in_groups<unsigned int>(filament_sets, next_lf);
         let filament_used_next_layer = collect_filaments_in_groups_u32(&filament_sets, &next_lf);
 
-        // ToolOrderUtils.cpp:1100  bool use_forcast = (filament_used.size() <= max_n_with_forcast && filament_used_next_layer.size() <= max_n_with_forcast);
-        let use_forcast = filament_used.len() <= MAX_N_WITH_FORCAST
-            && filament_used_next_layer.len() <= MAX_N_WITH_FORCAST;
+        // ToolOrderUtils.cpp:1095  bool use_forcast = false;
+        // (the earlier source had `filament_used.size() <= max_n_with_forcast &&
+        // filament_used_next_layer.size() <= max_n_with_forcast`, the off arm)
+        let use_forcast = if pin {
+            false
+        } else {
+            filament_used.len() <= MAX_N_WITH_FORCAST
+                && filament_used_next_layer.len() <= MAX_N_WITH_FORCAST
+        };
         // ToolOrderUtils.cpp:1101  float tmp_cost = 0;
         let mut tmp_cost: f32 = 0.0;
         // ToolOrderUtils.cpp:1102  std::vector<unsigned int> sequence;
@@ -2094,11 +2153,15 @@ fn reorder_filaments_for_minimum_flush_volume_base(
             curr_filament_id = Some(*sequence.last().unwrap());
         }
 
-        // ToolOrderUtils.cpp:1119  cost += tmp_cost;
-        cost += tmp_cost as i32;
+        // ToolOrderUtils.cpp:1114  cost += tmp_cost;
+        if pin {
+            int_add_assign_float(&mut cost, tmp_cost);
+        } else {
+            cost += tmp_cost as i32;
+        }
     }
 
-    // ToolOrderUtils.cpp:1122  return cost;
+    // ToolOrderUtils.cpp:1117  return cost;
     cost
 }
 
@@ -2112,8 +2175,9 @@ pub fn reorder_filaments_for_minimum_flush_volume(
     filament_sequences: Option<&mut Vec<Vec<u32>>>,
     nozzle_status: &HashMap<i32, i32>,
 ) -> i32 {
-    // ToolOrderUtils.cpp:1133  //only when layer filament num <= 5,we do forcast
-    // ToolOrderUtils.cpp:1134  constexpr int max_n_with_forcast = 5;
+    let pin = tool_order_utils_pin();
+    // ToolOrderUtils.cpp:1128  //only when layer filament num <= 5,we do forcast
+    // ToolOrderUtils.cpp:1129  constexpr int max_n_with_forcast = 5;
     const MAX_N_WITH_FORCAST: usize = 5;
     // ToolOrderUtils.cpp:1135  int cost = 0;
     let mut cost = 0;
@@ -2253,8 +2317,12 @@ pub fn reorder_filaments_for_minimum_flush_volume(
                     // ToolOrderUtils.cpp:1213  prev = f;
                     prev = Some(f);
                 }
-                // ToolOrderUtils.cpp:1215  cost += tmp_cost;
-                cost += tmp_cost as i32;
+                // ToolOrderUtils.cpp:1210  cost += tmp_cost;
+                if pin {
+                    int_add_assign_float(&mut cost, tmp_cost);
+                } else {
+                    cost += tmp_cost as i32;
+                }
 
                 // ToolOrderUtils.cpp:1217  if (!sequence_in_group.empty())
                 if !sequence_in_group.is_empty() {
@@ -2334,8 +2402,12 @@ pub fn reorder_filaments_for_minimum_flush_volume(
                 // ToolOrderUtils.cpp:1252  current_extruder_id = sequence.back();
                 current_extruder_id = Some(*sequence.last().unwrap());
             }
-            // ToolOrderUtils.cpp:1253  cost += tmp_cost;
-            cost += tmp_cost as i32;
+            // ToolOrderUtils.cpp:1248  cost += tmp_cost;
+            if pin {
+                int_add_assign_float(&mut cost, tmp_cost);
+            } else {
+                cost += tmp_cost as i32;
+            }
         }
     }
 
@@ -2422,12 +2494,792 @@ pub fn reorder_filaments_for_minimum_flush_volume(
     cost
 }
 
-// ToolOrderUtils.cpp:1306-1549  #if DEBUG_MULTI_NOZZLE_MCMF (== 0): NOT COMPILED.
-// Intentionally omitted to match the C++ preprocessor state.
+// ToolOrderUtils.cpp:1299-1544  #if DEBUG_MULTI_NOZZLE_MCMF ... #endif
+//
+// ToolOrderUtils.hpp:13 defines DEBUG_MULTI_NOZZLE_MCMF as 0, so the C++ build
+// leaves these functions out and the engine never calls them; they are ported
+// here, in a module named after the switch, so the whole file has a Rust
+// counterpart. The names the hpp declares inside the `#if` (:195-213) are
+// `pub`; the `static` ones stay private to the module.
+pub mod debug_multi_nozzle_mcmf {
+    use super::{
+        collect_filaments_in_groups, reorder_filaments_for_minimum_flush_volume, FlushMatrix, GeneralMinCostSolver,
+    };
+    use std::collections::{BTreeMap, HashMap, HashSet};
 
-// ToolOrderUtils.cpp:1551  int reorder_filaments_for_multi_nozzle_extruder(...)
+    // ToolOrderUtils.cpp:1302  //solve the problem by min cost max flow
+    // ToolOrderUtils.cpp:1303  static std::vector<std::vector<int>> solve_extruder_order_with_MCMF(...)
+    fn solve_extruder_order_with_mcmf(
+        wipe_volumes: &[Vec<f32>],
+        curr_layer_filaments: &[i32],
+        nozzle_state: &[i32],
+        min_cost: Option<&mut f32>,
+    ) -> Vec<Vec<i32>> {
+        // ToolOrderUtils.cpp:1308  std::vector<std::vector<int>>ret;
+        let mut ret: Vec<Vec<i32>> = Vec::new();
+        // ToolOrderUtils.cpp:1309  std::vector<int>l_nodes = nozzle_state;
+        let mut l_nodes: Vec<i32> = nozzle_state.to_vec();
+        // ToolOrderUtils.cpp:1310  std::vector<int>r_nodes = curr_layer_filaments;
+        let mut r_nodes: Vec<i32> = curr_layer_filaments.to_vec();
+        // ToolOrderUtils.cpp:1311  std::sort(r_nodes.begin(), r_nodes.end());
+        //   (ints: equal elements are indistinguishable, so any sort gives the same vector)
+        r_nodes.sort_unstable();
+
+        // ToolOrderUtils.cpp:1313  int nozzle_num = nozzle_state.size();
+        let nozzle_num = nozzle_state.len() as i32;
+        // ToolOrderUtils.cpp:1314  int filament_num = curr_layer_filaments.size();
+        let filament_num = curr_layer_filaments.len() as i32;
+        // ToolOrderUtils.cpp:1315  int epochs = std::ceil(filament_num / (double)(nozzle_num));
+        let epochs = (filament_num as f64 / nozzle_num as f64).ceil() as i32;
+        // ToolOrderUtils.cpp:1316  for (int i = 0; i < epochs; ++i) {
+        for _i in 0..epochs {
+            // ToolOrderUtils.cpp:1317  GeneralMinCostSolver s(wipe_volumes, l_nodes, r_nodes);
+            let mut s = GeneralMinCostSolver::new(wipe_volumes, &l_nodes, &r_nodes);
+            // ToolOrderUtils.cpp:1318  auto match = s.solve();
+            let r#match = s.solve();
+            // ToolOrderUtils.cpp:1319  ret.emplace_back(match);
+            ret.push(r#match.clone());
+            // ToolOrderUtils.cpp:1320  l_nodes = match;
+            l_nodes = r#match.clone();
+
+            // ToolOrderUtils.cpp:1322-1324  auto remove_iter = std::remove_if(r_nodes..., [match](auto item) { return std::find(match..., item) != match.end(); });
+            // ToolOrderUtils.cpp:1325  r_nodes.erase(remove_iter, r_nodes.end());
+            r_nodes.retain(|item| !r#match.contains(item));
+        }
+
+        // ToolOrderUtils.cpp:1328  if (min_cost) {
+        if let Some(min_cost) = min_cost {
+            // ToolOrderUtils.cpp:1329  float cost = 0;
+            let mut cost: f32 = 0.0;
+            // ToolOrderUtils.cpp:1330  std::vector<int>nozzle_filament = nozzle_state;
+            let mut nozzle_filament: Vec<i32> = nozzle_state.to_vec();
+            // ToolOrderUtils.cpp:1331  for (int seq = 0; seq < ret.size(); ++seq) {
+            for seq in 0..ret.len() {
+                // ToolOrderUtils.cpp:1332  for (int id = 0; id < ret[seq].size(); ++id) {
+                for id in 0..ret[seq].len() {
+                    // ToolOrderUtils.cpp:1333  if (ret[seq][id] != -1) {
+                    if ret[seq][id] != -1 {
+                        // ToolOrderUtils.cpp:1334-1335  if (nozzle_filament[id] != -1) cost += wipe_volumes[nozzle_filament[id]][ret[seq][id]];
+                        if nozzle_filament[id] != -1 {
+                            cost += wipe_volumes[nozzle_filament[id] as usize][ret[seq][id] as usize];
+                        }
+                        // ToolOrderUtils.cpp:1336  nozzle_filament[id] = ret[seq][id];
+                        nozzle_filament[id] = ret[seq][id];
+                    }
+                }
+            }
+            // ToolOrderUtils.cpp:1340  *min_cost = cost;
+            *min_cost = cost;
+        }
+
+        // ToolOrderUtils.cpp:1343  return ret;
+        ret
+    }
+
+    // ToolOrderUtils.cpp:1346  // get best filament order of multiple nozzle
+    // ToolOrderUtils.cpp:1347  std::vector<std::vector<int>> get_extruders_order(...)
+    pub fn get_extruders_order(
+        wipe_volumes: &[Vec<f32>],
+        curr_layer_filaments: &[i32],
+        nozzle_state: &[i32],
+        min_cost: Option<&mut f32>,
+    ) -> Vec<Vec<i32>> {
+        // ToolOrderUtils.cpp:1352  return solve_extruder_order_with_MCMF(wipe_volumes, curr_layer_filaments, nozzle_state, min_cost);
+        solve_extruder_order_with_mcmf(wipe_volumes, curr_layer_filaments, nozzle_state, min_cost)
+    }
+
+    // ToolOrderUtils.cpp:1356  // get nozzle match data when user set the filament sequence
+    // ToolOrderUtils.cpp:1357  static std::vector<std::vector<int>> get_nozzle_match_in_given_order(...)
+    fn get_nozzle_match_in_given_order(
+        wipe_volumes: &[Vec<f32>],
+        layer_filaments_sequence: &[u32],
+        nozzle_state: &[i32],
+        min_cost: Option<&mut f32>,
+    ) -> Vec<Vec<i32>> {
+        // ToolOrderUtils.cpp:1362  std::vector<std::vector<int>> ret;
+        let mut ret: Vec<Vec<i32>> = Vec::new();
+        // ToolOrderUtils.cpp:1363  std::vector<int>state = nozzle_state;
+        let mut state: Vec<i32> = nozzle_state.to_vec();
+        // ToolOrderUtils.cpp:1364  std::vector<int>filament_nozzles; //nozzles where each filament is placed
+        let mut filament_nozzles: Vec<i32> = Vec::new();
+
+        // ToolOrderUtils.cpp:1366  float cost = 0;
+        let mut cost: f32 = 0.0;
+
+        // ToolOrderUtils.cpp:1368  for (auto f : layer_filaments_sequence) {
+        for &f in layer_filaments_sequence {
+            // ToolOrderUtils.cpp:1369  float min_flush = std::numeric_limits<float>::max();
+            let mut min_flush = f32::MAX;
+            // ToolOrderUtils.cpp:1370  int min_flush_idx = -1;
+            let mut min_flush_idx: i32 = -1;
+            // ToolOrderUtils.cpp:1371  for (size_t idx = 0; idx < state.size(); ++idx) {
+            for idx in 0..state.len() {
+                // ToolOrderUtils.cpp:1372  float flush = (state[idx] == -1 ? 0 : wipe_volumes[state[idx]][f]);
+                let flush: f32 = if state[idx] == -1 { 0.0 } else { wipe_volumes[state[idx] as usize][f as usize] };
+                // ToolOrderUtils.cpp:1373  if (flush < min_flush) {
+                if flush < min_flush {
+                    // ToolOrderUtils.cpp:1374  min_flush = flush;
+                    min_flush = flush;
+                    // ToolOrderUtils.cpp:1375  min_flush_idx = idx;
+                    min_flush_idx = idx as i32;
+                }
+            }
+            // ToolOrderUtils.cpp:1378  cost += min_flush;
+            cost += min_flush;
+            // ToolOrderUtils.cpp:1379  state[min_flush_idx] = f;
+            state[min_flush_idx as usize] = f as i32;
+            // ToolOrderUtils.cpp:1380  filament_nozzles.emplace_back(min_flush_idx);
+            filament_nozzles.push(min_flush_idx);
+        }
+
+        // ToolOrderUtils.cpp:1383  assert(filament_nozzles.size() == layer_filaments_sequence.size());
+        debug_assert_eq!(filament_nozzles.len(), layer_filaments_sequence.len());
+        // ToolOrderUtils.cpp:1384  int prev = -1;
+        let mut prev: i32 = -1;
+        // ToolOrderUtils.cpp:1385  for (int idx = 0; idx < filament_nozzles.size(); ++idx) {
+        for idx in 0..filament_nozzles.len() {
+            // ToolOrderUtils.cpp:1386-1388  if (prev == -1 || filament_nozzles[idx] <= prev) ret.emplace_back(std::vector<int>(nozzle_state.size(), -1));
+            if prev == -1 || filament_nozzles[idx] <= prev {
+                ret.push(vec![-1; nozzle_state.len()]);
+            }
+            // ToolOrderUtils.cpp:1389  ret.back()[filament_nozzles[idx]] = layer_filaments_sequence[idx];
+            ret.last_mut().unwrap()[filament_nozzles[idx] as usize] = layer_filaments_sequence[idx] as i32;
+            // ToolOrderUtils.cpp:1390  prev = filament_nozzles[idx];
+            prev = filament_nozzles[idx];
+        }
+
+        // ToolOrderUtils.cpp:1393-1394  if (min_cost) *min_cost = cost;
+        if let Some(min_cost) = min_cost {
+            *min_cost = cost;
+        }
+
+        // ToolOrderUtils.cpp:1396  return ret;
+        ret
+    }
+
+    // ToolOrderUtils.cpp:1398  int reorder_filaments_for_multi_nozzle_extruder(const std::vector<unsigned int>& filament_lists,
+    //                              const std::vector<int>& filament_maps, ..., int multi_nozzle_extruder_id,
+    //                              int multi_nozzle_num, layer_sequences = nullptr, nozzle_match_per_layer = nullptr)
+    #[allow(clippy::too_many_arguments)]
+    pub fn reorder_filaments_for_multi_nozzle_extruder(
+        filament_lists: &[u32],
+        filament_maps: &[i32],
+        layer_filaments: &[Vec<u32>],
+        flush_matrix: &[FlushMatrix],
+        get_custom_seq: Option<&dyn Fn(i32, &mut Vec<i32>) -> bool>,
+        multi_nozzle_extruder_id: i32,
+        multi_nozzle_num: i32,
+        layer_sequences: Option<&mut Vec<Vec<u32>>>,
+        nozzle_match_per_layer: Option<&mut Vec<Vec<Vec<i32>>>>,
+    ) -> i32 {
+        // ToolOrderUtils.cpp:1408  assert(0 <= multi_nozzle_extruder_id && multi_nozzle_extruder_id <= 1);
+        debug_assert!(0 <= multi_nozzle_extruder_id && multi_nozzle_extruder_id <= 1);
+
+        // ToolOrderUtils.cpp:1410  int fixed_nozzle_extruder_id = 1 - multi_nozzle_extruder_id;
+        let fixed_nozzle_extruder_id = 1 - multi_nozzle_extruder_id;
+
+        // ToolOrderUtils.cpp:1412  std::vector<std::unordered_set<unsigned int>>groups(2); //save the grouped filaments
+        let mut groups: Vec<HashSet<u32>> = vec![HashSet::new(), HashSet::new()];
+        // ToolOrderUtils.cpp:1413  std::map<size_t, std::vector<unsigned int>>custom_layer_sequence_map;
+        let mut custom_layer_sequence_map: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
+
+        // ToolOrderUtils.cpp:1415  for (int i = 0; i < filament_maps.size(); ++i) {
+        for i in 0..filament_maps.len() {
+            // ToolOrderUtils.cpp:1416-1417  if (filament_maps[i] == 0) groups[0].insert(filament_lists[i]);
+            if filament_maps[i] == 0 {
+                groups[0].insert(filament_lists[i]);
+            }
+            // ToolOrderUtils.cpp:1418-1419  if (filament_maps[i] == 1) groups[1].insert(filament_lists[i]);
+            if filament_maps[i] == 1 {
+                groups[1].insert(filament_lists[i]);
+            }
+        }
+
+        // ToolOrderUtils.cpp:1422  // store custom layer sequence
+        // ToolOrderUtils.cpp:1423  for (size_t layer = 0; layer < layer_filaments.size(); ++layer) {
+        for layer in 0..layer_filaments.len() {
+            // ToolOrderUtils.cpp:1424  const auto& curr_lf = layer_filaments[layer];
+            let curr_lf = &layer_filaments[layer];
+            // ToolOrderUtils.cpp:1425  std::vector<int>custom_filament_seq;
+            let mut custom_filament_seq: Vec<i32> = Vec::new();
+            // ToolOrderUtils.cpp:1426  if (get_custom_seq && (*get_custom_seq)(layer, custom_filament_seq) && !custom_filament_seq.empty()) {
+            if let Some(gcs) = get_custom_seq {
+                if gcs(layer as i32, &mut custom_filament_seq) && !custom_filament_seq.is_empty() {
+                    // ToolOrderUtils.cpp:1427  std::vector<unsigned int> unsign_custom_extruder_seq;
+                    let mut unsign_custom_extruder_seq: Vec<u32> = Vec::new();
+                    // ToolOrderUtils.cpp:1428  for (int extruder : custom_filament_seq) {
+                    for &extruder in &custom_filament_seq {
+                        // ToolOrderUtils.cpp:1429  unsigned int unsign_extruder = static_cast<unsigned int>(extruder) - 1;
+                        let unsign_extruder = (extruder as u32).wrapping_sub(1);
+                        // ToolOrderUtils.cpp:1430-1432  if (std::find(curr_lf..., unsign_extruder) != curr_lf.end()) emplace_back
+                        if curr_lf.contains(&unsign_extruder) {
+                            unsign_custom_extruder_seq.push(unsign_extruder);
+                        }
+                    }
+                    // ToolOrderUtils.cpp:1434  assert(curr_lf.size() == unsign_custom_extruder_seq.size());
+                    debug_assert_eq!(curr_lf.len(), unsign_custom_extruder_seq.len());
+                    // ToolOrderUtils.cpp:1435  custom_layer_sequence_map[layer] = unsign_custom_extruder_seq;
+                    custom_layer_sequence_map.insert(layer, unsign_custom_extruder_seq);
+                }
+            }
+        }
+
+        // ToolOrderUtils.cpp:1439  float cost = 0;
+        let mut cost: f32 = 0.0;
+        // ToolOrderUtils.cpp:1440  std::vector<std::vector<std::vector<int>>>nozzle_match_info;
+        let mut nozzle_match_info: Vec<Vec<Vec<i32>>> = Vec::new();
+        // ToolOrderUtils.cpp:1441  std::vector<std::vector<std::vector<unsigned int>>>temp_layer_sequence(2);
+        let mut temp_layer_sequence: Vec<Vec<Vec<u32>>> = vec![Vec::new(), Vec::new()];
+        let want_layer_sequences = layer_sequences.is_some();
+
+        // ToolOrderUtils.cpp:1443  // first deal with fixed nozzle
+        // ToolOrderUtils.cpp:1444  if (!groups[fixed_nozzle_extruder_id].empty())
+        if !groups[fixed_nozzle_extruder_id as usize].is_empty() {
+            // ToolOrderUtils.cpp:1446  int idx = fixed_nozzle_extruder_id;
+            let idx = fixed_nozzle_extruder_id as usize;
+            // ToolOrderUtils.cpp:1447  std::vector<unsigned int> filament_used_in_group(groups[idx].begin(), groups[idx].end());
+            let filament_used_in_group: Vec<u32> = groups[idx].iter().copied().collect();
+            // ToolOrderUtils.cpp:1448  std::vector<int>filament_map_in_group(groups[idx].size(), idx);
+            let filament_map_in_group: Vec<i32> = vec![idx as i32; groups[idx].len()];
+            // ToolOrderUtils.cpp:1449  cost += reorder_filaments_for_minimum_flush_volume(filament_used_in_group, filament_map_in_group, layer_filaments, flush_matrix, get_custom_seq, layer_sequences ? &temp_layer_sequence[idx] : nullptr);
+            //   (float += int: the int result is converted to float)
+            cost += reorder_filaments_for_minimum_flush_volume(
+                &filament_used_in_group,
+                &filament_map_in_group,
+                layer_filaments,
+                flush_matrix,
+                get_custom_seq,
+                if want_layer_sequences { Some(&mut temp_layer_sequence[idx]) } else { None },
+                &HashMap::new(),
+            ) as f32;
+        }
+
+        // ToolOrderUtils.cpp:1452  //then deal with multiple nozzle
+        // ToolOrderUtils.cpp:1453  if (!groups[multi_nozzle_extruder_id].empty())
+        if !groups[multi_nozzle_extruder_id as usize].is_empty() {
+            // ToolOrderUtils.cpp:1455  int idx = multi_nozzle_extruder_id;
+            let idx = multi_nozzle_extruder_id as usize;
+            // ToolOrderUtils.cpp:1456-1457  if (layer_sequences) temp_layer_sequence[idx].reserve(layer_filaments.size());
+            if want_layer_sequences {
+                temp_layer_sequence[idx].reserve(layer_filaments.len());
+            }
+            // ToolOrderUtils.cpp:1458-1459  if (nozzle_match_per_layer) nozzle_match_info.reserve(layer_filaments.size());
+            if nozzle_match_per_layer.is_some() {
+                nozzle_match_info.reserve(layer_filaments.len());
+            }
+
+            // ToolOrderUtils.cpp:1461  std::vector<int> nozzle_state(multi_nozzle_num, -1);
+            let mut nozzle_state: Vec<i32> = vec![-1; multi_nozzle_num as usize];
+
+            // ToolOrderUtils.cpp:1463  auto update_nozzle_state = [&nozzle_state](const std::vector<std::vector<int>>& match_info) {
+            let update_nozzle_state = |nozzle_state: &mut Vec<i32>, match_info: &Vec<Vec<i32>>| {
+                // ToolOrderUtils.cpp:1464  for (size_t i = 0; i < match_info.size(); ++i) {
+                for i in 0..match_info.len() {
+                    // ToolOrderUtils.cpp:1465  for (size_t j = 0; j < match_info[i].size(); ++j)
+                    for j in 0..match_info[i].len() {
+                        // ToolOrderUtils.cpp:1466-1467  if (match_info[i][j] != -1) nozzle_state[j] = match_info[i][j];
+                        if match_info[i][j] != -1 {
+                            nozzle_state[j] = match_info[i][j];
+                        }
+                    }
+                }
+            };
+
+            // ToolOrderUtils.cpp:1471  for (size_t layer = 0; layer < layer_filaments.size(); ++layer) {
+            for layer in 0..layer_filaments.len() {
+                // ToolOrderUtils.cpp:1472  if (auto iter = custom_layer_sequence_map.find(layer); iter != custom_layer_sequence_map.end()) {
+                if let Some(sequence) = custom_layer_sequence_map.get(&layer) {
+                    // ToolOrderUtils.cpp:1473  const auto& sequence = iter->second;
+                    // ToolOrderUtils.cpp:1474  std::vector<unsigned int>sequence_in_group = collect_filaments_in_groups<unsigned int>(groups[idx], sequence);
+                    let sequence_in_group: Vec<u32> = collect_filaments_in_groups::<u32>(&groups[idx], sequence);
+
+                    // ToolOrderUtils.cpp:1476  float tmp_cost = 0;
+                    let mut tmp_cost: f32 = 0.0;
+                    // ToolOrderUtils.cpp:1477  auto nozzle_match = get_nozzle_match_in_given_order(flush_matrix[idx], sequence_in_group, nozzle_state, &tmp_cost);
+                    let nozzle_match = get_nozzle_match_in_given_order(
+                        &flush_matrix[idx],
+                        &sequence_in_group,
+                        &nozzle_state,
+                        Some(&mut tmp_cost),
+                    );
+                    // ToolOrderUtils.cpp:1478  cost += tmp_cost;
+                    cost += tmp_cost;
+                    // ToolOrderUtils.cpp:1479  update_nozzle_state(nozzle_match);
+                    update_nozzle_state(&mut nozzle_state, &nozzle_match);
+
+                    // ToolOrderUtils.cpp:1481-1482  if (layer_sequences) temp_layer_sequence[idx].emplace_back(std::vector<unsigned int>()); // insert an empty array as placeholder
+                    if want_layer_sequences {
+                        temp_layer_sequence[idx].push(Vec::new());
+                    }
+                    // ToolOrderUtils.cpp:1483-1484  if (nozzle_match_per_layer) nozzle_match_info.emplace_back(nozzle_match);
+                    if nozzle_match_per_layer.is_some() {
+                        nozzle_match_info.push(nozzle_match);
+                    }
+                    // ToolOrderUtils.cpp:1485  continue;
+                    continue;
+                }
+
+                // ToolOrderUtils.cpp:1489  const auto& curr_lf = layer_filaments[layer];
+                let curr_lf = &layer_filaments[layer];
+                // ToolOrderUtils.cpp:1490  std::vector<int>filament_used_in_group = collect_filaments_in_groups<int>(groups[idx], curr_lf);
+                let filament_used_in_group: Vec<i32> = collect_filaments_in_groups::<i32>(&groups[idx], curr_lf);
+
+                // ToolOrderUtils.cpp:1492  float tmp_cost = 0;
+                let mut tmp_cost: f32 = 0.0;
+                // ToolOrderUtils.cpp:1493  auto ret = solve_extruder_order_with_MCMF(flush_matrix[idx], filament_used_in_group, nozzle_state, &tmp_cost);
+                let ret = solve_extruder_order_with_mcmf(
+                    &flush_matrix[idx],
+                    &filament_used_in_group,
+                    &nozzle_state,
+                    Some(&mut tmp_cost),
+                );
+                // ToolOrderUtils.cpp:1494  cost += tmp_cost;
+                cost += tmp_cost;
+                // ToolOrderUtils.cpp:1495  update_nozzle_state(ret);
+                update_nozzle_state(&mut nozzle_state, &ret);
+
+                // ToolOrderUtils.cpp:1497  if (layer_sequences) {
+                if want_layer_sequences {
+                    // ToolOrderUtils.cpp:1498  std::vector<unsigned int> flatten;
+                    let mut flatten: Vec<u32> = Vec::new();
+                    // ToolOrderUtils.cpp:1499  for (size_t i = 0; i < ret.size(); ++i) {
+                    for i in 0..ret.len() {
+                        // ToolOrderUtils.cpp:1500  for (size_t j = 0; j < ret[i].size(); ++j)
+                        for j in 0..ret[i].len() {
+                            // ToolOrderUtils.cpp:1501-1502  if (ret[i][j] != -1) flatten.emplace_back(ret[i][j]);
+                            if ret[i][j] != -1 {
+                                flatten.push(ret[i][j] as u32);
+                            }
+                        }
+                    }
+                    // ToolOrderUtils.cpp:1504  temp_layer_sequence[idx].emplace_back(flatten);
+                    temp_layer_sequence[idx].push(flatten);
+                }
+                // ToolOrderUtils.cpp:1506-1507  if (nozzle_match_per_layer) nozzle_match_info.emplace_back(ret);
+                if nozzle_match_per_layer.is_some() {
+                    nozzle_match_info.push(ret);
+                }
+            }
+        }
+
+        // ToolOrderUtils.cpp:1511  // save the final sequence and match info if necessary
+        // ToolOrderUtils.cpp:1512  if (layer_sequences) {
+        if let Some(layer_sequences) = layer_sequences {
+            // ToolOrderUtils.cpp:1513  layer_sequences->clear();
+            layer_sequences.clear();
+            // ToolOrderUtils.cpp:1514  layer_sequences->resize(layer_filaments.size());
+            layer_sequences.resize(layer_filaments.len(), Vec::new());
+            // ToolOrderUtils.cpp:1515  bool last_group = 0;
+            let mut last_group = false;
+            // ToolOrderUtils.cpp:1516  //if last_group == 0,print group 0 first ,else print group 1 first
+            // ToolOrderUtils.cpp:1517  for (size_t i = 0; i < layer_filaments.size(); ++i) {
+            for i in 0..layer_filaments.len() {
+                // ToolOrderUtils.cpp:1518  auto& curr_layer_seq = (*layer_sequences)[i];
+                // ToolOrderUtils.cpp:1519  if (auto iter = custom_layer_sequence_map.find(i); iter != custom_layer_sequence_map.end()) {
+                if let Some(seq) = custom_layer_sequence_map.get(&i) {
+                    // ToolOrderUtils.cpp:1520  curr_layer_seq = iter->second;
+                    layer_sequences[i] = seq.clone();
+                    // ToolOrderUtils.cpp:1521-1523  if (!curr_layer_seq.empty()) last_group = groups[0].count(curr_layer_seq.back()) ? 0 : 1;
+                    if let Some(back) = layer_sequences[i].last() {
+                        last_group = !groups[0].contains(back);
+                    }
+                    // ToolOrderUtils.cpp:1524  continue;
+                    continue;
+                }
+                // ToolOrderUtils.cpp:1526  if (last_group) {
+                //   (temp_layer_sequence[g][i] of a group without filaments reads an
+                //   empty vector out of bounds in C++; Rust stops there)
+                if last_group {
+                    // ToolOrderUtils.cpp:1527  curr_layer_seq.insert(curr_layer_seq.end(), temp_layer_sequence[1][i]...);
+                    let s1 = temp_layer_sequence[1][i].clone();
+                    layer_sequences[i].extend_from_slice(&s1);
+                    // ToolOrderUtils.cpp:1528  curr_layer_seq.insert(curr_layer_seq.end(), temp_layer_sequence[0][i]...);
+                    let s0 = temp_layer_sequence[0][i].clone();
+                    layer_sequences[i].extend_from_slice(&s0);
+                } else {
+                    // ToolOrderUtils.cpp:1531  curr_layer_seq.insert(curr_layer_seq.end(), temp_layer_sequence[0][i]...);
+                    let s0 = temp_layer_sequence[0][i].clone();
+                    layer_sequences[i].extend_from_slice(&s0);
+                    // ToolOrderUtils.cpp:1532  curr_layer_seq.insert(curr_layer_seq.end(), temp_layer_sequence[1][i]...);
+                    let s1 = temp_layer_sequence[1][i].clone();
+                    layer_sequences[i].extend_from_slice(&s1);
+                }
+                // ToolOrderUtils.cpp:1534  last_group = !last_group;
+                last_group = !last_group;
+            }
+        }
+
+        // ToolOrderUtils.cpp:1538-1539  if (nozzle_match_per_layer) *nozzle_match_per_layer = nozzle_match_info;
+        if let Some(nozzle_match_per_layer) = nozzle_match_per_layer {
+            *nozzle_match_per_layer = nozzle_match_info;
+        }
+
+        // ToolOrderUtils.cpp:1541  return cost;
+        //   (float to the int return type: truncation)
+        cost as i32
+    }
+}
+
+// ToolOrderUtils.cpp:1546  int reorder_filaments_for_multi_nozzle_extruder(...)
 //   (the overload taking MultiNozzleUtils::LayeredNozzleGroupResult; outside the #if)
 pub fn reorder_filaments_for_multi_nozzle_extruder(
+    filament_lists: &[u32],
+    nozzle_group_result: &LayeredNozzleGroupResult,
+    layer_filaments: &[Vec<u32>],
+    flush_matrix: &[FlushMatrix],
+    get_custom_seq: Option<&dyn Fn(i32, &mut Vec<i32>) -> bool>,
+    filament_sequences: Option<&mut Vec<Vec<u32>>>,
+    initial_status: &NozzleStatusRecorder,
+) -> i32 {
+    if !tool_order_utils_pin() {
+        return reorder_filaments_for_multi_nozzle_extruder_pre_pin(
+            filament_lists,
+            nozzle_group_result,
+            layer_filaments,
+            flush_matrix,
+            get_custom_seq,
+            filament_sequences,
+            initial_status,
+        );
+    }
+    // ToolOrderUtils.cpp:1554  std::map<int,std::set<unsigned int>> nozzle_filament_groups;
+    let mut nozzle_filament_groups: BTreeMap<i32, BTreeSet<u32>> = BTreeMap::new();
+    // ToolOrderUtils.cpp:1555  std::map<int,std::set<int>> extruder_to_nozzle;
+    let mut extruder_to_nozzle: BTreeMap<i32, BTreeSet<i32>> = BTreeMap::new();
+
+    // ToolOrderUtils.cpp:1557  for(auto filament_idx : filament_lists){
+    for &filament_idx in filament_lists {
+        // ToolOrderUtils.cpp:1558  auto nozzle_info = nozzle_group_result.get_nozzle_for_filament(filament_idx, -1);
+        let nozzle_info = nozzle_group_result.get_nozzle_for_filament(filament_idx as i32, -1);
+        // ToolOrderUtils.cpp:1559-1560  if (!nozzle_info) continue;
+        let Some(nozzle_info) = nozzle_info else {
+            continue;
+        };
+        // ToolOrderUtils.cpp:1561  nozzle_filament_groups[nozzle_info->group_id].insert(filament_idx);
+        nozzle_filament_groups.entry(nozzle_info.group_id).or_default().insert(filament_idx);
+        // ToolOrderUtils.cpp:1562  extruder_to_nozzle[nozzle_info->extruder_id].insert(nozzle_info->group_id);
+        extruder_to_nozzle.entry(nozzle_info.extruder_id).or_default().insert(nozzle_info.group_id);
+    }
+
+    // ToolOrderUtils.cpp:1565  std::map<size_t, std::vector<unsigned int>>custom_layer_sequence_map;
+    let mut custom_layer_sequence_map: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
+    // ToolOrderUtils.cpp:1566  for (size_t layer = 0; layer < layer_filaments.size(); ++layer){
+    for layer in 0..layer_filaments.len() {
+        // ToolOrderUtils.cpp:1567  const auto& curr_lf = layer_filaments[layer];  (the body reads layer_filaments[layer])
+        // ToolOrderUtils.cpp:1568  std::vector<int> custom_filament_seq;
+        let mut custom_filament_seq: Vec<i32> = Vec::new();
+        // ToolOrderUtils.cpp:1569  if (get_custom_seq && get_custom_seq(layer, custom_filament_seq) && !custom_filament_seq.empty()) {
+        if let Some(gcs) = get_custom_seq {
+            if gcs(layer as i32, &mut custom_filament_seq) && !custom_filament_seq.is_empty() {
+                // ToolOrderUtils.cpp:1570  std::vector<unsigned int> unsign_custom_extruder_seq;
+                let mut unsign_custom_extruder_seq: Vec<u32> = Vec::new();
+                // ToolOrderUtils.cpp:1571  for (int extruder : custom_filament_seq) {
+                for &extruder in &custom_filament_seq {
+                    // ToolOrderUtils.cpp:1572  unsigned int unsign_extruder = static_cast<unsigned int>(extruder) - 1;
+                    let unsign_extruder = (extruder as u32).wrapping_sub(1);
+                    // ToolOrderUtils.cpp:1573-1575  if (std::find(layer_filaments[layer]..., unsign_extruder) != end) emplace_back
+                    if layer_filaments[layer].contains(&unsign_extruder) {
+                        unsign_custom_extruder_seq.push(unsign_extruder);
+                    }
+                }
+                // ToolOrderUtils.cpp:1577  assert(layer_filaments[layer].size() == unsign_custom_extruder_seq.size());
+                debug_assert_eq!(layer_filaments[layer].len(), unsign_custom_extruder_seq.len());
+                // ToolOrderUtils.cpp:1579  custom_layer_sequence_map[layer] = unsign_custom_extruder_seq;
+                custom_layer_sequence_map.insert(layer, unsign_custom_extruder_seq);
+            }
+        }
+    }
+
+    // ToolOrderUtils.cpp:1584  std::map<int, std::vector<std::vector<unsigned int>>> nozzle_filament_sequences;
+    let mut nozzle_filament_sequences: BTreeMap<i32, Vec<Vec<u32>>> = BTreeMap::new();
+    // ToolOrderUtils.cpp:1585  bool store_sequence = filament_sequences != nullptr;
+    let store_sequence = filament_sequences.is_some();
+
+    // ToolOrderUtils.cpp:1587  int cost = 0;
+    let mut cost: i32 = 0;
+    // ToolOrderUtils.cpp:1588  for(auto& group : nozzle_filament_groups){
+    for (&nozzle_id, filament_in_nozzle) in &nozzle_filament_groups {
+        // ToolOrderUtils.cpp:1589  int nozzle_id = group.first;
+        // ToolOrderUtils.cpp:1590  auto& filament_in_nozzle = group.second;
+
+        // ToolOrderUtils.cpp:1592  int extruder_id = 0;
+        let mut extruder_id: i32 = 0;
+        // ToolOrderUtils.cpp:1593  for(auto& [ext, nozzle_set] : extruder_to_nozzle){
+        for (&ext, nozzle_set) in &extruder_to_nozzle {
+            // ToolOrderUtils.cpp:1594  if(nozzle_set.count(nozzle_id)){
+            if nozzle_set.contains(&nozzle_id) {
+                // ToolOrderUtils.cpp:1595  extruder_id = ext;
+                extruder_id = ext;
+                // ToolOrderUtils.cpp:1596  break;
+                break;
+            }
+        }
+
+        // ToolOrderUtils.cpp:1600-1601  if(filament_in_nozzle.empty()) continue;
+        if filament_in_nozzle.is_empty() {
+            continue;
+        }
+        // ToolOrderUtils.cpp:1602-1603  if (extruder_id < 0 || extruder_id >= static_cast<int>(flush_matrix.size())) continue;
+        if extruder_id < 0 || extruder_id >= flush_matrix.len() as i32 {
+            continue;
+        }
+
+        // ToolOrderUtils.cpp:1605  std::vector<unsigned int> filament_vec_in_nozzle(filament_in_nozzle.begin(), filament_in_nozzle.end());
+        let filament_vec_in_nozzle: Vec<u32> = filament_in_nozzle.iter().copied().collect();
+
+        // ToolOrderUtils.cpp:1607  const auto& extruder_flush = flush_matrix[extruder_id];
+        let extruder_flush = &flush_matrix[extruder_id as usize];
+        // ToolOrderUtils.cpp:1608  int initial_fil = initial_status.get_filament_in_nozzle(nozzle_id);
+        let initial_fil = initial_status.get_filament_in_nozzle(nozzle_id);
+        // ToolOrderUtils.cpp:1609  std::optional<unsigned int> initial_fil_id = (initial_fil >= 0 && initial_fil < static_cast<int>(extruder_flush.size()))? ... : std::nullopt;
+        let initial_fil_id: Option<u32> = if initial_fil >= 0 && initial_fil < extruder_flush.len() as i32 {
+            Some(initial_fil as u32)
+        } else {
+            None
+        };
+
+        // ToolOrderUtils.cpp:1611  std::vector<std::vector<unsigned int>> filament_seq;
+        let mut filament_seq: Vec<Vec<u32>> = Vec::new();
+        // ToolOrderUtils.cpp:1612-1613  cost += reorder_filaments_for_minimum_flush_volume_base(filament_vec_in_nozzle, layer_filaments, extruder_flush, get_custom_seq, store_sequence ? &filament_seq : nullptr, initial_fil_id);
+        cost += reorder_filaments_for_minimum_flush_volume_base(
+            &filament_vec_in_nozzle,
+            layer_filaments,
+            extruder_flush,
+            get_custom_seq,
+            if store_sequence { Some(&mut filament_seq) } else { None },
+            initial_fil_id,
+        );
+        // ToolOrderUtils.cpp:1614-1615  if(store_sequence) nozzle_filament_sequences.emplace(nozzle_id, std::move(filament_seq));
+        if store_sequence {
+            nozzle_filament_sequences.entry(nozzle_id).or_insert(filament_seq);
+        }
+    }
+
+    // ToolOrderUtils.cpp:1619-1620  if(!store_sequence) return cost;
+    let Some(filament_sequences) = filament_sequences else {
+        return cost;
+    };
+
+    // ToolOrderUtils.cpp:1622  std::vector<int> extruders;
+    let mut extruders: Vec<i32> = Vec::new();
+    // ToolOrderUtils.cpp:1623  std::map<int, std::vector<int>> nozzles_per_extruder;
+    let mut nozzles_per_extruder: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+    // ToolOrderUtils.cpp:1624  for (auto& [extruder_id, nozzle_set] : extruder_to_nozzle) {
+    for (&extruder_id, nozzle_set) in &extruder_to_nozzle {
+        // ToolOrderUtils.cpp:1625  extruders.push_back(extruder_id);
+        extruders.push(extruder_id);
+        // ToolOrderUtils.cpp:1626-1628  nozzles_per_extruder[extruder_id] = std::vector<int>(nozzle_set.begin(), nozzle_set.end());
+        nozzles_per_extruder.insert(extruder_id, nozzle_set.iter().copied().collect());
+    }
+
+    // ToolOrderUtils.cpp:1631  filament_sequences->clear();
+    filament_sequences.clear();
+    // ToolOrderUtils.cpp:1632  filament_sequences->resize(layer_filaments.size());
+    filament_sequences.resize(layer_filaments.len(), Vec::new());
+    // ToolOrderUtils.cpp:1633  // No filament mapped to a nozzle: keep the empty per-layer sequences.
+    // ToolOrderUtils.cpp:1634  // max_element on an empty extruder list is undefined and used to corrupt the heap.
+    // ToolOrderUtils.cpp:1635-1636  if (extruders.empty()) return cost;
+    if extruders.is_empty() {
+        return cost;
+    }
+
+    // ToolOrderUtils.cpp:1638  auto get_extruder_for_filament = [nozzle_group_result](unsigned int filament_idx) {
+    let get_extruder_for_filament = |filament_idx: u32| -> i32 {
+        // ToolOrderUtils.cpp:1639  auto nozzle = nozzle_group_result.get_nozzle_for_filament(filament_idx, -1);
+        match nozzle_group_result.get_nozzle_for_filament(filament_idx as i32, -1) {
+            // ToolOrderUtils.cpp:1640-1641  if (!nozzle) return -1;
+            None => -1,
+            // ToolOrderUtils.cpp:1642  return nozzle->extruder_id;
+            Some(nozzle) => nozzle.extruder_id,
+        }
+    };
+
+    // ToolOrderUtils.cpp:1645  auto get_nozzle_idx_for_filament = [&nozzles_per_extruder, nozzle_group_result](unsigned int filament_idx)->int {
+    //   (takes the map as an argument: it is captured by reference and read
+    //   only, while the layer loop below never writes it)
+    let get_nozzle_idx_for_filament = |nozzles_per_extruder: &BTreeMap<i32, Vec<i32>>, filament_idx: u32| -> i32 {
+        // ToolOrderUtils.cpp:1646  auto nozzle = nozzle_group_result.get_nozzle_for_filament(filament_idx, -1);
+        // ToolOrderUtils.cpp:1647-1648  if (!nozzle) return -1;
+        let Some(nozzle) = nozzle_group_result.get_nozzle_for_filament(filament_idx as i32, -1) else {
+            return -1;
+        };
+        // ToolOrderUtils.cpp:1649  auto ext_it = nozzles_per_extruder.find(nozzle->extruder_id);
+        // ToolOrderUtils.cpp:1650-1651  if (ext_it == nozzles_per_extruder.end()) return -1;
+        let Some(nozzles) = nozzles_per_extruder.get(&nozzle.extruder_id) else {
+            return -1;
+        };
+        // ToolOrderUtils.cpp:1652  const auto& nozzles = ext_it->second;
+        // ToolOrderUtils.cpp:1653  auto it = std::find(nozzles.begin(), nozzles.end(), nozzle->group_id);
+        // ToolOrderUtils.cpp:1654-1655  if (it == nozzles.end()) return -1;
+        // ToolOrderUtils.cpp:1656  return static_cast<int>(std::distance(nozzles.begin(), it));
+        match nozzles.iter().position(|&x| x == nozzle.group_id) {
+            None => -1,
+            Some(pos) => pos as i32,
+        }
+    };
+
+    // ToolOrderUtils.cpp:1659  int initial_extruder = initial_status.get_current_extruder_id();
+    let initial_extruder = initial_status.get_current_extruder_id();
+    // ToolOrderUtils.cpp:1660  int last_extruder_idx = (initial_extruder >= 0 && initial_extruder < static_cast<int>(extruders.size()))? initial_extruder : 0;
+    let mut last_extruder_idx: i32 =
+        if initial_extruder >= 0 && initial_extruder < extruders.len() as i32 { initial_extruder } else { 0 };
+    // ToolOrderUtils.cpp:1661  // set size to max extruder_id in case extruder_id is not continuous
+    // ToolOrderUtils.cpp:1662  int max_extruder_id = *std::max_element(extruders.begin(), extruders.end());
+    let max_extruder_id: i32 = *extruders.iter().max().unwrap();
+    // ToolOrderUtils.cpp:1663  std::vector<int> last_nozzle_idx(max_extruder_id >= 0 ? static_cast<size_t>(max_extruder_id) + 1 : 0, 0);
+    let mut last_nozzle_idx: Vec<i32> =
+        vec![0; if max_extruder_id >= 0 { max_extruder_id as usize + 1 } else { 0 }];
+    // ToolOrderUtils.cpp:1664  auto nozzle_idx_in_range = [&last_nozzle_idx](int extruder_id) {
+    //   (takes the vector as an argument: its size never changes after this point)
+    let nozzle_idx_in_range = |last_nozzle_idx: &[i32], extruder_id: i32| -> bool {
+        // ToolOrderUtils.cpp:1665  return extruder_id >= 0 && extruder_id < static_cast<int>(last_nozzle_idx.size());
+        extruder_id >= 0 && extruder_id < last_nozzle_idx.len() as i32
+    };
+    // ToolOrderUtils.cpp:1667  for (int ext_id = 0; ext_id < static_cast<int>(last_nozzle_idx.size()); ext_id++) {
+    for ext_id in 0..last_nozzle_idx.len() as i32 {
+        // ToolOrderUtils.cpp:1668  auto ext_it = nozzles_per_extruder.find(ext_id);
+        // ToolOrderUtils.cpp:1669-1670  if (ext_it == nozzles_per_extruder.end()) continue;
+        let Some(ext_nozzles) = nozzles_per_extruder.get(&ext_id) else {
+            continue;
+        };
+        // ToolOrderUtils.cpp:1671  int initial_nozzle = initial_status.get_nozzle_in_extruder(ext_id);
+        let initial_nozzle = initial_status.get_nozzle_in_extruder(ext_id);
+        // ToolOrderUtils.cpp:1672  const auto& ext_nozzles = ext_it->second;
+        // ToolOrderUtils.cpp:1673  auto it = std::find(ext_nozzles.begin(), ext_nozzles.end(), initial_nozzle);
+        // ToolOrderUtils.cpp:1674-1675  if (it != ext_nozzles.end()) last_nozzle_idx[ext_id] = static_cast<int>(std::distance(ext_nozzles.begin(), it));
+        if let Some(pos) = ext_nozzles.iter().position(|&x| x == initial_nozzle) {
+            last_nozzle_idx[ext_id as usize] = pos as i32;
+        }
+    }
+
+    // ToolOrderUtils.cpp:1678  const int extruder_count = static_cast<int>(extruders.size());
+    let extruder_count = extruders.len() as i32;
+    // ToolOrderUtils.cpp:1679  for (size_t layer = 0; layer < layer_filaments.size(); ++layer) {
+    for layer in 0..layer_filaments.len() {
+        // ToolOrderUtils.cpp:1680  auto& out_seq = (*filament_sequences)[layer];
+
+        // ToolOrderUtils.cpp:1682  if (custom_layer_sequence_map.find(layer) != custom_layer_sequence_map.end()) {
+        if let Some(custom_seq) = custom_layer_sequence_map.get(&layer) {
+            // ToolOrderUtils.cpp:1683  out_seq = custom_layer_sequence_map[layer];
+            filament_sequences[layer] = custom_seq.clone();
+            let out_seq = &filament_sequences[layer];
+            // ToolOrderUtils.cpp:1684  if (!out_seq.empty()) {
+            if !out_seq.is_empty() {
+                // ToolOrderUtils.cpp:1685  int back_ext = get_extruder_for_filament(out_seq.back());
+                let back_ext = get_extruder_for_filament(*out_seq.last().unwrap());
+                // ToolOrderUtils.cpp:1686-1687  if (back_ext >= 0) last_extruder_idx = back_ext;
+                if back_ext >= 0 {
+                    last_extruder_idx = back_ext;
+                }
+                // ToolOrderUtils.cpp:1688  for (auto filament : out_seq) {
+                for &filament in out_seq {
+                    // ToolOrderUtils.cpp:1689  int cur_ext_id = get_extruder_for_filament(filament);
+                    let cur_ext_id = get_extruder_for_filament(filament);
+                    // ToolOrderUtils.cpp:1690  int nozzle_idx = get_nozzle_idx_for_filament(filament);
+                    let nozzle_idx = get_nozzle_idx_for_filament(&nozzles_per_extruder, filament);
+                    // ToolOrderUtils.cpp:1691-1692  // Filaments absent from this grouping have extruder -1. Writing that
+                    // index used to overwrite the vector heap header (free(): invalid pointer).
+                    // ToolOrderUtils.cpp:1693-1694  if (nozzle_idx >= 0 && nozzle_idx_in_range(cur_ext_id)) last_nozzle_idx[cur_ext_id] = nozzle_idx;
+                    if nozzle_idx >= 0 && nozzle_idx_in_range(&last_nozzle_idx, cur_ext_id) {
+                        last_nozzle_idx[cur_ext_id as usize] = nozzle_idx;
+                    }
+                }
+            }
+            // ToolOrderUtils.cpp:1697  continue;
+            continue;
+        }
+
+        // ToolOrderUtils.cpp:1700-1701  if (last_extruder_idx < 0) last_extruder_idx = 0;
+        if last_extruder_idx < 0 {
+            last_extruder_idx = 0;
+        }
+
+        // ToolOrderUtils.cpp:1703  int curr_last_extruder_idx = last_extruder_idx;
+        let mut curr_last_extruder_idx = last_extruder_idx;
+        // ToolOrderUtils.cpp:1704  auto curr_last_nozzle_idx = last_nozzle_idx;
+        let mut curr_last_nozzle_idx = last_nozzle_idx.clone();
+        // ToolOrderUtils.cpp:1705  int start = last_extruder_idx % extruder_count;
+        let mut start = last_extruder_idx % extruder_count;
+        // ToolOrderUtils.cpp:1706-1707  if (start < 0) start += extruder_count;
+        if start < 0 {
+            start += extruder_count;
+        }
+        // ToolOrderUtils.cpp:1708  for (int i = 0; i < extruder_count; ++i) {
+        for i in 0..extruder_count {
+            // ToolOrderUtils.cpp:1709  int extruder_id = extruders[(start + i) % extruder_count];
+            let extruder_id = extruders[((start + i) % extruder_count) as usize];
+            // ToolOrderUtils.cpp:1710  auto ext_it = nozzles_per_extruder.find(extruder_id);
+            // ToolOrderUtils.cpp:1711-1712  if (ext_it == nozzles_per_extruder.end() || ext_it->second.empty()) continue;
+            let base_nozzles = match nozzles_per_extruder.get(&extruder_id) {
+                Some(v) if !v.is_empty() => v,
+                _ => continue,
+            };
+            // ToolOrderUtils.cpp:1713  auto& base_nozzles = ext_it->second;
+
+            // ToolOrderUtils.cpp:1715  bool has_seq = false;
+            let mut has_seq = false;
+            // ToolOrderUtils.cpp:1716  int start_nozzle_idx = 0;
+            let mut start_nozzle_idx: i32 = 0;
+            // ToolOrderUtils.cpp:1717  if (nozzle_idx_in_range(extruder_id)) {
+            if nozzle_idx_in_range(&last_nozzle_idx, extruder_id) {
+                // ToolOrderUtils.cpp:1718-1719  if (last_nozzle_idx[extruder_id] < 0) last_nozzle_idx[extruder_id] = 0;
+                if last_nozzle_idx[extruder_id as usize] < 0 {
+                    last_nozzle_idx[extruder_id as usize] = 0;
+                }
+                // ToolOrderUtils.cpp:1720  start_nozzle_idx = last_nozzle_idx[extruder_id];
+                start_nozzle_idx = last_nozzle_idx[extruder_id as usize];
+            }
+
+            // ToolOrderUtils.cpp:1723  const int nozzle_count = static_cast<int>(base_nozzles.size());
+            let nozzle_count = base_nozzles.len() as i32;
+            // ToolOrderUtils.cpp:1724  for (int j = 0; j < nozzle_count; ++j) {
+            for j in 0..nozzle_count {
+                // ToolOrderUtils.cpp:1725  int nozzle_idx = (start_nozzle_idx + j) % nozzle_count;
+                let mut nozzle_idx = (start_nozzle_idx + j) % nozzle_count;
+                // ToolOrderUtils.cpp:1726-1727  if (nozzle_idx < 0) nozzle_idx += nozzle_count;
+                if nozzle_idx < 0 {
+                    nozzle_idx += nozzle_count;
+                }
+                // ToolOrderUtils.cpp:1728  int nozzle_id = base_nozzles[nozzle_idx];
+                let nozzle_id = base_nozzles[nozzle_idx as usize];
+                // ToolOrderUtils.cpp:1729  auto seq_it = nozzle_filament_sequences.find(nozzle_id);
+                // ToolOrderUtils.cpp:1730-1731  if (seq_it == nozzle_filament_sequences.end() || layer >= seq_it->second.size()) continue;
+                let frag = match nozzle_filament_sequences.get(&nozzle_id) {
+                    Some(seq) if layer < seq.len() => &seq[layer],
+                    _ => continue,
+                };
+                // ToolOrderUtils.cpp:1732  const auto& frag = seq_it->second[layer];
+                // ToolOrderUtils.cpp:1733-1734  if (frag.empty()) continue;
+                if frag.is_empty() {
+                    continue;
+                }
+                // ToolOrderUtils.cpp:1735  has_seq = true;
+                has_seq = true;
+                // ToolOrderUtils.cpp:1736-1737  if (nozzle_idx_in_range(extruder_id)) curr_last_nozzle_idx[extruder_id] = nozzle_idx;
+                if nozzle_idx_in_range(&last_nozzle_idx, extruder_id) {
+                    curr_last_nozzle_idx[extruder_id as usize] = nozzle_idx;
+                }
+                // ToolOrderUtils.cpp:1738  out_seq.insert(out_seq.end(), frag.begin(), frag.end());
+                filament_sequences[layer].extend_from_slice(frag);
+            }
+
+            // ToolOrderUtils.cpp:1741-1742  if (has_seq) curr_last_extruder_idx = extruder_id;
+            if has_seq {
+                curr_last_extruder_idx = extruder_id;
+            }
+        }
+        // ToolOrderUtils.cpp:1744  last_extruder_idx = curr_last_extruder_idx;
+        last_extruder_idx = curr_last_extruder_idx;
+        // ToolOrderUtils.cpp:1745  last_nozzle_idx = curr_last_nozzle_idx;
+        last_nozzle_idx = curr_last_nozzle_idx;
+    }
+    // ToolOrderUtils.cpp:1747  return cost;
+    cost
+}
+
+/// The off arm of `TOOL_ORDER_UTILS_PIN`: the port of the earlier source of
+/// `reorder_filaments_for_multi_nozzle_extruder`, kept byte for byte.
+fn reorder_filaments_for_multi_nozzle_extruder_pre_pin(
     filament_lists: &[u32],
     nozzle_group_result: &LayeredNozzleGroupResult,
     layer_filaments: &[Vec<u32>],
