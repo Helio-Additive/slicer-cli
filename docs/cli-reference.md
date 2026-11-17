@@ -268,7 +268,7 @@ Snapmaker Orca's words (`standard`, `high_flow`), in a project and in a
 settings file, and says so (event `config_normalized` /
 `FlowTypeSpellingConverted`). Snapmaker Orca itself substitutes its default,
 `standard`, for those words, so a `High Flow` nozzle would load as a standard
-one; this conversion is slicer-cli's own. Any other word is refused as above.
+one; this conversion is slicer-cli's own. Any other word is left as the engine reads it: in a project sliced with `--slice` (without `--allow-substitution`) it is refused as above, and in a settings file the engine substitutes its default, as before (event `config_substituted`).
 
 `--allow-mix-temp` in the `slicer_cli-snapmaker` binary: slice a plate whose
 filaments mix high- and low-temperature materials. Snapmaker Orca's engine has
