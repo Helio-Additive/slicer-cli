@@ -6506,6 +6506,53 @@ pub mod faithful {
         pub fn support_layers(&self) -> &[SupportLayer] {
             &self.m_support_layers
         }
+        /// libslic3r.h:219-238 `lower_bound_by_predicate(first, last, lower_than_key)` over `count` items.
+        fn lower_bound_by_predicate(count: usize, lower_than_key: impl Fn(usize) -> bool) -> usize {
+            let mut first: usize = 0;
+            let mut count = count as isize;
+            while count > 0 {
+                let step = count / 2;
+                let it = first + step as usize;
+                if lower_than_key(it) {
+                    first = it + 1;
+                    count -= step + 1;
+                } else {
+                    count = step;
+                }
+            }
+            first
+        }
+        /// PrintObject.cpp:1494-1499 `const SupportLayer* PrintObject::get_support_layer_at_printz(coordf_t print_z, coordf_t epsilon) const`
+        pub fn get_support_layer_at_printz(&self, print_z: f64, epsilon: f64) -> Option<&SupportLayer> {
+            let limit = print_z - epsilon;
+            let it = Self::lower_bound_by_predicate(self.m_support_layers.len(), |i| self.m_support_layers[i].layer.print_z < limit);
+            if it == self.m_support_layers.len() || self.m_support_layers[it].layer.print_z > print_z + epsilon {
+                None
+            } else {
+                Some(&self.m_support_layers[it])
+            }
+        }
+        /// PrintObject.cpp:6780-6784 `const Layer* PrintObject::get_layer_at_printz(coordf_t print_z, coordf_t epsilon) const`
+        // Get a layer approximately at print_z.
+        pub fn get_layer_at_printz(&self, print_z: f64, epsilon: f64) -> Option<&crate::layer::Layer> {
+            let limit = print_z - epsilon;
+            let it = Self::lower_bound_by_predicate(self.m_layers.len(), |i| self.m_layers[i].print_z < limit);
+            if it == self.m_layers.len() || self.m_layers[it].print_z > print_z + epsilon {
+                None
+            } else {
+                Some(&self.m_layers[it])
+            }
+        }
+        /// PrintObject.cpp:6790-6795 `const Layer *PrintObject::get_first_layer_bellow_printz(coordf_t print_z, coordf_t epsilon) const`
+        pub fn get_first_layer_bellow_printz(&self, print_z: f64, epsilon: f64) -> Option<&crate::layer::Layer> {
+            let limit = print_z + epsilon;
+            let it = Self::lower_bound_by_predicate(self.m_layers.len(), |i| self.m_layers[i].print_z < limit);
+            if it == 0 {
+                None
+            } else {
+                Some(&self.m_layers[it - 1])
+            }
+        }
         /// Print.hpp:409
         pub fn trafo(&self) -> &crate::geometry::geometry::Transform3d {
             &self.m_trafo

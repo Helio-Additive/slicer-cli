@@ -165,6 +165,12 @@ pub struct CGALMesh {
     hconn_: Vec<Halfedge_connectivity>,
     fconn_: Vec<Face_connectivity>,
     vpoint_: Vec<Point_3>,
+    /// `vremoved_`, `eremoved_`, `fremoved_` (the "v:removed", "e:removed" and "f:removed"
+    /// properties): set only by `from_connectivity`, which takes a mesh CGAL has removed elements
+    /// from. An index past the end of one of them is not removed.
+    vremoved_: Vec<bool>,
+    eremoved_: Vec<bool>,
+    fremoved_: Vec<bool>,
 }
 
 impl CGALMesh {
@@ -179,6 +185,9 @@ impl CGALMesh {
         self.hconn_.clear();
         self.fconn_.clear();
         self.vpoint_.clear();
+        self.vremoved_.clear();
+        self.eremoved_.clear();
+        self.fremoved_.clear();
     }
 
     /// `Surface_mesh::null_face()`
@@ -210,19 +219,19 @@ impl CGALMesh {
     /// `Surface_mesh::number_of_vertices()`: `num_vertices()` less the removed ones, of which
     /// there are none here
     pub fn number_of_vertices(&self) -> usize {
-        self.num_vertices()
+        self.num_vertices() - self.vremoved_.iter().filter(|r| **r).count()
     }
     /// `Surface_mesh::number_of_halfedges()`
     pub fn number_of_halfedges(&self) -> usize {
-        self.num_halfedges()
+        self.num_halfedges() - 2 * self.eremoved_.iter().filter(|r| **r).count()
     }
     /// `Surface_mesh::number_of_edges()`
     pub fn number_of_edges(&self) -> usize {
-        self.num_edges()
+        self.num_edges() - self.eremoved_.iter().filter(|r| **r).count()
     }
     /// `Surface_mesh::number_of_faces()`
     pub fn number_of_faces(&self) -> usize {
-        self.num_faces()
+        self.num_faces() - self.fremoved_.iter().filter(|r| **r).count()
     }
 
     /// `Surface_mesh::add_vertex(const Point& p)` (the branch without a free list)
@@ -468,20 +477,20 @@ impl CGALMesh {
     }
 
     /// `Surface_mesh::vertices()`
-    pub fn vertices(&self) -> impl Iterator<Item = SM_Vertex_index> {
-        (0..self.num_vertices() as u32).map(SM_Vertex_index)
+    pub fn vertices(&self) -> impl Iterator<Item = SM_Vertex_index> + '_ {
+        (0..self.num_vertices() as u32).map(SM_Vertex_index).filter(move |v| !self.is_removed_v(*v))
     }
     /// `Surface_mesh::halfedges()`
-    pub fn halfedges(&self) -> impl Iterator<Item = SM_Halfedge_index> {
-        (0..self.num_halfedges() as u32).map(SM_Halfedge_index)
+    pub fn halfedges(&self) -> impl Iterator<Item = SM_Halfedge_index> + '_ {
+        (0..self.num_halfedges() as u32).map(SM_Halfedge_index).filter(move |h| !self.is_removed_h(*h))
     }
     /// `Surface_mesh::edges()`
-    pub fn edges(&self) -> impl Iterator<Item = SM_Edge_index> {
-        (0..self.num_edges() as u32).map(SM_Edge_index::new)
+    pub fn edges(&self) -> impl Iterator<Item = SM_Edge_index> + '_ {
+        (0..self.num_edges() as u32).map(SM_Edge_index::new).filter(move |e| !self.is_removed_e(*e))
     }
     /// `Surface_mesh::faces()`
-    pub fn faces(&self) -> impl Iterator<Item = SM_Face_index> {
-        (0..self.num_faces() as u32).map(SM_Face_index)
+    pub fn faces(&self) -> impl Iterator<Item = SM_Face_index> + '_ {
+        (0..self.num_faces() as u32).map(SM_Face_index).filter(move |f| !self.is_removed_f(*f))
     }
 
     /// `Surface_mesh::has_valid_index(Vertex_index)`
@@ -501,21 +510,22 @@ impl CGALMesh {
         f.idx() < self.num_faces()
     }
 
-    /// `Surface_mesh::is_removed(Vertex_index)`: nothing is removed from this stand-in
-    pub fn is_removed_v(&self, _v: SM_Vertex_index) -> bool {
-        false
+    /// `Surface_mesh::is_removed(Vertex_index)`: the stand-in removes nothing itself, a mesh
+    /// taken over by `from_connectivity` may hold removed elements
+    pub fn is_removed_v(&self, v: SM_Vertex_index) -> bool {
+        self.vremoved_.get(v.idx()).copied().unwrap_or(false)
     }
-    /// `Surface_mesh::is_removed(Halfedge_index)`
-    pub fn is_removed_h(&self, _h: SM_Halfedge_index) -> bool {
-        false
+    /// `Surface_mesh::is_removed(Halfedge_index)`: `eremoved_[edge(h)]`
+    pub fn is_removed_h(&self, h: SM_Halfedge_index) -> bool {
+        self.eremoved_.get(h.idx() / 2).copied().unwrap_or(false)
     }
     /// `Surface_mesh::is_removed(Edge_index)`
-    pub fn is_removed_e(&self, _e: SM_Edge_index) -> bool {
-        false
+    pub fn is_removed_e(&self, e: SM_Edge_index) -> bool {
+        self.eremoved_.get(e.idx()).copied().unwrap_or(false)
     }
     /// `Surface_mesh::is_removed(Face_index)`
-    pub fn is_removed_f(&self, _f: SM_Face_index) -> bool {
-        false
+    pub fn is_removed_f(&self, f: SM_Face_index) -> bool {
+        self.fremoved_.get(f.idx()).copied().unwrap_or(false)
     }
 
     /// `Surface_mesh::is_valid(Vertex_index v)`
@@ -744,6 +754,52 @@ impl CGALMesh {
     /// `halfedges_around_face(h)`, the null face across a border edge
     pub fn faces_around_face(&self, h: SM_Halfedge_index) -> Vec<SM_Face_index> {
         self.halfedges_around_face(h).into_iter().map(|hf| self.face(self.opposite(hf))).collect()
+    }
+
+    /// `Surface_mesh::faces_around_target(Halfedge_index h)`: the face of each halfedge of
+    /// `halfedges_around_target(h)`, the null face for a border halfedge
+    pub fn faces_around_target(&self, h: SM_Halfedge_index) -> Vec<SM_Face_index> {
+        self.halfedges_around_target(h).into_iter().map(|ht| self.face(ht)).collect()
+    }
+
+    /// `Surface_mesh::points()`: the "v:point" property, one point per vertex index, the removed
+    /// ones among them
+    pub fn points(&self) -> &[Point_3] {
+        &self.vpoint_
+    }
+
+    /// The connectivity arrays of a `Surface_mesh` as they stand, for a mesh that an algorithm
+    /// of CGAL the crate does not have (corefinement, clipping) has worked on: per vertex its
+    /// halfedge (`vconn_`), per halfedge its face, target vertex, next and previous halfedge
+    /// (`hconn_`), per face its halfedge (`fconn_`), the points, and the three "removed"
+    /// properties. `u32::MAX` is the null index.
+    pub fn from_connectivity(
+        vertex_halfedge: &[u32],
+        halfedges: &[[u32; 4]],
+        face_halfedge: &[u32],
+        points: &[Point_3],
+        vremoved: &[bool],
+        eremoved: &[bool],
+        fremoved: &[bool],
+    ) -> Self {
+        assert_eq!(vertex_halfedge.len(), points.len());
+        CGALMesh {
+            vconn_: vertex_halfedge.iter().map(|&h| Vertex_connectivity { halfedge_: SM_Halfedge_index(h) }).collect(),
+            hconn_: halfedges
+                .iter()
+                .map(|h| Halfedge_connectivity {
+                    face_: SM_Face_index(h[0]),
+                    vertex_: SM_Vertex_index(h[1]),
+                    next_halfedge_: SM_Halfedge_index(h[2]),
+                    prev_halfedge_: SM_Halfedge_index(h[3]),
+                })
+                .collect(),
+            fconn_: face_halfedge.iter().map(|&h| Face_connectivity { halfedge_: SM_Halfedge_index(h) }).collect(),
+            vpoint_: points.to_vec(),
+            vremoved_: vremoved.to_vec(),
+            eremoved_: eremoved.to_vec(),
+            fremoved_: fremoved.to_vec(),
+        }
     }
 }
 
@@ -1038,6 +1094,222 @@ pub fn compare_distance_3(p: &Point_3, q: &Point_3, r: &Point_3) -> std::cmp::Or
     squared_distance_terms(p, q, 1.0, &mut terms);
     squared_distance_terms(p, r, -1.0, &mut terms);
     sign_of_sum(&terms)
+}
+
+/// The terms whose sum is exactly `a * b * c`
+fn product3_terms(a: f64, b: f64, c: f64, sign: f64, out: &mut Vec<f64>) {
+    let (p, e) = two_product(a, b);
+    for x in [p, e] {
+        if x != 0.0 {
+            let (y, f) = two_product(x, c);
+            out.push(sign * y);
+            out.push(sign * f);
+        }
+    }
+}
+
+/// The sign of the determinant whose rows are the three differences `u1 - u0`, `v1 - v0` and
+/// `w1 - w0`, the differences taken exactly (CGAL/determinant.h `determinant` of a 3x3 over an
+/// exact number type, as the filtered predicates of the kernel end up computing it).
+fn sign_of_determinant3_of_differences(u: (&Point_3, &Point_3), v: (&Point_3, &Point_3), w: (&Point_3, &Point_3)) -> std::cmp::Ordering {
+    // Shewchuk's filter (predicates.c, `orient3d`, o3derrboundA): the determinant in doubles
+    // decides when it is larger than the bound on its rounding error.
+    let d = |t: (&Point_3, &Point_3), i: usize| t.0[i] - t.1[i];
+    let (ux, uy, uz) = (d(u, 0), d(u, 1), d(u, 2));
+    let (vx, vy, vz) = (d(v, 0), d(v, 1), d(v, 2));
+    let (wx, wy, wz) = (d(w, 0), d(w, 1), d(w, 2));
+    let (vxwy, wxvy) = (vx * wy, wx * vy);
+    let (wxuy, uxwy) = (wx * uy, ux * wy);
+    let (uxvy, vxuy) = (ux * vy, vx * uy);
+    let det = uz * (vxwy - wxvy) + vz * (wxuy - uxwy) + wz * (uxvy - vxuy);
+    let permanent = (vxwy.abs() + wxvy.abs()) * uz.abs() + (wxuy.abs() + uxwy.abs()) * vz.abs() + (uxvy.abs() + vxuy.abs()) * wz.abs();
+    let errbound = (7.0 + 56.0 * (f64::EPSILON / 2.0)) * (f64::EPSILON / 2.0) * permanent;
+    if det.is_finite() && permanent.is_finite() && permanent > 1e-290 && (det > errbound || -det > errbound) {
+        return det.partial_cmp(&0.0).expect("finite");
+    }
+    // each difference as the sum of two doubles
+    let ex = |t: (&Point_3, &Point_3), i: usize| -> [f64; 2] {
+        let (s, e) = two_sum(t.0[i], -t.1[i]);
+        [s, e]
+    };
+    let r = [[ex(u, 0), ex(u, 1), ex(u, 2)], [ex(v, 0), ex(v, 1), ex(v, 2)], [ex(w, 0), ex(w, 1), ex(w, 2)]];
+    let mut terms: Vec<f64> = Vec::with_capacity(192);
+    for (perm, sign) in [([0, 1, 2], 1.0), ([1, 2, 0], 1.0), ([2, 0, 1], 1.0), ([0, 2, 1], -1.0), ([1, 0, 2], -1.0), ([2, 1, 0], -1.0)] {
+        for a in r[0][perm[0]] {
+            for b in r[1][perm[1]] {
+                for c in r[2][perm[2]] {
+                    if a != 0.0 && b != 0.0 && c != 0.0 {
+                        product3_terms(a, b, c, sign, &mut terms);
+                    }
+                }
+            }
+        }
+    }
+    sign_of_sum(&terms)
+}
+
+/// `Orientation_3(p, q, r, s)` of the kernel (CGAL/predicates/kernel_ftC3.h, `orientationC3`):
+/// the sign of the determinant of `q - p`, `r - p`, `s - p`; `Greater` is `CGAL::POSITIVE`. An
+/// exact predicate (CGAL filters with intervals and falls back on exact numbers; the sign is the
+/// same).
+pub fn orientation_3(p: &Point_3, q: &Point_3, r: &Point_3, s: &Point_3) -> std::cmp::Ordering {
+    sign_of_determinant3_of_differences((q, p), (r, p), (s, p))
+}
+
+/// `orientationC2(px, py, qx, qy, rx, ry)` (CGAL/predicates/kernel_ftC2.h):
+/// `sign_of_determinant(qx - px, qy - py, rx - px, ry - py)`, exactly.
+fn orientation_c2(px: f64, py: f64, qx: f64, qy: f64, rx: f64, ry: f64) -> std::cmp::Ordering {
+    let d = |a: f64, b: f64| -> [f64; 2] {
+        let (s, e) = two_sum(a, -b);
+        [s, e]
+    };
+    let (a00, a01, a10, a11) = (d(qx, px), d(qy, py), d(rx, px), d(ry, py));
+    let mut terms: Vec<f64> = Vec::with_capacity(16);
+    for (x, y, sign) in [(a00, a11, 1.0), (a10, a01, -1.0)] {
+        for a in x {
+            for b in y {
+                let (p, e) = two_product(a, b);
+                terms.push(sign * p);
+                terms.push(sign * e);
+            }
+        }
+    }
+    sign_of_sum(&terms)
+}
+
+/// `Coplanar_orientation_3(p, q, r)` (CGAL/predicates/kernel_ftC3.h, `coplanar_orientationC3`
+/// of three points): the orientation of the projection on the xy plane, or when that is
+/// collinear on the yz plane, or then on the xz plane.
+pub fn coplanar_orientation_3(p: &Point_3, q: &Point_3, r: &Point_3) -> std::cmp::Ordering {
+    use std::cmp::Ordering::Equal;
+    let oxy_pqr = orientation_c2(p[0], p[1], q[0], q[1], r[0], r[1]);
+    if oxy_pqr != Equal {
+        return oxy_pqr;
+    }
+    let oyz_pqr = orientation_c2(p[1], p[2], q[1], q[2], r[1], r[2]);
+    if oyz_pqr != Equal {
+        return oyz_pqr;
+    }
+    orientation_c2(p[0], p[2], q[0], q[2], r[0], r[2])
+}
+
+/// CGAL/Intersections_3/internal/Ray_3_Triangle_3_do_intersect.h, `do_intersect_coplanar(t, r,
+/// k, visitor)` with the empty visitor: the ray from `p` through `q` in the plane of the triangle
+fn do_intersect_coplanar_triangle_3_ray_3(t: &[Point_3; 3], p: &Point_3, q: &Point_3) -> bool {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let a = &t[0];
+    let (mut b, mut c) = (&t[1], &t[2]);
+    if coplanar_orientation_3(&t[0], &t[1], &t[2]) != Greater {
+        b = &t[2];
+        c = &t[1];
+    }
+    let pqa = coplanar_orientation_3(p, q, a);
+    let pqb = coplanar_orientation_3(p, q, b);
+    let pqc = coplanar_orientation_3(p, q, c);
+    let co = |x: &Point_3, y: &Point_3| coplanar_orientation_3(x, y, p) != Greater;
+    match pqa {
+        Greater => match pqb {
+            Greater => {
+                if pqc == Greater {
+                    return false;
+                }
+                co(a, c)
+            }
+            // b is isolated on the negative side
+            Less | Equal => {
+                if pqc == Greater {
+                    return co(c, b);
+                }
+                co(a, c)
+            }
+        },
+        Less => match pqb {
+            // a is isolated on the negative side
+            Greater => co(b, a),
+            Less => {
+                if pqc == Less {
+                    return false;
+                }
+                co(c, b)
+            }
+            // b is isolated on the positive side
+            Equal => co(b, a),
+        },
+        Equal => match pqb {
+            // a is isolated on the negative side
+            Greater => co(b, a),
+            Less => {
+                // a is isolated on the positive side
+                if pqc == Less {
+                    return co(a, c);
+                }
+                co(c, b)
+            }
+            Equal => {
+                // c is isolated on the positive side
+                if pqc == Greater {
+                    return co(c, b);
+                }
+                co(a, c)
+            }
+        },
+    }
+}
+
+/// `Do_intersect_3(Triangle_3, Ray_3)` of the kernel
+/// (CGAL/Intersections_3/internal/Ray_3_Triangle_3_do_intersect.h, `do_intersect(t, r, k,
+/// visitor)` with the empty visitor): the triangle `t` and the ray from `p` through `q`. The
+/// orientations are exact, that of the ray's direction too: the C++ builds the point
+/// `a + (q - p)` in the number type of the predicate, which is exact when it matters.
+pub fn do_intersect_triangle_3_ray_3(t: &[Point_3; 3], p: &Point_3, q: &Point_3) -> bool {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let (a, b, c) = (&t[0], &t[1], &t[2]);
+    // orientation(a, b, c, a + (q - p))
+    let ray_direction = sign_of_determinant3_of_differences((b, a), (c, a), (q, p));
+    if ray_direction == Equal {
+        if orientation_3(a, b, c, p) == Equal {
+            return do_intersect_coplanar_triangle_3_ray_3(t, p, q);
+        }
+        return false;
+    }
+    let abcp = orientation_3(a, b, c, p);
+    match abcp {
+        Greater => match ray_direction {
+            Greater => false,
+            _ => {
+                if orientation_3(p, q, a, b) == Greater {
+                    return false;
+                }
+                if orientation_3(p, q, b, c) == Greater {
+                    return false;
+                }
+                if orientation_3(p, q, c, a) == Greater {
+                    return false;
+                }
+                true
+            }
+        },
+        Less => match ray_direction {
+            Greater => {
+                if orientation_3(q, p, a, b) == Greater {
+                    return false;
+                }
+                if orientation_3(q, p, b, c) == Greater {
+                    return false;
+                }
+                if orientation_3(q, p, c, a) == Greater {
+                    return false;
+                }
+                true
+            }
+            _ => false,
+        },
+        // p belongs to the triangle's supporting plane
+        Equal => match ray_direction {
+            Greater => orientation_3(q, p, a, b) != Greater && orientation_3(q, p, b, c) != Greater && orientation_3(q, p, c, a) != Greater,
+            _ => orientation_3(p, q, a, b) != Greater && orientation_3(p, q, b, c) != Greater && orientation_3(p, q, c, a) != Greater,
+        },
+    }
 }
 
 /// `Construct_projected_point_3(Line_3(p1, p2), p)` (CGAL/Cartesian/function_objects.h): `p`

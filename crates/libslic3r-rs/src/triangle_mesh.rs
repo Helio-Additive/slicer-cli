@@ -55,7 +55,23 @@ pub type Vec2f = Vector2<f32>;
 #[inline]
 fn scaled_coord_f32(v: f32) -> i64 {
     // Point.hpp:540: Tout(v / Tin(SCALING_FACTOR)) with Tin = float.
-    (v / SCALING_FACTOR as f32) as i64
+    if float_pin() {
+        // libslic3r.h:58 `SCALING_FACTOR = 0.00001`, narrowed to float.
+        (v / (SCALING_FACTOR_PIN as f32)) as i64
+    } else {
+        // The earlier arm: the crate's SCALING_FACTOR is the inverse (100000), so this divided by it.
+        (v / SCALING_FACTOR as f32) as i64
+    }
+}
+
+/// Gate `TRIANGLE_MESH_FLOAT_PIN` (on by default): the float arithmetic of TriangleMesh.cpp as the
+/// C++ build evaluates it (Eigen's `cross`, `normalized`, `norm`, `dot` of `Vec3f` in
+/// `triangle_set_sampling`'s `eigen_*3f`, and `scaled<coord_t>(float)` dividing by the float
+/// SCALING_FACTOR), checked by tests/triangle_mesh_native_parity.rs. Off: the earlier arm,
+/// nalgebra's `cross`/`normalize`/`dot` and a division by the crate's inverse SCALING_FACTOR.
+#[inline]
+fn float_pin() -> bool {
+    crate::faithful_gate("TRIANGLE_MESH_FLOAT_PIN")
 }
 
 // ============================================================================
@@ -332,6 +348,32 @@ pub fn fill_initial_stats(its: &indexed_triangle_set, out: &mut TriangleMeshStat
     }
 }
 
+/// TriangleMesh.cpp:390-398, the tail of `TriangleMesh::flip_triangles()`: "Topology is unchanged
+/// by a global flip; reuse edge counts and only re-run the reversed-face test.
+/// same_direction_edges is not stored on TriangleMeshStats: watertight meshes with same-dir edges
+/// fall through to the ray test instead of the shortcut."
+///
+/// Behind the gate of [`fill_initial_stats`], `TRIANGLE_MESH_STATS_PIN`: off, the flag is left
+/// as it is (the earlier arm).
+pub(crate) fn flip_triangles_detect_reversed_faces(its: &indexed_triangle_set, m_stats: &mut TriangleMeshStats) {
+    if !crate::faithful_gate("TRIANGLE_MESH_STATS_PIN") {
+        return;
+    }
+    // TriangleMesh.cpp:394
+    let mut st = crate::mesh_diagnostics::MeshDiagnosticStats::default();
+    // TriangleMesh.cpp:395-396
+    st.open_edges = m_stats.open_edges.max(0) as usize;
+    st.non_manifold_edges = m_stats.non_manifold_edges.max(0) as usize;
+    // TriangleMesh.cpp:397
+    let its_diag = crate::triangle_set_sampling::indexed_triangle_set {
+        vertices: its.vertices.clone(),
+        indices: its.indices.clone(),
+    };
+    crate::mesh_diagnostics::its_detect_reversed_faces(&its_diag, &mut st);
+    // TriangleMesh.cpp:398
+    m_stats.has_reversed_faces = st.has_reversed_faces;
+}
+
 // ============================================================================
 // TriangleMesh.cpp:575-725 — Face edge IDs
 // ============================================================================
@@ -402,9 +444,16 @@ fn create_edge_map(
     // TriangleMesh.cpp:611
     throw_on_cancel();
     // TriangleMesh.cpp:612 — std::sort by operator<: (vertex_low, vertex_high).
-    edges_map.sort_by(|a, b| {
-        (a.vertex_low, a.vertex_high).cmp(&(b.vertex_low, b.vertex_high))
-    });
+    // Gate `TRIANGLE_MESH_EDGE_SORT_PIN` (on by default): libc++'s `std::sort`, which is not
+    // stable: the order of the edges of one vertex pair (more than two on a non-manifold edge)
+    // decides which faces share an edge ID. Off: the earlier arm, a stable sort.
+    if crate::faithful_gate("TRIANGLE_MESH_EDGE_SORT_PIN") {
+        crate::clipper::libcxx_sort(&mut edges_map, |a, b| {
+            a.vertex_low < b.vertex_low || (a.vertex_low == b.vertex_low && a.vertex_high < b.vertex_high)
+        });
+    } else {
+        edges_map.sort_by(|a, b| (a.vertex_low, a.vertex_high).cmp(&(b.vertex_low, b.vertex_high)));
+    }
 
     // TriangleMesh.cpp:614
     edges_map
@@ -1974,6 +2023,20 @@ pub fn its_volume(its: &indexed_triangle_set) -> f32 {
         let u = triangle[1] - triangle[0];
         // TriangleMesh.cpp:1838
         let v = triangle[2] - triangle[0];
+        if float_pin() {
+            use crate::triangle_set_sampling::{eigen_cross3f, eigen_dot3f, eigen_normalized3f, eigen_squared_norm3f};
+            // TriangleMesh.cpp:1839
+            let c = eigen_cross3f(&u, &v);
+            // TriangleMesh.cpp:1840
+            let normal = eigen_normalized3f(&c);
+            // TriangleMesh.cpp:1841 — float area = 0.5 * C.norm(); (computed in double then narrowed to float)
+            let area = (0.5 * eigen_squared_norm3f(&c).sqrt() as f64) as f32;
+            // TriangleMesh.cpp:1842
+            let height = eigen_dot3f(&normal, &(triangle[0] - p0));
+            // TriangleMesh.cpp:1843
+            volume += (area * height) / 3.0;
+            continue;
+        }
         // TriangleMesh.cpp:1839
         let c = u.cross(&v);
         // TriangleMesh.cpp:1840
@@ -2276,18 +2339,30 @@ pub fn its_unnormalized_normal(its: &indexed_triangle_set, face_id: usize) -> Ve
     // TriangleMesh.hpp:319
     let tri = its_triangle_vertices(its, face_id);
     // TriangleMesh.hpp:320
+    if float_pin() {
+        return crate::triangle_set_sampling::eigen_cross3f(&(tri[1] - tri[0]), &(tri[2] - tri[0]));
+    }
     (tri[1] - tri[0]).cross(&(tri[2] - tri[0]))
 }
 
 /// TriangleMesh.hpp:331
 /// C++: `inline Vec3f face_normal(const stl_vertex vertex[3]) { return (vertex[1] - vertex[0]).cross(vertex[2] - vertex[1]).normalized(); }`
 pub fn face_normal(vertex: &[StlVertex; 3]) -> Vec3f {
+    if float_pin() {
+        return crate::triangle_set_sampling::eigen_normalized3f(&crate::triangle_set_sampling::eigen_cross3f(
+            &(vertex[1] - vertex[0]),
+            &(vertex[2] - vertex[1]),
+        ));
+    }
     (vertex[1] - vertex[0]).cross(&(vertex[2] - vertex[1])).normalize()
 }
 
 /// TriangleMesh.hpp:332
 /// C++: `inline Vec3f face_normal_normalized(const stl_vertex vertex[3]) { return face_normal(vertex).normalized(); }`
 pub fn face_normal_normalized(vertex: &[StlVertex; 3]) -> Vec3f {
+    if float_pin() {
+        return crate::triangle_set_sampling::eigen_normalized3f(&face_normal(vertex));
+    }
     face_normal(vertex).normalize()
 }
 
@@ -2390,7 +2465,11 @@ pub fn its_write_stl_ascii(
             vertices[face[2] as usize],
         ];
         // TriangleMesh.cpp:1971
-        let normal = (vertex[1] - vertex[0]).cross(&(vertex[2] - vertex[1])).normalize();
+        let normal = if float_pin() {
+            face_normal(&vertex)
+        } else {
+            (vertex[1] - vertex[0]).cross(&(vertex[2] - vertex[1])).normalize()
+        };
         // TriangleMesh.cpp:1972 — "  facet normal % .8E % .8E % .8E\n"
         let _ = write!(
             fp,
@@ -2502,7 +2581,7 @@ pub fn its_write_stl_binary(
         let v1 = vertices[face[1] as usize];
         let v2 = vertices[face[2] as usize];
         // TriangleMesh.cpp:2013
-        let normal = (v1 - v0).cross(&(v2 - v1)).normalize();
+        let normal = if float_pin() { face_normal(&[v0, v1, v2]) } else { (v1 - v0).cross(&(v2 - v1)).normalize() };
 
         // 48-byte float block: normal, v0, v1, v2 (big_endian_reverse_quads is a no-op LE).
         let mut buf = [0u8; 50];
@@ -2795,6 +2874,102 @@ fn its_rotate_z(its: &mut indexed_triangle_set, angle: f32) {
     }
 }
 
+/// admesh/util.cpp:162-169 `void its_rotate_x(indexed_triangle_set &its, float angle)`, the angle
+/// in degrees: `rotate_point_2d(v(1), v(2), c, s)`.
+fn its_rotate_x(its: &mut indexed_triangle_set, angle: f32) {
+    // admesh/util.cpp:164: (angle / 180.0) * M_PI
+    let radian_angle = (angle as f64 / 180.0) * std::f64::consts::PI;
+    let c = radian_angle.cos();
+    let s = radian_angle.sin();
+    for v in &mut its.vertices {
+        let (mut a, mut b) = (v[1], v[2]);
+        rotate_point_2d(&mut a, &mut b, c, s);
+        v[1] = a;
+        v[2] = b;
+    }
+}
+
+/// admesh/util.cpp:171-178 `void its_rotate_y(indexed_triangle_set& its, float angle)`, the angle
+/// in degrees: `rotate_point_2d(v(2), v(0), c, s)`.
+fn its_rotate_y(its: &mut indexed_triangle_set, angle: f32) {
+    // admesh/util.cpp:173: (angle / 180.0) * M_PI
+    let radian_angle = (angle as f64 / 180.0) * std::f64::consts::PI;
+    let c = radian_angle.cos();
+    let s = radian_angle.sin();
+    for v in &mut its.vertices {
+        let (mut a, mut b) = (v[2], v[0]);
+        rotate_point_2d(&mut a, &mut b, c, s);
+        v[2] = a;
+        v[0] = b;
+    }
+}
+
+/// TriangleMesh.hpp:113 `void rotate(float angle, const Axis &axis)`, the overload of `rotate`
+/// about a coordinate axis (the inherent `rotate` is `rotate(double angle, Point* center)`).
+pub trait TriangleMeshRotateAxis {
+    fn rotate(&mut self, angle: f32, axis: crate::geometry::geometry::Axis);
+}
+
+impl TriangleMeshRotateAxis for crate::model::ModelMesh {
+    /// TriangleMesh.cpp:311-323
+    fn rotate(&mut self, angle: f32, axis: crate::geometry::geometry::Axis) {
+        use crate::geometry::geometry::Axis;
+        // TriangleMesh.cpp:313
+        if angle != 0.0f32 {
+            // TriangleMesh.cpp:314 — Geometry::rad2deg<float>: `T(180.0) * angle / T(PI)` (Geometry.hpp:293)
+            let angle = 180.0f32 * angle / (std::f64::consts::PI as f32);
+            // TriangleMesh.cpp:315-320
+            match axis {
+                Axis::X => its_rotate_x(&mut self.its, angle),
+                Axis::Y => its_rotate_y(&mut self.its, angle),
+                Axis::Z => its_rotate_z(&mut self.its, angle),
+                #[allow(unreachable_patterns)]
+                _ => {
+                    debug_assert!(false);
+                    return;
+                }
+            }
+            // TriangleMesh.cpp:321
+            let its = std::mem::take(&mut self.its);
+            update_bounding_box(&its, self.m_stats_mut());
+            self.its = its;
+        }
+    }
+}
+
+/// TriangleMesh.hpp:114 `void rotate(float angle, const Vec3d& axis)`, the overload of `rotate`
+/// about an arbitrary axis.
+pub trait TriangleMeshRotateVec3d {
+    fn rotate(&mut self, angle: f32, axis: &crate::geometry::geometry::Vec3d);
+}
+
+impl TriangleMeshRotateVec3d for crate::model::ModelMesh {
+    /// TriangleMesh.cpp:325-334
+    fn rotate(&mut self, angle: f32, axis: &crate::geometry::geometry::Vec3d) {
+        use crate::geometry::geometry::eigen;
+        // TriangleMesh.cpp:327
+        if angle != 0.0f32 {
+            // TriangleMesh.cpp:328
+            let axis_norm = eigen::normalized3(axis);
+            // TriangleMesh.cpp:329-330 — `m.rotate(r)` is `linearExt() *= r.toRotationMatrix()`
+            // (Eigen Transform.h), the identity times the rotation.
+            let r = eigen::AngleAxisd::new(angle as f64, axis_norm).to_rotation_matrix();
+            let l = eigen::mat3_mul(&nalgebra::Matrix3::<f64>::identity(), &r);
+            let mut m = nalgebra::Matrix4::<f64>::identity();
+            m.fixed_view_mut::<3, 3>(0, 0).copy_from(&l);
+            // TriangleMesh.cpp:331 — admesh/stl.h:371-380 its_transform(its, m): `(t * v.cast<double>()).cast<float>()`
+            for v in &mut self.its.vertices {
+                let p = eigen::transform_mul_vec(&m, &crate::geometry::geometry::Vec3d::new(v.x as f64, v.y as f64, v.z as f64));
+                *v = Vec3f::new(p.x as f32, p.y as f32, p.z as f32);
+            }
+            // TriangleMesh.cpp:332
+            let its = std::mem::take(&mut self.its);
+            update_bounding_box(&its, self.m_stats_mut());
+            self.its = its;
+        }
+    }
+}
+
 /// `sizeof(indexed_triangle_set)` at the pin (admesh/stl.h:220-266): three `std::vector`s
 /// (`indices`, `vertices`, `properties`) of 24 bytes each on a 64-bit libc++.
 const SIZEOF_INDEXED_TRIANGLE_SET: usize = 72;
@@ -2940,6 +3115,31 @@ impl crate::model::ModelMesh {
     /// TriangleMesh.hpp:121 `void mirror_z() { this->mirror(Z); }`
     pub fn mirror_z(&mut self) {
         self.mirror(crate::geometry::geometry::Axis::Z);
+    }
+
+    /// TriangleMesh.hpp:115 `void rotate_x(float angle) { this->rotate(angle, X); }`
+    pub fn rotate_x(&mut self, angle: f32) {
+        TriangleMeshRotateAxis::rotate(self, angle, crate::geometry::geometry::Axis::X);
+    }
+
+    /// TriangleMesh.hpp:116 `void rotate_y(float angle) { this->rotate(angle, Y); }`
+    pub fn rotate_y(&mut self, angle: f32) {
+        TriangleMeshRotateAxis::rotate(self, angle, crate::geometry::geometry::Axis::Y);
+    }
+
+    /// TriangleMesh.hpp:117 `void rotate_z(float angle) { this->rotate(angle, Z); }`
+    pub fn rotate_z(&mut self, angle: f32) {
+        TriangleMeshRotateAxis::rotate(self, angle, crate::geometry::geometry::Axis::Z);
+    }
+
+    /// TriangleMesh.cpp:245-248 `bool write_ascii(const char* output_file)`
+    pub fn write_ascii(&mut self, output_file: &str) -> bool {
+        its_write_stl_ascii_its::its_write_stl_ascii(output_file, "", &self.its)
+    }
+
+    /// TriangleMesh.cpp:250-253 `bool write_binary(const char* output_file)`
+    pub fn write_binary(&mut self, output_file: &str) -> bool {
+        its_write_stl_binary_its::its_write_stl_binary(output_file, "", &self.its)
     }
 
     /// TriangleMesh.cpp:260-263 `void WriteOBJFile(const char* output_file) const`

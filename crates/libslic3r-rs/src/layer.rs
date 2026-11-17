@@ -416,6 +416,10 @@ pub struct LayerRegion {
     /// Layer.hpp:66
     pub unsupported_bridge_edges: Polylines,
 
+    /// Layer.hpp:72 `std::vector<AdaptiveMergePatch> adaptive_merge_patches`: the multi-diameter
+    /// adaptive layer height patches of this region (none unless a caller fills them).
+    pub adaptive_merge_patches: Vec<crate::adaptive_layer_merge::AdaptiveMergePatch>,
+
     // Extrusions
     /// Layer.hpp:70
     pub perimeters: ExtrusionEntityCollection,
@@ -477,6 +481,7 @@ impl LayerRegion {
             fill_surfaces: SurfaceCollection::new(),
             fill_no_overlap_expolygons: ExPolygons::new(),
             unsupported_bridge_edges: Polylines::new(),
+            adaptive_merge_patches: Vec::new(),
             perimeters: ExtrusionEntityCollection::new(),
             fills: ExtrusionEntityCollection::new(),
             lower_slices: None,
@@ -2509,6 +2514,11 @@ impl Layer {
     // `static const int dist_scale_threshold = 1.2` truncates to int 1 — the
     // width limit is exactly the previous width; ported faithfully.
     pub fn calculate_perimeter_continuity(&mut self, prev_nodes: &mut [LoopNode]) {
+        // LAYER_CONTINUITY_PIN (on): Layer.cpp:468-547 as the pin has it, see
+        // `calculate_perimeter_continuity_pin`. =0 keeps the body below.
+        if crate::faithful_gate("LAYER_CONTINUITY_PIN") {
+            return self.calculate_perimeter_continuity_pin(prev_nodes);
+        }
         const CONTINUITIOUS_LENGTH: f64 = 1000.0; // scale_(0.01)
 
         // Layer.cpp:342-351 get_node_continuity_rang_limit (the ×1.2 truncates
@@ -2647,6 +2657,13 @@ impl Layer {
     // keeps ONE flat perimeters collection per region (native nests one
     // collection per island), so the range walk runs over that collection.
     pub fn record_cooling_node_for_each_extrusion(&mut self) {
+        self.recrod_cooling_node_for_each_extrusion()
+    }
+
+    // Layer.cpp:550-574
+    // C++: void Layer::recrod_cooling_node_for_each_extrusion()
+    // (the body described above; the C++ spells the name this way)
+    pub fn recrod_cooling_node_for_each_extrusion(&mut self) {
         for region in &mut self.regions {
             let (range_start, range_end) = region.perimeters.loop_node_range;
             if range_start >= range_end {
@@ -4708,6 +4725,461 @@ impl LayerRegion {
 
 // NOTE: the canonical PrintObject lives in crate::print_object; a dead local
 // placeholder struct (empty bounding_box stub) was removed here.
+
+// Layer.cpp:11 `static const int Continuitious_length = scale_(0.01);`: 0.01 / 0.00001 is
+// 999.9999999999999 in double, 999 as an int.
+const CONTINUITIOUS_LENGTH_PIN: i32 = (0.01 / crate::libslic3r::SCALING_FACTOR) as i32;
+// Layer.cpp:12 `static const int dist_scale_threshold = 1.2;`: 1 as an int.
+#[allow(non_upper_case_globals)]
+const dist_scale_threshold: i32 = 1.2 as i32;
+
+/// Layer.cpp:412-455 `class ContinuitiousDistancer`
+//BBS: use aabbtree to get distance
+pub struct ContinuitiousDistancer {
+    /// `std::vector<Linef> lines`: the end points are whole numbers, held here as the `Line`s the
+    /// tree functions take (they read them as doubles).
+    lines: Vec<crate::geometry::Line>,
+    tree: crate::aabb_tree_lines::tree2d::Tree,
+}
+
+impl ContinuitiousDistancer {
+    /// Layer.cpp:418-425 `ContinuitiousDistancer(const Points &pts)`
+    pub fn new(pts: &[Point]) -> Self {
+        let pt_to_lines = Self::to_lines(pts);
+        let mut lines: Vec<crate::geometry::Line> = Vec::new();
+        for line in &pt_to_lines {
+            lines.push(crate::geometry::Line::new(line.a, line.b));
+        }
+
+        let tree = crate::aabb_tree_lines::build_aabb_tree_over_indexed_lines(&lines);
+        ContinuitiousDistancer { lines, tree }
+    }
+
+    /// Layer.cpp:427-443 `float distance_from_perimeter(const Vec2f &point) const`
+    pub fn distance_from_perimeter(&self, point: [f32; 2]) -> f32 {
+        let p = crate::geometry::PointF::new(point[0] as f64, point[1] as f64);
+        let mut hit_idx_out: usize = 0;
+        let mut hit_point_out = crate::geometry::PointF::new(0.0, 0.0);
+        let mut distance: f64 = crate::aabb_tree_lines::squared_distance_to_indexed_lines(
+            &self.lines,
+            &self.tree,
+            p,
+            &mut hit_idx_out,
+            &mut hit_point_out,
+            f64::INFINITY,
+        );
+        if distance < 0.0 {
+            return f32::MAX;
+        }
+
+        distance = distance.sqrt();
+        let line = &self.lines[hit_idx_out];
+        let v1 = ((line.b.x - line.a.x) as f64, (line.b.y - line.a.y) as f64);
+        let v2 = (p.x - line.a.x as f64, p.y - line.a.y as f64);
+        if v1.0.mul_add(v2.1, -(v1.1 * v2.0)) > 0.0 {
+            distance *= -1.0;
+        }
+        distance as f32
+    }
+
+    /// Layer.cpp:445-454 `Lines to_lines(const Points &pts)`
+    pub fn to_lines(pts: &[Point]) -> Vec<crate::geometry::Line> {
+        let mut lines: Vec<crate::geometry::Line> = Vec::new();
+        if pts.len() >= 2 {
+            lines.reserve(pts.len() - 1);
+            for it in 0..pts.len() - 1 {
+                lines.push(crate::geometry::Line::new(pts[it], pts[it + 1]));
+            }
+        }
+        lines
+    }
+}
+
+/// Layer.cpp:458-467 `static double get_node_continuity_rang_limit(const std::vector<coord_t> &Prev_node_widths, int prev_pt_idx)`
+#[allow(non_snake_case)]
+fn get_node_continuity_rang_limit(Prev_node_widths: &[crate::Coord], prev_pt_idx: i32) -> f64 {
+    let width: f64;
+    let mut prev_width: f64 = Prev_node_widths[0] as f64;
+    if prev_pt_idx != 0 && (prev_pt_idx as usize) < Prev_node_widths.len() {
+        prev_width = Prev_node_widths[prev_pt_idx as usize] as f64;
+    }
+
+    width = prev_width * dist_scale_threshold as f64;
+    width
+}
+
+/// Layer.hpp:411-419 `template<typename LayerContainer> inline std::vector<float> zs_from_layers(const LayerContainer &layers)`
+pub fn zs_from_layers(layers: &[Layer]) -> Vec<f32> {
+    let mut zs: Vec<f32> = Vec::new();
+    zs.reserve(layers.len());
+    for l in layers {
+        zs.push(l.slice_z as f32);
+    }
+    zs
+}
+
+impl Layer {
+    /// Layer.hpp:210-213 `template <class T> bool any_internal_region_slice_contains(const T &item) const`
+    pub fn any_internal_region_slice_contains<T: crate::surface_collection::ExPolygonContains>(&self, item: &T) -> bool {
+        for layerm in &self.regions {
+            if layerm.slices.any_internal_contains(item) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Layer.hpp:214-217 `template <class T> bool any_bottom_region_slice_contains(const T &item) const`
+    pub fn any_bottom_region_slice_contains<T: crate::surface_collection::ExPolygonContains>(&self, item: &T) -> bool {
+        for layerm in &self.regions {
+            if layerm.slices.any_bottom_contains(item) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Layer.hpp:239 `virtual bool has_extrusions() const`
+    // Is there any valid extrusion assigned to this LayerRegion?
+    pub fn has_extrusions(&self) -> bool {
+        for layerm in &self.regions {
+            if layerm.has_extrusions() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Layer.hpp:242-249 `virtual coordf_t effective_print_height() const`
+    // BBS multi-diameter adaptive layer height: the maximum Z span covered by any group-top patch.
+    pub fn effective_print_height(&self) -> f64 {
+        let mut h: f64 = self.height;
+        for layerm in &self.regions {
+            for patch in &layerm.adaptive_merge_patches {
+                if patch.group_top && patch.merged_height > h {
+                    h = patch.merged_height;
+                }
+            }
+        }
+        h
+    }
+
+    /// Layer.hpp:256-263 `bool is_adaptive_merged_out() const`
+    // BBS multi-diameter adaptive layer height: true when this layer takes part in adaptive merging and
+    // carries no extrusions of its own. What it would have printed either moved up into the group-top layer
+    // or the group had nothing printable to begin with (a merged span that is internal void everywhere still
+    // owns its patches but extrudes nothing, and a group top whose slices moved to another region ends up
+    // empty as well). In none of those cases is the empty Z span a printability gap the merge planner left
+    // behind, so the layer above must not be reported as unsupported.
+    pub fn is_adaptive_merged_out(&self) -> bool {
+        if self.regions.is_empty() || self.has_extrusions() {
+            return false;
+        }
+        for layerm in &self.regions {
+            if !layerm.adaptive_merge_patches.is_empty() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Layer.hpp:266 `void simplify_wall_extrusion_path()`
+    //BBS
+    pub fn simplify_wall_extrusion_path(&mut self) {
+        for layerm in &mut self.regions {
+            layerm.simplify_wall_extrusion_entity();
+        }
+    }
+
+    /// Layer.hpp:267 `void simplify_infill_extrusion_path()`
+    pub fn simplify_infill_extrusion_path(&mut self) {
+        for layerm in &mut self.regions {
+            layerm.simplify_infill_extrusion_entity();
+        }
+    }
+
+    /// Layer.hpp:277-304 `template<typename IteratorType, typename IndexType, typename FN_HIGHER_EQUAL> static IndexType idx_higher_or_equal(IteratorType begin, IteratorType end, IndexType idx, FN_HIGHER_EQUAL fn_higher_equal)`
+    ///
+    /// `begin..end` is `items`; `IndexType(-1)` is `usize::MAX`.
+    // FN_HIGHER_EQUAL: the provided object pointer has a Z value >= of an internal threshold.
+    // Find the first item with Z value >= of an internal threshold of fn_higher_equal.
+    // If no vec item with Z value >= of an internal threshold of fn_higher_equal is found, return vec.size()
+    // If the initial idx is size_t(-1), then use binary search.
+    // Otherwise search linearly upwards.
+    pub fn idx_higher_or_equal<T, F: Fn(&T) -> bool>(items: &[T], mut idx: usize, fn_higher_equal: F) -> usize {
+        let size = items.len() as i32;
+        if size == 0 {
+            idx = 0;
+        } else if idx == usize::MAX {
+            // First of the batch of layers per thread pool invocation. Use binary search.
+            let mut idx_low: i32 = 0;
+            let mut idx_high: i32 = 0.max(size - 1);
+            while idx_low + 1 < idx_high {
+                let idx_mid = (idx_low + idx_high) / 2;
+                if fn_higher_equal(&items[idx_mid as usize]) {
+                    idx_high = idx_mid;
+                } else {
+                    idx_low = idx_mid;
+                }
+            }
+            idx = if fn_higher_equal(&items[idx_low as usize]) {
+                idx_low as usize
+            } else if fn_higher_equal(&items[idx_high as usize]) {
+                idx_high as usize
+            } else {
+                size as usize
+            };
+        } else {
+            // For the other layers of this batch of layers, search incrementally, which is cheaper than the binary search.
+            while (idx as i32) < size && !fn_higher_equal(&items[idx]) {
+                idx += 1;
+            }
+        }
+        idx
+    }
+
+    /// Layer.cpp:468-547 `void Layer::calculate_perimeter_continuity(std::vector<LoopNode> &prev_nodes)`
+    /// at the pin: the distance of a point of the lower contour is that of the point as floats, to the
+    /// nearest line of the node's contour through the AABB tree, as a float; a run counts from
+    /// `Continuitious_length`, the int 999.
+    fn calculate_perimeter_continuity_pin(&mut self, prev_nodes: &mut [LoopNode]) {
+        // `Polyline::length()`
+        fn polyline_length(pts: &[Point]) -> f64 {
+            let mut l: f64 = 0.0;
+            for i in 1..pts.len() {
+                let dx = (pts[i].x - pts[i - 1].x) as f64;
+                let dy = (pts[i].y - pts[i - 1].y) as f64;
+                l += (dx * dx + dy * dy).sqrt();
+            }
+            l
+        }
+        // `BoundingBoxBase::overlap` (BoundingBox.hpp:57-60)
+        fn overlap(a: &BoundingBox, b: &BoundingBox) -> bool {
+            !(a.max.x < b.min.x || a.min.x > b.max.x || a.max.y < b.min.y || a.min.y > b.max.y)
+        }
+
+        for node_pos in 0..self.loop_nodes.len() {
+            let mut width: f64;
+            let node_distancer = ContinuitiousDistancer::new(&self.loop_nodes[node_pos].node_contour.pts);
+            for prev_pos in 0..prev_nodes.len() {
+                let prev_node = &mut prev_nodes[prev_pos];
+                let node = &mut self.loop_nodes[node_pos];
+
+                // no overlap or has diff speed
+                if !overlap(&node.bbox, &prev_node.bbox) {
+                    continue;
+                }
+
+                //calculate dist, checkout the continuity
+                let mut continuitious_pl: Vec<Point> = Vec::new();
+                //check start pt
+                let mut start: usize = 0;
+                let mut conntiouitious_flag = false;
+                let mut end: i32 = prev_node.node_contour.pts.len() as i32 - 1;
+
+                //if the countor is loop
+                if prev_node.node_contour.is_loop {
+                    while end >= 0 {
+                        if polyline_length(&continuitious_pl) >= CONTINUITIOUS_LENGTH_PIN as f64 {
+                            node.lower_node_ids.push(prev_node.node_id);
+                            prev_node.upper_node_ids.push(node.node_id);
+                            conntiouitious_flag = true;
+                            break;
+                        }
+
+                        let pt = prev_node.node_contour.pts[end as usize];
+                        let dist: f32 = node_distancer.distance_from_perimeter([pt.x as f32, pt.y as f32]);
+                        // get corr width
+                        width = get_node_continuity_rang_limit(&prev_node.node_contour.widths, end);
+
+                        if (dist as f64) < width && (dist as f64) > -width {
+                            continuitious_pl.insert(0, pt);
+                        } else {
+                            break;
+                        }
+                        end -= 1;
+                    }
+
+                    if conntiouitious_flag || end < 0 {
+                        continue;
+                    }
+                }
+
+                let mut last_pt_idx: i32 = end;
+                // line need to check end point
+                if !prev_node.node_contour.is_loop {
+                    last_pt_idx += 1;
+                }
+
+                // `start < last_pt_idx` compares a size_t with an int: the int converts.
+                while start < last_pt_idx as isize as usize {
+                    let pt = prev_node.node_contour.pts[start];
+                    let dist: f32 = node_distancer.distance_from_perimeter([pt.x as f32, pt.y as f32]);
+                    //get corr width
+                    width = get_node_continuity_rang_limit(&prev_node.node_contour.widths, start as i32);
+
+                    if (dist as f64) < width && (dist as f64) > -width {
+                        continuitious_pl.push(pt);
+                        start += 1;
+                        continue;
+                    }
+
+                    if continuitious_pl.is_empty() || polyline_length(&continuitious_pl) < CONTINUITIOUS_LENGTH_PIN as f64 {
+                        continuitious_pl.clear();
+                        start += 1;
+                        continue;
+                    }
+
+                    node.lower_node_ids.push(prev_node.node_id);
+                    prev_node.upper_node_ids.push(node.node_id);
+                    continuitious_pl.clear();
+                    break;
+                }
+
+                if polyline_length(&continuitious_pl) >= CONTINUITIOUS_LENGTH_PIN as f64 {
+                    node.lower_node_ids.push(prev_node.node_id);
+                    prev_node.upper_node_ids.push(node.node_id);
+                }
+            }
+        }
+    }
+
+    /// Layer.cpp:576-593 `void Layer::export_region_slices_to_svg(const char *path) const`
+    pub fn export_region_slices_to_svg(&self, path: &str) {
+        let mut bbox = BoundingBox::empty();
+        for region in &self.regions {
+            for surface in &region.slices.surfaces {
+                bbox.merge(&crate::ex_polygon::get_extents_expoly(&surface.expolygon));
+            }
+        }
+        let legend_size = crate::surface::export_surface_type_legend_to_svg_box_size();
+        let legend_pos = Point::new(bbox.min.x, bbox.max.y);
+        bbox.merge_point(Point::new((bbox.min.x + legend_size.x).max(bbox.max.x), bbox.max.y + legend_size.y));
+
+        let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+        let transparency: f32 = 0.5;
+        for region in &self.regions {
+            for surface in &region.slices.surfaces {
+                svg.draw_expolygon(&surface.expolygon, crate::surface::surface_type_to_color_name(surface.surface_type), transparency);
+            }
+        }
+        crate::surface::export_surface_type_legend_to_svg(&mut svg, &legend_pos);
+        svg.close();
+    }
+
+    /// Layer.cpp:596-600 `void Layer::export_region_slices_to_svg_debug(const char *name) const`
+    // Export to "out/LayerRegion-name-%d.svg" with an increasing index with every export.
+    pub fn export_region_slices_to_svg_debug(&self, name: &str) {
+        static IDX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let idx = IDX.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.export_region_slices_to_svg(&crate::utils::debug_out_path(&format!("Layer-slices-{}-{}.svg", name, idx)));
+    }
+
+    /// Layer.cpp:602-619 `void Layer::export_region_fill_surfaces_to_svg(const char *path) const`
+    pub fn export_region_fill_surfaces_to_svg(&self, path: &str) {
+        let mut bbox = BoundingBox::empty();
+        for region in &self.regions {
+            for surface in &region.slices.surfaces {
+                bbox.merge(&crate::ex_polygon::get_extents_expoly(&surface.expolygon));
+            }
+        }
+        let legend_size = crate::surface::export_surface_type_legend_to_svg_box_size();
+        let legend_pos = Point::new(bbox.min.x, bbox.max.y);
+        bbox.merge_point(Point::new((bbox.min.x + legend_size.x).max(bbox.max.x), bbox.max.y + legend_size.y));
+
+        let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+        let transparency: f32 = 0.5;
+        for region in &self.regions {
+            for surface in &region.slices.surfaces {
+                svg.draw_expolygon(&surface.expolygon, crate::surface::surface_type_to_color_name(surface.surface_type), transparency);
+            }
+        }
+        crate::surface::export_surface_type_legend_to_svg(&mut svg, &legend_pos);
+        svg.close();
+    }
+
+    /// The `print_config` values the `simplify_support_*` functions read (Layer.cpp:640-643):
+    /// `spiral_mode`, `enable_arc_fitting`, `scaled<double>(resolution)`.
+    fn simplify_support_print_params(&self) -> (bool, bool, f64) {
+        let print_config = self.print_config.as_deref().expect("config hierarchy not wired — call wire_layer_hierarchy");
+        (print_config.spiral_vase, print_config.arc_fitting_enabled, print_config.resolution / crate::libslic3r::SCALING_FACTOR)
+    }
+
+    /// Layer.cpp:622-636 `void Layer::simplify_support_entity_collection(ExtrusionEntityCollection* entity_collection)`
+    //BBS: method to simplify support path
+    pub fn simplify_support_entity_collection(&self, entity_collection: &mut ExtrusionEntityCollection) {
+        use crate::extrusion_entity::ExtrusionEntityType;
+        for i in 0..entity_collection.entities.len() {
+            match &mut entity_collection.entities[i] {
+                ExtrusionEntityType::Collection(collection) => self.simplify_support_entity_collection(collection),
+                ExtrusionEntityType::Path(path) => self.simplify_support_path(path),
+                ExtrusionEntityType::MultiPath(multipath) => self.simplify_support_multi_path(multipath),
+                ExtrusionEntityType::Loop(loop_) => self.simplify_support_loop(loop_),
+            }
+        }
+    }
+
+    /// Layer.cpp:638-651 `void Layer::simplify_support_path(ExtrusionPath * path)`
+    //BBS: method to simplify support path
+    pub fn simplify_support_path(&self, path: &mut crate::extrusion_entity::ExtrusionPath) {
+        let (spiral_mode, enable_arc_fitting, scaled_resolution) = self.simplify_support_print_params();
+
+        if enable_arc_fitting && !spiral_mode {
+            path.simplify_by_fitting_arc(SCALED_SUPPORT_RESOLUTION);
+        } else {
+            path.simplify(scaled_resolution);
+        }
+    }
+
+    /// Layer.cpp:653-668 `void Layer::simplify_support_multi_path(ExtrusionMultiPath* multipath)`
+    //BBS: method to simplify support path
+    pub fn simplify_support_multi_path(&self, multipath: &mut crate::extrusion_entity::ExtrusionMultiPath) {
+        let (spiral_mode, enable_arc_fitting, scaled_resolution) = self.simplify_support_print_params();
+
+        for i in 0..multipath.paths.len() {
+            if enable_arc_fitting && !spiral_mode {
+                multipath.paths[i].simplify_by_fitting_arc(SCALED_SUPPORT_RESOLUTION);
+            } else {
+                multipath.paths[i].simplify(scaled_resolution);
+            }
+        }
+    }
+
+    /// Layer.cpp:670-685 `void Layer::simplify_support_loop(ExtrusionLoop* loop)`
+    //BBS: method to simplify support path
+    pub fn simplify_support_loop(&self, loop_: &mut crate::extrusion_entity::ExtrusionLoop) {
+        let (spiral_mode, enable_arc_fitting, scaled_resolution) = self.simplify_support_print_params();
+
+        for i in 0..loop_.paths.len() {
+            if enable_arc_fitting && !spiral_mode {
+                loop_.paths[i].simplify_by_fitting_arc(SCALED_SUPPORT_RESOLUTION);
+            } else {
+                loop_.paths[i].simplify(scaled_resolution);
+            }
+        }
+    }
+
+    /// Layer.cpp:688-692 `void Layer::export_region_fill_surfaces_to_svg_debug(const char *name) const`
+    // Export to "out/LayerRegion-name-%d.svg" with an increasing index with every export.
+    pub fn export_region_fill_surfaces_to_svg_debug(&self, name: &str) {
+        static IDX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let idx = IDX.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.export_region_fill_surfaces_to_svg(&crate::utils::debug_out_path(&format!("Layer-fill_surfaces-{}-{}.svg", name, idx)));
+    }
+}
+
+/// libslic3r.h:68-69 `#define SCALED_SUPPORT_RESOLUTION (SUPPORT_RESOLUTION / SCALING_FACTOR)`, with
+/// `SUPPORT_RESOLUTION = 0.0375`.
+const SCALED_SUPPORT_RESOLUTION: f64 = 0.0375 / crate::libslic3r::SCALING_FACTOR;
+
+impl crate::print::faithful::SupportLayer {
+    /// Layer.hpp:374 `void simplify_support_extrusion_path() { this->simplify_support_entity_collection(&support_fills); }`
+    pub fn simplify_support_extrusion_path(&mut self) {
+        let mut support_fills = std::mem::take(&mut self.support_fills);
+        self.layer.simplify_support_entity_collection(&mut support_fills);
+        self.support_fills = support_fills;
+    }
+}
 
 /// Chain points by finding nearest neighbors
 /// Layer.cpp:1334-1385

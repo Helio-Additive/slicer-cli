@@ -111,6 +111,65 @@ fn cross2f(a: PointF, b: PointF) -> f64 {
 // MultiMaterialSegmentation.cpp:46 mk_vec2() are implemented inline at call sites
 // against the boostvoronoi vertex coordinates (which are f64).
 
+/// The `mk_point` overloads of MultiMaterialSegmentation.cpp:39-45, one implementation per argument
+/// type of the C++.
+#[allow(dead_code)]
+trait MkPoint {
+    fn mk_point(self) -> Point;
+}
+
+// MultiMaterialSegmentation.cpp:39
+// static inline Point mk_point(const Voronoi::VD::vertex_type *point) { return {coord_t(point->x()), coord_t(point->y())}; }
+impl MkPoint for &crate::boost_polygon_voronoi::VoronoiVertex {
+    #[inline]
+    fn mk_point(self) -> Point {
+        Point::new(self.x() as Coord, self.y() as Coord)
+    }
+}
+
+/// `Voronoi::Internal::point_type` (`boost::polygon::point_data<double>`, VoronoiVisualUtils.hpp).
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct VoronoiInternalPoint {
+    x: f64,
+    y: f64,
+}
+
+// MultiMaterialSegmentation.cpp:41
+// static inline Point mk_point(const Voronoi::Internal::point_type &point) { return {coord_t(point.x()), coord_t(point.y())}; }
+impl MkPoint for &VoronoiInternalPoint {
+    #[inline]
+    fn mk_point(self) -> Point {
+        Point::new(self.x as Coord, self.y as Coord)
+    }
+}
+
+// MultiMaterialSegmentation.cpp:43
+// static inline Point mk_point(const voronoi_diagram<double>::vertex_type &point) { return {coord_t(point.x()), coord_t(point.y())}; }
+impl MkPoint for crate::boost_polygon_voronoi::VoronoiVertex {
+    #[inline]
+    fn mk_point(self) -> Point {
+        Point::new(self.x() as Coord, self.y() as Coord)
+    }
+}
+
+// MultiMaterialSegmentation.cpp:45
+// static inline Point mk_point(const Vec2d &point) { return {coord_t(std::round(point.x())), coord_t(std::round(point.y()))}; }
+impl MkPoint for &PointF {
+    #[inline]
+    fn mk_point(self) -> Point {
+        Point::new(self.x.round() as Coord, self.y.round() as Coord)
+    }
+}
+
+// MultiMaterialSegmentation.cpp:47
+// static inline Vec2d mk_vec2(const voronoi_diagram<double>::vertex_type *point) { return {point->x(), point->y()}; }
+#[allow(dead_code)]
+#[inline]
+fn mk_vec2(point: &crate::boost_polygon_voronoi::VoronoiVertex) -> PointF {
+    PointF::new(point.x(), point.y())
+}
+
 // MultiMaterialSegmentation.hpp:37-46 — `boost::polygon::segment_traits<Slic3r::ColoredLine>`:
 // `get(line, dir)` is `dir.to_int() ? line.line.b : line.line.a`.
 impl VoronoiSegment for ColoredLine {
@@ -1006,7 +1065,7 @@ fn append_threshold2() -> f64 {
 }
 
 // MultiMaterialSegmentation.cpp:592
-fn get_extents_colored(colored_polygons: &[ColoredLines]) -> BoundingBox {
+fn get_extents(colored_polygons: &[ColoredLines]) -> BoundingBox {
     let mut bbox = BoundingBox::empty();
     for colored_lines in colored_polygons {
         for colored_line in colored_lines {
@@ -1019,7 +1078,7 @@ fn get_extents_colored(colored_polygons: &[ColoredLines]) -> BoundingBox {
 
 // Flatten the vector of vectors into a vector.
 // MultiMaterialSegmentation.cpp:604
-fn to_lines_colored(c_lines: &[ColoredLines]) -> ColoredLines {
+fn to_lines(c_lines: &[ColoredLines]) -> ColoredLines {
     let mut n_lines = 0usize;
     for c_line in c_lines {
         n_lines += c_line.len();
@@ -1600,6 +1659,302 @@ fn points_inside(contour_first: &Line, contour_second: &Line, new_point: &Point)
     side > 0.0
 }
 
+// MultiMaterialSegmentation.cpp:978-981
+// enum VD_ANNOTATION : Voronoi::VD::cell_type::color_type { VERTEX_ON_CONTOUR = 1, DELETED = 2 };
+#[allow(non_snake_case, dead_code)]
+pub(crate) mod VD_ANNOTATION {
+    pub const VERTEX_ON_CONTOUR: usize = 1;
+    pub const DELETED: usize = 2;
+}
+
+/// `Voronoi::VD` of the functions below: the port of `boost::polygon::voronoi_diagram<double>`. A
+/// vertex and an edge are indices into `vertices()` and `edges()`; `color` is `mutable` in boost, so
+/// the functions that colour take the diagram as `&mut`.
+#[allow(dead_code)]
+type VD = crate::boost_polygon_voronoi::VoronoiDiagram;
+
+// MultiMaterialSegmentation.cpp:984-1012 (MM_SEGMENTATION_DEBUG_GRAPH)
+// static void export_graph_to_svg(const std::string &path, const Voronoi::VD& vd, const std::vector<ColoredLines>& colored_polygons)
+#[allow(dead_code)]
+fn export_graph_to_svg(path: &str, vd: &VD, colored_polygons: &[ColoredLines]) {
+    // scaled<coordf_t>(0.05f): the division is in float (Point.hpp `scaled`).
+    let stroke_width: f64 = (0.05f32 / (crate::libslic3r::SCALING_FACTOR as f32)) as f64;
+    let bbox: BoundingBox = get_extents(colored_polygons);
+
+    let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+    for colored_lines in colored_polygons {
+        for colored_line in colored_lines {
+            svg.draw_line(&colored_line.line, "black", stroke_width);
+        }
+    }
+
+    // Geometry::VoronoiUtils::is_in_range<coord_t>(double value) (VoronoiUtils.hpp:99-102)
+    let is_in_range_value = |value: f64| -> bool { (Coord::MIN as f64) <= value && value <= (Coord::MAX as f64) };
+    // Geometry::VoronoiUtils::is_in_range<coord_t>(const VD::vertex_type &vertex) (VoronoiUtils.hpp:104-107)
+    let is_in_range_vertex = |vertex: usize| -> bool {
+        let v = &vd.vertices()[vertex];
+        v.x().is_finite() && v.y().is_finite() && is_in_range_value(v.x()) && is_in_range_value(v.y())
+    };
+
+    for vertex in 0..vd.num_vertices() {
+        if is_in_range_vertex(vertex) {
+            let pt = Point::new(vd.vertices()[vertex].x() as Coord, vd.vertices()[vertex].y() as Coord);
+            if vd.vertex_color(vertex) == VD_ANNOTATION::VERTEX_ON_CONTOUR {
+                svg.draw_point(&pt, "blue", stroke_width as Coord);
+            } else if vd.vertex_color(vertex) != VD_ANNOTATION::DELETED {
+                svg.draw_point(&pt, "green", stroke_width as Coord);
+            }
+        }
+    }
+
+    for edge in 0..vd.num_edges() {
+        // Geometry::VoronoiUtils::is_in_range<coord_t>(const VD::edge_type &edge) (VoronoiUtils.hpp:109-115)
+        let is_in_range_edge = match (vd.edges()[edge].vertex0(), vd.vertex1(edge)) {
+            (Some(v0), Some(v1)) => is_in_range_vertex(v0) && is_in_range_vertex(v1),
+            _ => false,
+        };
+        if vd.is_infinite(edge) || !is_in_range_edge {
+            continue;
+        }
+
+        let v0 = &vd.vertices()[vd.edges()[edge].vertex0().unwrap()];
+        let v1 = &vd.vertices()[vd.vertex1(edge).unwrap()];
+        let from = Point::new(v0.x() as Coord, v0.y() as Coord);
+        let to = Point::new(v1.x() as Coord, v1.y() as Coord);
+
+        if vd.edge_color(edge) != VD_ANNOTATION::DELETED {
+            svg.draw_line(&Line::new(from, to), "red", stroke_width);
+        }
+    }
+}
+
+/// `edge->prev()->twin()` (voronoi_diagram.hpp:196-197 `rot_next`), the step of the walks around a vertex.
+#[allow(dead_code)]
+#[inline]
+fn vd_prev_twin(vd: &VD, edge: usize) -> usize {
+    vd.edges()[vd.edges()[edge].prev().expect("voronoi_edge::prev")].twin().expect("voronoi_edge::twin")
+}
+
+// MultiMaterialSegmentation.cpp:1016-1025
+// static size_t non_deleted_edge_count(const VD::vertex_type &vertex)
+#[allow(dead_code)]
+fn non_deleted_edge_count(vd: &VD, vertex: usize) -> usize {
+    let mut non_deleted_edge_cnt: usize = 0;
+    let incident_edge = vd.vertices()[vertex].incident_edge().expect("voronoi_vertex::incident_edge");
+    let mut edge = incident_edge;
+    loop {
+        if vd.edge_color(edge) != VD_ANNOTATION::DELETED {
+            non_deleted_edge_cnt += 1;
+        }
+        edge = vd_prev_twin(vd, edge);
+        if edge == incident_edge {
+            break;
+        }
+    }
+
+    non_deleted_edge_cnt
+}
+
+// MultiMaterialSegmentation.cpp:1027-1032
+// static bool can_vertex_be_deleted(const VD::vertex_type &vertex)
+#[allow(dead_code)]
+fn can_vertex_be_deleted(vd: &VD, vertex: usize) -> bool {
+    if vd.vertex_color(vertex) == VD_ANNOTATION::VERTEX_ON_CONTOUR || vd.vertex_color(vertex) == VD_ANNOTATION::DELETED {
+        return false;
+    }
+
+    non_deleted_edge_count(vd, vertex) <= 1
+}
+
+// MultiMaterialSegmentation.cpp:1034-1052
+// static void delete_vertex_deep(const VD::vertex_type &vertex)
+#[allow(dead_code)]
+fn delete_vertex_deep(vd: &mut VD, vertex: usize) {
+    let mut vertices_to_delete: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    vertices_to_delete.push_back(vertex);
+
+    while !vertices_to_delete.is_empty() {
+        let vertex_to_delete = *vertices_to_delete.front().unwrap();
+        vertices_to_delete.pop_front();
+        vd.set_vertex_color(vertex_to_delete, VD_ANNOTATION::DELETED);
+
+        let incident_edge = vd.vertices()[vertex_to_delete].incident_edge().expect("voronoi_vertex::incident_edge");
+        let mut edge = incident_edge;
+        loop {
+            vd.set_edge_color(edge, VD_ANNOTATION::DELETED);
+            let twin = vd.edges()[edge].twin().expect("voronoi_edge::twin");
+            vd.set_edge_color(twin, VD_ANNOTATION::DELETED);
+
+            if vd.is_finite(edge) && can_vertex_be_deleted(vd, vd.vertex1(edge).unwrap()) {
+                vertices_to_delete.push_back(vd.vertex1(edge).unwrap());
+            }
+            edge = vd_prev_twin(vd, edge);
+            if edge == incident_edge {
+                break;
+            }
+        }
+    }
+}
+
+/// The functions of MultiMaterialSegmentation.cpp:1054-1072 on the Voronoi diagram. `mk_point_vec2d`
+/// is here the C++ function of that name (a vertex as a `Vec2d`); the `mk_point_vec2d` at the top of
+/// this file is `mk_point(const Vec2d &)`.
+#[allow(dead_code)]
+mod vd_vectors {
+    use super::{PointF, VD};
+
+    // MultiMaterialSegmentation.cpp:1054-1057
+    // static inline Vec2d mk_point_vec2d(const VD::vertex_type *point)
+    #[inline]
+    pub(super) fn mk_point_vec2d(vd: &VD, point: Option<usize>) -> PointF {
+        let point = point.expect("mk_point_vec2d: point != nullptr");
+        PointF::new(vd.vertices()[point].x(), vd.vertices()[point].y())
+    }
+
+    // MultiMaterialSegmentation.cpp:1059-1062
+    // static inline Vec2d mk_vector_vec2d(const VD::edge_type *edge)
+    #[inline]
+    pub(super) fn mk_vector_vec2d(vd: &VD, edge: usize) -> PointF {
+        let v1 = mk_point_vec2d(vd, vd.vertex1(edge));
+        let v0 = mk_point_vec2d(vd, vd.edges()[edge].vertex0());
+        PointF::new(v1.x - v0.x, v1.y - v0.y)
+    }
+
+    // MultiMaterialSegmentation.cpp:1064-1067
+    // static inline Vec2d mk_flipped_vector_vec2d(const VD::edge_type *edge)
+    #[inline]
+    pub(super) fn mk_flipped_vector_vec2d(vd: &VD, edge: usize) -> PointF {
+        let v0 = mk_point_vec2d(vd, vd.edges()[edge].vertex0());
+        let v1 = mk_point_vec2d(vd, vd.vertex1(edge));
+        PointF::new(v0.x - v1.x, v0.y - v1.y)
+    }
+
+    // MultiMaterialSegmentation.cpp:1069-1072
+    // static double edge_length(const VD::edge_type &edge)
+    pub(super) fn edge_length(vd: &VD, edge: usize) -> f64 {
+        debug_assert!(vd.is_finite(edge));
+        let v = mk_vector_vec2d(vd, edge);
+        // Eigen `norm()` of a Vec2d: the square root of the sum of the two squares.
+        (v.x * v.x + v.y * v.y).sqrt()
+    }
+
+    /// Eigen `normalized()` of a Vec2d (Dot.h): divided by the square root of its squared norm when
+    /// that is positive, itself otherwise.
+    #[inline]
+    pub(super) fn normalized(v: PointF) -> PointF {
+        let z = v.x * v.x + v.y * v.y;
+        if z > 0.0 {
+            let n = z.sqrt();
+            PointF::new(v.x / n, v.y / n)
+        } else {
+            v
+        }
+    }
+}
+
+// Used in remove_multiple_edges_in_vertices()
+// Returns length of edge with is connected to contour. To this length is include other edges with follows it if they are almost straight (with the
+// tolerance of 15) And also if node between two subsequent edges is connected only to these two edges.
+// MultiMaterialSegmentation.cpp:1077-1113
+// static inline double calc_total_edge_length(const VD::edge_type &starting_edge)
+#[allow(dead_code)]
+fn calc_total_edge_length(vd: &VD, starting_edge: usize) -> f64 {
+    use vd_vectors::{edge_length, mk_flipped_vector_vec2d, mk_vector_vec2d, normalized};
+    let mut total_edge_length: f64 = edge_length(vd, starting_edge);
+    let mut prev: usize = starting_edge;
+    loop {
+        if vd.is_finite(prev) && non_deleted_edge_count(vd, vd.vertex1(prev).unwrap()) > 2 {
+            break;
+        }
+
+        let mut found_next_edge = false;
+        let mut current: usize = vd.edges()[prev].next().expect("voronoi_edge::next");
+        loop {
+            // The body of the C++ inner do-while; `continue` there goes to its condition.
+            'body: {
+                if vd.edge_color(current) == VD_ANNOTATION::DELETED {
+                    break 'body;
+                }
+
+                let first_line_vec_n = normalized(mk_flipped_vector_vec2d(vd, prev));
+                let second_line_vec_n = normalized(mk_vector_vec2d(vd, current));
+                let mut angle: f64 =
+                    (first_line_vec_n.x * second_line_vec_n.x + first_line_vec_n.y * second_line_vec_n.y).clamp(-1.0, 1.0).acos();
+                // Slic3r::cross2(first_line_vec_n, second_line_vec_n) < 0.0
+                if first_line_vec_n.x.mul_add(second_line_vec_n.y, -(first_line_vec_n.y * second_line_vec_n.x)) < 0.0 {
+                    angle = 2.0f64.mul_add(PI, -angle);
+                }
+
+                if (angle - PI).abs() >= (PI / 12.0) {
+                    break 'body;
+                }
+
+                prev = current;
+                found_next_edge = true;
+                total_edge_length += edge_length(vd, current);
+            }
+            if found_next_edge {
+                break;
+            }
+            current = vd_prev_twin(vd, current);
+            if current == vd.edges()[prev].next().expect("voronoi_edge::next") {
+                break;
+            }
+        }
+
+        if !found_next_edge {
+            break;
+        }
+
+        if prev == starting_edge {
+            break;
+        }
+    }
+
+    total_edge_length
+}
+
+// When a Voronoi vertex has more than one Voronoi edge (for example, in concave parts of a polygon),
+// we leave just one Voronoi edge in the Voronoi vertex.
+// This Voronoi edge is selected based on a heuristic.
+// MultiMaterialSegmentation.cpp:1118-1145
+// static void remove_multiple_edges_in_vertex(const VD::vertex_type &vertex)
+#[allow(dead_code)]
+fn remove_multiple_edges_in_vertex(vd: &mut VD, vertex: usize) {
+    if non_deleted_edge_count(vd, vertex) <= 1 {
+        return;
+    }
+
+    let mut edges_to_check: Vec<(usize, f64)> = Vec::new();
+    let incident_edge = vd.vertices()[vertex].incident_edge().expect("voronoi_vertex::incident_edge");
+    let mut edge = incident_edge;
+    loop {
+        if vd.edge_color(edge) != VD_ANNOTATION::DELETED {
+            edges_to_check.push((edge, calc_total_edge_length(vd, edge)));
+        }
+        edge = vd_prev_twin(vd, edge);
+        if edge == incident_edge {
+            break;
+        }
+    }
+
+    crate::clipper::libcxx_sort(&mut edges_to_check, |l, r| l.1 > r.1);
+
+    while edges_to_check.len() > 1 {
+        let edge_to_check = edges_to_check.last().unwrap().0;
+        vd.set_edge_color(edge_to_check, VD_ANNOTATION::DELETED);
+        let twin = vd.edges()[edge_to_check].twin().expect("voronoi_edge::twin");
+        vd.set_edge_color(twin, VD_ANNOTATION::DELETED);
+
+        let vertex_to_delete = vd.vertex1(edge_to_check).expect("voronoi_edge::vertex1");
+        if can_vertex_be_deleted(vd, vertex_to_delete) {
+            delete_vertex_deep(vd, vertex_to_delete);
+        }
+
+        edges_to_check.pop();
+    }
+}
+
 // For every ColoredLine in lines_colored_out, assign the index of the polygon to which it belongs
 // and also the index of this line inside of the polygon.
 // MultiMaterialSegmentation.cpp:1617
@@ -2089,7 +2444,7 @@ pub fn build_graph(_layer_idx: usize, color_poly: &[Vec<ColoredLine>]) -> MmuGra
 
     // MultiMaterialSegmentation.cpp:1765-1766 — the flat colored-line segment list (the
     // diagram is built from a copy of it, so cell source_index maps to it).
-    let mut lines_colored = to_lines_colored(color_poly);
+    let mut lines_colored = to_lines(color_poly);
     let colored_lines = lines_colored.clone();
 
     // MultiMaterialSegmentation.cpp:1770-1778 — seed the graph with one node per contour
@@ -2543,6 +2898,91 @@ pub fn remove_multiple_edges_in_vertices(graph: &mut MmuGraph, color_poly: &[Vec
     }
 }
 
+// MultiMaterialSegmentation.cpp:2083-2099 (MM_SEGMENTATION_DEBUG_REGIONS)
+// static void export_regions_to_svg(const std::string &path, const std::vector<ExPolygons> &regions, const ExPolygons &lslices)
+#[allow(dead_code)]
+fn export_regions_to_svg(path: &str, regions: &[ExPolygons], lslices: &ExPolygons) {
+    let colors: Vec<&str> = vec!["blue", "cyan", "red", "orange", "magenta", "pink", "purple", "yellow"];
+    let stroke_width: f64 = 0.05 / crate::libslic3r::SCALING_FACTOR;
+    let mut bbox: BoundingBox = crate::ex_polygon::get_extents(lslices);
+    bbox.expand((1.0 / crate::libslic3r::SCALING_FACTOR) as Coord);
+    let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+
+    svg.draw_outline_expolygons(lslices, "green", "lime", stroke_width);
+    for (extrude_idx, by_extruder) in regions.iter().enumerate() {
+        if extrude_idx < colors.len() {
+            svg.draw_expolygons(by_extruder, colors[extrude_idx], 1.0);
+        } else {
+            svg.draw_expolygons(by_extruder, "black", 1.0);
+        }
+    }
+}
+
+// MultiMaterialSegmentation.cpp:2103-2116 (MM_SEGMENTATION_DEBUG_INPUT)
+// void export_processed_input_expolygons_to_svg(const std::string &path, const LayerRegionPtrs &regions, const ExPolygons &processed_input_expolygons)
+#[allow(dead_code)]
+fn export_processed_input_expolygons_to_svg(path: &str, regions: &[crate::layer::LayerRegion], processed_input_expolygons: &ExPolygons) {
+    let stroke_width: f64 = 0.05 / crate::libslic3r::SCALING_FACTOR;
+    let mut bbox: BoundingBox = crate::layer::get_extents_layer_regions(regions);
+    bbox.merge(&crate::ex_polygon::get_extents(processed_input_expolygons));
+    bbox.expand((1.0 / crate::libslic3r::SCALING_FACTOR) as Coord);
+    let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+
+    for region in regions {
+        for surface in &region.slices.surfaces {
+            svg.draw_outline_surface(surface, "blue", "cyan", stroke_width);
+        }
+    }
+
+    svg.draw_outline_expolygons(processed_input_expolygons, "red", "pink", stroke_width);
+}
+
+// MultiMaterialSegmentation.cpp:2120-2134 (MM_SEGMENTATION_DEBUG_PAINTED_LINES)
+// static void export_painted_lines_to_svg(const std::string &path, const std::vector<std::vector<PaintedLine>> &all_painted_lines, const ExPolygons &lslices)
+#[allow(dead_code)]
+fn export_painted_lines_to_svg(path: &str, all_painted_lines: &[Vec<PaintedLine>], lslices: &ExPolygons) {
+    let colors: Vec<&str> = vec!["blue", "cyan", "red", "orange", "magenta", "pink", "purple", "yellow"];
+    let stroke_width: f64 = 0.05 / crate::libslic3r::SCALING_FACTOR;
+    let mut bbox: BoundingBox = crate::ex_polygon::get_extents(lslices);
+    bbox.expand((1.0 / crate::libslic3r::SCALING_FACTOR) as Coord);
+    let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+
+    for line in &crate::geometry::to_lines(lslices) {
+        svg.draw_line(line, "green", stroke_width);
+    }
+
+    for painted_lines in all_painted_lines {
+        for painted_line in painted_lines {
+            svg.draw_line(
+                &painted_line.projected_line,
+                if painted_line.color < colors.len() as i32 { colors[painted_line.color as usize] } else { "black" },
+                stroke_width,
+            );
+        }
+    }
+}
+
+// MultiMaterialSegmentation.cpp:2138-2149 (MM_SEGMENTATION_DEBUG_COLORIZED_POLYGONS)
+// static void export_colorized_polygons_to_svg(const std::string &path, const std::vector<ColoredLines> &colorized_polygons, const ExPolygons &lslices)
+#[allow(dead_code)]
+fn export_colorized_polygons_to_svg(path: &str, colorized_polygons: &[ColoredLines], lslices: &ExPolygons) {
+    let colors: Vec<&str> = vec!["blue", "cyan", "red", "orange", "magenta", "pink", "purple", "green", "yellow"];
+    let stroke_width: f64 = 0.05 / crate::libslic3r::SCALING_FACTOR;
+    let mut bbox: BoundingBox = crate::ex_polygon::get_extents(lslices);
+    bbox.expand((1.0 / crate::libslic3r::SCALING_FACTOR) as Coord);
+    let mut svg = crate::svg::SVG::new_bbox_default(path, &bbox);
+
+    for colorized_polygon in colorized_polygons {
+        for colorized_line in colorized_polygon {
+            svg.draw_line(
+                &colorized_line.line,
+                if colorized_line.color < colors.len() as i32 { colors[colorized_line.color as usize] } else { "black" },
+                stroke_width,
+            );
+        }
+    }
+}
+
 // Check if all ColoredLine representing a single layer uses the same color.
 // MultiMaterialSegmentation.cpp:2082
 pub fn has_layer_only_one_color(colored_polygons: &[ColoredLines]) -> bool {
@@ -2718,6 +3158,77 @@ fn tb_opening_ex(ex: &[ExPolygon], delta_scaled: f32) -> ExPolygons {
         tb_mm(delta_scaled),
         OffsetJoinType::Miter,
     )
+}
+
+// MultiMaterialSegmentation.cpp:1311-1317
+// static bool is_volume_sinking(const indexed_triangle_set &its, const Transform3d &trafo)
+//
+// `trafo_f * vertex` is Eigen's `Transform<float, 3, Affine> * Vector3f`: the translation, plus the
+// product of the linear part and the vertex, whose row is summed as `a0*b0 + (a1*b1 + a2*b2)` (the
+// unrolled reduction of three coefficients) in float.
+#[allow(dead_code)]
+fn is_volume_sinking(its: &indexed_triangle_set, trafo: &crate::geometry::geometry::Transform3d) -> bool {
+    let trafo_f: [f32; 4] = [trafo[(2, 0)] as f32, trafo[(2, 1)] as f32, trafo[(2, 2)] as f32, trafo[(2, 3)] as f32];
+    for vertex in &its.vertices {
+        let z: f32 = trafo_f[3] + (trafo_f[0] * vertex.x + (trafo_f[1] * vertex.y + trafo_f[2] * vertex.z));
+        if z < crate::model::SINKING_Z_THRESHOLD {
+            return true;
+        }
+    }
+    false
+}
+
+// MultiMaterialSegmentation.cpp:1321-1326
+// struct EffectiveColorPenetrationLayers
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EffectiveColorPenetrationLayers {
+    pub top: i32,
+    pub bottom: i32,
+    pub band_size: i32,
+}
+
+// MultiMaterialSegmentation.cpp:1328-1353
+// static EffectiveColorPenetrationLayers effective_color_penetration_layers(const PrintObject &object, const PrintRegionConfig &config)
+//
+// `object.print()` is the `print` argument.
+pub fn effective_color_penetration_layers(
+    print: &crate::print::faithful::Print,
+    object: &crate::print::faithful::PrintObject,
+    config: &crate::print::faithful::PrintRegionConfig,
+) -> EffectiveColorPenetrationLayers {
+    use crate::config::ConfigOptionResolver;
+    use crate::print_config::config_def::{
+        layer_grid_nozzle_diameter, multi_nozzle_bottom_color_penetration_layers, multi_nozzle_diameter_mode_enabled,
+        multi_nozzle_top_color_penetration_layers,
+    };
+    let cfg_int = |key: &str| -> i32 { config.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0) };
+    let mut out = EffectiveColorPenetrationLayers {
+        top: cfg_int("top_color_penetration_layers"),
+        bottom: cfg_int("bottom_color_penetration_layers"),
+        band_size: 1,
+    };
+    if !multi_nozzle_diameter_mode_enabled(print.full_print_config()) {
+        return out;
+    }
+
+    let nozzle_diameter: f64 = crate::print::faithful::nozzle_diameter_for_filament(print.config(), cfg_int("wall_filament") as u32) as f64;
+    out.top = multi_nozzle_top_color_penetration_layers(nozzle_diameter, out.top);
+    out.bottom = multi_nozzle_bottom_color_penetration_layers(nozzle_diameter, out.bottom);
+    // A plate sliced for a single diameter is already on that nozzle's band height, one layer per extrusion.
+    out.band_size = if print.single_diameter_layering_nozzle() > EPSILON {
+        1
+    } else {
+        crate::adaptive_layer_merge::adaptive_layer_band_size(
+            nozzle_diameter,
+            layer_grid_nozzle_diameter(print.full_print_config()),
+            object.slicing_parameters().layer_height,
+        ) as i32
+    };
+    let band_size = out.band_size;
+    let scale_layers = |layers: i32| -> i32 { if layers > 0 { 1 + (layers - 1) * band_size } else { 0 } };
+    out.top = scale_layers(out.top);
+    out.bottom = scale_layers(out.bottom);
+    out
 }
 
 // MultiMaterialSegmentation.cpp:1310-1318 — is_volume_sinking. The C++ checks
@@ -4220,8 +4731,8 @@ fn _parity_anchors() {
         colorize_line as fn(&Line, usize, usize, &[PaintedLine]) -> ColoredLines,
         filter_colorized_polygon as fn(ColoredLines) -> ColoredLines,
         filter_painted_lines as fn(&Line, usize, usize, &[PaintedLine]) -> Vec<PaintedLine>,
-        get_extents_colored as fn(&[ColoredLines]) -> BoundingBox,
-        to_lines_colored as fn(&[ColoredLines]) -> ColoredLines,
+        get_extents as fn(&[ColoredLines]) -> BoundingBox,
+        to_lines as fn(&[ColoredLines]) -> ColoredLines,
         colored_points_to_polygon as fn(&[Vec<ColoredLine>]) -> Vec<Polygon>,
         cos_threshold2 as fn() -> f64,
         append_threshold2 as fn() -> f64,

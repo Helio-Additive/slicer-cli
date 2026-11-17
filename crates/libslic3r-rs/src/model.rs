@@ -1118,10 +1118,13 @@ impl ModelMesh {
 
     /// TriangleMesh.cpp:386-399 `flip_triangles()`
     ///
-    /// FIDELITY-NOTE: `m_stats.has_reversed_faces` (its_detect_reversed_faces) is not kept.
+    /// `m_stats.has_reversed_faces` is refreshed behind the gate `TRIANGLE_MESH_STATS_PIN`.
     pub fn flip_triangles(&mut self) {
         crate::triangle_mesh::its_flip_triangles(&mut self.its);
         self.m_stats.volume = -self.m_stats.volume;
+        // TriangleMesh.cpp:390-398 (the reversed-face test again, on the edge counts the
+        // statistics hold), in triangle_mesh.rs beside `fill_initial_stats` and behind its gate.
+        crate::triangle_mesh::flip_triangles_detect_reversed_faces(&self.its, &mut self.m_stats);
     }
 
     /// TriangleMesh.cpp:419-422
@@ -1223,6 +1226,13 @@ impl ModelMesh {
     /// TriangleMesh.hpp:154
     pub fn empty(&self) -> bool {
         self.facets_count() == 0
+    }
+
+    /// `m_stats` (TriangleMesh.hpp:169) for the methods of the class that `triangle_mesh.rs` carries
+    /// (`rotate(float, Axis)`, `rotate(float, Vec3d)`: TriangleMesh.cpp:311-334 update the bounding
+    /// box of the statistics in place).
+    pub(crate) fn m_stats_mut(&mut self) -> &mut TriangleMeshStats {
+        &mut self.m_stats
     }
 
     /// TriangleMesh.hpp:163
