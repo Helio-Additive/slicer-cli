@@ -24,21 +24,21 @@ std::optional<double> fitting_z_rotation(const Slic3r::ModelObject& object, size
     shape.contour.make_counter_clockwise();
 
     std::optional<double> best;
-    auto try_angle = [&](double angle) {
-        double degrees = std::fmod(angle * 180. / M_PI, 180.);
+    auto try_degrees = [&](double degrees) {
+        degrees = std::fmod(degrees, 180.);
         if (degrees < 0.)
             degrees += 180.;
         if (best && *best <= degrees)
             return;
         ExPolygon rotated = shape;
-        libnest2d::sl::rotate(rotated, angle);
+        libnest2d::sl::rotate(rotated, Geometry::deg2rad(degrees));
         const auto box = libnest2d::sl::boundingBox(rotated);
         if (unscale_(box.width()) <= bed.size().x() + EPSILON &&
             unscale_(box.height()) <= bed.size().y() + EPSILON)
             best = degrees;
     };
     for (int degrees = 0; degrees < 180; ++degrees)
-        try_angle(degrees * M_PI / 180.);
+        try_degrees(degrees);
 
     // Include the arranger's minimum-area orientation, which need not be an
     // integer angle (BambuStudio Arrange.cpp 969-973; OrcaSlicer Arrange.cpp
@@ -46,7 +46,8 @@ std::optional<double> fitting_z_rotation(const Slic3r::ModelObject& object, size
     using Unit = libnest2d::TCompute<ExPolygon>;
     using Ratio = boost::rational<boost::multiprecision::int128_t>;
     try {
-        try_angle(libnest2d::minAreaBoundingBox<ExPolygon, Unit, Ratio>(shape).angleToX());
+        const double angle = libnest2d::minAreaBoundingBox<ExPolygon, Unit, Ratio>(shape).angleToX();
+        try_degrees(angle * 180. / M_PI);
     } catch (const std::exception&) {
     }
     return best;

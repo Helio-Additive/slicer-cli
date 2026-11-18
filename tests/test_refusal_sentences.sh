@@ -46,16 +46,18 @@ bin_of() { [ "$1" = orca ] && echo "$O" || echo "$B"; }
 python3 - <<'PY'
 import json, math, struct
 
-def box(path, width, h, depth=None):
+def box(path, width, h, depth=None, degrees=0):
     if depth is None:
         depth = width
-    v = [(x, y, z) for z in (0, h) for y in (0, depth) for x in (0, width)]
+    angle = math.radians(degrees)
+    c, s = math.cos(angle), math.sin(angle)
+    v = [(x*c - y*s, x*s + y*c, z) for z in (0, h) for y in (0, depth) for x in (0, width)]
     f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
     with open(path, "w") as o:
         o.write("solid t\n")
         for a, b, c in f:
             o.write("facet normal 0 0 0\nouter loop\n")
-            for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+            for i in (a, b, c): o.write("vertex %.9g %.9g %.9g\n" % v[i])
             o.write("endloop\nendfacet\n")
         o.write("endsolid t\n")
 
@@ -63,6 +65,8 @@ box("cube.stl", 20, 20)
 box("big.stl", 300, 10)          # larger than the A1 mini bed in both directions
 box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
 box("bar.stl", 220, 10, 20)      # fits the 180 mm square bed at 41 degrees
+box("tall-bar.stl", 220, 200, 20) # the same footprint also needs 200 mm height
+box("skew-bar.stl", 179.99, 1, 100, degrees=0.04) # a whole-degree turn is too coarse
 # Same bounds as the A1 mini, but a 220 mm part cannot fit a 180 mm circle.
 with open("round-bed.json", "w") as out:
     json.dump({"printable_area": [
@@ -293,14 +297,17 @@ both load-filament-ids        "*give --load-filaments with at least 3 file(s)*" 
      cube.stl --slice 1 --load-filament-ids 3
 both clone-objects-max        "*copies or fewer*" \
      cube.stl --slice 1 --clone-objects 9999
-both object-larger-than-bed   "*Try another way up, split it across plates, or use a bigger printer. Scale the object down only if changing its size is acceptable.*" \
+OVERSIZED="Scale the object down, split it across plates, or use a bigger printer."
+both object-larger-than-bed   "*$OVERSIZED Try another way up to keep its size." \
      big.stl --slice 1 --arrange 1 --printer-preset "$A1M"
-both object-too-tall          "*It is too tall for this bed; try another way up first. Split it across plates or use a bigger printer. Scale the object down only if changing its size is acceptable.*" \
+both object-too-tall          "*$OVERSIZED It is too tall for this bed. Try another way up to keep its size." \
      tall.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+both object-tall-no-turn      "*Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed." \
+     tall-bar.stl --slice 1 --printer-preset "$A1M"
 TURN_ADVICE="*fits at full size rotated 41 degrees about Z. Use --rotate 41, or give --arrange 1 --allow-rotations.*"
 both object-turn-plain        "$TURN_ADVICE" bar.stl --slice 1 --printer-preset "$A1M"
 both object-turn-arrange      "$TURN_ADVICE" bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
-both object-round-bed         "*Try another way up, split it across plates, or use a bigger printer.*" \
+both object-round-bed         "*$OVERSIZED Try another way up to keep its size." \
      bar.stl --slice 1 --arrange 1 --printer-preset "$A1M" --machine round-bed.json
 for e in bambu orca; do
     bin=$(bin_of "$e")
@@ -314,6 +321,53 @@ except Exception: print("none")' "c-object-turn-slices-$e/out/result.json" 2>/de
     else
         report object-turn-slices "$e" FAIL "full-size turn did not slice; $(why "c-object-turn-slices-$e")"
     fi
+done
+for e in bambu orca; do
+    bin=$(bin_of "$e")
+    refusal="c-object-fractional-turn-$e"
+    run "$refusal" "$bin" skew-bar.stl --slice 1 --printer-preset "$A1M" --outputdir "$refusal/out"
+    angle=$(python3 - "$refusal/out/result.json" <<'PYANGLE'
+import json, re, sys
+with open(sys.argv[1]) as f:
+    detail = json.load(f)["error_string"]
+match = re.search(r"Use --rotate ([0-9]+(?:[.][0-9]+)?)(?=,)", detail)
+if match:
+    print(match[1])
+PYANGLE
+    )
+    replay="c-object-fractional-replay-$e"
+    if [ -n "$angle" ]; then
+        run "$replay" "$bin" skew-bar.stl --slice 1 --printer-preset "$A1M" \
+            --rotate "$angle" --outputdir "$replay/out"
+    fi
+    if [ -n "$angle" ] && [ "$(cat "$replay/rc" 2>/dev/null)" = 0 ] && [ -s "$replay/out/plate_1.gcode" ]; then
+        report object-fractional-turn "$e" PASS "the printed angle $angle fits"
+    else
+        report object-fractional-turn "$e" FAIL "the printed angle '$angle' did not produce G-code"
+    fi
+
+    # The input is that engine's own cube project. Mirror and stretch its
+    # single build instance to make the same 220 x 20 mm footprint as the bar.
+    python3 - "proj-$e.3mf" "mirrored-$e.3mf" <<'PYMIRROR'
+import re, sys, zipfile
+
+def mirror(match):
+    values = match[2].split()
+    assert len(values) == 12
+    values[:3] = [str(-11 * float(value)) for value in values[:3]]
+    return match[1] + " ".join(values) + match[3]
+
+with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as dest:
+    for member in source.infolist():
+        data = source.read(member)
+        if member.filename == "3D/3dmodel.model":
+            model, count = re.subn(r'(<item\b[^>]*\btransform=")([^"]+)(")', mirror, data.decode())
+            assert count == 1
+            data = model.encode()
+        dest.writestr(member, data)
+PYMIRROR
+    check object-mirrored-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+        "mirrored-$e.3mf" --slice 1 --printer-preset "$A1M"
 done
 both assemble-no-fit          "*Give the plate fewer objects or smaller copies, or use a bigger printer.*" \
      --load-assemble-list pair.json --slice 1 --printer-preset "$A1M"

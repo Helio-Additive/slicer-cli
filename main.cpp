@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <limits>
+#include <locale>
 #include <stdexcept>
 #include <fstream>
 #include <string>
@@ -3560,6 +3561,9 @@ static std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObj
     for (const Slic3r::Vec2d& point : area->values)
         bed.merge(point);
     const Slic3r::Vec3d size = object.instance_bounding_box(instance_index).size();
+    const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    if (height > 0. && size.z() > height + EPSILON)
+        return std::nullopt;
     const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
     if (fits_as_is)
         return std::nullopt;
@@ -3575,10 +3579,23 @@ static std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObj
     return slicer_cli::fitting_z_rotation(object, instance_index, bed);
 }
 
-static std::string full_size_turn_advice(double degrees) {
-    const std::string angle = mm_text(degrees);
-    return " It fits at full size rotated " + angle + " degrees about Z. Use --rotate " + angle +
-           ", or give --arrange 1 --allow-rotations.";
+static std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index) {
+    std::ostringstream formatted;
+    formatted.imbue(std::locale::classic());
+    formatted << std::setprecision(std::numeric_limits<double>::max_digits10) << degrees;
+    const std::string angle = formatted.str();
+    const std::string fit = " It fits at full size rotated " + angle + " degrees about Z.";
+
+    // --rotate turns each volume before the instance transform. Offer that
+    // flag for one volume when a local Z turn commutes with the instance's
+    // linear transform. A mirror across X or Y reverses the world-frame turn.
+    if (object.instances.size() == 1 && object.volumes.size() == 1) {
+        const Eigen::Matrix3d linear = object.instances[instance_index]->get_matrix().linear();
+        const Eigen::Matrix3d quarter_turn = (Eigen::Matrix3d() << 0, -1, 0, 1, 0, 0, 0, 0, 1).finished();
+        if ((linear * quarter_turn).isApprox(quarter_turn * linear))
+            return fit + " Use --rotate " + angle + ", or give --arrange 1 --allow-rotations.";
+    }
+    return fit + " Give --arrange 1 --allow-rotations.";
 }
 
 /// The official per-plate gate before apply (BambuStudio.cpp 6527-6567 at
@@ -3629,12 +3646,12 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
             std::string detail = "Object '" + object->name + "' (" +
                 object_size_text(object->instance_bounding_box(i)) +
                 ") crosses the edge of the " + bed_size_text(config) + " bed.";
-            if (turn)
-                detail += full_size_turn_advice(*turn);
-            else if (arranged)
+            if (arranged)
                 detail += " Use a printer with a bigger bed.";
             else
                 detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
+            if (turn)
+                detail += full_size_turn_advice(*turn, *object, i);
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
                         {"object", object->name}, {"message", detail}});
@@ -4510,8 +4527,8 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
     const auto refuse_oversized = [&](const ModelObject& object, const BoundingBoxf3& box, const char* advice) {
         const std::string detail = "Object '" + object.name + "' is " + object_size_text(box) +
-                                   "; the bed is " + bed_size_text(config) + "." + advice +
-                                   " Scale the object down only if changing its size is acceptable.";
+                                   "; the bed is " + bed_size_text(config) +
+                                   ". Scale the object down, split it across plates, or use a bigger printer." + advice;
         set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
         emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
                     {"object", object.name}, {"message", detail}});
@@ -4530,7 +4547,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
             if (too_tall)
                 return refuse_oversized(*object, box,
-                    " It is too tall for this bed; try another way up first. Split it across plates or use a bigger printer.");
+                    " It is too tall for this bed. Try another way up to keep its size.");
         }
     }
 
@@ -4760,7 +4777,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
         const size_t instance_index = size_t(it - object->instances.begin());
         if (const auto turn = oversized_fitting_z_rotation(*object, instance_index, config)) {
-            turn_advice += " " + object->name + ":" + full_size_turn_advice(*turn);
+            turn_advice += " " + object->name + ":" + full_size_turn_advice(*turn, *object, instance_index);
             continue;
         }
         const BoundingBoxf3 box = object->instance_bounding_box(instance_index);
@@ -4769,7 +4786,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const bool fits_as_is = size.x() <= available.x() && size.y() <= available.y();
         const bool fits_turned = size.y() <= available.x() && size.x() <= available.y();
         if (!fits_as_is && !fits_turned)
-            return refuse_oversized(*object, box, " Try another way up, split it across plates, or use a bigger printer.");
+            return refuse_oversized(*object, box, " Try another way up to keep its size.");
     }
     if (!off_bed.empty()) {
         std::string detail = "These objects do not fit on the " + bed_size_text(config) +
