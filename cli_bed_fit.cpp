@@ -4,11 +4,12 @@
 
 #include <boost/multiprecision/integer.hpp>
 #include <boost/rational.hpp>
-#include <libnest2d/backends/libslic3r/geometries.hpp>
-#include <libnest2d/utils/rotcalipers.hpp>
 
 #include "libslic3r/ExPolygon.hpp"
+// Bambu's model headers need to precede the libnest2d Point operators on Clang.
 #include "libslic3r/Model.hpp"
+#include <libnest2d/backends/libslic3r/geometries.hpp>
+#include <libnest2d/utils/rotcalipers.hpp>
 
 namespace slicer_cli {
 
