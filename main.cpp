@@ -4487,9 +4487,10 @@ static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& co
 ///     printer's clearances), then update_arrange_params,
 ///     update_selected_items_inflation, update_unselected_items_inflation,
 ///     (Orca) update_selected_items_axis_align and get_shrink_bedpts.
-/// An object taller than the bed is refused first; width is left to the
-/// arranger. Objects that do not all land on the bed are refused with the
-/// official arrange sentence (-21, BambuStudio.cpp 5938-5944;
+/// An object taller than the bed is refused first (-50). An oversized
+/// footprint gets a chance to arrange. If it fails and has no fitting turn
+/// to suggest, keep the oversized-object refusal (-50). Other failures use
+/// the official arrange sentence (-21, BambuStudio.cpp 5938-5944;
 /// OrcaSlicer.cpp 5198-5204).
 /// `landed_out`, for --repetitions: how many printable items landed on the
 /// plate; the arrange is applied even when some did not, and those are
@@ -4507,6 +4508,15 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     BoundingBoxf bed;
     for (const Vec2d& pt : area->values) bed.merge(pt);
     const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    const auto refuse_oversized = [&](const ModelObject& object, const BoundingBoxf3& box, const char* advice) {
+        const std::string detail = "Object '" + object.name + "' is " + object_size_text(box) +
+                                   "; the bed is " + bed_size_text(config) + "." + advice +
+                                   " Scale the object down only if changing its size is acceptable.";
+        set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
+        emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
+                    {"object", object.name}, {"message", detail}});
+        return false;
+    };
     // Each instance on its own: the arrange places every instance as its own
     // item, so copies that start far apart are not one object wider than the bed.
     // Width is the arranger's verdict: it can turn a part to its minimum-area
@@ -4518,16 +4528,9 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             const BoundingBoxf3 box = object->instance_bounding_box(i);
             const Vec3d size = box.size();
             const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
-            if (too_tall) {
-                std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
-                                     "; the bed is " + bed_size_text(config) + ".";
-                detail += " It is too tall for this bed; try another way up first. Split it across plates or use a bigger printer.";
-                detail += " Scale the object down only if changing its size is acceptable.";
-                set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
-                emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
-                            {"object", object->name}, {"message", detail}});
-                return false;
-            }
+            if (too_tall)
+                return refuse_oversized(*object, box,
+                    " It is too tall for this bed; try another way up first. Split it across plates or use a bigger printer.");
         }
     }
 
@@ -4756,8 +4759,17 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const ModelObject* object = inst->get_object();
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
         const size_t instance_index = size_t(it - object->instances.begin());
-        if (const auto turn = oversized_fitting_z_rotation(*object, instance_index, config))
+        if (const auto turn = oversized_fitting_z_rotation(*object, instance_index, config)) {
             turn_advice += " " + object->name + ":" + full_size_turn_advice(*turn);
+            continue;
+        }
+        const BoundingBoxf3 box = object->instance_bounding_box(instance_index);
+        const Vec3d size = box.size();
+        const Vec2d available = bed.size().array() + EPSILON;
+        const bool fits_as_is = size.x() <= available.x() && size.y() <= available.y();
+        const bool fits_turned = size.y() <= available.x() && size.x() <= available.y();
+        if (!fits_as_is && !fits_turned)
+            return refuse_oversized(*object, box, " Try another way up, split it across plates, or use a bigger printer.");
     }
     if (!off_bed.empty()) {
         std::string detail = "These objects do not fit on the " + bed_size_text(config) +
@@ -4770,11 +4782,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
                              // OrcaSlicer.cpp 5196-5205 at 31f6803), or a
                              // bigger printer's bed takes them together.
                              " Move some objects to another plate in the file, or use a printer with a bigger bed.";
-        if (!turn_advice.empty())
-            detail += turn_advice;
-        else
-            detail += " Try another way up, split it across plates, or use a bigger printer."
-                      " Scale the object down only if changing its size is acceptable.";
+        detail += turn_advice;
         set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
         emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
         return false;
