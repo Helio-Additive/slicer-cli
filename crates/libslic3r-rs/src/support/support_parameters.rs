@@ -11,11 +11,16 @@
 //! PrintObject accessors (object.print().config(), object.config(),
 //! object.slicing_parameters(), object.layers(), object.printing_region()).
 
+use crate::config::{ConfigOptionBool, ConfigOptionFloat, ConfigOptionResolver};
 use crate::flow::{
     support_material_1st_layer_flow, support_material_flow, support_material_interface_flow, Flow,
-    FlowRole,
+    FlowError, FlowResult, FlowRole,
 };
+use crate::gcode::wipe_tower::{cfg_bools, cfg_floats, get_at};
 use crate::libslic3r::scale;
+use crate::print::faithful as pf;
+use crate::print_config::config_def::DynamicPrintConfig;
+use crate::print_config::enums;
 use crate::print_config::{
     InfillPattern, SupportBasePattern, SupportInterfacePattern, SupportType, TreeSupportStyle,
 };
@@ -96,6 +101,16 @@ pub struct SupportParameters {
     // SupportParameters.hpp:271 — // Flow at raft inteface & contact layers.
     // SupportParameters.hpp:272 — Flow raft_interface_flow;
     pub raft_interface_flow: Flow,
+    // SupportParameters.hpp:336-339 — BBS multi-diameter: the line width option behind the support flows, so
+    // base and interface slabs can be rebuilt for the nozzle selected by the support merge plan.
+    // `ConfigOptionFloat support_base_width;` / `ConfigOptionFloat support_first_layer_width;`: the values of
+    // the two options (the crate's ConfigOptionFloat is not Clone).
+    pub support_base_width: f64,
+    pub support_first_layer_width: f64,
+    // SupportParameters.hpp:340 — float preset_nozzle_diameter { 0.f };
+    pub preset_nozzle_diameter: f32,
+    // SupportParameters.hpp:341 — bool multi_nozzle_diameter_mode { false };
+    pub multi_nozzle_diameter_mode: bool,
     // SupportParameters.hpp:273 — coordf_t support_extrusion_width;
     pub support_extrusion_width: f64,
     // SupportParameters.hpp:274 — // Is merging of regions allowed? Could the interface & base support regions be printed with the same extruder?
@@ -635,6 +650,11 @@ impl SupportParameters {
             support_material_interface_flow,
             support_material_bottom_interface_flow,
             raft_interface_flow,
+            // Members of the pin's struct the older constructor has no source for (SupportParameters.hpp:338-341).
+            support_base_width: if object_config.support_line_width > 0.0 { object_config.support_line_width } else { object_config.line_width },
+            support_first_layer_width: 0.0,
+            preset_nozzle_diameter: 0.0,
+            multi_nozzle_diameter_mode: false,
             support_extrusion_width,
             can_merge_support_regions,
             support_layer_height_min,
@@ -696,7 +716,8 @@ impl SupportParameters {
 
     // SupportParameters.hpp:266 — size_t num_bottom_interface_layers_only() const { return this->num_bottom_interface_layers - this->num_bottom_base_interface_layers; }
     pub fn num_bottom_interface_layers_only(&self) -> usize {
-        self.num_bottom_interface_layers - self.num_bottom_base_interface_layers
+        // size_t arithmetic: it wraps where the base layers outnumber the interface layers.
+        self.num_bottom_interface_layers.wrapping_sub(self.num_bottom_base_interface_layers)
     }
 
     // SupportParameters.hpp:308-310 — // Produce a raft interface angle for a given SupportLayer::interface_id()
@@ -709,6 +730,622 @@ impl SupportParameters {
             } else {
                 (std::f64::consts::PI / 4.0) as f32
             }
+    }
+}
+
+// ============================================================================
+// SupportParameters.hpp at the pin, over the Print classes of `crate::print::faithful`.
+// ============================================================================
+
+// `config.<key>.value` of a float or percent option.
+fn cfg_float(config: &DynamicPrintConfig, key: &str) -> f64 {
+    config.option(key).and_then(|o| o.get_float().ok()).unwrap_or(0.0)
+}
+
+// `config.<key>.value` of an int or enum option.
+fn cfg_int(config: &DynamicPrintConfig, key: &str) -> i32 {
+    config.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0)
+}
+
+// `config.<key>.value` of a bool option.
+fn cfg_bool(config: &DynamicPrintConfig, key: &str) -> bool {
+    config.option(key).and_then(|o| o.get_bool().ok()).unwrap_or(false)
+}
+
+// `std::min(a, b)`: `(b < a) ? b : a`.
+#[inline]
+fn std_min(a: f64, b: f64) -> f64 {
+    if b < a {
+        b
+    } else {
+        a
+    }
+}
+
+// `std::max(a, b)`: `(a < b) ? b : a`.
+#[inline]
+fn std_max(a: f64, b: f64) -> f64 {
+    if a < b {
+        b
+    } else {
+        a
+    }
+}
+
+/// The `InfillPattern` of the crate's older enum for a value of PrintConfig.hpp's `enum InfillPattern`
+/// (the first 27 enumerators are the same in both; the support options take none of the later ones).
+fn infill_pattern_from_i32(v: i32) -> InfillPattern {
+    match enums::InfillPattern::from_i32(v) {
+        enums::InfillPattern::IpConcentric => InfillPattern::Concentric,
+        enums::InfillPattern::IpRectilinear => InfillPattern::Rectilinear,
+        enums::InfillPattern::IpGrid => InfillPattern::Grid,
+        enums::InfillPattern::IpLine => InfillPattern::Line,
+        enums::InfillPattern::IpCubic => InfillPattern::Cubic,
+        enums::InfillPattern::IpTriangles => InfillPattern::Triangles,
+        enums::InfillPattern::IpStars => InfillPattern::Stars,
+        enums::InfillPattern::IpGyroid => InfillPattern::Gyroid,
+        enums::InfillPattern::IpHoneycomb => InfillPattern::Honeycomb,
+        enums::InfillPattern::IpAdaptiveCubic => InfillPattern::AdaptiveCubic,
+        enums::InfillPattern::IpMonotonic => InfillPattern::Monotonic,
+        enums::InfillPattern::IpMonotonicLine => InfillPattern::MonotonicLine,
+        enums::InfillPattern::IpAlignedRectilinear => InfillPattern::AlignedRectilinear,
+        enums::InfillPattern::Ip3DHoneycomb => InfillPattern::Honeycomb3D,
+        enums::InfillPattern::IpHilbertCurve => InfillPattern::HilbertCurve,
+        enums::InfillPattern::IpArchimedeanChords => InfillPattern::ArchimedeanChords,
+        enums::InfillPattern::IpOctagramSpiral => InfillPattern::OctagramSpiral,
+        enums::InfillPattern::IpSupportCubic => InfillPattern::SupportCubic,
+        enums::InfillPattern::IpSupportBase => InfillPattern::SupportBase,
+        enums::InfillPattern::IpConcentricInternal => InfillPattern::ConcentricInternal,
+        enums::InfillPattern::IpLightning => InfillPattern::Lightning,
+        enums::InfillPattern::IpCrossHatch => InfillPattern::CrossHatch,
+        enums::InfillPattern::IpZigZag => InfillPattern::ZigZag,
+        enums::InfillPattern::IpCrossZag => InfillPattern::CrossZag,
+        enums::InfillPattern::IpFloatingConcentric => InfillPattern::FloatingConcentric,
+        enums::InfillPattern::IpLockedZag => InfillPattern::LockedZag,
+        enums::InfillPattern::Ip2DLattice => InfillPattern::Lattice2D,
+        other => panic!("InfillPattern {:?} is not a support pattern", other),
+    }
+}
+
+// SupportParameters.hpp:14-19
+// Read a bool print option when present; unknown keys stay false.
+pub fn config_flag_or_false(cfg: &(impl ConfigOptionResolver + ?Sized), key: &str) -> bool {
+    // const auto *opt = cfg.option<ConfigOptionBool>(key);
+    let opt = cfg.option(key).and_then(|o| o.as_any().downcast_ref::<ConfigOptionBool>());
+    // return opt != nullptr && opt->value;
+    opt.is_some() && opt.unwrap().value
+}
+
+// SupportParameters.hpp:21-28
+pub fn resolved_support_object_xy_distance(print_config: &pf::PrintConfig, object_config: &pf::PrintObjectConfig) -> f64 {
+    if !cfg_bool(print_config, "top_z_overrides_xy_distance") {
+        cfg_float(object_config, "support_object_xy_distance")
+    } else {
+        std_min(
+            cfg_float(object_config, "support_object_xy_distance"),
+            std_max(0.2, cfg_float(object_config, "support_top_z_distance")),
+        )
+    }
+}
+
+// SupportParameters.hpp:30-62
+// Keep Default / Grid / Snug / mismatched-style rewrite in one place so the uncovered-overhang
+// warning names the same classic-vs-organic path as SupportParameters. Organic is refused for
+// variable layer heights (#4313), a zero Top Z gap, a requested ring / heat preserve, or multi-diameter mode.
+pub fn resolve_support_style(
+    mut support_style: enums::SupportMaterialStyle,
+    support_type: enums::SupportType,
+    has_variable_layer_heights: bool,
+    soluble_interface: bool,
+    heat_preserve_mode: bool,
+    enable_support_ring: bool,
+    multi_diameter_mode: bool,
+) -> enums::SupportMaterialStyle {
+    use crate::print_config::config_def::is_tree;
+    use enums::SupportMaterialStyle::*;
+    if support_style != SmsDefault {
+        if (support_style == SmsSnug || support_style == SmsGrid) && is_tree(support_type) {
+            support_style = SmsDefault;
+        }
+        if (support_style == SmsTreeSlim || support_style == SmsTreeStrong || support_style == SmsTreeHybrid || support_style == SmsTreeOrganic)
+            && !is_tree(support_type)
+        {
+            support_style = SmsDefault;
+        }
+    }
+    if support_style == SmsDefault {
+        if is_tree(support_type) {
+            if !has_variable_layer_heights && !soluble_interface && !heat_preserve_mode && !enable_support_ring && !multi_diameter_mode {
+                support_style = SmsTreeOrganic;
+            } else {
+                support_style = SmsTreeHybrid;
+            }
+        } else {
+            support_style = SmsGrid;
+        }
+    }
+    support_style
+}
+
+// Flow.cpp:293-301 `float support_nozzle_diameter(const PrintObject *object, unsigned int filament_id)`
+//
+// FIDELITY-NOTE: Flow.cpp's function; flow.rs has the support flows of the slicing pipeline's PrintObject only,
+// so the ones over `crate::print::faithful` that the constructor calls are kept here.
+pub fn support_nozzle_diameter(print: &pf::Print, filament_id: u32) -> f32 {
+    if filament_id == 0 {
+        let single_nozzle = print.single_diameter_layering_nozzle();
+        if single_nozzle > crate::libslic3r::EPSILON {
+            return single_nozzle as f32;
+        }
+    }
+    pf::nozzle_diameter_for_filament(print.config(), filament_id)
+}
+
+// Flow.cpp:136-157 `Flow Flow::new_from_config_width(FlowRole role, const ConfigOptionFloat &width, float
+// preset_nozzle_diameter, float nozzle_diameter, float height, bool multi_nozzle_diameter_mode)`
+// This constructor builds a Flow object from an extrusion width config setting
+// and other context properties.
+pub fn flow_new_from_config_width(
+    role: FlowRole,
+    width: &ConfigOptionFloat,
+    preset_nozzle_diameter: f32,
+    nozzle_diameter: f32,
+    height: f32,
+    multi_nozzle_diameter_mode: bool,
+) -> FlowResult<Flow> {
+    if height <= 0.0 {
+        return Err(FlowError::InvalidArgument("Invalid flow height supplied to new_from_config_width()".to_string()));
+    }
+
+    let w: f32;
+    if width.value == 0. {
+        // If user left option to 0, calculate a sane default width.
+        w = Flow::auto_extrusion_width(role, nozzle_diameter as f64) as f32;
+    } else {
+        w = Flow::extrusion_width_for_nozzle(width, preset_nozzle_diameter, nozzle_diameter, multi_nozzle_diameter_mode) as f32;
+    }
+
+    // return Flow(w, height, rounded_rectangle_extrusion_spacing(w, height), nozzle_diameter, false);
+    Flow::new(w as f64, height as f64, nozzle_diameter as f64)
+}
+
+// Flow.cpp:248-261 `Flow support_material_flow(const PrintObject *object, float layer_height)`
+pub fn support_material_flow_of(object: &pf::PrintObject, print: &pf::Print, layer_height: f32) -> FlowResult<Flow> {
+    use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+    let preset_nozzle_diameter = primary_nozzle_diameter(print.full_print_config()) as f32;
+    // Width conversion follows the selected nozzle even when one diameter is sliced directly and needs no merge plan.
+    let multi_diameter_mode = multi_nozzle_diameter_mode_enabled(print.full_print_config());
+    let config = object.config();
+    flow_new_from_config_width(
+        FlowRole::SupportMaterial,
+        &ConfigOptionFloat::with_value(if cfg_float(config, "support_line_width") > 0.0 {
+            cfg_float(config, "support_line_width")
+        } else {
+            cfg_float(config, "line_width")
+        }),
+        preset_nozzle_diameter,
+        support_nozzle_diameter(print, cfg_int(config, "support_filament") as u32),
+        if layer_height > 0.0 { layer_height } else { cfg_float(config, "layer_height") as f32 },
+        multi_diameter_mode,
+    )
+}
+
+// Flow.cpp:270-281 `Flow support_material_1st_layer_flow(const PrintObject *object, float layer_height)`
+pub fn support_material_1st_layer_flow_of(object: &pf::PrintObject, print: &pf::Print, layer_height: f32) -> FlowResult<Flow> {
+    use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+    let print_config = print.config();
+    let config = object.config();
+    // const auto &width = (print_config.initial_layer_line_width.value > 0) ? print_config.initial_layer_line_width : object->config().support_line_width;
+    let width = if cfg_float(print_config, "initial_layer_line_width") > 0.0 {
+        cfg_float(print_config, "initial_layer_line_width")
+    } else {
+        cfg_float(config, "support_line_width")
+    };
+    flow_new_from_config_width(
+        FlowRole::SupportMaterial,
+        &ConfigOptionFloat::with_value(if width > 0.0 { width } else { cfg_float(config, "line_width") }),
+        primary_nozzle_diameter(print.full_print_config()) as f32,
+        support_nozzle_diameter(print, cfg_int(config, "support_filament") as u32),
+        if layer_height > 0.0 { layer_height } else { cfg_float(print_config, "initial_layer_print_height") as f32 },
+        multi_nozzle_diameter_mode_enabled(print.full_print_config()),
+    )
+}
+
+// Flow.cpp:283-292 `Flow support_material_interface_flow(const PrintObject *object, float layer_height)`
+pub fn support_material_interface_flow_of(object: &pf::PrintObject, print: &pf::Print, layer_height: f32) -> FlowResult<Flow> {
+    use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+    let config = object.config();
+    flow_new_from_config_width(
+        FlowRole::SupportMaterialInterface,
+        &ConfigOptionFloat::with_value(if cfg_float(config, "support_line_width") > 0.0 {
+            cfg_float(config, "support_line_width")
+        } else {
+            cfg_float(config, "line_width")
+        }),
+        primary_nozzle_diameter(print.full_print_config()) as f32,
+        support_nozzle_diameter(print, cfg_int(config, "support_interface_filament") as u32),
+        if layer_height > 0.0 { layer_height } else { cfg_float(config, "layer_height") as f32 },
+        multi_nozzle_diameter_mode_enabled(print.full_print_config()),
+    )
+}
+
+impl SupportParameters {
+    /// SupportParameters.hpp:66-305 — `SupportParameters(const PrintObject& object)`, the constructor of the
+    /// pin over `crate::print::faithful` (`object.print()` is `print`).
+    ///
+    /// An exception of the C++ (a flow that cannot be made) is the `Err`.
+    pub fn new(object: &pf::PrintObject, print: &pf::Print) -> FlowResult<Self> {
+        use crate::print_config::config_def::{is_tree, multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+        use enums::{SupportMaterialInterfacePattern as Smip, SupportMaterialPattern as Smp, SupportMaterialStyle as Sms};
+        // 68-70
+        let print_config = print.config();
+        let object_config = object.config();
+        let slicing_params = object.slicing_parameters();
+        let mut this = SupportParameters::default();
+
+        let support_filament = cfg_int(object_config, "support_filament");
+        let support_interface_filament = cfg_int(object_config, "support_interface_filament");
+        let support_type = enums::SupportType::from_i32(cfg_int(object_config, "support_type"));
+        let filament_soluble = cfg_bools(print_config, "filament_soluble");
+
+        // 72
+        this.soluble_interface = slicing_params.soluble_interface;
+        // 73-79
+        this.soluble_interface_non_soluble_base =
+            // Zero z-gap between the overhangs and the support interface.
+            slicing_params.soluble_interface &&
+            // Interface extruder soluble.
+            support_interface_filament > 0 && get_at(&filament_soluble, (support_interface_filament - 1) as usize) &&
+            // Base extruder: Either "print with active extruder" not soluble.
+            (support_filament == 0 || !get_at(&filament_soluble, (support_filament - 1) as usize));
+
+        // 81-116
+        {
+            let support_interface_top_layers = cfg_int(object_config, "support_interface_top_layers");
+            let support_interface_bottom_layers = cfg_int(object_config, "support_interface_bottom_layers");
+            this.num_top_interface_layers = std::cmp::max(0, support_interface_top_layers) as usize;
+            this.num_bottom_interface_layers =
+                if support_interface_bottom_layers < 0 { this.num_top_interface_layers } else { support_interface_bottom_layers as usize };
+            this.has_top_contacts = this.num_top_interface_layers > 0;
+            this.has_bottom_contacts = this.num_bottom_interface_layers > 0;
+            if is_tree(support_type) {
+                if this.soluble_interface_non_soluble_base {
+                    // Try to support soluble dense interfaces with non-soluble dense interfaces.
+                    this.num_top_base_interface_layers = std::cmp::min(this.num_top_interface_layers as i32 / 2, 2) as usize;
+                    this.num_bottom_base_interface_layers = std::cmp::min(this.num_bottom_interface_layers as i32 / 2, 2) as usize;
+                } else {
+                    // BBS: if support interface and support base do not use the same filament, add a base layer to improve their adhesion
+                    // Note: support materials (such as Supp.W) can't be used as support base now, so support interface and base are still using different filaments even if
+                    // support_filament==0
+                    let differnt_support_interface_filament = support_interface_filament != 0 && support_interface_filament != support_filament;
+                    this.num_top_base_interface_layers = if differnt_support_interface_filament { 1 } else { 0 };
+                    this.num_bottom_base_interface_layers = if differnt_support_interface_filament { 1 } else { 0 };
+                }
+            } else {
+                if this.soluble_interface_non_soluble_base {
+                    // Try to support soluble dense interfaces with non-soluble dense interfaces.
+                    this.num_top_base_interface_layers = if this.num_top_interface_layers > 0 { 2 } else { 0 };
+                    this.num_bottom_base_interface_layers = std::cmp::min(this.num_bottom_interface_layers as i32 / 2, 2) as usize;
+                } else {
+                    // BBS: if support interface and support base do not use the same filament, add a base layer to improve their adhesion
+                    // Note: support materials (such as Supp.W) can't be used as support base now, so support interface and base are still using different filaments even if
+                    // support_filament==0
+                    let differnt_support_interface_filament = support_interface_filament != 0 && support_interface_filament != support_filament;
+                    this.num_top_base_interface_layers =
+                        if this.num_top_interface_layers > 0 { if differnt_support_interface_filament { 2 } else { 1 } } else { 0 };
+                    this.num_bottom_base_interface_layers = if differnt_support_interface_filament { 1 } else { 0 };
+                }
+            }
+        }
+        // 117-120
+        this.first_layer_flow = support_material_1st_layer_flow_of(object, print, slicing_params.first_print_layer_height as f32)?;
+        this.support_material_flow = support_material_flow_of(object, print, slicing_params.layer_height as f32)?;
+        this.support_material_interface_flow = support_material_interface_flow_of(object, print, slicing_params.layer_height as f32)?;
+        this.raft_interface_flow = this.support_material_interface_flow;
+        // 121-127
+        // BBS multi-diameter: kept so the support base flow can be rebuilt for a nozzle the support merge plan
+        // picked. support_material_flow() derives the nozzle from support_filament, which is 0 in that case.
+        this.support_base_width =
+            if cfg_float(object_config, "support_line_width") > 0.0 { cfg_float(object_config, "support_line_width") } else { cfg_float(object_config, "line_width") };
+        this.support_first_layer_width = if cfg_float(print_config, "initial_layer_line_width") > 0.0 {
+            cfg_float(print_config, "initial_layer_line_width")
+        } else {
+            this.support_base_width
+        };
+        this.preset_nozzle_diameter = primary_nozzle_diameter(print.full_print_config()) as f32;
+        this.multi_nozzle_diameter_mode = multi_nozzle_diameter_mode_enabled(print.full_print_config());
+
+        // 129-134
+        // Calculate a minimum support layer height as a minimum over all extruders, but not smaller than 10um.
+        // scaled<coord_t>(0.01): coord_t(0.01 / SCALING_FACTOR)
+        this.support_layer_height_min = (0.01 / crate::libslic3r::SCALING_FACTOR) as i64 as f64;
+        for lh in cfg_floats(print_config, "min_layer_height") {
+            this.support_layer_height_min = std_min(this.support_layer_height_min, std_max(0.01, lh));
+        }
+        for layer in object.layers() {
+            this.support_layer_height_min = std_min(this.support_layer_height_min, std_max(0.01, layer.height));
+        }
+
+        // 136-139
+        if cfg_int(object_config, "support_interface_top_layers") == 0 {
+            // No interface layers allowed, print everything with the base support pattern.
+            this.support_material_interface_flow = this.support_material_flow;
+        }
+
+        // 141-152
+        // Evaluate the XY gap between the object outer perimeters and the support structures.
+        // Evaluate the XY gap between the object outer perimeters and the support structures.
+        //
+        // `external_perimeter_width` (the maximum of `region.flow(object, frExternalPerimeter,
+        // slicing_params.layer_height).width()` over the regions) is computed by the C++ and never read; the
+        // faithful PrintRegion has no `flow()`, and the value is not computed here.
+        let mut bridge_flow_ratio: f64 = 0.0;
+        for region_id in 0..object.num_printing_regions() {
+            let region = object.printing_region(region_id);
+            bridge_flow_ratio += cfg_float(region.borrow().config(), "bridge_flow");
+        }
+        this.gap_xy = resolved_support_object_xy_distance(print_config, object_config);
+        this.gap_xy_first_layer = cfg_float(object_config, "support_object_first_layer_gap");
+        bridge_flow_ratio /= object.num_printing_regions() as f64;
+
+        // 154-156
+        this.support_material_bottom_interface_flow = if slicing_params.soluble_interface || !cfg_bool(object_config, "thick_bridges") {
+            this.support_material_interface_flow.with_flow_ratio(bridge_flow_ratio)?
+        } else {
+            Flow::bridging_flow(
+                bridge_flow_ratio * this.support_material_interface_flow.nozzle_diameter(),
+                this.support_material_interface_flow.nozzle_diameter(),
+            )
+        };
+
+        // 158-167
+        this.can_merge_support_regions = support_filament == support_interface_filament;
+        if !this.can_merge_support_regions && (support_filament == 0 || support_interface_filament == 0) {
+            // One of the support extruders is of "don't care" type.
+            let object_extruders = object.object_extruders(print);
+            if object_extruders.len() == 1 &&
+                // object_extruders are 0-based but object_config.support_filament's are 1-based
+                object_extruders[0] + 1 == std::cmp::max(support_filament as u32, support_interface_filament as u32)
+            {
+                // Object is printed with the same extruder as the support.
+                this.can_merge_support_regions = true;
+            }
+        }
+
+        // 170-171: Geometry::deg2rad<float>: `T(PI) * angle / T(180.0)`
+        let support_angle = cfg_float(object_config, "support_angle");
+        this.base_angle = std::f32::consts::PI * (support_angle as f32) / 180.0_f32;
+        this.interface_angle = std::f32::consts::PI * ((support_angle + 90.) as f32) / 180.0_f32;
+        // 172-177
+        this.interface_spacing = cfg_float(object_config, "support_interface_spacing") + this.support_material_interface_flow.spacing();
+        this.interface_density = std_min(1., this.support_material_interface_flow.spacing() / this.interface_spacing);
+        let raft_interface_spacing = cfg_float(object_config, "support_interface_spacing") + this.raft_interface_flow.spacing();
+        this.raft_interface_density = std_min(1., this.raft_interface_flow.spacing() / raft_interface_spacing);
+        this.support_spacing = cfg_float(object_config, "support_base_pattern_spacing") + this.support_material_flow.spacing();
+        this.support_density = std_min(1., this.support_material_flow.spacing() / this.support_spacing);
+        // 178-182
+        if cfg_int(object_config, "support_interface_top_layers") == 0 {
+            // No interface layers allowed, print everything with the base support pattern.
+            this.interface_spacing = this.support_spacing;
+            this.interface_density = this.support_density;
+        }
+
+        // 184-190
+        this.enable_support_ironing = cfg_bool(object_config, "enable_support_ironing");
+        this.ironing_angle = cfg_float(object_config, "support_ironing_direction");
+        this.ironing_flow_percent = cfg_float(object_config, "support_ironing_flow");
+        this.ironing_inset = cfg_float(object_config, "support_ironing_inset");
+        this.ironing_line_spacing = cfg_float(object_config, "support_ironing_spacing");
+        this.ironing_pattern = infill_pattern_from_i32(cfg_int(object_config, "support_ironing_pattern"));
+        this.ironing_speed = cfg_float(object_config, "support_ironing_speed");
+
+        // 192-213
+        let mut support_style = Sms::from_i32(cfg_int(object_config, "support_style"));
+        if support_style != Sms::SmsDefault {
+            if (support_style == Sms::SmsSnug || support_style == Sms::SmsGrid) && is_tree(support_type) {
+                support_style = Sms::SmsDefault;
+            }
+            if (support_style == Sms::SmsTreeSlim
+                || support_style == Sms::SmsTreeStrong
+                || support_style == Sms::SmsTreeHybrid
+                || support_style == Sms::SmsTreeOrganic)
+                && !is_tree(support_type)
+            {
+                support_style = Sms::SmsDefault;
+            }
+        }
+        if support_style == Sms::SmsDefault {
+            if is_tree(support_type) {
+                // organic support doesn't work with variable layer heights (including adaptive layer height and height range modifier, see #4313)
+                // BBS multi-diameter: default to hybrid tree as well.
+                if !object.has_variable_layer_heights && !slicing_params.soluble_interface && !print.uses_multiple_nozzle_diameters() {
+                    // BOOST_LOG_TRIVIAL(warning) << "tree support default to organic support";
+                    support_style = Sms::SmsTreeOrganic;
+                } else {
+                    // BOOST_LOG_TRIVIAL(warning) << "tree support default to hybrid tree due to adaptive layer height or multi-diameter mode";
+                    support_style = Sms::SmsTreeHybrid;
+                }
+            } else {
+                support_style = Sms::SmsGrid;
+            }
+        }
+        this.support_style = support_style as i32;
+
+        // 215-222
+        let mut support_base_pattern = Smp::from_i32(cfg_int(object_config, "support_base_pattern"));
+        if support_base_pattern == Smp::SmpLightning && !is_tree(support_type) {
+            support_base_pattern = Smp::SmpRectilinear;
+        }
+        if support_base_pattern == Smp::SmpDefault {
+            if is_tree(support_type) {
+                support_base_pattern = if support_style == Sms::SmsTreeHybrid { Smp::SmpRectilinear } else { Smp::SmpNone };
+            } else {
+                support_base_pattern = Smp::SmpRectilinear;
+            }
+        }
+        this.support_base_pattern = support_base_pattern as i32;
+
+        // 224-238
+        this.with_sheath = cfg_int(object_config, "tree_support_wall_count") > 0;
+        this.base_fill_pattern = if support_base_pattern == Smp::SmpLightning {
+            InfillPattern::Lightning
+        } else if support_base_pattern == Smp::SmpHoneycomb {
+            InfillPattern::Honeycomb
+        } else if this.support_density > 0.95 || this.with_sheath {
+            InfillPattern::Rectilinear
+        } else {
+            InfillPattern::SupportBase
+        };
+        this.interface_fill_pattern = if this.interface_density > 0.95 { InfillPattern::Rectilinear } else { InfillPattern::SupportBase };
+        this.raft_interface_fill_pattern = if this.raft_interface_density > 0.95 { InfillPattern::Rectilinear } else { InfillPattern::SupportBase };
+        let support_interface_pattern = Smip::from_i32(cfg_int(object_config, "support_interface_pattern"));
+        if support_interface_pattern == Smip::SmipGrid {
+            this.contact_fill_pattern = InfillPattern::Grid;
+        } else if support_interface_pattern == Smip::SmipRectilinearInterlaced || support_interface_pattern == Smip::SmipAuto {
+            this.contact_fill_pattern = InfillPattern::Rectilinear;
+        } else {
+            this.contact_fill_pattern = if support_interface_pattern == Smip::SmipConcentric {
+                InfillPattern::Concentric
+            } else if this.interface_density > 0.95 {
+                InfillPattern::Rectilinear
+            } else {
+                InfillPattern::SupportBase
+            };
+        }
+
+        // 240-269
+        this.raft_angle_1st_layer = 0.;
+        this.raft_angle_base = 0.;
+        this.raft_angle_interface = 0.;
+        if slicing_params.base_raft_layers > 1 {
+            debug_assert!(slicing_params.raft_layers() >= 4);
+            // There are all raft layer types (1st layer, base, interface & contact layers) available.
+            this.raft_angle_1st_layer = this.interface_angle;
+            this.raft_angle_base = this.base_angle;
+            this.raft_angle_interface = this.interface_angle;
+            if (slicing_params.interface_raft_layers & 1) == 0 {
+                // Allign the 1st raft interface layer so that the object 1st layer is hatched perpendicularly to the raft contact interface.
+                this.raft_angle_interface += (0.5 * std::f64::consts::PI) as f32;
+            }
+        } else if slicing_params.base_raft_layers == 1 || slicing_params.interface_raft_layers > 1 {
+            debug_assert!(slicing_params.raft_layers() == 2 || slicing_params.raft_layers() == 3);
+            // 1st layer, interface & contact layers available.
+            this.raft_angle_1st_layer = this.base_angle;
+            // `this->interface_angle + 0.5 * M_PI`: the sum in double, stored as a float.
+            this.raft_angle_interface = (this.interface_angle as f64 + 0.5 * std::f64::consts::PI) as f32;
+        } else if slicing_params.interface_raft_layers == 1 {
+            // Only the contact raft layer is non-empty, which will be printed as the 1st layer.
+            debug_assert!(slicing_params.base_raft_layers == 0);
+            debug_assert!(slicing_params.interface_raft_layers == 1);
+            debug_assert!(slicing_params.raft_layers() == 1);
+            this.raft_angle_1st_layer = (0.5 * std::f64::consts::PI) as f32;
+            this.raft_angle_interface = this.raft_angle_1st_layer;
+        } else {
+            // No raft.
+            debug_assert!(slicing_params.base_raft_layers == 0);
+            debug_assert!(slicing_params.interface_raft_layers == 0);
+            debug_assert!(slicing_params.raft_layers() == 0);
+        }
+
+        // 271-282
+        {
+            let support_nozzle = support_nozzle_diameter(print, support_filament as u32);
+            let support_width_opt = ConfigOptionFloat::with_value(if cfg_float(object_config, "support_line_width") > 0.0 {
+                cfg_float(object_config, "support_line_width")
+            } else {
+                cfg_float(object_config, "line_width")
+            });
+            this.support_extrusion_width =
+                Flow::extrusion_width_for_nozzle(&support_width_opt, this.preset_nozzle_diameter, support_nozzle, this.multi_nozzle_diameter_mode);
+        }
+        // Check if set to zero, use default if so.
+        if this.support_extrusion_width <= 0.0 {
+            let nozzle_diameter = support_nozzle_diameter(print, support_interface_filament as u32);
+            this.support_extrusion_width = Flow::auto_extrusion_width(FlowRole::SupportMaterial, nozzle_diameter as f64);
+        }
+
+        // 284-302
+        let tree_support_branch_diameter_double_wall: f64;
+        // get support filament strength and decide the thresh of double wall area
+        let impact_strength_z = cfg_floats(print_config, "impact_strength_z");
+        // `get_at(object_config.support_filament - 1)`: the index is a size_t, -1 is past the end.
+        let mut support_filament_strength: f32 = get_at(&impact_strength_z, (support_filament as i64 - 1) as usize) as f32;
+        if support_filament == 0 {
+            // find the weakest filament
+            support_filament_strength = f32::MAX;
+            for extruder in object.object_extruders(print) {
+                let strength = get_at(&impact_strength_z, extruder as usize) as f32;
+                if strength < support_filament_strength {
+                    support_filament_strength = strength;
+                }
+            }
+        }
+
+        let tree_support_wall_count = cfg_int(object_config, "tree_support_wall_count");
+        if tree_support_wall_count == -1 {
+            tree_support_branch_diameter_double_wall = support_filament_strength as f64;
+            // 0.25*sqr(scaled<double>(tree_support_branch_diameter_double_wall))*M_PI
+            this.tree_branch_diameter_double_wall_area_scaled =
+                0.25 * sqr(tree_support_branch_diameter_double_wall / crate::libslic3r::SCALING_FACTOR) * std::f64::consts::PI;
+        } else {
+            // force double walls everywhere if wall count is larger than 1
+            this.tree_branch_diameter_double_wall_area_scaled = if tree_support_wall_count > 1 { 0.1 } else { f64::MAX };
+        }
+
+        // 304
+        this.independent_layer_height = cfg_bool(print_config, "independent_support_layer_height");
+        // 370 `coordf_t support_expansion=0;`, 404 `const double thresh_big_overhang = scale_(10);`
+        this.support_expansion = 0.;
+        this.thresh_big_overhang = 10. / crate::libslic3r::SCALING_FACTOR;
+        Ok(this)
+    }
+
+    // SupportParameters.hpp:342-346
+    pub fn support_material_flow_for_nozzle(&self, nozzle_diameter: f64, layer_height: f32) -> FlowResult<Flow> {
+        flow_new_from_config_width(
+            FlowRole::SupportMaterial,
+            &ConfigOptionFloat::with_value(self.support_base_width),
+            self.preset_nozzle_diameter,
+            nozzle_diameter as f32,
+            layer_height,
+            self.multi_nozzle_diameter_mode,
+        )
+    }
+
+    // SupportParameters.hpp:347-351
+    pub fn support_material_interface_flow_for_nozzle(&self, nozzle_diameter: f64, layer_height: f32) -> FlowResult<Flow> {
+        flow_new_from_config_width(
+            FlowRole::SupportMaterialInterface,
+            &ConfigOptionFloat::with_value(self.support_base_width),
+            self.preset_nozzle_diameter,
+            nozzle_diameter as f32,
+            layer_height,
+            self.multi_nozzle_diameter_mode,
+        )
+    }
+
+    // SupportParameters.hpp:352-356
+    pub fn support_material_first_layer_flow_for_nozzle(&self, nozzle_diameter: f64, layer_height: f32) -> FlowResult<Flow> {
+        flow_new_from_config_width(
+            FlowRole::SupportMaterial,
+            &ConfigOptionFloat::with_value(self.support_first_layer_width),
+            self.preset_nozzle_diameter,
+            nozzle_diameter as f32,
+            layer_height,
+            self.multi_nozzle_diameter_mode,
+        )
+    }
+
+    // SupportParameters.hpp:396-401
+    // Produce a support interface angle for a given SupportLayer::interface_id()
+    pub fn support_interface_angle(&self, interface_id: usize, interface_pattenn: enums::SupportMaterialInterfacePattern) -> f32 {
+        if self.support_style == enums::SupportMaterialStyle::SmsGrid as i32
+            || interface_pattenn == enums::SupportMaterialInterfacePattern::SmipRectilinear
+        {
+            return self.interface_angle;
+        }
+        self.interface_angle
+            + if interface_id & 1 != 0 { (-std::f64::consts::PI / 4.) as f32 } else { (std::f64::consts::PI / 4.) as f32 }
     }
 }
 
@@ -731,6 +1368,12 @@ impl Default for SupportParameters {
             support_material_interface_flow: Flow::zero(),
             support_material_bottom_interface_flow: Flow::zero(),
             raft_interface_flow: Flow::zero(),
+            support_base_width: 0.0,
+            support_first_layer_width: 0.0,
+            // SupportParameters.hpp:340 — float preset_nozzle_diameter { 0.f };
+            preset_nozzle_diameter: 0.0,
+            // SupportParameters.hpp:341 — bool multi_nozzle_diameter_mode { false };
+            multi_nozzle_diameter_mode: false,
             support_extrusion_width: 0.0,
             can_merge_support_regions: false,
             support_layer_height_min: 0.0,

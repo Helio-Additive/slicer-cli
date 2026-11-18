@@ -25,7 +25,6 @@
 //! runs `support/mod.rs` (`PrintObject::generate_support_material`).
 
 use crate::clipper_utils::OffsetJoinType;
-use crate::ex_polygon::projection_onto;
 use crate::geometry::{
     get_extents_expoly, turn90_ccw, BoundingBox, ExPolygon, ExPolygons, Line, Lines, Point, Polygon,
     Polygons,
@@ -258,6 +257,76 @@ fn point_mul(pt: Point, r: f64) -> Point {
 #[inline]
 fn point_from_f64(x: f64, y: f64) -> Point {
     Point::new(x.round_ties_even() as Coord, y.round_ties_even() as Coord)
+}
+
+// Point.cpp:157-180 `Point Point::projection_onto(const Line &line) const`. A local copy:
+// `Point::project_onto_segment` of the crate takes the differences in 32 bits.
+fn point_projection_onto_line(pt: &Point, a: Point, b: Point) -> Point {
+    if a == b {
+        return a;
+    }
+    let lx = (b.x - a.x) as f64;
+    let ly = (b.y - a.y) as f64;
+    // `( (double)(b(0) - x)*lx + (double)(b(1) - y)*ly ) / ( sqr<double>(lx) + sqr<double>(ly) )`:
+    // the left product of the numerator is contracted with the sum, the squares are calls.
+    let theta = ((b.x - pt.x) as f64).mul_add(lx, (b.y - pt.y) as f64 * ly) / (lx * lx + ly * ly);
+    if 0.0 <= theta && theta <= 1.0 {
+        // `(theta * a.cast<coordf_t>() + (1.0-theta) * b.cast<coordf_t>()).cast<coord_t>()`: Eigen's
+        // functors, nothing contracted; the cast truncates.
+        return Point::new(
+            (theta * a.x as f64 + (1.0 - theta) * b.x as f64) as Coord,
+            (theta * a.y as f64 + (1.0 - theta) * b.y as f64) as Coord,
+        );
+    }
+    // Else pick closest endpoint.
+    let sqn = |p: Point| {
+        let (x, y) = ((p.x - pt.x) as f64, (p.y - pt.y) as f64);
+        x * x + y * y
+    };
+    if sqn(a) < sqn(b) {
+        a
+    } else {
+        b
+    }
+}
+
+// Point.cpp:141-155 `Point Point::projection_onto(const MultiPoint &poly) const` on a Polygon:
+// `poly.lines()` is virtual, Polygon::lines() (Polygon.hpp:199-209 `to_lines`) closes the contour and
+// is empty under three points. A local copy: `Point::projection_onto_multipoint` of the crate leaves
+// the closing edge out.
+fn point_projection_onto_polygon(pt: &Point, poly: &Polygon) -> Point {
+    let mut running_projection = poly.points[0];
+    let mut running_min = point_norm(Point::new(running_projection.x - pt.x, running_projection.y - pt.y));
+    let n = poly.points.len();
+    if n > 2 {
+        for i in 0..n {
+            let (a, b) = (poly.points[i], poly.points[if i + 1 == n { 0 } else { i + 1 }]);
+            let point_temp = point_projection_onto_line(pt, a, b);
+            if point_norm(Point::new(point_temp.x - pt.x, point_temp.y - pt.y)) < running_min {
+                running_projection = point_temp;
+                running_min = point_norm(Point::new(running_projection.x - pt.x, running_projection.y - pt.y));
+            }
+        }
+    }
+    running_projection
+}
+
+// ExPolygon.cpp:206-223 `Point projection_onto(const ExPolygons& polygons, const Point& from)`
+pub fn projection_onto(polygons: &[ExPolygon], from: &Point) -> Point {
+    let mut projected_pt = Point::new(0, 0);
+    let mut min_dist = f64::MAX;
+    for poly in polygons {
+        for i in 0..poly.num_contours() {
+            let p = point_projection_onto_polygon(from, contour_or_hole(poly, i));
+            let (dx, dy) = ((from.x - p.x) as f64, (from.y - p.y) as f64);
+            let dist = dx * dx + dy * dy;
+            if dist < min_dist {
+                projected_pt = p;
+                min_dist = dist;
+            }
+        }
+    }
+    projected_pt
 }
 
 // ============================================================================
@@ -1245,8 +1314,9 @@ pub fn is_inside_ex_poly(polygon: &ExPolygon, pt: &Point) -> bool {
     if !get_extents_expoly(polygon).contains_point(pt) {
         return false;
     }
-    // return polygon.contains(pt);
-    polygon.contains_point(pt)
+    // return polygon.contains(pt);  ExPolygon.cpp:109-119, border_result = true: a point on the
+    // boundary of a hole is inside.
+    polygon.contains(pt, true)
 }
 
 // TreeSupport.cpp:561-569
@@ -2940,8 +3010,47 @@ fn shrink_ex(expolygons: &[ExPolygon], delta: f32) -> ExPolygons {
     offset_ex(expolygons, -delta)
 }
 
-// SupportCommon.hpp `safe_offset_inc(const ExPolygons &me, coord_t distance, const ExPolygons &collision, ...)`.
-// FIDELITY-NOTE: the crate's port (support_common.rs) takes the collision as Polygons.
+// SupportCommon.cpp:3037-3051 `ExPolygons safe_union(const ExPolygons first, const ExPolygons second = {})`.
+// A local copy: `safe_union_ex` of support_common.rs unions on another clipper.
+fn safe_union(first: &[ExPolygon], second: &[ExPolygon]) -> ExPolygons {
+    use crate::clipper::{EndType, JoinType};
+    use crate::support::support_common::{cu, cu_expolygon};
+    let mut result: ExPolygons = Vec::new();
+    if !first.is_empty() || !second.is_empty() {
+        result = cu_expolygon::union_ex_2(first, second);
+        if result.is_empty() {
+            // just take the few lines we have, and offset them a tiny bit. Needs to be offsetPolylines, as offset may aleady have problems with the area.
+            let to_polylines = |src: &[ExPolygon]| -> crate::geometry::Polylines {
+                let mut out = Vec::new();
+                for expoly in src {
+                    out.extend(cu_expolygon::to_polylines_closed(expoly));
+                }
+                out
+            };
+            // scaled<float>(0.002)
+            let delta = (0.002 / SCALING_FACTOR) as f32;
+            let offset = |src: &[ExPolygon]| -> Polygons {
+                let polylines = to_polylines(src);
+                // raw_offset() of no paths is no paths
+                if polylines.is_empty() {
+                    Vec::new()
+                } else {
+                    cu::offset_polylines(&polylines, delta, JoinType::jtMiter, 1.2, EndType::etOpenButt)
+                }
+            };
+            let result_polys = cu::union_2(&offset(first), &offset(second));
+            for poly in result_polys {
+                result.push(ExPolygon::new(poly));
+            }
+        }
+    }
+    result
+}
+
+// SupportCommon.hpp:218-256 `template<typename CollisionPolyType> ExPolygons safe_offset_inc(const ExPolygons &me,
+// coord_t distance, const CollisionPolyType &collision, coord_t safe_step_size, coord_t last_step_offset_without_check,
+// size_t min_amount_offset)` with CollisionPolyType = ExPolygons. A local copy: `safe_offset_inc_ex` of
+// support_common.rs takes the collision as Polygons and runs on another clipper.
 fn safe_offset_inc(
     me: &ExPolygons,
     distance: Coord,
@@ -2950,7 +3059,107 @@ fn safe_offset_inc(
     last_step_offset_without_check: Coord,
     min_amount_offset: usize,
 ) -> ExPolygons {
-    crate::support::support_common::safe_offset_inc_ex(me, distance, &to_polygons(collision), safe_step_size, last_step_offset_without_check, min_amount_offset)
+    use crate::clipper::JoinType;
+    use crate::support::support_common::cu;
+    let mut do_final_difference = last_step_offset_without_check == 0;
+    let mut ret: ExPolygons = safe_union(me, &[]); // ensure sane input
+
+    // Trim the collision polygons with the region of interest for diff() efficiency.
+    let mut collision_trimmed_buffer: Polygons = Vec::new();
+    macro_rules! collision_trimmed {
+        () => {{
+            if collision_trimmed_buffer.is_empty() && !collision.is_empty() {
+                // get_extents(ret).inflated(std::max(0, distance) + SCALED_EPSILON): the sum is a double,
+                // truncated to the coord_t inflated() takes
+                let delta = (0.max(distance) as f64 + scale_(EPSILON)) as Coord;
+                let mut bbox = crate::geometry::get_extents(&ret);
+                bbox.min = Point::new(bbox.min.x - delta, bbox.min.y - delta);
+                bbox.max = Point::new(bbox.max.x + delta, bbox.max.y + delta);
+                collision_trimmed_buffer =
+                    crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(&collision.to_vec(), &bbox, false);
+            }
+            &collision_trimmed_buffer
+        }};
+    }
+    // scaled<float>(0.01), the arc tolerance of jtRound
+    let arc_tolerance = (0.01 / SCALING_FACTOR) as f32 as f64;
+    // scaled<double>(0.015)
+    let simplify_tolerance = 0.015 / SCALING_FACTOR;
+
+    if distance == 0 {
+        return if do_final_difference {
+            cu::diff_ex_ep(&ret, collision_trimmed!(), cu::ApplySafetyOffset::No)
+        } else {
+            cu::union_ex_expolygons(&ret)
+        };
+    }
+    if safe_step_size < 0 || last_step_offset_without_check < 0 {
+        // BOOST_LOG_TRIVIAL(error) << "Offset increase got invalid parameter!";
+        return if do_final_difference {
+            cu::diff_ex_ep(&ret, collision_trimmed!(), cu::ApplySafetyOffset::No)
+        } else {
+            cu::union_ex_expolygons(&ret)
+        };
+    }
+
+    // coord_t is 32 bits (libslic3r.h:40), so is the arithmetic of the steps
+    let distance = distance as i32;
+    let last_step_offset_without_check = last_step_offset_without_check as i32;
+    let safe_step_size = safe_step_size as i32;
+    let mut step_size: i32 = safe_step_size;
+    let mut steps: i32 = if distance > last_step_offset_without_check { (distance - last_step_offset_without_check) / step_size } else { 0 };
+    if distance - steps * step_size > last_step_offset_without_check {
+        if (steps + 1) * step_size <= distance {
+            // This will be the case when last_step_offset_without_check >= safe_step_size
+            steps += 1;
+        } else {
+            do_final_difference = true;
+        }
+    }
+    if steps + ((distance < last_step_offset_without_check || (distance % step_size) != 0) as i32) < min_amount_offset as i32 && min_amount_offset > 1 {
+        // yes one can add a bool as the standard specifies that a result from compare operators has to be 0 or 1
+        // reduce the stepsize to ensure it is offset the required amount of times
+        // `distance / min_amount_offset`: the division is unsigned (size_t)
+        step_size = ((distance as i64 as u64) / min_amount_offset as u64) as i32;
+        if step_size >= safe_step_size {
+            // effectivly reduce last_step_offset_without_check
+            step_size = safe_step_size;
+            steps = min_amount_offset as i32;
+        } else {
+            steps = distance / step_size;
+        }
+    }
+    // offset in steps
+    for i in 0..steps {
+        ret = cu::diff_ex_ep(
+            &cu::offset_ex_expolygons(&ret, step_size as f32, JoinType::jtRound, arc_tolerance),
+            collision_trimmed!(),
+            cu::ApplySafetyOffset::No,
+        );
+        // ensure that if many offsets are done the performance does not suffer extremely by the new vertices of jtRound.
+        if i % 10 == 7 {
+            ret = expolygons_simplify(&ret, simplify_tolerance);
+        }
+    }
+    // offset the remainder
+    let last_offset: f32 = (distance - steps * step_size) as f32;
+    if last_offset as f64 > scale_(EPSILON) {
+        ret = cu::offset_ex_expolygons(&ret, (distance - steps * step_size) as f32, JoinType::jtRound, arc_tolerance);
+    }
+    ret = expolygons_simplify(&ret, simplify_tolerance);
+
+    if do_final_difference {
+        ret = cu::diff_ex_ep(&ret, collision_trimmed!(), cu::ApplySafetyOffset::No);
+    }
+    cu::union_ex_expolygons(&ret)
+}
+
+// ClipperUtils.cpp:567-569 `ExPolygons offset_ex(const ExPolygon &expolygon, const float delta, ...)`, the overload
+// `offset_ex({expolygon}, delta)` and `offset_ex(expolygons[0], delta)` resolve to:
+// `ClipperPaths_to_Slic3rExPolygons(expolygon_offset(...))`, an even-odd union, not the PolyTree of
+// `offset_ex(const ExPolygons &, ...)`.
+fn offset_ex_expolygon(expolygon: &ExPolygon, delta: f32) -> ExPolygons {
+    crate::support::support_common::cu_expolygon::offset_ex(expolygon, delta, crate::clipper::JoinType::jtMiter, 3.0)
 }
 
 /// The locals the lambdas of `TreeSupport::generate_contact_points()` capture, per layer (TreeSupport.cpp:6470-6514).
@@ -3900,7 +4109,8 @@ impl<'a> TreeSupport<'a> {
                         if (bottom_expand_enabled && n!(p_node).print_z < do_not_mover_under_mm)
                             || (poly_radius < scale_(node_target_radius) || node_overhang.area() < 3.0 * sq(scale_(node_target_radius)))
                         {
-                            overhangs_next = offset_ex(std::slice::from_ref(&node_overhang), scale_(max_move_distance / 2.0) as f32);
+                            // `offset_ex({node.overhang}, ...)`: the overload of one ExPolygon
+                            overhangs_next = offset_ex_expolygon(&node_overhang, scale_(max_move_distance / 2.0) as f32);
                             offseted = true;
                         }
                         // keep only the part that won't be removed by the next layer
@@ -3948,7 +4158,7 @@ impl<'a> TreeSupport<'a> {
                             // if the part would fall straight to th buildplate, shrink it a little
                             if !offseted && node_roof < 0 && overhang.area() > node_origin_area / 2.0 && overhang.area() > sq(scale_(10.0)) {
                                 let shrink_overhangs = union_ex(&shrink_ex(
-                                    &crate::support::support_common::safe_union_ex(&vec![overhang.clone()], &Vec::new()),
+                                    &safe_union(std::slice::from_ref(&overhang), &[]),
                                     scale_(max_move_distance / 2.0) as f32,
                                 ));
                                 if shrink_overhangs.len() == 1
@@ -3960,7 +4170,7 @@ impl<'a> TreeSupport<'a> {
                                 {
                                     if diff_ex(
                                         std::slice::from_ref(&overhang),
-                                        &offset_ex(std::slice::from_ref(&shrink_overhangs[0]), scale_(max_move_distance) as f32),
+                                        &offset_ex_expolygon(&shrink_overhangs[0], scale_(max_move_distance) as f32),
                                     )
                                     .is_empty()
                                     {

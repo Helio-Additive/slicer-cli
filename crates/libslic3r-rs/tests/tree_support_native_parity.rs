@@ -289,7 +289,12 @@ fn node_ref(nodes: &[SupportNode], n: Option<NodeId>) -> String {
 /// gen.cpp `NODE(n)`
 fn node_s(nodes: &[SupportNode], id: NodeId) -> String {
     let n = &nodes[id];
-    let type_ = if n.type_ == TreeNodeType::EPolygon { 1 } else { 0 };
+    // TreeSupport.hpp:39-43 `enum TreeNodeType { eCircle, eSquare, ePolygon }`
+    let type_ = match n.type_ {
+        TreeNodeType::ECircle => 0,
+        TreeNodeType::ESquare => 1,
+        TreeNodeType::EPolygon => 2,
+    };
     let mut o = format!(
         "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} p {} c {} {} {}",
         pt(&n.position),
@@ -718,28 +723,6 @@ fn tree_support_native_parity() {
         eprintln!("{kind}: {n} lines, {bad} mismatches");
     }
     eprintln!("{} lines, {} mismatches", r.expected.len(), mismatches);
-    // NOT YET EQUAL TO THE PIN (R917): the node stages `drop_nodes`, `smooth_nodes`,
-    // `insert_dropped_node` and `tree_support_node_disk` (lines `sN drop`, `sN smooth`,
-    // `sN dropped`, `sN insert_dropped_node`, `sN disk`), and in scenario 1 four lines of
-    // `generate_contact_points` / `plan_layer_heights` (`s1 contact`, `s1 planned`). They are
-    // reported above and not asserted until the port of those functions is finished; every other
-    // kind of line has to be equal. Set TREE_SUPPORT_PARITY_STRICT=1 to assert all of them.
-    let pending = |kind: &str| {
-        let mut it = kind.split(' ');
-        let (scenario, tag) = (it.next().unwrap_or(""), it.next().unwrap_or(""));
-        matches!(tag, "drop" | "smooth" | "dropped" | "insert_dropped_node" | "disk")
-            || (scenario == "s1" && matches!(tag, "contact" | "planned"))
-    };
-    let strict = std::env::var("TREE_SUPPORT_PARITY_STRICT").map(|v| v == "1").unwrap_or(false);
-    // The surplus lines (a stage that wrote more lines than the pin) come from the same stages.
-    let (mut asserted, mut reported) = if strict { (r.surplus, 0usize) } else { (0usize, r.surplus) };
-    for (kind, (_, bad)) in &by_kind {
-        if pending(kind) && !strict {
-            reported += bad;
-        } else {
-            asserted += bad;
-        }
-    }
-    eprintln!("{asserted} mismatches in asserted lines, {reported} in the stages not finished yet");
-    assert_eq!(asserted, 0);
+    // Every line has to be equal; the surplus lines (a stage that wrote more lines than the pin) count.
+    assert_eq!(mismatches, 0);
 }

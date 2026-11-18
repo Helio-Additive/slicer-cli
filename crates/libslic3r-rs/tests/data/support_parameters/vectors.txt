@@ -1,0 +1,418 @@
+resolve_support_style 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 0 1 6 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 0 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 0 3 6 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 1 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 1 1 6 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 1 3 6 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 2 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
+resolve_support_style 2 1 6 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
+resolve_support_style 2 3 6 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 3 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 3 1 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+resolve_support_style 3 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+resolve_support_style 4 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 4 1 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4
+resolve_support_style 4 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 4 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4
+resolve_support_style 5 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 5 1 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 5 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 5 3 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5 5
+resolve_support_style 6 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 6 1 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6
+resolve_support_style 6 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+resolve_support_style 6 3 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6
+in s0 model 20 20 10 100 100
+in s0 cfg enable_support 1
+in s0 cfg support_type normal(auto)
+in s0 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s0 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s0 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s0 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s0 layer 3fe947ae147ae148 3fb1eb851eb851ec 3fe828f5c28f5c29
+in s0 layer 3fefae147ae147ae 3fc999999999999a 3fec7ae147ae147b
+in s0 variable 0
+s0 slicing 3fc999999999999a 3fc999999999999a 0 0 0
+s0 flags 0 0 1 0 3 0 1 0 1 1 1 2 0
+s0 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s0 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s0 angles 00000000 3fc90fdb 3feb6d3240000000 0000000000000000 3fdaa9f629091864 3fdaa9f629091864 4006db4c90000000 3fbffebb1af59367 1 1
+s0 patterns 18 18 18 1 0 0000000000000000 00000000 00000000 00000000 1 412e847fffffffff
+s0 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s0 interface_angle 0 3f490fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s0 interface_angle 1 bf490fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s0 interface_angle 2 3f490fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s0 interface_angle 7 bf490fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s0 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s0 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s0 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s0 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s0 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s0 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s0 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s0 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s0 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s0 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s0 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s0 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s0 xy_distance 3fd6666666666666
+s0 flag 1 0 0 0
+in s1 model 20 20 10 100 100
+in s1 cfg enable_support 1
+in s1 cfg support_type normal(manual)
+in s1 cfg support_style snug
+in s1 cfg support_interface_top_layers 3
+in s1 cfg support_interface_bottom_layers 2
+in s1 cfg raft_layers 5
+in s1 cfg support_angle 30
+in s1 cfg support_interface_spacing 0.3
+in s1 cfg support_base_pattern_spacing 1.7
+in s1 cfg support_line_width 0.38
+in s1 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s1 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s1 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s1 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s1 layer 3fe9a1cac083126e 3fb4bc6a7ef9db23 3fe85604189374bc
+in s1 layer 3ff004189374bc6a 3fc999999999999a 3fecd4fdf3b645a1
+in s1 variable 0
+s1 slicing 3fc999999999999a 3fc999999999999a 2 3 0
+s1 flags 0 0 1 1 3 2 1 0 1 1 1 2 2
+s1 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3ecccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3ecccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3ecccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3ecccccd 0
+s1 widths 3fd851eb851eb852 3fd999999999999a 3ecccccd 0 3fd851eb851eb852 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s1 angles 3f060a92 40060a92 3fe462f4c999999a 0000000000000000 3fe0ee65b9a1d49c 3fe0ee65b9a1d49c 40004bf06599999a 3fc52e2fa55f3f32 2 1
+s1 patterns 18 18 18 1 0 0000000000000000 40060a92 3f060a92 40060a92 1 412e847fffffffff
+s1 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s1 interface_angle 0 40384e89 40384e89 40060a92 40384e89 40384e89 40384e89
+s1 interface_angle 1 3fa78d36 3fa78d36 40060a92 3fa78d36 3fa78d36 3fa78d36
+s1 interface_angle 2 40384e89 40384e89 40060a92 40384e89 40384e89 40384e89
+s1 interface_angle 7 3fa78d36 3fa78d36 40060a92 3fa78d36 3fa78d36 3fa78d36
+s1 flow_for_nozzle 3fc999999999999a 3da3d70a 3ec28f5c 3da3d70a 3eb9c519 3e4ccccd 0 3ec28f5c 3da3d70a 3eb9c519 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s1 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ec28f5c 3e4ccccd 3eac95b3 3e4ccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s1 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ec28f5c 3e8f5c29 3ea3cb70 3e4ccccd 0 3ec28f5c 3e8f5c29 3ea3cb70 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s1 flow_for_nozzle 3fd999999999999a 3da3d70a 3ec28f5c 3da3d70a 3eb9c519 3ecccccd 0 3ec28f5c 3da3d70a 3eb9c519 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s1 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ec28f5c 3e4ccccd 3eac95b3 3ecccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s1 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ec28f5c 3e8f5c29 3ea3cb70 3ecccccd 0 3ec28f5c 3e8f5c29 3ea3cb70 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s1 flow_for_nozzle 3fe3333333333333 3da3d70a 3ec28f5c 3da3d70a 3eb9c519 3f19999a 0 3ec28f5c 3da3d70a 3eb9c519 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s1 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ec28f5c 3e4ccccd 3eac95b3 3f19999a 0 3ec28f5c 3e4ccccd 3eac95b3 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s1 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ec28f5c 3e8f5c29 3ea3cb70 3f19999a 0 3ec28f5c 3e8f5c29 3ea3cb70 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s1 flow_for_nozzle 3fe999999999999a 3da3d70a 3ec28f5c 3da3d70a 3eb9c519 3f4ccccd 0 3ec28f5c 3da3d70a 3eb9c519 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s1 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ec28f5c 3e4ccccd 3eac95b3 3f4ccccd 0 3ec28f5c 3e4ccccd 3eac95b3 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s1 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ec28f5c 3e8f5c29 3ea3cb70 3f4ccccd 0 3ec28f5c 3e8f5c29 3ea3cb70 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s1 xy_distance 3fd6666666666666
+s1 flag 1 0 0 0
+in s2 model 20 20 10 100 100
+in s2 cfg enable_support 1
+in s2 cfg support_type normal(auto)
+in s2 cfg support_interface_top_layers 0
+in s2 cfg raft_layers 2
+in s2 cfg support_interface_pattern grid
+in s2 cfg support_base_pattern honeycomb
+in s2 cfg support_angle 45
+in s2 cfg top_z_overrides_xy_distance 1
+in s2 cfg support_top_z_distance 0.12
+in s2 cfg support_object_xy_distance 0.5
+in s2 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s2 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s2 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s2 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s2 layer 3fe9fbe76c8b4395 3fb78d4fdf3b645a 3fe883126e978d4f
+in s2 layer 3ff03126e978d4fe 3fc999999999999a 3fed2f1a9fbe76c9
+in s2 variable 0
+s2 slicing 3fc999999999999a 3fc999999999999a 1 1 0
+s2 flags 0 0 0 0 0 0 0 0 0 0 0 0 0
+s2 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s2 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fc999999999999a 3fc999999999999a
+s2 angles 3f490fdb 4016cbe4 4006db4c90000000 0000000000000000 3fbffebb1af59367 3fdaa9f629091864 4006db4c90000000 3fbffebb1af59367 1 3
+s2 patterns 8 18 18 2 0 0000000000000000 3f490fdb 00000000 407b53d1 1 412e847fffffffff
+s2 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s2 interface_angle 0 4096cbe4 4016cbe4 4016cbe4 4016cbe4 4016cbe4 4016cbe4
+s2 interface_angle 1 40490fda 4016cbe4 4016cbe4 4016cbe4 4016cbe4 4016cbe4
+s2 interface_angle 2 4096cbe4 4016cbe4 4016cbe4 4016cbe4 4016cbe4 4016cbe4
+s2 interface_angle 7 40490fda 4016cbe4 4016cbe4 4016cbe4 4016cbe4 4016cbe4
+s2 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s2 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s2 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s2 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s2 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s2 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s2 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s2 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s2 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s2 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s2 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s2 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s2 xy_distance 3fc999999999999a
+s2 flag 1 0 0 0
+in s3 model 20 20 10 100 100
+in s3 cfg enable_support 1
+in s3 cfg support_type normal(auto)
+in s3 cfg raft_layers 1
+in s3 cfg support_interface_pattern concentric
+in s3 cfg support_base_pattern_spacing 0
+in s3 cfg thick_bridges 1
+in s3 cfg support_filament 2
+in s3 cfg support_interface_filament 3
+in s3 cfg bridge_flow 0.9
+in s3 cfg support_interface_bottom_layers -1
+in s3 cfg support_interface_top_layers 4
+in s3 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s3 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s3 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s3 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s3 layer 3fea5604189374bc 3fba5e353f7ced92 3fe8b020c49ba5e3
+in s3 layer 3ff05e353f7ced91 3fc999999999999a 3fed89374bc6a7ef
+in s3 variable 0
+s3 slicing 3fc999999999999a 3fc999999999999a 0 1 0
+s3 flags 0 0 1 1 4 4 1 0 1 1 1 3 4
+s3 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3eb851ec 3eb851ec 3ed1eb86 3ecccccd 1 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s3 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s3 angles 00000000 3fc90fdb 3feb6d3240000000 0000000000000000 3fdaa9f629091864 3fdaa9f629091864 3fd6da6480000000 3ff0000000000000 1 1
+s3 patterns 1 18 18 0 0 0000000000000000 3fc90fdb 00000000 3fc90fdb 1 412e847fffffffff
+s3 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s3 interface_angle 0 4016cbe4 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s3 interface_angle 1 3f490fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s3 interface_angle 2 4016cbe4 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s3 interface_angle 7 3f490fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s3 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s3 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s3 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s3 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s3 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s3 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s3 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s3 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s3 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s3 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s3 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s3 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s3 xy_distance 3fd6666666666666
+s3 flag 1 1 0 0
+in s4 model 20 20 10 100 100
+in s4 cfg enable_support 1
+in s4 cfg support_type tree(auto)
+in s4 cfg tree_support_wall_count -1
+in s4 cfg impact_strength_z 13.5,7.25,21
+in s4 cfg support_interface_filament 2
+in s4 cfg layer_height 0.16
+in s4 cfg support_ironing_pattern concentric
+in s4 cfg enable_support_ironing 1
+in s4 cfg support_ironing_flow 12.5%
+in s4 cfg support_ironing_spacing 0.15
+in s4 cfg support_ironing_inset 0.05
+in s4 cfg support_ironing_speed 33
+in s4 cfg support_ironing_direction 17
+in s4 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s4 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s4 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s4 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s4 layer 3feab020c49ba5e3 3fbd2f1a9fbe76c9 3fe8dd2f1a9fbe76
+in s4 layer 3ff08b4395810625 3fc999999999999a 3fede353f7ced917
+in s4 variable 1
+s4 slicing 3fc47ae147ae147b 3fc999999999999a 0 0 0
+s4 flags 0 0 1 0 3 0 1 1 1 1 1 2 -1
+s4 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e23d70a 3ebb3846 3ecccccd 0 3ecccccd 3e23d70a 3ebb3846 3ecccccd 0 3ecccccd 3e23d70a 3ebb3846 3ecccccd 0 3ecccccd 3e23d70a 3ebb3846 3ecccccd 0
+s4 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s4 angles 00000000 3fc90fdb 3febb38460000000 0000000000000000 3fdb08bda83bb7ba 3fdb08bda83bb7ba 4006ece118000000 3fc05541120da810 5 1
+s4 patterns 18 18 18 1 0 4274d4561e3d7d98 00000000 00000000 00000000 1 412e847fffffffff
+s4 ironing 1 0 3fc3333333333333 4029000000000000 4040800000000000 4031000000000000 3fa999999999999a
+s4 interface_angle 0 3f490fdb 4016cbe4 3fc90fdb 4016cbe4 4016cbe4 4016cbe4
+s4 interface_angle 1 bf490fdb 3f490fdb 3fc90fdb 3f490fdb 3f490fdb 3f490fdb
+s4 interface_angle 2 3f490fdb 4016cbe4 3fc90fdb 4016cbe4 4016cbe4 4016cbe4
+s4 interface_angle 7 bf490fdb 3f490fdb 3fc90fdb 3f490fdb 3f490fdb 3f490fdb
+s4 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s4 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s4 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s4 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s4 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s4 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s4 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s4 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s4 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s4 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s4 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s4 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s4 xy_distance 3fd6666666666666
+s4 flag 1 0 0 0
+in s5 model 20 20 10 100 100
+in s5 cfg enable_support 1
+in s5 cfg support_type tree(manual)
+in s5 cfg support_style grid
+in s5 cfg support_base_pattern lightning
+in s5 cfg tree_support_wall_count 2
+in s5 cfg support_top_z_distance 0
+in s5 cfg support_interface_filament 3
+in s5 cfg filament_soluble 0,0,1
+in s5 cfg support_filament 1
+in s5 cfg support_interface_top_layers 5
+in s5 cfg support_interface_bottom_layers 5
+in s5 cfg independent_support_layer_height 0
+in s5 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s5 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s5 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s5 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s5 layer 3feb0a3d70a3d70a 3fc0000000000000 3fe90a3d70a3d70a
+in s5 layer 3ff0b851eb851eb8 3fc999999999999a 3fee3d70a3d70a3d
+in s5 variable 0
+s5 slicing 3fc999999999999a 3fc999999999999a 0 0 1
+s5 flags 1 0 1 1 5 5 0 0 1 1 0 5 5
+s5 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s5 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s5 angles 00000000 3fc90fdb 3feb6d3240000000 0000000000000000 3fdaa9f629091864 3fdaa9f629091864 4006db4c90000000 3fbffebb1af59367 5 4
+s5 patterns 20 18 18 1 1 3fb999999999999a 00000000 00000000 00000000 0 412e847fffffffff
+s5 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s5 interface_angle 0 3f490fdb 4016cbe4 3fc90fdb 4016cbe4 4016cbe4 4016cbe4
+s5 interface_angle 1 bf490fdb 3f490fdb 3fc90fdb 3f490fdb 3f490fdb 3f490fdb
+s5 interface_angle 2 3f490fdb 4016cbe4 3fc90fdb 4016cbe4 4016cbe4 4016cbe4
+s5 interface_angle 7 bf490fdb 3f490fdb 3fc90fdb 3f490fdb 3f490fdb 3f490fdb
+s5 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s5 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s5 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s5 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s5 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s5 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s5 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s5 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s5 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s5 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s5 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s5 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s5 xy_distance 3fd6666666666666
+s5 flag 1 0 0 0
+in s6 model 20 20 10 100 100
+in s6 cfg enable_support 1
+in s6 cfg support_type normal(auto)
+in s6 cfg support_style tree_hybrid
+in s6 cfg support_base_pattern lightning
+in s6 cfg support_top_z_distance 0
+in s6 cfg support_interface_filament 3
+in s6 cfg support_filament 3
+in s6 cfg filament_soluble 0,0,1
+in s6 cfg initial_layer_line_width 0.62
+in s6 cfg line_width 0.44
+in s6 cfg support_line_width 0
+in s6 cfg support_interface_top_layers 2
+in s6 cfg support_interface_bottom_layers 1
+in s6 cfg support_object_first_layer_gap 0.35
+in s6 cfg raft_layers 3
+in s6 cfg min_layer_height 0.04,0.08,0.06
+in s6 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s6 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s6 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s6 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s6 layer 3feb645a1cac0831 3fc16872b020c49c 3fe9374bc6a7ef9e
+in s6 layer 3ff0e5604189374c 3fc999999999999a 3fee978d4fdf3b65
+in s6 variable 0
+s6 slicing 3fc999999999999a 3fc999999999999a 1 2 1
+s6 flags 1 0 1 1 2 1 1 0 1 1 1 1 1
+s6 flows 3f1eb852 3e4ccccd 3f13bb7e 3ecccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3ecccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3ecccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3ecccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3ecccccd 0
+s6 widths 3fdc28f5c28f5c29 3fe3d70a3d70a3d7 3ecccccd 0 3fdc28f5c28f5c29 1 3fa47ae147ae147b 3fd6666666666666 3fd6666666666666
+s6 angles 00000000 3fc90fdb 3fecb4e050000000 0000000000000000 3fdc54256699f06f 3fdc54256699f06f 40072d3814000000 3fc18b3fa6bbfa8f 1 1
+s6 patterns 18 18 18 1 0 0000000000000000 00000000 00000000 40490fdb 1 412e847fffffffff
+s6 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s6 interface_angle 0 407b53d2 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s6 interface_angle 1 4016cbe4 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s6 interface_angle 2 407b53d2 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s6 interface_angle 7 4016cbe4 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s6 flow_for_nozzle 3fc999999999999a 3da3d70a 3ee147ae 3da3d70a 3ed87d6b 3e4ccccd 0 3ee147ae 3da3d70a 3ed87d6b 3e4ccccd 0 3f1eb852 3da3d70a 3f1a5330 3e4ccccd 0
+s6 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ee147ae 3e4ccccd 3ecb4e05 3e4ccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3e4ccccd 0 3f1eb852 3e4ccccd 3f13bb7e 3e4ccccd 0
+s6 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ee147ae 3e8f5c29 3ec283c2 3e4ccccd 0 3ee147ae 3e8f5c29 3ec283c2 3e4ccccd 0 3f1eb852 3e8f5c29 3f0f565c 3e4ccccd 0
+s6 flow_for_nozzle 3fd999999999999a 3da3d70a 3ee147ae 3da3d70a 3ed87d6b 3ecccccd 0 3ee147ae 3da3d70a 3ed87d6b 3ecccccd 0 3f1eb852 3da3d70a 3f1a5330 3ecccccd 0
+s6 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ee147ae 3e4ccccd 3ecb4e05 3ecccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3ecccccd 0 3f1eb852 3e4ccccd 3f13bb7e 3ecccccd 0
+s6 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ee147ae 3e8f5c29 3ec283c2 3ecccccd 0 3ee147ae 3e8f5c29 3ec283c2 3ecccccd 0 3f1eb852 3e8f5c29 3f0f565c 3ecccccd 0
+s6 flow_for_nozzle 3fe3333333333333 3da3d70a 3ee147ae 3da3d70a 3ed87d6b 3f19999a 0 3ee147ae 3da3d70a 3ed87d6b 3f19999a 0 3f1eb852 3da3d70a 3f1a5330 3f19999a 0
+s6 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ee147ae 3e4ccccd 3ecb4e05 3f19999a 0 3ee147ae 3e4ccccd 3ecb4e05 3f19999a 0 3f1eb852 3e4ccccd 3f13bb7e 3f19999a 0
+s6 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ee147ae 3e8f5c29 3ec283c2 3f19999a 0 3ee147ae 3e8f5c29 3ec283c2 3f19999a 0 3f1eb852 3e8f5c29 3f0f565c 3f19999a 0
+s6 flow_for_nozzle 3fe999999999999a 3da3d70a 3ee147ae 3da3d70a 3ed87d6b 3f4ccccd 0 3ee147ae 3da3d70a 3ed87d6b 3f4ccccd 0 3f1eb852 3da3d70a 3f1a5330 3f4ccccd 0
+s6 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ee147ae 3e4ccccd 3ecb4e05 3f4ccccd 0 3ee147ae 3e4ccccd 3ecb4e05 3f4ccccd 0 3f1eb852 3e4ccccd 3f13bb7e 3f4ccccd 0
+s6 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ee147ae 3e8f5c29 3ec283c2 3f4ccccd 0 3ee147ae 3e8f5c29 3ec283c2 3f4ccccd 0 3f1eb852 3e8f5c29 3f0f565c 3f4ccccd 0
+s6 xy_distance 3fd6666666666666
+s6 flag 1 0 0 0
+in s7 model 20 20 10 100 100
+in s7 cfg enable_support 1
+in s7 cfg support_type normal(auto)
+in s7 cfg support_top_z_distance 0
+in s7 cfg support_interface_filament 3
+in s7 cfg support_filament 0
+in s7 cfg filament_soluble 0,0,1
+in s7 cfg support_interface_top_layers 3
+in s7 cfg support_interface_bottom_layers 5
+in s7 cfg support_interface_pattern rectilinear_interlaced
+in s7 cfg support_interface_spacing 0
+in s7 cfg raft_layers 4
+in s7 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s7 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s7 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s7 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s7 layer 3febbe76c8b43958 3fc2d0e560418937 3fe9645a1cac0831
+in s7 layer 3ff1126e978d4fdf 3fc999999999999a 3feef1a9fbe76c8b
+in s7 variable 0
+s7 slicing 3fc999999999999a 3fc999999999999a 2 2 1
+s7 flags 1 0 1 1 3 5 2 1 1 1 1 1 4
+s7 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s7 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s7 angles 00000000 3fc90fdb 3fd6da6480000000 0000000000000000 3ff0000000000000 3ff0000000000000 4006db4c90000000 3fbffebb1af59367 1 1
+s7 patterns 18 1 1 1 0 0000000000000000 3fc90fdb 00000000 40490fdb 1 412e847fffffffff
+s7 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s7 interface_angle 0 407b53d2 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s7 interface_angle 1 4016cbe4 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s7 interface_angle 2 407b53d2 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s7 interface_angle 7 4016cbe4 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb 3fc90fdb
+s7 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s7 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s7 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s7 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s7 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s7 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s7 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s7 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s7 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s7 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s7 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s7 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s7 xy_distance 3fd6666666666666
+s7 flag 1 0 0 0
+in s8 model 20 20 10 100 100
+in s8 cfg enable_support 1
+in s8 cfg support_type tree(auto)
+in s8 cfg support_style tree_strong
+in s8 cfg support_filament 2
+in s8 cfg support_interface_filament 0
+in s8 cfg tree_support_wall_count 1
+in s8 cfg support_interface_pattern rectilinear
+in s8 cfg support_base_pattern rectilinear-grid
+in s8 layer 3fc999999999999a 3fc999999999999a 3fb999999999999a
+in s8 layer 3fd999999999999a 3fc999999999999a 3fd3333333333334
+in s8 layer 3fe0a3d70a3d70a4 3fbeb851eb851eb8 3fdd70a3d70a3d71
+in s8 layer 3fe70a3d70a3d70a 3fc999999999999a 3fe3d70a3d70a3d7
+in s8 layer 3fec189374bc6a7f 3fc4395810624dd3 3fe9916872b020c5
+in s8 layer 3ff13f7ced916873 3fc999999999999a 3fef4bc6a7ef9db3
+in s8 variable 0
+s8 slicing 3fc999999999999a 3fc999999999999a 0 0 0
+s8 flags 0 0 1 0 3 0 0 0 1 1 0 3 0
+s8 flows 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s8 widths 3fd999999999999a 3fd999999999999a 3ecccccd 0 3fd999999999999a 1 3fb1eb851eb851ec 3fd6666666666666 3fc999999999999a
+s8 angles 00000000 3fc90fdb 3feb6d3240000000 0000000000000000 3fdaa9f629091864 3fdaa9f629091864 4006db4c90000000 3fbffebb1af59367 4 2
+s8 patterns 1 18 18 18 1 7fefffffffffffff 00000000 00000000 00000000 1 412e847fffffffff
+s8 ironing 0 1 3fb999999999999a 4024000000000000 4034000000000000 0000000000000000 0000000000000000
+s8 interface_angle 0 3f490fdb 4016cbe4 3fc90fdb 4016cbe4 4016cbe4 4016cbe4
+s8 interface_angle 1 bf490fdb 3f490fdb 3fc90fdb 3f490fdb 3f490fdb 3f490fdb
+s8 interface_angle 2 3f490fdb 4016cbe4 3fc90fdb 4016cbe4 4016cbe4 4016cbe4
+s8 interface_angle 7 bf490fdb 3f490fdb 3fc90fdb 3f490fdb 3f490fdb 3f490fdb
+s8 flow_for_nozzle 3fc999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3e4ccccd 0
+s8 flow_for_nozzle 3fc999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3e4ccccd 0
+s8 flow_for_nozzle 3fc999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3e4ccccd 0
+s8 flow_for_nozzle 3fd999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0 3ecccccd 3da3d70a 3ec4028a 3ecccccd 0
+s8 flow_for_nozzle 3fd999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0 3ecccccd 3e4ccccd 3eb6d324 3ecccccd 0
+s8 flow_for_nozzle 3fd999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0 3ecccccd 3e8f5c29 3eae08e1 3ecccccd 0
+s8 flow_for_nozzle 3fe3333333333333 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0 3ecccccd 3da3d70a 3ec4028a 3f19999a 0
+s8 flow_for_nozzle 3fe3333333333333 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0 3ecccccd 3e4ccccd 3eb6d324 3f19999a 0
+s8 flow_for_nozzle 3fe3333333333333 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0 3ecccccd 3e8f5c29 3eae08e1 3f19999a 0
+s8 flow_for_nozzle 3fe999999999999a 3da3d70a 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0 3ecccccd 3da3d70a 3ec4028a 3f4ccccd 0
+s8 flow_for_nozzle 3fe999999999999a 3e4ccccd 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0 3ecccccd 3e4ccccd 3eb6d324 3f4ccccd 0
+s8 flow_for_nozzle 3fe999999999999a 3e8f5c29 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0 3ecccccd 3e8f5c29 3eae08e1 3f4ccccd 0
+s8 xy_distance 3fd6666666666666
+s8 flag 1 0 0 0

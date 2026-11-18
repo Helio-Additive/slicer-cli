@@ -1482,7 +1482,8 @@ impl MatchModeGroupSolver {
 // ==================== static functions ====================
 // ToolOrderUtils.cpp:790  //solve the problem by searching the least flush of current filament
 // ToolOrderUtils.cpp:791  static std::vector<unsigned int> solve_extruder_order_with_greedy(...)
-fn solve_extruder_order_with_greedy(
+// (`static` in the C++; `pub` for tests/tool_order_utils_native_parity.rs)
+pub fn solve_extruder_order_with_greedy(
     wipe_volumes: &[Vec<f32>],
     curr_layer_extruders: &[u32],
     start_extruder_id: Option<u32>,
@@ -1558,7 +1559,8 @@ fn solve_extruder_order_with_greedy(
 
 // ToolOrderUtils.cpp:830  //solve the problem by forcasting one layer
 // ToolOrderUtils.cpp:831  static std::vector<unsigned int> solve_extruder_order_with_forcast(...)
-fn solve_extruder_order_with_forcast(
+// (`static` in the C++; `pub` for tests/tool_order_utils_native_parity.rs)
+pub fn solve_extruder_order_with_forcast(
     wipe_volumes: &[Vec<f32>],
     mut curr_layer_extruders: Vec<u32>,
     mut next_layer_extruders: Vec<u32>,
@@ -1722,11 +1724,12 @@ fn next_permutation<T: Ord>(arr: &mut [T]) -> bool {
 
 // ToolOrderUtils.cpp:900  // Shortest hamilton path problem
 // ToolOrderUtils.cpp:901  static std::vector<unsigned int> solve_extruder_order(...)
-fn solve_extruder_order(
+// (`static` in the C++; `pub` for tests/tool_order_utils_native_parity.rs)
+pub fn solve_extruder_order(
     wipe_volumes: &[Vec<f32>],
     mut all_extruders: Vec<u32>,
     mut start_extruder_id: Option<u32>,
-    min_cost: Option<&mut f32>,
+    mut min_cost: Option<&mut f32>,
 ) -> Vec<u32> {
     // ToolOrderUtils.cpp:906  bool add_start_extruder_flag = false;
     let mut add_start_extruder_flag = false;
@@ -1802,17 +1805,15 @@ fn solve_extruder_order(
         {
             // ToolOrderUtils.cpp:947  cost = cache[final_state][dst];
             cost = cache[final_state as usize][dst as usize];
-            // ToolOrderUtils.cpp:948  if (min_cost)
-            // (deferred until after the loop; see below — C++ writes inside loop)
-            // ToolOrderUtils.cpp:950  final_dst = dst;
+            // ToolOrderUtils.cpp:943-944  if (min_cost) *min_cost = cost;
+            //   (written only when a destination improves: with nothing but the start
+            //   filament to visit, *min_cost keeps the caller's value)
+            if let Some(mc) = min_cost.as_deref_mut() {
+                *mc = cost;
+            }
+            // ToolOrderUtils.cpp:945  final_dst = dst;
             final_dst = dst as i32;
         }
-    }
-    // ToolOrderUtils.cpp:948-949  if (min_cost) *min_cost = cost;
-    // C++ assigns *min_cost on each improving iteration; the final value equals
-    // the last (best) cost. We assign once with the resulting best cost.
-    if let Some(mc) = min_cost {
-        *mc = cost;
     }
 
     // ToolOrderUtils.cpp:954  std::vector<unsigned int>path;
@@ -1947,7 +1948,8 @@ pub fn get_extruders_order(
 
 // ToolOrderUtils.cpp:1016  // TODO:  add cusotm sequence
 // ToolOrderUtils.cpp:1017  static int reorder_filaments_for_minimum_flush_volume_base(...)
-fn reorder_filaments_for_minimum_flush_volume_base(
+// (`static` in the C++; `pub` for tests/tool_order_utils_native_parity.rs)
+pub fn reorder_filaments_for_minimum_flush_volume_base(
     filament_lists: &[u32],
     layer_filaments: &[Vec<u32>],
     flush_matrix: &FlushMatrix,
@@ -2509,7 +2511,8 @@ pub mod debug_multi_nozzle_mcmf {
 
     // ToolOrderUtils.cpp:1302  //solve the problem by min cost max flow
     // ToolOrderUtils.cpp:1303  static std::vector<std::vector<int>> solve_extruder_order_with_MCMF(...)
-    fn solve_extruder_order_with_mcmf(
+    // (`static` in the C++; `pub` for tests/tool_order_utils_native_parity.rs)
+    pub fn solve_extruder_order_with_mcmf(
         wipe_volumes: &[Vec<f32>],
         curr_layer_filaments: &[i32],
         nozzle_state: &[i32],
@@ -2590,7 +2593,8 @@ pub mod debug_multi_nozzle_mcmf {
 
     // ToolOrderUtils.cpp:1356  // get nozzle match data when user set the filament sequence
     // ToolOrderUtils.cpp:1357  static std::vector<std::vector<int>> get_nozzle_match_in_given_order(...)
-    fn get_nozzle_match_in_given_order(
+    // (`static` in the C++; `pub` for tests/tool_order_utils_native_parity.rs)
+    pub fn get_nozzle_match_in_given_order(
         wipe_volumes: &[Vec<f32>],
         layer_filaments_sequence: &[u32],
         nozzle_state: &[i32],

@@ -4,7 +4,7 @@
 //
 // Build as tests/data/config/gen.cpp says (the compile line of a libslic3r source of a built tree
 // of the Bambu Studio engine, linked with its libslic3r_core and the libraries that links), then
-//   ./gen > vectors.txt && gzip -9 -n vectors.txt
+//   ./gen > vectors.txt && gzip -9n vectors.txt
 //
 // The functions are `static` in the C++, so this file includes AvoidCrossingPerimeters.cpp itself;
 // the linker then takes every symbol of that unit from here and leaves the library's copy alone.
@@ -135,6 +135,13 @@ static void print_polygons(const Polygons &polys)
 }
 
 static Point rnd_point() { return Point(coord_t(rnd_range(-500000, 18500000)), coord_t(rnd_range(-500000, 18500000))); }
+// A point inside `bb`: EdgeGrid::Grid::visit_cells_intersecting_line takes end points inside the grid's
+// bounding box only (EdgeGrid.hpp:294-301), which AvoidCrossingPerimeters::travel_to checks before it
+// calls avoid_perimeters (AvoidCrossingPerimeters.cpp:1388, 1403).
+static Point rnd_point_in(const BoundingBox &bb)
+{
+    return Point(coord_t(rnd_range(bb.min.x(), bb.max.x())), coord_t(rnd_range(bb.min.y(), bb.max.y())));
+}
 
 int main()
 {
@@ -151,6 +158,7 @@ int main()
 
     for (int i = 0; i < 500; ++i) {
         const Polygons polys = to_polygons(rnd_expolygons(6));
+        const BoundingBox extents = get_extents(polys);
         AvoidCrossingPerimeters::Boundary boundary;
         {
             Polygons copy = polys;
@@ -184,7 +192,7 @@ int main()
             std::printf("\n");
         }
         {
-            const Point start = rnd_point(), end = rnd_point();
+            const Point start = rnd_point_in(extents), end = rnd_point_in(extents);
             const float radius = float(rnd_range(20000, 300000));
             std::vector<Intersection> intersections;
             {
@@ -210,7 +218,7 @@ int main()
         {
             // start, a run of vertices of one or two boundaries pushed inwards by a little, end
             std::vector<TravelPoint> travel;
-            travel.push_back({rnd_point(), -1});
+            travel.push_back({rnd_point_in(extents), -1});
             const int runs = int(rnd_range(1, 2));
             for (int r = 0; r < runs; ++r) {
                 const size_t   b = rnd() % polys.size();
@@ -220,7 +228,7 @@ int main()
                 for (int j = 0; j < n; ++j, k = (k + 1) % p.points.size())
                     travel.push_back({get_polygon_vertex_offset(p, k, coord_t(SCALED_EPSILON)), int(b), rnd() % 9 == 0});
             }
-            travel.push_back({rnd_point(), -1});
+            travel.push_back({rnd_point_in(extents), -1});
             const std::vector<TravelPoint> out = simplify_travel(boundary, travel);
             std::printf("SIMPL");
             print_polygons(polys);

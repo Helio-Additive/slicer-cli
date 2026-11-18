@@ -8888,6 +8888,49 @@ pub mod faithful {
         pub base_slab_height: f64,
         pub interface_slab_height: f64,
         m_interface_id: usize,
+        /// Layer.hpp:388-392 for tree support (`friend class TreeSupport`)
+        pub roof_areas: crate::geometry::ExPolygons,
+        /// the layer just below roof. When working with PolySupport, this layer should be printed with regular material
+        pub roof_1st_layer: crate::geometry::ExPolygons,
+        pub floor_areas: crate::geometry::ExPolygons,
+        /// the areas in the gap between support roof and overhang
+        pub roof_gap_areas: crate::geometry::ExPolygons,
+        /// Layer.hpp:407 `std::vector<AreaGroup> area_groups`
+        pub area_groups: Vec<SupportLayerAreaGroup>,
+    }
+
+    /// Layer.hpp:393 `enum AreaType { BaseType = 0, RoofType = 1, FloorType = 2, Roof1stLayer = 3 }` of `SupportLayer`.
+    #[allow(non_snake_case)]
+    pub mod SupportLayerAreaType {
+        pub const BaseType: i32 = 0;
+        pub const RoofType: i32 = 1;
+        pub const FloorType: i32 = 2;
+        pub const Roof1stLayer: i32 = 3;
+    }
+
+    /// Layer.hpp:394-406 `struct AreaGroup` of `SupportLayer`.
+    ///
+    /// `ExPolygon *area` points into the vector of the layer that `type` names (`base_areas`, `roof_areas`,
+    /// `floor_areas`, `roof_1st_layer`); here it is the index in that vector, see `SupportLayer::area_group_area`.
+    #[derive(Debug, Clone)]
+    pub struct SupportLayerAreaGroup {
+        pub area: usize,
+        pub type_: i32,
+        pub interface_id: i32,
+        /// mm dist to top
+        pub dist_to_top: f64,
+        pub need_infill: bool,
+        pub need_extra_wall: bool,
+        pub need_cooling: bool,
+        /// BBS multi-diameter tree support: widened wall width at a nozzle change, 0 for the layer default.
+        pub line_width: f64,
+    }
+
+    impl SupportLayerAreaGroup {
+        /// Layer.hpp:405 `AreaGroup(ExPolygon *a, int t, coordf_t d) : area(a), type(t), dist_to_top(d) {}`
+        pub fn new(a: usize, t: i32, d: f64) -> Self {
+            SupportLayerAreaGroup { area: a, type_: t, interface_id: 0, dist_to_top: d, need_infill: false, need_extra_wall: false, need_cooling: false, line_width: 0. }
+        }
     }
 
     impl SupportLayer {
@@ -8906,6 +8949,29 @@ pub mod faithful {
                 base_slab_height: 0.0,
                 interface_slab_height: 0.0,
                 m_interface_id: interface_id,
+                roof_areas: Vec::new(),
+                roof_1st_layer: Vec::new(),
+                floor_areas: Vec::new(),
+                roof_gap_areas: Vec::new(),
+                area_groups: Vec::new(),
+            }
+        }
+        /// `*area_group.area`: the expolygon of the layer an area group points at.
+        pub fn area_group_area(&self, area_group: &SupportLayerAreaGroup) -> &crate::geometry::ExPolygon {
+            match area_group.type_ {
+                SupportLayerAreaType::BaseType => &self.base_areas[area_group.area],
+                SupportLayerAreaType::RoofType => &self.roof_areas[area_group.area],
+                SupportLayerAreaType::FloorType => &self.floor_areas[area_group.area],
+                _ => &self.roof_1st_layer[area_group.area],
+            }
+        }
+        /// `*area_group.area`, to write through.
+        pub fn area_group_area_mut(&mut self, area_group: &SupportLayerAreaGroup) -> &mut crate::geometry::ExPolygon {
+            match area_group.type_ {
+                SupportLayerAreaType::BaseType => &mut self.base_areas[area_group.area],
+                SupportLayerAreaType::RoofType => &mut self.roof_areas[area_group.area],
+                SupportLayerAreaType::FloorType => &mut self.floor_areas[area_group.area],
+                _ => &mut self.roof_1st_layer[area_group.area],
             }
         }
         /// Layer.hpp:366 `virtual bool has_extrusions() const { return ! support_fills.empty(); }`
