@@ -44,7 +44,7 @@ bin_of() { [ "$1" = orca ] && echo "$O" || echo "$B"; }
 
 # ---------------------------------------------------------------- fixtures
 python3 - <<'PY'
-import json, struct
+import json, math, struct
 
 def box(path, width, h, depth=None):
     if depth is None:
@@ -63,6 +63,12 @@ box("cube.stl", 20, 20)
 box("big.stl", 300, 10)          # larger than the A1 mini bed in both directions
 box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
 box("bar.stl", 220, 10, 20)      # fits the 180 mm square bed at 41 degrees
+# Same bounds as the A1 mini, but a 220 mm part cannot fit a 180 mm circle.
+with open("round-bed.json", "w") as out:
+    json.dump({"printable_area": [
+        f"{90 + 90 * math.cos(i * math.tau / 32):.6f}x{90 + 90 * math.sin(i * math.tau / 32):.6f}"
+        for i in range(32)
+    ]}, out)
 box("tall.stl", 20, 200)         # too tall for the A1 mini as it stands
 open("empty.stl", "w").write("solid t\nendsolid t\n")
 open("zero.stl", "wb").write(b"\0" * 80 + struct.pack("<I", 0))
@@ -294,6 +300,8 @@ both object-too-tall          "*It is too tall for this bed; try another way up 
 TURN_ADVICE="*fits at full size rotated 41 degrees about Z. Use --rotate 41, or give --arrange 1 --allow-rotations.*"
 both object-turn-plain        "$TURN_ADVICE" bar.stl --slice 1 --printer-preset "$A1M"
 both object-turn-arrange      "$TURN_ADVICE" bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+both object-round-bed         "*Try another way up, split it across plates, or use a bigger printer.*" \
+     bar.stl --slice 1 --arrange 1 --printer-preset "$A1M" --machine round-bed.json
 for e in bambu orca; do
     bin=$(bin_of "$e")
     run "c-object-turn-slices-$e" "$bin" bar.stl --slice 1 --arrange 1 --allow-rotations \

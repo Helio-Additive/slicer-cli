@@ -3563,6 +3563,15 @@ static std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObj
     const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
     if (fits_as_is)
         return std::nullopt;
+
+    // The bounding box proves a planar fit only on a rectangular bed.
+#ifndef ENGINE_SNAPMAKER
+    const Slic3r::BuildVolume build_volume(area->values, 0., {}, {});
+#else
+    const Slic3r::BuildVolume build_volume(area->values, 0.);
+#endif
+    if (build_volume.type() != decltype(build_volume.type())::Rectangle)
+        return std::nullopt;
     return slicer_cli::fitting_z_rotation(object, instance_index, bed);
 }
 
