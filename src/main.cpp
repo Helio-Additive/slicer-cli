@@ -105,6 +105,7 @@
 #include "cli_nozzle_options.hpp"
 #include "cli_project_load.hpp"
 #include "cli_pipe.hpp"
+#include "cli_run_context.hpp"
 #include "cli_project_settings.hpp"
 #include "cli_percent_widths.hpp"
 #include "cli_preset_staging.hpp"
@@ -122,6 +123,7 @@
 #include <mach-o/dyld.h>   // _NSGetExecutablePath
 #include <climits>         // PATH_MAX
 #endif
+using slicer_cli::CliRunContext;
 using json = nlohmann::json;
 using slicer_cli::project_settings_json;
 #ifdef ENGINE_ORCA
@@ -253,25 +255,6 @@ void print_usage(const char* prog_name) {
 // The command line itself is CliOptions (cli_options.hpp), filled by
 // cli_command_line.cpp.
 
-// The settings the named presets resolve to, computed once per run (loading a
-// profiles tree takes seconds) and applied to every plate.
-static std::unique_ptr<Slic3r::DynamicPrintConfig> g_preset_config;
-
-// --load-assemble-list: the list's plates and objects, built once per run
-// before the plate loop (as BambuStudio.cpp 2165-2188 builds them before
-// its own); each plate's slice copies its objects out.
-static std::unique_ptr<slicer_cli::AssembleList> g_assemble;
-
-/// The parts of an assemble list the run is building — the ones its loaders
-/// have read, in the order they read them — or, if the build turned the list
-/// down, those same parts: they were read while it was built, and a refusal
-/// then writes result.json too, from run_slice_mode or from its caller. Those
-/// parts and the files their loaders read beside them are the run's own inputs
-/// by then, so the write is held back for them as it is for a built list's. A
-/// part no loader opened is not here: nothing read it, and reading it beside
-/// the input list can hold the run (a part that is a pipe). Empty while no
-/// assemble list is in hand.
-static std::vector<std::string> g_assemble_pending_sources;
 
 /// The --load-assemble-list file, or empty (an empty value is no list, as
 /// the official reads it: BambuStudio.cpp 1795-1799).
@@ -364,12 +347,6 @@ struct PlateOutcome {
     std::shared_ptr<Slic3r::PlateBBoxData>      plate_bbox;
 };
 
-/// --skip-useless-pick (BambuStudio only), read where the export fills the plate.
-static bool g_skip_useless_pick = false;
-
-/// The printer model id the desktop app stores per plate for presets picked
-/// by name (Preset::get_printer_type, Plater.cpp 22261 at 5873b5f).
-static std::string g_preset_printer_model_id;
 
 
 
@@ -525,11 +502,11 @@ static std::string mm_text(double v) {
 
 /// The parts of the assemble list in hand — the built one, or the one a refusal
 /// left half-built (they name the run's files just the same) — or nullptr.
-static const std::vector<std::string>* assemble_sources() {
-    if (g_assemble)
-        return &g_assemble->sources;
-    if (!g_assemble_pending_sources.empty())
-        return &g_assemble_pending_sources;
+static const std::vector<std::string>* assemble_sources(CliRunContext& context) {
+    if (context.g_assemble)
+        return &context.g_assemble->sources;
+    if (!context.g_assemble_pending_sources.empty())
+        return &context.g_assemble_pending_sources;
     return nullptr;
 }
 
@@ -542,7 +519,7 @@ static const std::vector<std::string>* assemble_sources() {
 /// The files the command line names for the run to read: the inputs, the
 /// settings files and every file of a list option, as the loaders read them
 /// (merge_loaded_settings, load_downward_printers).
-static std::vector<std::string> named_input_files(const CliOptions& o) {
+static std::vector<std::string> named_input_files(CliRunContext& context, const CliOptions& o) {
     std::vector<std::string> inputs = o.input_files;
     if (!o.machine_config.empty())  inputs.push_back(o.machine_config);
     if (!o.filament_config.empty()) inputs.push_back(o.filament_config);
@@ -559,7 +536,7 @@ static std::vector<std::string> named_input_files(const CliOptions& o) {
             inputs.push_back(file);
         }
     }
-    if (const std::vector<std::string>* sources = assemble_sources())
+    if (const std::vector<std::string>* sources = assemble_sources(context))
         for (const std::string& file : *sources)
             inputs.push_back(file);
     return inputs;
@@ -577,17 +554,8 @@ static std::vector<std::string> model_side_files(const std::vector<std::string>&
     return out;
 }
 
-/// The run's command line, for result.json never to write over a file it
-/// reads (set once parsing starts), and its words as typed: a refused command
-/// line may stop parsing before it reaches the flag that names the file.
-static const CliOptions* g_result_json_options = nullptr;
-/// The modes' own files (--layout JSON, --engine-info FILE): named to the run
-/// to read like the settings files, and not held by CliOptions.
-static const slicer_cli::ModeArgs* g_result_json_mode = nullptr;
-static std::vector<std::string> g_command_line_words;
-static bool g_command_line_parsed = false;   // the whole command line was read
 
-static bool write_result_json(const std::string& outputdir, int code, int plate_id,
+static bool write_result_json(CliRunContext& context, const std::string& outputdir, int code, int plate_id,
                               const std::string& error_string,
                               const std::vector<PlateOutcome>& outcomes,
                               long long prepare_time_ms, long long export_time_ms) {
@@ -610,25 +578,25 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
                             {"message", shown + why + "; result.json is not written over it"}});
                 return true;
             };
-            if (g_result_json_options != nullptr) {
-                std::vector<std::string> inputs = named_input_files(*g_result_json_options);
-                for (const std::string& side : model_side_files(g_result_json_options->input_files))
+            if (context.g_result_json_options != nullptr) {
+                std::vector<std::string> inputs = named_input_files(context, *context.g_result_json_options);
+                for (const std::string& side : model_side_files(context.g_result_json_options->input_files))
                     inputs.push_back(side);
                 // The assemble list's models and their side files, as
                 // check_run_outputs reads them (named_input_files has the
                 // models; their side files are added here). The list being
                 // built counts too: its parts are read before it is the run's.
-                if (const std::vector<std::string>* sources = assemble_sources())
+                if (const std::vector<std::string>* sources = assemble_sources(context))
                     for (const std::string& file : *sources)
                         for (std::string& side : slicer_cli::loader_side_files(file, false))
                             inputs.push_back(std::move(side));
-                if (g_result_json_mode != nullptr) {
+                if (context.g_result_json_mode != nullptr) {
                     // --layout's JSON and --engine-info's file: read by the
                     // run, and named by a mode flag rather than an option.
-                    if (!g_result_json_mode->layout_json_file.empty())
-                        inputs.push_back(g_result_json_mode->layout_json_file);
-                    if (!g_result_json_mode->engine_info_file.empty())
-                        inputs.push_back(g_result_json_mode->engine_info_file);
+                    if (!context.g_result_json_mode->layout_json_file.empty())
+                        inputs.push_back(context.g_result_json_mode->layout_json_file);
+                    if (!context.g_result_json_mode->engine_info_file.empty())
+                        inputs.push_back(context.g_result_json_mode->engine_info_file);
                 }
                 for (const std::string& input : inputs)
                     if (keep(input, " is the input file '" + input + "'"))
@@ -639,8 +607,8 @@ static bool write_result_json(const std::string& outputdir, int code, int plate_
             // read for the files the run would open (a model, a flag that
             // reads a file, and the files those models' loaders read beside
             // them).
-            if (!g_command_line_parsed) {
-                const slicer_cli::CommandLineFiles files = slicer_cli::command_line_files(g_command_line_words);
+            if (!context.g_command_line_parsed) {
+                const slicer_cli::CommandLineFiles files = slicer_cli::command_line_files(context.g_command_line_words);
                 std::vector<std::string> named = files.named;
                 named.insert(named.end(), files.models.begin(), files.models.end());
                 for (const std::string& side : model_side_files(files.models))
@@ -933,31 +901,12 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
 }
 
 
-/// The official arrange switches given on the command line (cli_options.hpp).
-struct ArrangeSwitches {
-    bool enable_timelapse            = false;   // --enable-timelapse
-    bool allow_rotations             = false;   // --allow-rotations (see below)
-    bool allow_multicolor_oneplate   = true;    // --allow-multicolor-oneplate
-    bool avoid_extrusion_cali_region = false;   // --avoid-extrusion-cali-region
-};
-static ArrangeSwitches g_arrange_switches;
-
-/// --downward-check's result: the official checks every plate once per run
-/// (BambuStudio.cpp 4645-4658, 4779-4790), so a --slice 0 run checks on its
-/// first pass and every later pass reports the same.
-struct DownwardRun {
-    bool done = false;
-    std::vector<std::string> printers, failed;
-    bool sequence_plate = false;
-    bool multi_nozzle_diameters = false;
-};
-static DownwardRun g_downward_run;
 
 /// The box of the plate's objects with its prime tower, as the lambda
 /// check_plate_wipe_tower measures it (BambuStudio.cpp 4418-4495; OrcaSlicer.cpp
 /// 3819-3884), for --downward-check and the move to a new bed. The model holds
 /// only this plate's objects, at the plate's own origin.
-static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+static Slic3r::BoundingBoxf3 downward_plate_bbox(CliRunContext& context, const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                                  int plate_index, bool is_sequence, bool* has_wipe_tower = nullptr) {
     using namespace Slic3r;
     if (has_wipe_tower)
@@ -978,7 +927,7 @@ static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, con
     if (valid_count <= 0 || (is_sequence && valid_count > 1))
         return obj_bbox;
     const auto* timelapse_type_opt = config.option("timelapse_type");
-    const bool is_smooth_timelapse = g_arrange_switches.enable_timelapse && timelapse_type_opt &&
+    const bool is_smooth_timelapse = context.g_arrange_switches.enable_timelapse && timelapse_type_opt &&
                                      timelapse_type_opt->getInt() == TimelapseType::tlSmooth;
     const unsigned int filaments_cnt = (unsigned int)arrange_plate_extruders(model, config, plate_index).size();
     if (filaments_cnt <= 1 && !is_smooth_timelapse)
@@ -1036,9 +985,9 @@ static Slic3r::BoundingBoxf3 downward_plate_bbox(const Slic3r::Model& model, con
     return obj_bbox;
 }
 
-static Slic3r::Vec3d downward_plate_size(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+static Slic3r::Vec3d downward_plate_size(CliRunContext& context, const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                          int plate_index, bool is_sequence) {
-    return downward_plate_bbox(model, config, plate_index, is_sequence).size();
+    return downward_plate_bbox(context, model, config, plate_index, is_sequence).size();
 }
 
 /// shrink_to_new_bed alone (BambuStudio.cpp 4280-4310; OrcaSlicer.cpp
@@ -1085,7 +1034,7 @@ static int new_bed_shrink(const slicer_cli::ProjectFacts& facts, const Slic3r::D
 /// plate's objects at the plate's own origin, so each move is the official one
 /// with both origins taken out, and the tower moves with them. Returns
 /// shrink_to_new_bed; `moved` is the offset applied.
-static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_switch, Slic3r::Model& model,
+static int move_to_new_bed(CliRunContext& context, const slicer_cli::ProjectFacts& facts, bool machine_switch, Slic3r::Model& model,
                            Slic3r::DynamicPrintConfig& config, int plate_index, bool is_sequence, Slic3r::Vec3d& moved) {
     using namespace Slic3r;
     moved = Vec3d::Zero();
@@ -1143,7 +1092,7 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
         exclude_depth = current_exclude_area[2].y() - current_exclude_area[0].y();
     }
     bool has_wipe_tower = false;
-    const BoundingBoxf3 bbox = downward_plate_bbox(model, config, plate_index, is_sequence, &has_wipe_tower);
+    const BoundingBoxf3 bbox = downward_plate_bbox(context, model, config, plate_index, is_sequence, &has_wipe_tower);
     Vec3d offset = Vec3d::Zero();
     if (shrink_to_new_bed == 1) {
         offset = Vec3d(double(current_width) / 2 - double(old_width) / 2, double(current_depth) / 2 - double(old_depth) / 2, 0.);
@@ -1204,7 +1153,7 @@ static int move_to_new_bed(const slicer_cli::ProjectFacts& facts, bool machine_s
     return shrink_to_new_bed;
 }
 
-static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
+static void assemble_tower_inside_plate(CliRunContext& context, Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
                                         int plate_index, bool keep_existing);
 
 /// The plate's bounding box, narrowed by every extruder's own area
@@ -1256,7 +1205,7 @@ static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& co
 /// `landed_out`, for --repetitions: how many printable items landed on the
 /// plate; the arrange is applied even when some did not, and those are
 /// left off the plate (not printed), as the official copies loop does.
-static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+static bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
                            int plate_index, size_t sliced_filament_count, PlateOutcome& outcome,
                            int* landed_out = nullptr) {
     using namespace Slic3r;
@@ -1334,7 +1283,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     // Smooth timelapse: --enable-timelapse with a smooth timelapse_type
     // (BambuStudio.cpp 4183-4187; OrcaSlicer.cpp 3596-3599).
     const auto* timelapse_type_opt = config.option("timelapse_type");
-    const bool is_smooth_timelapse = g_arrange_switches.enable_timelapse && timelapse_type_opt &&
+    const bool is_smooth_timelapse = context.g_arrange_switches.enable_timelapse && timelapse_type_opt &&
                                      timelapse_type_opt->getInt() == TimelapseType::tlSmooth;
 
     // The prime tower as a fixed item (BambuStudio.cpp 5770-5878; OrcaSlicer.cpp
@@ -1401,7 +1350,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
             if (const auto* areas = config.option<ConfigOptionPointsGroups>("extruder_printable_area");
                 areas && areas->values.size() > 1 &&
                 (x < reach.min.x() || x + w > reach.max.x() || y < reach.min.y() || y + depth > reach.max.y())) {
-                assemble_tower_inside_plate(config, model, plate_index, /*keep_existing=*/true);
+                assemble_tower_inside_plate(context, config, model, plate_index, /*keep_existing=*/true);
                 x = (float)config.option<ConfigOptionFloats>("wipe_tower_x")->get_at(plate_index);
                 y = (float)config.option<ConfigOptionFloats>("wipe_tower_y")->get_at(plate_index);
             }
@@ -1463,9 +1412,9 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     // --avoid-extrusion-cali-region set them as the official CLI does
     // (BambuStudio.cpp 5886-5888; OrcaSlicer.cpp 5143-5145); rotations stay
     // off unless --allow-rotations is given.
-    params.allow_rotations                     = g_arrange_switches.allow_rotations;
-    params.allow_multi_materials_on_same_plate = g_arrange_switches.allow_multicolor_oneplate;
-    params.avoid_extrusion_cali_region         = g_arrange_switches.avoid_extrusion_cali_region;
+    params.allow_rotations                     = context.g_arrange_switches.allow_rotations;
+    params.allow_multi_materials_on_same_plate = context.g_arrange_switches.allow_multicolor_oneplate;
+    params.avoid_extrusion_cali_region         = context.g_arrange_switches.avoid_extrusion_cali_region;
     params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
     params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
 #ifdef ENGINE_ORCA
@@ -1571,7 +1520,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
 /// set_default_wipe_tower_pos_for_plate reads the same ones: Orca PartPlate.cpp
 /// 4128-4135, Bambu 4625-4635). Bambu's A2L keeps its own y (model id "N9",
 /// PartPlate.cpp 4637-4642).
-static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& config) {
+static Slic3r::Vec2d tower_default_corner(CliRunContext& context, const Slic3r::DynamicPrintConfig& config) {
     using namespace Slic3r;
 #ifdef ENGINE_SNAPMAKER
     return slicer_cli::snapmaker_tower_default_corner(config);
@@ -1581,7 +1530,7 @@ static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& conf
         structure && structure->value == PrinterStructure::psI3)
         corner = Vec2d(0., 250.);   // I3_WIPE_TOWER_DEFAULT_X_POS / _Y_POS
 #ifdef ENGINE_BAMBU
-    if (g_preset_printer_model_id == "N9")   // N9_WIPE_TOWER_DEFAULT_Y_POS
+    if (context.g_preset_printer_model_id == "N9")   // N9_WIPE_TOWER_DEFAULT_Y_POS
         corner.y() = 160.;
 #endif
     return corner;
@@ -1594,9 +1543,9 @@ static Slic3r::Vec2d tower_default_corner(const Slic3r::DynamicPrintConfig& conf
 /// prime_tower_width from the edges, as its block reads it (OrcaSlicer.cpp
 /// 4636-4637); the Orca fixed plate and both Bambu blocks use
 /// WIPE_TOWER_MARGIN (15 mm on Bambu, 1 mm on Orca).
-static void assemble_tower_default_corner(Slic3r::DynamicPrintConfig& config, int plate_index, float margin) {
+static void assemble_tower_default_corner(CliRunContext& context, Slic3r::DynamicPrintConfig& config, int plate_index, float margin) {
     using namespace Slic3r;
-    const Vec2d corner = tower_default_corner(config);
+    const Vec2d corner = tower_default_corner(context, config);
     float x = (float)corner.x(), y = (float)corner.y();
     if (x < margin) x = margin;
     if (y < margin) y = margin;
@@ -1647,12 +1596,12 @@ static TowerWipeParams tower_wipe_params(const Slic3r::DynamicPrintConfig& confi
 /// `keep_existing` keeps the plate's saved position and only clamps it back
 /// inside the bed, as the 3MF load does (Bambu PartPlate.hpp 840-844,
 /// Plater.cpp 8774).
-static void assemble_tower_inside_plate(Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
+static void assemble_tower_inside_plate(CliRunContext& context, Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
                                         int plate_index, bool keep_existing) {
     using namespace Slic3r;
     auto* wipe_x = config.option<ConfigOptionFloats>("wipe_tower_x", true);
     auto* wipe_y = config.option<ConfigOptionFloats>("wipe_tower_y", true);
-    const Vec2d corner = tower_default_corner(config);
+    const Vec2d corner = tower_default_corner(context, config);
     float x = (float)corner.x(), y = (float)corner.y();
     if (keep_existing && plate_index >= 0 && (int)wipe_x->values.size() > plate_index &&
         (int)wipe_y->values.size() > plate_index) {
@@ -1765,7 +1714,7 @@ static Slic3r::arrangement::ArrangePolygon estimate_tower_polygon_global(const S
 /// 2236-2281, Orca 2174-2220), and the objects are only moved, never dropped
 /// to the bed. An object the arrange leaves off the plate is
 /// CLI_OBJECT_ARRANGE_FAILED.
-static bool arrange_assemble_plate(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config, int plate_index,
+static bool arrange_assemble_plate(CliRunContext& context, Slic3r::Model& model, Slic3r::DynamicPrintConfig& config, int plate_index,
                                    int filaments_count, const Slic3r::Model& global_model, PlateOutcome& outcome) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
@@ -1804,7 +1753,7 @@ static bool arrange_assemble_plate(Slic3r::Model& model, Slic3r::DynamicPrintCon
 #else
         const float corner_margin = WIPE_TOWER_MARGIN;
 #endif
-        assemble_tower_default_corner(config, plate_index, corner_margin);
+        assemble_tower_default_corner(context, config, plate_index, corner_margin);
         const int plate_width = area->values.size() >= 4 ? (int)(area->values[2].x() - area->values[0].x()) : (int)bed.size().x();
         const int plate_depth = area->values.size() >= 4 ? (int)(area->values[2].y() - area->values[0].y()) : (int)bed.size().y();
         Vec2d pos;
@@ -1819,9 +1768,9 @@ static bool arrange_assemble_plate(Slic3r::Model& model, Slic3r::DynamicPrintCon
     arrange_add_exclude_areas(unselected, config, 0.);
 
     // Step 2: the same settings as the general arrange (see arrange_on_bed).
-    params.allow_rotations                     = g_arrange_switches.allow_rotations;
-    params.allow_multi_materials_on_same_plate = g_arrange_switches.allow_multicolor_oneplate;
-    params.avoid_extrusion_cali_region         = g_arrange_switches.avoid_extrusion_cali_region;
+    params.allow_rotations                     = context.g_arrange_switches.allow_rotations;
+    params.allow_multi_materials_on_same_plate = context.g_arrange_switches.allow_multicolor_oneplate;
+    params.avoid_extrusion_cali_region         = context.g_arrange_switches.avoid_extrusion_cali_region;
     params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
     params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
 #ifdef ENGINE_ORCA
@@ -1988,7 +1937,7 @@ static void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Mo
 /// project (PartPlateList::store_to_3mf_structure, slic3r/GUI/PartPlate.cpp
 /// at 5873b5f): G-code file, predicted time, weight, filaments used per slot
 /// (PlateData::parse_filament_info), and the processor's per-plate facts.
-static void record_plate_for_export(const Slic3r::Print& print, const Slic3r::Model& model,
+static void record_plate_for_export(CliRunContext& context, const Slic3r::Print& print, const Slic3r::Model& model,
                                     const Slic3r::DynamicPrintConfig& config,
                                     Slic3r::GCodeProcessorResult& result, const std::string& gcode_file,
                                     PlateOutcome& outcome, const Slic3r::Vec2d& plate_origin) {
@@ -2026,8 +1975,8 @@ static void record_plate_for_export(const Slic3r::Print& print, const Slic3r::Mo
     pd->skipped_objects.assign(outcome.skipped_objects.begin(), outcome.skipped_objects.end());
     if (outcome.settings_merge && !outcome.settings_merge->printer_model_id.empty())
         pd->printer_model_id = outcome.settings_merge->printer_model_id;
-    else if (!g_preset_printer_model_id.empty())
-        pd->printer_model_id = g_preset_printer_model_id;
+    else if (!context.g_preset_printer_model_id.empty())
+        pd->printer_model_id = context.g_preset_printer_model_id;
     if (const auto* nozzles = config.option("nozzle_diameter"))
         pd->nozzle_diameters = nozzles->serialize();
     {
@@ -2058,7 +2007,7 @@ static void record_plate_for_export(const Slic3r::Print& print, const Slic3r::Mo
 #ifdef ENGINE_BAMBU
     // --skip-useless-pick: a plate of one object needs no object labels
     // (BambuStudio.cpp 7486-7498).
-    if (g_skip_useless_pick) {
+    if (context.g_skip_useless_pick) {
         int printable = 0;
         for (const Slic3r::ModelObject* object : model.objects)
             for (const Slic3r::ModelInstance* inst : object->instances)
@@ -2360,27 +2309,8 @@ struct BambuValueAction {
     std::string from;
 };
 
-#ifdef ENGINE_SNAPMAKER
-/// The filament-id remap a printer switch leaves behind, and the filament total
-/// it maps into. The desktop applies it to every volume's painted facets when
-/// the filament count changes (references/SnapmakerOrca/src/slic3r/GUI/Plater.cpp:22180-22290
-/// at bac6fd5); the remap is built by
-/// PresetBundle::update_multi_material_filament_presets (PresetBundle.cpp:3983-4094).
-static std::vector<unsigned int> g_filament_id_remap;
-static size_t                    g_filament_id_total = 0;
-// The desktop remaps only when the filament count changes (on_filaments_change);
-// a run without a printer switch that changes it leaves the paint alone.
-static bool                      g_filament_count_changed = false;
 
-#endif
-
-#if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
-/// Whether this file was made by BambuStudio, so BambuStudio's own meaning of a
-/// value applies to it and no one else's. Set from the maker check.
-static bool g_file_made_by_bambustudio = false;
-#endif
-
-static bool bambu_value_actions(const RawValues& raw, const std::string& support_type, bool maker_set_raft,
+static bool bambu_value_actions(CliRunContext& context, const RawValues& raw, const std::string& support_type, bool maker_set_raft,
                                 std::vector<BambuValueAction>& conversions,
                                 std::vector<BambuValueAction>& warnings, std::string& refusal) {
     const auto raw_value = [&raw](const char* key) {
@@ -2401,7 +2331,7 @@ static bool bambu_value_actions(const RawValues& raw, const std::string& support
     // BambuStudio's 0 means infill-only walls. Snapmaker's 0 is its own automatic
     // (PrintConfig tooltip, 0-2 at bac6fd5) and an OrcaSlicer project's 0 is its
     // own value too, so the warning is about a file made in BambuStudio only.
-    else if (wall_count == "0" && tree && g_file_made_by_bambustudio)
+    else if (wall_count == "0" && tree && context.g_file_made_by_bambustudio)
 #else
     else if (wall_count == "0" && tree)
 #endif
@@ -2877,7 +2807,7 @@ static bool desktop_plate_type_for_printer(const CliOptions& o, const std::strin
     return true;
 }
 
-static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfig& out,
+static bool resolve_named_presets(CliRunContext& context, const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
     // The temp folder lookup throws on a bad TMPDIR/TMP; it sits inside the
@@ -3065,7 +2995,7 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // (construct_full_config: BambuStudio PresetBundle.cpp 97, OrcaSlicer 82).
     const slicer_cli::DesktopBedType bed = slicer_cli::desktop_bed_type(bundle);
     bundle.project_config.set_key_value("curr_bed_type", new Slic3r::ConfigOptionEnum<Slic3r::BedType>(bed.type));
-    g_preset_printer_model_id = bundle.printers.get_edited_preset().get_printer_type(&bundle);
+    context.g_preset_printer_model_id = bundle.printers.get_edited_preset().get_printer_type(&bundle);
     slicer_cli::apply_printer_pick(bundle);
 #ifdef ENGINE_ORCA
     // The settings the desktop slices with: full_config(false), every
@@ -3087,9 +3017,9 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // at bac6fd5; set_num_filaments is its own call, Tab.cpp:2270).
     if (!o.printer_preset.empty() && o.printer_preset.find("Snapmaker U1") == std::string::npos &&
         slicer_cli::trim_named_filaments_for_switch(bundle))
-        g_filament_count_changed = true;
+        context.g_filament_count_changed = true;
     // The remap the switch built, applied to the volumes once the model is loaded.
-    g_filament_id_remap = bundle.consume_last_filament_id_remap();
+    context.g_filament_id_remap = bundle.consume_last_filament_id_remap();
 #endif
 #ifdef ENGINE_SNAPMAKER
     // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
@@ -3097,7 +3027,7 @@ static bool resolve_named_presets(const CliOptions& o, Slic3r::DynamicPrintConfi
     // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
     out = bundle.full_config();
     // The filament total the switch's remap maps into.
-    g_filament_id_total = slicer_cli::snapmaker_filament_id_total(out);
+    context.g_filament_id_total = slicer_cli::snapmaker_filament_id_total(out);
 #else
     out = bundle.full_config(false);
 #endif
@@ -3346,7 +3276,7 @@ static int plan_plate_cols(int count) {
 /// `file_version` are the project's own, for the plate list's size (the old
 /// printer's, as the plate list keeps it without the Bambu-project resize,
 /// BambuStudio.cpp 4313-4320; OrcaSlicer.cpp 3727-3729).
-static bool plan_project_plates(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+static bool plan_project_plates(CliRunContext& context, Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
                                 const Slic3r::DynamicPrintConfig& file_config, const Slic3r::Semver& file_version,
                                 const Slic3r::PlateDataPtrs& plate_data, int filament_count, bool need_arrange,
                                 ProjectPlan& plan, PlateOutcome& outcome) {
@@ -3453,7 +3383,7 @@ static bool plan_project_plates(Slic3r::Model& model, Slic3r::DynamicPrintConfig
             // The one corner function, so this path and the assemble ones cannot
             // drift apart (Snapmaker's x = 13 / y = depth/2, Snapmaker_Orca.cpp:
             // 4206-4213 and 4296-4303 at bac6fd5).
-            const Vec2d snap_corner = tower_default_corner(config);
+            const Vec2d snap_corner = tower_default_corner(context, config);
             float x = (float) snap_corner.x();
             float y = (float) snap_corner.y();
 #else
@@ -3496,9 +3426,9 @@ static bool plan_project_plates(Slic3r::Model& model, Slic3r::DynamicPrintConfig
 
         // Step 2 (BambuStudio.cpp 5886-5915; OrcaSlicer.cpp 5142-5172): the
         // same settings as the one-plate arrange (arrange_on_bed).
-        params.allow_rotations                     = g_arrange_switches.allow_rotations;
-        params.allow_multi_materials_on_same_plate = g_arrange_switches.allow_multicolor_oneplate;
-        params.avoid_extrusion_cali_region         = g_arrange_switches.avoid_extrusion_cali_region;
+        params.allow_rotations                     = context.g_arrange_switches.allow_rotations;
+        params.allow_multi_materials_on_same_plate = context.g_arrange_switches.allow_multicolor_oneplate;
+        params.avoid_extrusion_cali_region         = context.g_arrange_switches.avoid_extrusion_cali_region;
         params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
         params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
 #ifdef ENGINE_ORCA
@@ -3708,83 +3638,6 @@ static void emit_project_plan_event(const ProjectPlan& plan, bool model_files = 
                 {"off_plates", plan.off_plates}, {"plates", plates}, {"message", message}});
 }
 
-/// The staging folders this run made: the 3MF load's backup folder and the
-/// --export-3mf one. Both are handed to the engine, and 397e505's comment here
-/// claimed the engine's removal of them "runs as a UI task the command line
-/// never drains" — it does not: ~Model queues a RemoveBackup task
-/// (Model.cpp 203-210 / OrcaSlicer 176-183, remove_backup at bbs_3mf.cpp 9030
-/// / OrcaSlicer 8604) and the backup manager's worker thread runs it
-/// (bbs_3mf.cpp 9140-9144 / OrcaSlicer 8715-8719 start the thread, 9212-9235 /
-/// 8788-8803 is the RemoveBackup it runs). A model that still holds this
-/// folder when it dies therefore removes it mid-run; detach_run_backup_path
-/// takes every model off it, and the run removes it itself as the process
-/// ends. The list is a member, not a function-local static: this object's
-/// destructor must outlive it. A crash or a kill leaves the folders, as it
-/// leaves any temp file — up to the input's embedded G-code, so the sweep
-/// below exists: the folders of runs that are gone go at the start of the
-/// next run. Nothing else removes them on the way out: a SIGTERM or SIGHUP
-/// ends this process through its default action, exactly as SIGKILL does, and
-/// both leave the folder to that sweep. A handler would have to remove the
-/// folders from signal context, and the process holds ~30 threads: fork()
-/// there runs glibc's atfork handlers and takes the malloc arena locks, so a
-/// signal that lands while any thread holds one blocks the handler on a
-/// futex for ever instead of ending the run ("stale" is judged from the
-/// ownership marker below, so the folder the hang would have left is still
-/// reclaimed).
-///
-/// An engine backup folder is marked as owned by the run's PID, and the
-/// desktop's own test of "this folder still has its owner" is the rule the
-/// sweep follows: the folder is stale once that PID is not a running process
-/// of a binary of this package — either engine's, see is_engine_binary_name
-/// (the desktop's test, has_restore_data, bbs_3mf.cpp 9447-9466 /
-/// OrcaSlicer 9013-9031, compares with its own one program). The desktop writes the PID inside the folder, as
-/// lock.txt, when it makes the folder for a load that has no backup path yet
-/// (Model.cpp 1123-1130 / OrcaSlicer 986-993); this program's marker is
-/// <folder>.owner beside it instead, for the reason add() gives, and add()
-/// writes it as the folder is made, so the folder carries its marker from the
-/// moment it exists — a run killed before its load reached a backup path
-/// would otherwise leave a folder only the age rule below could reclaim.
-
-struct RunStagingFolders {
-    /// The 3MF load's folder and the --export-3mf one, in a fixed array: the
-    /// set is bounded by the run's steps, and a fixed size keeps add() off the
-    /// heap while the run holds its staging folders.
-    static constexpr size_t kMax = 4;
-    char paths[kMax][4096];   ///< TMPDIR + a relative path, well inside 4096
-    size_t count = 0;         ///< Paths registered so far.
-
-    /// Creates `path` with this run's ownership marker, registers it, returns
-    /// it.
-    /// The marker is `<path>.owner` — a SIBLING of the folder, never a member:
-    /// the loader extracts an archive's files under their own names
-    /// (_extract_file_from_archive, bbs_3mf.cpp 2904-2919), so a project whose
-    /// root holds an entry named lock.txt overwrote a marker kept at
-    /// <path>/lock.txt with a PID the archive chose, and the sweep of a second
-    /// run then read a dead PID out of a live run's folder and removed that
-    /// folder under it. An archive member cannot reach a sibling: extraction
-    /// refuses a path that leaves the folder (bbs_3mf.cpp 2909-2912 /
-    /// 2804-2807).
-    std::string add(std::string path) {
-        boost::system::error_code mk;
-        boost::filesystem::create_directories(path, mk);   // the engine would create it itself (_extract_file_from_archive, bbs_3mf.cpp 2914-2919)
-        write_owner_marker(boost::filesystem::path(path));   // whole, never empty: write_owner_marker
-        const size_t n = (size_t)count;
-        if (n < kMax) {
-            const size_t room = sizeof paths[n] - 1;
-            const size_t len  = std::min(path.size(), room);
-            std::memcpy(paths[n], path.data(), len);
-            paths[n][len] = '\0';
-            count = n + 1;
-        }
-        return path;
-    }
-
-    ~RunStagingFolders() {
-        for (size_t i = 0; i < (size_t)count; ++i)
-            remove_staging_folder(boost::filesystem::path(paths[i]));   // markers first
-    }
-};
-static RunStagingFolders run_staging;
 
 /// True for the names this program stages under, and (the sweep's guard)
 /// nothing else: temp_directory_path() is shared, and another program's
@@ -3929,17 +3782,17 @@ static void sweep_stale_staging_folders() {
 /// load would litter the temp dir. "detach" first, so set_backup_path does not
 /// remove the folder it replaces (Model::set_backup_path, Model.cpp 1165-1179
 /// / 1028-1042) — as f747602 does for the --export-3mf staging folder.
-static const std::string& run_backup_path() {
+static const std::string& run_backup_path(CliRunContext& context) {
     static const std::string path =
-        run_staging.add((boost::filesystem::temp_directory_path() /
+        context.run_staging.add((boost::filesystem::temp_directory_path() /
                          boost::filesystem::unique_path("slicer_cli_load-%%%%%%%%")).string());
     return path;
 }
 
 /// Gives `model` this run's own backup folder (run_backup_path).
-static void set_run_backup_path(Slic3r::Model& model) {
+static void set_run_backup_path(CliRunContext& context, Slic3r::Model& model) {
     model.set_backup_path("detach");
-    model.set_backup_path(run_backup_path());
+    model.set_backup_path(run_backup_path(context));
 }
 
 /// Creates, inside the run's staging folder, the directory of every file the
@@ -4063,7 +3916,7 @@ struct RunOutput {
 /// `plate_members`, when given, receives each plate's (object, instance)
 /// pairs in the loaded model (PlateData::objects_and_instances), and
 /// `file_config` the project's settings as the file holds them.
-static bool load_plate_objects(const std::string& input_file, int plate_id, Slic3r::Model& model,
+static bool load_plate_objects(CliRunContext& context, const std::string& input_file, int plate_id, Slic3r::Model& model,
                                std::vector<std::vector<std::pair<int, int>>>* plate_members = nullptr,
                                Slic3r::DynamicPrintConfig* file_config = nullptr) {
     using namespace Slic3r;
@@ -4090,8 +3943,8 @@ static bool load_plate_objects(const std::string& input_file, int plate_id, Slic
     // so the extraction finds them, and detached again when this function
     // ends: this model is a temporary one, and its destruction must not remove
     // the folder the run's own load extracts into (detach_run_backup_path).
-    set_run_backup_path(model);
-    create_archive_dirs(load_path, run_backup_path());
+    set_run_backup_path(context, model);
+    create_archive_dirs(load_path, run_backup_path(context));
     const RunBackupDetach detach_model{model};
     bool loaded = false;
     try {
@@ -4458,7 +4311,7 @@ static void announce_noted_warning(const json& announcement) {
 /// call (outcome.prepare_pass, which stops before the plate checks) and then
 /// one call per plate. The return value is the process exit code of the
 /// default call; `outcome` carries what `--slice` mode reports on top.
-static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
+static int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
                              std::string* detail, bool after_slice_actions_only = false,
                              const std::vector<RunOutput>* reserved = nullptr,
                              std::vector<RunOutput>* reserve = nullptr);
@@ -4575,7 +4428,7 @@ static bool manual_map_extruders_fit(const Slic3r::DynamicPrintConfig& config, c
 }
 #endif
 
-static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
+static int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
     const std::string& machine_config  = o.machine_config;
@@ -4592,7 +4445,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     // the named-preset staging folder, which is removed once staging ends, so a
     // run that switched printer stopped there. Give such a run a data directory
     // that exists for as long as the slice does.
-    slicer_cli::snapmaker_keep_data_dir(run_backup_path());
+    slicer_cli::snapmaker_keep_data_dir(run_backup_path(context));
 #endif
     const bool calib_enabled       = calib_params.mode != Slic3r::CalibMode::Calib_None;
     const bool calib_self_geometry = slicer_cli::calib_mode_generates_geometry(calib_params.mode);
@@ -4662,7 +4515,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // runs it (ProjectPlan): the run loads every plate (plate_id 0) and
         // the model files into the one model and arranges them; each plate's
         // slice then takes its instances from the plan.
-        const bool trailing_port = !geometry_input && g_assemble == nullptr && trailing_models_port(o);
+        const bool trailing_port = !geometry_input && context.g_assemble == nullptr && trailing_models_port(o);
         // The plate filter of the one load (Model::read_from_file(...,
         // plate_to_slice), BambuStudio.cpp 1889; OrcaSlicer.cpp 1571): the
         // plate the run slices, or 0 for every plate.
@@ -4671,7 +4524,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // before the plate loop, and every plate's own settings (plate_params)
         // as its PlateData config, where the official keeps them
         // (BambuStudio.cpp 1066-1078; OrcaSlicer.cpp 877-889).
-        const bool assemble_input = g_assemble != nullptr;
+        const bool assemble_input = context.g_assemble != nullptr;
         // The settings base the plate's own are laid over (below), and the
         // run-level part of the settings and of the model: once per run.
         std::optional<Slic3r::DynamicPrintConfig> project_settings;
@@ -4703,8 +4556,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // path, and parallel runs never share the loader's _temp_N.config
         // files (run_backup_path), with the input's own directories in it (the
         // OrcaSlicer loader does not create them: create_archive_dirs).
-        set_run_backup_path(model);
-        create_archive_dirs(input_file, run_backup_path());
+        set_run_backup_path(context, model);
+        create_archive_dirs(input_file, run_backup_path(context));
         // The run's model is detached when this block ends, so no copy of it
         // (each plate's own, or any temporary) can take the folder down while
         // a later load still writes into it (detach_run_backup_path).
@@ -4713,17 +4566,17 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // The list's plates the run slices: plate N, or every plate. Each
             // plate's objects go to its place in the plate grid once the bed
             // is known (below).
-            if (plate_id > (int)g_assemble->plates.size() || plate_id < 0) {
+            if (plate_id > (int)context.g_assemble->plates.size() || plate_id < 0) {
                 set_outcome_failure(outcome, CLI_INVALID_PARAMS, "The assemble list has no plate " + std::to_string(plate_id) + ".");
                 return 1;
             }
-            rs.plates.assign(g_assemble->plates.size(), RunPlate());
-            for (size_t k = 0; k < g_assemble->plates.size(); ++k) {
+            rs.plates.assign(context.g_assemble->plates.size(), RunPlate());
+            for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
                 rs.plates[k].all = false;
                 if (plate_id > 0 && int(k) != plate_id - 1)
                     continue;
                 const size_t before = model.objects.size();
-                for (const Slic3r::ModelObject* object : g_assemble->plates[k].loaded_obj_list)
+                for (const Slic3r::ModelObject* object : context.g_assemble->plates[k].loaded_obj_list)
                     model.add_object(*object);
                 for (size_t oi = before; oi < model.objects.size(); ++oi)
                     for (Slic3r::ModelInstance* inst : model.objects[oi]->instances)
@@ -4733,11 +4586,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                             {"message","Plate " + std::to_string(k + 1) + " of the assemble list holds " +
                                        std::to_string(model.objects.size() - before) + " object(s)"}});
             }
-            for (size_t k = 0; k < g_assemble->plates.size(); ++k) {
+            for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
                 auto* pd = new Slic3r::PlateData();
                 pd->plate_index = int(k);
-                pd->plate_name  = g_assemble->plates[k].plate_name;
-                pd->config      = g_assemble->plate_configs[k];
+                pd->plate_name  = context.g_assemble->plates[k].plate_name;
+                pd->config      = context.g_assemble->plate_configs[k];
                 plate_data.push_back(pd);
             }
         } else if (geometry_input) {
@@ -4955,7 +4808,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // Snapmaker_Orca Plater.cpp 12103, Preset.cpp 2121-2148).
             const bool bambu_made_project = is_bbl_3mf;
 #if defined(ENGINE_SNAPMAKER) || defined(ENGINE_ORCA)
-            g_file_made_by_bambustudio = is_bbl_3mf && !is_orca_3mf;
+            context.g_file_made_by_bambustudio = is_bbl_3mf && !is_orca_3mf;
 #endif
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // The loader's own is_orca_3mf flag does not recognise every
@@ -4972,7 +4825,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     const bool orca_made  = maker_meta.count("OrcaSlicer") != 0 ||
                                             (maker_app != maker_meta.end() &&
                                              boost::starts_with(maker_app->second, "OrcaSlicer-"));
-                    g_file_made_by_bambustudio = is_bbl_3mf && !orca_made;
+                    context.g_file_made_by_bambustudio = is_bbl_3mf && !orca_made;
                 }
             }
 #endif
@@ -5198,7 +5051,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 std::vector<BambuValueAction> conversions;
                 std::vector<BambuValueAction> warnings;
                 std::string                   refusal;
-                if (!bambu_value_actions(project_raw, config_value_text(config, "support_type"),
+                if (!bambu_value_actions(context, project_raw, config_value_text(config, "support_type"),
                                          maker_changed_key(project_file_config, "raft_first_layer_expansion"),
                                          conversions, warnings, refusal)) {
                     emit_event({{"event","config_refused"},
@@ -5262,7 +5115,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         std::vector<BambuValueAction> scope_conversions;
                         std::vector<BambuValueAction> scope_warnings;
                         std::string                   scope_refusal;
-                        if (!bambu_value_actions(raw, support_type, /*maker_set_raft=*/true, scope_conversions,
+                        if (!bambu_value_actions(context, raw, support_type, /*maker_set_raft=*/true, scope_conversions,
                                                  scope_warnings, scope_refusal)) {
                             const std::string sentence = scope_refusal + " (in " + scope + " \"" + scope_name + "\")";
                             emit_event({{"event","config_refused"},
@@ -5381,8 +5234,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #ifdef ENGINE_SNAPMAKER
             // The desktop's rule for filament indices out of range on load,
             // after the switch's paint remap (cli_snapmaker.hpp).
-            slicer_cli::fix_out_of_range_filaments(model, config, project_filament_count(config), g_filament_id_remap,
-                                                   g_filament_id_total, g_filament_count_changed);
+            slicer_cli::fix_out_of_range_filaments(model, config, project_filament_count(config), context.g_filament_id_remap,
+                                                   context.g_filament_id_total, context.g_filament_count_changed);
 #endif
             // Engine fit: a project for a printer this engine does not have is
             // refused before anything is sliced. Without the printer's presets
@@ -5960,15 +5813,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         };
         // Presets by name: the desktop app's full_config() for the named
         // printer, process and filaments, over the engine defaults.
-        if (g_preset_config)
-            config.apply(*g_preset_config);
+        if (context.g_preset_config)
+            config.apply(*context.g_preset_config);
         // Capture preset names before raw settings files can replace their
         // id fields. A settings file is configuration input, not proof that
         // its arbitrary ids were selected from this engine's preset catalog.
         // Project inputs, including named project switches, are deliberately
         // omitted: an embedded id can be arbitrary and switch defaults are
         // decided later in the settings merge.
-        if (g_preset_config) {
+        if (context.g_preset_config) {
             if (const auto* id = config.option<Slic3r::ConfigOptionString>("printer_settings_id"))
                 outcome.printer_preset = id->value;
             if (const auto* id = config.option<Slic3r::ConfigOptionString>("print_settings_id"))
@@ -5987,8 +5840,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #ifdef ENGINE_BAMBU
         // An assemble list's OBJ colours become filaments in the merge, which
         // needs the filaments loaded (BambuStudio.cpp 2574-2580).
-        if (assemble_input && !g_assemble->colours.empty()) {
-            settings_merge.input_obj_colours.assign(g_assemble->colours.begin(), g_assemble->colours.end());
+        if (assemble_input && !context.g_assemble->colours.empty()) {
+            settings_merge.input_obj_colours.assign(context.g_assemble->colours.begin(), context.g_assemble->colours.end());
             if (!slicer_cli::wants_settings_merge(o)) {
                 const std::string why = "The assemble list's OBJ files carry colours, which become filaments: "
                                         "give the filaments with --load-filaments.";
@@ -6005,7 +5858,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // own settings, the named presets' full config, or a profile file
             // that names it.
             bool has_colours = (!input_file.empty() && input_is_3mf(input_file) && !geometry_input && !assemble_input) ||
-                               g_preset_config != nullptr;
+                               context.g_preset_config != nullptr;
             for (const std::string* path : {&bundle_config, &machine_config, &process_config, &filament_config})
                 has_colours = has_colours || json_file_has_key(*path, "filament_colour");
             settings_merge.project_has_filament_colour = has_colours;
@@ -6097,7 +5950,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             bool plate_chosen = o.given_flag("curr_bed_type");
             for (const std::string* path : {&bundle_config, &machine_config, &process_config, &filament_config})
                 plate_chosen = plate_chosen || (!path->empty() && json_file_has_key(*path, "curr_bed_type"));
-            const bool plate_needed = !plate_chosen && g_preset_config == nullptr &&
+            const bool plate_needed = !plate_chosen && context.g_preset_config == nullptr &&
                                       (!input_is_3mf(input_file) || geometry_only_3mf);
             if (nozzle_given || plate_needed) {
                 // The printer preset this run's settings belong to: the name
@@ -6393,7 +6246,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 Slic3r::Vec3d moved;
                 {
                     PlateScope scope(model, run_plate);
-                    shrink_to_new_bed = move_to_new_bed(project_facts, settings_merge.machine_switch, model, config,
+                    shrink_to_new_bed = move_to_new_bed(context, project_facts, settings_merge.machine_switch, model, config,
                                                         index, is_sequence, moved);
                 }
                 if (moved.x() != 0. || moved.y() != 0.) {
@@ -7180,13 +7033,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // (BambuStudio.cpp 4669-4914; OrcaSlicer.cpp 4006-4175). The
         // official checks the plates of a project (plate_obj_size_infos
         // exists only then, BambuStudio.cpp 4646-4658), every one of them.
-        if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check") && g_downward_run.done) {
+        if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check") && context.g_downward_run.done) {
             // Every plate was checked by the run's first call.
             outcome.downward_checked = true;
-            outcome.downward_printers = g_downward_run.printers;
-            outcome.downward_failed = g_downward_run.failed;
-            outcome.sequence_plate = g_downward_run.sequence_plate;
-            outcome.multi_nozzle_diameters = g_downward_run.multi_nozzle_diameters;
+            outcome.downward_printers = context.g_downward_run.printers;
+            outcome.downward_failed = context.g_downward_run.failed;
+            outcome.sequence_plate = context.g_downward_run.sequence_plate;
+            outcome.multi_nozzle_diameters = context.g_downward_run.multi_nozzle_diameters;
         } else if (o.given_flag("downward_check") && o.cli.opt_bool("downward_check")) {
             if (plate_data.empty()) {
                 const std::string why = "--downward-check checks the plates of a 3MF project; this input has none";
@@ -7238,9 +7091,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 } else {
                     plate.loaded = std::make_unique<Slic3r::Model>();
                     if (assemble_input) {
-                        for (const Slic3r::ModelObject* object : g_assemble->plates[index].loaded_obj_list)
+                        for (const Slic3r::ModelObject* object : context.g_assemble->plates[index].loaded_obj_list)
                             plate.loaded->add_object(*object);
-                    } else if (!load_plate_objects(input_file, index + 1, *plate.loaded)) {
+                    } else if (!load_plate_objects(context, input_file, index + 1, *plate.loaded)) {
                         const std::string why = "--downward-check could not read plate " + std::to_string(index + 1) +
                                                 " of " + input_file + ".";
                         std::cerr << "Error: " << why << "\n";
@@ -7313,18 +7166,18 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (printers.empty())
                     continue;
                 const std::vector<std::string> failed = slicer_cli::downward_failures(
-                    printers, downward_plate_size(*plate.model, config, plate.index, plate.is_sequence),
+                    printers, downward_plate_size(context, *plate.model, config, plate.index, plate.is_sequence),
                     plate.is_sequence, config, project_facts, has_support);
                 for (const std::string& name : failed)
                     if (std::find(outcome.downward_failed.begin(), outcome.downward_failed.end(), name) ==
                         outcome.downward_failed.end())
                         outcome.downward_failed.push_back(name);
             }
-            g_downward_run.done = true;
-            g_downward_run.printers = outcome.downward_printers;
-            g_downward_run.failed = outcome.downward_failed;
-            g_downward_run.sequence_plate = outcome.sequence_plate;
-            g_downward_run.multi_nozzle_diameters = outcome.multi_nozzle_diameters;
+            context.g_downward_run.done = true;
+            context.g_downward_run.printers = outcome.downward_printers;
+            context.g_downward_run.failed = outcome.downward_failed;
+            context.g_downward_run.sequence_plate = outcome.sequence_plate;
+            context.g_downward_run.multi_nozzle_diameters = outcome.multi_nozzle_diameters;
         }
 
         // --pipe: the files are loaded (BambuStudio.cpp 4923-4926;
@@ -7340,7 +7193,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
         // this printer's bed (PartPlateList::compute_origin, PartPlate.cpp
         // 4306-4341), now that the bed is known.
         if (first_call && assemble_input) {
-            const int count = (int)g_assemble->plates.size();
+            const int count = (int)context.g_assemble->plates.size();
             for (int k = 0; k < count && k < (int)rs.plates.size(); ++k) {
                 const Slic3r::Vec2d origin = plate_grid_origin(config, Slic3r::Semver(), k, count);
                 rs.plates[k].origin = origin;
@@ -7458,7 +7311,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     used_filaments.insert(filament_ids[index]);
             ProjectPlan& plan = rs.plan;
             const Slic3r::DynamicPrintConfig& file_config = plan_file_config ? *plan_file_config : config;
-            if (!plan_project_plates(model, config, file_config, plan_file_version, plate_data, (int)used_filaments.size(),
+            if (!plan_project_plates(context, model, config, file_config, plan_file_version, plate_data, (int)used_filaments.size(),
                                      global_arrange || o.arrange != 0, plan, outcome)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
@@ -7537,7 +7390,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         known_plates.push_back(p);
             }
             std::string detail;
-            if (const int refused = check_run_outputs(o, known_plates, &model, &detail, after_slice_actions_only,
+            if (const int refused = check_run_outputs(context, o, known_plates, &model, &detail, after_slice_actions_only,
                                                       after_slice_actions_only ? &rs.reserved_outputs : nullptr,
                                                       after_slice_actions_only ? nullptr : &rs.reserved_outputs)) {
                 set_outcome_failure(outcome, refused, detail);
@@ -7652,9 +7505,9 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // OrcaSlicer.cpp 4582-4816), every plate of the run in its
                 // own frame.
                 for (int arranged_plate = plate_id > 0 ? plate_id : 1;
-                     arranged_plate <= (plate_id > 0 ? plate_id : (int)g_assemble->plates.size()); ++arranged_plate) {
+                     arranged_plate <= (plate_id > 0 ? plate_id : (int)context.g_assemble->plates.size()); ++arranged_plate) {
                 const int arrange_plate_index = arranged_plate - 1;
-                const slicer_cli::AssemblePlate& plate = g_assemble->plates[arrange_plate_index];
+                const slicer_cli::AssemblePlate& plate = context.g_assemble->plates[arrange_plate_index];
                 // A plate of --slice 0 reads its own settings (plate_params)
                 // over the run's, as its own slice does.
                 Slic3r::DynamicPrintConfig plate_settings_copy;
@@ -7668,8 +7521,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 Slic3r::DynamicPrintConfig& config_k = plate_id == 0 ? plate_settings_copy : config;
                 PlateScope scope(model, rs.plate(arranged_plate));
                 if (plate.need_arrange) {
-                    if (!arrange_assemble_plate(model, config_k, arrange_plate_index, plate.filaments_count,
-                                                g_assemble->model, outcome)) {
+                    if (!arrange_assemble_plate(context, model, config_k, arrange_plate_index, plate.filaments_count,
+                                                context.g_assemble->model, outcome)) {
                         std::cerr << "Error: " << outcome.error_string << "\n";
                         return 1;
                     }
@@ -7693,7 +7546,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     const bool has_wipe_tower_position =
                         states_tower(settings_merge.load_process_config) || states_tower(o.extra_config);
                     if (!is_seq_print && plate.filaments_count > 1 && !has_wipe_tower_position)
-                        assemble_tower_inside_plate(config_k, model, arrange_plate_index, /*keep_existing=*/false);
+                        assemble_tower_inside_plate(context, config_k, model, arrange_plate_index, /*keep_existing=*/false);
                 }
                 // The plate's tower entry goes into the run's settings.
                 if (plate_id == 0)
@@ -7714,14 +7567,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     model, config, arrange_plate_index, outcome.duplicate_count, skip_ids,
                     [&](Slic3r::Model& m, Slic3r::DynamicPrintConfig& c, int& landed) {
                         PlateOutcome scratch = outcome;
-                        return arrange_on_bed(m, c, arrange_plate_index, sliced_filament_count, scratch, &landed);
+                        return arrange_on_bed(context, m, c, arrange_plate_index, sliced_filament_count, scratch, &landed);
                     });
                 // Copies the loop left off the plate stand wholly outside it
                 // and are left out by the inside check below.
                 outcome.duplicate_count = reps.copies_kept;
             } else if ((o.arrange_forced() || auto_arrange_model_files || clearance_arrange) && !rs.plan.done) {
                 PlateScope scope(model, rs.plate(plate_id));
-                if (!arrange_on_bed(model, config, arrange_plate_index, sliced_filament_count, outcome)) {
+                if (!arrange_on_bed(context, model, config, arrange_plate_index, sliced_filament_count, outcome)) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
@@ -8014,7 +7867,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                                                             user_set_tower, o.given_flag("arrange"))) {
                 // The same writer the assemble and fixed-plate paths use, so the
                 // corner and its margin live in one place.
-                assemble_tower_default_corner(config, std::max(0, plate_id - 1),
+                assemble_tower_default_corner(context, config, std::max(0, plate_id - 1),
                                               WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat());
             }
 #endif
@@ -8538,7 +8391,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
             // Again here: the project rebase and the desktop plate type load
             // presets after the call at the top of this function, and each
             // points data_dir() at a staging folder its scope then removes.
-            slicer_cli::snapmaker_keep_data_dir(run_backup_path());
+            slicer_cli::snapmaker_keep_data_dir(run_backup_path(context));
 #endif
             std::cout << "Slicing...\n";
             if (!load_dir.empty() && print.load_cached_data(load_dir) == 0) {
@@ -8616,7 +8469,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         return 1;
                     outcome.exported = true;
                     if (!o.export_3mf.empty())
-                        record_plate_for_export(print, model, config, gcode_result, output_file, outcome,
+                        record_plate_for_export(context, print, model, config, gcode_result, output_file, outcome,
                                                 plate_origin);
                     if (o.progress)
                         emit_progress(outcome, 100, "Slicing finished");
@@ -8961,7 +8814,7 @@ static int run_info(const std::string& argv0, const std::string& path, const std
 /// listing its instances, and each sliced plate gets its G-code and slice
 /// facts. No thumbnails are rendered (the CLI has no OpenGL), so a project
 /// keeps the plate pictures it came with.
-static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path& outdir, RunState& rs,
+static int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::filesystem::path& outdir, RunState& rs,
                              std::vector<PlateOutcome>& outcomes, const Slic3r::DynamicPrintConfig& project,
                              const std::set<std::string>* given_settings, std::string& error) {
     using namespace Slic3r;
@@ -8978,7 +8831,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     // load's own (run_backup_path).
     model.set_backup_path("detach");
     const std::string export_backup =
-        run_staging.add((boost::filesystem::temp_directory_path() /
+        context.run_staging.add((boost::filesystem::temp_directory_path() /
                          boost::filesystem::unique_path("slicer_cli_export-%%%%%%%%")).string());
     model.set_backup_path(export_backup);   // removed with the run's other staging folders
     // Detached again when this function ends, so this model's destruction does
@@ -9022,7 +8875,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     // Each sliced plate's slice result (BambuStudio.cpp 7483-7532).
     for (const PlateOutcome& out : outcomes) {
         if (!out.plate_data) continue;
-        const int idx = geometry_input && !g_assemble ? 0 : out.plate_id - 1;
+        const int idx = geometry_input && !context.g_assemble ? 0 : out.plate_id - 1;
         if (idx < 0 || idx >= count) continue;
         PlateData* pd = plates[idx];
         const PlateData& sliced = *out.plate_data;
@@ -9069,9 +8922,9 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     if (!rs.settings_merge.printer_model_id.empty())
         for (PlateData* pd : plates)
             pd->printer_model_id = rs.settings_merge.printer_model_id;
-    if (g_assemble)
-        for (int k = 0; k < count && k < (int)g_assemble->plates.size(); ++k)
-            plates[k]->plate_name = g_assemble->plates[k].plate_name;
+    if (context.g_assemble)
+        for (int k = 0; k < count && k < (int)context.g_assemble->plates.size(); ++k)
+            plates[k]->plate_name = context.g_assemble->plates[k].plate_name;
 
     // The presets the project carries, and the "(auto)" process a printer
     // change makes (BambuStudio.cpp 3094).
@@ -9098,7 +8951,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     // The slice ran its custom G-code with the legacy placeholder aliased
     // (normalize_legacy_gcode_tokens, before print.apply); the project
     // states the same templates. The slice already reported the alias.
-    if (!geometry_input && !g_assemble && o.normalize_legacy_gcode)
+    if (!geometry_input && !context.g_assemble && o.normalize_legacy_gcode)
         normalize_legacy_gcode_tokens(config, /*report_event=*/false);
     // The settings this run changed, listed as the desktop lists them when it
     // saves (desktop_presets.hpp): a project is opened over the presets and
@@ -9137,7 +8990,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
     for (size_t i = 0; i < plates.size(); ++i) {
         PlateBBoxData* found = nullptr;
         for (const PlateOutcome& out : outcomes)
-            if (out.plate_bbox && (geometry_input && !g_assemble ? i == 0 : out.plate_id - 1 == int(i)))
+            if (out.plate_bbox && (geometry_input && !context.g_assemble ? i == 0 : out.plate_id - 1 == int(i)))
                 found = out.plate_bbox.get();
         bbox_storage.push_back(std::make_unique<PlateBBoxData>(found ? *found : PlateBBoxData()));
         plate_bboxes.push_back(bbox_storage.back().get());
@@ -9211,7 +9064,7 @@ static int export_sliced_3mf(const CliOptions& o, const boost::filesystem::path&
 /// pattern): their names are taken, so every output still to come is called
 /// out against them, and they are not checked or run again. `reserve` hands
 /// the outputs of those earlier actions back for that second check.
-static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
+static int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
                              std::string* detail, bool after_slice_actions_only,
                              const std::vector<RunOutput>* reserved,
                              std::vector<RunOutput>* reserve) {
@@ -9315,7 +9168,7 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
     // With the STL and OBJ files the assemble list names, as its loader opens
     // them (the path as written, construct_assemble_list): they were read into
     // the model, and an output over one would replace the user's part.
-    std::vector<std::string> inputs = named_input_files(o);
+    std::vector<std::string> inputs = named_input_files(context, o);
     // The files the loaders read beside those models (an OBJ's mtllib file,
     // its textures, a glTF's buffers), as each loader resolves them: the
     // user's files too, named only inside the model.
@@ -9324,8 +9177,8 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
         for (const std::string& file : o.input_files)
             for (std::string& s : slicer_cli::loader_side_files(file, true))
                 side.push_back(std::move(s));
-        if (g_assemble)
-            for (const std::string& file : g_assemble->sources)
+        if (context.g_assemble)
+            for (const std::string& file : context.g_assemble->sources)
                 for (std::string& s : slicer_cli::loader_side_files(file, false))
                     side.push_back(std::move(s));
         inputs.insert(inputs.end(), side.begin(), side.end());
@@ -9336,7 +9189,7 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
         if (detail != nullptr)
             *detail = sentence;
         else if (o.slice_mode)
-            write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+            write_result_json(context, outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
                               cli_error_sentence(CLI_INVALID_PARAMS) + " " + sentence, {}, 0, 0);
         std::cerr << "Error: " << sentence << "\n";
         emit_event({{"event","input_error"}, {"tag", tag}, {"message", sentence}});
@@ -9439,7 +9292,7 @@ static int check_run_outputs(const CliOptions& o, const std::vector<int>& plates
 /// call runs. The official loop stops at the first plate that fails
 /// (flush_and_exit inside the plate loop, BambuStudio.cpp 6533-7240), and so
 /// does this one. The exit status is the official CLI_* code of that failure.
-static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
+static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::Calib_Params& calib_params) {
     namespace fs = boost::filesystem;
     const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
     std::vector<PlateOutcome> outcomes;
@@ -9465,16 +9318,16 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         // this function's caller — lands on none of them. They stay in hand
         // until the list is the run's (g_assemble).
         const slicer_cli::StepResult built = slicer_cli::load_assemble_list(assemble_file, *list);
-        g_assemble_pending_sources = list->sources;
+        context.g_assemble_pending_sources = list->sources;
         if (built.code != 0) {
-            write_result_json(outdir.string(), built.code, 0, cli_error_sentence(built.code) + " " + built.message, {}, 0, 0);
+            write_result_json(context, outdir.string(), built.code, 0, cli_error_sentence(built.code) + " " + built.message, {}, 0, 0);
             std::cerr << "Error: " << built.message << "\n";
             emit_event({{"event","input_error"}, {"tag","AssembleListRefused"}, {"path", assemble_file},
                         {"message", built.message}});
             return built.code;
         }
-        g_assemble = std::move(list);
-        g_assemble_pending_sources.clear();
+        context.g_assemble = std::move(list);
+        context.g_assemble_pending_sources.clear();
     } else
     // A missing input is the official "not found", not an unparseable model:
     // the official CLI checks every input before loading it
@@ -9486,7 +9339,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             // The path could not be checked (permissions, I/O): say so, not
             // "not found".
             const std::string detail = "Cannot check the input " + o.input_file + ": " + exists_ec.message();
-            write_result_json(outdir.string(), CLI_ENVIRONMENT_ERROR, o.slice_plate,
+            write_result_json(context, outdir.string(), CLI_ENVIRONMENT_ERROR, o.slice_plate,
                               cli_error_sentence(CLI_ENVIRONMENT_ERROR) + " " + detail, {}, 0, 0);
             std::cerr << "Error: " << detail << "\n";
             emit_event({{"event","input_error"}, {"tag","InputUnreadable"}, {"path", o.input_file},
@@ -9494,7 +9347,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             return CLI_ENVIRONMENT_ERROR;
         }
         if (!input_exists) {
-            write_result_json(outdir.string(), CLI_FILE_NOTFOUND, o.slice_plate,
+            write_result_json(context, outdir.string(), CLI_FILE_NOTFOUND, o.slice_plate,
                               cli_error_sentence(CLI_FILE_NOTFOUND), {}, 0, 0);
             std::cerr << "No such file: " << o.input_file << "\n";
             emit_event({{"event","input_error"}, {"tag","InputNotFound"}, {"path", o.input_file},
@@ -9509,8 +9362,8 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // (BambuStudio.cpp 2192-2196).
     int plate_count = 1;
     bool per_plate_load = false;
-    if (g_assemble) {
-        plate_count = int(g_assemble->plates.size());
+    if (context.g_assemble) {
+        plate_count = int(context.g_assemble->plates.size());
         per_plate_load = true;
     } else if (slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::Project) {
         // A geometry-only 3MF (no project settings) loads whole as model
@@ -9531,13 +9384,13 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     rs.file_plate_count = plate_count;
     int plan_code = 0;
     std::string plan_error;
-    const bool trailing = per_plate_load && !g_assemble && trailing_models_port(o);
+    const bool trailing = per_plate_load && !context.g_assemble && trailing_models_port(o);
     std::optional<PlateOutcome> prepare_failure;
     const auto prepare_run = [&](int prepare_plate) {
         PlateOutcome prepare_outcome;
         prepare_outcome.prepare_pass = true;
         prepare_outcome.plate_id = prepare_plate;
-        const int rc = slice_one_plate(o, calib_params, rs, prepare_plate, std::string(), prepare_outcome);
+        const int rc = slice_one_plate(context, o, calib_params, rs, prepare_plate, std::string(), prepare_outcome);
         if (rc == 0 && prepare_outcome.cli_code == 0 && rs.prepared)
             return;
         if (prepare_outcome.cli_code == 0)
@@ -9559,7 +9412,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     }
 
     if (plan_code == 0 && o.slice_plate > plate_count) {
-        write_result_json(outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+        write_result_json(context, outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
                           cli_error_sentence(CLI_INVALID_PARAMS) + " --slice " + std::to_string(o.slice_plate) +
                           " but the file has only " + std::to_string(plate_count) + " plate(s).",
                           {}, 0, 0);
@@ -9645,7 +9498,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     // add plates the pre-arrange count does not know (BambuStudio.cpp
     // 5627-5722; OrcaSlicer.cpp 4887-4983), and a plate_<n>.gcode it then
     // writes would be overwritten. `plates` is the set this run slices.
-    if (const int refused = check_run_outputs(o, plates, &rs.model, nullptr))
+    if (const int refused = check_run_outputs(context, o, plates, &rs.model, nullptr))
         return refused;
 
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
@@ -9660,7 +9513,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
         slicer_cli::diagnostics::held_events = &held;
         int rc = 0;
         try {
-            rc = slice_one_plate(o, calib_params, rs, per_plate_load ? plates[i] : 0, outcome.gcode_path, outcome);
+            rc = slice_one_plate(context, o, calib_params, rs, per_plate_load ? plates[i] : 0, outcome.gcode_path, outcome);
         } catch (...) {
             slicer_cli::diagnostics::held_events = nullptr;
             throw;
@@ -9710,7 +9563,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             boost::system::error_code ignored;
             fs::remove(outcome.gcode_path, ignored);
         }
-        const int rc = slice_one_plate(o, calib_params, rs, per_plate_load ? plates[i] : 0,
+        const int rc = slice_one_plate(context, o, calib_params, rs, per_plate_load ? plates[i] : 0,
                                        outcome.gcode_path, outcome);
         // A failure that set no official code (an engine exception in the
         // process or export step) is the official CLI's slicing failure with
@@ -9768,7 +9621,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
             if (slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
                 slicer_cli::trim_project_roster_for_switch(project);
 #endif
-            code = export_sliced_3mf(o, outdir, rs, outcomes, project, presets_only ? &given_settings : nullptr,
+            code = export_sliced_3mf(context, o, outdir, rs, outcomes, project, presets_only ? &given_settings : nullptr,
                                      export_error);
         } catch (const std::exception& e) {
             code = CLI_EXPORT_3MF_ERROR;
@@ -9787,7 +9640,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     const int reported_plate = (code != 0 && !outcomes.empty())
                                    ? (outcomes.back().run_step_failed ? 0 : outcomes.back().plate_id)
                                    : o.slice_plate;
-    const bool result_written = write_result_json(outdir.string(), code, reported_plate, error_string, outcomes,
+    const bool result_written = write_result_json(context, outdir.string(), code, reported_plate, error_string, outcomes,
                                                   std::max(0LL, total_ms - sliced_ms - export_ms), export_ms);
     if (code != 0)
         std::cerr << "Error: " << error_string << "\n";
@@ -9809,7 +9662,7 @@ static int run_slice_mode(const CliOptions& o, Slic3r::Calib_Params& calib_param
     return code;
 }
 
-static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params) {
+static int run_cli_slice(CliRunContext& context, const CliOptions& o, Slic3r::Calib_Params& calib_params) {
 #ifdef ENGINE_BAMBU
     // --allow-mix-temp has no engine hook on Bambu 2.9.1 (no plate-level
     // temperature-mix check to lift); a caller that passes it is told once,
@@ -9821,11 +9674,11 @@ static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params
                                 "temperature-mix check to lift"}});
 #endif
     if (o.slice_mode)
-        return run_slice_mode(o, calib_params);
+        return run_slice_mode(context, o, calib_params);
     PlateOutcome outcome;
     outcome.plate_id = o.plate_id;
     RunState rs;
-    const int rc = slice_one_plate(o, calib_params, rs, o.plate_id, o.output_file, outcome);
+    const int rc = slice_one_plate(context, o, calib_params, rs, o.plate_id, o.output_file, outcome);
     // --progress on the single-file call ends like --slice: 100 once the
     // G-code is written ("All done, Success", BambuStudio.cpp 8237).
     if (rc == 0 && o.progress)
@@ -9839,6 +9692,7 @@ static int run_cli_slice(const CliOptions& o, Slic3r::Calib_Params& calib_params
 }
 
 int main(int argc, char** argv) {
+    static CliRunContext context;
     // Name the main thread and save its id first, as the official command
     // lines start (BambuStudio.cpp:1490-1493 at 926a719, OrcaSlicer.cpp
     // 1189-1192 at 8500fcd, Snapmaker_Orca.cpp:1045-1048 at bac6fd5). On
@@ -9901,7 +9755,7 @@ int main(int argc, char** argv) {
     slicer_cli::CalibOptions& calib_opts = mode_args.calib;
 
     for (int i = 1; i < argc; ++i)
-        g_command_line_words.emplace_back(argv[i]);
+        context.g_command_line_words.emplace_back(argv[i]);
 
     // subcommand: slicer_cli layout capabilities --json
     if (argc >= 3 && std::string(argv[1]) == "layout" && std::string(argv[2]) == "capabilities") {
@@ -9924,9 +9778,9 @@ int main(int argc, char** argv) {
                 const std::string dir = probe.outputdir.empty() ? "." : probe.outputdir;
                 boost::system::error_code mk;
                 boost::filesystem::create_directories(dir, mk);
-                g_result_json_options = &probe;
-                g_result_json_mode = &probe_mode;
-                write_result_json(dir, CLI_INVALID_PARAMS, probe.slice_mode ? std::max(0, probe.slice_plate) : 0,
+                context.g_result_json_options = &probe;
+                context.g_result_json_mode = &probe_mode;
+                write_result_json(context, dir, CLI_INVALID_PARAMS, probe.slice_mode ? std::max(0, probe.slice_plate) : 0,
                                   cli_error_sentence(CLI_INVALID_PARAMS) +
                                       " layout capabilities takes --json and nothing else; run the slice without it.",
                                   {}, 0, 0);
@@ -9974,8 +9828,8 @@ int main(int argc, char** argv) {
 
     {
         slicer_cli::ParseRefusal refusal;
-        g_result_json_options = &o;
-        g_result_json_mode = &mode_args;
+        context.g_result_json_options = &o;
+        context.g_result_json_mode = &mode_args;
         if (!slicer_cli::parse_command_line(argc, argv, o, mode_args, refusal)) {
             std::cerr << "Error: " << refusal.message << "\n";
             if (refusal.with_usage) {
@@ -9991,13 +9845,13 @@ int main(int argc, char** argv) {
                 const std::string dir = o.outputdir.empty() ? "." : o.outputdir;
                 boost::system::error_code mk;
                 boost::filesystem::create_directories(dir, mk);
-                write_result_json(dir, refusal.code, o.slice_mode ? std::max(0, o.slice_plate) : 0,
+                write_result_json(context, dir, refusal.code, o.slice_mode ? std::max(0, o.slice_plate) : 0,
                                   cli_error_sentence(refusal.code) + " " + refusal.message, {}, 0, 0);
                 return refusal.code;
             }
             return 1;
         }
-        g_command_line_parsed = true;
+        context.g_command_line_parsed = true;
     }
     // --help: the flags. With --slice the run goes on: the official prints its
     // help as one action of its loop and runs the others, --slice among them
@@ -10018,7 +9872,7 @@ int main(int argc, char** argv) {
         const std::string dir = o.outputdir.empty() ? "." : o.outputdir;
         boost::system::error_code mk;
         boost::filesystem::create_directories(dir, mk);
-        write_result_json(dir, code, o.slice_plate, cli_error_sentence(code) + " " + sentence, {}, 0, 0);
+        write_result_json(context, dir, code, o.slice_plate, cli_error_sentence(code) + " " + sentence, {}, 0, 0);
         return code;
     };
     if (o.verbose)
@@ -10029,12 +9883,12 @@ int main(int argc, char** argv) {
     // The arrange switches (read in arrange_on_bed).
     {
         auto flag = [&](const char* key, bool fallback) { return o.given_flag(key) ? o.cli.opt_bool(key) : fallback; };
-        g_arrange_switches.enable_timelapse            = flag("enable_timelapse", false);
-        g_arrange_switches.allow_rotations             = flag("allow_rotations", false);
-        g_arrange_switches.allow_multicolor_oneplate   = flag("allow_multicolor_oneplate", true);
-        g_arrange_switches.avoid_extrusion_cali_region = flag("avoid_extrusion_cali_region", false);
+        context.g_arrange_switches.enable_timelapse            = flag("enable_timelapse", false);
+        context.g_arrange_switches.allow_rotations             = flag("allow_rotations", false);
+        context.g_arrange_switches.allow_multicolor_oneplate   = flag("allow_multicolor_oneplate", true);
+        context.g_arrange_switches.avoid_extrusion_cali_region = flag("avoid_extrusion_cali_region", false);
 #ifdef ENGINE_BAMBU
-        g_skip_useless_pick = flag("skip_useless_pick", false);
+        context.g_skip_useless_pick = flag("skip_useless_pick", false);
 #endif
     }
 
@@ -10172,12 +10026,12 @@ int main(int argc, char** argv) {
             // --printer-preset on a project 3MF: the desktop app's printer
             // switch (stage_named_presets_for_project). The presets named are
             // written out in full for the merge --load-settings already runs.
-            const std::string dir = run_staging.add((boost::filesystem::temp_directory_path() /
+            const std::string dir = context.run_staging.add((boost::filesystem::temp_directory_path() /
                                                      boost::filesystem::unique_path("slicer_cli_preset-%%%%%%%%")).string());
             resolved = stage_named_presets_for_project(o, dir, code, error);
         } else {
-            g_preset_config = std::make_unique<Slic3r::DynamicPrintConfig>();
-            resolved = resolve_named_presets(o, *g_preset_config, code, error);
+            context.g_preset_config = std::make_unique<Slic3r::DynamicPrintConfig>();
+            resolved = resolve_named_presets(context, o, *context.g_preset_config, code, error);
         }
         if (!resolved) {
             emit_event({{"event","preset_error"}, {"tag","NamedPresetRefused"}, {"message", error}});
@@ -10185,7 +10039,7 @@ int main(int argc, char** argv) {
             if (o.slice_mode) {
                 boost::system::error_code mk;
                 boost::filesystem::create_directories(o.outputdir.empty() ? "." : o.outputdir, mk);
-                write_result_json(o.outputdir.empty() ? "." : o.outputdir, code, o.slice_plate,
+                write_result_json(context, o.outputdir.empty() ? "." : o.outputdir, code, o.slice_plate,
                                   cli_error_sentence(code) + " " + error, {}, 0, 0);
                 return code;
             }
@@ -10478,5 +10332,5 @@ int main(int argc, char** argv) {
         slicer_cli::pipe_update(1, "Start to load files");
     }
 
-    return run_cli_slice(o, calib_params);
+    return run_cli_slice(context, o, calib_params);
 }
