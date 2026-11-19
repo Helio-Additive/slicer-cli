@@ -4363,7 +4363,7 @@ assert p, "no filament preset " + fil
 skip = {"name", "inherits", "from", "type", "instantiation", "setting_id", "filament_id", "compatible_printers",
         "compatible_printers_condition", "compatible_prints", "compatible_prints_condition", "version", "description"}
 # filament_extruder_variant is the variant-slot table, sized by the extruders
-# of the printer on purpose (see the padding in src/cli_filament_config.cpp), not one value per filament.
+# of the printer on purpose (see the NORM_VEC pass in src/main.cpp), not one value per filament.
 skip.add("filament_extruder_variant")
 bad = []
 for k, v in p.items():
