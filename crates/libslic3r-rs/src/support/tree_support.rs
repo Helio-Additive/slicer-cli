@@ -6350,6 +6350,997 @@ impl<'a> TreeSupport<'a> {
     }
 }
 
+// ============================================================================
+// The toolpaths (TreeSupport.cpp:1598-1743, 2990-3496)
+// ============================================================================
+
+use crate::extrusion_entity::{ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole, ExtrusionPath, ExtrusionRole};
+use crate::fill::FillParams;
+use crate::flow::{Flow, FlowResult};
+use crate::print_config::InfillPattern;
+use crate::support::support_common::{ExtrusionEntitiesPtr, SupportFill, SupportFillFactory};
+
+/// `FillParams fill_params;` (FillBase.hpp:51-110): `density` 0, `ExtrusionRole(0)`, a default flow.
+///
+/// FIDELITY-NOTE: `FillParams::new()` of the crate starts at `density` 1, erInternalInfill and a flow.
+fn default_fill_params() -> FillParams {
+    let mut fill_params = FillParams::new();
+    fill_params.density = 0.;
+    fill_params.dont_adjust = false;
+    fill_params.dont_sort = false;
+    fill_params.extrusion_role = ExtrusionRole::None;
+    fill_params.flow = Flow::default_constructed();
+    fill_params
+}
+
+// MultiPoint.hpp `BoundingBox MultiPoint::bounding_box() const { return BoundingBox(this->points); }`
+fn multipoint_bounding_box(points: &[Point]) -> BoundingBox {
+    let mut bbox = BoundingBox::from_points(points);
+    if !bbox.is_defined() {
+        bbox.min = Point::new(0, 0);
+        bbox.max = Point::new(0, 0);
+    }
+    bbox
+}
+
+// ExtrusionEntity.hpp:647-656 `inline void extrusion_entities_append_paths(ExtrusionEntitiesPtr &dst, Polylines &&polylines,
+// ExtrusionRole role, double mm3_per_mm, float width, float height, bool can_reverse = true)`
+fn extrusion_entities_append_paths(dst: &mut ExtrusionEntitiesPtr, polylines: crate::geometry::Polylines, role: ExtrusionRole, mm3_per_mm: f64, width: f32, height: f32) {
+    crate::support::support_common::extrusion_entities_append_paths(dst, polylines, role, mm3_per_mm, width, height, true);
+}
+
+// ExtrusionEntity.hpp:732-744 `inline void extrusion_entities_append_loops(ExtrusionEntitiesPtr &dst, Polygons &&loops,
+// ExtrusionRole role, double mm3_per_mm, float width, float height)`
+fn extrusion_entities_append_loops(dst: &mut ExtrusionEntitiesPtr, loops: Polygons, role: ExtrusionRole, mm3_per_mm: f64, width: f32, height: f32) {
+    dst.reserve(loops.len());
+    for poly in loops {
+        if poly.is_valid() {
+            let mut path = ExtrusionPath::with_params(role, mm3_per_mm, width as f64, height as f64, false);
+            path.polyline.points = poly.points;
+            let front = path.polyline.points[0];
+            path.polyline.points.push(front);
+            dst.push(ExtrusionEntityType::Loop(ExtrusionLoop::from_path(path, ExtrusionLoopRole::default())));
+        }
+    }
+}
+
+// `ExtrusionEntity::first_point()` of an entity of a vector of `ExtrusionEntity*`.
+fn extrusion_entity_first_point(entity: &ExtrusionEntityType) -> Point {
+    match entity {
+        ExtrusionEntityType::Path(path) => path.first_point(),
+        ExtrusionEntityType::MultiPath(multipath) => multipath.first_point(),
+        ExtrusionEntityType::Loop(loop_) => loop_.first_point(),
+        // ExtrusionEntityCollection.hpp `Point first_point() const { return this->entities.front()->first_point(); }`
+        ExtrusionEntityType::Collection(collection) => extrusion_entity_first_point(&collection.entities[0]),
+    }
+}
+
+// `static_cast<ExtrusionEntityCollection *>(entity)->empty()` (TreeSupport.cpp:1730, ShortestPath.cpp:1034) on an
+// entity that is not a collection. The cast reads the three words after the vtable pointer as the vector
+// `entities`: of an ExtrusionLoop and an ExtrusionMultiPath that is `paths`, so the entity counts as empty when
+// it has no paths; of an ExtrusionPath it is the vtable pointer of the polyline and the begin of its points,
+// which never are equal.
+fn extrusion_entity_empty_as_collection(entity: &ExtrusionEntityType) -> bool {
+    match entity {
+        ExtrusionEntityType::Path(_) => false,
+        ExtrusionEntityType::MultiPath(multipath) => multipath.paths.is_empty(),
+        ExtrusionEntityType::Loop(loop_) => loop_.paths.is_empty(),
+        ExtrusionEntityType::Collection(collection) => collection.entities.is_empty(),
+    }
+}
+
+// TreeSupport.cpp:1598-1623
+// `Surface surface(stInternal, std::move(expolygon))` binds to `Surface(SurfaceType, const ExPolygon &&)`
+// (Surface.hpp:70), which copies: the expolygon of the caller stays as it is.
+pub fn fill_expolygon_generate_paths(
+    dst: &mut ExtrusionEntitiesPtr,
+    expolygon: &mut ExPolygon,
+    filler: &mut dyn SupportFill,
+    fill_params: &FillParams,
+    role: ExtrusionRole,
+    flow: &Flow,
+) -> FlowResult<BoundingBox> {
+    let surface = crate::surface::Surface::new(crate::surface::SurfaceType::Internal, expolygon.clone());
+    // try { polylines = filler->fill_surface(&surface, fill_params); } catch (InfillFailedException &) {}
+    let polylines: crate::geometry::Polylines = filler.fill_surface(&surface, fill_params).unwrap_or_default();
+
+    // `BoundingBox fill_bbox;`: (0, 0)-(0, 0), not defined (BoundingBox.hpp:20).
+    let mut fill_bbox = multipoint_bounding_box(&[]);
+    if !polylines.is_empty() {
+        fill_bbox = multipoint_bounding_box(&polylines[0].points);
+        for polyline in &polylines {
+            fill_bbox.merge(&multipoint_bounding_box(&polyline.points));
+        }
+    }
+
+    extrusion_entities_append_paths(dst, polylines, role, flow.mm3_per_mm()?, flow.width() as f32, flow.height() as f32);
+
+    Ok(fill_bbox)
+}
+
+// TreeSupport.cpp:1625-1639
+pub fn fill_expolygons_generate_paths(
+    dst: &mut ExtrusionEntitiesPtr,
+    expolygons: &mut ExPolygons,
+    filler: &mut dyn SupportFill,
+    fill_params: &FillParams,
+    role: ExtrusionRole,
+    flow: &Flow,
+) -> FlowResult<Vec<BoundingBox>> {
+    let mut fill_boxes: Vec<BoundingBox> = Vec::new();
+    for expoly in expolygons.iter_mut() {
+        let box_ = fill_expolygon_generate_paths(dst, expoly, filler, fill_params, role, flow)?;
+        fill_boxes.push(box_);
+    }
+    Ok(fill_boxes)
+}
+
+// TreeSupport.cpp:1641-1674
+// `std::list<ExPolygon> expoly_list` with `std::map<ExPolygon *, int> depth_per_expoly`: the depth travels with
+// its expolygon. The new expolygons are inserted at the head one by one and the old head is erased after them.
+pub fn _make_loops(loops_entities: &mut ExtrusionEntitiesPtr, support_area: &mut ExPolygons, role: ExtrusionRole, wall_count: usize, flow: &Flow) -> FlowResult<()> {
+    let mut loops: Polygons = Vec::new();
+    let mut expoly_list: std::collections::VecDeque<(ExPolygon, i32)> = std::collections::VecDeque::new();
+
+    for expoly in support_area.iter_mut() {
+        expoly_list.push_back((std::mem::take(expoly), 0));
+    }
+    if expoly_list.is_empty() {
+        return Ok(());
+    }
+
+    while let Some((front, depth)) = expoly_list.pop_front() {
+        loops.extend(to_polygons(std::slice::from_ref(&front)));
+
+        // `depth_iter->second + 1 < wall_count`: the int against a size_t
+        if ((depth + 1) as usize) < wall_count {
+            //ExPolygons expolys_new = offset_ex(expoly_list.front(), -float(flow.scaled_spacing()), jtSquare);
+            // shrink and then dilate to prevent overlapping and overflow
+            let scaled_spacing = flow.scaled_spacing() as f32;
+            let expolys_new: ExPolygons = cx::offset2_ex(
+                std::slice::from_ref(&front),
+                (-1.4 * scaled_spacing as f64) as f32,
+                (0.4 * scaled_spacing as f64) as f32,
+                cx::DEFAULT_JOIN_TYPE,
+                cx::DEFAULT_MITER_LIMIT,
+            );
+
+            for expoly in expolys_new {
+                expoly_list.push_front((expoly, depth + 1));
+            }
+        }
+    }
+
+    extrusion_entities_append_loops(loops_entities, loops, role, (flow.mm3_per_mm()? as f32) as f64, flow.width() as f32, flow.height() as f32);
+    Ok(())
+}
+
+// TreeSupport.cpp:1676-1681
+pub fn make_perimeter_and_inner_brim(dst: &mut ExtrusionEntitiesPtr, support_area: &ExPolygon, wall_count: usize, flow: &Flow, role: ExtrusionRole) -> FlowResult<()> {
+    let mut support_area_new: ExPolygons =
+        cx::offset_ex_expolygon(support_area, -0.5f32 * flow.scaled_spacing() as f32, crate::clipper::JoinType::jtSquare, cx::DEFAULT_MITER_LIMIT);
+    _make_loops(dst, &mut support_area_new, role, wall_count, flow)
+}
+
+// TreeSupport.cpp:1683-1743
+#[allow(clippy::too_many_arguments)]
+pub fn make_perimeter_and_infill(
+    dst: &mut ExtrusionEntitiesPtr,
+    support_area: &ExPolygon,
+    wall_count: usize,
+    flow: &Flow,
+    role: ExtrusionRole,
+    filler_support: &mut dyn SupportFill,
+    support_density: f64,
+    infill_first: bool,
+) -> FlowResult<()> {
+    use crate::clipper::JoinType;
+    let mut support_area_new: ExPolygons = cx::offset_ex_expolygon(support_area, -0.5f32 * flow.scaled_spacing() as f32, JoinType::jtSquare, cx::DEFAULT_MITER_LIMIT);
+
+    // draw infill
+    let mut fill_params = default_fill_params();
+    // `float density`
+    fill_params.density = (support_density as f32) as f64;
+    fill_params.dont_adjust = true;
+    let mut to_infill: ExPolygons =
+        cx::offset_ex_expolygon(support_area, -(wall_count as f32) * flow.scaled_spacing() as f32, JoinType::jtSquare, cx::DEFAULT_MITER_LIMIT);
+    let fill_boxes: Vec<BoundingBox> = fill_expolygons_generate_paths(dst, &mut to_infill, filler_support, &fill_params, role, flow)?;
+
+    // allow wall_count to be zero, which means only draw infill
+    if wall_count == 0 {
+        for fill_bbox in &fill_boxes {
+            let mut fill_bbox = fill_bbox.clone();
+            // extend bounding box on x-axis
+            let angle: f32 = filler_support.fill().angle;
+            if angle.cos() >= angle.sin() {
+                fill_bbox.min.x = (fill_bbox.min.x as f64 - scale_(10.)) as Coord;
+                fill_bbox.max.x = (fill_bbox.max.x as f64 + scale_(10.)) as Coord;
+            } else {
+                fill_bbox.min.y = (fill_bbox.min.y as f64 - scale_(10.)) as Coord;
+                fill_bbox.max.y = (fill_bbox.max.y as f64 + scale_(10.)) as Coord;
+            }
+            // `to_expolygons({ fill_bbox.polygon() })`
+            let boxes: ExPolygons = vec![ExPolygon::new(fill_bbox.polygon())];
+            support_area_new = cx::diff_ex(
+                &support_area_new,
+                &cx::offset_ex(&boxes, (0.5 * flow.scaled_width() as f64) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+            );
+        }
+        // filter out small areas
+        let scaled_width = flow.scaled_width();
+        support_area_new.retain(|it| !cx::offset_ex_expolygon(it, -scaled_width as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT).is_empty());
+    }
+
+    {
+        // draw loops
+        let mut loops_entities: ExtrusionEntitiesPtr = Vec::new();
+        _make_loops(&mut loops_entities, &mut support_area_new, role, wall_count, flow)?;
+
+        if infill_first {
+            dst.extend(loops_entities);
+        } else {
+            // loops first
+            loops_entities.append(dst);
+            *dst = loops_entities;
+        }
+    }
+    dst.retain(|entity| !extrusion_entity_empty_as_collection(entity));
+    if infill_first {
+        // sort regions to reduce travel
+        let mut ordering_points: Vec<Point> = Vec::new();
+        for area in dst.iter() {
+            ordering_points.push(extrusion_entity_first_point(area));
+        }
+        let order: Vec<usize> = crate::shortest_path::chain_points(&ordering_points, None);
+        let mut old: Vec<Option<ExtrusionEntityType>> = std::mem::take(dst).into_iter().map(Some).collect();
+        let mut new_dst: ExtrusionEntitiesPtr = Vec::with_capacity(ordering_points.len());
+        for i in order {
+            // `new_dst.emplace_back(dst[i])`: the order is a permutation
+            new_dst.push(old[i].take().expect("chain_points: a permutation"));
+        }
+        *dst = new_dst;
+    }
+    Ok(())
+}
+
+// TreeSupport.cpp:3411-3423 the lambda `setOverhangDegreeImpl` of generate_toolpaths()
+fn set_overhang_degree_impl(entities: &mut ExtrusionEntitiesPtr) {
+    for entity in entities.iter_mut() {
+        match entity {
+            ExtrusionEntityType::Collection(collection) => set_overhang_degree_impl(&mut collection.entities),
+            ExtrusionEntityType::Path(path) => path.set_overhang_degree(10),
+            ExtrusionEntityType::MultiPath(multipath) => {
+                for path in multipath.paths.iter_mut() {
+                    path.set_overhang_degree(10);
+                }
+            }
+            ExtrusionEntityType::Loop(loop_) => {
+                for path in loop_.paths.iter_mut() {
+                    path.set_overhang_degree(10);
+                }
+            }
+        }
+    }
+}
+
+// TreeSupport.cpp:3000-3010 the lambda `bridge_angle_on` of generate_toolpaths()
+fn bridge_angle_on(obj_layer: Option<&Layer>, polys: &[ExPolygon], angle: &mut f64) -> bool {
+    let Some(obj_layer) = obj_layer else {
+        return false;
+    };
+    for layerm in obj_layer.regions() {
+        for surface in &layerm.fill_surfaces.surfaces {
+            // `overlaps(const ExPolygons &expolys, const ExPolygon &expoly)` (ExPolygon.cpp:197-204)
+            if surface.surface_type == crate::surface::SurfaceType::BottomBridge && polys.iter().any(|el| cx::overlaps(el, &surface.expolygon)) {
+                // Surface.hpp `double bridge_angle = -1.`
+                *angle = surface.bridge_angle.unwrap_or(-1.);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// PrintObject.cpp:6802-6812 `const Layer* PrintObject::get_layer_at_bottomz(coordf_t bottom_z, coordf_t epsilon) const`
+fn get_layer_at_bottomz(layers: &[Layer], bottom_z: CoordF, epsilon: CoordF) -> Option<&Layer> {
+    let limit_upper = bottom_z + epsilon;
+    let limit_lower = bottom_z - epsilon;
+
+    for layer in layers {
+        if layer.bottom_z() > limit_lower {
+            return if layer.bottom_z() < limit_upper { Some(layer) } else { None };
+        }
+    }
+
+    None
+}
+
+impl<'a> TreeSupport<'a> {
+    // TreeSupport.cpp:3011-3021 the lambda `bridge_angle_above` of generate_toolpaths()
+    fn bridge_angle_above(&self, print_z: CoordF, polys: &[ExPolygon], angle: &mut f64, layer_height: CoordF) -> bool {
+        let layers = self.m_object.layers();
+        if self.m_top_z_outlines.is_empty() {
+            return bridge_angle_on(
+                get_layer_at_bottomz(layers, print_z + cfg_float(self.object_config(), "support_top_z_distance"), layer_height / 10.),
+                polys,
+                angle,
+            );
+        }
+        let z_max: CoordF = print_z + self.m_top_z_max as f64 + self.m_slicing_params.max_layer_height + EPSILON;
+        // std::upper_bound(..., print_z - EPSILON, [](coordf_t z, const Layer *layer) { return z < layer->bottom_z(); })
+        let z = print_z - EPSILON;
+        let first = layers.partition_point(|layer| !(z < layer.bottom_z()));
+        let mut it = first;
+        while it != layers.len() && layers[it].bottom_z() <= z_max {
+            if bridge_angle_on(Some(&layers[it]), polys, angle) {
+                return true;
+            }
+            it += 1;
+        }
+        false
+    }
+
+    // TreeSupport.cpp:3034-3070 the lambda `generate_support_ironing_entity` of generate_toolpaths()
+    #[allow(clippy::too_many_arguments)]
+    fn generate_support_ironing_entity(
+        &self,
+        fill_factory: &dyn SupportFillFactory,
+        unioned_expolygons: &ExPolygons,
+        bbox_object: &BoundingBox,
+        ts_layer_id: usize,
+        ts_layer_print_z: CoordF,
+        temp_entity_collection: &mut ExtrusionEntitiesPtr,
+        interface_flow: &Flow,
+    ) -> FlowResult<()> {
+        // support interface ironing related generation, tree support logic
+        if self.m_support_params.enable_support_ironing && !unioned_expolygons.is_empty() {
+            let mut ironing_fill = fill_factory.new_from_type(self.m_support_params.ironing_pattern);
+            {
+                let f = ironing_fill.fill_mut();
+                f.bounding_box = bbox_object.clone();
+                f.layer_id = ts_layer_id;
+                f.z = ts_layer_print_z;
+                f.overlap = 0.;
+                f.angle = self.m_support_params.ironing_angle as f32;
+                f.spacing = self.m_support_params.ironing_line_spacing;
+                f.link_max_length = scale_(3. * f.spacing) as Coord;
+            }
+
+            let mut polys_to_iron: ExPolygons = unioned_expolygons.clone();
+            if self.m_support_params.ironing_inset > EPSILON {
+                polys_to_iron = cx::union_ex_polygons(&crate::support::support_common::cu::offset_expolygons(
+                    &polys_to_iron,
+                    (-scale_(self.m_support_params.ironing_inset)) as f32,
+                    cx::DEFAULT_JOIN_TYPE,
+                    cx::DEFAULT_MITER_LIMIT,
+                ));
+            }
+
+            // `Flow(float w, float h, float nozzle_diameter)`: the height is a product in doubles
+            let support_ironing_flow = Flow::new(
+                interface_flow.width(),
+                ((interface_flow.height() * self.m_support_params.ironing_flow_percent * 0.01) as f32) as f64,
+                interface_flow.nozzle_diameter(),
+            )?;
+            let mut ironing_fill_params = default_fill_params();
+            ironing_fill_params.density = 1.0;
+            ironing_fill_params.dont_adjust = true;
+            fill_expolygons_generate_paths(
+                // Destination
+                temp_entity_collection,
+                // Regions to fill
+                &mut polys_to_iron,
+                // Filler and its parameters
+                ironing_fill.as_mut(),
+                &ironing_fill_params,
+                // Extrusion parameters
+                ExtrusionRole::SupportIroning,
+                &support_ironing_flow,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// TreeSupport.cpp:2990-3496 `void TreeSupport::generate_toolpaths()`
+    ///
+    /// `Fill::new_from_type()` is `fill_factory` (`SupportFillFactory` of support_common.rs: the fillers of the
+    /// crate are not behind one base class). An exception of the C++ (a flow that cannot be made) is the `Err`.
+    ///
+    /// FIDELITY-NOTE: the tbb::parallel_for over the support layers runs in order: every iteration writes the
+    /// extrusions of its own layer. The lightning infill of the bases needs `generator`, which draw_circles()
+    /// only has when the caller handed in a `LightningSupportGenerator`; without one a layer is left as the C++
+    /// leaves a layer the generator has no entry for.
+    pub fn generate_toolpaths(&mut self, fill_factory: &dyn SupportFillFactory) -> FlowResult<()> {
+        use crate::print::faithful::SupportLayerAreaType;
+        use crate::print_config::enums::{SupportMaterialInterfacePattern, SupportMaterialPattern};
+        const M_PI_2: f64 = std::f64::consts::FRAC_PI_2;
+        let deg2rad = |angle: f64| -> f64 { M_PI * angle / 180.0 };
+
+        let support_extrusion_width: CoordF = self.m_support_params.support_extrusion_width;
+        let nozzle_diameter: CoordF = support_nozzle_diameter(self.m_print, cfg_int(self.object_config(), "support_filament") as u32) as CoordF;
+        let layer_height: CoordF = cfg_float(self.object_config(), "layer_height");
+        let wall_count: i32 = cfg_int(self.object_config(), "tree_support_wall_count");
+        let support_interface_spacing_cfg = cfg_float(self.object_config(), "support_interface_spacing");
+        let support_base_pattern_spacing = cfg_float(self.object_config(), "support_base_pattern_spacing");
+        let raft_first_layer_density = cfg_float(self.object_config(), "raft_first_layer_density");
+        let raft_first_layer_expansion = cfg_float(self.object_config(), "raft_first_layer_expansion");
+        let support_angle = cfg_float(self.object_config(), "support_angle");
+        let support_interface_pattern = cfg_int(self.object_config(), "support_interface_pattern");
+        let object_support_base_pattern = cfg_int(self.object_config(), "support_base_pattern");
+
+        // coconut: use same intensity settings as SupportMaterial.cpp
+        let m_support_material_interface_flow =
+            crate::support::support_parameters::support_material_interface_flow_of(self.m_object, self.m_print, self.m_slicing_params.layer_height as f32)?;
+        let interface_spacing: CoordF = support_interface_spacing_cfg + m_support_material_interface_flow.spacing();
+        let interface_density: CoordF = {
+            let v = m_support_material_interface_flow.spacing() / interface_spacing;
+            if v < 1. {
+                v
+            } else {
+                1.
+            }
+        };
+
+        if self.m_object.support_layers().is_empty() {
+            return Ok(());
+        }
+
+        // calculate fill areas for raft layers
+        let mut raft_areas: ExPolygons = Vec::new();
+        if self.m_object.layer_count() > 0 {
+            let layer = &self.m_object.layers()[0];
+            for expoly in &layer.lslices {
+                raft_areas.push(expoly.clone());
+            }
+        }
+
+        if self.m_object.support_layer_count() > self.m_raft_layers {
+            let ts_layer = &self.m_object.m_support_layers[self.m_raft_layers];
+            for expoly in &ts_layer.floor_areas {
+                raft_areas.push(expoly.clone());
+            }
+            for expoly in &ts_layer.roof_areas {
+                raft_areas.push(expoly.clone());
+            }
+            for expoly in &ts_layer.base_areas {
+                raft_areas.push(expoly.clone());
+            }
+        }
+
+        raft_areas = cx::offset_ex(&raft_areas, scale_(3.) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+
+        let mut layer_nr: usize = 0;
+        while layer_nr < self.m_slicing_params.base_raft_layers {
+            let ts_height = self.m_object.m_support_layers[layer_nr].layer.height;
+            let expand_offset: CoordF = if layer_nr == 0 { raft_first_layer_expansion } else { 0. };
+            let mut raft_areas1 = cx::offset_ex(&raft_areas, scale_(expand_offset) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+
+            let support_flow = Flow::new(support_extrusion_width, ts_height, nozzle_diameter)?;
+            let mut filler_raft = fill_factory.new_from_type(InfillPattern::Rectilinear);
+            filler_raft.fill_mut().angle = if layer_nr == 0 { (M_PI / 2.) as f32 } else { 0. };
+            filler_raft.fill_mut().spacing = support_flow.spacing();
+
+            let mut fill_params = default_fill_params();
+            let raft_density: CoordF = {
+                let v = support_flow.spacing() / (support_base_pattern_spacing + support_flow.spacing());
+                if v < 1. {
+                    v
+                } else {
+                    1.
+                }
+            };
+            fill_params.density = ((if layer_nr == 0 { raft_first_layer_density * 0.01 } else { raft_density }) as f32) as f64;
+            fill_params.dont_adjust = true;
+
+            let mut entities = std::mem::take(&mut self.m_object.m_support_layers[layer_nr].support_fills.entities);
+            // wall of first layer raft
+            if layer_nr == 0 {
+                let flow = Flow::new(support_extrusion_width, ts_height, nozzle_diameter)?;
+                extrusion_entities_append_loops(
+                    &mut entities,
+                    to_polygons(&raft_areas1),
+                    ExtrusionRole::SupportMaterial,
+                    (flow.mm3_per_mm()? as f32) as f64,
+                    flow.width() as f32,
+                    flow.height() as f32,
+                );
+                raft_areas1 = cx::offset_ex(&raft_areas1, (-(flow.scaled_spacing() as f64) / 2.) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+            }
+            let res = fill_expolygons_generate_paths(&mut entities, &mut raft_areas1, filler_raft.as_mut(), &fill_params, ExtrusionRole::SupportMaterial, &support_flow);
+            self.m_object.m_support_layers[layer_nr].support_fills.entities = entities;
+            res?;
+            layer_nr += 1;
+        }
+
+        // subtract the non-raft support bases, otherwise we'll get support base on top of raft interfaces which is not stable
+        let mut first_non_raft_base: ExPolygons = Vec::new();
+        if let Some(first_non_raft_layer) = self.m_object.m_support_layers.get(self.m_raft_layers) {
+            for area_group in &first_non_raft_layer.area_groups {
+                if area_group.type_ == SupportLayerAreaType::BaseType {
+                    first_non_raft_base.push(first_non_raft_layer.area_group_area(area_group).clone());
+                }
+            }
+        }
+        // `offset_ex(first_non_raft_base, support_extrusion_width)`: the width in mm is the delta, as the C++ has it.
+        first_non_raft_base = cx::offset_ex(&first_non_raft_base, support_extrusion_width as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+        let mut raft_base_areas: ExPolygons = cx::intersection_ex(&raft_areas, &first_non_raft_base);
+        let mut raft_interface_areas: ExPolygons = cx::diff_ex(&raft_areas, &raft_base_areas);
+
+        // raft interfaces
+        layer_nr = self.m_slicing_params.base_raft_layers;
+        while layer_nr < self.m_slicing_params.base_raft_layers + self.m_slicing_params.interface_raft_layers {
+            let (ts_height, ts_id, ts_print_z) = {
+                let ts_layer = &self.m_object.m_support_layers[layer_nr];
+                (ts_layer.layer.height, ts_layer.layer.id(), ts_layer.layer.print_z)
+            };
+
+            let support_flow = Flow::new(support_extrusion_width, ts_height, nozzle_diameter)?;
+            let mut filler_interface = fill_factory.new_from_type(InfillPattern::Rectilinear);
+            filler_interface.fill_mut().angle = (M_PI / 2.) as f32; // interface should be perpendicular to base
+            filler_interface.fill_mut().spacing = support_flow.spacing();
+
+            let mut fill_params = default_fill_params();
+            fill_params.density = (interface_density as f32) as f64;
+            fill_params.dont_adjust = true;
+
+            let mut entities = std::mem::take(&mut self.m_object.m_support_layers[layer_nr].support_fills.entities);
+            let res = (|| -> FlowResult<()> {
+                fill_expolygons_generate_paths(
+                    &mut entities,
+                    &mut raft_interface_areas,
+                    filler_interface.as_mut(),
+                    &fill_params,
+                    ExtrusionRole::SupportMaterialInterface,
+                    &support_flow,
+                )?;
+
+                if self.m_support_params.enable_support_ironing
+                    && !raft_interface_areas.is_empty()
+                    && layer_nr == self.m_slicing_params.base_raft_layers + self.m_slicing_params.interface_raft_layers - 1
+                {
+                    let bbox_object = BoundingBox::from_points_minmax(point_from_f64(-scale_(1.), -scale_(1.0)), point_from_f64(scale_(1.), scale_(1.)));
+                    self.generate_support_ironing_entity(fill_factory, &raft_interface_areas, &bbox_object, ts_id, ts_print_z, &mut entities, &support_flow)?;
+                }
+
+                fill_params.density = ((raft_first_layer_density * 0.01) as f32) as f64;
+                fill_expolygons_generate_paths(&mut entities, &mut raft_base_areas, filler_interface.as_mut(), &fill_params, ExtrusionRole::SupportMaterial, &support_flow)?;
+                Ok(())
+            })();
+            self.m_object.m_support_layers[layer_nr].support_fills.entities = entities;
+            res?;
+            layer_nr += 1;
+        }
+
+        // layers between raft and object
+        while layer_nr < self.m_raft_layers {
+            let ts_height = self.m_object.m_support_layers[layer_nr].layer.height;
+            let support_flow = Flow::new(support_extrusion_width, ts_height, nozzle_diameter)?;
+            let mut filler_raft = fill_factory.new_from_type(InfillPattern::Rectilinear);
+            filler_raft.fill_mut().angle = (M_PI / 2.) as f32;
+            filler_raft.fill_mut().spacing = support_flow.spacing();
+            let mut entities = std::mem::take(&mut self.m_object.m_support_layers[layer_nr].support_fills.entities);
+            let mut res: FlowResult<()> = Ok(());
+            for poly in &first_non_raft_base {
+                // `std::min(1, wall_count)` handed to a size_t
+                res = make_perimeter_and_infill(
+                    &mut entities,
+                    poly,
+                    1.min(wall_count) as usize,
+                    &support_flow,
+                    ExtrusionRole::SupportMaterial,
+                    filler_raft.as_mut(),
+                    interface_density,
+                    false,
+                );
+                if res.is_err() {
+                    break;
+                }
+            }
+            self.m_object.m_support_layers[layer_nr].support_fills.entities = entities;
+            res?;
+            layer_nr += 1;
+        }
+
+        if self.m_object.support_layer_count() <= self.m_raft_layers {
+            return Ok(());
+        }
+
+        // generate tree support tool paths
+        for layer_id in self.m_raft_layers..self.m_object.support_layer_count() {
+            if (self.canceled)() {
+                break;
+            }
+
+            let mut entities = std::mem::take(&mut self.m_object.m_support_layers[layer_id].support_fills.entities);
+            let res = self.generate_toolpaths_layer(
+                fill_factory,
+                layer_id,
+                &mut entities,
+                support_extrusion_width,
+                nozzle_diameter,
+                layer_height,
+                wall_count,
+                support_interface_spacing_cfg,
+                support_base_pattern_spacing,
+                raft_first_layer_density,
+                support_angle,
+                support_interface_pattern == SupportMaterialInterfacePattern::SmipGrid as i32,
+                object_support_base_pattern == SupportMaterialPattern::SmpDefault as i32,
+                deg2rad,
+                M_PI_2,
+            );
+            let ts_layer = &mut self.m_object.m_support_layers[layer_id];
+            ts_layer.support_fills.entities = entities;
+            // sort extrusions to reduce travel, also make sure walls go before infills
+            if res? && !ts_layer.support_fills.no_sort {
+                crate::shortest_path::chain_and_reorder_extrusion_entities(&mut ts_layer.support_fills.entities, None);
+            }
+        }
+        Ok(())
+    }
+
+    // TreeSupport.cpp:3184-3488: the body of the tbb::parallel_for of generate_toolpaths() for one support layer, up
+    // to the sort of its extrusions. `Ok(false)` is one of the `continue`s of the lightning block, which leave
+    // the layer without the sort.
+    #[allow(clippy::too_many_arguments)]
+    fn generate_toolpaths_layer(
+        &mut self,
+        fill_factory: &dyn SupportFillFactory,
+        layer_id: usize,
+        entities: &mut ExtrusionEntitiesPtr,
+        support_extrusion_width: CoordF,
+        nozzle_diameter: CoordF,
+        layer_height: CoordF,
+        wall_count: i32,
+        support_interface_spacing_cfg: CoordF,
+        support_base_pattern_spacing: CoordF,
+        raft_first_layer_density: CoordF,
+        support_angle: CoordF,
+        interface_pattern_grid: bool,
+        object_base_pattern_default: bool,
+        deg2rad: impl Fn(f64) -> f64,
+        m_pi_2: f64,
+    ) -> FlowResult<bool> {
+        use crate::print::faithful::SupportLayerAreaType;
+        let min1 = |v: f64| -> f64 {
+            if v < 1. {
+                v
+            } else {
+                1.
+            }
+        };
+        let bbox_object = BoundingBox::from_points_minmax(point_from_f64(-scale_(1.), -scale_(1.0)), point_from_f64(scale_(1.), scale_(1.)));
+        let mut filler_interface = fill_factory.new_from_type(self.m_support_params.contact_fill_pattern);
+        let mut filler_roof1st_layer = fill_factory.new_from_type(InfillPattern::Rectilinear);
+
+        let support_layer_count = self.m_object.support_layer_count();
+        let (ts_height, ts_print_z, ts_id, base_slab_height, interface_slab_height, planned_nozzle_diameter, planned_interface_nozzle_diameter, area_groups) = {
+            let ts_layer = &self.m_object.m_support_layers[layer_id];
+            (
+                ts_layer.layer.height,
+                ts_layer.layer.print_z,
+                ts_layer.layer.id(),
+                ts_layer.base_slab_height,
+                ts_layer.interface_slab_height,
+                ts_layer.planned_nozzle_diameter as f64,
+                ts_layer.planned_interface_nozzle_diameter as f64,
+                ts_layer.area_groups.clone(),
+            )
+        };
+        let base_height: CoordF = if base_slab_height > EPSILON { base_slab_height } else { ts_height };
+        // An interface folded onto the bed band reaches the bed as well, even when no base was folded
+        // onto this layer, and draw_circles() already gave it the first layer expansion. Its brim then
+        // has to be extruded at the interface slab's height and with the interface slab's nozzle.
+        let interface_only_bed = interface_slab_height > base_height + EPSILON;
+        let bed_height: CoordF = if interface_only_bed { interface_slab_height } else { base_height };
+        let bed_nozzle: f64 = if interface_only_bed { planned_interface_nozzle_diameter } else { planned_nozzle_diameter };
+        let base_starts_on_bed = self.m_raft_layers == 0 && ts_print_z - bed_height <= EPSILON;
+        let support_flow: Flow = if planned_nozzle_diameter > EPSILON {
+            self.m_support_params.support_material_flow_for_nozzle(planned_nozzle_diameter, base_height as f32)?
+        } else {
+            Flow::new(support_extrusion_width, base_height, nozzle_diameter)?
+        };
+        let first_layer_support_flow: Flow = if bed_nozzle > EPSILON {
+            self.m_support_params.support_material_first_layer_flow_for_nozzle(bed_nozzle, bed_height as f32)?
+        } else {
+            self.m_support_params.first_layer_flow.clone()
+        };
+        let interface_height: CoordF = if interface_slab_height > EPSILON { interface_slab_height } else { ts_height };
+        let interface_flow: Flow = if planned_interface_nozzle_diameter > EPSILON {
+            self.m_support_params.support_material_interface_flow_for_nozzle(planned_interface_nozzle_diameter, interface_height as f32)?
+        } else {
+            crate::support::support_parameters::support_material_interface_flow_of(self.m_object, self.m_print, interface_height as f32)?
+        };
+        // The interface is folded on the node grid now, so the roof and the transition layer below it
+        // belong to the same slab and share its height. The floor is the one interface region that is
+        // never folded - it is the bottom contact, generated per layer in postprocess_base_areas() -
+        // so it keeps a flow of its own even when the roof above got pinned to a nozzle.
+        let layer_interface_density: CoordF = min1(interface_flow.spacing() / (support_interface_spacing_cfg + interface_flow.spacing()));
+        let floor_flow: Flow = if planned_interface_nozzle_diameter > EPSILON {
+            self.m_support_params.support_material_interface_flow_for_nozzle(planned_interface_nozzle_diameter, ts_height as f32)?
+        } else {
+            crate::support::support_parameters::support_material_interface_flow_of(self.m_object, self.m_print, ts_height as f32)?
+        };
+        let floor_density: CoordF = min1(floor_flow.spacing() / (support_interface_spacing_cfg + floor_flow.spacing()));
+        let support_spacing: CoordF = support_base_pattern_spacing + support_flow.spacing();
+        let support_density: CoordF = min1(support_flow.spacing() / support_spacing);
+        self.m_object.m_support_layers[layer_id].support_fills.no_sort = false;
+
+        for area_group in &area_groups {
+            filler_interface.fill_mut().bounding_box = bbox_object.clone();
+            filler_roof1st_layer.fill_mut().bounding_box = bbox_object.clone();
+            filler_interface.fill_mut().angle = deg2rad(support_angle + 90.) as f32;
+            filler_roof1st_layer.fill_mut().angle = deg2rad(support_angle + 90.) as f32;
+
+            let poly: ExPolygon = self.m_object.m_support_layers[layer_id].area_group_area(area_group).clone();
+            let mut polys: ExPolygons = Vec::new();
+            let mut fill_params = default_fill_params();
+            if area_group.type_ != SupportLayerAreaType::BaseType {
+                // interface
+                // BBS multi-diameter: the bed band is emitted on its top layer once folded, so the
+                // brim belongs to whichever layer's material actually reaches the bed.
+                if base_starts_on_bed {
+                    // This brim belongs to the tree support, so its flow must follow support_filament.
+                    // Print::brim_flow() is derived from a model wall filament and may use a different
+                    // nozzle diameter in multi-diameter mode.
+                    let flow = first_layer_support_flow.clone();
+                    make_perimeter_and_inner_brim(
+                        entities,
+                        &poly,
+                        wall_count as usize,
+                        &flow,
+                        if area_group.type_ == SupportLayerAreaType::RoofType { ExtrusionRole::SupportMaterialInterface } else { ExtrusionRole::SupportMaterial },
+                    )?;
+                    polys = cx::offset_ex_expolygon(&poly, -flow.scaled_spacing() as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                } else if area_group.type_ == SupportLayerAreaType::Roof1stLayer {
+                    polys = cx::offset_ex_expolygon(&poly, (0.5 * support_flow.scaled_width() as f64) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                } else {
+                    polys.push(poly.clone());
+                }
+                fill_params.density = (layer_interface_density as f32) as f64;
+                fill_params.dont_adjust = true;
+            }
+            if area_group.type_ == SupportLayerAreaType::Roof1stLayer {
+                // use higher flow for roof_1st_layer ?
+                let roof_1st_layer_flow = interface_flow.clone(); /*.with_flow_ratio(1.5)*/
+
+                // Note: spacing means the separation between two lines as if they are tightly extruded
+                filler_roof1st_layer.fill_mut().spacing = roof_1st_layer_flow.spacing();
+
+                // BBS multi-diameter: the interface sits N *printed* layers above, and a folded slab
+                // swallows the ones in between - draw_circles() zeroes their height. Adding the raw
+                // layer count would land inside a slab, so walk the layers that actually print.
+                let mut interface_layer_above: Option<usize> = None;
+                if self.m_fold_carriers.is_empty() {
+                    let idx = layer_id + self.m_support_params.num_top_interface_layers;
+                    if idx < support_layer_count {
+                        interface_layer_above = Some(idx);
+                    }
+                } else {
+                    let mut left = self.m_support_params.num_top_interface_layers as i32;
+                    let mut probe = layer_id as i32 + 1;
+                    while left > 0 && probe < support_layer_count as i32 {
+                        let candidate = &self.m_object.m_support_layers[probe as usize];
+                        if candidate.layer.height < EPSILON {
+                            probe += 1;
+                            continue;
+                        }
+                        left -= 1;
+                        if left == 0 {
+                            interface_layer_above = Some(probe as usize);
+                        }
+                        probe += 1;
+                    }
+                }
+                let mut bridge_angle = 0.;
+                if let Some(above) = interface_layer_above {
+                    let above_print_z = self.m_object.m_support_layers[above].layer.print_z;
+                    if self.bridge_angle_above(above_print_z, &polys, &mut bridge_angle, layer_height) {
+                        // `bridge_angle + (num_top_interface_layers - 1) * M_PI_2`: the size_t wraps at 0
+                        filler_roof1st_layer.fill_mut().angle =
+                            ((self.m_support_params.num_top_interface_layers.wrapping_sub(1)) as f64).mul_add(m_pi_2, bridge_angle) as f32;
+                    }
+                }
+
+                // generate a perimeter first to support interface better
+                let mut temp_support_fills = ExtrusionEntityCollection::new();
+                make_perimeter_and_infill(
+                    &mut temp_support_fills.entities,
+                    &poly,
+                    1,
+                    &roof_1st_layer_flow,
+                    ExtrusionRole::SupportTransition,
+                    filler_roof1st_layer.as_mut(),
+                    layer_interface_density,
+                    false,
+                )?;
+                temp_support_fills.no_sort = true; // make sure loops are first
+                if !temp_support_fills.entities.is_empty() {
+                    entities.push(ExtrusionEntityType::Collection(Box::new(temp_support_fills)));
+                }
+            } else if area_group.type_ == SupportLayerAreaType::FloorType {
+                // floor_areas
+                fill_params.density = (floor_density as f32) as f64;
+                filler_interface.fill_mut().spacing = floor_flow.spacing();
+                fill_expolygons_generate_paths(entities, &mut polys, filler_interface.as_mut(), &fill_params, ExtrusionRole::SupportMaterialInterface, &floor_flow)?;
+            } else if area_group.type_ == SupportLayerAreaType::RoofType {
+                // roof_areas
+                fill_params.density = (layer_interface_density as f32) as f64;
+                filler_interface.fill_mut().spacing = interface_flow.spacing();
+                if interface_pattern_grid {
+                    filler_interface.fill_mut().angle = deg2rad(support_angle) as f32;
+                    fill_params.dont_sort = true;
+                }
+                if self.m_support_params.contact_fill_pattern == InfillPattern::Rectilinear {
+                    let mut bridge_found = false;
+                    for i in 0..self.m_support_params.num_top_interface_layers {
+                        if layer_id + i >= support_layer_count {
+                            break;
+                        }
+                        let cur_print_z = self.m_object.m_support_layers[layer_id + i].layer.print_z;
+                        let mut bridge_angle = 0.;
+                        if self.bridge_angle_above(cur_print_z, &polys, &mut bridge_angle, layer_height) {
+                            filler_interface.fill_mut().angle = ((i + 1) as f64).mul_add(m_pi_2, bridge_angle) as f32;
+                            bridge_found = true;
+                            break;
+                        }
+                    }
+                    if !bridge_found {
+                        filler_interface.fill_mut().layer_id = area_group.interface_id as usize;
+                    } else {
+                        filler_interface.fill_mut().layer_id = 0;
+                    }
+                }
+
+                let mut temp_support_fills = ExtrusionEntityCollection::new();
+                for single_poly in &cx::union_ex(&polys) {
+                    make_perimeter_and_infill(
+                        &mut temp_support_fills.entities,
+                        single_poly,
+                        1,
+                        &interface_flow,
+                        ExtrusionRole::SupportMaterialInterface,
+                        filler_interface.as_mut(),
+                        layer_interface_density,
+                        false,
+                    )?;
+                }
+                temp_support_fills.no_sort = true; // make sure loops are first
+                if !temp_support_fills.entities.is_empty() {
+                    entities.push(ExtrusionEntityType::Collection(Box::new(temp_support_fills)));
+                }
+
+                if self.m_support_params.enable_support_ironing {
+                    let mut temp_support_ironings = ExtrusionEntityCollection::new();
+                    let mut unioned_expolygons: ExPolygons = cx::union_ex(&polys);
+                    let mut upper_expolygons: ExPolygons = Vec::new();
+                    if let Some(ts_upper_layer) = self.m_object.m_support_layers.get(layer_id + 1) {
+                        for area_t in &ts_upper_layer.area_groups {
+                            upper_expolygons.push(ts_upper_layer.area_group_area(area_t).clone());
+                        }
+                        unioned_expolygons = cx::diff_ex(&unioned_expolygons, &upper_expolygons);
+                        unioned_expolygons = cx::union_ex(&unioned_expolygons);
+                    }
+                    if !unioned_expolygons.is_empty() {
+                        self.generate_support_ironing_entity(
+                            fill_factory,
+                            &unioned_expolygons,
+                            &bbox_object,
+                            ts_id,
+                            ts_print_z,
+                            &mut temp_support_ironings.entities,
+                            &interface_flow,
+                        )?;
+                    }
+                    temp_support_ironings.no_sort = true; // make sure loops are first
+                    if !temp_support_ironings.entities.is_empty() {
+                        entities.push(ExtrusionEntityType::Collection(Box::new(temp_support_ironings)));
+                    }
+                }
+            } else {
+                // base_areas
+                let flow: Flow = if base_starts_on_bed { first_layer_support_flow.clone() } else { support_flow.clone() };
+                let mut need_infill = self.with_infill;
+                if object_base_pattern_default {
+                    need_infill &= area_group.need_infill;
+                }
+
+                let mut filler_support =
+                    fill_factory.new_from_type(if base_starts_on_bed { InfillPattern::Concentric } else { self.m_support_params.base_fill_pattern });
+                filler_support.fill_mut().bounding_box = bbox_object.clone();
+                filler_support.fill_mut().spacing = flow.spacing();
+                filler_support.fill_mut().angle = deg2rad(support_angle) as f32;
+
+                let loops: Polygons = to_polygons(std::slice::from_ref(&poly));
+                if base_starts_on_bed {
+                    let density: f32 = (raft_first_layer_density * 0.01) as f32;
+                    crate::support::support_common::fill_expolygons_with_sheath_generate_paths(
+                        entities,
+                        &loops,
+                        filler_support.as_mut(),
+                        density,
+                        ExtrusionRole::SupportMaterial,
+                        &flow,
+                        &self.m_support_params,
+                        true,
+                        false,
+                    )?;
+                } else if need_infill && self.m_support_params.base_fill_pattern != InfillPattern::Lightning {
+                    // allow infill-only mode if support is thick enough (so min_wall_count is 0);
+                    // otherwise must draw 1 wall
+                    // Don't need extra walls if we have infill. Extra walls may overlap with the infills.
+                    let min_wall_count: usize = if wall_count == 0 { 0 } else { 1 };
+                    make_perimeter_and_infill(
+                        entities,
+                        &poly,
+                        (min_wall_count as i32).max(wall_count) as usize,
+                        &flow,
+                        ExtrusionRole::SupportMaterial,
+                        filler_support.as_mut(),
+                        support_density,
+                        true,
+                    )?;
+                } else {
+                    // BBS multi-diameter: an area widened at a nozzle change also gets the second wall
+                    // when the wall count is automatic. Its paths are inset by half their own width, so
+                    // the bead's outer edge stays on the contour and it grows inwards onto the coarse bead.
+                    let widened = area_group.line_width > flow.width() + EPSILON;
+                    let mut support_params = self.m_support_params.clone();
+                    if (area_group.need_extra_wall || widened) && wall_count == -1 {
+                        support_params.tree_branch_diameter_double_wall_area_scaled = 0.1;
+                    }
+                    let wall_flow: Flow = if widened { flow.with_width((area_group.line_width as f32) as f64)? } else { flow.clone() };
+                    crate::support::support_common::tree_supports_generate_paths(entities, &loops, &wall_flow, &support_params)?;
+                }
+
+                if area_group.need_cooling {
+                    // `setOverhangDegreeImpl(&ts_layer->support_fills)`: every extrusion the layer has so far
+                    set_overhang_degree_impl(entities);
+                }
+            }
+        }
+        if self.m_support_params.base_fill_pattern == InfillPattern::Lightning {
+            // A base that reaches the bed was already filled above, concentrically and at the raft
+            // first layer density, and that path has no lightning guard of its own. Laying a
+            // lightning scaffold over it would extrude the area twice. Unfolded, this never showed:
+            // the bed band is support layer 0, which never becomes a lower_layer and so never gets
+            // a generator entry. Folded, the band is emitted on its top layer, which does.
+            if base_starts_on_bed {
+                return Ok(false);
+            }
+            let print_z = ts_print_z;
+            let Some(&lightning_layer_idx) = self.print_z_to_lightninglayer.get(&f64_key(print_z)) else {
+                return Ok(false);
+            };
+            // See the FIDELITY-NOTE of generate_toolpaths().
+            let Some(generator) = self.generator.as_ref() else {
+                return Ok(false);
+            };
+            let lightning_layer = generator.get_trees_for_layer(lightning_layer_idx);
+
+            let flow: Flow = if base_starts_on_bed { first_layer_support_flow.clone() } else { support_flow.clone() };
+            let areas: ExPolygons =
+                cx::offset_ex(&self.m_object.m_support_layers[layer_id].base_areas, -flow.scaled_spacing() as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+
+            for area in &areas {
+                let mut polylines: crate::geometry::Polylines = lightning_layer.convert_to_lines(&to_polygons(std::slice::from_ref(area)), 0);
+                polylines.retain(|itr| !(itr.length() < scale_(1.0)));
+                //this wont create connection patterns along contours
+                let opt_polylines: crate::geometry::Polylines = crate::shortest_path::chain_polylines(polylines, None);
+                extrusion_entities_append_paths(
+                    entities,
+                    opt_polylines,
+                    ExtrusionRole::SupportMaterial,
+                    (flow.mm3_per_mm()? as f32) as f64,
+                    flow.width() as f32,
+                    flow.height() as f32,
+                );
+            }
+        }
+        Ok(true)
+    }
+}
+
 // @@TAIL@@
 // Keep the unused-helper warnings quiet for the not-yet-wired constants/helpers.
 #[allow(dead_code)]

@@ -1565,7 +1565,7 @@ fn increase_areas_one_layer(
             || (elem.bits.to_model_gracious
                 && intersection(
                     &layer_elements[parent_idx].influence_area,
-                    &volumes.get_placeable_areas(radius, layer_idx),
+                    &volumes.get_placeable_areas(radius, layer_idx, &|| {}),
                 )
                 .is_empty())
         {
@@ -2367,7 +2367,7 @@ fn set_to_model_contact_to_model_gracious(
         let mut cur_idx = first_elem_idx;
         loop {
             let elem = &move_bounds[layer_check][cur_idx];
-            let placeable = volumes.get_placeable_areas(elem.state.get_collision_radius(config), layer_check as LayerIndex);
+            let placeable = volumes.get_placeable_areas(elem.state.get_collision_radius(config), layer_check as LayerIndex, &|| {});
             if intersection(&elem.influence_area, &placeable).is_empty() {
                 break;
             }
@@ -2836,5 +2836,5 @@ fn _refs(volumes: &TreeModelVolumes, p: Point) -> bool {
     let _ = perp(p);
     let _ = geometry::area_polygons(&[]);
     let _ = VolAvoidanceType::Fast;
-    point_inside_polygons(p, &volumes.get_collision(0, 0))
+    point_inside_polygons(p, &volumes.get_collision(0, 0, true))
 }

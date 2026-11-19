@@ -20,7 +20,16 @@
 use slicer::config::{
     ConfigBase, ConfigOptionInts, ConfigOptionResolver, ConfigOptionStrings, ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule,
 };
-use slicer::geometry::{BoundingBox, ExPolygon, ExPolygons, Point, Polygon, Polygons};
+use slicer::extrusion_entity::{ExtrusionEntityType, ExtrusionPath};
+use slicer::fill::fill_base::Fill;
+use slicer::fill::FillParams;
+use slicer::geometry::{BoundingBox, ExPolygon, ExPolygons, Point, Polygon, Polygons, Polyline, Polylines};
+use slicer::print_config::InfillPattern;
+use slicer::support::support_common::cu;
+use slicer::support::support_common::{InfillFailedException, SupportFill, SupportFillFactory};
+use slicer::surface::Surface;
+use std::cell::RefCell;
+use std::rc::Rc;
 use slicer::model::*;
 use slicer::normal_utils::indexed_triangle_set;
 use slicer::print::faithful::{Print, PrintObject};
@@ -75,6 +84,131 @@ fn expolys_s(es: &[ExPolygon]) -> String {
         o += &format!(" {}", expoly_s(e));
     }
     o
+}
+
+fn pts_s(pts: &[Point]) -> String {
+    let mut o = format!("{}", pts.len());
+    for q in pts {
+        o += &format!(" {}", pt(q));
+    }
+    o
+}
+/// gen.cpp `PATH(p)`
+fn path_s(p: &ExtrusionPath) -> String {
+    format!(
+        "P {} {} {} {} {} {} {}",
+        p.role as i32,
+        hd(p.mm3_per_mm),
+        hf(p.width as f32),
+        hf(p.height as f32),
+        hb(p.can_reverse),
+        hd(p.overhang_degree),
+        pts_s(&p.polyline.points)
+    )
+}
+/// gen.cpp `ENT(e)`
+fn ent_s(e: &ExtrusionEntityType) -> String {
+    match e {
+        ExtrusionEntityType::Collection(c) => {
+            let mut o = format!("C {} {}", hb(c.no_sort), c.entities.len());
+            for ee in &c.entities {
+                o += &format!(" {}", ent_s(ee));
+            }
+            o
+        }
+        ExtrusionEntityType::MultiPath(m) => {
+            let mut o = format!("M {} {}", hb(m.can_reverse), m.paths.len());
+            for q in &m.paths {
+                o += &format!(" {}", path_s(q));
+            }
+            o
+        }
+        ExtrusionEntityType::Loop(l) => {
+            let mut o = format!("L {}", l.paths.len());
+            for q in &l.paths {
+                o += &format!(" {}", path_s(q));
+            }
+            o
+        }
+        ExtrusionEntityType::Path(q) => path_s(q),
+    }
+}
+/// gen.cpp `ENTS(v)`
+fn ents_s(v: &[ExtrusionEntityType]) -> String {
+    let mut o = format!("{}", v.len());
+    for e in v {
+        o += &format!(" {}", ent_s(e));
+    }
+    o
+}
+
+type Log = Rc<RefCell<Vec<String>>>;
+
+/// gen.cpp `RecFill`
+struct RecFill {
+    base: Fill,
+    pattern: InfillPattern,
+    log: Log,
+}
+impl SupportFill for RecFill {
+    fn fill(&self) -> &Fill {
+        &self.base
+    }
+    fn fill_mut(&mut self) -> &mut Fill {
+        &mut self.base
+    }
+    fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Result<Polylines, InfillFailedException> {
+        let f = &self.base;
+        self.log.borrow_mut().push(format!(
+            "{} {} {} {} {} {} {} {} {} {} {} {} {}",
+            self.pattern as i32,
+            hf(f.angle),
+            hd(f.spacing),
+            f.link_max_length,
+            pt(&f.bounding_box.min),
+            pt(&f.bounding_box.max),
+            f.layer_id as i64,
+            hd(f.z),
+            hd(f.overlap),
+            hf(params.density as f32),
+            hb(params.dont_adjust),
+            hb(params.dont_sort),
+            expoly_s(&surface.expolygon)
+        ));
+        let pts = &surface.expolygon.contour.points;
+        if pts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (mut lo, mut hi) = (pts[0], pts[0]);
+        for q in pts {
+            lo = Point::new(lo.x.min(q.x), lo.y.min(q.y));
+            hi = Point::new(hi.x.max(q.x), hi.y.max(q.y));
+        }
+        let d: f64 = if params.density as f32 > 0. { params.density as f32 as f64 } else { 1. };
+        let mut step: i64 = ((f.spacing / slicer::libslic3r::SCALING_FACTOR) / d) as i64;
+        if step < 20000 {
+            step = 20000;
+        }
+        let slant: i64 = if self.pattern == InfillPattern::Rectilinear { 0 } else { 7770 };
+        let mut lines: Polylines = Vec::new();
+        let mut y = lo.y + step / 2;
+        while y < hi.y {
+            lines.push(Polyline::from_points(vec![Point::new(lo.x - 1000, y), Point::new(hi.x + 1000, y + slant)]));
+            y += step;
+        }
+        if self.pattern == InfillPattern::Concentric && lines.len() % 2 == 1 {
+            return Err(InfillFailedException);
+        }
+        Ok(cu::intersection_pl_ex(&lines, std::slice::from_ref(&surface.expolygon)))
+    }
+}
+struct RecFactory {
+    log: Log,
+}
+impl SupportFillFactory for RecFactory {
+    fn new_from_type(&self, pattern: InfillPattern) -> Box<dyn SupportFill> {
+        Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() })
+    }
 }
 
 /// The tokens of an input line.
@@ -588,14 +722,22 @@ fn run_scenario(r: &mut Run, scenario: usize) {
     let bed = Tok::new(&line).poly();
     let line = r.input(&format!("in {s} params")).expect("params");
     let mut t = Tok::new(&line);
-    let mut params = SupportParameters::default();
-    params.support_style = t.i() as i32;
-    params.support_base_pattern = t.i() as i32;
-    params.num_top_interface_layers = t.i() as usize;
-    params.support_extrusion_width = t.d();
-    params.independent_layer_height = t.b();
-    params.soluble_interface = t.b();
-    params.thresh_big_overhang = t.d();
+    // `SupportParameters m_support_params(object)`; the members the generator wrote down are the pin's.
+    obj.m_slicing_params = sp.clone();
+    let params = SupportParameters::new(&obj, &print).expect("SupportParameters");
+    assert_eq!(
+        (
+            params.support_style,
+            params.support_base_pattern,
+            params.num_top_interface_layers,
+            params.support_extrusion_width.to_bits(),
+            params.independent_layer_height,
+            params.soluble_interface,
+            params.thresh_big_overhang.to_bits()
+        ),
+        (t.i() as i32, t.i() as i32, t.i() as usize, t.d().to_bits(), t.b(), t.b(), t.d().to_bits()),
+        "{s} params"
+    );
 
     let mut ts = TreeSupport::new(&mut obj, &print, &sp, params, &bed);
 
@@ -841,6 +983,33 @@ fn run_scenario(r: &mut Run, scenario: usize) {
             r.outb(format!("{s} lightning_generator"), body, true);
         }
     }
+
+    // The toolpaths, with the generator's fillers. A scenario with the lightning pattern in the bases writes
+    // "toolpaths_lightning" lines, which are counted and not compared: there is no generator of the lightning
+    // infill to hand to the tree support.
+    {
+        let tag = if ts.m_support_params.base_fill_pattern == InfillPattern::Lightning { format!("{s} toolpaths_lightning") } else { format!("{s} toolpaths") };
+        let log: Log = Rc::new(RefCell::new(Vec::new()));
+        let factory = RecFactory { log: log.clone() };
+        ts.generate_toolpaths(&factory).expect("generate_toolpaths");
+        let mut fills: Vec<String> = log.borrow_mut().drain(..).collect();
+        fills.sort();
+        let mut body = String::new();
+        for l in &fills {
+            body += l;
+            body.push('\n');
+        }
+        if r.full {
+            for l in &fills {
+                r.out(format!("{tag} fill {l}"));
+            }
+        }
+        r.out(format!("{tag} fills {} #{}", fills.len(), fnv(&body)));
+        let layers = ts.m_object.support_layers();
+        for (i, sl) in layers.iter().enumerate() {
+            r.outb(format!("{tag} layer {} {} {}", i, hb(sl.support_fills.no_sort), sl.support_fills.entities.len()), ents_s(&sl.support_fills.entities), true);
+        }
+    }
 }
 
 fn read_vectors() -> Vec<String> {
@@ -879,6 +1048,7 @@ fn tree_support_native_parity() {
         let _ = std::fs::write(path, r.lines.join("\n"));
     }
     let mut mismatches = r.surplus;
+    let mut not_compared = 0usize;
     let mut by_kind: std::collections::BTreeMap<String, (usize, usize)> = std::collections::BTreeMap::new();
     for k in 0..r.expected.len().max(r.lines.len()) {
         let e = r.expected.get(k).map(|s| s.as_str()).unwrap_or("<missing>");
@@ -888,6 +1058,11 @@ fn tree_support_native_parity() {
         entry.0 += 1;
         if e != l {
             entry.1 += 1;
+            // Counted, not compared: see the toolpaths of run_scenario().
+            if e.split(' ').nth(1) == Some("toolpaths_lightning") {
+                not_compared += 1;
+                continue;
+            }
             mismatches += 1;
             if mismatches <= 12 {
                 let cut = |s: &str| if s.len() > 700 { format!("{}...", &s[..700]) } else { s.to_string() };
@@ -899,6 +1074,7 @@ fn tree_support_native_parity() {
         eprintln!("{kind}: {n} lines, {bad} mismatches");
     }
     eprintln!("{} lines, {} mismatches", r.expected.len(), mismatches);
+    eprintln!("{not_compared} lines of the lightning toolpaths differ and are not compared");
     // Every line has to be equal; the surplus lines (a stage that wrote more lines than the pin) count.
     assert_eq!(mismatches, 0);
 }

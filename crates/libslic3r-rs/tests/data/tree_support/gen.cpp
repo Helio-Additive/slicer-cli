@@ -49,13 +49,59 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/spin_mutex.h>
 
+#include <boost/container/static_vector.hpp>
+
 #define private public
 #define protected public
-#include "libslic3r/Support/TreeSupport.cpp"
-#undef protected
-#undef private
+// What TreeSupport.cpp includes, ahead of it: the headers are read with `Fill` meaning the class of
+// FillBase.hpp.
+#include "libslic3r/format.hpp"
+#include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/ClipperUtils.hpp"
+#include "libslic3r/Clipper2Utils.hpp"
+#include "libslic3r/Fill/FillBase.hpp"
+#include "libslic3r/I18N.hpp"
+#include "libslic3r/Layer.hpp"
+#include "libslic3r/MinimumSpanningTree.hpp"
+#include "libslic3r/Print.hpp"
+#include "libslic3r/ShortestPath.hpp"
+#include "libslic3r/Support/SupportCommon.hpp"
+#include "libslic3r/SVG.hpp"
+#include "libslic3r/Time.hpp"
+#include "libslic3r/Support/TreeSupportCommon.hpp"
+#include "libslic3r/Support/TreeSupport.hpp"
+#include "libslic3r/Support/TreeSupport3D.hpp"
+#include <libnest2d/backends/libslic3r/geometries.hpp>
+#include <libnest2d/placers/nfpplacer.hpp>
+#include "libslic3r/Log.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/TriangleMesh.hpp"
+
+namespace Slic3r {
+// The filler of the generator: TreeSupport.cpp is compiled with `Fill` standing for `RecFill`, a filler that
+// writes down what it is asked (its pattern, the members generate_toolpaths() sets, the parameters and the
+// surface) and answers with lines across the surface that it clips with the surface. The Rust test has the
+// same filler, so that everything around the fillers is compared, not the fillers of the engine.
+struct RecFill : public Fill
+{
+    InfillPattern   pattern{ipRectilinear};
+    static RecFill *new_from_type(const InfillPattern type)
+    {
+        RecFill *f = new RecFill();
+        f->pattern = type;
+        return f;
+    }
+    Fill     *clone() const override { return new RecFill(*this); }
+    bool      is_self_crossing() override { return false; }
+    Polylines fill_surface(const Surface *surface, const FillParams &params) override;
+};
+} // namespace Slic3r
+
+#define Fill RecFill
+#include "libslic3r/Support/TreeSupport.cpp"
+#undef Fill
+#undef protected
+#undef private
 
 using namespace Slic3r;
 
@@ -119,6 +165,71 @@ static std::string EXPOLYS(const ExPolygons &es)
     std::string o = hI((long long) es.size());
     for (const ExPolygon &e : es) o += " " + EXPOLY(e);
     return o;
+}
+
+static std::string PTS(const Points &pts)
+{
+    std::string o = hI((long long) pts.size());
+    for (const Point &pt : pts) o += " " + PT(pt);
+    return o;
+}
+static std::string PATH(const ExtrusionPath &p)
+{
+    return "P " + hI(int(p.role())) + " " + hD(p.mm3_per_mm) + " " + hF(p.width) + " " + hF(p.height) + " " + hB(p.can_reverse()) + " " + hD(p.overhang_degree) + " " +
+           PTS(p.polyline.points);
+}
+static std::string ENT(const ExtrusionEntity *e)
+{
+    if (const auto *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+        std::string o = "C " + hB(c->no_sort) + " " + hI((long long) c->entities.size());
+        for (const ExtrusionEntity *ee : c->entities) o += " " + ENT(ee);
+        return o;
+    }
+    if (const auto *m = dynamic_cast<const ExtrusionMultiPath *>(e)) {
+        std::string o = "M " + hB(m->can_reverse()) + " " + hI((long long) m->paths.size());
+        for (const ExtrusionPath &p : m->paths) o += " " + PATH(p);
+        return o;
+    }
+    if (const auto *l = dynamic_cast<const ExtrusionLoop *>(e)) {
+        std::string o = "L " + hI((long long) l->paths.size());
+        for (const ExtrusionPath &p : l->paths) o += " " + PATH(p);
+        return o;
+    }
+    if (const auto *p = dynamic_cast<const ExtrusionPath *>(e)) return PATH(*p);
+    return "X";
+}
+static std::string ENTS(const ExtrusionEntitiesPtr &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const ExtrusionEntity *e : v) o += " " + ENT(e);
+    return o;
+}
+
+// What the fillers were asked since the list was cleared.
+static std::vector<std::string> g_fills;
+
+// The filler of the generator. Its lines: at every `step` of the height of the surface, slanted unless the
+// pattern is the rectilinear one, clipped with the surface. The concentric one fails on an odd number of lines.
+Polylines Slic3r::RecFill::fill_surface(const Surface *surface, const FillParams &params)
+{
+    g_fills.emplace_back(hI(int(this->pattern)) + " " + hF(this->angle) + " " + hD(this->spacing) + " " + hI(this->link_max_length) + " " + PT(this->bounding_box.min) + " " +
+                         PT(this->bounding_box.max) + " " + hI((long long) this->layer_id) + " " + hD(this->z) + " " + hD(this->overlap) + " " + hF(params.density) + " " +
+                         hB(params.dont_adjust) + " " + hB(params.dont_sort) + " " + EXPOLY(surface->expolygon));
+    const Points &pts = surface->expolygon.contour.points;
+    if (pts.empty()) return {};
+    Point lo = pts.front(), hi = pts.front();
+    for (const Point &q : pts) {
+        lo = Point(std::min(lo.x(), q.x()), std::min(lo.y(), q.y()));
+        hi = Point(std::max(hi.x(), q.x()), std::max(hi.y(), q.y()));
+    }
+    const double d    = params.density > 0.f ? double(params.density) : 1.;
+    coord_t      step = coord_t(scale_(this->spacing) / d);
+    if (step < 20000) step = 20000;
+    const coord_t slant = this->pattern == ipRectilinear ? 0 : 7770;
+    Polylines     lines;
+    for (coord_t y = lo.y() + step / 2; y < hi.y(); y += step) lines.emplace_back(Polyline(Point(lo.x() - 1000, y), Point(hi.x() + 1000, y + slant)));
+    if (this->pattern == ipConcentric && lines.size() % 2 == 1) throw InfillFailedException();
+    return intersection_pl(lines, surface->expolygon);
 }
 
 static Polygon rect(double x0, double y0, double x1, double y1)
@@ -773,6 +884,26 @@ static void run_scenario(int scenario)
             std::string body = hI((long long) ts.generator->m_supporting_radius) + " " + hI((long long) ts.generator->m_overhang_per_layer.size());
             for (const Polygons &polys : ts.generator->m_overhang_per_layer) body += " " + POLYS(polys);
             outb(S + " lightning_generator", body, true);
+        }
+    }
+
+    // The toolpaths. The fillers are the generator's (RecFill); what they were asked is written sorted, the
+    // layers being filled in the order tbb takes them. A scenario with the lightning pattern in the bases
+    // writes its lines as "toolpaths_lightning": the Rust test has no generator of the lightning infill.
+    {
+        const std::string T = S + (ts.m_support_params.base_fill_pattern == ipLightning ? " toolpaths_lightning" : " toolpaths");
+        g_fills.clear();
+        ts.generate_toolpaths();
+        std::sort(g_fills.begin(), g_fills.end());
+        std::string body;
+        for (const std::string &l : g_fills) body += l + "\n";
+        if (g_full)
+            for (const std::string &l : g_fills) out(T + " fill " + l);
+        out(T + " fills " + hI((long long) g_fills.size()) + " #" + fnv(body));
+        size_t i = 0;
+        for (const SupportLayer *sl : obj->support_layers()) {
+            outb(T + " layer " + hI((long long) i) + " " + hB(sl->support_fills.no_sort) + " " + hI((long long) sl->support_fills.entities.size()), ENTS(sl->support_fills.entities), true);
+            ++i;
         }
     }
 }
