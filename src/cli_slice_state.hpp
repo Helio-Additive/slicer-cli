@@ -1,0 +1,111 @@
+#pragma once
+
+#include "cli_load_settings.hpp"
+#include "cli_plate_plan.hpp"
+#include "cli_result_json.hpp"
+#include "cli_slice_export.hpp"
+#include "libslic3r/Model.hpp"
+#include "libslic3r/Preset.hpp"
+#include "libslic3r/Semver.hpp"
+
+#include <algorithm>
+#include <optional>
+
+namespace slicer_cli {
+
+/// One plate of the run: its grid origin in the scene and its instances in
+/// the run's model (PartPlate's origin and obj_to_instance_set). `members`
+/// empty with `all` set: every instance of the model is on this plate (a
+/// load of one plate, or one plate of model files).
+struct RunPlate {
+    Slic3r::Vec2d origin = Slic3r::Vec2d::Zero();
+    bool all = true;
+    std::vector<Slic3r::ModelInstance*> members;
+    bool is_member(const Slic3r::ModelInstance* inst) const {
+        return all || std::find(members.begin(), members.end(), inst) != members.end();
+    }
+};
+
+/// The run's one model and one settings base, as the official CLI keeps them:
+/// every input is loaded once into one model (BambuStudio.cpp 1855-2163,
+/// 3947-3963; OrcaSlicer.cpp 1537-1810, 3441-3457), every object at its
+/// place in the scene, and m_print_config is built once from the file, the
+/// profiles, the settings merge and the flags (BambuStudio.cpp 4091;
+/// OrcaSlicer.cpp 3542). Each plate is then sliced from that model with the
+/// plate's origin on its Print (PartPlate::get_print, set_plate_origin;
+/// BambuStudio.cpp 6506; OrcaSlicer.cpp 5623) and a copy of the settings with
+/// the plate's own laid on top (BambuStudio.cpp 6902-6904; OrcaSlicer.cpp
+/// 5905-5907).
+struct RunState {
+    bool loaded = false;      // the inputs are in `model` and `base`
+    bool prepared = false;    // the steps before the plate loop ran
+    int prepared_plate = 0;   // the plate the run-level steps ran for (0: every plate)
+    Slic3r::Model model;
+    // m_print_config: the project's (or the profiles') settings with the
+    // settings merge and the flags applied, before any plate's own.
+    Slic3r::DynamicPrintConfig base;
+    // The settings the steps before the plate loop read and changed (the
+    // arrange's tower): `prepared_plate`'s own, or the project's for every plate.
+    Slic3r::DynamicPrintConfig run_config;
+    Slic3r::PlateDataPtrs plate_data;
+#ifdef ENGINE_SNAPMAKER
+    // The 3MF printer switch remaps the shared model's paint once per run: every
+    // plate pass trims its own copy of the settings, but the model is the run's.
+    bool switch_paint_remapped = false;
+#endif
+    ~RunState() { Slic3r::release_PlateData_list(plate_data); }
+    std::vector<RunPlate> plates;   // index = plate id - 1
+    ProjectPlan plan;
+    // What the load and the run-level steps record for every plate's result.
+    PlateOutcome carry;
+    // The settings check's warnings, per plate (InvalidValuesNoted).
+    std::map<int, nlohmann::json> noted;
+    // --slice 0's check pass runs every plate before any is sliced: the
+    // warnings it finds are announced only once every plate passed (the
+    // warning promises a run that slices), so it holds them here.
+    bool hold_noted = false;
+    std::vector<nlohmann::json> noted_held;
+    // Load-time facts every later step reads.
+    bool is_bbl_3mf = false;
+    Slic3r::Semver file_version;
+    std::vector<Slic3r::Vec2d> plate_origins;   // the file's grid, for --downward-check
+    std::optional<Slic3r::DynamicPrintConfig> plan_file_config;
+    Slic3r::Semver plan_file_version;
+    int plan_file_filaments = 0;
+    slicer_cli::ProjectFacts project_facts;
+    std::vector<Slic3r::Preset> project_presets_kept;
+    bool project_loaded_like_desktop = false;   // the project was loaded over the system presets
+    Slic3r::DynamicPrintConfig extra;
+    bool explicit_config_supplied_nozzle_map = false;
+    slicer_cli::SettingsMerge settings_merge;
+    std::string merged_print_sequence;
+    int shrink_to_new_bed = 0;
+    size_t project_filaments = 0;
+    // --pipe: steps 2 and 3 go out once per run, before any plate is
+    // checked (BambuStudio.cpp 4923-4926 before the transforms, 6455-6458 as
+    // the slice action starts, after pre_check is set at 6441; OrcaSlicer.cpp
+    // 4185 and 5580, after 5565).
+    bool pipe_files_loaded_sent = false;
+    bool pipe_prepare_sent = false;
+    // The model actions run once per run (BambuStudio.cpp 6336; OrcaSlicer.cpp 5470).
+    bool actions_done = false;
+    // The outputs were checked before the first write (check_run_outputs).
+    bool outputs_checked = false;
+    // The outputs the actions given before --slice wrote: the check after the
+    // calibration pattern replaced the model reserves them (see
+    // check_run_outputs' `reserved`).
+    std::vector<RunOutput> reserved_outputs;
+    // --slice: the plates the input declares before any plan (run_slice_mode).
+    int file_plate_count = 1;
+    // Plate `plate_id` of the run; a run of one plate (model files, a 3MF
+    // without plates) answers with that plate whatever the id.
+    RunPlate& plate(int plate_id) {
+        if (plates.empty())
+            plates.assign(1, RunPlate());
+        if (plates.size() == 1 || plate_id < 1 || plate_id > (int)plates.size())
+            return plates.front();
+        return plates[plate_id - 1];
+    }
+};
+
+} // namespace slicer_cli
