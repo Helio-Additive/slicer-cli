@@ -372,8 +372,11 @@ PYMIRROR
     # The same 220 x 20 mm footprint, kept at x = 50 mm: turned in place it
     # still crosses the bed's edge, so --rotate alone is not offered. The bar
     # is in the mesh itself and the copy's transform only moves it, so the
-    # position is what withholds the flag.
-    python3 - "proj-$e.3mf" "offset-$e.3mf" <<'PYOFFSET'
+    # position is what withholds the flag. The second copy stays centred and
+    # is raised 175 mm, so its top is past the 180 mm bed height.
+    for placed in "offset 9 50" "raised 11 175"; do
+    read -r name index value <<< "$placed"
+    python3 - "proj-$e.3mf" "$name-$e.3mf" "$index" "$value" <<'PYOFFSET'
 import re, sys, zipfile
 
 def widen(match):
@@ -382,7 +385,7 @@ def widen(match):
 def move(match):
     values = match[2].split()
     assert len(values) == 12
-    values[9] = "50"
+    values[int(sys.argv[3])] = sys.argv[4]
     return match[1] + " ".join(values) + match[3]
 
 with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as dest:
@@ -401,8 +404,11 @@ with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", z
         dest.writestr(member, data)
     assert items == 1 and vertices > 0
 PYOFFSET
+    done
     check object-offset-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
         "offset-$e.3mf" --slice 1 --printer-preset "$A1M"
+    check object-raised-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+        "raised-$e.3mf" --slice 1 --printer-preset "$A1M"
 done
 # A run that already turned the part: a second --rotate would replace the
 # first, so only the arrange is offered.

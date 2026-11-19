@@ -113,13 +113,16 @@ std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& obj
     if (flag_alone && arranged) {
         // The arrange places the turned part; the turn fits the bed's box.
     } else if (flag_alone && rectangular_bed(config, bed)) {
-        // The part turned the way the flag turns it, at the position it keeps.
+        // The part turned the way the flag turns it, at the position it keeps:
+        // inside the bed's box and under its printable height.
         Model   scratch;
         ModelObject* turned = scratch.add_object(object);
         turned->rotate(Geometry::deg2rad(degrees), Z);
         const BoundingBoxf3 box = turned->instance_bounding_box(instance_index);
+        const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
         flag_alone = box.min.x() >= bed.min.x() - EPSILON && box.min.y() >= bed.min.y() - EPSILON &&
-                     box.max.x() <= bed.max.x() + EPSILON && box.max.y() <= bed.max.y() + EPSILON;
+                     box.max.x() <= bed.max.x() + EPSILON && box.max.y() <= bed.max.y() + EPSILON &&
+                     (height <= 0. || box.max.z() <= height + EPSILON);
     } else {
         flag_alone = false;
     }
