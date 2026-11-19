@@ -336,6 +336,117 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
     return {};
 }
 
+static StepResult load_assemble_object(AssembleObject& assemble_object, const std::string& what,
+        std::string& object_name, std::string& object_1_name, TriangleMesh& mesh, ModelObject*& object,
+        bool& skip_filament, Model& temp_model, std::vector<RGBA>& all_colours, int max_filament_count,
+        std::vector<std::string>& sources) {
+    // The parts the run reads are named below, in the branch whose
+    // loader opens them — not here, before the branch is chosen. The
+    // output check beside the input list reads every name, so a part
+    // the branches turn down without opening it (an OBJ that is not a
+    // normal part, on the Bambu build) must not be named: the check
+    // would read a part nothing opened, and a part that is a pipe
+    // would hold the run there.
+
+    if (!boost::filesystem::exists(boost::filesystem::path(assemble_object.path)))
+        return fail(CLI_FILE_NOTFOUND, "The assemble list names " + what + ", which does not exist; check the path");
+
+    const char* path_str = assemble_object.path.c_str();
+    const char* last_slash = std::strrchr(path_str, kDirSeparator);
+    object_name.assign(last_slash == nullptr ? path_str : last_slash + 1);
+
+    if (boost::algorithm::iends_with(assemble_object.path, ".stl")) {
+        sources.push_back(assemble_object.path);   // read from ReadSTLFile on
+        if (!mesh.ReadSTLFile(path_str, true, nullptr))
+            return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be read; check the file");
+        if (mesh.empty())
+            return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " holds no mesh; check the file");
+        object_name.erase(object_name.end() - 4, object_name.end());
+        object_1_name = object_name + "_1";
+        object = temp_model.add_object(object_1_name.c_str(), path_str, std::move(mesh));
+        if (!object)
+            return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be added; check the file");
+    }
+#ifdef ENGINE_ORCA
+    else if (boost::algorithm::iends_with(assemble_object.path, ".obj"))
+#else
+    else if (boost::algorithm::iends_with(assemble_object.path, ".obj") &&
+             assemble_object.subtype == ModelVolumeType::MODEL_PART)
+#endif
+    {
+        sources.push_back(assemble_object.path);   // read from load_obj on
+        std::string message;
+        ObjInfo obj_info;
+        bool result = load_obj(path_str, &mesh, obj_info, message);
+        if (!result)
+            return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " holds no usable mesh: " + message + "; check the file");
+#ifndef ENGINE_SNAPMAKER
+        // ObjInfo::lost_material_name is OrcaSlicer 2.4 only; the
+        // Snapmaker fork's ObjInfo carries no such field
+        // (references/SnapmakerOrca/src/libslic3r/Format/OBJ.hpp:12-25
+        // at bac6fd5), so an unmatched MTL material cannot be named.
+        if (!obj_info.lost_material_name.empty())
+            return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " uses the material " +
+                                                 obj_info.lost_material_name +
+                                                 ", which its MTL file lacks; check the file");
+#endif
+        if (!obj_info.face_colors.empty() && obj_info.face_colors.size() < mesh.facets_count())
+            return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " gives some faces no colour; check its MTL and OBJ files.");
+        object_name.erase(object_name.end() - 4, object_name.end());
+        object_1_name = object_name + "_1";
+        Model obj_temp_model;
+        ModelObject* temp_object = obj_temp_model.add_object(object_1_name.c_str(), path_str, std::move(mesh));
+        if (!temp_object)
+            return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
+        std::vector<unsigned char> output_filament_ids;
+        int first_filament_id = 0;
+#ifdef ENGINE_ORCA
+        if (!obj_info.vertex_colors.empty()) {
+            convert_obj_cluster_colors(obj_info.vertex_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
+            if (!output_filament_ids.empty()) {
+                unsigned char first_extruder_id = output_filament_ids.front();
+                result = Model::obj_import_vertex_color_deal(output_filament_ids, first_extruder_id, &obj_temp_model);
+            }
+            skip_filament = true;
+        } else if (!obj_info.face_colors.empty() && !obj_info.has_uv_png) {
+            convert_obj_cluster_colors(obj_info.face_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
+            if (!output_filament_ids.empty()) {
+                unsigned char first_extruder_id = output_filament_ids.front();
+                result = Model::obj_import_face_color_deal(output_filament_ids, first_extruder_id, &obj_temp_model);
+            }
+            skip_filament = true;
+        }
+#else
+        if (!obj_info.vertex_colors.empty()) {
+            convert_obj_cluster_colors(obj_info.vertex_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
+            if (!output_filament_ids.empty())
+                result = Model::obj_import_color_deal(output_filament_ids, std::optional<unsigned char>(first_filament_id),
+                                                      &obj_temp_model, [](int) { return true; });
+            skip_filament = true;
+        } else if (!obj_info.face_colors.empty() && !obj_info.has_uv_png) {
+            convert_obj_cluster_colors(obj_info.face_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id,
+                                       obj_info.first_time_using_makerlab, obj_info.mtl_colors);
+            if (!output_filament_ids.empty())
+                result = Model::obj_import_color_deal(output_filament_ids, std::optional<unsigned char>(first_filament_id),
+                                                      &obj_temp_model, [](int) { return false; });
+            skip_filament = true;
+        }
+#endif
+        if (!result)
+            return fail(CLI_DATA_FILE_ERROR, "The colours of the OBJ " + what +
+                                                 " could not be turned into filaments; check the file");
+        object = temp_model.add_object(*temp_object);
+        obj_temp_model.clear_objects();
+        obj_temp_model.clear_materials();
+        if (!object)
+            return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
+    } else {
+        return fail(CLI_INVALID_PARAMS, "The assemble list names " + what +
+                                            "; it takes STL files, and OBJ files as normal parts.");
+    }
+    return {};
+}
+
 StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& model,
                                    std::vector<DynamicPrintConfig>& plate_configs, std::vector<RGBA>& all_colours,
                                    std::vector<std::string>& sources) {
@@ -364,110 +475,10 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
             TriangleMesh mesh;
             bool skip_filament = false;
             const std::string what = assemble_object.path + " (" + where + ", object " + std::to_string(obj_index + 1) + ")";
-            // The parts the run reads are named below, in the branch whose
-            // loader opens them — not here, before the branch is chosen. The
-            // output check beside the input list reads every name, so a part
-            // the branches turn down without opening it (an OBJ that is not a
-            // normal part, on the Bambu build) must not be named: the check
-            // would read a part nothing opened, and a part that is a pipe
-            // would hold the run there.
-
-            if (!boost::filesystem::exists(boost::filesystem::path(assemble_object.path)))
-                return fail(CLI_FILE_NOTFOUND, "The assemble list names " + what + ", which does not exist; check the path");
-
-            const char* path_str = assemble_object.path.c_str();
-            const char* last_slash = std::strrchr(path_str, kDirSeparator);
-            object_name.assign(last_slash == nullptr ? path_str : last_slash + 1);
-
-            if (boost::algorithm::iends_with(assemble_object.path, ".stl")) {
-                sources.push_back(assemble_object.path);   // read from ReadSTLFile on
-                if (!mesh.ReadSTLFile(path_str, true, nullptr))
-                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be read; check the file");
-                if (mesh.empty())
-                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " holds no mesh; check the file");
-                object_name.erase(object_name.end() - 4, object_name.end());
-                object_1_name = object_name + "_1";
-                object = temp_model.add_object(object_1_name.c_str(), path_str, std::move(mesh));
-                if (!object)
-                    return fail(CLI_DATA_FILE_ERROR, "The STL " + what + " could not be added; check the file");
-            }
-#ifdef ENGINE_ORCA
-            else if (boost::algorithm::iends_with(assemble_object.path, ".obj"))
-#else
-            else if (boost::algorithm::iends_with(assemble_object.path, ".obj") &&
-                     assemble_object.subtype == ModelVolumeType::MODEL_PART)
-#endif
-            {
-                sources.push_back(assemble_object.path);   // read from load_obj on
-                std::string message;
-                ObjInfo obj_info;
-                bool result = load_obj(path_str, &mesh, obj_info, message);
-                if (!result)
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " holds no usable mesh: " + message + "; check the file");
-#ifndef ENGINE_SNAPMAKER
-                // ObjInfo::lost_material_name is OrcaSlicer 2.4 only; the
-                // Snapmaker fork's ObjInfo carries no such field
-                // (references/SnapmakerOrca/src/libslic3r/Format/OBJ.hpp:12-25
-                // at bac6fd5), so an unmatched MTL material cannot be named.
-                if (!obj_info.lost_material_name.empty())
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " uses the material " +
-                                                         obj_info.lost_material_name +
-                                                         ", which its MTL file lacks; check the file");
-#endif
-                if (!obj_info.face_colors.empty() && obj_info.face_colors.size() < mesh.facets_count())
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " gives some faces no colour; check its MTL and OBJ files.");
-                object_name.erase(object_name.end() - 4, object_name.end());
-                object_1_name = object_name + "_1";
-                Model obj_temp_model;
-                ModelObject* temp_object = obj_temp_model.add_object(object_1_name.c_str(), path_str, std::move(mesh));
-                if (!temp_object)
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
-                std::vector<unsigned char> output_filament_ids;
-                int first_filament_id = 0;
-#ifdef ENGINE_ORCA
-                if (!obj_info.vertex_colors.empty()) {
-                    convert_obj_cluster_colors(obj_info.vertex_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
-                    if (!output_filament_ids.empty()) {
-                        unsigned char first_extruder_id = output_filament_ids.front();
-                        result = Model::obj_import_vertex_color_deal(output_filament_ids, first_extruder_id, &obj_temp_model);
-                    }
-                    skip_filament = true;
-                } else if (!obj_info.face_colors.empty() && !obj_info.has_uv_png) {
-                    convert_obj_cluster_colors(obj_info.face_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
-                    if (!output_filament_ids.empty()) {
-                        unsigned char first_extruder_id = output_filament_ids.front();
-                        result = Model::obj_import_face_color_deal(output_filament_ids, first_extruder_id, &obj_temp_model);
-                    }
-                    skip_filament = true;
-                }
-#else
-                if (!obj_info.vertex_colors.empty()) {
-                    convert_obj_cluster_colors(obj_info.vertex_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id);
-                    if (!output_filament_ids.empty())
-                        result = Model::obj_import_color_deal(output_filament_ids, std::optional<unsigned char>(first_filament_id),
-                                                              &obj_temp_model, [](int) { return true; });
-                    skip_filament = true;
-                } else if (!obj_info.face_colors.empty() && !obj_info.has_uv_png) {
-                    convert_obj_cluster_colors(obj_info.face_colors, all_colours, max_filament_count, output_filament_ids, first_filament_id,
-                                               obj_info.first_time_using_makerlab, obj_info.mtl_colors);
-                    if (!output_filament_ids.empty())
-                        result = Model::obj_import_color_deal(output_filament_ids, std::optional<unsigned char>(first_filament_id),
-                                                              &obj_temp_model, [](int) { return false; });
-                    skip_filament = true;
-                }
-#endif
-                if (!result)
-                    return fail(CLI_DATA_FILE_ERROR, "The colours of the OBJ " + what +
-                                                         " could not be turned into filaments; check the file");
-                object = temp_model.add_object(*temp_object);
-                obj_temp_model.clear_objects();
-                obj_temp_model.clear_materials();
-                if (!object)
-                    return fail(CLI_DATA_FILE_ERROR, "The OBJ " + what + " could not be added; check the file");
-            } else {
-                return fail(CLI_INVALID_PARAMS, "The assemble list names " + what +
-                                                    "; it takes STL files, and OBJ files as normal parts.");
-            }
+            if (auto step = load_assemble_object(assemble_object, what, object_name,
+                    object_1_name, mesh, object, skip_filament, temp_model, all_colours,
+                    max_filament_count, sources); step.code)
+                return step;
 
             if (!skip_filament) {
                 if (assemble_object.filaments.empty())
