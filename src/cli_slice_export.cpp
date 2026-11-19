@@ -23,6 +23,57 @@
 
 namespace slicer_cli {
 
+static void copy_sliced_plate_results(CliRunContext& context, const std::vector<PlateOutcome>& outcomes,
+        int count, bool geometry_input, Slic3r::PlateDataPtrs& plates) {
+    using namespace Slic3r;
+    // Each sliced plate's slice result (BambuStudio.cpp 7483-7532).
+    for (const PlateOutcome& out : outcomes) {
+        if (!out.plate_data) continue;
+        const int idx = geometry_input && !context.g_assemble ? 0 : out.plate_id - 1;
+        if (idx < 0 || idx >= count) continue;
+        PlateData* pd = plates[idx];
+        const PlateData& sliced = *out.plate_data;
+        pd->gcode_file               = sliced.gcode_file;
+        pd->is_sliced_valid          = true;
+        pd->gcode_prediction         = sliced.gcode_prediction;
+        pd->gcode_weight             = sliced.gcode_weight;
+        pd->toolpath_outside         = sliced.toolpath_outside;
+        pd->timelapse_warning_code   = sliced.timelapse_warning_code;
+        pd->is_label_object_enabled  = sliced.is_label_object_enabled;
+#ifndef ENGINE_SNAPMAKER
+        // Not in Snapmaker's PlateData at bac6fd5 (see record_plate_for_export).
+        pd->limit_filament_maps      = sliced.limit_filament_maps;
+        pd->layer_filaments          = sliced.layer_filaments;
+        pd->filament_change_sequence = sliced.filament_change_sequence;
+        pd->nozzle_change_sequence   = sliced.nozzle_change_sequence;
+        pd->optimal_assignment       = sliced.optimal_assignment;
+        pd->filament_maps            = sliced.filament_maps;
+#endif
+        pd->is_support_used          = sliced.is_support_used;
+        pd->slice_filaments_info     = sliced.slice_filaments_info;
+        pd->skipped_objects          = sliced.skipped_objects;
+        pd->printer_model_id         = sliced.printer_model_id;
+        pd->nozzle_diameters         = sliced.nozzle_diameters;
+#ifndef ENGINE_SNAPMAKER
+        // The routing the slice derived from a supplied nozzle map, or the
+        // command line's --filament-map, on this plate only: store_bbs_3mf writes a plate's filament_map_mode and
+        // filament_maps from its config (bbs_3mf.cpp 8260-8279 at 5873b5f;
+        // PartPlate::set_filament_maps keeps the map there, PartPlate.cpp
+        // 3860-3863), and a plate mode other than Default wins over the
+        // project's (PartPlate.cpp 278-289). The objects keep their own
+        // filaments, so an object with copies on other plates stays as it is.
+        if (!out.derived_filament_map.empty())
+            pd->config.option<ConfigOptionInts>("filament_map", true)->values = out.derived_filament_map;
+        if (!out.derived_filament_map_mode.empty()) {
+            ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
+            pd->config.set_deserialize("filament_map_mode", out.derived_filament_map_mode, mode_subst);
+        }
+        for (const auto& [key, values] : out.flag_plate_maps)
+            pd->config.option<ConfigOptionInts>(key, true)->values = values;
+#endif
+    }
+}
+
 /// --export-3mf: the sliced project, written with store_bbs_3mf as the
 /// official CLI writes it: export_project(&m_models[0], plate_data_list,
 /// project_presets, ..., &m_print_config, minimum_save, plate_to_slice - 1)
@@ -94,52 +145,7 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
                     break;
                 }
         }
-    // Each sliced plate's slice result (BambuStudio.cpp 7483-7532).
-    for (const PlateOutcome& out : outcomes) {
-        if (!out.plate_data) continue;
-        const int idx = geometry_input && !context.g_assemble ? 0 : out.plate_id - 1;
-        if (idx < 0 || idx >= count) continue;
-        PlateData* pd = plates[idx];
-        const PlateData& sliced = *out.plate_data;
-        pd->gcode_file               = sliced.gcode_file;
-        pd->is_sliced_valid          = true;
-        pd->gcode_prediction         = sliced.gcode_prediction;
-        pd->gcode_weight             = sliced.gcode_weight;
-        pd->toolpath_outside         = sliced.toolpath_outside;
-        pd->timelapse_warning_code   = sliced.timelapse_warning_code;
-        pd->is_label_object_enabled  = sliced.is_label_object_enabled;
-#ifndef ENGINE_SNAPMAKER
-        // Not in Snapmaker's PlateData at bac6fd5 (see record_plate_for_export).
-        pd->limit_filament_maps      = sliced.limit_filament_maps;
-        pd->layer_filaments          = sliced.layer_filaments;
-        pd->filament_change_sequence = sliced.filament_change_sequence;
-        pd->nozzle_change_sequence   = sliced.nozzle_change_sequence;
-        pd->optimal_assignment       = sliced.optimal_assignment;
-        pd->filament_maps            = sliced.filament_maps;
-#endif
-        pd->is_support_used          = sliced.is_support_used;
-        pd->slice_filaments_info     = sliced.slice_filaments_info;
-        pd->skipped_objects          = sliced.skipped_objects;
-        pd->printer_model_id         = sliced.printer_model_id;
-        pd->nozzle_diameters         = sliced.nozzle_diameters;
-#ifndef ENGINE_SNAPMAKER
-        // The routing the slice derived from a supplied nozzle map, or the
-        // command line's --filament-map, on this plate only: store_bbs_3mf writes a plate's filament_map_mode and
-        // filament_maps from its config (bbs_3mf.cpp 8260-8279 at 5873b5f;
-        // PartPlate::set_filament_maps keeps the map there, PartPlate.cpp
-        // 3860-3863), and a plate mode other than Default wins over the
-        // project's (PartPlate.cpp 278-289). The objects keep their own
-        // filaments, so an object with copies on other plates stays as it is.
-        if (!out.derived_filament_map.empty())
-            pd->config.option<ConfigOptionInts>("filament_map", true)->values = out.derived_filament_map;
-        if (!out.derived_filament_map_mode.empty()) {
-            ConfigSubstitutionContext mode_subst(ForwardCompatibilitySubstitutionRule::Enable);
-            pd->config.set_deserialize("filament_map_mode", out.derived_filament_map_mode, mode_subst);
-        }
-        for (const auto& [key, values] : out.flag_plate_maps)
-            pd->config.option<ConfigOptionInts>(key, true)->values = values;
-#endif
-    }
+    copy_sliced_plate_results(context, outcomes, count, geometry_input, plates);
     // printer_model_id per plate after a printer change (BambuStudio.cpp 7524-7525).
     if (!rs.settings.settings_merge.printer_model_id.empty())
         for (PlateData* pd : plates)
@@ -247,70 +253,11 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
     return 0;
 }
 
-/// Every file this run writes, checked before the run writes any of them,
-/// whatever flags are given: no two of them may be one file (the one written
-/// last would replace the other, and the run would report success with a
-/// requested output lost), and none may be a file the run reads.
-///
-/// The outputs: result.json and each sliced plate's plate_<n>.gcode in
-/// --outputdir (--slice), the G-code of -o (the single-plate call),
-/// --export-3mf (joined onto --outputdir, as the official joins it:
-/// export_3mf_file = outfile_dir + "/" + export_3mf_file, BambuStudio.cpp
-/// 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803), the
-/// --export-settings file, the object STL files of --export-stl /
-/// --export-stls (each object's own name, object_stl_file, read from the
-/// loaded `model`) and the plate folders under --export-slicedata.
-///
-/// It runs twice in a --slice run: once the model is loaded and before the
-/// first action writes a file (every output but the plates', whose plan may
-/// not be final yet; `plates` holds the ones already known), and again once
-/// the plate plan is final, before the first plate is sliced, with every
-/// plate. A run without --slice checks once, before its actions and its -o
-/// G-code.
-///
-/// Two outputs are compared by name, the link chain followed and without
-/// case on every system (they may not exist yet; a name that differs from
-/// another only by letter case is refused too, as an odd combination), and
-/// two existing names for one file by fs::equivalent. An output overwrites an
-/// input only when it is that file, and the inputs exist, so that check asks
-/// the file system (fs::equivalent: links, hard links and the volume's own
-/// case rule); an output that does not exist overwrites nothing.
-///
-/// Returns 0, or CLI_INVALID_PARAMS once the refusal is reported (-2:
-/// ExportOverwritesInput for an input, ExportNameTaken for two outputs). With
-/// `detail` the sentence is handed back for the caller's result; without it,
-/// result.json is written here.
-///
-/// `reserved` holds outputs already written by actions given before --slice
-/// (the check the calibration pattern runs after it, once the model is the
-/// pattern): their names are taken, so every output still to come is called
-/// out against them, and they are not checked or run again. `reserve` hands
-/// the outputs of those earlier actions back for that second check.
-int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
-                             std::string* detail, bool after_slice_actions_only,
-                             const std::vector<RunOutput>* reserved,
-                             std::vector<RunOutput>* reserve) {
+static void collect_run_outputs(const CliOptions& o, const boost::filesystem::path& outdir,
+        const std::vector<int>& plates, const Slic3r::Model* model, bool after_slice_actions_only,
+        const std::vector<RunOutput>* reserved, std::vector<RunOutput>* reserve,
+        std::vector<RunOutput>& outputs) {
     namespace fs = boost::filesystem;
-    const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
-    const auto key = [](const fs::path& p) {
-        // A link whose target does not exist yet (result.json before the run
-        // writes it) is not resolved by weakly_canonical: follow the chain by
-        // hand first.
-        fs::path q = fs::absolute(p);
-        boost::system::error_code ec;
-        for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
-            const fs::path link = fs::read_symlink(q, ec);
-            if (ec) break;
-            q = link.is_absolute() ? link : q.parent_path() / link;
-        }
-        ec.clear();
-        const fs::path resolved = fs::weakly_canonical(q, ec);
-        return (ec ? q : resolved).lexically_normal().generic_string();
-    };
-    const auto lower = [](const std::string& s) { return boost::algorithm::to_lower_copy(s); };
-
-    // ── What the run writes ─────────────────────────────────────────────
-    std::vector<RunOutput> outputs;
     const auto add = [&](bool folder, bool stl, const std::string& flag, const fs::path& path,
                          const std::string& what, const std::string& is_what, bool before_slice = false) {
         RunOutput out;
@@ -385,6 +332,73 @@ int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::ve
         add(false, false, "-o " + o.output_file, fs::path(o.output_file), "the G-code -o " + o.output_file + " writes",
             "the G-code -o " + o.output_file + " writes");
     }
+}
+
+/// Every file this run writes, checked before the run writes any of them,
+/// whatever flags are given: no two of them may be one file (the one written
+/// last would replace the other, and the run would report success with a
+/// requested output lost), and none may be a file the run reads.
+///
+/// The outputs: result.json and each sliced plate's plate_<n>.gcode in
+/// --outputdir (--slice), the G-code of -o (the single-plate call),
+/// --export-3mf (joined onto --outputdir, as the official joins it:
+/// export_3mf_file = outfile_dir + "/" + export_3mf_file, BambuStudio.cpp
+/// 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803), the
+/// --export-settings file, the object STL files of --export-stl /
+/// --export-stls (each object's own name, object_stl_file, read from the
+/// loaded `model`) and the plate folders under --export-slicedata.
+///
+/// It runs twice in a --slice run: once the model is loaded and before the
+/// first action writes a file (every output but the plates', whose plan may
+/// not be final yet; `plates` holds the ones already known), and again once
+/// the plate plan is final, before the first plate is sliced, with every
+/// plate. A run without --slice checks once, before its actions and its -o
+/// G-code.
+///
+/// Two outputs are compared by name, the link chain followed and without
+/// case on every system (they may not exist yet; a name that differs from
+/// another only by letter case is refused too, as an odd combination), and
+/// two existing names for one file by fs::equivalent. An output overwrites an
+/// input only when it is that file, and the inputs exist, so that check asks
+/// the file system (fs::equivalent: links, hard links and the volume's own
+/// case rule); an output that does not exist overwrites nothing.
+///
+/// Returns 0, or CLI_INVALID_PARAMS once the refusal is reported (-2:
+/// ExportOverwritesInput for an input, ExportNameTaken for two outputs). With
+/// `detail` the sentence is handed back for the caller's result; without it,
+/// result.json is written here.
+///
+/// `reserved` holds outputs already written by actions given before --slice
+/// (the check the calibration pattern runs after it, once the model is the
+/// pattern): their names are taken, so every output still to come is called
+/// out against them, and they are not checked or run again. `reserve` hands
+/// the outputs of those earlier actions back for that second check.
+int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::vector<int>& plates, const Slic3r::Model* model,
+                             std::string* detail, bool after_slice_actions_only,
+                             const std::vector<RunOutput>* reserved,
+                             std::vector<RunOutput>* reserve) {
+    namespace fs = boost::filesystem;
+    const fs::path outdir = o.outputdir.empty() ? fs::path(".") : fs::path(o.outputdir);
+    const auto key = [](const fs::path& p) {
+        // A link whose target does not exist yet (result.json before the run
+        // writes it) is not resolved by weakly_canonical: follow the chain by
+        // hand first.
+        fs::path q = fs::absolute(p);
+        boost::system::error_code ec;
+        for (int hops = 0; hops < 40 && fs::is_symlink(q, ec) && !ec; ++hops) {
+            const fs::path link = fs::read_symlink(q, ec);
+            if (ec) break;
+            q = link.is_absolute() ? link : q.parent_path() / link;
+        }
+        ec.clear();
+        const fs::path resolved = fs::weakly_canonical(q, ec);
+        return (ec ? q : resolved).lexically_normal().generic_string();
+    };
+    const auto lower = [](const std::string& s) { return boost::algorithm::to_lower_copy(s); };
+
+    // ── What the run writes ─────────────────────────────────────────────
+    std::vector<RunOutput> outputs;
+    collect_run_outputs(o, outdir, plates, model, after_slice_actions_only, reserved, reserve, outputs);
 
     // ── What the run reads ──────────────────────────────────────────────
     // With the STL and OBJ files the assemble list names, as its loader opens
