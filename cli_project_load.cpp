@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/libslic3r.h"
 
 namespace slicer_cli {
@@ -49,22 +50,91 @@ void project_load_tower_positions_per_plate(Slic3r::DynamicPrintConfig& config, 
             opt->values.resize(plate_count, opt->values.front());
 }
 
+// Two lists that hold one same value, repeated a different number of times
+// (one value where the other holds it once per extruder or variant).
+static bool same_value_repeated(const Slic3r::ConfigOption* a, const Slic3r::ConfigOption* b) {
+    using namespace Slic3r;
+    const auto* va = dynamic_cast<const ConfigOptionVectorBase*>(a);
+    const auto* vb = dynamic_cast<const ConfigOptionVectorBase*>(b);
+    if (va == nullptr || vb == nullptr)
+        return false;
+    const std::vector<std::string> sa = va->vserialize(), sb = vb->vserialize();
+    if (sa.empty() || sb.empty())
+        return false;
+    const auto all_are = [](const std::vector<std::string>& v, const std::string& x) {
+        return std::all_of(v.begin(), v.end(), [&x](const std::string& e) { return e == x; });
+    };
+    return all_are(sa, sa.front()) && all_are(sb, sa.front());
+}
+
+void keep_replaced_printed_differently(std::vector<std::string>& replaced,
+                                       const std::map<std::string, std::vector<std::string>>& file_values,
+                                       const Slic3r::DynamicPrintConfig& printed,
+                                       const std::set<std::string>& command_line) {
+    using namespace Slic3r;
+    // The keys that index each preset type's per-variant lists, not settings
+    // of the print: Preset::get_extruder_names_and_keysets (BambuStudio
+    // Preset.cpp 957-980 at v02.09.01.70), and filament_self_index, which the
+    // engine sizes to filament_extruder_variant (PresetBundle.cpp 4866-4868).
+    static const std::set<std::string> variant_index = {"print_extruder_id",       "print_extruder_variant",
+                                                        "printer_extruder_id",     "printer_extruder_variant",
+                                                        "filament_extruder_variant", "filament_self_index"};
+    replaced.erase(std::remove_if(replaced.begin(), replaced.end(),
+                                  [&](const std::string& key) {
+                                      if (command_line.count(key) != 0 || variant_index.count(key) != 0)
+                                          return true;
+                                      // A setting the app shows: one with a
+                                      // label, outside the developer mode
+                                      // (comDevelop; the device's AMS drying
+                                      // values have no label at all, BambuStudio
+                                      // PrintConfig.cpp 7479-7486 at v02.09.01.70).
+                                      const ConfigOptionDef* def = print_config_def.get(key);
+                                      if (def == nullptr || def->label.empty() || def->mode == comDevelop)
+                                          return true;
+                                      // A project-level setting is the
+                                      // project's, never a preset's: the
+                                      // desktop takes it from the file
+                                      // (s_project_options, project_config;
+                                      // BambuStudio PresetBundle.cpp 59-90,
+                                      // 428, 5574; OrcaSlicer 391, 4565;
+                                      // Snapmaker Orca 303, 3135).
+                                      static const std::set<std::string> project_level = [] {
+                                          const PresetBundle bundle;
+                                          const t_config_option_keys keys = bundle.project_config.keys();
+                                          return std::set<std::string>(keys.begin(), keys.end());
+                                      }();
+                                      if (project_level.count(key) != 0)
+                                          return true;
+                                      const ConfigOption* used = printed.option(key);
+                                      const auto file = file_values.find(key);
+                                      if (used == nullptr || file == file_values.end())
+                                          return true;
+                                      // The file's value as the engine read
+                                      // it and, for a text value, as the file
+                                      // writes it (a reader can rewrite the
+                                      // text: OrcaSlicer's thumbnails, PrintConfig.cpp
+                                      // 8292-8312 at 8500fcd).
+                                      for (const std::string& value : file->second) {
+                                          if (value == used->serialize())
+                                              return true;
+                                          std::unique_ptr<ConfigOption> stated(used->clone());
+                                          try {
+                                              if (!stated->deserialize(value))
+                                                  continue;
+                                          } catch (const std::exception&) {
+                                              continue;
+                                          }
+                                          if (*stated == *used || same_value_repeated(stated.get(), used))
+                                              return true;
+                                      }
+                                      return false;
+                                  }),
+                   replaced.end());
+}
+
 std::vector<std::string> settings_replaced_by_presets(const Slic3r::DynamicPrintConfig& file,
                                                       const Slic3r::DynamicPrintConfig& loaded) {
     using namespace Slic3r;
-    const auto same_value_repeated = [](const ConfigOption* a, const ConfigOption* b) {
-        const auto* va = dynamic_cast<const ConfigOptionVectorBase*>(a);
-        const auto* vb = dynamic_cast<const ConfigOptionVectorBase*>(b);
-        if (va == nullptr || vb == nullptr)
-            return false;
-        const std::vector<std::string> sa = va->vserialize(), sb = vb->vserialize();
-        if (sa.empty() || sb.empty())
-            return false;
-        const auto all_are = [](const std::vector<std::string>& v, const std::string& x) {
-            return std::all_of(v.begin(), v.end(), [&x](const std::string& e) { return e == x; });
-        };
-        return all_are(sa, sa.front()) && all_are(sb, sa.front());
-    };
     std::vector<std::string> replaced;
     for (const std::string& key : file.diff(loaded))
         if (key != "different_settings_to_system" && key != "inherits_group" &&

@@ -89,7 +89,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Settings whose value in the project file was replaced by the preset's, because the file does not list them as changed by its maker (different_settings_to_system); the desktop app loads the project the same way. Empty with --project-settings-as-saved and for model files."
+      "description": "Settings the project file states and that printed with the preset's value instead, because the file does not list them as changed by its maker (different_settings_to_system); the desktop app loads the project the same way. Only settings the app shows, not set by a flag, whose printed value differs from the file's. Empty with --project-settings-as-saved and for model files."
     },
     "downward_compatible_machine": {
       "type": "array",
