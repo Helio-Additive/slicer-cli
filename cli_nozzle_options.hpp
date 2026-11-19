@@ -72,4 +72,16 @@ std::string manual_mode_nozzle_maps(Slic3r::DynamicPrintConfig& extra, const Sli
 std::string manual_map_extruder_refusal(const Slic3r::DynamicPrintConfig& config, const std::vector<int>& plate_filaments);
 #endif
 
+#ifdef ENGINE_BAMBU
+/// A project moved to another printer (a printer settings file): the Bambu
+/// Studio app keeps the file's nozzles on an extruder only when they hold the
+/// new printer's diameter (on a nozzle rack, when any nozzle is installed);
+/// another extruder takes the printer's default nozzles (NozzleInventory
+/// resolve and holds_selected_diameter, NozzleInventory.cpp 69-76, 523-541,
+/// read_selected_printer 128-155, at v02.09.01.70). Rewrites the per-slot
+/// nozzle keys of `config` when an extruder's do not hold it; returns whether
+/// it did. `config` already holds the new printer's settings.
+bool fit_project_nozzles_to_printer(Slic3r::DynamicPrintConfig& config);
+#endif
+
 } // namespace slicer_cli

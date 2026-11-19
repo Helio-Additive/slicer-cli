@@ -1769,6 +1769,9 @@ jobs:
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          # Settings files and projects that name their parents, and a project
+          # moved to another printer (an H2D project given the H2D 0.6 mm printer).
+          bash tests/test-inherits-inputs.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
           # --list-settings: the settings table of both engines as JSON.
           bash tests/test_list_settings.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
           # --list-flags: the flags of every binary as JSON.
@@ -2123,6 +2126,7 @@ jobs:
           ulimit -c unlimited
           sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p" || echo "core_pattern not settable; no cores this run"
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
+          bash tests/test-inherits-inputs.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
 
       - name: Backtraces of crashed slicer runs (Linux)
         if: failure()

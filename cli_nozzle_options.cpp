@@ -4,6 +4,11 @@
 #include <cmath>
 #include <map>
 
+#ifdef ENGINE_BAMBU
+#include "libslic3r/LocalesUtils.hpp"   // string_to_double_decimal_point
+#include "libslic3r/Utils.hpp"          // format_diameter_to_str
+#endif
+
 namespace slicer_cli {
 
 using namespace Slic3r;
@@ -278,5 +283,79 @@ std::string manual_map_extruder_refusal(const DynamicPrintConfig& config, const 
     return {};
 }
 #endif // ENGINE_ORCA
+
+#ifdef ENGINE_BAMBU
+bool fit_project_nozzles_to_printer(Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    if (!per_slot_nozzle_options_consistent(config) || !config.has("printer_variant"))
+        return false;
+    const auto* nozzle_diameters = config.option<ConfigOptionFloats>("nozzle_diameter");
+    const auto* max_counts       = config.option<ConfigOptionIntsNullable>("extruder_max_nozzle_count");
+    const size_t extruder_count  = nozzle_diameters ? nozzle_diameters->values.size() : 1;
+    // read_selected_printer: the diameter, each extruder's slot count, the
+    // default volume type of each slot, and whether an extruder has a rack.
+    const std::string diameter = format_diameter_to_str(string_to_double_decimal_point(config.opt_string("printer_variant")));
+    std::vector<int> slot_counts;
+    bool has_rack = false;
+    for (size_t eid = 0; eid < extruder_count; ++eid) {
+        int slot_count = 1;
+        if (max_counts && eid < max_counts->values.size() && !max_counts->is_nil(eid) && max_counts->values[eid] > 0)
+            slot_count = max_counts->values[eid];
+        slot_counts.push_back(slot_count);
+        has_rack = has_rack || slot_count > 1;
+    }
+
+    // The file's slots per extruder: extruder_nozzle_count nozzles each, in
+    // order, at the global slot extruder_nozzle_slot names.
+    const std::vector<int>    counts = config.option<ConfigOptionInts>("extruder_nozzle_count")->values;
+    const std::vector<int>    types  = config.option<ConfigOptionEnumsGeneric>("extruder_nozzle_volume_type")->values;
+    const std::vector<double> sizes  = config.option<ConfigOptionFloats>("extruder_nozzle_diameter")->values;
+    const std::vector<int>    slots  = config.option<ConfigOptionInts>("extruder_nozzle_slot")->values;
+    if (counts.size() != extruder_count)
+        return false;
+    using Slot = std::pair<std::string, std::string>;   // diameter, volume type; empty when no nozzle
+    std::vector<std::vector<Slot>> file(extruder_count);
+    size_t nozzle = 0;
+    int    offset = 0;
+    for (size_t eid = 0; eid < extruder_count; ++eid) {
+        file[eid].assign(size_t(slot_counts[eid]), Slot{});
+        for (int i = 0; i < counts[eid]; ++i, ++nozzle) {
+            const int at = slots[nozzle] - offset;
+            if (at < 0 || at >= slot_counts[eid])
+                return false;
+            file[eid][size_t(at)] = {format_diameter_to_str(sizes[nozzle]),
+                                     GetNozzleVolumeTypeStr(NozzleVolumeType(types[nozzle]))};
+        }
+        offset += slot_counts[eid];
+    }
+
+    // holds_selected_diameter, then resolve(): the file's slots, or the
+    // printer's defaults (uniform_slots) with a type the diameter is not
+    // made in replaced by Standard (drop_unmade_volume_types).
+    bool changed = false;
+    ExtruderFullStat full_stat;
+    full_stat.resize(extruder_count);
+    for (size_t eid = 0; eid < extruder_count; ++eid) {
+        const bool holds = has_rack
+            ? std::any_of(file[eid].begin(), file[eid].end(), [](const Slot& s) { return !s.second.empty(); })
+            : std::any_of(file[eid].begin(), file[eid].end(), [&diameter](const Slot& s) { return s.first == diameter; });
+        std::vector<Slot> result = file[eid];
+        if (!holds) {
+            changed = true;
+            result.clear();
+            for (int slot = 0; slot < slot_counts[eid]; ++slot) {
+                NozzleVolumeType type = get_default_nozzle_volume_type(config, int(eid), slot);
+                if (!nozzle_variant_exists(diameter, type))
+                    type = nvtStandard;
+                result.emplace_back(diameter, GetNozzleVolumeTypeStr(type));
+            }
+        }
+        full_stat.set_extruder_stats(eid, result);
+    }
+    if (changed)
+        sync_per_slot_nozzle_options_from_full_stat(config, full_stat);
+    return changed;
+}
+#endif
 
 } // namespace slicer_cli
