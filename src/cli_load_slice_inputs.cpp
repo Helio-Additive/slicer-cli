@@ -1123,16 +1123,17 @@ static void normalize_toolchanger_vectors(bool verbose, Slic3r::DynamicPrintConf
 }
 #endif
 
-int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs, int plate_id,
+int load_slice_inputs(CliRunContext& context, const CliOptions& o, LoadedProject& loaded_project, RunSettings& run_settings,
+                      RunPlatePlan& plate_plan, PlateWarnings& plate_warnings, int plate_id,
                       const PlateLoadInputs& inputs, PlateLoadSettings& settings, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
     const bool verbose                 = o.verbose;
     const auto& overrides = o.overrides;
-    Slic3r::Model& model = rs.project.model;
-    Slic3r::PlateDataPtrs& plate_data = rs.project.plate_data;
-    slicer_cli::ProjectFacts& project_facts = rs.project.project_facts;
-    Slic3r::DynamicPrintConfig& extra = rs.settings.extra;
-    bool& explicit_config_supplied_nozzle_map = rs.settings.explicit_config_supplied_nozzle_map;
+    Slic3r::Model& model = loaded_project.model;
+    Slic3r::PlateDataPtrs& plate_data = loaded_project.plate_data;
+    slicer_cli::ProjectFacts& project_facts = loaded_project.project_facts;
+    Slic3r::DynamicPrintConfig& extra = run_settings.extra;
+    bool& explicit_config_supplied_nozzle_map = run_settings.explicit_config_supplied_nozzle_map;
     auto& config = settings.config;
 
     std::cout << "\nConfiguring print settings...\n";
@@ -1162,16 +1163,16 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     // (each plate's own, or any temporary) can take the folder down while
     // a later load still writes into it (detach_run_backup_path).
     const RunBackupDetach detach_run_model{model};
-    if (load_input_geometry(context, o, rs.project, rs.layout, outcome, plate_id, settings, inputs) != 0)
+    if (load_input_geometry(context, o, loaded_project, plate_plan, outcome, plate_id, settings, inputs) != 0)
         return 1;
 
-    if (finish_loaded_geometry(o, rs.project, rs.layout, outcome, plate_id, config,
+    if (finish_loaded_geometry(o, loaded_project, plate_plan, outcome, plate_id, config,
             inputs) != 0)
         return 1;
 
     load_named_and_file_profiles(context, o, outcome, config, explicit_config_supplied_nozzle_map);
-    if (merge_slice_settings(context, o, outcome, plate_id, config, inputs, rs.project,
-            rs.settings) != 0)
+    if (merge_slice_settings(context, o, outcome, plate_id, config, inputs, loaded_project,
+            run_settings) != 0)
         return 1;
     // Every setting given as a flag, over the loaded settings: the
     // official m_print_config.apply(m_extra_config, true)
@@ -1183,15 +1184,15 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     if (select_nozzle_and_plate(context, o, outcome, config, inputs) != 0)
         return 1;
 
-    if (validate_loaded_plate_settings(rs.warnings, outcome, plate_id, overrides, settings,
+    if (validate_loaded_plate_settings(plate_warnings, outcome, plate_id, overrides, settings,
             extra, plate_data, inputs,
             settings_before_flags) != 0)
         return 1;
 
-    move_loaded_project_to_bed(context, rs.layout, plate_id, config, inputs, rs.project, rs.settings);
+    move_loaded_project_to_bed(context, plate_plan, plate_id, config, inputs, loaded_project, run_settings);
 
 #ifdef ENGINE_BAMBU
-    initialize_extruder_nozzle_stats(rs.settings, config, project_facts);
+    initialize_extruder_nozzle_stats(run_settings, config, project_facts);
 #endif
 
 #ifdef ENGINE_BAMBU
@@ -1200,8 +1201,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
 
     // The run's settings base, m_print_config (see RunState): everything
     // above runs once per run.
-    rs.settings.base = config;
-    rs.project.loaded = true;
+    run_settings.base = config;
+    loaded_project.loaded = true;
     return 0;
 }
 

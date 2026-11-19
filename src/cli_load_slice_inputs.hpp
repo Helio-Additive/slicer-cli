@@ -10,7 +10,10 @@ struct CliOptions;
 namespace slicer_cli {
 
 struct CliRunContext;
-struct RunState;
+struct LoadedProject;
+struct RunSettings;
+struct RunPlatePlan;
+struct PlateWarnings;
 struct PlateOutcome;
 
 struct PlateLoadInputs {
@@ -29,7 +32,8 @@ struct PlateLoadSettings {
     nlohmann::json unknown_items = nlohmann::json::array();
 };
 
-int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs, int plate_id,
+int load_slice_inputs(CliRunContext& context, const CliOptions& o, LoadedProject& loaded_project, RunSettings& run_settings,
+                      RunPlatePlan& plate_plan, PlateWarnings& plate_warnings, int plate_id,
                       const PlateLoadInputs& inputs, PlateLoadSettings& settings, PlateOutcome& outcome);
 
 } // namespace slicer_cli

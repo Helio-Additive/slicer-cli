@@ -694,7 +694,8 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         std::optional<Slic3r::DynamicPrintConfig> project_settings;
         slicer_cli::SettingsMerge& settings_merge = rs.settings.settings_merge;
         if (!rs.project.loaded) {
-            const int rc = load_slice_inputs(context, o, rs, plate_id, inputs, load_settings, outcome);
+            const int rc = load_slice_inputs(context, o, rs.project, rs.settings, rs.layout, rs.warnings,
+                                             plate_id, inputs, load_settings, outcome);
             if (rc != 0)
                 return rc;
         }
