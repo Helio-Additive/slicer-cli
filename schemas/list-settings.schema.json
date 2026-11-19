@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/list-settings.schema.json",
   "title": "slicer-cli --list-settings",
-  "description": "The JSON document --list-settings prints on stdout (run_list_settings in main.cpp): this engine's settings table, exit code 0. tests/test_list_settings.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
+  "description": "The JSON document --list-settings prints on stdout (run_list_settings in src/cli_list_settings.cpp): this engine's settings table, exit code 0. tests/test_list_settings.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
   "type": "object",
   "required": [
     "engine",

@@ -22,13 +22,13 @@ Read first, and change here rather than copy: [README.md](README.md),
 
 | Path | What it is |
 |-|-|
-| `main.cpp` | The front end: option parsing, run modes, the engine-specific blocks (`ENGINE_BAMBU` / `ENGINE_ORCA` / `ENGINE_SNAPMAKER`) |
-| `cli_snapmaker.cpp` | The Snapmaker Orca build's desktop rules (mixed filaments, paint remap, pre-slice checks, the prime tower) and its profile lookup |
-| `cli_command_line.cpp`, `cli_flag_support.cpp` | Flag table, `--help`, the refusal sentences for flags a program does not take |
-| `cli_load_settings.cpp`, `desktop_presets.cpp` | Preset/profile resolution, `inherits` chains, desktop-equivalent selection |
-| `cli_model_load.cpp`, `cli_assemble.cpp`, `cli_run_steps.cpp`, `cli_repetitions.cpp` | Model and 3MF loading, plate assembly, the run itself, repeated plates |
-| `cli_pipe.cpp` | The official Linux progress pipe |
-| `layout_plan.cpp`, `calib_args.cpp`, `startup_logging.cpp` | `--layout` planning, calibration arguments, startup log |
+| `src/main.cpp` | The front end: option parsing, run modes, the engine-specific blocks (`ENGINE_BAMBU` / `ENGINE_ORCA` / `ENGINE_SNAPMAKER`) |
+| `src/cli_snapmaker.cpp` | The Snapmaker Orca build's desktop rules (mixed filaments, paint remap, pre-slice checks, the prime tower) and its profile lookup |
+| `src/cli_command_line.cpp`, `src/cli_flag_support.cpp` | Flag table, `--help`, the refusal sentences for flags a program does not take |
+| `src/cli_load_settings.cpp`, `src/desktop_presets.cpp` | Preset/profile resolution, `inherits` chains, desktop-equivalent selection |
+| `src/cli_model_load.cpp`, `src/cli_assemble.cpp`, `src/cli_run_steps.cpp`, `src/cli_repetitions.cpp` | Model and 3MF loading, plate assembly, the run itself, repeated plates |
+| `src/cli_pipe.cpp` | The official Linux progress pipe |
+| `src/layout_plan.cpp`, `src/calib_args.cpp`, `src/startup_logging.cpp` | `--layout` planning, calibration arguments, startup log |
 | `libslic3r/bambustudio/`, `libslic3r/orcaslicer/`, `libslic3r/snapmaker/` | The override layer: files that replace engine source of the same relative path |
 | `references/BambuStudio`, `references/OrcaSlicer`, `references/SnapmakerOrca` | The pinned engine submodules. Read-only, upstream as-is |
 | `tests/` | The test scripts, run against built or packaged programs |
@@ -119,7 +119,7 @@ compiles about 1,500 engine files.
   single-engine code path. Where the engines differ, follow each engine's own
   code and say which one a line applies to; engine-only code is guarded by
   `#ifdef ENGINE_ORCA` / `#ifndef ENGINE_ORCA`, and Snapmaker-only code by
-  `#ifdef ENGINE_SNAPMAKER` (in `cli_snapmaker.cpp` where it is more than a
+  `#ifdef ENGINE_SNAPMAKER` (in `src/cli_snapmaker.cpp` where it is more than a
   branch). A change for the Snapmaker build must leave the other two programs'
   output as it was.
 - **New behaviour gets a new flag; an existing flag keeps its meaning.** What
@@ -147,7 +147,7 @@ compiles about 1,500 engine files.
   `tests/test_official_cli_parity.py` fails on any other such refusal. "The
   engine derives it" is not a reason.
 - **Refusals are clear sentences that say what to do**, and name the program
-  that fits when the other engine does (`cli_flag_support.cpp`): a flag a
+  that fits when the other engine does (`src/cli_flag_support.cpp`): a flag a
   program does not take is refused by name, before anything loads, and points
   at `slicer_cli`, `slicer_cli-orcaslicer` or `slicer_cli-snapmaker` as appropriate.
 - **A test proves its fix:** it fails before the change and passes after.
@@ -158,7 +158,7 @@ compiles about 1,500 engine files.
 - **No machine-specific paths, hostnames or internal names** in code, docs or
   commits. This repository is public.
 - C++17, the engine's conventions. New command-line code goes in its own
-  `cli_*.cpp`, not in `main.cpp`.
+  `src/cli_*.cpp`, not in `src/main.cpp`.
 
 ## Releases
 

@@ -19,7 +19,7 @@ if ! "$BINARY" "$FIXTURE" -o "$WORKDIR/out.gcode" > "$WORKDIR/slice.log" 2>&1; t
 fi
 cat "$WORKDIR/slice.log"
 
-# The engine prints the resources root it configured (main.cpp
+# The engine prints the resources root it configured (src/cli_preset_staging.cpp
 # configure_engine_resources()); it must be the package's, not "<not found>".
 grep -E "^  Engine resources: .*[/\\\\]resources$" "$WORKDIR/slice.log"
 # The fixture names all three Bambu presets; the packaged profiles tree and
@@ -43,7 +43,7 @@ echo "PASS: packaged slice resolved presets and read resources"
 # syscall on Linux, which reports EXDEV (Invalid cross-device link) when the
 # packaged vendor JSONs and TMPDIR live on different filesystems — the Linux
 # host that hit this had the profiles tree on btrfs and /tmp on tmpfs. The
-# vendor-JSON copy has to fall back to a stream copy (main.cpp stage_file_copy)
+# vendor-JSON copy has to fall back to a stream copy (src/cli_preset_staging.cpp stage_file_copy)
 # rather than failing the preset load, and a staging failure must never leave
 # the slice running on the flat 3MF config.
 # /dev/shm is tmpfs on Linux hosts and usually a different device from the
@@ -145,7 +145,7 @@ STL
 fi
 
 # The Snapmaker engine finds its own profiles tree and resources root in the
-# package (resources/snapmaker, main.cpp snapmaker_profiles_dir): a named U1
+# package (resources/snapmaker, src/cli_snapmaker.cpp snapmaker_profiles_dir): a named U1
 # printer must resolve there, and the engine's own data reads beside it
 # (info/, profiles/Snapmaker/filament/) must not be swallowed.
 if [ -n "$SNAP_BINARY" ]; then

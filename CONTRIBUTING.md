@@ -74,6 +74,6 @@ The workflow is `.github/workflows/slicer-cli-ci.yml`. To build locally, see
 ## Style
 
 C++17, the same conventions as the engine source. New command-line code goes
-in its own files (`cli_*.cpp`), not in `main.cpp`. Comments cite the engine
+in its own files (`src/cli_*.cpp`), not in `src/main.cpp`. Comments cite the engine
 lines a behaviour comes from as `BambuStudio.cpp 1234`, `OrcaSlicer.cpp 1234`
 or `Snapmaker_Orca.cpp:1234`, at the pinned commits.

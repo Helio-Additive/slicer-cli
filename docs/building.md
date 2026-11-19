@@ -226,8 +226,8 @@ The front end now does the same, so neither override is needed:
 
 | Engine | Where |
 |-|-|
-| Bambu | `align_per_filament_config_vectors()` in `main.cpp`, called before `print.apply()`. It sizes every key `is_per_filament_config_key()` names — `filament_printable` included — to the roster, and `ensure_vector_config_sizes()` gives a missing or empty `filament_printable` its definition default first. |
-| Orca | `normalize_filament_config_vectors()` in `main.cpp`, called immediately before `print.apply()`. It applies the `Preset::normalize` rule over the engine's own `Preset::filament_options()` list. Only a vector shorter than the roster is resized; one already at the roster length keeps every value it holds, so a project's own `filament_printable` is never overwritten. |
+| Bambu | `align_per_filament_config_vectors()` in `src/cli_filament_config.cpp`, called before `print.apply()`. It sizes every key `is_per_filament_config_key()` names — `filament_printable` included — to the roster, and `ensure_vector_config_sizes()` gives a missing or empty `filament_printable` its definition default first. |
+| Orca | `normalize_filament_config_vectors()` in `src/cli_filament_config.cpp`, called immediately before `print.apply()`. It applies the `Preset::normalize` rule over the engine's own `Preset::filament_options()` list. Only a vector shorter than the roster is resized; one already at the roster length keeps every value it holds, so a project's own `filament_printable` is never overwritten. |
 
 The files the build leaves out of each engine, and why:
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/engine-info.schema.json",
   "title": "slicer-cli --engine-info",
-  "description": "The JSON document `--engine-info FILE` prints on stdout (run_info in main.cpp): what the file is and which binary of this package slices it. It is a report, or, with a non-zero exit code, an error. tests/test-complete-slice-path.sh checks every --engine-info document it makes against this schema, so a change to the output must change this file too.",
+  "description": "The JSON document `--engine-info FILE` prints on stdout (run_info in src/main.cpp): what the file is and which binary of this package slices it. It is a report, or, with a non-zero exit code, an error. tests/test-complete-slice-path.sh checks every --engine-info document it makes against this schema, so a change to the output must change this file too.",
   "oneOf": [
     {
       "$ref": "#/$defs/report"
@@ -21,7 +21,7 @@
       ]
     },
     "kind": {
-      "description": "The file's last extension, lower case, when it is a model file the engine reads (cli_model_load.cpp kinds()); otherwise unknown.",
+      "description": "The file's last extension, lower case, when it is a model file the engine reads (src/cli_model_load.cpp kinds()); otherwise unknown.",
       "enum": [
         "3mf",
         "stl",
