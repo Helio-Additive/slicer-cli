@@ -27,15 +27,17 @@ std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& ob
                                                    const Slic3r::DynamicPrintConfig& config);
 
 /// The refusal's sentence for that turn. It names --rotate only when that flag
-/// alone puts the part on the bed: the model has one object with one part and
-/// one copy, the run gave no rotation flag (a second --rotate replaces the
-/// first, it does not add to it), the turn commutes with the copy's transform,
+/// alone puts the part on the bed: `rotate_flag_ok`, the caller's word that the
+/// run's whole model is one object with one part and one copy and the run gave
+/// no rotation flag (--rotate turns every object, and a second --rotate
+/// replaces the first, it does not add to it), the turn commutes with the
+/// copy's transform,
 /// and, in a run that keeps positions, the part turned as --rotate turns it
 /// (ModelObject::rotate, cli_run_steps.cpp) lies inside the bed where it
 /// stands. A run that arranges places the turned part again. Otherwise it
 /// names the arrange with rotations.
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  const Slic3r::DynamicPrintConfig& config, bool rotation_given, bool arranged);
+                                  const Slic3r::DynamicPrintConfig& config, bool rotate_flag_ok, bool arranged);
 
 } // namespace slicer_cli
 

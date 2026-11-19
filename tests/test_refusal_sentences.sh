@@ -370,25 +370,36 @@ PYMIRROR
         "mirrored-$e.3mf" --slice 1 --printer-preset "$A1M"
 
     # The same 220 x 20 mm footprint, kept at x = 50 mm: turned in place it
-    # still crosses the bed's edge, so --rotate alone is not offered.
+    # still crosses the bed's edge, so --rotate alone is not offered. The bar
+    # is in the mesh itself and the copy's transform only moves it, so the
+    # position is what withholds the flag.
     python3 - "proj-$e.3mf" "offset-$e.3mf" <<'PYOFFSET'
 import re, sys, zipfile
 
-def stretch(match):
+def widen(match):
+    return match[1] + repr(11 * float(match[2])) + match[3]
+
+def move(match):
     values = match[2].split()
     assert len(values) == 12
-    values[:3] = [str(11 * float(value)) for value in values[:3]]
     values[9] = "50"
     return match[1] + " ".join(values) + match[3]
 
 with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as dest:
+    items = 0
+    vertices = 0
     for member in source.infolist():
         data = source.read(member)
-        if member.filename == "3D/3dmodel.model":
-            model, count = re.subn(r'(<item\b[^>]*\btransform=")([^"]+)(")', stretch, data.decode())
-            assert count == 1
-            data = model.encode()
+        if member.filename.endswith(".model"):
+            text = data.decode()
+            text, n = re.subn(r'(<vertex\b[^>]*?\bx=")([^"]+)(")', widen, text)
+            vertices += n
+            if member.filename == "3D/3dmodel.model":
+                text, count = re.subn(r'(<item\b[^>]*\btransform=")([^"]+)(")', move, text)
+                items += count
+            data = text.encode()
         dest.writestr(member, data)
+    assert items == 1 and vertices > 0
 PYOFFSET
     check object-offset-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
         "offset-$e.3mf" --slice 1 --printer-preset "$A1M"

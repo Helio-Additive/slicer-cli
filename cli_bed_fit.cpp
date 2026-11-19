@@ -93,7 +93,7 @@ std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& ob
 }
 
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  const Slic3r::DynamicPrintConfig& config, bool rotation_given, bool arranged) {
+                                  const Slic3r::DynamicPrintConfig& config, bool rotate_flag_ok, bool arranged) {
     using namespace Slic3r;
     std::ostringstream formatted;
     formatted.imbue(std::locale::classic());
@@ -103,9 +103,7 @@ std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& obj
 
     // --rotate turns every object, each volume before the instance transform.
     // A mirror across X or Y reverses the world-frame turn.
-    const Model* model = object.get_model();
-    bool flag_alone = !rotation_given && model != nullptr && model->objects.size() == 1 &&
-                      object.instances.size() == 1 && object.volumes.size() == 1;
+    bool flag_alone = rotate_flag_ok && object.instances.size() == 1 && object.volumes.size() == 1;
     if (flag_alone) {
         const Eigen::Matrix3d linear       = object.instances[instance_index]->get_matrix().linear();
         const Eigen::Matrix3d quarter_turn = (Eigen::Matrix3d() << 0, -1, 0, 1, 0, 0, 0, 0, 1).finished();

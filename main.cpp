@@ -3561,7 +3561,7 @@ static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
 /// run's own --arrange 1: it has already re-arranged this plate, so the
 /// refusal cannot offer that as the way out.
 static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                                     PlateOutcome& outcome, bool arranged = false, bool rotation_given = false) {
+                                     PlateOutcome& outcome, bool arranged = false, bool rotate_flag_ok = false) {
     const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 3)
         return true;   // no bed to check against
@@ -3605,7 +3605,7 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
             else
                 detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
             if (turn)
-                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, config, rotation_given, arranged);
+                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, config, rotate_flag_ok, arranged);
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
                         {"object", object->name}, {"message", detail}});
@@ -4468,7 +4468,7 @@ static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& co
 /// left off the plate (not printed), as the official copies loop does.
 static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
                            int plate_index, size_t sliced_filament_count, PlateOutcome& outcome,
-                           int* landed_out = nullptr, bool rotation_given = false) {
+                           int* landed_out = nullptr, bool rotate_flag_ok = false) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
     const auto* area = config.option<ConfigOptionPoints>("printable_area");
@@ -4731,7 +4731,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
         const size_t instance_index = size_t(it - object->instances.begin());
         if (const auto turn = slicer_cli::oversized_fitting_z_rotation(*object, instance_index, config)) {
-            turn_advice += " " + object->name + ":" + slicer_cli::full_size_turn_advice(*turn, *object, instance_index, config, rotation_given, true);
+            turn_advice += " " + object->name + ":" + slicer_cli::full_size_turn_advice(*turn, *object, instance_index, config, rotate_flag_ok, true);
             continue;
         }
         const BoundingBoxf3 box = object->instance_bounding_box(instance_index);
@@ -8203,6 +8203,13 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     // already gave (cli_bed_fit.hpp).
     const bool rotation_given = o.given.count("rotate") != 0 || o.given.count("rotate_x") != 0 ||
                                 o.given.count("rotate_y") != 0;
+    // --rotate turns every object of the run, so it is offered alone only for
+    // a run of one object with one part and one copy, read before a plate
+    // scope hides the other plates' objects (PlateScope).
+    const auto rotate_flag_usable = [rotation_given](const Slic3r::Model& whole) {
+        return !rotation_given && whole.objects.size() == 1 && whole.objects.front()->instances.size() == 1 &&
+               whole.objects.front()->volumes.size() == 1;
+    };
     const bool verbose                 = o.verbose;
     const bool normalize_legacy_gcode  = o.normalize_legacy_gcode;
     const auto& overrides              = o.overrides;
@@ -11311,6 +11318,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                         }
                 }
             } else if (outcome.duplicate_count > 0) {
+                const bool rotate_flag_ok = rotate_flag_usable(model);
                 PlateScope scope(model, rs.plate(plate_id));
                 std::set<int> skip_ids;
                 for (int id : o.cli.option<Slic3r::ConfigOptionInts>("skip_objects")->values)
@@ -11320,14 +11328,15 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     model, config, arrange_plate_index, outcome.duplicate_count, skip_ids,
                     [&](Slic3r::Model& m, Slic3r::DynamicPrintConfig& c, int& landed) {
                         PlateOutcome scratch = outcome;
-                        return arrange_on_bed(m, c, arrange_plate_index, sliced_filament_count, scratch, &landed, rotation_given);
+                        return arrange_on_bed(m, c, arrange_plate_index, sliced_filament_count, scratch, &landed, rotate_flag_ok);
                     });
                 // Copies the loop left off the plate stand wholly outside it
                 // and are left out by the inside check below.
                 outcome.duplicate_count = reps.copies_kept;
             } else if ((o.arrange_forced() || auto_arrange_model_files || clearance_arrange) && !rs.plan.done) {
+                const bool rotate_flag_ok = rotate_flag_usable(model);
                 PlateScope scope(model, rs.plate(plate_id));
-                if (!arrange_on_bed(model, config, arrange_plate_index, sliced_filament_count, outcome, nullptr, rotation_given)) {
+                if (!arrange_on_bed(model, config, arrange_plate_index, sliced_filament_count, outcome, nullptr, rotate_flag_ok)) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
@@ -11411,6 +11420,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // The plate's instances in the plate's own frame: the bed check
                 // reads the plate's shape (PartPlate::get_shape, the bed at the
                 // plate's origin, BambuStudio.cpp 6527).
+                const bool rotate_flag_ok = rotate_flag_usable(model);
                 PlateScope scope(model, run_plate);
                 if (!plate_object_steps(o, model, step_plate, outcome))
                     return 1;
@@ -11418,7 +11428,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (!manual_map_extruders_fit(config, model, step_plate, outcome))
                     return 1;
 #endif
-                if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), rotation_given)) {
+                if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), rotate_flag_ok)) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
