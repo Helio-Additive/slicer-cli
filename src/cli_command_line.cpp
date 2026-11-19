@@ -422,13 +422,8 @@ bool gcode_timing_requested(int argc, char** argv) {
     return false;
 }
 
-bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, ParseRefusal& refusal) {
-    o.argv0 = argc > 0 ? argv[0] : "slicer_cli";
-    Slic3r::DynamicPrintAndCLIConfig& cfg = o.cli;
-    const auto& names = official_names();
-    std::vector<std::string> order;
-    std::vector<std::string> positional;
-
+static void read_refusal_output_options(int argc, char** argv, CliOptions& o,
+        Slic3r::DynamicPrintAndCLIConfig& cfg, const std::map<std::string, std::string>& names) {
     // First pass for the two values a refusal needs: --slice (write
     // result.json) and --outputdir (where), read before any refusal. The
     // tokens are read as the parse below reads them: nothing after "--" is
@@ -465,7 +460,151 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
             o.outputdir = v;
         }
     }
+}
 
+static bool apply_legacy_flag(CliOptions& o, ModeArgs& m, ParseRefusal& refusal,
+        std::vector<std::string>& positional, std::string& value, const LegacyFlag* lf,
+        bool has_inline_value, const std::string& token) {
+    switch (lf->id) {
+    case Legacy::Verbose:   o.verbose = true; break;
+    case Legacy::Output:    o.output_file = value; break;
+    case Legacy::Machine:   o.machine_config = value; break;
+    case Legacy::Filament:  o.filament_config = value; break;
+    case Legacy::Process:   o.process_config = value; break;
+    case Legacy::Config:    o.bundle_config = value; break;
+    case Legacy::LayerHeight: o.overrides["layer_height"] = value; break;
+    case Legacy::Infill:    o.overrides["fill_density"] = value; break;
+    case Legacy::Perimeters: o.overrides["perimeters"] = value; break;
+    case Legacy::Nozzle:    o.overrides["nozzle_diameter"] = value; break;
+    case Legacy::Temp:      o.overrides["nozzle_temperature"] = value; break;
+    case Legacy::BedTemp:   o.overrides["bed_temperature"] = value; break;
+    case Legacy::Plate:
+        if (!parse_int_text(value, o.plate_id) || o.plate_id < 0) {
+            refusal = refuse("--plate: '" + value + "' is not a plate number; "
+                             "give 0 for every plate, or a plate number");
+            return false;
+        }
+        break;
+    case Legacy::Input:     positional.insert(positional.begin(), value); break;
+    case Legacy::NoNormalizeLegacyGcode: o.normalize_legacy_gcode = false; break;
+#ifdef ENGINE_SNAPMAKER
+    case Legacy::AllowMixTemp:
+        // Read as the other builds read their own allow_mix_temp, a
+        // bool option: bare or =1 lifts the refusal, =0 keeps it.
+        if (!has_inline_value || value == "1")
+            o.allow_mix_temp = true;
+        else if (value == "0")
+            o.allow_mix_temp = false;
+        else {
+            refusal = refuse("--allow-mix-temp takes =0 or =1, not '" + value + "'");
+            return false;
+        }
+        break;
+#endif
+    case Legacy::CalibMode: m.calib.mode = value; break;
+    case Legacy::CalibStart:
+    case Legacy::CalibEnd:
+    case Legacy::CalibStep: {
+        double d = 0;
+        if (!parse_double_text(value, d)) {
+            refusal = refuse_number("--" + token, value, false);
+            return false;
+        }
+        if (lf->id == Legacy::CalibStart) { m.calib.start = d; m.calib.has_start = true; }
+        if (lf->id == Legacy::CalibEnd)   { m.calib.end = d;   m.calib.has_end = true; }
+        if (lf->id == Legacy::CalibStep)  { m.calib.step = d;  m.calib.has_step = true; }
+        break;
+    }
+    case Legacy::CalibExtruderId:
+        if (!parse_int_text(value, m.calib.extruder_id)) {
+            refusal = refuse_number("--calib-extruder-id", value, true);
+            return false;
+        }
+        break;
+    case Legacy::CalibNoNumbers: m.calib.print_numbers = false; break;
+    case Legacy::Layout:     m.layout_json_file = value; break;
+    case Legacy::LayoutPlan: m.layout_plan_mode = true; break;
+    case Legacy::Progress:   o.progress = true; break;
+    case Legacy::PrinterPreset:  o.printer_preset = value; break;
+    case Legacy::ProcessPreset:  o.process_preset = value; break;
+    case Legacy::FilamentPreset: o.filament_presets.push_back(value); break;
+    case Legacy::ListPresets:    m.list_presets = true; break;
+    case Legacy::ListSettings:   m.list_settings = true; break;
+    case Legacy::ListFlags:      m.list_flags = true; break;
+    case Legacy::Printer:        m.list_printer = value; break;
+    case Legacy::AllowSubstitution: o.allow_substitution = true; break;
+    case Legacy::EngineInfo:     m.engine_info_file = value; break;
+    case Legacy::SingleInstance: break;
+    case Legacy::Simplify: {
+        // The dialog's five detail levels (GLGizmoSimplify.cpp 301-307 at 56a57d0).
+        static const char* const levels[] = {"extra-high", "high", "medium", "low", "extra-low"};
+        if (std::find(std::begin(levels), std::end(levels), value) == std::end(levels)) {
+            refusal = refuse("--simplify expects one of extra-high, high, medium, low, extra-low, got '" +
+                             value + "'");
+            return false;
+        }
+        o.simplify.level = value;
+        break;
+    }
+    case Legacy::SimplifyRatio: {
+        double d = 0;
+        if (!parse_double_text(value, d)) {
+            refusal = refuse_number("--simplify-ratio", value, false);
+            return false;
+        }
+        // 0 keeps every triangle and 100 keeps none (fix_count_by_ratio,
+        // GLGizmoSimplify.cpp 859-867 at 56a57d0): neither is a reduction.
+        // std::stod also reads "nan" and "inf": not percents either.
+        if (!std::isfinite(d) || d <= 0. || d >= 100.) {
+            refusal = refuse("--simplify-ratio expects a percent above 0 and below 100, got '" + value + "'");
+            return false;
+        }
+        o.simplify.ratio = d;
+        break;
+    }
+    case Legacy::SimplifyTriangles: {
+        int n = 0;
+        if (!parse_int_text(value, n)) {
+            refusal = refuse_number("--simplify-triangles", value, true);
+            return false;
+        }
+        if (n < 1) {
+            refusal = refuse("--simplify-triangles expects a count of at least 1, got '" + value + "'");
+            return false;
+        }
+        o.simplify.triangles = n;
+        break;
+    }
+    case Legacy::SimplifyObjects: {
+        // "3,5,10": the form --skip-objects takes.
+        std::vector<int> ids;
+        std::stringstream list(value);
+        std::string item;
+        bool ok = !value.empty();
+        while (ok && std::getline(list, item, ',')) {
+            int id = 0;
+            ok = parse_int_text(item, id);
+            if (ok)
+                ids.push_back(id);
+        }
+        if (!ok) {
+            refusal = refuse("--simplify-objects expects object ids separated by commas, like 3,5,10, got '" +
+                             value + "'");
+            return false;
+        }
+        o.simplify.objects       = ids;
+        o.simplify.objects_given = true;
+        break;
+    }
+    case Legacy::SimplifyKeepPaint: o.simplify.keep_paint = true; break;
+    case Legacy::ProjectSettingsAsSaved: o.project_settings_as_saved = true; break;
+    }
+    return true;
+}
+
+static bool parse_option_tokens(int argc, char** argv, CliOptions& o, ModeArgs& m, ParseRefusal& refusal,
+        Slic3r::DynamicPrintAndCLIConfig& cfg, const std::map<std::string, std::string>& names,
+        std::vector<std::string>& order, std::vector<std::string>& positional) {
     bool parse_options = true;
     for (int i = 1; i < argc; ++i) {
         std::string token = argv[i];
@@ -551,140 +690,8 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
                 }
                 value = argv[++i];
             }
-            switch (lf->id) {
-            case Legacy::Verbose:   o.verbose = true; break;
-            case Legacy::Output:    o.output_file = value; break;
-            case Legacy::Machine:   o.machine_config = value; break;
-            case Legacy::Filament:  o.filament_config = value; break;
-            case Legacy::Process:   o.process_config = value; break;
-            case Legacy::Config:    o.bundle_config = value; break;
-            case Legacy::LayerHeight: o.overrides["layer_height"] = value; break;
-            case Legacy::Infill:    o.overrides["fill_density"] = value; break;
-            case Legacy::Perimeters: o.overrides["perimeters"] = value; break;
-            case Legacy::Nozzle:    o.overrides["nozzle_diameter"] = value; break;
-            case Legacy::Temp:      o.overrides["nozzle_temperature"] = value; break;
-            case Legacy::BedTemp:   o.overrides["bed_temperature"] = value; break;
-            case Legacy::Plate:
-                if (!parse_int_text(value, o.plate_id) || o.plate_id < 0) {
-                    refusal = refuse("--plate: '" + value + "' is not a plate number; "
-                                     "give 0 for every plate, or a plate number");
-                    return false;
-                }
-                break;
-            case Legacy::Input:     positional.insert(positional.begin(), value); break;
-            case Legacy::NoNormalizeLegacyGcode: o.normalize_legacy_gcode = false; break;
-#ifdef ENGINE_SNAPMAKER
-            case Legacy::AllowMixTemp:
-                // Read as the other builds read their own allow_mix_temp, a
-                // bool option: bare or =1 lifts the refusal, =0 keeps it.
-                if (!has_inline_value || value == "1")
-                    o.allow_mix_temp = true;
-                else if (value == "0")
-                    o.allow_mix_temp = false;
-                else {
-                    refusal = refuse("--allow-mix-temp takes =0 or =1, not '" + value + "'");
-                    return false;
-                }
-                break;
-#endif
-            case Legacy::CalibMode: m.calib.mode = value; break;
-            case Legacy::CalibStart:
-            case Legacy::CalibEnd:
-            case Legacy::CalibStep: {
-                double d = 0;
-                if (!parse_double_text(value, d)) {
-                    refusal = refuse_number("--" + token, value, false);
-                    return false;
-                }
-                if (lf->id == Legacy::CalibStart) { m.calib.start = d; m.calib.has_start = true; }
-                if (lf->id == Legacy::CalibEnd)   { m.calib.end = d;   m.calib.has_end = true; }
-                if (lf->id == Legacy::CalibStep)  { m.calib.step = d;  m.calib.has_step = true; }
-                break;
-            }
-            case Legacy::CalibExtruderId:
-                if (!parse_int_text(value, m.calib.extruder_id)) {
-                    refusal = refuse_number("--calib-extruder-id", value, true);
-                    return false;
-                }
-                break;
-            case Legacy::CalibNoNumbers: m.calib.print_numbers = false; break;
-            case Legacy::Layout:     m.layout_json_file = value; break;
-            case Legacy::LayoutPlan: m.layout_plan_mode = true; break;
-            case Legacy::Progress:   o.progress = true; break;
-            case Legacy::PrinterPreset:  o.printer_preset = value; break;
-            case Legacy::ProcessPreset:  o.process_preset = value; break;
-            case Legacy::FilamentPreset: o.filament_presets.push_back(value); break;
-            case Legacy::ListPresets:    m.list_presets = true; break;
-            case Legacy::ListSettings:   m.list_settings = true; break;
-            case Legacy::ListFlags:      m.list_flags = true; break;
-            case Legacy::Printer:        m.list_printer = value; break;
-            case Legacy::AllowSubstitution: o.allow_substitution = true; break;
-            case Legacy::EngineInfo:     m.engine_info_file = value; break;
-            case Legacy::SingleInstance: break;
-            case Legacy::Simplify: {
-                // The dialog's five detail levels (GLGizmoSimplify.cpp 301-307 at 56a57d0).
-                static const char* const levels[] = {"extra-high", "high", "medium", "low", "extra-low"};
-                if (std::find(std::begin(levels), std::end(levels), value) == std::end(levels)) {
-                    refusal = refuse("--simplify expects one of extra-high, high, medium, low, extra-low, got '" +
-                                     value + "'");
-                    return false;
-                }
-                o.simplify.level = value;
-                break;
-            }
-            case Legacy::SimplifyRatio: {
-                double d = 0;
-                if (!parse_double_text(value, d)) {
-                    refusal = refuse_number("--simplify-ratio", value, false);
-                    return false;
-                }
-                // 0 keeps every triangle and 100 keeps none (fix_count_by_ratio,
-                // GLGizmoSimplify.cpp 859-867 at 56a57d0): neither is a reduction.
-                // std::stod also reads "nan" and "inf": not percents either.
-                if (!std::isfinite(d) || d <= 0. || d >= 100.) {
-                    refusal = refuse("--simplify-ratio expects a percent above 0 and below 100, got '" + value + "'");
-                    return false;
-                }
-                o.simplify.ratio = d;
-                break;
-            }
-            case Legacy::SimplifyTriangles: {
-                int n = 0;
-                if (!parse_int_text(value, n)) {
-                    refusal = refuse_number("--simplify-triangles", value, true);
-                    return false;
-                }
-                if (n < 1) {
-                    refusal = refuse("--simplify-triangles expects a count of at least 1, got '" + value + "'");
-                    return false;
-                }
-                o.simplify.triangles = n;
-                break;
-            }
-            case Legacy::SimplifyObjects: {
-                // "3,5,10": the form --skip-objects takes.
-                std::vector<int> ids;
-                std::stringstream list(value);
-                std::string item;
-                bool ok = !value.empty();
-                while (ok && std::getline(list, item, ',')) {
-                    int id = 0;
-                    ok = parse_int_text(item, id);
-                    if (ok)
-                        ids.push_back(id);
-                }
-                if (!ok) {
-                    refusal = refuse("--simplify-objects expects object ids separated by commas, like 3,5,10, got '" +
-                                     value + "'");
-                    return false;
-                }
-                o.simplify.objects       = ids;
-                o.simplify.objects_given = true;
-                break;
-            }
-            case Legacy::SimplifyKeepPaint: o.simplify.keep_paint = true; break;
-            case Legacy::ProjectSettingsAsSaved: o.project_settings_as_saved = true; break;
-            }
+            if (!apply_legacy_flag(o, m, refusal, positional, value, lf, has_inline_value, token))
+                return false;
             continue;
         }
 
@@ -695,7 +702,12 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
               " engine; run --help for the flags");
         return false;
     }
+    return true;
+}
 
+static bool finish_parsed_options(CliOptions& o, ModeArgs& m, ParseRefusal& refusal,
+        Slic3r::DynamicPrintAndCLIConfig& cfg, const std::vector<std::string>& order,
+        const std::vector<std::string>& positional) {
     // CLI::setup: actions and transforms in command-line order (BambuStudio.cpp 8346-8351).
     for (const std::string& key : order) {
         o.given.insert(key);
@@ -793,6 +805,21 @@ bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, Parse
         return false;
     }
     return true;
+}
+
+bool parse_command_line(int argc, char** argv, CliOptions& o, ModeArgs& m, ParseRefusal& refusal) {
+    o.argv0 = argc > 0 ? argv[0] : "slicer_cli";
+    Slic3r::DynamicPrintAndCLIConfig& cfg = o.cli;
+    const auto& names = official_names();
+    std::vector<std::string> order;
+    std::vector<std::string> positional;
+
+    read_refusal_output_options(argc, argv, o, cfg, names);
+
+    if (!parse_option_tokens(argc, argv, o, m, refusal, cfg, names, order, positional))
+        return false;
+
+    return finish_parsed_options(o, m, refusal, cfg, order, positional);
 }
 
 namespace {
