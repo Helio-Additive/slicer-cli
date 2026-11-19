@@ -16,7 +16,8 @@ std::optional<int> run_timing_or_initialize_logging(int argc, char** argv);
 std::optional<int> parse_startup_options(CliRunContext& context, int argc, char** argv, CliOptions& o,
         ModeArgs& mode_args);
 
-void configure_command_logging(CliRunContext& context, const CliOptions& o);
+void configure_command_logging(CliOptions& o);
+void read_arrange_switches(CliRunContext& context, const CliOptions& o);
 
 std::optional<int> check_calibration_options(CliRunContext& context, const CliOptions& o, const CalibOptions& calib_opts,
         Slic3r::Calib_Params& calib_params, bool& calib_self_geometry);

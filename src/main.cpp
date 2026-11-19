@@ -17,8 +17,6 @@ using slicer_cli::CliRunContext;
 using slicer_cli::install_engine_log_bridge;
 using slicer_cli::run_cli_slice;
 
-
-
 int main(int argc, char** argv) {
     static CliRunContext context;
     // Name the main thread and save its id first, as the official command
@@ -53,7 +51,8 @@ int main(int argc, char** argv) {
     if (auto result = slicer_cli::parse_startup_options(context, argc, argv, o, mode_args))
         return *result;
 
-    slicer_cli::configure_command_logging(context, o);
+    slicer_cli::configure_command_logging(o);
+    slicer_cli::read_arrange_switches(context, o);
 
     // Calibration: resolve the mode and params up front so a bad --calib-*
     // value fails fast with usage, before any model/config work.

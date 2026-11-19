@@ -204,12 +204,15 @@ std::optional<int> parse_startup_options(CliRunContext& context, int argc, char*
     return std::nullopt;
 }
 
-void configure_command_logging(CliRunContext& context, const CliOptions& o) {
+void configure_command_logging(CliOptions& o) {
     if (o.verbose)
         Slic3r::set_logging_level(5);
     // --debug N: the engine's log level (BambuStudio.cpp 1661-1667; OrcaSlicer.cpp 1352-1359).
     if (o.given_flag("debug"))
         Slic3r::set_logging_level(o.cli.opt_int("debug"));
+}
+
+void read_arrange_switches(CliRunContext& context, const CliOptions& o) {
     // The arrange switches (read in arrange_on_bed).
     {
         auto flag = [&](const char* key, bool fallback) { return o.given_flag(key) ? o.cli.opt_bool(key) : fallback; };
