@@ -424,6 +424,77 @@ Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& config,
     return plate_bbox;
 }
 
+static bool apply_bed_placements(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+        Slic3r::arrangement::ArrangePolygons& selected, Slic3r::arrangement::ArrangePolygons& unprintable,
+        const Slic3r::BoundingBoxf& bed, PlateOutcome& outcome,
+        Slic3r::ModelInstancePtrs& selected_instances, Slic3r::ModelInstancePtrs& unprintable_instances,
+        int* landed_out) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    // Every selected item must land on this plate (BambuStudio.cpp 5936-5945;
+    // OrcaSlicer.cpp 5196-5205).
+    std::string off_bed, only_turned;
+    if (landed_out != nullptr) {
+        int landed = 0;
+        for (const ArrangePolygon& ap : selected)
+            landed += ap.bed_idx == 0 ? 1 : 0;
+        *landed_out = landed;
+        apply_arrange_polys(selected, selected_instances, [](ArrangePolygon&) {});
+        apply_arrange_polys(unprintable, unprintable_instances, [](ArrangePolygon&) {});
+        for (ModelObject* object : model.objects)
+            object->ensure_on_bed();
+        return landed == int(selected.size());
+    }
+    for (size_t k = 0; k < selected.size(); ++k) {
+        if (selected[k].bed_idx == 0)
+            continue;
+        off_bed += (off_bed.empty() ? "'" : ", '") + selected[k].name + "'";
+        // A part that fits the bed only turned 90 degrees, which this
+        // engine's arrange did not do.
+        const ModelInstance* inst = selected_instances[k];
+        const ModelObject* object = inst->get_object();
+        const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
+        const Vec3d size = object->instance_bounding_box(size_t(it - object->instances.begin())).size();
+        if (!(size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON))
+            only_turned += (only_turned.empty() ? "'" : ", '") + object->name + "'";
+    }
+    if (!off_bed.empty()) {
+        std::string detail = "These objects do not fit on the " + bed_size_text(config) +
+                             " bed together: " + off_bed + "."
+                             // The verdict says what is wrong; this says what to
+                             // do with it: the plate's objects can be spread
+                             // over the file's other plates (the official
+                             // command line arranges one plate per --slice,
+                             // BambuStudio.cpp 5936-5945 at 5873b5f /
+                             // OrcaSlicer.cpp 5196-5205 at 31f6803), or a
+                             // bigger printer's bed takes them together.
+                             " Move some objects to another plate in the file, or use a printer with a bigger bed.";
+        if (!only_turned.empty())
+            detail += " " + only_turned + " fit" + (only_turned.find(',') == std::string::npos ? "s" : "") +
+                      " the bed only turned 90 degrees, which this arrange does not do; turn it in the file.";
+        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
+        emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
+        return false;
+    }
+    apply_arrange_polys(selected, selected_instances, [](ArrangePolygon&) {});
+    // Unprintable instances: the official moves them on to a virtual bed past
+    // the last plate (BambuStudio.cpp 5989-5997); a one-plate slice has no such
+    // bed, so they keep their own arrange result on this bed. They are not printed.
+    apply_arrange_polys(unprintable, unprintable_instances, [](ArrangePolygon&) {});
+    for (ModelObject* object : model.objects)
+        object->ensure_on_bed();
+    json placed = json::array();
+    for (const ModelObject* object : model.objects) {
+        const BoundingBoxf3 box = object_world_bbox(object);
+        placed.push_back(json{{"object", object->name},
+                              {"center_x_mm", box.center().x()}, {"center_y_mm", box.center().y()}});
+    }
+    emit_event({{"event","arranged"}, {"tag","ObjectsArranged"}, {"objects", placed},
+                {"message","Placed " + std::to_string(model.objects.size()) + " object(s) on the " +
+                           bed_size_text(config) + " bed"}});
+    return true;
+}
+
 static void place_arrange_wipe_tower(CliRunContext& context, Slic3r::Model& model,
         Slic3r::DynamicPrintConfig& config, int plate_index, Slic3r::arrangement::ArrangePolygons& selected,
         Slic3r::arrangement::ArrangePolygons& unselected, Slic3r::arrangement::ArrangeParams& params,
@@ -712,68 +783,8 @@ bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::Dynami
 
     arrange_bed_polygons(context, config, selected, unselected, unprintable, params);
 
-    // Every selected item must land on this plate (BambuStudio.cpp 5936-5945;
-    // OrcaSlicer.cpp 5196-5205).
-    std::string off_bed, only_turned;
-    if (landed_out != nullptr) {
-        int landed = 0;
-        for (const ArrangePolygon& ap : selected)
-            landed += ap.bed_idx == 0 ? 1 : 0;
-        *landed_out = landed;
-        apply_arrange_polys(selected, selected_instances, [](ArrangePolygon&) {});
-        apply_arrange_polys(unprintable, unprintable_instances, [](ArrangePolygon&) {});
-        for (ModelObject* object : model.objects)
-            object->ensure_on_bed();
-        return landed == int(selected.size());
-    }
-    for (size_t k = 0; k < selected.size(); ++k) {
-        if (selected[k].bed_idx == 0)
-            continue;
-        off_bed += (off_bed.empty() ? "'" : ", '") + selected[k].name + "'";
-        // A part that fits the bed only turned 90 degrees, which this
-        // engine's arrange did not do.
-        const ModelInstance* inst = selected_instances[k];
-        const ModelObject* object = inst->get_object();
-        const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
-        const Vec3d size = object->instance_bounding_box(size_t(it - object->instances.begin())).size();
-        if (!(size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON))
-            only_turned += (only_turned.empty() ? "'" : ", '") + object->name + "'";
-    }
-    if (!off_bed.empty()) {
-        std::string detail = "These objects do not fit on the " + bed_size_text(config) +
-                             " bed together: " + off_bed + "."
-                             // The verdict says what is wrong; this says what to
-                             // do with it: the plate's objects can be spread
-                             // over the file's other plates (the official
-                             // command line arranges one plate per --slice,
-                             // BambuStudio.cpp 5936-5945 at 5873b5f /
-                             // OrcaSlicer.cpp 5196-5205 at 31f6803), or a
-                             // bigger printer's bed takes them together.
-                             " Move some objects to another plate in the file, or use a printer with a bigger bed.";
-        if (!only_turned.empty())
-            detail += " " + only_turned + " fit" + (only_turned.find(',') == std::string::npos ? "s" : "") +
-                      " the bed only turned 90 degrees, which this arrange does not do; turn it in the file.";
-        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, detail);
-        emit_event({{"event","plate_error"}, {"tag","ArrangeFailed"}, {"message", detail}});
-        return false;
-    }
-    apply_arrange_polys(selected, selected_instances, [](ArrangePolygon&) {});
-    // Unprintable instances: the official moves them on to a virtual bed past
-    // the last plate (BambuStudio.cpp 5989-5997); a one-plate slice has no such
-    // bed, so they keep their own arrange result on this bed. They are not printed.
-    apply_arrange_polys(unprintable, unprintable_instances, [](ArrangePolygon&) {});
-    for (ModelObject* object : model.objects)
-        object->ensure_on_bed();
-    json placed = json::array();
-    for (const ModelObject* object : model.objects) {
-        const BoundingBoxf3 box = object_world_bbox(object);
-        placed.push_back(json{{"object", object->name},
-                              {"center_x_mm", box.center().x()}, {"center_y_mm", box.center().y()}});
-    }
-    emit_event({{"event","arranged"}, {"tag","ObjectsArranged"}, {"objects", placed},
-                {"message","Placed " + std::to_string(model.objects.size()) + " object(s) on the " +
-                           bed_size_text(config) + " bed"}});
-    return true;
+    return apply_bed_placements(model, config, selected, unprintable, bed, outcome, selected_instances,
+            unprintable_instances, landed_out);
 }
 
 /// The desktop's default prime-tower corner: the top left of the bed, the I3
