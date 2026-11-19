@@ -25,6 +25,7 @@
 #include "cli_engine_info.hpp"
 #include "cli_filament_config.hpp"
 #include "cli_filament_map.hpp"
+#include "cli_legacy_gcode.hpp"
 #include "cli_load_settings.hpp"
 #include "cli_model_load.hpp"
 #include "cli_named_presets.hpp"
