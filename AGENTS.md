@@ -78,6 +78,8 @@ The slice driver owns one `RunState`. Loading fills `LoadedProject` (model, proj
 | `cli_slice_run.hpp` | Slice run entry point |
 | `cli_run_context.hpp` | Run-wide options, preset cache, assemble list, downward checks and staging paths |
 | `cli_slice_state.hpp` | Ownership of the project, settings, plan, preparation, warnings, pipe and action outputs |
+| `cli_load_project_archive.cpp` | Read the project archive, rebase desktop presets and recover its plate layout |
+| `cli_load_project_archive.hpp` | Archive load inputs, project facts and plate layout outputs |
 | `cli_load_slice_inputs.cpp` | Load models and projects, merge settings and validate inputs before preparation |
 | `cli_load_slice_inputs.hpp` | Input classification and per-load settings and substitutions |
 | `cli_project_archive.cpp` | Read ZIP members, count plates and check file versions |
