@@ -166,9 +166,9 @@ static int read_3mf_archive(const CliOptions& o, PlateOutcome& outcome, int load
 }
 
 static void load_desktop_project_presets(const CliOptions& o, LoadedProject& loaded_project,
-            PlateOutcome& outcome, Slic3r::DynamicPrintConfig& config, std::vector<Slic3r::Preset*>& presets,
-            bool& project_file_config_kept, Slic3r::DynamicPrintConfig& project_file_config,
-            bool bambu_made_project) {
+            PlateOutcome& outcome, Slic3r::DynamicPrintConfig& config, const Slic3r::Semver& file_version,
+            std::vector<Slic3r::Preset*>& presets, bool& project_file_config_kept,
+            Slic3r::DynamicPrintConfig& project_file_config, bool bambu_made_project) {
     const auto& input_file = o.input_file;
 
     if (bambu_made_project && !o.project_settings_as_saved) {
@@ -1172,8 +1172,8 @@ static int load_project_archive(CliRunContext& context, const CliOptions& o, Loa
     // file's own values, which is what the official command line does.
     const bool bambu_made_project = is_bbl_3mf;
 #endif
-    load_desktop_project_presets(o, loaded_project, outcome, config, presets, project_file_config_kept,
-            project_file_config, bambu_made_project);
+    load_desktop_project_presets(o, loaded_project, outcome, config, file_version, presets,
+            project_file_config_kept, project_file_config, bambu_made_project);
 #ifdef ENGINE_ORCA
     if (convert_project_object_values(context, outcome, input_file, config, model,
             config_subst, project_file_config) != 0)
