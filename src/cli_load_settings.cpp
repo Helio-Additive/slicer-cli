@@ -1178,12 +1178,13 @@ static StepResult read_preset_compatibility(PrinterCompatibility& compatibility,
     return {};
 }
 
+static bool contains(const std::vector<std::string>& list, const std::string& name) {
+    return std::find(list.begin(), list.end(), name) != list.end();
+}
+
 static StepResult check_process_compatibility(const LoadedSettingsPresets& presets,
         PrinterCompatibility& compatibility, const ProjectFacts& facts) {
     bool process_compatible = false;
-    auto contains = [](const std::vector<std::string>& list, const std::string& name) {
-        return std::find(list.begin(), list.end(), name) != list.end();
-    };
     if (!presets.new_printer_name.empty()) {
         process_compatible = !presets.new_process_name.empty() ? contains(presets.new_print_compatible_printers, presets.new_printer_system_name)
                                                        : contains(compatibility.current_print_compatible_printers, presets.new_printer_system_name);
