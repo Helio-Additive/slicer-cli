@@ -706,6 +706,7 @@ static void report_active_plate_settings(const Slic3r::DynamicPrintConfig& confi
         if (nozzles && !nozzles->values.empty()) {
             std::cout << "  Nozzle: " << nozzles->values[0] << "mm\n";
         }
+    }
 }
 
 static int overlay_fresh_plate_configuration(const CliOptions& o, LoadedProject& loaded_project,
@@ -715,22 +716,21 @@ static int overlay_fresh_plate_configuration(const CliOptions& o, LoadedProject&
     auto& plate_data = loaded_project.plate_data;
 
     if (fresh_plate_config) {
-    // The prepare call of a run of several plates lays no plate's own
-    // settings: its settings serve the run-level steps only, and each
-    // plate reports its own when it is sliced.
-    HeldEventsScope run_config_events(outcome.prepare_pass && plate_id == 0 &&
-                                      (trailing_port || plate_data.size() > 1));
+        // The prepare call of a run of several plates lays no plate's own
+        // settings: its settings serve the run-level steps only, and each
+        // plate reports its own when it is sliced.
+        HeldEventsScope run_config_events(outcome.prepare_pass && plate_id == 0 &&
+                                          (trailing_port || plate_data.size() > 1));
 #ifdef ENGINE_BAMBU
-    if (apply_bambu_plate_filament_map(o, run_settings, outcome, plate_id, config,
-            plate_data, project_settings) != 0)
-        return 1;
+        if (apply_bambu_plate_filament_map(o, run_settings, outcome, plate_id, config,
+                plate_data, project_settings) != 0)
+            return 1;
 #endif // ENGINE_BAMBU — BBS toolchanger / per-extruder normalizations
-    if (apply_plate_overrides(o, run_settings, outcome, plate_id, config,
-            project_settings, loaded_project) != 0)
-        return 1;
-    report_active_plate_settings(config);
-    }
-    run_config_events.drop();
+        if (apply_plate_overrides(o, run_settings, outcome, plate_id, config,
+                project_settings, loaded_project) != 0)
+            return 1;
+        report_active_plate_settings(config);
+        run_config_events.drop();
     } // fresh_plate_config
     return 0;
 }
@@ -747,8 +747,6 @@ static int check_downward_printers(CliRunContext& context, const CliOptions& o, 
     auto& project_facts = loaded_project.project_facts;
     auto& extra = run_settings.extra;
     auto& merged_print_sequence = run_settings.merged_print_sequence;
-
-                config.set_key_value(key, opt->clone());
 
     // A plate's print sequence: its own, or else the project's
     // (get_print_sequence, BambuStudio.cpp 4403-4416), for the plates
@@ -1021,12 +1019,12 @@ static int simplify_and_check_models(const CliOptions& o, PlateOutcome& outcome,
             set_outcome_failure(outcome, sd.code, sd.message);
             return 1;
         }
+    }
     return 0;
 }
 
 static void place_geometry_inputs(const CliOptions& o, bool first_call, bool geometry_input,
             bool geometry_only_3mf, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model) {
-    }
     const bool needs_placement = first_call && (geometry_input ||
         std::any_of(model.objects.begin(), model.objects.end(),
                     [](const Slic3r::ModelObject* obj) { return obj->instances.empty(); }));
@@ -1048,6 +1046,19 @@ static void place_geometry_inputs(const CliOptions& o, bool first_call, bool geo
                 inst->use_loaded_id_for_label = true;
     }
 
+
+}
+
+static int build_plate_arrangement_plan(CliRunContext& context, const CliOptions& o, RunPlatePlan& plate_plan,
+            PlateOutcome& outcome, bool calib_self_geometry, bool first_call, bool trailing_port,
+            bool assemble_input, Slic3r::DynamicPrintConfig& config, LoadedProject& loaded_project) {
+    auto& model = loaded_project.model;
+    auto& is_bbl_3mf = loaded_project.is_bbl_3mf;
+    auto& plate_data = loaded_project.plate_data;
+    auto& plan_file_config = plate_plan.plan_file_config;
+    auto& plan_file_version = plate_plan.plan_file_version;
+    auto& plan_file_filaments = plate_plan.plan_file_filaments;
+
     // Actions that work on the loaded model and settings (--info,
     // --export-settings, --export-stl, --export-stls). The official runs
     // every action in one loop in command-line order, the first that fails
@@ -1062,18 +1073,6 @@ static void place_geometry_inputs(const CliOptions& o, bool first_call, bool geo
     // A project 3MF with model files after it: the plan (ProjectPlan) once
     // the transforms ran, before any action, as the official arranges
     // before its action loop; the actions then see every object at its
-}
-
-static int build_plate_arrangement_plan(CliRunContext& context, const CliOptions& o, RunPlatePlan& plate_plan,
-            PlateOutcome& outcome, bool calib_self_geometry, bool first_call, bool trailing_port,
-            bool assemble_input, Slic3r::DynamicPrintConfig& config, LoadedProject& loaded_project) {
-    auto& model = loaded_project.model;
-    auto& is_bbl_3mf = loaded_project.is_bbl_3mf;
-    auto& plate_data = loaded_project.plate_data;
-    auto& plan_file_config = plate_plan.plan_file_config;
-    auto& plan_file_version = plate_plan.plan_file_version;
-    auto& plan_file_filaments = plate_plan.plan_file_filaments;
-
     // arranged place.
     // --slice 0 --arrange 1 on a project of several plates: the official
     // arranges every plate's objects together across the plates (the
@@ -1504,8 +1503,6 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         // presets, for --load-settings and friends (cli_load_settings.cpp).
         // The settings given as flags; the settings merge takes filament_colour
         // out of them once it has used it, as the official does.
-#ifdef ENGINE_BAMBU
-#endif
 
         // Geometry files (every model file this engine reads that is not a
         // project 3MF) load the official CLI's way, placed further down once
@@ -1529,8 +1526,6 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         // run-level part of the settings and of the model: once per run.
         std::optional<Slic3r::DynamicPrintConfig> project_settings;
         slicer_cli::SettingsMerge& settings_merge = rs.settings.settings_merge;
-#ifdef ENGINE_BAMBU
-#endif
         if (!rs.project.loaded) {
             const PlateLoadInputs inputs{geometry_input, geometry_only_3mf, trailing_port, assemble_input, calib_self_geometry};
             const int rc = load_slice_inputs(context, o, rs, plate_id, inputs, load_settings, outcome);
@@ -1559,6 +1554,7 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         if (fresh_plate_config && rs.preparation.prepared)
             for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
                 if (const Slic3r::ConfigOption* opt = rs.preparation.run_config.option(key))
+                    config.set_key_value(key, opt->clone());
         if (check_downward_printers(context, o, rs.layout, outcome, trailing_port,
                 assemble_input, plate_id, config, rs.project, rs.settings) != 0)
             return 1;
