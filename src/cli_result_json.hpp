@@ -25,6 +25,10 @@ struct SettingsMerge;
 #define CLI_GCODE_IN_WRAPPING_DETECT_AREA  -105
 #endif
 
+// ── Per-plate outcome ───────────────────────────────────────────────────
+// The command line itself is CliOptions (cli_options.hpp), filled by
+// cli_command_line.cpp.
+
 /// What one plate's slice produced, in the shape the official CLI records per
 /// plate (sliced_plate_info_t, BambuStudio.cpp 191-219 at 5873b5f).
 struct PlateOutcome {

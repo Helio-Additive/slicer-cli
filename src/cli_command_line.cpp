@@ -179,6 +179,9 @@ bool parse_int_text(const std::string& text, int& out) {
     }
 }
 
+// Parse a numeric CLI argument, failing fast with usage instead of letting
+// std::stod/std::stoi throw an uncaught exception (which would SIGABRT). Used by
+// the --calib-* flags so a typo like `--calib-start abc` exits 1 cleanly.
 bool parse_double_text(const std::string& text, double& out) {
     try {
         size_t pos = 0;

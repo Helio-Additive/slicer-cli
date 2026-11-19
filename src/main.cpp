@@ -68,13 +68,6 @@ void print_usage(const char* prog_name) {
     slicer_cli::print_help(std::cout, prog_name);
 }
 
-// Parse a numeric CLI argument, failing fast with usage instead of letting
-// std::stod/std::stoi throw an uncaught exception (which would SIGABRT). Used by
-// the --calib-* flags so a typo like `--calib-start abc` exits 1 cleanly.
-// ── Per-plate outcome ───────────────────────────────────────────────────
-// The command line itself is CliOptions (cli_options.hpp), filled by
-// cli_command_line.cpp.
-
 int main(int argc, char** argv) {
     static CliRunContext context;
     // Name the main thread and save its id first, as the official command
