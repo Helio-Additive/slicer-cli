@@ -30,6 +30,7 @@ struct PreparedPlate {
     const std::optional<Slic3r::DynamicPrintConfig>& project_settings;
     PlateOutcome& outcome;
 
+    bool prepare_calibration_geometry(Slic3r::Calib_Params& calib_params);
     bool run_model_action_step(ActionPhase phase);
     bool outputs_ok(bool after_slice_actions_only = false);
     int print_plate(Slic3r::Calib_Params& calib_params, int plate_id, const std::string& output_file,

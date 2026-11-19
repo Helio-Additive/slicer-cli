@@ -126,7 +126,7 @@ bool PreparedPlate::outputs_ok(bool after_slice_actions_only) {
     return true;
 }
 
-static void set_plate_printer_vendor(LoadedProject& loaded_project, RunSettings& run_settings, int plate_id,
+static void set_plate_printer_vendor(LoadedProject& loaded_project, const SettingsMerge& settings_merge, int plate_id,
             const Slic3r::DynamicPrintConfig& config, Slic3r::Print& print) {
     auto& model = loaded_project.model;
 
@@ -157,8 +157,8 @@ static void set_plate_printer_vendor(LoadedProject& loaded_project, RunSettings&
         bool is_bbl_vendor_preset = false;
         if (!printer_model_string.empty())
             is_bbl_vendor_preset = printer_model_string.compare(0, 9, "Bambu Lab") == 0;
-        else if (!run_settings.settings_merge.new_printer_name.empty())
-            is_bbl_vendor_preset = run_settings.settings_merge.new_printer_name.compare(0, 9, "Bambu Lab") == 0;
+        else if (!settings_merge.new_printer_name.empty())
+            is_bbl_vendor_preset = settings_merge.new_printer_name.compare(0, 9, "Bambu Lab") == 0;
         else if (!loaded_project.project_facts.current_printer_system_name.empty())
             is_bbl_vendor_preset = loaded_project.project_facts.current_printer_system_name.compare(0, 9, "Bambu Lab") == 0;
         print.set_BBL_Printer(is_bbl_vendor_preset);
@@ -188,6 +188,19 @@ static int normalize_plate_before_apply(CliRunContext& context, const CliOptions
     const auto& input_file = o.input_file;
     const auto& verbose = o.verbose;
     auto& model = loaded_project.model;
+
+    // Automatic filament grouping on a machine with several extruders sizes
+    // each nozzle's group from extruder_ams_count (FilamentGroupUtils.cpp
+    // calc_max_group_size, both engines). The desktop app takes that count
+    // from the printer it is connected to, else from the project it opened,
+    // and builds no AMS slots without a printer (BambuStudio PresetBundle.cpp
+    // 3826-3831 and 3547, Plater.cpp 10810-10826 at 02.08.02.61; OrcaSlicer
+    // PresetBundle.cpp 4375-4379 and 4162 at 2.4.2). Headless there is no
+    // printer, so the input's own count stands, and input without one groups
+    // as the desktop does with an empty count. The official CLIs instead
+    // give every nozzle an estimated 4-slot AMS (BambuStudio.cpp 6911-6950,
+    // OrcaSlicer.cpp 5914-5951), which regroups a project the maker sliced
+    // with another count.
 
     std::cout << "Applying configuration...\n";
 #ifdef ENGINE_ORCA
@@ -251,7 +264,7 @@ static int normalize_plate_before_apply(CliRunContext& context, const CliOptions
     return 0;
 }
 
-static void apply_plate_to_print(const CliOptions& o, RunPlatePlan& plate_plan, RunSettings& run_settings,
+static void apply_plate_to_print(const CliOptions& o, RunPlatePlan& plate_plan, const Slic3r::DynamicPrintConfig& extra,
             PlateOutcome& outcome, int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model,
             Slic3r::Print& print) {
     {
@@ -327,7 +340,7 @@ static void apply_plate_to_print(const CliOptions& o, RunPlatePlan& plate_plan, 
         // sparse_infill_density, --bed-temp the plate type's keys).
         if (!outcome.settings_replaced_by_presets.empty()) {
             std::set<std::string> command_line;
-            for (const std::string& key : run_settings.extra.keys())
+            for (const std::string& key : extra.keys())
                 command_line.insert(key);
             Slic3r::DynamicPrintConfig written;
             if (const Slic3r::ConfigOption* bed = config.option("curr_bed_type"))
@@ -412,6 +425,15 @@ static void apply_print_calibration(bool calib_enabled, Slic3r::Calib_Params& ca
     }
 }
 
+// Install the structured-warning emitter BEFORE validate() / process()
+// so the TS host sees pre-slice diagnostics in the same JSON-line
+// stream as slicing-time warnings. Pure stdout side-effect — does
+// not change print state, exit codes, or G-code output.
+// --pipe: the steps before the first plate (BambuStudio.cpp
+// 1765-1767, 4923-4926, 6455-6458: 1 at the start, 2 once the
+// files are loaded, 3 before the plates), then this plate
+// (7034-7046: its index and the run's plate count, 4 to begin),
+// and every status the slice reports (cli_status_callback).
 static void install_plate_progress(const CliOptions& o, RunPipeProgress& pipe_progress, PlateOutcome& outcome,
             Slic3r::Print& print, bool piped) {
     // The check pass sends no plate step: the official reports a plate
@@ -762,7 +784,7 @@ static int process_plate_toolpath(CliRunContext& context, const CliOptions& o, P
     return 0;
 }
 
-static int export_plate_gcode(CliRunContext& context, const CliOptions& o, RunSettings& run_settings,
+static int export_plate_gcode(CliRunContext& context, const CliOptions& o, const Slic3r::DynamicPrintConfig& base,
             PlateOutcome& outcome, const std::string& output_file, Slic3r::DynamicPrintConfig& config,
             Slic3r::Model& model, std::chrono::steady_clock::time_point plate_started, Slic3r::Print& print,
             const Slic3r::Vec2d& plate_origin, const PlateLoopSwitches& switches, int cache_plate,
@@ -788,7 +810,7 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, RunSe
         // toolpath conflicts or printable-area failures.
         emit_gcode_result_diagnostics(gcode_result);
         if (o.slice_mode) {
-            record_plate_statistics(print, model, config, run_settings.base, gcode_result, outcome);
+            record_plate_statistics(print, model, config, base, gcode_result, outcome);
             outcome.sliced_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - plate_started).count();
             // --mstpp: a plate that took longer ends the run, listed with
@@ -896,19 +918,7 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, RunSe
     return 0;
 }
 
-int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id, const std::string& output_file,
-                               std::chrono::steady_clock::time_point plate_started, bool calib_enabled) {
-    const bool verbose = o.verbose;
-    const bool normalize_legacy_gcode = o.normalize_legacy_gcode;
-    auto& model = loaded_project.model;
-    auto& extra = run_settings.extra;
-    size_t& project_filaments = run_settings.project_filaments;
-
-    // Initialize print
-    std::cout << "\nInitializing print...\n";
-    Slic3r::Print print;
-    set_plate_printer_vendor(loaded_project, run_settings, plate_id, config, print);
-
+static Slic3r::Vec2d set_print_plate_frame(Slic3r::Print& print, int plate_id) {
     // The plate's Print in the plate's own frame. The official CLI slices
     // each plate of the scene model with a Print whose origin is the
     // plate's (PartPlate::get_print and the plate's BuildVolume,
@@ -933,13 +943,16 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
     // Left at 0, plate N's prime tower stood where plate 1's does.
     if (plate_id > 0)
         print.set_plate_index(plate_id - 1);
+    return plate_origin;
+}
 
+bool PreparedPlate::prepare_calibration_geometry(Slic3r::Calib_Params& calib_params) {
     // Alias the unbound `initial_no_support_filament_id` placeholder to the
     // engine-bound `initial_no_support_extruder` across custom-gcode keys, BEFORE
     // print.apply snapshots the config. Without this the PlaceholderParser throws at
     // export when a 3MF carries the legacy token in its custom gcode. Always on;
     // suppressed with --no-normalize-legacy-gcode.
-    if (normalize_legacy_gcode) {
+    if (o.normalize_legacy_gcode) {
         normalize_legacy_gcode_tokens(config);
     }
 
@@ -955,7 +968,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
     // stays valid through the whole slice.
     if (calib_params.mode == Slic3r::CalibMode::Calib_PA_Pattern) {
         std::cout << "Generating pressure-advance pattern geometry...\n";
-        slicer_cli::apply_pa_pattern(calib_params, config, model, calib_is_bbl_machine);
+        slicer_cli::apply_pa_pattern(calib_params, config, loaded_project.model, calib_is_bbl_machine);
         // The pattern replaced the model, so the object STL files an
         // --export-stl after --slice writes carry its object's name
         // (obj_1_pa_pattern_handle.stl): the outputs still to be written
@@ -963,8 +976,46 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
         // loaded model's files already.
         action_outputs.outputs_checked = false;
         if (!outputs_ok(/*after_slice_actions_only=*/true))
-            return 1;
+            return false;
     }
+    return true;
+}
+
+static void set_brim_tables(Slic3r::DynamicPrintConfig& config, Slic3r::Print& print) {
+    // The per-filament and speed tables the brim width reads
+    // (Brim.cpp, through Model::extruderParamsMap and
+    // printSpeedMap): both official CLIs fill them between apply()
+    // and process() (BambuStudio.cpp 7074-7075 at 5873b5f;
+    // OrcaSlicer.cpp 6065-6066 at 31f6803). Left empty, the brim
+    // takes no account of the filament (TPU narrower, PETG/PCTG
+    // wider) or of the print speed.
+    {
+        int filament_count = 1;
+        if (auto* fc = config.option<Slic3r::ConfigOptionStrings>("filament_colour", false))
+            filament_count = std::max<int>(1, (int)fc->values.size());
+        Slic3r::Model::setExtruderParams(config, filament_count);
+        Slic3r::Model::setPrintSpeedTable(config, print.config());
+#ifdef ENGINE_ORCA
+        std::cout << "  [orca] setExtruderParams/setPrintSpeedTable (filaments="
+                  << filament_count << ")\n";
+#endif
+    }
+}
+
+int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id, const std::string& output_file,
+                               std::chrono::steady_clock::time_point plate_started, bool calib_enabled) {
+    auto& model = loaded_project.model;
+    auto& extra = run_settings.extra;
+
+    // Initialize print
+    std::cout << "\nInitializing print...\n";
+    Slic3r::Print print;
+    set_plate_printer_vendor(loaded_project, run_settings.settings_merge, plate_id, config, print);
+
+    const Slic3r::Vec2d plate_origin = set_print_plate_frame(print, plate_id);
+
+    if (!prepare_calibration_geometry(calib_params))
+        return 1;
 
 #ifdef ENGINE_BAMBU
     // Align every per-filament array with the filament roster the project
@@ -977,63 +1028,25 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
     // pattern, and the command-line overrides — an override such as --temp
     // rewrites nozzle_temperature down to a single value, so aligning any
     // earlier would leave that array short again.
-    align_per_filament_config_vectors(config, project_filaments, verbose);
+    align_per_filament_config_vectors(config, run_settings.project_filaments, o.verbose);
 #endif // ENGINE_BAMBU
-
-    // Automatic filament grouping on a machine with several extruders sizes
-    // each nozzle's group from extruder_ams_count (FilamentGroupUtils.cpp
-    // calc_max_group_size, both engines). The desktop app takes that count
-    // from the printer it is connected to, else from the project it opened,
-    // and builds no AMS slots without a printer (BambuStudio PresetBundle.cpp
-    // 3826-3831 and 3547, Plater.cpp 10810-10826 at 02.08.02.61; OrcaSlicer
-    // PresetBundle.cpp 4375-4379 and 4162 at 2.4.2). Headless there is no
-    // printer, so the input's own count stands, and input without one groups
-    // as the desktop does with an empty count. The official CLIs instead
-    // give every nozzle an estimated 4-slot AMS (BambuStudio.cpp 6911-6950,
-    // OrcaSlicer.cpp 5914-5951), which regroups a project the maker sliced
-    // with another count.
 
     try {
         if (normalize_plate_before_apply(context, o, loaded_project, plate_plan, outcome,
                 plate_id, config, extra) != 0)
             return 1;
-        apply_plate_to_print(o, plate_plan, run_settings, outcome, plate_id, config, model, print);
+        apply_plate_to_print(o, plate_plan, extra, outcome, plate_id, config, model, print);
 #ifdef ENGINE_ORCA
         initialize_print_wipe_tower(print);
 #endif
 
         apply_print_calibration(calib_enabled, calib_params, print);
 
-        // Install the structured-warning emitter BEFORE validate() / process()
-        // so the TS host sees pre-slice diagnostics in the same JSON-line
-        // stream as slicing-time warnings. Pure stdout side-effect — does
-        // not change print state, exit codes, or G-code output.
-        // --pipe: the steps before the first plate (BambuStudio.cpp
-        // 1765-1767, 4923-4926, 6455-6458: 1 at the start, 2 once the
-        // files are loaded, 3 before the plates), then this plate
-        // (7034-7046: its index and the run's plate count, 4 to begin),
-        // and every status the slice reports (cli_status_callback).
         const bool piped = slicer_cli::pipe_started();
         install_plate_progress(o, pipe_progress, outcome, print, piped);
 
-        // The per-filament and speed tables the brim width reads
-        // (Brim.cpp, through Model::extruderParamsMap and
-        // printSpeedMap): both official CLIs fill them between apply()
-        // and process() (BambuStudio.cpp 7074-7075 at 5873b5f;
-        // OrcaSlicer.cpp 6065-6066 at 31f6803). Left empty, the brim
-        // takes no account of the filament (TPU narrower, PETG/PCTG
-        // wider) or of the print speed.
-        {
-            int filament_count = 1;
-            if (auto* fc = config.option<Slic3r::ConfigOptionStrings>("filament_colour", false))
-                filament_count = std::max<int>(1, (int)fc->values.size());
-            Slic3r::Model::setExtruderParams(config, filament_count);
-            Slic3r::Model::setPrintSpeedTable(config, print.config());
-#ifdef ENGINE_ORCA
-            std::cout << "  [orca] setExtruderParams/setPrintSpeedTable (filaments="
-                      << filament_count << ")\n";
-#endif
-        }
+        set_brim_tables(config, print);
+
         // --no-check and --allow-mix-temp (BambuStudio.cpp 6979-6982;
         // OrcaSlicer.cpp 5968-5971); only when given, so the default
         // stays the engine's own.
@@ -1055,7 +1068,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
         if (process_plate_toolpath(context, o, outcome, print, cache_plate) != 0)
             return 1;
 
-        if (export_plate_gcode(context, o, run_settings, outcome, output_file, config,
+        if (export_plate_gcode(context, o, run_settings.base, outcome, output_file, config,
                 model, plate_started, print, plate_origin, switches, cache_plate,
                 *this) != 0)
             return 1;
