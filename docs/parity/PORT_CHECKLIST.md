@@ -11,21 +11,21 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**67.7% of the named C++ functions are ported or verified (6484 of 9574); 62.6% by size of body.**
+**68.5% of the named C++ functions are ported or verified (6557 of 9574); 65.0% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 710 | 7.4% | 13.1% |
-| partial `[~]` | 2380 | 24.9% | 24.3% |
-| ported `[x]` | 3967 | 41.4% | 29.5% |
-| verified `[v]` | 2517 | 26.3% | 33.1% |
+| not started `[ ]` | 642 | 6.7% | 11.7% |
+| partial `[~]` | 2375 | 24.8% | 23.3% |
+| ported `[x]` | 3949 | 41.2% | 28.3% |
+| verified `[v]` | 2608 | 27.2% | 36.6% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
 | no Rust file of that name | 4 |
-| partial | 238 |
-| every named function ported | 61 |
+| partial | 237 |
+| every named function ported | 62 |
 | every named function verified | 14 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
@@ -95,7 +95,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `BlacklistedLibraryCheck` | 1 | `blacklisted_library_check.rs` | partial | 5 | 0 | 1 | 4 | 0 |
 | `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 26 | 28 | 1 |
 | `BridgeDetector` | 1 | `bridge_detector.rs` | partial | 11 | 1 | 5 | 5 | 0 |
-| `Brim` | 2 | `brim.rs` | partial | 32 | 8 | 3 | 18 | 3 |
+| `Brim` | 2 | `brim.rs` | ported | 32 | 0 | 0 | 5 | 27 |
 | `BrimEarsPoint` | 2 | `brim_ears_point.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `BuildVolume` | 1 | `build_volume.rs` | partial | 20 | 1 | 2 | 17 | 0 |
 | `ByObjectPrintData` | 3 | `by_object_print_data.rs` | partial | 4 | 2 | 1 | 1 | 0 |
@@ -112,7 +112,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `clipper2/clipper.rectclip` | 1 | `clipper2/clipper_rectclip.rs` | partial | 31 | 0 | 1 | 0 | 30 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 3 | 9 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 25 | 170 | 30 | 2 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 24 | 171 | 30 | 2 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
@@ -132,8 +132,8 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 6 | 12 | 1 | 0 |
 | `Debounce` | 3 | `debounce.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
-| `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 12 | 24 | 11 | 0 |
-| `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 5 | 0 | 4 | 1 |
+| `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 11 | 25 | 11 | 0 |
+| `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 1 | 4 | 4 | 1 |
 | `Emboss` | 3 | `emboss.rs` | partial | 91 | 6 | 5 | 27 | 53 |
 | `EmbossShape` | 3 | `emboss_shape.rs` | partial | 8 | 0 | 8 | 0 | 0 |
 | `enum_bitmask` | 1 | `enum_bitmask.rs` | partial | 4 | 0 | 1 | 3 | 0 |
@@ -146,7 +146,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `ExPolygonsIndex` | 1 | `ex_polygons_index.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `Extruder` | 1 | `extruder.rs` | ported | 31 | 0 | 0 | 31 | 0 |
-| `ExtrusionEntity` | 1 | `extrusion_entity.rs` | partial | 125 | 7 | 29 | 89 | 0 |
+| `ExtrusionEntity` | 1 | `extrusion_entity.rs` | partial | 125 | 5 | 31 | 89 | 0 |
 | `ExtrusionEntityCollection` | 1 | `extrusion_entity_collection.rs` | partial | 35 | 1 | 24 | 10 | 0 |
 | `ExtrusionSimulator` | 1 | `extrusion_simulator.rs` | partial | 22 | 0 | 3 | 19 | 0 |
 | `FaceDetector` | 3 | `face_detector.rs` | ported | 1 | 0 | 0 | 1 | 0 |
@@ -280,7 +280,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `ParameterUtils` | 1 | `parameter_utils.rs` | partial | 3 | 1 | 1 | 1 | 0 |
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
-| `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 17 | 8 | 4 | 0 |
+| `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 9 | 9 | 11 | 0 |
 | `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 0 | 10 | 1 | 74 |
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 0 | 13 | 11 | 0 |
@@ -296,7 +296,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 0 | 4 | 11 | 62 |
 | `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 5 | 26 | 15 | 91 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 12 | 29 | 41 | 0 |
-| `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 0 | 2 | 22 | 0 |
+| `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 0 | 1 | 0 | 23 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `ProjectTask` | 1 | `project_task.rs` | partial | 11 | 0 | 5 | 6 | 0 |
 | `QuadricEdgeCollapse` | 3 | `quadric_edge_collapse.rs` | partial | 28 | 3 | 3 | 22 | 0 |
@@ -331,14 +331,14 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `SlicesToTriangleMesh` | 3 | `slices_to_triangle_mesh.rs` | partial | 7 | 0 | 4 | 3 | 0 |
 | `Slicing` | 1 | `slicing.rs` | partial | 22 | 0 | 1 | 21 | 0 |
 | `SlicingAdaptive` | 2 | `slicing_adaptive.rs` | ported | 6 | 0 | 0 | 6 | 0 |
-| `Support/SupportCommon` | 2 | `support/support_common.rs` | partial | 31 | 0 | 6 | 8 | 17 |
+| `Support/SupportCommon` | 2 | `support/support_common.rs` | partial | 31 | 0 | 5 | 2 | 24 |
 | `Support/SupportLayer` | 2 | `support/support_layer.rs` | ported | 4 | 0 | 0 | 4 | 0 |
-| `Support/SupportMaterial` | 2 | `support/support_material.rs` | partial | 51 | 34 | 13 | 4 | 0 |
+| `Support/SupportMaterial` | 2 | `support/support_material.rs` | partial | 51 | 28 | 14 | 9 | 0 |
 | `Support/SupportParameters` | 2 | `support/support_parameters.rs` | verified | 13 | 0 | 0 | 0 | 13 |
-| `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 4 | 17 | 13 | 0 |
-| `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 11 | 10 | 26 | 25 |
-| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 44 | 15 | 17 | 0 |
-| `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 3 | 1 | 11 | 0 |
+| `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 0 | 10 | 10 | 14 |
+| `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 6 | 6 | 26 | 34 |
+| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 20 | 14 | 42 | 0 |
+| `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 0 | 1 | 0 | 14 |
 | `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
 | `SupportRecommendedParams` | 3 | `support_recommended_params.rs` | verified | 9 | 0 | 0 | 0 | 9 |
 | `Surface` | 1 | `surface.rs` | partial | 39 | 0 | 20 | 19 | 0 |
@@ -360,7 +360,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 3 | 18 | 23 | 92 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
-| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 8 | 14 | 22 | 1 |
+| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 6 | 16 | 22 | 1 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 0 | 20 | 45 | 38 |
 | `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `TriangulateWall` | 3 | `triangulate_wall.rs` | partial | 13 | 0 | 1 | 12 | 0 |
@@ -1283,42 +1283,42 @@ Rust file: `bridge_detector.rs`. Status: **partial**. Not listed: 3 constructors
 
 ### `Brim` (.cpp+.hpp)
 
-Rust file: `brim.rs`. Status: **partial**.
+Rust file: `brim.rs`. Status: **ported**.
 
 **free functions**
 
-- [x] `append_and_translate` (line 29) → `brim.rs:555`
-- [x] `append_and_translate` (line 38) → `brim.rs:573`
-- [x] `append_and_translate` (line 49) → `brim.rs:601`
+- [x] `append_and_translate` (line 29) → `brim.rs:566`
+- [x] `append_and_translate` (line 38) → `brim.rs:584`
+- [x] `append_and_translate` (line 49) → `brim.rs:612`
 - [x] `max_brim_width` (line 57) → `brim.rs:81`
-- [x] `get_print_object_bottom_layer_expolygons` (line 67) → `brim.rs:630`
-- [x] `get_print_bottom_layers_expolygons` (line 88) → `brim.rs:660`
-- [x] `get_top_level_objects_with_brim` (line 98) → `brim.rs:672`
-- [x] `top_level_outer_brim_islands` (line 161) → `brim.rs:755`
-- [x] `top_level_outer_brim_area` (line 195) → `brim.rs:806`
-- [x] `top_level_outer_brim_area` (line 271) → `brim.rs:944`
-- [x] `inner_brim_area` (line 379) → `brim.rs:1091`
-- [x] `inner_brim_area` (line 439) → `brim.rs:1187`
-- [x] `getTemperatureFromExtruder` (line 562) → `brim.rs:1414`
-- [~] `getadhesionCoeff` (line 587) → `brim.rs:1446` — partial
-- [v] `compSecondMoment` (line 642) → `brim.rs:1355` — R917: tests/brim_native_parity.rs: the three overloads of compSecondMoment over 42 polygons, 30 expolygons and 20 groups against the pin's Brim.cpp, bit for bit (gate BRIM_SECOND_MOMENT_PIN) (the body reads as divergent to the estimate)
-- [v] `compSecondMoment` (line 670) → `brim.rs:1362` — R917: tests/brim_native_parity.rs: the three overloads of compSecondMoment over 42 polygons, 30 expolygons and 20 groups against the pin's Brim.cpp, bit for bit (gate BRIM_SECOND_MOMENT_PIN) (the body reads as divergent to the estimate)
-- [v] `compSecondMoment` (line 696) → `brim.rs:1369` — R917: tests/brim_native_parity.rs: the three overloads of compSecondMoment over 42 polygons, 30 expolygons and 20 groups against the pin's Brim.cpp, bit for bit (gate BRIM_SECOND_MOMENT_PIN) (the body reads as divergent to the estimate)
-- [x] `configBrimWidthByVolumes` (line 731) → `brim.rs:1492`
-- [x] `configBrimWidthByVolumeGroups` (line 772) → `brim.rs:1554`
-- [x] `make_brim_ears` (line 820) → `brim.rs:1633`
-- [x] `bed_support_islands` (line 864) → `brim.rs:1699`
-- [ ] `outer_inner_brim_area` (line 885) → `brim.rs`
-- [x] `optimize_polylines_by_reversing` (line 1227) → `brim.rs:427`
-- [ ] `connect_brim_lines` (line 1243) → `brim.rs`
-- [ ] `make_inner_island_brim` (line 1323) → `brim.rs`
-- [ ] `make_inner_island_brim` (line 1442) → `brim.rs`
-- [ ] `make_inner_brim` (line 1596) → `brim.rs`
-- [ ] `make_inner_brim` (line 1646) → `brim.rs`
-- [ ] `tryExPolygonOffset` (line 1706) → `brim.rs`
-- [ ] `makeBrimInfill` (line 1729) → `brim.rs`
-- [~] `make_brim` (line 1769) → `print.rs` — not in the paired file
-- [~] `make_brim` (line 1845) → `print.rs` — not in the paired file
+- [v] `get_print_object_bottom_layer_expolygons` (line 67) → `brim.rs:641` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `get_print_bottom_layers_expolygons` (line 88) → `brim.rs:671` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `get_top_level_objects_with_brim` (line 98) → `brim.rs:683` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `top_level_outer_brim_islands` (line 161) → `brim.rs:766` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `top_level_outer_brim_area` (line 195) → `brim.rs:817` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `top_level_outer_brim_area` (line 271) → `brim.rs:955` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `inner_brim_area` (line 379) → `brim.rs:1102` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `inner_brim_area` (line 439) → `brim.rs:1198` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `getTemperatureFromExtruder` (line 562) → `brim.rs:1426` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `getadhesionCoeff` (line 587) → `brim.rs:1458` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator. (the body reads as partial to the estimate)
+- [v] `compSecondMoment` (line 642) → `brim.rs:1366` — R917: tests/brim_native_parity.rs: the three overloads of compSecondMoment over 42 polygons, 30 expolygons and 20 groups against the pin's Brim.cpp, bit for bit (gate BRIM_SECOND_MOMENT_PIN) (the body reads as divergent to the estimate)
+- [v] `compSecondMoment` (line 670) → `brim.rs:1373` — R917: tests/brim_native_parity.rs: the three overloads of compSecondMoment over 42 polygons, 30 expolygons and 20 groups against the pin's Brim.cpp, bit for bit (gate BRIM_SECOND_MOMENT_PIN) (the body reads as divergent to the estimate)
+- [v] `compSecondMoment` (line 696) → `brim.rs:1380` — R917: tests/brim_native_parity.rs: the three overloads of compSecondMoment over 42 polygons, 30 expolygons and 20 groups against the pin's Brim.cpp, bit for bit (gate BRIM_SECOND_MOMENT_PIN) (the body reads as divergent to the estimate)
+- [x] `configBrimWidthByVolumes` (line 731) → `brim.rs:1504`
+- [v] `configBrimWidthByVolumeGroups` (line 772) → `brim.rs:1566` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `make_brim_ears` (line 820) → `brim.rs:1645` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `bed_support_islands` (line 864) → `brim.rs:1711` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `outer_inner_brim_area` (line 885) → `brim.rs:1907` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `optimize_polylines_by_reversing` (line 1227) → `brim.rs:427` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `connect_brim_lines` (line 1243) → `brim.rs:2299` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `make_inner_island_brim` (line 1323) → `brim.rs:2431` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `make_inner_island_brim` (line 1442) → `brim.rs:2556` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `make_inner_brim` (line 1596) → `brim.rs:2727` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator. (the body reads as partial to the estimate)
+- [v] `make_inner_brim` (line 1646) → `brim.rs:2784` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator. (the body reads as partial to the estimate)
+- [v] `tryExPolygonOffset` (line 1706) → `brim.rs:2837` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `makeBrimInfill` (line 1729) → `brim.rs:2867` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `make_brim` (line 1769) → `brim.rs:2916` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
+- [v] `make_brim` (line 1845) → `brim.rs:3035` — R919: tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.
 
 ### `BrimEarsPoint` (.hpp)
 
@@ -2211,8 +2211,8 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
 - [x] `shrink` (line 388) → `clipper_utils.rs:339`
-- [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
-- [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs, brim.rs, support/support_common.rs` — not in the paired file
+- [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs, brim.rs, support/support_common.rs` — not in the paired file
 - [x] `offset_paths` (line 400) → `clipper_utils.rs:1125`
 - [x] `closing` (line 407) → `clipper_utils.rs:610`
 - [~] `closing_ex` (line 410) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
@@ -2350,8 +2350,8 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [ ] `union_pt` (line 966) → `clipper_utils.rs`
 - [ ] `order_nodes` (line 972) → `clipper_utils.rs`
 - [ ] `traverse_pt_noholes` (line 989) → `clipper_utils.rs`
-- [ ] `traverse_pt_outside_in` (line 999) → `clipper_utils.rs`
-- [~] `union_pt_chained_outside_in` (line 1019) → `fill/fill_concentric.rs` — not in the paired file
+- [~] `traverse_pt_outside_in` (line 999) → `brim.rs` — not in the paired file
+- [~] `union_pt_chained_outside_in` (line 1019) → `brim.rs, fill/fill_concentric.rs` — not in the paired file
 - [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, clipper.rs, geometry/geometry.rs` — not in the paired file
 - [ ] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs`
 - [ ] `top_level_islands` (line 1059) → `clipper_utils.rs`
@@ -3377,7 +3377,7 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 - [ ] `closest_point_signed_distance` (line 1047) → `edge_grid.rs`
 - [x] `signed_distance_edges` (line 1178) → `edge_grid.rs:1533`
 - [x] `signed_distance` (line 1273) → `edge_grid.rs:1633`
-- [ ] `contours_simplified` (line 1283) → `edge_grid.rs`
+- [~] `contours_simplified` (line 1283) → `support/support_material.rs` — not in the paired file
 - [ ] `intersecting_edges` (line 1414) → `edge_grid.rs`
 - [x] `has_intersecting_edges` (line 1452) → `edge_grid.rs:369`
 
@@ -3416,10 +3416,10 @@ Rust file: `elephant_foot_compensation.rs`. Status: **partial**. Not listed: 1 c
 - [ ] `smooth_compensation` (line 449) → `elephant_foot_compensation.rs`
 - [v] `smooth_compensation_banded` (line 465) → `elephant_foot_compensation.rs:601` — R896: tests/smooth_compensation_banded_native_parity.rs (40,000 contours, bit for bit against the function compiled as C++ in clipper-z-sys)
 - [x] `validate_expoly_orientation` (line 535) → `elephant_foot_compensation.rs:722`
-- [ ] `elephant_foot_compensation` (line 544) → `elephant_foot_compensation.rs`
-- [ ] `elephant_foot_compensation` (line 620) → `elephant_foot_compensation.rs`
-- [ ] `elephant_foot_compensation` (line 627) → `elephant_foot_compensation.rs`
-- [ ] `elephant_foot_compensation` (line 637) → `elephant_foot_compensation.rs`
+- [~] `elephant_foot_compensation` (line 544) → `print_object_slice.rs` — not in the paired file
+- [~] `elephant_foot_compensation` (line 620) → `print_object_slice.rs` — not in the paired file
+- [~] `elephant_foot_compensation` (line 627) → `print_object_slice.rs` — not in the paired file
+- [~] `elephant_foot_compensation` (line 637) → `print_object_slice.rs` — not in the paired file
 
 ### `Emboss` (.cpp+.hpp)
 
@@ -3655,12 +3655,12 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `to_polylines` (line 231) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 250) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 267) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [~] `to_polygons` (line 286) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `to_polygons` (line 295) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 286) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 295) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
 - [ ] `to_polygon_ptrs` (line 306) → `ex_polygon.rs`
 - [ ] `to_polygon_ptrs` (line 316) → `ex_polygon.rs`
-- [~] `to_polygons` (line 328) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `to_polygons` (line 339) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 328) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 339) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
 - [~] `to_expolygons` (line 352) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
 - [~] `to_expolygons` (line 361) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
 - [~] `to_points` (line 370) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
@@ -3673,7 +3673,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `expolygons_append` (line 426) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_rotate` (line 437) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_contain` (line 443) → `geometry/expolygon.rs` — not in the paired file
-- [~] `expolygons_simplify` (line 451) → `geometry/expolygon.rs, support/tree_support.rs` — not in the paired file
+- [~] `expolygons_simplify` (line 451) → `geometry/expolygon.rs, print_object_slice.rs, support/tree_support.rs` — not in the paired file
 - [x] `get_expolygons_area` (line 455) → `ex_polygon.rs:563`
 - [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:572` — partial
 - [x] `expolygons_match` (line 480) → `ex_polygon.rs:612`
@@ -3852,10 +3852,10 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [~] `extrusion_paths_append` (line 626) → `overhang_detector.rs` — not in the paired file
 - [~] `extrusion_paths_append` (line 637) → `overhang_detector.rs` — not in the paired file
 - [x] `extrusion_entities_append_paths` (line 647) → `extrusion_entity.rs:2478`
-- [~] `extrusion_entities_append_paths` (line 658) → `support/support_common.rs` — not in the paired file
+- [~] `extrusion_entities_append_paths` (line 658) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [~] `extrusion_entities_append_paths_with_wipe` (line 671) → `extrusion_entity.rs:2399` — partial
-- [ ] `extrusion_entities_append_loops` (line 732) → `extrusion_entity.rs`
-- [ ] `extrusion_entities_append_loops_and_paths` (line 746) → `extrusion_entity.rs`
+- [~] `extrusion_entities_append_loops` (line 732) → `brim.rs, support/tree_support.rs` — not in the paired file
+- [~] `extrusion_entities_append_loops_and_paths` (line 746) → `brim.rs` — not in the paired file
 
 **class `ExtrusionEntity`**
 
@@ -9594,7 +9594,7 @@ Rust file: `nsvg_utils.rs`. Status: **partial**. Not listed: 2 constructors.
 **free functions**
 
 - [ ] `create_shape_with_ids` (line 25) → `nsvg_utils.rs`
-- [~] `to_polygons` (line 62) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 62) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
 - [~] `bounds` (line 78) → `optimize/optimizer.rs` — not in the paired file
 - [ ] `nsvgParseFromFile` (line 93) → `nsvg_utils.rs`
 - [~] `read_from_disk` (line 99) → `nsvg_utils.rs:515` — divergent
@@ -9960,15 +9960,15 @@ Rust file: `perimeter_generator.rs`. Status: **partial**. Not listed: 3 construc
 - [~] `random_value` (line 31) → `fuzzy_skin.rs` — not in the paired file
 - [~] `fuzzy_polygon` (line 66) → `fuzzy_skin.rs` — not in the paired file
 - [~] `fuzzy_extrusion_line` (line 100) → `fuzzy_skin.rs` — not in the paired file
-- [ ] `lowpass_filter_by_paths_overhang_degree` (line 147) → `perimeter_generator.rs`
+- [x] `lowpass_filter_by_paths_overhang_degree` (line 147) → `perimeter_generator.rs:5662`
 - [x] `detect_bridge_wall` (line 244) → `perimeter_generator.rs:2589`
-- [~] `is_enable_overhang_speed` (line 272) → `g_code.rs` — not in the paired file
-- [ ] `fuzzy_skin_allows_overhang_slowdown` (line 282) → `perimeter_generator.rs`
+- [~] `is_enable_overhang_speed` (line 272) → `perimeter_generator.rs:5759` — partial
+- [~] `fuzzy_skin_allows_overhang_slowdown` (line 282) → `perimeter_generator.rs:5790` — divergent
 - [~] `traverse_loops` (line 288) → `perimeter_generator.rs:2626` — partial
 - [x] `smooth_overhang_level` (line 514) → `perimeter_generator.rs:5541`
 - [ ] `detect_brigde_wall_arachne` (line 597) → `perimeter_generator.rs`
 - [ ] `traverse_extrusions` (line 621) → `perimeter_generator.rs`
-- [ ] `to_polygons_with_flag` (line 835) → `perimeter_generator.rs`
+- [x] `to_polygons_with_flag` (line 835) → `perimeter_generator.rs:5800`
 
 **class `PerimeterGenerator`**
 
@@ -9977,24 +9977,24 @@ Rust file: `perimeter_generator.rs`. Status: **partial**. Not listed: 3 construc
 - [ ] `mm3_per_mm_overhang` (line 117) → `perimeter_generator.rs`
 - [ ] `smaller_width_ext_mm3_per_mm` (line 119) → `perimeter_generator.rs`
 - [ ] `lower_slices_polygons` (line 120) → `perimeter_generator.rs`
-- [ ] `dist_boundary` (line 232) → `perimeter_generator.rs`
-- [ ] `effective_wall_loops` (line 849) → `perimeter_generator.rs`
+- [x] `dist_boundary` (line 232) → `perimeter_generator.rs:5827`
+- [x] `effective_wall_loops` (line 849) → `perimeter_generator.rs:5843`
 - [ ] `process_classic` (line 859) → `perimeter_generator.rs`
 - [~] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:4437` — partial
 - [ ] `process_arachne` (line 1489) → `perimeter_generator.rs`
 - [x] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:3299`
-- [ ] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs`
+- [x] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs:5858`
 - [ ] `process_no_bridge` (line 1953) → `perimeter_generator.rs`
 
 **class `PerimeterGeneratorLoop`**
 
-- [~] `is_external` (line 59) → `surface.rs` — not in the paired file
+- [x] `is_external` (line 59) → `perimeter_generator.rs:5817`
 - [x] `is_internal_contour` (line 1875) → `perimeter_generator.rs:411`
 
 **class `PerimeterRegion`**
 
-- [ ] `has_compatible_perimeter_regions` (line 1917) → `perimeter_generator.rs`
-- [ ] `merge_compatible_perimeter_regions` (line 1929) → `perimeter_generator.rs`
+- [~] `has_compatible_perimeter_regions` (line 1917) → `perimeter_generator.rs:5935` — divergent
+- [x] `merge_compatible_perimeter_regions` (line 1929) → `perimeter_generator.rs:5958`
 
 ### `PlaceholderParser` (.cpp+.hpp)
 
@@ -10303,8 +10303,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [~] `to_polylines` (line 242) → `geometry/expolygon.rs, geometry/polyline.rs, support/support_common.rs` — not in the paired file
 - [x] `to_polygons` (line 257) → `geometry/polygon.rs:1847`
 - [x] `filter_points_by_vectors` (line 263) → `geometry/polygon.rs:1003`
-- [~] `to_polygons` (line 267) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `to_polygons` (line 276) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 267) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 276) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
 - [x] `filter_convex_concave_points_by_angle_threshold` (line 284) → `geometry/polygon.rs:1030`
 - [x] `get_extents` (line 411) → `geometry/polygon.rs:1149`
 - [~] `get_extents` (line 416) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
@@ -10778,20 +10778,20 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 **free functions**
 
 - [ ] `layered_print_cleareance_valid` (line 1124) → `print.rs`
-- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:10072`
-- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:10090`
-- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:9726`
-- [x] `getObjectExtruderMap` (line 2150) → `print.rs:9759`
-- [x] `convex_outline_gap` (line 3749) → `print.rs:9787`
-- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:9803`
-- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:9836`
-- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:9856`
-- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:9906`
-- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:9944`
-- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:9956`
-- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:9970`
-- [x] `print_instance_hull` (line 3912) → `print.rs:9976`
-- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:10003`
+- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:10075`
+- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:10093`
+- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:9729`
+- [x] `getObjectExtruderMap` (line 2150) → `print.rs:9762`
+- [x] `convex_outline_gap` (line 3749) → `print.rs:9790`
+- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:9806`
+- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:9839`
+- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:9859`
+- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:9909`
+- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:9947`
+- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:9959`
+- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:9973`
+- [x] `print_instance_hull` (line 3912) → `print.rs:9979`
+- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:10006`
 - [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:4899`
 - [~] `to_json` (line 4596) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4604) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
@@ -10820,7 +10820,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [x] `empty` (line 1387) → `print.rs:9830`
+- [x] `empty` (line 1387) → `print.rs:9833`
 
 **class `ConstVectorOfPtrsAdaptor`**
 
@@ -10828,139 +10828,139 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
-- [x] `size` (line 212) → `print.rs:6490`
+- [x] `size` (line 212) → `print.rs:6493`
 - [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
 - [~] `vector` (line 216) → `geometry/line.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `FakeWipeTower`**
 
-- [x] `set_fake_extrusion_data` (line 733) → `print.rs:6809`
-- [x] `set_pos` (line 744) → `print.rs:6820`
-- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:6826`
-- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:6864`
+- [x] `set_fake_extrusion_data` (line 733) → `print.rs:6812`
+- [x] `set_pos` (line 744) → `print.rs:6823`
+- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:6829`
+- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:6867`
 
 **class `Print`**
 
-- [x] `clear` (line 60) → `print.rs:7601`
-- [x] `has_tpu_filament` (line 74) → `print.rs:7618`
-- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:7631` — read against the C++ in R915 (the estimate says partial)
-- [x] `set_calib_params` (line 449) → `print.rs:7776`
-- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:7781`
-- [x] `invalidate_step` (line 459) → `print.rs:7786`
-- [x] `is_step_done` (line 470) → `print.rs:6783` — read against the C++ in R915 (the estimate says partial)
-- [v] `object_extruders` (line 482) → `print.rs:7818` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `support_material_extruders` (line 523) → `print.rs:7852` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `extruders` (line 558) → `print.rs:7888` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `printed_filaments` (line 578) → `print.rs:8997` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:7909` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:9029` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `num_object_instances` (line 713) → `print.rs:7953` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `max_allowed_layer_height` (line 721) → `print.rs:7962` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `print_object_ids` (line 732) → `print.rs:7972`
-- [v] `has_infinite_skirt` (line 742) → `print.rs:7981` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_skirt` (line 747) → `print.rs:7987` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_brim` (line 752) → `print.rs:7993` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `layers_sorted_for_object` (line 758) → `print.rs:9114`
+- [x] `clear` (line 60) → `print.rs:7604`
+- [x] `has_tpu_filament` (line 74) → `print.rs:7621`
+- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:7634` — read against the C++ in R915 (the estimate says partial)
+- [x] `set_calib_params` (line 449) → `print.rs:7779`
+- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:7784`
+- [x] `invalidate_step` (line 459) → `print.rs:7789`
+- [x] `is_step_done` (line 470) → `print.rs:6786` — read against the C++ in R915 (the estimate says partial)
+- [v] `object_extruders` (line 482) → `print.rs:7821` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `support_material_extruders` (line 523) → `print.rs:7855` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `extruders` (line 558) → `print.rs:7891` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `printed_filaments` (line 578) → `print.rs:9000` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:7912` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:9032` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `num_object_instances` (line 713) → `print.rs:7956` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `max_allowed_layer_height` (line 721) → `print.rs:7965` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `print_object_ids` (line 732) → `print.rs:7975`
+- [v] `has_infinite_skirt` (line 742) → `print.rs:7984` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_skirt` (line 747) → `print.rs:7990` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_brim` (line 752) → `print.rs:7996` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `layers_sorted_for_object` (line 758) → `print.rs:9117`
 - [ ] `sequential_print_clearance_valid` (line 777) → `print.rs`
-- [x] `technology` (line 910) → `print.rs:7998`
-- [v] `empty` (line 918) → `print.rs:8003` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_step_done` (line 933) → `print.rs:7796`
-- [x] `finished` (line 937) → `print.rs:8008`
-- [v] `has_auto_brim` (line 943) → `print.rs:8013` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:8018`
-- [x] `objects` (line 994) → `print.rs:8035`
-- [x] `get_object` (line 995) → `print.rs:8039`
+- [x] `technology` (line 910) → `print.rs:8001`
+- [v] `empty` (line 918) → `print.rs:8006` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_step_done` (line 933) → `print.rs:7799`
+- [x] `finished` (line 937) → `print.rs:8011`
+- [v] `has_auto_brim` (line 943) → `print.rs:8016` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:8021`
+- [x] `objects` (line 994) → `print.rs:8038`
+- [x] `get_object` (line 995) → `print.rs:8042`
 - [~] `get_object` (line 996) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
 - [~] `get_object` (line 999) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
-- [x] `statistics_by_extruder` (line 1027) → `print.rs:8044`
-- [v] `is_sequential_print` (line 1038) → `print.rs:8054` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8063`
-- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8067`
-- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8071`
-- [x] `set_filament_print_time` (line 1080) → `print.rs:8075`
-- [x] `get_filament_print_time` (line 1081) → `print.rs:8079`
-- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8083`
-- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8087`
-- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8091`
-- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8095`
-- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8100`
-- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8108`
-- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8116`
-- [v] `num_print_regions` (line 1130) → `print.rs:8125` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_plate_origin` (line 1135) → `print.rs:8133`
-- [x] `get_plate_origin` (line 1136) → `print.rs:8137`
-- [x] `get_modified_count` (line 1142) → `print.rs:8141`
-- [x] `is_support_used` (line 1144) → `print.rs:8145`
-- [x] `is_BBL_Printer` (line 1145) → `print.rs:8149`
-- [x] `set_BBL_Printer` (line 1146) → `print.rs:8153`
-- [x] `get_conflict_string` (line 1147) → `print.rs:8157`
-- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8165`
-- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8169`
-- [x] `get_rib_offset` (line 1173) → `print.rs:8173`
-- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8182` — partial
+- [x] `statistics_by_extruder` (line 1027) → `print.rs:8047`
+- [v] `is_sequential_print` (line 1038) → `print.rs:8057` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8066`
+- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8070`
+- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8074`
+- [x] `set_filament_print_time` (line 1080) → `print.rs:8078`
+- [x] `get_filament_print_time` (line 1081) → `print.rs:8082`
+- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8086`
+- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8090`
+- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8094`
+- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8098`
+- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8103`
+- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8111`
+- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8119`
+- [v] `num_print_regions` (line 1130) → `print.rs:8128` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_plate_origin` (line 1135) → `print.rs:8136`
+- [x] `get_plate_origin` (line 1136) → `print.rs:8140`
+- [x] `get_modified_count` (line 1142) → `print.rs:8144`
+- [x] `is_support_used` (line 1144) → `print.rs:8148`
+- [x] `is_BBL_Printer` (line 1145) → `print.rs:8152`
+- [x] `set_BBL_Printer` (line 1146) → `print.rs:8156`
+- [x] `get_conflict_string` (line 1147) → `print.rs:8160`
+- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8168`
+- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8172`
+- [x] `get_rib_offset` (line 1173) → `print.rs:8176`
+- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8185` — partial
 - [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:3867`
 - [x] `is_filaments_compatible` (line 1268) → `print.rs:3899`
 - [x] `get_compatible_filament_type` (line 1285) → `print.rs:3923`
-- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8188` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_indx` (line 1319) → `print.rs:8206`
-- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:8216`
-- [x] `get_nozzle_config_index` (line 1355) → `print.rs:8247`
+- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8191` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_indx` (line 1319) → `print.rs:8209`
+- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:8219`
+- [x] `get_nozzle_config_index` (line 1355) → `print.rs:8250`
 - [~] `get_config_index` (line 1360) → `print.rs` — another overload of the name is ported
-- [x] `get_config_index` (line 1385) → `print.rs:8259`
+- [x] `get_config_index` (line 1385) → `print.rs:8262`
 - [~] `validate` (line 1413) → `print.rs:2176` — divergent
-- [x] `bounding_box` (line 1849) → `print.rs:9144`
-- [x] `total_bounding_box` (line 1864) → `print.rs:9160`
-- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8298` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `brim_flow` (line 1918) → `print.rs:9203` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9238` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9254` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `skirt_flow` (line 2001) → `print.rs:9288` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `bounding_box` (line 1849) → `print.rs:9147`
+- [x] `total_bounding_box` (line 1864) → `print.rs:9163`
+- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8301` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `brim_flow` (line 1918) → `print.rs:9206` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9241` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9257` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `skirt_flow` (line 2001) → `print.rs:9291` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [~] `skirt_flow` (line 2017) → `print.rs` — another overload of the name is ported
 - [~] `skirt_flow` (line 2022) → `print.rs` — another overload of the name is ported
-- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9330` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `has_support_material` (line 2048) → `print.rs:8314` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `auto_assign_extruders` (line 2058) → `print.rs:8326`
+- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9333` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `has_support_material` (line 2048) → `print.rs:8317` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `auto_assign_extruders` (line 2058) → `print.rs:8329`
 - [~] `process` (line 2178) → `print.rs:2275` — divergent
 - [~] `export_gcode` (line 2839) → `print.rs:641` — divergent
 - [~] `_make_skirt` (line 2869) → `print.rs:3469` — divergent
-- [x] `first_layer_islands` (line 3061) → `print.rs:9343`
-- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:8766`
-- [x] `translate_to_print_space` (line 3107) → `print.rs:8341`
+- [x] `first_layer_islands` (line 3061) → `print.rs:9346`
+- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:8769`
+- [x] `translate_to_print_space` (line 3107) → `print.rs:8344`
 - [~] `translate_to_print_space` (line 3112) → `print.rs` — another overload of the name is ported
 - [~] `get_filament_temp_type` (line 3116) → `print.rs:3835` — divergent
-- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8357` — divergent
-- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9370` — partial
-- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9425`
-- [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8376` — divergent
+- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8360` — divergent
+- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9373` — partial
+- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9428`
+- [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8379` — divergent
 - [ ] `resolve_manual_nozzle_map` (line 3322) → `print.rs`
 - [ ] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs`
-- [x] `apply_config_for_render` (line 3402) → `print.rs:8440`
-- [v] `get_filament_maps` (line 3407) → `print.rs:8447` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:8451`
-- [v] `get_filament_volume_maps` (line 3417) → `print.rs:8455` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_filament_map_mode` (line 3422) → `print.rs:8459` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:8464` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:8490`
-- [v] `get_filament_usage_type` (line 3474) → `print.rs:8513` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:8567` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:8605`
-- [x] `get_extruder_printable_height` (line 3568) → `print.rs:8642`
-- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:8656` — partial
-- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:8666`
+- [x] `apply_config_for_render` (line 3402) → `print.rs:8443`
+- [v] `get_filament_maps` (line 3407) → `print.rs:8450` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:8454`
+- [v] `get_filament_volume_maps` (line 3417) → `print.rs:8458` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_filament_map_mode` (line 3422) → `print.rs:8462` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:8467` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:8493`
+- [v] `get_filament_usage_type` (line 3474) → `print.rs:8516` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:8570` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:8608`
+- [x] `get_extruder_printable_height` (line 3568) → `print.rs:8645`
+- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:8659` — partial
+- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:8669`
 - [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:5286`
-- [v] `get_extruder_id` (line 3609) → `print.rs:8678` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_idx` (line 3618) → `print.rs:8687`
-- [x] `get_process_config_idx` (line 3623) → `print.rs:8693`
-- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:8707` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_wipe_tower` (line 3655) → `print.rs:8737` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
-- [v] `enable_timelapse_print` (line 3742) → `print.rs:8759` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9530`
-- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9605`
+- [v] `get_extruder_id` (line 3609) → `print.rs:8681` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_idx` (line 3618) → `print.rs:8690`
+- [x] `get_process_config_idx` (line 3623) → `print.rs:8696`
+- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:8710` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_wipe_tower` (line 3655) → `print.rs:8740` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
+- [v] `enable_timelapse_print` (line 3742) → `print.rs:8762` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9533`
+- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9608`
 - [x] `_make_wipe_tower` (line 4157) → `print.rs:5326`
-- [x] `output_filename` (line 4402) → `print.rs:8797`
-- [~] `set_gcode_file_ready` (line 4414) → `print.rs:8808` — partial
-- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:8814`
+- [x] `output_filename` (line 4402) → `print.rs:8800`
+- [~] `set_gcode_file_ready` (line 4414) → `print.rs:8811` — partial
+- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:8817`
 - [ ] `export_gcode_from_previous_file` (line 4428) → `print.rs`
 - [~] `export_cached_data` (line 5316) → `print_base.rs` — not in the paired file
 - [~] `load_cached_data` (line 5597) → `print_base.rs` — not in the paired file
@@ -10973,42 +10973,42 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `PrintObject`**
 
-- [x] `configBrimWidth` (line 416) → `print.rs:6498`
-- [x] `layers` (line 417) → `print.rs:6502`
-- [x] `support_layers` (line 418) → `print.rs:6506`
-- [~] `trafo_centered` (line 421) → `print.rs:6561` — partial
-- [x] `bounding_box` (line 442) → `print.rs:6575`
-- [x] `height` (line 445) → `print.rs:6582`
-- [x] `max_z` (line 446) → `print.rs:6586`
-- [v] `has_brim` (line 457) → `print.rs:6594` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `total_layer_count` (line 472) → `print.rs:6602`
-- [x] `layer_count` (line 473) → `print.rs:6606`
+- [x] `configBrimWidth` (line 416) → `print.rs:6501`
+- [x] `layers` (line 417) → `print.rs:6505`
+- [x] `support_layers` (line 418) → `print.rs:6509`
+- [~] `trafo_centered` (line 421) → `print.rs:6564` — partial
+- [x] `bounding_box` (line 442) → `print.rs:6578`
+- [x] `height` (line 445) → `print.rs:6585`
+- [x] `max_z` (line 446) → `print.rs:6589`
+- [v] `has_brim` (line 457) → `print.rs:6597` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `total_layer_count` (line 472) → `print.rs:6605`
+- [x] `layer_count` (line 473) → `print.rs:6609`
 - [~] `get_layer` (line 475) → `gcode/multi_material.rs` — not in the paired file
-- [x] `get_layer` (line 476) → `print.rs:6610`
+- [x] `get_layer` (line 476) → `print.rs:6613`
 - [ ] `clear_tree_support_preview_cache` (line 497) → `print.rs`
-- [x] `support_layer_count` (line 499) → `print.rs:6614`
-- [x] `get_support_layer` (line 501) → `print.rs:6771`
-- [x] `num_printing_regions` (line 518) → `print.rs:6618`
-- [x] `shared_regions` (line 522) → `print.rs:6633`
-- [x] `has_support` (line 524) → `print.rs:6637`
-- [x] `has_raft` (line 525) → `print.rs:6641`
-- [v] `has_support_material` (line 526) → `print.rs:6645` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_mm_painted` (line 530) → `print.rs:6657`
+- [x] `support_layer_count` (line 499) → `print.rs:6617`
+- [x] `get_support_layer` (line 501) → `print.rs:6774`
+- [x] `num_printing_regions` (line 518) → `print.rs:6621`
+- [x] `shared_regions` (line 522) → `print.rs:6636`
+- [x] `has_support` (line 524) → `print.rs:6640`
+- [x] `has_raft` (line 525) → `print.rs:6644`
+- [v] `has_support_material` (line 526) → `print.rs:6648` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_mm_painted` (line 530) → `print.rs:6660`
 - [~] `is_fuzzy_skin_painted` (line 532) → `model.rs` — not in the paired file
 - [ ] `slice_support_blockers` (line 544) → `print.rs`
 - [ ] `slice_support_enforcers` (line 545) → `print.rs`
-- [x] `get_shared_object` (line 560) → `print.rs:6661`
-- [x] `get_klipper_object_id` (line 578) → `print.rs:6665`
-- [x] `set_klipper_object_id` (line 579) → `print.rs:6669`
-- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:6673`
-- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:6677`
-- [x] `config_apply` (line 591) → `print.rs:6681`
-- [x] `config_apply_only` (line 592) → `print.rs:6687`
-- [x] `set_shared_object` (line 2073) → `print.rs:6691`
-- [~] `clear_shared_object` (line 2079) → `print.rs:6695` — partial
-- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:6708`
-- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:6725`
-- [x] `get_first_layer_bbox` (line 2125) → `print.rs:6738`
+- [x] `get_shared_object` (line 560) → `print.rs:6664`
+- [x] `get_klipper_object_id` (line 578) → `print.rs:6668`
+- [x] `set_klipper_object_id` (line 579) → `print.rs:6672`
+- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:6676`
+- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:6680`
+- [x] `config_apply` (line 591) → `print.rs:6684`
+- [x] `config_apply_only` (line 592) → `print.rs:6690`
+- [x] `set_shared_object` (line 2073) → `print.rs:6694`
+- [~] `clear_shared_object` (line 2079) → `print.rs:6698` — partial
+- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:6711`
+- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:6728`
+- [x] `get_first_layer_bbox` (line 2125) → `print.rs:6741`
 
 **class `PrintObjectRegions`**
 
@@ -11037,14 +11037,14 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `PrintStatistics`**
 
-- [x] `clear` (line 842) → `print.rs:7093`
-- [x] `config` (line 4454) → `print.rs:7051`
-- [x] `placeholders` (line 4473) → `print.rs:7071`
+- [x] `clear` (line 842) → `print.rs:7096`
+- [x] `config` (line 4454) → `print.rs:7054`
+- [x] `placeholders` (line 4473) → `print.rs:7074`
 - [~] `finalize_output_path` (line 4484) → `sla_print.rs` — not in the paired file
 
 **class `StatisticsByExtruderCount`**
 
-- [x] `clear` (line 877) → `print.rs:7120`
+- [x] `clear` (line 877) → `print.rs:7123`
 
 **class `SupportStageTimes`**
 
@@ -11053,8 +11053,8 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `WipeTowerData`**
 
-- [x] `clear` (line 799) → `print.rs:6948`
-- [v] `construct_mesh` (line 5888) → `print.rs:6961` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `clear` (line 799) → `print.rs:6951`
+- [v] `construct_mesh` (line 5888) → `print.rs:6964` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 
 ### `PrintApply` (.cpp)
 
@@ -11476,7 +11476,7 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5737`
 - [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5761` — partial
 - [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5779`
-- [~] `get_layer_at_bottomz` (line 6814) → `print_object.rs` — another overload of the name is ported
+- [~] `get_layer_at_bottomz` (line 6814) → `support/tree_support.rs` — not in the paired file
 
 ### `PrintObjectSlice` (.cpp)
 
@@ -11484,33 +11484,33 @@ Rust file: `print_object_slice.rs`. Status: **partial**.
 
 **free functions**
 
-- [x] `new_layers` (line 37) → `print_object_slice.rs:524`
-- [x] `slice_volume` (line 63) → `print_object_slice.rs:604`
+- [v] `new_layers` (line 37) → `print_object_slice.rs:553` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `slice_volume` (line 63) → `print_object_slice.rs:633` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
 - [~] `slice_volume` (line 133) → `print_object_slice.rs` — another overload of the name is ported
-- [x] `model_volume_needs_slicing` (line 171) → `print_object_slice.rs:727`
-- [x] `slice_volumes_inner` (line 181) → `print_object_slice.rs:750`
-- [x] `overlap_in_xy` (line 299) → `print_object_slice.rs:883`
-- [x] `layer_range_first` (line 305) → `print_object_slice.rs:890`
-- [x] `layer_range_next` (line 319) → `print_object_slice.rs:907`
-- [x] `slices_to_regions` (line 330) → `print_object_slice.rs:939`
-- [x] `groupingVolumes` (line 651) → `print_object_slice.rs:1288`
-- [x] `findPartVolumes` (line 866) → `print_object_slice.rs:1534`
-- [x] `applyNegtiveVolumes` (line 880) → `print_object_slice.rs:1552`
-- [x] `reGroupingLayerPolygons` (line 899) → `print_object_slice.rs:1574`
-- [x] `fix_slicing_errors` (line 945) → `print_object_slice.rs:1623`
-- [x] `groupingVolumesForBrim` (line 1067) → `print_object_slice.rs:1776`
-- [~] `normalize_mm_segmentation_to_layer_bands` (line 1173) → `print_object_slice.rs:2629` — divergent
-- [x] `apply_mm_segmentation` (line 1852) → `print_object_slice.rs:1793`
-- [x] `apply_fuzzy_skin_segmentation` (line 1979) → `print_object_slice.rs:1941`
-- [x] `should_skip_filament_shrink` (line 2087) → `print_object_slice.rs:2063`
+- [v] `model_volume_needs_slicing` (line 171) → `print_object_slice.rs:756` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `slice_volumes_inner` (line 181) → `print_object_slice.rs:779` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `overlap_in_xy` (line 299) → `print_object_slice.rs:912` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `layer_range_first` (line 305) → `print_object_slice.rs:919` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `layer_range_next` (line 319) → `print_object_slice.rs:936` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `slices_to_regions` (line 330) → `print_object_slice.rs:968` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `groupingVolumes` (line 651) → `print_object_slice.rs:1317` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `findPartVolumes` (line 866) → `print_object_slice.rs:1563` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `applyNegtiveVolumes` (line 880) → `print_object_slice.rs:1581` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `reGroupingLayerPolygons` (line 899) → `print_object_slice.rs:1603` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `fix_slicing_errors` (line 945) → `print_object_slice.rs:1652` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `groupingVolumesForBrim` (line 1067) → `print_object_slice.rs:1805` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `normalize_mm_segmentation_to_layer_bands` (line 1173) → `print_object_slice.rs:2665` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `apply_mm_segmentation` (line 1852) → `print_object_slice.rs:1822` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `apply_fuzzy_skin_segmentation` (line 1979) → `print_object_slice.rs:1973` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `should_skip_filament_shrink` (line 2087) → `print_object_slice.rs:2095` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
 
 **class `PrintObject`**
 
-- [x] `slice` (line 1086) → `print_object_slice.rs:2087`
-- [x] `slice_volumes` (line 2109) → `print_object_slice.rs:2172`
-- [x] `_shrink_contour_holes` (line 2416) → `print_object_slice.rs:2489`
-- [x] `support_shrinkage_scale` (line 2449) → `print_object_slice.rs:2523`
-- [x] `slice_support_volumes` (line 2479) → `print_object_slice.rs:2558`
+- [v] `slice` (line 1086) → `print_object_slice.rs:2119` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `slice_volumes` (line 2109) → `print_object_slice.rs:2204` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `_shrink_contour_holes` (line 2416) → `print_object_slice.rs:2514` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `support_shrinkage_scale` (line 2449) → `print_object_slice.rs:2548` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
+- [v] `slice_support_volumes` (line 2479) → `print_object_slice.rs:2583` — R919: tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.
 
 ### `PrintRegion` (.cpp)
 
@@ -12502,24 +12502,24 @@ Rust file: `slicing.rs`. Status: **partial**. Not listed: 2 constructors.
 
 **free functions**
 
-- [x] `min_layer_height_from_nozzle` (line 31) → `slicing.rs:1408`
-- [x] `max_layer_height_from_nozzle` (line 39) → `slicing.rs:1416`
+- [x] `min_layer_height_from_nozzle` (line 31) → `slicing.rs:1412`
+- [x] `max_layer_height_from_nozzle` (line 39) → `slicing.rs:1420`
 - [x] `equal_layering` (line 125) → `slicing.rs:281`
-- [x] `custom_layer_heights_within_limits` (line 212) → `slicing.rs:1591`
-- [x] `layer_height_profile_from_ranges` (line 235) → `slicing.rs:1617`
+- [x] `custom_layer_heights_within_limits` (line 212) → `slicing.rs:1595`
+- [x] `layer_height_profile_from_ranges` (line 235) → `slicing.rs:1621`
 - [~] `serialize` (line 238) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
-- [x] `layer_height_profile_adaptive` (line 311) → `slicing.rs:339`
-- [x] `smooth_height_profile` (line 404) → `slicing.rs:467`
-- [x] `adjust_layer_height_profile` (line 513) → `slicing.rs:618`
-- [x] `adjust_layer_series_to_align_object_height` (line 702) → `slicing.rs:913`
-- [x] `generate_object_layers` (line 796) → `slicing.rs:1054`
-- [x] `check_object_layers_fixed` (line 854) → `slicing.rs:1148`
-- [x] `generate_layer_height_texture` (line 887) → `slicing.rs:1203`
+- [x] `layer_height_profile_adaptive` (line 311) → `slicing.rs:343`
+- [x] `smooth_height_profile` (line 404) → `slicing.rs:471`
+- [x] `adjust_layer_height_profile` (line 513) → `slicing.rs:622`
+- [x] `adjust_layer_series_to_align_object_height` (line 702) → `slicing.rs:917`
+- [x] `generate_object_layers` (line 796) → `slicing.rs:1058`
+- [x] `check_object_layers_fixed` (line 854) → `slicing.rs:1152`
+- [x] `generate_layer_height_texture` (line 887) → `slicing.rs:1207`
 
 **class `Slicing`**
 
-- [x] `min_layer_height_from_nozzle` (line 48) → `slicing.rs:1429`
-- [x] `max_layer_height_from_nozzle` (line 56) → `slicing.rs:1436`
+- [x] `min_layer_height_from_nozzle` (line 48) → `slicing.rs:1433`
+- [x] `max_layer_height_from_nozzle` (line 56) → `slicing.rs:1440`
 
 **class `SlicingParameters`**
 
@@ -12527,7 +12527,7 @@ Rust file: `slicing.rs`. Status: **partial**. Not listed: 2 constructors.
 - [x] `raft_layers` (line 50) → `slicing.rs:166`
 - [x] `first_object_layer_height_fixed` (line 53) → `slicing.rs:172`
 - [x] `object_print_z_height` (line 56) → `slicing.rs:179`
-- [x] `create_from_config` (line 64) → `slicing.rs:1448`
+- [x] `create_from_config` (line 64) → `slicing.rs:1452`
 - [x] `to_base_layer_height` (line 79) → `slicing.rs:185`
 - [x] `to_layer_height_limit` (line 82) → `slicing.rs:191`
 
@@ -12555,24 +12555,24 @@ Rust file: `support/support_common.rs`. Status: **partial**. Not listed: 1 const
 
 - [v] `compact_layers` (line 52) → `support/support_common.rs:1255` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
 - [v] `generate_interface_layers` (line 59) → `support/support_common.rs:1348` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
-- [x] `idx_higher_or_equal` (line 133) → `support/support_common.rs:72`
+- [v] `idx_higher_or_equal` (line 133) → `support/support_common.rs:72` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
 - [~] `idx_higher_or_equal` (line 159) → `layer.rs` — not in the paired file
-- [x] `idx_lower_or_equal` (line 170) → `support/support_common.rs:118`
+- [v] `idx_lower_or_equal` (line 170) → `support/support_common.rs:118` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
 - [~] `idx_lower_or_equal` (line 196) → `support/support_common.rs` — another overload of the name is ported
 - [~] `safe_offset_inc` (line 219) → `support/tree_support.rs` — not in the paired file
 - [v] `generate_raft_base` (line 300) → `support/support_common.rs:1646` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
-- [x] `fill_expolygon_generate_paths` (line 478) → `support/support_common.rs:2198`
-- [x] `fill_expolygons_generate_paths` (line 501) → `support/support_common.rs:2246`
-- [~] `fill_expolygons_generate_paths` (line 514) → `support/support_common.rs` — another overload of the name is ported
+- [v] `fill_expolygon_generate_paths` (line 478) → `support/support_common.rs:2198` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
+- [v] `fill_expolygons_generate_paths` (line 501) → `support/support_common.rs:2246` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
+- [~] `fill_expolygons_generate_paths` (line 514) → `support/tree_support.rs` — not in the paired file
 - [v] `draw_perimeters` (line 528) → `support/support_common.rs:2063` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 - [v] `tree_supports_generate_paths` (line 546) → `support/support_common.rs:2343` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
 - [v] `fill_expolygons_with_sheath_generate_paths` (line 767) → `support/support_common.rs:2550` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 - [x] `dbg_index_to_color` (line 1124) → `support/support_common.rs:2082`
 - [v] `keep_polylines_near_bbox` (line 1148) → `support/support_common.rs:2009` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
-- [x] `modulate_extrusion_paths_by_overlapping_layers` (line 1194) → `support/support_common.rs:3133`
+- [v] `modulate_extrusion_paths_by_overlapping_layers` (line 1194) → `support/support_common.rs:3133` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
 - [v] `modulate_extrusion_by_overlapping_layers` (line 1446) → `support/support_common.rs:3330` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
-- [~] `merged_band_footprint` (line 1518) → `support/support_common.rs:1996` — partial
-- [x] `merge_support_layers_multi_diameter` (line 1528) → `support/support_common.rs:4765`
+- [v] `merged_band_footprint` (line 1518) → `support/support_common.rs:1994` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
+- [v] `merge_support_layers_multi_diameter` (line 1528) → `support/support_common.rs:4759` — R919: tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.
 - [v] `generate_support_layers` (line 2189) → `support/support_common.rs:1896` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 - [v] `generate_support_toolpaths` (line 2270) → `support/support_common.rs:3672` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 - [v] `safe_union` (line 3004) → `support/support_common.rs:228` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
@@ -12614,8 +12614,8 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 - [ ] `export_support_surface_type_legend_to_svg` (line 95) → `support/support_material.rs`
 - [ ] `export_print_z_polygons_to_svg` (line 123) → `support/support_material.rs`
 - [ ] `export_print_z_polygons_and_extrusions_to_svg` (line 141) → `support/support_material.rs`
-- [ ] `rasterize_polygons` (line 172) → `support/support_material.rs`
-- [ ] `contours_simplified` (line 206) → `support/support_material.rs`
+- [x] `rasterize_polygons` (line 172) → `support/support_material.rs:492`
+- [x] `contours_simplified` (line 206) → `support/support_material.rs:536`
 - [~] `layers_append` (line 366) → `support/support_material.rs:134` — partial
 - [x] `collect_region_slices_by_type` (line 635) → `support/support_material.rs:160`
 - [x] `collect_slices_outer` (line 655) → `support/support_material.rs:192`
@@ -12626,7 +12626,7 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 - [ ] `collect_bridging_perimeter_areas` (line 1220) → `support/support_material.rs`
 - [ ] `collect_bridging_perimeter_areas` (line 1246) → `support/support_material.rs`
 - [ ] `remove_bridges_from_contacts` (line 1260) → `support/support_material.rs`
-- [~] `detect_overhangs` (line 1406) → `support/mod.rs` — not in the paired file
+- [~] `detect_overhangs` (line 1406) → `support/mod.rs, support/tree_support.rs` — not in the paired file
 - [ ] `detect_contacts` (line 1599) → `support/support_material.rs`
 - [ ] `sync_gap_with_object_layer` (line 1739) → `support/support_material.rs`
 - [ ] `new_contact_layer` (line 1783) → `support/support_material.rs`
@@ -12660,14 +12660,14 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 
 **class `SupportGridPattern`**
 
-- [ ] `extract_support` (line 786) → `support/support_material.rs`
+- [~] `extract_support` (line 786) → `support/support_material.rs:808` — partial
 - [~] `serialize` (line 912) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `deserialize` (line 944) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 - [~] `deserialize_` (line 952) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [ ] `dilate_trimming_region` (line 1027) → `support/support_material.rs`
-- [ ] `seed_fill_block` (line 1048) → `support/support_material.rs`
+- [x] `dilate_trimming_region` (line 1027) → `support/support_material.rs:916`
+- [x] `seed_fill_block` (line 1048) → `support/support_material.rs:940`
 - [ ] `island_sample` (line 1093) → `support/support_material.rs`
-- [ ] `island_samples` (line 1117) → `support/support_material.rs`
+- [x] `island_samples` (line 1117) → `support/support_material.rs:990`
 
 ### `Support/SupportParameters` (.hpp)
 
@@ -12698,49 +12698,49 @@ Rust file: `support/tree_model_volumes.rs`. Status: **partial**. Not listed: 2 c
 
 **free functions**
 
-- [~] `calculateMachineBorderCollision` (line 38) → `support/tree_model_volumes.rs:509` — divergent
+- [v] `calculateMachineBorderCollision` (line 38) → `support/tree_model_volumes.rs:627` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ. (the body reads as divergent to the estimate)
 
 **class `TreeModelVolumes`**
 
-- [x] `clear` (line 54) → `support/tree_model_volumes.rs:777`
-- [x] `clear_all_but_object_collision` (line 58) → `support/tree_model_volumes.rs:783`
+- [x] `clear` (line 54) → `support/tree_model_volumes.rs:1063`
+- [x] `clear_all_but_object_collision` (line 58) → `support/tree_model_volumes.rs:1069`
 - [~] `ceilRadius` (line 148) → `support/tree_support.rs` — not in the paired file
-- [x] `getRadiusNextCeil` (line 162) → `support/tree_model_volumes.rs:834`
-- [~] `precalculate` (line 177) → `support/tree_model_volumes.rs:850` — divergent
-- [x] `get_collision_lower_bound_area` (line 338) → `support/tree_model_volumes.rs:968`
-- [ ] `calculateCollisionHolefree` (line 357) → `support/tree_model_volumes.rs`
+- [v] `getRadiusNextCeil` (line 162) → `support/tree_model_volumes.rs:1119` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
+- [v] `precalculate` (line 177) → `support/tree_model_volumes.rs:1133` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ. (the body reads as divergent to the estimate)
+- [x] `get_collision_lower_bound_area` (line 338) → `support/tree_model_volumes.rs:1275`
+- [~] `calculateCollisionHolefree` (line 357) → `support/tree_model_volumes.rs` — another overload of the name is ported
 - [~] `calculateAvoidance` (line 378) → `support/tree_support.rs` — not in the paired file
-- [ ] `calculateWallRestrictions` (line 412) → `support/tree_model_volumes.rs`
+- [~] `calculateWallRestrictions` (line 412) → `support/tree_model_volumes.rs` — another overload of the name is ported
 - [~] `calculateCollision` (line 431) → `support/tree_support.rs` — not in the paired file
-- [x] `calculateCollision` (line 444) → `support/tree_model_volumes.rs:1097`
-- [ ] `calculateCollisionHolefree` (line 609) → `support/tree_model_volumes.rs`
-- [~] `calculateAvoidance` (line 641) → `support/tree_support.rs` — not in the paired file
+- [v] `calculateCollision` (line 444) → `support/tree_model_volumes.rs:1405` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
+- [v] `calculateCollisionHolefree` (line 609) → `support/tree_model_volumes.rs:1583` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
+- [v] `calculateAvoidance` (line 641) → `support/tree_model_volumes.rs:1625` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
 - [~] `calculatePlaceables` (line 744) → `support/tree_model_volumes.rs` — another overload of the name is ported
-- [~] `calculatePlaceables` (line 753) → `support/tree_model_volumes.rs:1463` — partial
-- [ ] `calculateWallRestrictions` (line 792) → `support/tree_model_volumes.rs`
-- [~] `ceilRadius` (line 862) → `support/tree_model_volumes.rs:1540` — partial
+- [v] `calculatePlaceables` (line 753) → `support/tree_model_volumes.rs:1761` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ. (the body reads as partial to the estimate)
+- [v] `calculateWallRestrictions` (line 792) → `support/tree_model_volumes.rs:1793` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
+- [v] `ceilRadius` (line 862) → `support/tree_model_volumes.rs:1865` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
 
 **class `TreeModelVolumes::LayerPolygonCache`**
 
-- [x] `allocate` (line 175) → `support/tree_model_volumes.rs:232`
-- [x] `begin` (line 181) → `support/tree_model_volumes.rs:240`
-- [x] `end` (line 182) → `support/tree_model_volumes.rs:244`
-- [x] `size` (line 183) → `support/tree_model_volumes.rs:248`
-- [x] `has` (line 185) → `support/tree_model_volumes.rs:253`
+- [x] `allocate` (line 175) → `support/tree_model_volumes.rs:358`
+- [x] `begin` (line 181) → `support/tree_model_volumes.rs:366`
+- [x] `end` (line 182) → `support/tree_model_volumes.rs:370`
+- [x] `size` (line 183) → `support/tree_model_volumes.rs:374`
+- [x] `has` (line 185) → `support/tree_model_volumes.rs:379`
 
 **class `TreeModelVolumes::RadiusLayerPolygonCache`**
 
 - [~] `insert` (line 213) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [~] `insert` (line 219) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [~] `insert` (line 224) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
-- [~] `insert` (line 230) → `support/tree_model_volumes.rs:472` — divergent
-- [x] `getArea` (line 242) → `support/tree_model_volumes.rs:383`
-- [~] `get_lower_bound_area` (line 252) → `support/tree_model_volumes.rs:394` — partial
-- [~] `getMaxCalculatedLayer` (line 274) → `support/tree_model_volumes.rs:419` — partial
-- [x] `clear` (line 287) → `support/tree_model_volumes.rs:452`
-- [~] `clear_all_but_radius0` (line 288) → `support/tree_model_volumes.rs:459` — partial
-- [x] `allocate_layers` (line 891) → `support/tree_model_volumes.rs:316`
-- [~] `sorted` (line 901) → `support/tree_model_volumes.rs:440` — partial
+- [v] `insert` (line 230) → `support/tree_model_volumes.rs:590` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ. (the body reads as divergent to the estimate)
+- [v] `getArea` (line 242) → `support/tree_model_volumes.rs:508` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
+- [~] `get_lower_bound_area` (line 252) → `support/tree_model_volumes.rs:519` — partial
+- [v] `getMaxCalculatedLayer` (line 274) → `support/tree_model_volumes.rs:537` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ. (the body reads as partial to the estimate)
+- [x] `clear` (line 287) → `support/tree_model_volumes.rs:569`
+- [x] `clear_all_but_radius0` (line 288) → `support/tree_model_volumes.rs:577`
+- [v] `allocate_layers` (line 891) → `support/tree_model_volumes.rs:444` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.
+- [v] `sorted` (line 901) → `support/tree_model_volumes.rs:557` — R919: tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ. (the body reads as partial to the estimate)
 
 ### `Support/TreeSupport` (.cpp+.hpp)
 
@@ -12748,93 +12748,93 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 
 **free functions**
 
-- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:1116`
-- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:1124`
-- [x] `normal` (line 66) → `support/tree_support.rs:1132`
-- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:1293`
+- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:1120`
+- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:1128`
+- [x] `normal` (line 66) → `support/tree_support.rs:1136`
+- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:1297`
 - [ ] `draw_contours_and_nodes_to_svg` (line 184) → `support/tree_support.rs`
 - [ ] `draw_layer_mst` (line 246) → `support/tree_support.rs`
-- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:1341`
-- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1467`
-- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1636`
-- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1666`
+- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:1345`
+- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1471`
+- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1640`
+- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1670`
 - [~] `is_inside_ex` (line 550) → `support/tree_support.rs` — another overload of the name is ported
-- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1689`
-- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1702`
-- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1748`
-- [v] `add_overhang` (line 779) → `support/tree_support.rs:2616` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `is_stable` (line 785) → `support/tree_support.rs:1754`
-- [~] `fill_expolygon_generate_paths` (line 1598) → `support/support_common.rs` — not in the paired file
-- [~] `fill_expolygons_generate_paths` (line 1625) → `support/support_common.rs` — not in the paired file
-- [ ] `_make_loops` (line 1641) → `support/tree_support.rs`
-- [ ] `make_perimeter_and_inner_brim` (line 1676) → `support/tree_support.rs`
-- [ ] `make_perimeter_and_infill` (line 1683) → `support/tree_support.rs`
-- [v] `tree_support_node_disk` (line 1758) → `support/tree_support.rs:2675` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1693`
+- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1706`
+- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1752`
+- [v] `add_overhang` (line 779) → `support/tree_support.rs:2632` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `is_stable` (line 785) → `support/tree_support.rs:1758`
+- [v] `fill_expolygon_generate_paths` (line 1598) → `support/tree_support.rs:6451` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `fill_expolygons_generate_paths` (line 1625) → `support/tree_support.rs:6478` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `_make_loops` (line 1641) → `support/tree_support.rs:6497` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `make_perimeter_and_inner_brim` (line 1676) → `support/tree_support.rs:6535` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `make_perimeter_and_infill` (line 1683) → `support/tree_support.rs:6543` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `tree_support_node_disk` (line 1758) → `support/tree_support.rs:2691` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 - [ ] `deleteDirectoryContents` (line 3498) → `support/tree_support.rs`
-- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1839`
-- [v] `carried_area` (line 4613) → `support/tree_support.rs:2716` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `carried_area_ratio` (line 4628) → `support/tree_support.rs:2738` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `smooth_filter` (line 5103) → `support/tree_support.rs:2754` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `densify_polygon` (line 5124) → `support/tree_support.rs:2787` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1843`
+- [v] `carried_area` (line 4613) → `support/tree_support.rs:2732` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `carried_area_ratio` (line 4628) → `support/tree_support.rs:2754` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `smooth_filter` (line 5103) → `support/tree_support.rs:2770` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `densify_polygon` (line 5124) → `support/tree_support.rs:2803` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 
 **class `LayerHeightData`**
 
-- [x] `bottom_z` (line 35) → `support/tree_support.rs:578`
+- [x] `bottom_z` (line 35) → `support/tree_support.rs:582`
 
 **class `SupportNode`**
 
-- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:848`
+- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:852`
 
 **class `TreeSupport`**
 
-- [x] `create_node` (line 416) → `support/tree_support.rs:2426`
-- [x] `init_top_z_by_nozzle` (line 651) → `support/tree_support.rs:2457`
-- [v] `top_z_at` (line 715) → `support/tree_support.rs:2529` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `top_z_for_overhang` (line 724) → `support/tree_support.rs:2541` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `union_outlines_within_top_z` (line 744) → `support/tree_support.rs:2571` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [~] `detect_overhangs` (line 796) → `support/mod.rs` — not in the paired file
-- [v] `create_tree_support_layers` (line 1554) → `support/tree_support.rs:2814` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `support_flare_step_width` (line 1745) → `support/tree_support.rs:2861` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `create_node` (line 416) → `support/tree_support.rs:2442`
+- [x] `init_top_z_by_nozzle` (line 651) → `support/tree_support.rs:2473`
+- [v] `top_z_at` (line 715) → `support/tree_support.rs:2545` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `top_z_for_overhang` (line 724) → `support/tree_support.rs:2557` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `union_outlines_within_top_z` (line 744) → `support/tree_support.rs:2587` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `detect_overhangs` (line 796) → `support/tree_support.rs:7946` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `create_tree_support_layers` (line 1554) → `support/tree_support.rs:2830` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `support_flare_step_width` (line 1745) → `support/tree_support.rs:2877` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 - [ ] `fold_nodes_multi_diameter` (line 1806) → `support/tree_support.rs`
 - [ ] `smooth_line_width_multi_diameter` (line 2894) → `support/tree_support.rs`
-- [x] `fold_carriers_above` (line 2978) → `support/tree_support.rs:2886`
-- [~] `generate_toolpaths` (line 2990) → `arachne/skeletal_trapezoidation.rs` — not in the paired file
+- [x] `fold_carriers_above` (line 2978) → `support/tree_support.rs:2902`
+- [v] `generate_toolpaths` (line 2990) → `support/tree_support.rs:6769` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines). (the body reads as partial to the estimate)
 - [ ] `move_bounds_to_contact_nodes` (line 3505) → `support/tree_support.rs`
 - [~] `generate` (line 3534) → `arachne/wall_tool_paths.rs, debug/validation.rs, fill/fill_plane_path.rs` — not in the paired file
-- [v] `calc_branch_radius` (line 3702) → `support/tree_support.rs:2921` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ (the body reads as partial to the estimate)
+- [v] `calc_branch_radius` (line 3702) → `support/tree_support.rs:2937` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ (the body reads as partial to the estimate)
 - [~] `calc_branch_radius` (line 3722) → `support/tree_support.rs` — another overload of the name is ported
-- [v] `calc_radius` (line 3745) → `support/tree_support.rs:2938` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `get_radius` (line 3750) → `support/tree_support.rs:2943`
-- [v] `get_avoidance` (line 3757) → `support/tree_support.rs:2952` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
-- [v] `get_collision` (line 3774) → `support/tree_support.rs:2957` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
-- [v] `get_collision_polys` (line 3791) → `support/tree_support.rs:2962` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
-- [ ] `get_trim_support_regions` (line 3829) → `support/tree_support.rs`
-- [v] `draw_circles` (line 3905) → `support/tree_support.rs:5172` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [~] `resolve_material_covered_by_folded_interfaces` (line 4635) → `support/tree_support.rs:6168` — partial
-- [ ] `prune_floating_supports` (line 4903) → `support/tree_support.rs`
-- [v] `drop_nodes` (line 5147) → `support/tree_support.rs:4043` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `smooth_nodes` (line 6036) → `support/tree_support.rs:2974` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `calc_radius` (line 3745) → `support/tree_support.rs:2954` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `get_radius` (line 3750) → `support/tree_support.rs:2959`
+- [v] `get_avoidance` (line 3757) → `support/tree_support.rs:2968` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
+- [v] `get_collision` (line 3774) → `support/tree_support.rs:2973` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
+- [v] `get_collision_polys` (line 3791) → `support/tree_support.rs:2978` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
+- [v] `get_trim_support_regions` (line 3829) → `support/tree_support.rs:8659` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `draw_circles` (line 3905) → `support/tree_support.rs:5188` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [~] `resolve_material_covered_by_folded_interfaces` (line 4635) → `support/tree_support.rs:6184` — partial
+- [v] `prune_floating_supports` (line 4903) → `support/tree_support.rs:8763` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `drop_nodes` (line 5147) → `support/tree_support.rs:4059` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `smooth_nodes` (line 6036) → `support/tree_support.rs:2990` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 - [~] `smooth_nodes` (line 6138) → `support/tree_support.rs` — another overload of the name is ported
-- [v] `plan_layer_heights` (line 6257) → `support/tree_support.rs:3073` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `generate_contact_points` (line 6389) → `support/tree_support.rs:3639` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `insert_dropped_node` (line 6693) → `support/tree_support.rs:3225` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `plan_layer_heights` (line 6257) → `support/tree_support.rs:3089` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `generate_contact_points` (line 6389) → `support/tree_support.rs:3655` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `insert_dropped_node` (line 6693) → `support/tree_support.rs:3241` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 
 **class `TreeSupportData`**
 
-- [v] `get_contours` (line 6786) → `support/tree_support.rs:2025` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `get_contours_with_holes` (line 6796) → `support/tree_support.rs:2034` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `create_node` (line 6806) → `support/tree_support.rs:2046`
-- [x] `clear_nodes` (line 6819) → `support/tree_support.rs:2085`
-- [v] `ceil_radius` (line 6825) → `support/tree_support.rs:2090` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `get_contours` (line 6786) → `support/tree_support.rs:2029` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `get_contours_with_holes` (line 6796) → `support/tree_support.rs:2038` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `create_node` (line 6806) → `support/tree_support.rs:2050`
+- [x] `clear_nodes` (line 6819) → `support/tree_support.rs:2089`
+- [v] `ceil_radius` (line 6825) → `support/tree_support.rs:2094` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 
 **class `TreeSupportProfiler`**
 
-- [x] `stage_start` (line 103) → `support/tree_support.rs:1029`
-- [x] `stage_finish` (line 111) → `support/tree_support.rs:1041`
-- [x] `tic` (line 120) → `support/tree_support.rs:1054`
-- [~] `toc` (line 121) → `support/tree_support.rs:1059` — partial
-- [x] `stage_add` (line 125) → `support/tree_support.rs:1066`
-- [x] `report` (line 132) → `support/tree_support.rs:1077`
+- [x] `stage_start` (line 103) → `support/tree_support.rs:1033`
+- [x] `stage_finish` (line 111) → `support/tree_support.rs:1045`
+- [x] `tic` (line 120) → `support/tree_support.rs:1058`
+- [~] `toc` (line 121) → `support/tree_support.rs:1063` — partial
+- [x] `stage_add` (line 125) → `support/tree_support.rs:1070`
+- [x] `report` (line 132) → `support/tree_support.rs:1081`
 
 ### `Support/TreeSupport3D` (.cpp+.hpp)
 
@@ -12842,52 +12842,52 @@ Rust file: `support/tree_support_3d.rs`. Status: **partial**. Not listed: 5 cons
 
 **free functions**
 
-- [ ] `validate_range` (line 94) → `support/tree_support_3d.rs`
-- [ ] `validate_range` (line 101) → `support/tree_support_3d.rs`
-- [ ] `validate_range` (line 107) → `support/tree_support_3d.rs`
-- [ ] `validate_range` (line 112) → `support/tree_support_3d.rs`
-- [ ] `validate_range` (line 118) → `support/tree_support_3d.rs`
-- [ ] `validate_range` (line 124) → `support/tree_support_3d.rs`
-- [ ] `validate_range` (line 130) → `support/tree_support_3d.rs`
-- [ ] `check_self_intersections` (line 136) → `support/tree_support_3d.rs`
-- [ ] `check_self_intersections` (line 143) → `support/tree_support_3d.rs`
-- [ ] `group_meshes` (line 152) → `support/tree_support_3d.rs`
-- [ ] `getPolygonAsString` (line 213) → `support/tree_support_3d.rs`
-- [~] `getEffectiveDTT` (line 224) → `support/tree_support_settings.rs` — not in the paired file
+- [x] `validate_range` (line 94) → `support/tree_support_3d.rs:3164`
+- [x] `validate_range` (line 101) → `support/tree_support_3d.rs:3190`
+- [x] `validate_range` (line 107) → `support/tree_support_3d.rs:3183`
+- [x] `validate_range` (line 112) → `support/tree_support_3d.rs:3206`
+- [x] `validate_range` (line 118) → `support/tree_support_3d.rs:3215`
+- [x] `validate_range` (line 124) → `support/tree_support_3d.rs:3197`
+- [x] `validate_range` (line 130) → `support/tree_support_3d.rs:3224`
+- [~] `check_self_intersections` (line 136) → `support/tree_support_3d.rs` — another overload of the name is ported
+- [x] `check_self_intersections` (line 143) → `support/tree_support_3d.rs:3241`
+- [x] `group_meshes` (line 152) → `support/tree_support_3d.rs:3254`
+- [x] `getPolygonAsString` (line 213) → `support/tree_support_3d.rs:3301`
+- [x] `getEffectiveDTT` (line 224) → `support/tree_support_3d.rs:3068`
 - [ ] `generate_overhangs` (line 226) → `support/tree_support_3d.rs`
-- [ ] `support_element_radius` (line 236) → `support/tree_support_3d.rs`
-- [ ] `support_element_collision_radius` (line 246) → `support/tree_support_3d.rs`
-- [ ] `support_element_model_collision_radius` (line 251) → `support/tree_support_3d.rs`
-- [ ] `support_element_radius` (line 294) → `support/tree_support_3d.rs`
-- [ ] `support_element_collision_radius` (line 299) → `support/tree_support_3d.rs`
-- [~] `precalculate` (line 352) → `support/tree_model_volumes.rs` — not in the paired file
-- [x] `get_avoidance_status` (line 373) → `support/tree_support_3d.rs:151`
-- [x] `convert_lines_to_internal` (line 405) → `support/tree_support_3d.rs:210`
-- [ ] `convert_internal_to_lines` (line 452) → `support/tree_support_3d.rs`
-- [x] `evaluate_point_for_next_layer_function` (line 472) → `support/tree_support_3d.rs:285`
-- [x] `split_lines` (line 501) → `support/tree_support_3d.rs:342`
-- [x] `polyline_sample_next_point_at_distance` (line 529) → `support/tree_support_3d.rs:391`
-- [~] `ensure_maximum_distance_polyline` (line 583) → `support/tree_support_3d.rs:465` — partial
-- [ ] `generate_support_infill_lines` (line 687) → `support/tree_support_3d.rs`
-- [ ] `generate_raft_contact` (line 934) → `support/tree_support_3d.rs`
-- [ ] `finalize_raft_contact` (line 955) → `support/tree_support_3d.rs`
-- [ ] `sample_overhang_area` (line 1017) → `support/tree_support_3d.rs`
-- [ ] `generate_initial_areas` (line 1170) → `support/tree_support_3d.rs`
-- [x] `move_inside` (line 1429) → `support/tree_support_3d.rs:645`
-- [x] `move_inside_if_outside` (line 1532) → `support/tree_support_3d.rs:799`
-- [~] `increase_single_area` (line 1559) → `support/tree_support_3d.rs:813` — partial
-- [~] `increase_areas_one_layer` (line 1751) → `support/tree_support_3d.rs:1233` — partial
-- [x] `merge_support_element_states` (line 2015) → `support/tree_support_3d.rs:1799`
-- [~] `merge_influence_areas_two_elements` (line 2064) → `support/tree_support_3d.rs:1892` — partial
-- [~] `merge_influence_areas_leaves` (line 2266) → `support/tree_support_3d.rs:2101` — partial
+- [x] `support_element_radius` (line 236) → `support/tree_support_3d.rs:3083`
+- [x] `support_element_collision_radius` (line 246) → `support/tree_support_3d.rs:3091`
+- [x] `support_element_model_collision_radius` (line 251) → `support/tree_support_3d.rs:3099`
+- [~] `support_element_radius` (line 294) → `support/tree_support_3d.rs` — another overload of the name is ported
+- [~] `support_element_collision_radius` (line 299) → `support/tree_support_3d.rs` — another overload of the name is ported
+- [x] `precalculate` (line 352) → `support/tree_support_3d.rs:3320`
+- [x] `get_avoidance_status` (line 373) → `support/tree_support_3d.rs:3353`
+- [x] `convert_lines_to_internal` (line 405) → `support/tree_support_3d.rs:3394`
+- [x] `convert_internal_to_lines` (line 452) → `support/tree_support_3d.rs:3447`
+- [x] `evaluate_point_for_next_layer_function` (line 472) → `support/tree_support_3d.rs:3466`
+- [x] `split_lines` (line 501) → `support/tree_support_3d.rs:3519`
+- [x] `polyline_sample_next_point_at_distance` (line 529) → `support/tree_support_3d.rs:386`
+- [x] `ensure_maximum_distance_polyline` (line 583) → `support/tree_support_3d.rs:3616`
+- [~] `generate_support_infill_lines` (line 687) → `support/tree_support_3d.rs:3722` — partial
+- [x] `generate_raft_contact` (line 934) → `support/tree_support_3d.rs:4158`
+- [~] `finalize_raft_contact` (line 955) → `support/tree_support_3d.rs:4198` — partial
+- [x] `sample_overhang_area` (line 1017) → `support/tree_support_3d.rs:4252`
+- [x] `generate_initial_areas` (line 1170) → `support/tree_support_3d.rs:4480`
+- [x] `move_inside` (line 1429) → `support/tree_support_3d.rs:640`
+- [x] `move_inside_if_outside` (line 1532) → `support/tree_support_3d.rs:3892`
+- [~] `increase_single_area` (line 1559) → `support/tree_support_3d.rs:808` — partial
+- [~] `increase_areas_one_layer` (line 1751) → `support/tree_support_3d.rs:1228` — partial
+- [x] `merge_support_element_states` (line 2015) → `support/tree_support_3d.rs:1794`
+- [~] `merge_influence_areas_two_elements` (line 2064) → `support/tree_support_3d.rs:1887` — partial
+- [~] `merge_influence_areas_leaves` (line 2266) → `support/tree_support_3d.rs:2096` — partial
 - [ ] `merge_influence_areas_two_sets` (line 2289) → `support/tree_support_3d.rs`
-- [~] `merge_influence_areas` (line 2346) → `support/tree_support_3d.rs:2160` — divergent
-- [x] `create_layer_pathing` (line 2441) → `support/tree_support_3d.rs:2186`
-- [x] `set_points_on_areas` (line 2544) → `support/tree_support_3d.rs:2310`
-- [~] `set_to_model_contact_simple` (line 2574) → `support/tree_support_3d.rs:2344` — partial
-- [x] `set_to_model_contact_to_model_gracious` (line 2588) → `support/tree_support_3d.rs:2354`
-- [x] `remove_deleted_elements` (line 2636) → `support/tree_support_3d.rs:2422`
-- [x] `create_nodes_from_area` (line 2683) → `support/tree_support_3d.rs:2474`
+- [~] `merge_influence_areas` (line 2346) → `support/tree_support_3d.rs:2155` — divergent
+- [x] `create_layer_pathing` (line 2441) → `support/tree_support_3d.rs:2181`
+- [x] `set_points_on_areas` (line 2544) → `support/tree_support_3d.rs:2305`
+- [~] `set_to_model_contact_simple` (line 2574) → `support/tree_support_3d.rs:2339` — partial
+- [x] `set_to_model_contact_to_model_gracious` (line 2588) → `support/tree_support_3d.rs:2349`
+- [x] `remove_deleted_elements` (line 2636) → `support/tree_support_3d.rs:2417`
+- [x] `create_nodes_from_area` (line 2683) → `support/tree_support_3d.rs:2469`
 - [ ] `generate_branch_areas` (line 2819) → `support/tree_support_3d.rs`
 - [ ] `smooth_branch_areas` (line 2959) → `support/tree_support_3d.rs`
 - [ ] `drop_non_gracious_areas` (line 3090) → `support/tree_support_3d.rs`
@@ -12912,24 +12912,24 @@ Rust file: `support/tree_support_3d.rs`. Status: **partial**. Not listed: 5 cons
 
 **class `RichInterfacePlacer`**
 
-- [ ] `add_points_along_lines` (line 788) → `support/tree_support_3d.rs`
-- [ ] `add_point_as_influence_area` (line 871) → `support/tree_support_3d.rs`
+- [x] `add_points_along_lines` (line 788) → `support/tree_support_3d.rs:4010`
+- [x] `add_point_as_influence_area` (line 871) → `support/tree_support_3d.rs:4104`
 
 **class `SupportElementInfluenceAreas`**
 
-- [x] `clear` (line 1705) → `support/tree_support_3d.rs:1167`
+- [x] `clear` (line 1705) → `support/tree_support_3d.rs:1162`
 
 **class `SupportElementMerging`**
 
-- [x] `centroid` (line 1724) → `support/tree_support_3d.rs:1201`
-- [x] `set_bbox` (line 1725) → `support/tree_support_3d.rs:1205`
-- [x] `idx` (line 1730) → `support/tree_support_3d.rs:1213`
+- [x] `centroid` (line 1724) → `support/tree_support_3d.rs:1196`
+- [x] `set_bbox` (line 1725) → `support/tree_support_3d.rs:1200`
+- [x] `idx` (line 1730) → `support/tree_support_3d.rs:1208`
 
 **class `SupportElementState`**
 
-- [~] `result_on_layer_is_set` (line 178) → `support/tree_support_settings.rs` — not in the paired file
-- [~] `result_on_layer_reset` (line 179) → `support/tree_support_settings.rs` — not in the paired file
-- [~] `propagate_down` (line 206) → `support/tree_support_settings.rs` — not in the paired file
+- [x] `result_on_layer_is_set` (line 178) → `support/tree_support_3d.rs:2994`
+- [x] `result_on_layer_reset` (line 179) → `support/tree_support_3d.rs:2999`
+- [x] `propagate_down` (line 206) → `support/tree_support_3d.rs:3006`
 
 ### `Support/TreeSupportCommon` (.hpp)
 
@@ -12937,27 +12937,27 @@ Rust file: `support/tree_support_common.rs`. Status: **partial**. Not listed: 4 
 
 **free functions**
 
-- [~] `tree_supports_show_error` (line 631) → `support/tree_support_common.rs:965` — stub
-- [x] `layer_z` (line 646) → `support/tree_support_common.rs:975`
-- [x] `layer_idx_ceil` (line 653) → `support/tree_support_common.rs:989`
-- [x] `layer_idx_floor` (line 660) → `support/tree_support_common.rs:1007`
-- [ ] `layer_mid_z` (line 668) → `support/tree_support_common.rs`
-- [ ] `layer_idx_mid_ceil` (line 677) → `support/tree_support_common.rs`
-- [ ] `layer_idx_mid_floor` (line 694) → `support/tree_support_common.rs`
+- [~] `tree_supports_show_error` (line 631) → `support/tree_support_common.rs:1062` — stub
+- [v] `layer_z` (line 646) → `support/tree_support_common.rs:1072` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `layer_idx_ceil` (line 653) → `support/tree_support_common.rs:1086` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `layer_idx_floor` (line 660) → `support/tree_support_common.rs:1098` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `layer_mid_z` (line 668) → `support/tree_support_common.rs:1110` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `layer_idx_mid_ceil` (line 677) → `support/tree_support_common.rs:1120` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `layer_idx_mid_floor` (line 694) → `support/tree_support_common.rs:1142` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
 
 **class `InterfacePlacer`**
 
-- [x] `add_roofs` (line 772) → `support/tree_support_common.rs:1127`
-- [x] `add_roof` (line 782) → `support/tree_support_common.rs:1161`
-- [x] `add_roof_build_plate` (line 789) → `support/tree_support_common.rs:1188`
-- [x] `add_roof_unguarded` (line 795) → `support/tree_support_common.rs:1213`
+- [v] `add_roofs` (line 772) → `support/tree_support_common.rs:1266` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `add_roof` (line 782) → `support/tree_support_common.rs:1300` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `add_roof_build_plate` (line 789) → `support/tree_support_common.rs:1327` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `add_roof_unguarded` (line 795) → `support/tree_support_common.rs:1352` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
 
 **class `TreeSupportSettings`**
 
-- [x] `getRadius` (line 590) → `support/tree_support_common.rs:843`
-- [x] `recommendedMinRadius` (line 604) → `support/tree_support_common.rs:871`
-- [x] `getActualZ` (line 615) → `support/tree_support_common.rs:888`
-- [x] `setActualZ` (line 625) → `support/tree_support_common.rs:914`
+- [v] `getRadius` (line 590) → `support/tree_support_common.rs:944` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `recommendedMinRadius` (line 604) → `support/tree_support_common.rs:968` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `getActualZ` (line 615) → `support/tree_support_common.rs:983` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
+- [v] `setActualZ` (line 625) → `support/tree_support_common.rs:1009` — R919: tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.
 
 ### `SupportMergePlan` (.cpp+.hpp)
 
@@ -13018,10 +13018,10 @@ Rust file: `surface.rs`. Status: **partial**. Not listed: 7 constructors.
 - [x] `export_surface_type_legend_to_svg_box_size` (line 51) → `surface.rs:642`
 - [x] `export_surface_type_legend_to_svg` (line 56) → `surface.rs:649`
 - [x] `export_to_svg` (line 86) → `surface.rs:748`
-- [~] `to_polygons` (line 121) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `to_polygons` (line 126) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 121) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 126) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
 - [x] `to_polygons` (line 131) → `surface.rs:449`
-- [~] `to_polygons` (line 146) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 146) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
 - [x] `to_expolygons` (line 161) → `surface.rs:483`
 - [~] `to_expolygons` (line 170) → `print_object_slice.rs, sla/concave_hull.rs, surface_collection.rs` — not in the paired file
 - [~] `to_expolygons` (line 180) → `print_object_slice.rs, sla/concave_hull.rs, surface_collection.rs` — not in the paired file
@@ -13667,8 +13667,8 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [x] `chain_open_polylines_close_gaps` (line 1281) → `triangle_mesh_slicer.rs:1023`
 - [x] `cut_plane_xy_equal` (line 1393) → `triangle_mesh_slicer.rs:3102`
 - [x] `find_cut_plane_vertex_index` (line 1402) → `triangle_mesh_slicer.rs:3131`
-- [ ] `make_loops` (line 1433) → `triangle_mesh_slicer.rs`
-- [ ] `make_loops` (line 1534) → `triangle_mesh_slicer.rs`
+- [~] `make_loops` (line 1433) → `support/tree_support.rs` — not in the paired file
+- [~] `make_loops` (line 1534) → `support/tree_support.rs` — not in the paired file
 - [~] `make_slab_loops` (line 1589) → `triangle_mesh_slicer.rs:2549` — partial
 - [~] `make_expolygons_simple` (line 1716) → `triangle_mesh_slicer.rs:1248` — partial
 - [ ] `remove_short_backtracks` (line 1790) → `triangle_mesh_slicer.rs`

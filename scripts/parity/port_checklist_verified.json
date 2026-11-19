@@ -3182,5 +3182,133 @@
    "priv::Visitor::intersection_point_detected",
    "priv::Visitor::new_vertex_added"
   ]
+ },
+ {
+  "unit": "PrintObjectSlice",
+  "round": 919,
+  "evidence": "tests/print_object_slice_native_parity.rs: 26 scenarios built with the pin's Print::apply (cube, modifier and negative volumes, two-part multi-material, carving, compensations, needle, floating parts, support volumes, shrinkage, layer ranges, mirror, spiral, the slicing modes, painted and fuzzy painted objects, two nozzle diameters) put through the helpers and through PrintObject::slice() on one thread, layer by layer and region by region, plus direct calls on synthetic inputs (overlap_in_xy 80, the layer range walk, groupingVolumes 16, the brim grouping chain 12, _shrink_contour_holes 40, normalize_mm_segmentation_to_layer_bands 16): 5,712 lines against the pin's PrintObjectSlice.cpp compiled into the generator, none differ. The two segmentations by painting are inputs read from the vectors.",
+  "functions": [
+   "new_layers",
+   "slice_volume",
+   "model_volume_needs_slicing",
+   "slice_volumes_inner",
+   "overlap_in_xy",
+   "layer_range_first",
+   "layer_range_next",
+   "slices_to_regions",
+   "groupingVolumes",
+   "findPartVolumes",
+   "applyNegtiveVolumes",
+   "reGroupingLayerPolygons",
+   "fix_slicing_errors",
+   "groupingVolumesForBrim",
+   "normalize_mm_segmentation_to_layer_bands",
+   "apply_mm_segmentation",
+   "apply_fuzzy_skin_segmentation",
+   "should_skip_filament_shrink",
+   "PrintObject::slice",
+   "PrintObject::slice_volumes",
+   "PrintObject::_shrink_contour_holes",
+   "PrintObject::support_shrinkage_scale",
+   "PrintObject::slice_support_volumes"
+  ]
+ },
+ {
+  "unit": "Support/TreeModelVolumes",
+  "round": 919,
+  "evidence": "tests/tree_model_volumes_native_parity.rs: 16 scenarios built with the pin's Print::apply: the members the constructor sets (with a support blocker and the wrapping detection area), ceilRadius and getRadiusNextCeil, every lazy getter (collision, hole-free collision, the avoidances to the plate and to the model, placeable areas, wall restrictions) and every cache after precalculate: 11,155 lines against the pin's TreeModelVolumes.cpp on one thread, none differ.",
+  "functions": [
+   "calculateMachineBorderCollision",
+   "TreeModelVolumes::ceilRadius",
+   "TreeModelVolumes::getRadiusNextCeil",
+   "TreeModelVolumes::precalculate",
+   "TreeModelVolumes::calculateCollision",
+   "TreeModelVolumes::calculateCollisionHolefree",
+   "TreeModelVolumes::calculateAvoidance",
+   "TreeModelVolumes::calculatePlaceables",
+   "TreeModelVolumes::calculateWallRestrictions",
+   "TreeModelVolumes::RadiusLayerPolygonCache::insert",
+   "TreeModelVolumes::RadiusLayerPolygonCache::getArea",
+   "TreeModelVolumes::RadiusLayerPolygonCache::getMaxCalculatedLayer",
+   "TreeModelVolumes::RadiusLayerPolygonCache::allocate_layers",
+   "TreeModelVolumes::RadiusLayerPolygonCache::sorted"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupportCommon",
+  "round": 919,
+  "evidence": "tests/tree_model_volumes_native_parity.rs: TreeSupportMeshGroupSettings and TreeSupportSettings of the same 16 scenarios field by field, the layer helpers (layer_z, layer_idx_ceil/floor, layer_mid_z, layer_idx_mid_ceil/floor, getRadius, recommendedMinRadius, getActualZ/setActualZ) and InterfacePlacer's add_roofs, add_roof and add_roof_build_plate, against the pin's TreeSupportCommon.hpp.",
+  "functions": [
+   "layer_z",
+   "layer_idx_ceil",
+   "layer_idx_floor",
+   "layer_mid_z",
+   "layer_idx_mid_ceil",
+   "layer_idx_mid_floor",
+   "InterfacePlacer::add_roofs",
+   "InterfacePlacer::add_roof",
+   "InterfacePlacer::add_roof_build_plate",
+   "InterfacePlacer::add_roof_unguarded",
+   "TreeSupportSettings::getRadius",
+   "TreeSupportSettings::recommendedMinRadius",
+   "TreeSupportSettings::getActualZ",
+   "TreeSupportSettings::setActualZ"
+  ]
+ },
+ {
+  "unit": "Brim",
+  "round": 919,
+  "evidence": "tests/brim_native_parity.rs, brim_of_a_print_matches_the_pin: connect_brim_lines (24), tryExPolygonOffset and makeBrimInfill (6 each) on polygons, then 15 Prints of boxes built with the pin's Print::apply (outer, inner, both, ears, automatic width with four materials and bed types, raft, prime tower, draft shield, by-object sequence, several objects): the bottom layers, the top-level objects, the brim areas of every overload, the adhesion coefficient and the temperature per object, the brims of the inner islands and of the holes and both overloads of make_brim, every stage equal in 15 of 15, against the pin's Brim.cpp compiled into the generator.",
+  "functions": [
+   "get_print_object_bottom_layer_expolygons",
+   "get_print_bottom_layers_expolygons",
+   "get_top_level_objects_with_brim",
+   "top_level_outer_brim_islands",
+   "top_level_outer_brim_area",
+   "inner_brim_area",
+   "getTemperatureFromExtruder",
+   "getadhesionCoeff",
+   "configBrimWidthByVolumeGroups",
+   "make_brim_ears",
+   "bed_support_islands",
+   "outer_inner_brim_area",
+   "optimize_polylines_by_reversing",
+   "connect_brim_lines",
+   "make_inner_island_brim",
+   "make_inner_brim",
+   "tryExPolygonOffset",
+   "makeBrimInfill",
+   "make_brim"
+  ]
+ },
+ {
+  "unit": "Support/SupportCommon",
+  "round": 919,
+  "evidence": "tests/support_common_native_parity.rs: direct calls of modulate_extrusion_paths_by_overlapping_layers (4), idx_higher_or_equal and idx_lower_or_equal (40), fill_expolygon_generate_paths and both fill_expolygons_generate_paths (18) through a recording filler on both sides, and merge_support_layers_multi_diameter with merged_band_footprint on 8 Prints with two nozzle diameters (bands 116, merged layers 201, the lists, the planned layers and the areas): 3,277 lines in all against the pin's SupportCommon.cpp, none differ.",
+  "functions": [
+   "idx_higher_or_equal",
+   "idx_lower_or_equal",
+   "fill_expolygon_generate_paths",
+   "fill_expolygons_generate_paths",
+   "modulate_extrusion_paths_by_overlapping_layers",
+   "merged_band_footprint",
+   "merge_support_layers_multi_diameter"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupport",
+  "round": 919,
+  "evidence": "tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).",
+  "functions": [
+   "fill_expolygon_generate_paths",
+   "fill_expolygons_generate_paths",
+   "_make_loops",
+   "make_perimeter_and_inner_brim",
+   "make_perimeter_and_infill",
+   "TreeSupport::generate_toolpaths",
+   "TreeSupport::detect_overhangs",
+   "TreeSupport::get_trim_support_regions",
+   "TreeSupport::prune_floating_supports"
+  ]
  }
 ]
