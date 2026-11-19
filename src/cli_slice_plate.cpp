@@ -735,6 +735,65 @@ static int overlay_fresh_plate_configuration(const CliOptions& o, LoadedProject&
     return 0;
 }
 
+static int prepare_plate_configuration(const CliOptions& o, LoadedProject& loaded_project, RunSettings& run_settings,
+                                       const PlatePreparation& preparation, PlateOutcome& outcome, bool trailing_port,
+                                       int plate_id, Slic3r::DynamicPrintConfig& config,
+                                       std::optional<Slic3r::DynamicPrintConfig>& project_settings) {
+    // This plate's settings: a copy of the base with the plate's own and
+    // the flags laid on top (BambuStudio.cpp 6902-6904; OrcaSlicer.cpp
+    // 5905-5907). The plate the run-level steps ran for keeps the settings
+    // those steps read and changed (the arrange's tower).
+    const bool fresh_plate_config = !(preparation.prepared && plate_id == preparation.prepared_plate);
+    config = fresh_plate_config ? run_settings.base : preparation.run_config;
+    // --export-settings writes the project's settings, not this plate's:
+    // the official action saves m_print_config before the plate loop
+    // applies *part_plate->config() (BambuStudio.cpp 6366-6370 and
+    // 6902-6904; OrcaSlicer.cpp 5499-5503 and 5905-5907).
+    if (slicer_cli::has_model_actions(o))
+        project_settings = run_settings.base;
+    if (overlay_fresh_plate_configuration(o, loaded_project, run_settings, outcome,
+            trailing_port, fresh_plate_config, plate_id, config, project_settings) != 0)
+        return 1;
+    // A plate sliced after the run-level steps ran for every plate: the
+    // towers those steps placed (the official's m_print_config after its
+    // arrange, BambuStudio.cpp 5693-5700, 5856; OrcaSlicer.cpp 4954-4961).
+    if (fresh_plate_config && preparation.prepared)
+        for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
+            if (const Slic3r::ConfigOption* opt = preparation.run_config.option(key))
+                config.set_key_value(key, opt->clone());
+    return 0;
+}
+
+static bool read_project_print_sequence(const Slic3r::DynamicPrintConfig& extra, const std::string& merged_print_sequence,
+                                        bool assemble_input, const Slic3r::DynamicPrintConfig& config,
+                                        const std::string& input_file, std::optional<bool>& project_sequence_read) {
+    if (project_sequence_read)
+        return *project_sequence_read;
+    std::string project_seq;
+    if (const Slic3r::ConfigOption* opt = extra.option("print_sequence"))
+        project_seq = opt->serialize();
+    else if (!merged_print_sequence.empty())
+        // --load-settings and friends: the merged settings
+        // (m_print_config, BambuStudio.cpp 4785).
+        project_seq = merged_print_sequence;
+    else if (assemble_input) {
+        if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
+            project_seq = seq->serialize();
+    } else {
+        std::string text;
+        if (read_zip_member(input_file, "Metadata/project_settings.config", text)) {
+            try {
+                const json settings = json::parse(text);
+                if (settings.contains("print_sequence") && settings["print_sequence"].is_string())
+                    project_seq = settings["print_sequence"].get<std::string>();
+            } catch (...) {
+            }
+        }
+    }
+    project_sequence_read = project_seq == "by object";
+    return *project_sequence_read;
+}
+
 static int check_downward_printers(CliRunContext& context, const CliOptions& o, RunPlatePlan& plate_plan,
             PlateOutcome& outcome, bool trailing_port, bool assemble_input, int plate_id,
             Slic3r::DynamicPrintConfig& config, LoadedProject& loaded_project, RunSettings& run_settings) {
@@ -754,31 +813,7 @@ static int check_downward_printers(CliRunContext& context, const CliOptions& o, 
     // the model actions for --slice 0).
     std::optional<bool> project_sequence_read;
     const auto project_sequence = [&]() {
-        if (project_sequence_read)
-            return *project_sequence_read;
-        std::string project_seq;
-        if (const Slic3r::ConfigOption* opt = extra.option("print_sequence"))
-            project_seq = opt->serialize();
-        else if (!merged_print_sequence.empty())
-            // --load-settings and friends: the merged settings
-            // (m_print_config, BambuStudio.cpp 4785).
-            project_seq = merged_print_sequence;
-        else if (assemble_input) {
-            if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
-                project_seq = seq->serialize();
-        } else {
-            std::string text;
-            if (read_zip_member(input_file, "Metadata/project_settings.config", text)) {
-                try {
-                    const json settings = json::parse(text);
-                    if (settings.contains("print_sequence") && settings["print_sequence"].is_string())
-                        project_seq = settings["print_sequence"].get<std::string>();
-                } catch (...) {
-                }
-            }
-        }
-        project_sequence_read = project_seq == "by object";
-        return *project_sequence_read;
+        return read_project_print_sequence(extra, merged_print_sequence, assemble_input, config, input_file, project_sequence_read);
     };
     const auto plate_sequence = [&](int index) {
         if (index < (int)plate_data.size() && plate_data[index] != nullptr)
@@ -1217,8 +1252,7 @@ static int arrange_plate_instances(CliRunContext& context, const CliOptions& o, 
 static std::optional<int> finish_run_arrangement(CliRunContext& context, const CliOptions& o,
             LoadedProject& loaded_project, RunPlatePlan& plate_plan, RunSettings& run_settings,
             RunPipeProgress& pipe_progress, RunActionOutputs& action_outputs, PlateOutcome& outcome,
-            bool calib_self_geometry, bool first_call, bool geometry_input, bool trailing_port,
-            bool assemble_input, int plate_id, Slic3r::DynamicPrintConfig& config,
+            const PlateLoadInputs& inputs, bool first_call, int plate_id, Slic3r::DynamicPrintConfig& config,
             std::optional<Slic3r::DynamicPrintConfig>& project_settings, PreparedPlate& prepared) {
     auto& model = loaded_project.model;
     auto& is_bbl_3mf = loaded_project.is_bbl_3mf;
@@ -1241,7 +1275,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
     // (need_arrange for model files, BambuStudio.cpp 2077, 5558, then
     // 6336; OrcaSlicer.cpp 1724, 4817, then 5470).
     const bool actions_only = slicer_cli::model_actions_only(o);
-    if ((o.slice_mode || actions_only) && !calib_self_geometry && first_call) {
+    if ((o.slice_mode || actions_only) && !inputs.calib_self_geometry && first_call) {
         // The plate's towers before the arrange: only the entries the
         // arrange changes go into the project below. The rest are the
         // flags laid over this plate (BambuStudio.cpp 6902-6904), which
@@ -1265,7 +1299,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
         // placement on load could stack them. One object keeps the
         // desktop's placement (the bed centre either way).
         int model_file_instances = 0;
-        if (geometry_input)
+        if (inputs.geometry_input)
             for (const Slic3r::ModelObject* object : model.objects)
                 for (const Slic3r::ModelInstance* inst : object->instances)
                     model_file_instances += inst->printable ? 1 : 0;
@@ -1280,7 +1314,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
             const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
             const bool is_seq_print = seq && seq->value == Slic3r::PrintSequence::ByObject;
             const bool need_arrange = o.arrange_forced() || auto_arrange_model_files || outcome.duplicate_count > 0 ||
-                                      assemble_input;
+                                      inputs.assemble_input;
             auto opt_or_zero = [&](const char* key) {
                 return config.option<Slic3r::ConfigOptionFloat>(key) ? float(config.opt_float(key)) : 0.f;
             };
@@ -1306,7 +1340,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
             // plate_to_slice > 0: one plate named, never --slice 0; 0
             // without --slice (BambuStudio.cpp 1677).
             const int plate_to_slice = o.slice_mode ? o.slice_plate : 0;
-            clearance_arrange = !need_arrange && is_bbl_3mf && !trailing_port && shrink_to_new_bed == 0 && plate_to_slice > 0 &&
+            clearance_arrange = !need_arrange && is_bbl_3mf && !inputs.trailing_port && shrink_to_new_bed == 0 && plate_to_slice > 0 &&
                                 printer_changed && clearances_changed && is_seq_print;
             if (clearance_arrange)
                 emit_event({{"event","arranged"}, {"tag","ClearanceArrange"},
@@ -1314,7 +1348,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
         }
         // --repetitions: a spiral vase is copied only when printing by
         // object (BambuStudio.cpp 5259-5269; OrcaSlicer.cpp 4519-4529).
-        if (!assemble_input && outcome.duplicate_count > 0) {
+        if (!inputs.assemble_input && outcome.duplicate_count > 0) {
             const auto* spiral = config.option<Slic3r::ConfigOptionBool>("spiral_mode");
             const auto* seq    = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
             if (spiral && spiral->value && !(seq && seq->value == Slic3r::PrintSequence::ByObject)) {
@@ -1326,7 +1360,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
         // --repetitions arranges the copies and sets the tower in `config`
         // (arrange_repetitions); the project keeps that tower.
         if (arrange_plate_instances(context, o, plate_plan, outcome,
-                assemble_input, plate_id, config, auto_arrange_model_files,
+                inputs.assemble_input, plate_id, config, auto_arrange_model_files,
                 clearance_arrange, arrange_plate_index, sliced_filament_count,
                 loaded_project, run_settings) != 0)
             return 1;
@@ -1459,6 +1493,29 @@ static std::optional<int> finish_model_actions(const CliOptions& o, RunActionOut
     return std::nullopt;
 }
 
+static PlateLoadInputs classify_plate_inputs(const CliOptions& o, const CliRunContext& context, bool calib_self_geometry) {
+    const std::string& input_file = o.input_file;
+    // Geometry files (every model file this engine reads that is not a
+    // project 3MF) load the official CLI's way, placed further down once
+    // the bed is known. Any other file keeps the unsupported-format
+    // refusal below.
+    const bool geometry_input = !input_file.empty() && slicer_cli::is_loadable_model_file(input_file) &&
+        (!input_is_3mf(input_file) ||
+         slicer_cli::classify_3mf(input_file) == slicer_cli::ThreeMfKind::GeometryOnly);
+    const bool geometry_only_3mf = geometry_input && input_is_3mf(input_file);
+    // A project 3MF with model files after it, run as the official CLI
+    // runs it (ProjectPlan): the run loads every plate (plate_id 0) and
+    // the model files into the one model and arranges them; each plate's
+    // slice then takes its instances from the plan.
+    const bool trailing_port = !geometry_input && context.g_assemble == nullptr && trailing_models_port(o);
+    // --load-assemble-list: the plates' objects from the list built
+    // before the plate loop, and every plate's own settings (plate_params)
+    // as its PlateData config, where the official keeps them
+    // (BambuStudio.cpp 1066-1078; OrcaSlicer.cpp 877-889).
+    const bool assemble_input = context.g_assemble != nullptr;
+    return {geometry_input, geometry_only_3mf, trailing_port, assemble_input, calib_self_geometry};
+}
+
 /// One slice of one plate from the run's one model and settings (RunState):
 /// the first call of a run loads the inputs and builds the settings base
 /// (`rs.project.loaded`) and runs the steps the official CLI runs once before its
@@ -1472,7 +1529,6 @@ static std::optional<int> finish_model_actions(const CliOptions& o, RunActionOut
 /// default call; `outcome` carries what `--slice` mode reports on top.
 int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
-    const std::string& input_file      = o.input_file;
 #ifdef ENGINE_SNAPMAKER
     // The engine writes debug SVGs into data_dir()/"SVG" on some slicing paths
     // (references/SnapmakerOrca/src/libslic3r/utils.cpp:302-320 at bac6fd5, where
@@ -1494,69 +1550,24 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         PlateLoadSettings load_settings;
         auto& config = load_settings.config;
         Slic3r::Model& model = rs.project.model;
-        // Each plate's grid origin in the project (plate_grid_origin), for
-        // the plates --downward-check loads alone; empty when not a project.
-        // A project 3MF with model files after it (ProjectPlan): the file's own
-        // settings and version, for the plate list's size, and its filament
-        // count, the used filaments of the official's tower step.
-        // What the official CLI reads from a Bambu-made 3MF, and its embedded
-        // presets, for --load-settings and friends (cli_load_settings.cpp).
-        // The settings given as flags; the settings merge takes filament_colour
-        // out of them once it has used it, as the official does.
 
-        // Geometry files (every model file this engine reads that is not a
-        // project 3MF) load the official CLI's way, placed further down once
-        // the bed is known. Any other file keeps the unsupported-format
-        // refusal below.
-        const bool geometry_input = !input_file.empty() && slicer_cli::is_loadable_model_file(input_file) &&
-            (!input_is_3mf(input_file) ||
-             slicer_cli::classify_3mf(input_file) == slicer_cli::ThreeMfKind::GeometryOnly);
-        const bool geometry_only_3mf = geometry_input && input_is_3mf(input_file);
-        // A project 3MF with model files after it, run as the official CLI
-        // runs it (ProjectPlan): the run loads every plate (plate_id 0) and
-        // the model files into the one model and arranges them; each plate's
-        // slice then takes its instances from the plan.
-        const bool trailing_port = !geometry_input && context.g_assemble == nullptr && trailing_models_port(o);
-        // --load-assemble-list: the plates' objects from the list built
-        // before the plate loop, and every plate's own settings (plate_params)
-        // as its PlateData config, where the official keeps them
-        // (BambuStudio.cpp 1066-1078; OrcaSlicer.cpp 877-889).
-        const bool assemble_input = context.g_assemble != nullptr;
+
+        const PlateLoadInputs inputs = classify_plate_inputs(o, context, calib_self_geometry);
         // The settings base the plate's own are laid over (below), and the
         // run-level part of the settings and of the model: once per run.
         std::optional<Slic3r::DynamicPrintConfig> project_settings;
         slicer_cli::SettingsMerge& settings_merge = rs.settings.settings_merge;
         if (!rs.project.loaded) {
-            const PlateLoadInputs inputs{geometry_input, geometry_only_3mf, trailing_port, assemble_input, calib_self_geometry};
             const int rc = load_slice_inputs(context, o, rs, plate_id, inputs, load_settings, outcome);
             if (rc != 0)
                 return rc;
         }
 
-        // This plate's settings: a copy of the base with the plate's own and
-        // the flags laid on top (BambuStudio.cpp 6902-6904; OrcaSlicer.cpp
-        // 5905-5907). The plate the run-level steps ran for keeps the settings
-        // those steps read and changed (the arrange's tower).
-        const bool fresh_plate_config = !(rs.preparation.prepared && plate_id == rs.preparation.prepared_plate);
-        config = fresh_plate_config ? rs.settings.base : rs.preparation.run_config;
-        // --export-settings writes the project's settings, not this plate's:
-        // the official action saves m_print_config before the plate loop
-        // applies *part_plate->config() (BambuStudio.cpp 6366-6370 and
-        // 6902-6904; OrcaSlicer.cpp 5499-5503 and 5905-5907).
-        if (slicer_cli::has_model_actions(o))
-            project_settings = rs.settings.base;
-        if (overlay_fresh_plate_configuration(o, rs.project, rs.settings, outcome,
-                trailing_port, fresh_plate_config, plate_id, config, project_settings) != 0)
+        if (prepare_plate_configuration(o, rs.project, rs.settings, rs.preparation, outcome, inputs.trailing_port,
+                                        plate_id, config, project_settings) != 0)
             return 1;
-        // A plate sliced after the run-level steps ran for every plate: the
-        // towers those steps placed (the official's m_print_config after its
-        // arrange, BambuStudio.cpp 5693-5700, 5856; OrcaSlicer.cpp 4954-4961).
-        if (fresh_plate_config && rs.preparation.prepared)
-            for (const char* key : {"wipe_tower_x", "wipe_tower_y"})
-                if (const Slic3r::ConfigOption* opt = rs.preparation.run_config.option(key))
-                    config.set_key_value(key, opt->clone());
-        if (check_downward_printers(context, o, rs.layout, outcome, trailing_port,
-                assemble_input, plate_id, config, rs.project, rs.settings) != 0)
+        if (check_downward_printers(context, o, rs.layout, outcome, inputs.trailing_port,
+                inputs.assemble_input, plate_id, config, rs.project, rs.settings) != 0)
             return 1;
 
         // --pipe: the files are loaded (BambuStudio.cpp 4923-4926;
@@ -1564,13 +1575,13 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         pipe_files_loaded(rs.progress);
 
         if (transform_loaded_objects(context, o, rs.layout, outcome, first_call,
-                assemble_input, plate_id, config, settings_merge, rs.project) != 0)
+                inputs.assemble_input, plate_id, config, settings_merge, rs.project) != 0)
             return 1;
         if (simplify_and_check_models(o, outcome, first_call, model) != 0)
             return 1;
-        place_geometry_inputs(o, first_call, geometry_input, geometry_only_3mf, config, model);
+        place_geometry_inputs(o, first_call, inputs.geometry_input, inputs.geometry_only_3mf, config, model);
         if (build_plate_arrangement_plan(context, o, rs.layout, outcome,
-                calib_self_geometry, first_call, trailing_port, assemble_input,
+                calib_self_geometry, first_call, inputs.trailing_port, inputs.assemble_input,
                 config, rs.project) != 0)
             return 1;
         PreparedPlate prepared{context, o, rs.project, rs.settings, rs.layout, rs.progress, rs.outputs,
@@ -1578,8 +1589,7 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
 
         if (const auto result = finish_run_arrangement(context, o, rs.project,
                 rs.layout, rs.settings, rs.progress, rs.outputs, outcome,
-                calib_self_geometry, first_call, geometry_input, trailing_port,
-                assemble_input, plate_id, config, project_settings, prepared))
+                inputs, first_call, plate_id, config, project_settings, prepared))
             return *result;
         // The run-level steps are done: the prepare call stops here, before
         // any plate is checked.

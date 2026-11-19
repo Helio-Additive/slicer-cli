@@ -48,7 +48,11 @@ struct LoadedProject {
     // Load-time facts every later step reads.
     bool is_bbl_3mf = false;
     Slic3r::Semver file_version;
+    // Each plate's grid origin in the project (plate_grid_origin), for
+    // the plates --downward-check loads alone; empty when not a project.
     std::vector<Slic3r::Vec2d> plate_origins;   // the file's grid, for --downward-check
+    // What the official CLI reads from a Bambu-made 3MF, and its embedded
+    // presets, for --load-settings and friends (cli_load_settings.cpp).
     slicer_cli::ProjectFacts project_facts;
     std::vector<Slic3r::Preset> project_presets_kept;
     bool project_loaded_like_desktop = false;   // the project was loaded over the system presets
@@ -58,6 +62,8 @@ struct RunSettings {
     // m_print_config: the project's (or the profiles') settings with the
     // settings merge and the flags applied, before any plate's own.
     Slic3r::DynamicPrintConfig base;
+    // The settings given as flags; the settings merge takes filament_colour
+    // out of them once it has used it, as the official does.
     Slic3r::DynamicPrintConfig extra;
     bool explicit_config_supplied_nozzle_map = false;
     slicer_cli::SettingsMerge settings_merge;
@@ -69,6 +75,9 @@ struct RunSettings {
 struct RunPlatePlan {
     std::vector<RunPlate> plates;   // index = plate id - 1
     ProjectPlan plan;
+    // A project 3MF with model files after it (ProjectPlan): the file's own
+    // settings and version, for the plate list's size, and its filament
+    // count, the used filaments of the official's tower step.
     std::optional<Slic3r::DynamicPrintConfig> plan_file_config;
     Slic3r::Semver plan_file_version;
     int plan_file_filaments = 0;
