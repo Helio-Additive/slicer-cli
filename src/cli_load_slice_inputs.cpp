@@ -52,10 +52,24 @@ namespace slicer_cli {
 
 using json = nlohmann::json;
 
+struct ProjectArchiveLoad {
+    Slic3r::ConfigSubstitutionContext config_subst{Slic3r::ForwardCompatibilitySubstitutionRule::Enable};
+    std::vector<Slic3r::Preset*> presets;
+    Slic3r::Semver file_version;
+#ifdef ENGINE_ORCA
+    bool is_orca_3mf = false;
+#endif
+
+    ~ProjectArchiveLoad() {
+        for (Slic3r::Preset* p : presets)
+            delete p;
+        presets.clear();
+    }
+};
+
 static int read_3mf_archive(const CliOptions& o, PlateOutcome& outcome, int load_plate_id,
-            Slic3r::DynamicPrintConfig& config, Slic3r::Semver& file_version,
-            Slic3r::ConfigSubstitutionContext& config_subst, std::vector<Slic3r::Preset*>& presets,
-            bool& is_orca_3mf, const std::string& load_path, LoadedProject& loaded_project) {
+            Slic3r::DynamicPrintConfig& config, ProjectArchiveLoad& archive,
+            const std::string& load_path, LoadedProject& loaded_project) {
     const auto& input_file = o.input_file;
     auto& model = loaded_project.model;
     auto& is_bbl_3mf = loaded_project.is_bbl_3mf;
@@ -79,12 +93,12 @@ static int read_3mf_archive(const CliOptions& o, PlateOutcome& outcome, int load
     bool result = Slic3r::load_bbs_3mf(
         load_path.c_str(),
         &config,
-        &config_subst,
+        &archive.config_subst,
         &model,
         &plate_data,
-        &presets,
+        &archive.presets,
         &is_bbl_3mf,
-        &file_version,
+        &archive.file_version,
         nullptr,   // proFn (progress callback)
         strategy,
         nullptr,   // BBLProject
@@ -96,13 +110,13 @@ static int read_3mf_archive(const CliOptions& o, PlateOutcome& outcome, int load
     bool result = Slic3r::load_bbs_3mf(
         load_path.c_str(),
         &config,
-        &config_subst,
+        &archive.config_subst,
         &model,
         &plate_data,
-        &presets,
+        &archive.presets,
         &is_bbl_3mf,
-        &is_orca_3mf,
-        &file_version,
+        &archive.is_orca_3mf,
+        &archive.file_version,
         nullptr,   // proFn (progress callback)
         strategy,
         nullptr,   // BBLProject
@@ -113,12 +127,12 @@ static int read_3mf_archive(const CliOptions& o, PlateOutcome& outcome, int load
     bool result = Slic3r::load_bbs_3mf(
         load_path.c_str(),
         &config,
-        &config_subst,
+        &archive.config_subst,
         &model,
         &plate_data,
-        &presets,
+        &archive.presets,
         &is_bbl_3mf,
-        &file_version,
+        &archive.file_version,
         nullptr,   // proFn (progress callback)
         strategy,
         nullptr,   // BBLProject
@@ -131,10 +145,10 @@ static int read_3mf_archive(const CliOptions& o, PlateOutcome& outcome, int load
     // substituted", and it is also where an unknown key (a setting the
     // host wrote that this engine has no definition for) is recorded.
 #ifdef ENGINE_SNAPMAKER
-    slicer_cli::convert_flow_type_spelling(config, config_subst, "3mf:project_settings.config");
+    slicer_cli::convert_flow_type_spelling(config, archive.config_subst, "3mf:project_settings.config");
 #endif
-    emit_config_substitutions(config_subst, "3mf:project_settings.config");
-    outcome.unknown_settings = config_subst.unrecogized_keys;   // sic — upstream spelling
+    emit_config_substitutions(archive.config_subst, "3mf:project_settings.config");
+    outcome.unknown_settings = archive.config_subst.unrecogized_keys;   // sic — upstream spelling
 #ifdef ENGINE_SNAPMAKER
     if (result)
         slicer_cli::warn_newer_project_schema(config);
@@ -1033,9 +1047,13 @@ static int resolve_bambu_project_profiles(const CliOptions& o, PlateOutcome& out
 #endif
 
 static int load_project_archive(CliRunContext& context, const CliOptions& o, LoadedProject& loaded_project,
-            RunPlatePlan& plate_plan, PlateOutcome& outcome, int plate_id, int load_plate_id,
-            Slic3r::DynamicPrintConfig& config, std::vector<std::string>& unknown_values, json& unknown_items,
+            RunPlatePlan& plate_plan, PlateOutcome& outcome, int plate_id, PlateLoadSettings& settings,
             const PlateLoadInputs& inputs) {
+    // The plate filter of the one load (Model::read_from_file(...,
+    // plate_to_slice), BambuStudio.cpp 1889; OrcaSlicer.cpp 1571): the
+    // plate the run slices, or 0 for every plate.
+    const int load_plate_id = plate_id;
+    auto& config = settings.config;
     const auto& input_file = o.input_file;
     const auto& verbose = o.verbose;
     auto& model = loaded_project.model;
@@ -1079,17 +1097,15 @@ static int load_project_archive(CliRunContext& context, const CliOptions& o, Loa
                                mm_text(percent_rewrite.nozzle_mm) + " mm nozzle into mm"}});
     }
 #endif
-    Slic3r::ConfigSubstitutionContext config_subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
-    std::vector<Slic3r::Preset*> presets;
-    struct PresetsRelease {
-        std::vector<Slic3r::Preset*>& presets;
-        ~PresetsRelease() { for (Slic3r::Preset* p : presets) delete p; presets.clear(); }
-    } presets_release{presets};
-    Slic3r::Semver file_version;
-    [[maybe_unused]] bool is_orca_3mf = false;
+    ProjectArchiveLoad archive;
+    auto& config_subst = archive.config_subst;
+    auto& presets = archive.presets;
+    auto& file_version = archive.file_version;
+#ifdef ENGINE_ORCA
+    auto& is_orca_3mf = archive.is_orca_3mf;
+#endif
 
-    if (read_3mf_archive(o, outcome, load_plate_id, config, file_version,
-            config_subst, presets, is_orca_3mf, load_path, loaded_project) != 0)
+    if (read_3mf_archive(o, outcome, load_plate_id, config, archive, load_path, loaded_project) != 0)
         return 1;
     // The settings exactly as the file states them, and whether they
     // were kept: the rebase below (Orca build) replaces `config` with
@@ -1188,7 +1204,7 @@ static int load_project_archive(CliRunContext& context, const CliOptions& o, Loa
 #endif
     if (check_project_version(o, outcome, config, file_version) != 0)
         return 1;
-    check_project_substitutions(o, unknown_values, unknown_items, config_subst);
+    check_project_substitutions(o, settings.unknown_values, settings.unknown_items, config_subst);
 #ifdef ENGINE_BAMBU
     // The importer may partially mutate a vector before rejecting it.
     // Retain the last usable input map, or the original driver default
@@ -1208,76 +1224,75 @@ static int load_project_archive(CliRunContext& context, const CliOptions& o, Loa
 }
 
 static int load_input_geometry(CliRunContext& context, const CliOptions& o, LoadedProject& loaded_project,
-            RunPlatePlan& plate_plan, PlateOutcome& outcome, int plate_id, int load_plate_id,
-            Slic3r::DynamicPrintConfig& config, std::vector<std::string>& unknown_values, json& unknown_items,
+            RunPlatePlan& plate_plan, PlateOutcome& outcome, int plate_id, PlateLoadSettings& settings,
             const PlateLoadInputs& inputs) {
     const auto& input_file = o.input_file;
     auto& model = loaded_project.model;
     auto& plate_data = loaded_project.plate_data;
 
-     if (inputs.assemble_input) {
-         // The list's plates the run slices: plate N, or every plate. Each
-         // plate's objects go to its place in the plate grid once the bed
-         // is known (below).
-         if (plate_id > (int)context.g_assemble->plates.size() || plate_id < 0) {
-             set_outcome_failure(outcome, CLI_INVALID_PARAMS, "The assemble list has no plate " + std::to_string(plate_id) + ".");
-             return 1;
-         }
-         plate_plan.plates.assign(context.g_assemble->plates.size(), RunPlate());
-         for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
-             plate_plan.plates[k].all = false;
-             if (plate_id > 0 && int(k) != plate_id - 1)
-                 continue;
-             const size_t before = model.objects.size();
-             for (const Slic3r::ModelObject* object : context.g_assemble->plates[k].loaded_obj_list)
-                 model.add_object(*object);
-             for (size_t oi = before; oi < model.objects.size(); ++oi)
-                 for (Slic3r::ModelInstance* inst : model.objects[oi]->instances)
-                     plate_plan.plates[k].members.push_back(inst);
-             emit_event({{"event","model_loaded"}, {"tag","AssemblePlateBuilt"}, {"plate_id", int(k) + 1},
-                         {"objects", model.objects.size() - before},
-                         {"message","Plate " + std::to_string(k + 1) + " of the assemble list holds " +
-                                    std::to_string(model.objects.size() - before) + " object(s)"}});
-         }
-         for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
-             auto* pd = new Slic3r::PlateData();
-             pd->plate_index = int(k);
-             pd->plate_name  = context.g_assemble->plates[k].plate_name;
-             pd->config      = context.g_assemble->plate_configs[k];
-             plate_data.push_back(pd);
-         }
-     } else if (inputs.geometry_input) {
-         const slicer_cli::ModelLoadResult loaded = slicer_cli::load_geometry_files(o, o.input_files, 0, model);
-         if (loaded.code != 0 && o.input_files.size() == 1 && input_is_stl(input_file) &&
-             (loaded.code == CLI_DATA_FILE_ERROR || loaded.code == CLI_FILE_NOTFOUND)) {
-             // One STL that cannot be read: the refusal slicer-cli has
-             // always given for it.
-             std::cerr << "Failed to load STL file\n";
-             set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
-             return 1;
-         }
-         slicer_cli::add_failure_reason(outcome.error_reason, loaded.failure_reason);
-         if (loaded.code != 0) {
-             emit_event({{"event","load_error"}, {"tag","ModelLoadFailed"}, {"path", input_file},
-                         {"message", loaded.message}});
-             std::cerr << "Error: " << loaded.message << "\n";
-             set_outcome_failure(outcome, loaded.code, loaded.message);
-             return 1;
-         }
-     } else if (input_is_3mf(input_file)) {
-         if (load_project_archive(context, o, loaded_project, plate_plan, outcome, plate_id,
-                 load_plate_id, config, unknown_values, unknown_items, inputs) != 0)
-             return 1;
-    // OrcaSlicer slices directly from the flat 3MF project_settings.config.
-     } else if (inputs.calib_self_geometry && input_file.empty()) {
-         std::cout << "No --input: pressure_advance_pattern will synthesize a handle cube.\n";
-     } else {
-         // The kinds this engine's loaders read (cli_model_load.cpp).
-         std::cerr << "Unsupported file format. This engine loads: "
-                   << slicer_cli::loadable_model_extensions() << "\n";
-         set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
-         return 1;
-     }
+    if (inputs.assemble_input) {
+        // The list's plates the run slices: plate N, or every plate. Each
+        // plate's objects go to its place in the plate grid once the bed
+        // is known (below).
+        if (plate_id > (int)context.g_assemble->plates.size() || plate_id < 0) {
+            set_outcome_failure(outcome, CLI_INVALID_PARAMS, "The assemble list has no plate " + std::to_string(plate_id) + ".");
+            return 1;
+        }
+        plate_plan.plates.assign(context.g_assemble->plates.size(), RunPlate());
+        for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
+            plate_plan.plates[k].all = false;
+            if (plate_id > 0 && int(k) != plate_id - 1)
+                continue;
+            const size_t before = model.objects.size();
+            for (const Slic3r::ModelObject* object : context.g_assemble->plates[k].loaded_obj_list)
+                model.add_object(*object);
+            for (size_t oi = before; oi < model.objects.size(); ++oi)
+                for (Slic3r::ModelInstance* inst : model.objects[oi]->instances)
+                    plate_plan.plates[k].members.push_back(inst);
+            emit_event({{"event","model_loaded"}, {"tag","AssemblePlateBuilt"}, {"plate_id", int(k) + 1},
+                        {"objects", model.objects.size() - before},
+                        {"message","Plate " + std::to_string(k + 1) + " of the assemble list holds " +
+                                   std::to_string(model.objects.size() - before) + " object(s)"}});
+        }
+        for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
+            auto* pd = new Slic3r::PlateData();
+            pd->plate_index = int(k);
+            pd->plate_name  = context.g_assemble->plates[k].plate_name;
+            pd->config      = context.g_assemble->plate_configs[k];
+            plate_data.push_back(pd);
+        }
+    } else if (inputs.geometry_input) {
+        const slicer_cli::ModelLoadResult loaded = slicer_cli::load_geometry_files(o, o.input_files, 0, model);
+        if (loaded.code != 0 && o.input_files.size() == 1 && input_is_stl(input_file) &&
+            (loaded.code == CLI_DATA_FILE_ERROR || loaded.code == CLI_FILE_NOTFOUND)) {
+            // One STL that cannot be read: the refusal slicer-cli has
+            // always given for it.
+            std::cerr << "Failed to load STL file\n";
+            set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
+            return 1;
+        }
+        slicer_cli::add_failure_reason(outcome.error_reason, loaded.failure_reason);
+        if (loaded.code != 0) {
+            emit_event({{"event","load_error"}, {"tag","ModelLoadFailed"}, {"path", input_file},
+                        {"message", loaded.message}});
+            std::cerr << "Error: " << loaded.message << "\n";
+            set_outcome_failure(outcome, loaded.code, loaded.message);
+            return 1;
+        }
+    } else if (input_is_3mf(input_file)) {
+        if (load_project_archive(context, o, loaded_project, plate_plan, outcome, plate_id,
+                settings, inputs) != 0)
+            return 1;
+        // OrcaSlicer slices directly from the flat 3MF project_settings.config.
+    } else if (inputs.calib_self_geometry && input_file.empty()) {
+        std::cout << "No --input: pressure_advance_pattern will synthesize a handle cube.\n";
+    } else {
+        // The kinds this engine's loaders read (cli_model_load.cpp).
+        std::cerr << "Unsupported file format. This engine loads: "
+                  << slicer_cli::loadable_model_extensions() << "\n";
+        set_outcome_failure(outcome, CLI_DATA_FILE_ERROR);
+        return 1;
+    }
     return 0;
 }
 
@@ -1711,10 +1726,13 @@ static int select_nozzle_and_plate(CliRunContext& context, const CliOptions& o, 
 }
 
 static int validate_loaded_plate_settings(PlateWarnings& plate_warnings, PlateOutcome& outcome, int plate_id,
-            const std::map<std::string, std::string>& overrides, const Slic3r::DynamicPrintConfig& config,
-            Slic3r::DynamicPrintConfig& extra, const Slic3r::PlateDataPtrs& plate_data,
-            std::vector<std::string>& unknown_values, json& unknown_items, const PlateLoadInputs& inputs,
+            const std::map<std::string, std::string>& overrides, const PlateLoadSettings& settings,
+            const Slic3r::DynamicPrintConfig& extra, const Slic3r::PlateDataPtrs& plate_data, const PlateLoadInputs& inputs,
             const Slic3r::DynamicPrintConfig& settings_before_flags) {
+    const auto& config = settings.config;
+    const auto& unknown_values = settings.unknown_values;
+    const auto& unknown_items = settings.unknown_items;
+
     // The official value check (OrcaSlicer.cpp 3574-3581 at 31f6803,
     // BambuStudio.cpp 4134-4141 at 5873b5f): DynamicPrintConfig::validate(true)
     // over the settings as the file and profiles state them, before this
@@ -2284,13 +2302,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     slicer_cli::ProjectFacts& project_facts = rs.project.project_facts;
     Slic3r::DynamicPrintConfig& extra = rs.settings.extra;
     bool& explicit_config_supplied_nozzle_map = rs.settings.explicit_config_supplied_nozzle_map;
-    // The plate filter of the one load (Model::read_from_file(...,
-    // plate_to_slice), BambuStudio.cpp 1889; OrcaSlicer.cpp 1571): the
-    // plate the run slices, or 0 for every plate.
-    const int load_plate_id = plate_id;
     auto& config = settings.config;
-    auto& unknown_values = settings.unknown_values;
-    auto& unknown_items = settings.unknown_items;
 
     std::cout << "\nConfiguring print settings...\n";
 #ifdef ENGINE_BAMBU
@@ -2319,9 +2331,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     // (each plate's own, or any temporary) can take the folder down while
     // a later load still writes into it (detach_run_backup_path).
     const RunBackupDetach detach_run_model{model};
-   if (load_input_geometry(context, o, rs.project, rs.layout, outcome, plate_id,
-           load_plate_id, config, unknown_values, unknown_items, inputs) != 0)
-       return 1;
+    if (load_input_geometry(context, o, rs.project, rs.layout, outcome, plate_id, settings, inputs) != 0)
+        return 1;
 
     if (finish_loaded_geometry(o, rs.project, rs.layout, outcome, plate_id, config,
             inputs) != 0)
@@ -2341,8 +2352,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     if (select_nozzle_and_plate(context, o, outcome, config, inputs) != 0)
         return 1;
 
-    if (validate_loaded_plate_settings(rs.warnings, outcome, plate_id, overrides, config,
-            extra, plate_data, unknown_values, unknown_items, inputs,
+    if (validate_loaded_plate_settings(rs.warnings, outcome, plate_id, overrides, settings,
+            extra, plate_data, inputs,
             settings_before_flags) != 0)
         return 1;
 
