@@ -1,4 +1,10 @@
 #include "cli_check_downward.hpp"
+#include "cli_arrange_geometry.hpp"
+#include "cli_named_presets.hpp"
+#include "cli_percent_widths.hpp"
+#include "cli_plate_scope.hpp"
+#include "cli_result_json.hpp"
+#include "cli_run_steps.hpp"
 #include "cli_assemble.hpp"
 #include "cli_events.hpp"
 #include "cli_load_settings.hpp"
@@ -116,37 +122,6 @@ static bool load_plate_objects(CliRunContext& context, const std::string& input_
         delete p;
     return loaded;
 }
-
-/// Events held while it lives (diagnostics::held_events): dropped when the
-/// step they come from passes (drop()), sent when it stops early.
-class HeldEventsScope {
-public:
-    explicit HeldEventsScope(bool active) : m_active(active) {
-        if (!m_active) return;
-        m_prev = slicer_cli::diagnostics::held_events;
-        slicer_cli::diagnostics::held_events = &m_held;
-    }
-    void drop() { m_held.clear(); }
-    ~HeldEventsScope() {
-        if (!m_active) return;
-        slicer_cli::diagnostics::held_events = m_prev;
-        for (const std::string& line : m_held)
-            slicer_cli::diagnostics::write_event(line);
-    }
-    HeldEventsScope(const HeldEventsScope&) = delete;
-    HeldEventsScope& operator=(const HeldEventsScope&) = delete;
-private:
-    bool m_active = false;
-    std::vector<std::string>* m_prev = nullptr;
-    std::vector<std::string> m_held;
-};
-
-/// --skip-objects on the placed objects (BambuStudio.cpp 6541-6581,
-/// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left; OrcaSlicer.cpp
-/// 5645-5720): inside the slice action, after the model actions. Its caller
-/// runs --ensure-on-bed first, before the actions (BambuStudio.cpp 6188-6194
-/// then the action loop at 6336; OrcaSlicer.cpp 5443-5455 then 5470).
-/// --mtcpp follows the bed check (plate_triangle_limit).
 
 static bool read_project_print_sequence(const Slic3r::DynamicPrintConfig& extra, const std::string& merged_print_sequence,
                                         bool assemble_input, const Slic3r::DynamicPrintConfig& config,

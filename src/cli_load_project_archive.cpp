@@ -1,4 +1,6 @@
 #include "cli_load_project_archive.hpp"
+#include "cli_events.hpp"
+#include "cli_plate_arrange.hpp"
 #include "cli_load_slice_inputs.hpp"
 #include "cli_run_context.hpp"
 #include "cli_slice_state.hpp"

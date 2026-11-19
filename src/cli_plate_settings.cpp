@@ -1,4 +1,6 @@
 #include "cli_plate_settings.hpp"
+#include "cli_events.hpp"
+#include "cli_plate_scope.hpp"
 #include "cli_arrange_geometry.hpp"
 #include "cli_engine_events.hpp"
 #include "cli_filament_config.hpp"
@@ -502,6 +504,30 @@ static void report_active_plate_settings(const Slic3r::DynamicPrintConfig& confi
         }
     }
 }
+
+/// Events held while it lives (diagnostics::held_events): dropped when the
+/// step they come from passes (drop()), sent when it stops early.
+class HeldEventsScope {
+public:
+    explicit HeldEventsScope(bool active) : m_active(active) {
+        if (!m_active) return;
+        m_prev = slicer_cli::diagnostics::held_events;
+        slicer_cli::diagnostics::held_events = &m_held;
+    }
+    void drop() { m_held.clear(); }
+    ~HeldEventsScope() {
+        if (!m_active) return;
+        slicer_cli::diagnostics::held_events = m_prev;
+        for (const std::string& line : m_held)
+            slicer_cli::diagnostics::write_event(line);
+    }
+    HeldEventsScope(const HeldEventsScope&) = delete;
+    HeldEventsScope& operator=(const HeldEventsScope&) = delete;
+private:
+    bool m_active = false;
+    std::vector<std::string>* m_prev = nullptr;
+    std::vector<std::string> m_held;
+};
 
 static int overlay_fresh_plate_configuration(const CliOptions& o, LoadedProject& loaded_project,
             RunSettings& run_settings, PlateOutcome& outcome, bool trailing_port, bool fresh_plate_config,

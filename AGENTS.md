@@ -150,7 +150,7 @@ The slice driver owns one `RunState`. Loading fills `LoadedProject` (model, proj
 | `cli_pipe.hpp` | Progress pipe lifecycle and messages |
 | `cli_engine_events.cpp` | Translate engine substitutions, warnings and validation results into events |
 | `cli_engine_events.hpp` | Engine diagnostic event adapters |
-| `cli_events.hpp` | Structured event writer and held-event scope |
+| `cli_events.hpp` | Structured event writer |
 | `diagnostic_output.hpp` | Write each diagnostic record as one synchronized stream operation |
 | `cli_failure_reason.cpp` | Build the explanation for a failed plate |
 | `cli_failure_reason.hpp` | Plate failure reason helpers |

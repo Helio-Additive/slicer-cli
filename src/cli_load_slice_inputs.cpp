@@ -1,4 +1,5 @@
 #include "cli_load_slice_inputs.hpp"
+#include "cli_events.hpp"
 #include "cli_load_project_archive.hpp"
 #include "libslic3r_version.h"
 

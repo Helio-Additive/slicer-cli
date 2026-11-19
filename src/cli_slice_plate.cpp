@@ -58,6 +58,12 @@ namespace slicer_cli {
 
 using json = nlohmann::json;
 
+/// --skip-objects on the placed objects (BambuStudio.cpp 6541-6581,
+/// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left; OrcaSlicer.cpp
+/// 5645-5720): inside the slice action, after the model actions. Its caller
+/// runs --ensure-on-bed first, before the actions (BambuStudio.cpp 6188-6194
+/// then the action loop at 6336; OrcaSlicer.cpp 5443-5455 then 5470).
+/// --mtcpp follows the bed check (plate_triangle_limit).
 static bool plate_object_steps(const CliOptions& o, Slic3r::Model& model, int plate, PlateOutcome& outcome) {
     std::vector<int> skipped;
     if (slicer_cli::apply_skip_objects(o, model, skipped) < 0) {
