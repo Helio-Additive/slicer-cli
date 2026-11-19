@@ -81,6 +81,126 @@ static std::optional<int> load_slice_mode_inputs(CliRunContext& context, const C
     return std::nullopt;
 }
 
+struct SlicePreparationResult {
+    int plan_code = 0;
+    std::string plan_error;
+    std::optional<PlateOutcome> prepare_failure;
+};
+
+static void prepare_run(CliRunContext& context, const CliOptions& o, Slic3r::Calib_Params& calib_params,
+        RunState& rs, int prepare_plate, SlicePreparationResult& preparation) {
+    PlateOutcome prepare_outcome;
+    prepare_outcome.prepare_pass = true;
+    prepare_outcome.plate_id = prepare_plate;
+    const int rc = slice_one_plate(context, o, calib_params, rs, prepare_plate, std::string(), prepare_outcome);
+    if (rc == 0 && prepare_outcome.cli_code == 0 && rs.preparation.prepared)
+        return;
+    if (prepare_outcome.cli_code == 0)
+        set_outcome_failure(prepare_outcome, CLI_SLICING_ERROR);
+    if (prepare_outcome.error_string.empty())
+        prepare_outcome.error_string = cli_error_sentence(prepare_outcome.cli_code);
+    preparation.plan_code = prepare_outcome.cli_code;
+    preparation.plan_error = prepare_outcome.error_string;
+    preparation.prepare_failure = prepare_outcome;
+}
+
+static std::optional<int> prepare_trailing_models_and_check_plate_number(CliRunContext& context,
+        const CliOptions& o, Slic3r::Calib_Params& calib_params, const fs::path& outdir, RunState& rs,
+        SlicePreparationResult& preparation, int& plate_count, bool trailing) {
+    if (trailing) {
+        // --slice 0 may check several plates once the plan is known, so the
+        // project's noted-value warning found here is held like the check
+        // pass's own (released below when the run checks only one plate).
+        rs.warnings.hold_noted = o.slice_plate == 0;
+        prepare_run(context, o, calib_params, rs, 0, preparation);
+        if (preparation.plan_code == 0)
+            plate_count = rs.layout.plan.plate_count;
+    }
+
+    if (preparation.plan_code == 0 && o.slice_plate > plate_count) {
+        write_result_json(context, outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
+                          cli_error_sentence(CLI_INVALID_PARAMS) + " --slice " + std::to_string(o.slice_plate) +
+                          " but the file has only " + std::to_string(plate_count) + " plate(s).",
+                          {}, 0, 0);
+        std::cerr << "Error: --slice " << o.slice_plate << " but the file has only "
+                  << plate_count << " plate(s)\n";
+        emit_event({{"event","input_error"},
+                    {"tag","PlateOutOfRange"},
+                    {"requested_plate", o.slice_plate},
+                    {"plate_count", plate_count},
+                    {"message","--slice " + std::to_string(o.slice_plate) +
+                               " but the file has only " + std::to_string(plate_count) + " plate(s)"}});
+        return CLI_INVALID_PARAMS;
+    }
+    return std::nullopt;
+}
+
+static void prepare_selected_plates(CliRunContext& context, const CliOptions& o,
+        Slic3r::Calib_Params& calib_params, RunState& rs, bool per_plate_load, std::vector<int>& plates,
+        SlicePreparationResult& preparation, int& plate_count, bool trailing) {
+    if (o.slice_plate == 0)
+        for (int p = 1; p <= plate_count; ++p) plates.push_back(p);
+    else
+        plates.push_back(o.slice_plate);
+
+    // A run that checks every plate before slicing any (--slice 0 on several
+    // plates) holds each plate's noted-value warning until the whole check
+    // pass has passed: the warning says the run slices with the file's values,
+    // which a later plate's refusal makes untrue. The prepare call below
+    // checks the first plate, so the hold starts before it.
+    const bool hold_noted = o.slice_plate == 0 && plates.size() > 1;
+    if (rs.warnings.hold_noted && !hold_noted) {
+        for (const json& announcement : rs.warnings.noted_held)
+            announce_noted_warning(announcement);
+        rs.warnings.noted_held.clear();
+    }
+    rs.warnings.hold_noted = hold_noted;
+
+    // --slice 0 on several plates checks every plate before it slices any
+    // (pre_check, BambuStudio.cpp 6441, 7027-7028, 7428-7429; OrcaSlicer.cpp
+    // 5565, 6034-6035, 6222-6223): each plate runs up to its slice, and the
+    // first refusal ends the run with no G-code written. Every event of the
+    // pass is held (diagnostics::held_events). A plate that passes is run
+    // again by the slice pass below, so its events are dropped. When a later
+    // plate is refused they stay dropped: no plate was sliced, and the
+    // official's check pass reports only the refused plate (record_exit_reson
+    // with its index, BambuStudio.cpp 6533, 6579; OrcaSlicer.cpp 5650). The
+    // refused plate's events are sent with its result.
+    // Every other run prepares here, for its one plate or for every plate
+    // (--slice 0 on several plates).
+    if (!trailing && preparation.plan_code == 0) {
+        prepare_run(context, o, calib_params, rs, plates.size() == 1 && per_plate_load ? plates.front() : 0, preparation);
+        // --slice 0 --arrange 1 on several plates: the plates the arrange left.
+        if (preparation.plan_code == 0 && rs.layout.plan.done) {
+            plates.clear();
+            for (int p = 1; p <= rs.layout.plan.plate_count; ++p) plates.push_back(p);
+        }
+    }
+}
+
+static void record_plate_preparation_failure(const fs::path& outdir, std::vector<PlateOutcome>& outcomes,
+        int& code, std::string& error_string, const std::vector<int>& plates,
+        SlicePreparationResult& preparation, bool trailing) {
+    // A prepare call that failed ends the run here: with plate 0 for a
+    // project with model files after it (its plan), else with the plate it
+    // was preparing (the first plate's check, for --slice 0).
+    if (preparation.plan_code != 0) {
+        code = preparation.plan_code;
+        error_string = preparation.plan_error;
+        if (!trailing && preparation.prepare_failure) {
+            preparation.prepare_failure->plate_id = plates.size() == 1 ? plates.front() : 1;
+            preparation.prepare_failure->plate_index = 1;
+            preparation.prepare_failure->plate_count = int(plates.size());
+            // The refused plate starts without a G-code, as in the slice pass.
+            preparation.prepare_failure->gcode_path =
+                (outdir / ("plate_" + std::to_string(preparation.prepare_failure->plate_id) + ".gcode")).string();
+            boost::system::error_code ignored;
+            fs::remove(preparation.prepare_failure->gcode_path, ignored);
+            outcomes.push_back(*preparation.prepare_failure);
+        }
+    }
+}
+
 static void precheck_slice_plates(CliRunContext& context, const CliOptions& o,
         Slic3r::Calib_Params& calib_params, const fs::path& outdir, std::vector<PlateOutcome>& outcomes,
         int& code, std::string& error_string, RunState& rs, bool per_plate_load,
@@ -305,50 +425,13 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     // other run prepares once the plates are known (below).
     RunState rs;
     rs.layout.file_plate_count = plate_count;
-    int plan_code = 0;
-    std::string plan_error;
+    SlicePreparationResult preparation;
     const bool trailing = per_plate_load && !context.g_assemble && trailing_models_port(o);
-    std::optional<PlateOutcome> prepare_failure;
-    const auto prepare_run = [&](int prepare_plate) {
-        PlateOutcome prepare_outcome;
-        prepare_outcome.prepare_pass = true;
-        prepare_outcome.plate_id = prepare_plate;
-        const int rc = slice_one_plate(context, o, calib_params, rs, prepare_plate, std::string(), prepare_outcome);
-        if (rc == 0 && prepare_outcome.cli_code == 0 && rs.preparation.prepared)
-            return;
-        if (prepare_outcome.cli_code == 0)
-            set_outcome_failure(prepare_outcome, CLI_SLICING_ERROR);
-        if (prepare_outcome.error_string.empty())
-            prepare_outcome.error_string = cli_error_sentence(prepare_outcome.cli_code);
-        plan_code = prepare_outcome.cli_code;
-        plan_error = prepare_outcome.error_string;
-        prepare_failure = prepare_outcome;
-    };
-    if (trailing) {
-        // --slice 0 may check several plates once the plan is known, so the
-        // project's noted-value warning found here is held like the check
-        // pass's own (released below when the run checks only one plate).
-        rs.warnings.hold_noted = o.slice_plate == 0;
-        prepare_run(0);
-        if (plan_code == 0)
-            plate_count = rs.layout.plan.plate_count;
-    }
 
-    if (plan_code == 0 && o.slice_plate > plate_count) {
-        write_result_json(context, outdir.string(), CLI_INVALID_PARAMS, o.slice_plate,
-                          cli_error_sentence(CLI_INVALID_PARAMS) + " --slice " + std::to_string(o.slice_plate) +
-                          " but the file has only " + std::to_string(plate_count) + " plate(s).",
-                          {}, 0, 0);
-        std::cerr << "Error: --slice " << o.slice_plate << " but the file has only "
-                  << plate_count << " plate(s)\n";
-        emit_event({{"event","input_error"},
-                    {"tag","PlateOutOfRange"},
-                    {"requested_plate", o.slice_plate},
-                    {"plate_count", plate_count},
-                    {"message","--slice " + std::to_string(o.slice_plate) +
-                               " but the file has only " + std::to_string(plate_count) + " plate(s)"}});
-        return CLI_INVALID_PARAMS;
-    }
+
+    if (auto result = prepare_trailing_models_and_check_plate_number(context, o, calib_params,
+            outdir, rs, preparation, plate_count, trailing))
+        return *result;
 
     const auto run_started = std::chrono::steady_clock::now();
     if (o.progress) {
@@ -357,62 +440,9 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     }
 
     std::vector<int> plates;
-    if (o.slice_plate == 0)
-        for (int p = 1; p <= plate_count; ++p) plates.push_back(p);
-    else
-        plates.push_back(o.slice_plate);
-
-    // A run that checks every plate before slicing any (--slice 0 on several
-    // plates) holds each plate's noted-value warning until the whole check
-    // pass has passed: the warning says the run slices with the file's values,
-    // which a later plate's refusal makes untrue. The prepare call below
-    // checks the first plate, so the hold starts before it.
-    const bool hold_noted = o.slice_plate == 0 && plates.size() > 1;
-    if (rs.warnings.hold_noted && !hold_noted) {
-        for (const json& announcement : rs.warnings.noted_held)
-            announce_noted_warning(announcement);
-        rs.warnings.noted_held.clear();
-    }
-    rs.warnings.hold_noted = hold_noted;
-
-    // --slice 0 on several plates checks every plate before it slices any
-    // (pre_check, BambuStudio.cpp 6441, 7027-7028, 7428-7429; OrcaSlicer.cpp
-    // 5565, 6034-6035, 6222-6223): each plate runs up to its slice, and the
-    // first refusal ends the run with no G-code written. Every event of the
-    // pass is held (diagnostics::held_events). A plate that passes is run
-    // again by the slice pass below, so its events are dropped. When a later
-    // plate is refused they stay dropped: no plate was sliced, and the
-    // official's check pass reports only the refused plate (record_exit_reson
-    // with its index, BambuStudio.cpp 6533, 6579; OrcaSlicer.cpp 5650). The
-    // refused plate's events are sent with its result.
-    // Every other run prepares here, for its one plate or for every plate
-    // (--slice 0 on several plates).
-    if (!trailing && plan_code == 0) {
-        prepare_run(plates.size() == 1 && per_plate_load ? plates.front() : 0);
-        // --slice 0 --arrange 1 on several plates: the plates the arrange left.
-        if (plan_code == 0 && rs.layout.plan.done) {
-            plates.clear();
-            for (int p = 1; p <= rs.layout.plan.plate_count; ++p) plates.push_back(p);
-        }
-    }
-    // A prepare call that failed ends the run here: with plate 0 for a
-    // project with model files after it (its plan), else with the plate it
-    // was preparing (the first plate's check, for --slice 0).
-    if (plan_code != 0) {
-        code = plan_code;
-        error_string = plan_error;
-        if (!trailing && prepare_failure) {
-            prepare_failure->plate_id = plates.size() == 1 ? plates.front() : 1;
-            prepare_failure->plate_index = 1;
-            prepare_failure->plate_count = int(plates.size());
-            // The refused plate starts without a G-code, as in the slice pass.
-            prepare_failure->gcode_path =
-                (outdir / ("plate_" + std::to_string(prepare_failure->plate_id) + ".gcode")).string();
-            boost::system::error_code ignored;
-            fs::remove(prepare_failure->gcode_path, ignored);
-            outcomes.push_back(*prepare_failure);
-        }
-    }
+    prepare_selected_plates(context, o, calib_params, rs, per_plate_load, plates, preparation, plate_count,
+            trailing);
+    record_plate_preparation_failure(outdir, outcomes, code, error_string, plates, preparation, trailing);
     // Every file the run writes (result.json, the plates' G-code, the
     // --export-3mf project, the --export-settings file, the object STL files,
     // the --export-slicedata folders), checked against each other and against
