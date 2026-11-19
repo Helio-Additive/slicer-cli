@@ -75,6 +75,8 @@ The slice driver owns one `RunState`. Loading fills `LoadedProject` (model, proj
 | `startup_logging.cpp` | Silence engine startup logs before command dispatch |
 | `standalone_stubs.cpp` | Supply headless implementations of engine GUI hooks |
 | `cli_slice_run.cpp` | Drive the prepare, check and slice passes and collect their outcomes |
+| `cli_startup.cpp` | Parse startup options, dispatch information and layout modes, validate slice inputs |
+| `cli_startup.hpp` | Declare the startup steps that main calls |
 | `cli_slice_run.hpp` | Slice run entry point |
 | `cli_run_context.hpp` | Run-wide options, preset cache, assemble list, downward checks and staging paths |
 | `cli_slice_state.hpp` | Ownership of the project, settings, plan, preparation, warnings, pipe and action outputs |

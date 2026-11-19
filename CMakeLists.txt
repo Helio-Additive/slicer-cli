@@ -905,6 +905,7 @@ add_executable(slicer_cli src/cli_result_json.cpp
     src/cli_check_downward.cpp
     src/cli_plate_settings.cpp
     src/cli_slice_run.cpp
+    src/cli_startup.cpp
     src/cli_layout_command.cpp
     src/main.cpp src/cli_staging_folders.cpp src/startup_logging.cpp src/calib_args.cpp src/layout_plan.cpp
     src/cli_command_line.cpp src/cli_flag_support.cpp src/desktop_presets.cpp src/cli_model_load.cpp src/cli_run_steps.cpp src/cli_load_settings.cpp src/cli_repetitions.cpp src/cli_simplify.cpp src/cli_list_flags.cpp src/cli_engine_info.cpp
