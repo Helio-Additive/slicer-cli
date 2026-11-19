@@ -505,7 +505,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             slicer_cli::pipe_update(4, "Slicing begins");
         }
         if (o.progress || piped) {
-            print.set_status_callback([&outcome, &o, piped](const Slic3r::PrintBase::SlicingStatus& status) {
+            print.set_status_callback([&outcome = this->outcome, &o = this->o, piped](const Slic3r::PrintBase::SlicingStatus& status) {
                 if (piped)
                     slicer_cli::pipe_update(status.percent, status.text, status.warning_step);
                 emit_status_warning(status);
