@@ -1921,6 +1921,13 @@ impl Layer {
         self.regions.push(region);
     }
 
+    /// PrintObjectSlice.cpp:2118-2122 `while (!layer->m_regions.empty()) { delete layer->m_regions.back();
+    /// layer->m_regions.pop_back(); }`: what `PrintObject::slice_volumes` does to `m_regions` before it
+    /// allocates the LayerRegions of the current PrintRegions.
+    pub fn clear_regions(&mut self) {
+        self.regions.clear();
+    }
+
     // Test whether whether there are any slices assigned to this layer.
     // Layer.cpp:25
     pub fn empty(&self) -> bool {

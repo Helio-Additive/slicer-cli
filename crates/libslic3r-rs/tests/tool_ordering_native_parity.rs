@@ -8,7 +8,7 @@
 //! here on the Rust port, and what it returns has to be the same: floats and doubles bit for bit,
 //! integers and texts equal.
 
-use slicer::config::ConfigBase;
+use slicer::config::{ConfigBase, ConfigOptionResolver};
 use slicer::custom_g_code;
 use slicer::extrusion_entity::{
     ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole, ExtrusionMultiPath, ExtrusionPath,
@@ -472,6 +472,628 @@ fn dump_outputs(o: &mut Out, out: &ToolOrderingObjectOutputs) {
     o.d(out.object_brim_print_z);
 }
 
+// ---------------------------------------------------------------------------------------------
+// The filament grouping chain (ToolOrdering.cpp:1615-3634): GroupReorder::build_manual_nozzle_map,
+// build_filament_group_context, ToolOrdering::get_recommended_filament_maps,
+// refine_groups_by_Nozzle_State, plan_filament_mapping_and_order_by_combo_ranges and
+// sort_and_build_data over prints carrying a grouping state (the "P" block of gen.cpp).
+// ---------------------------------------------------------------------------------------------
+
+use slicer::filament_group::FilamentGroupContext;
+use slicer::filament_group_utils::{Color, FilamentUsageType, NozzleLoadedFilamentInfo};
+use slicer::multi_nozzle_utils::{NozzleStatusRecorder, UnorderedMapInt};
+use slicer::print_config::enums::FilamentMapMode;
+use std::cell::RefCell;
+use std::sync::Arc;
+
+fn usage_type(v: i64) -> FilamentUsageType {
+    // PrintConfig.hpp:45-49
+    match v {
+        0 => FilamentUsageType::SupportOnly,
+        1 => FilamentUsageType::ModelOnly,
+        _ => FilamentUsageType::Hybrid,
+    }
+}
+
+fn ints_of(c: &ToolOrderingPrintConfig, key: &str) -> Vec<i32> {
+    c.option(key).and_then(|o| o.as_any().downcast_ref::<slicer::config::ConfigOptionInts>()).map(|o| o.values.clone()).unwrap_or_default()
+}
+
+fn join_ints(v: &[i32]) -> String {
+    v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+}
+
+/// The `Print` of the grouping lines: its configuration and the state the generator's
+/// apply_print_state() gives it, and for "sorted_build" the hand-built objects.
+struct GroupPrint {
+    /// `m_config` (and `m_full_print_config`): the last entry is the current one. The write-back of
+    /// Print::update_filament_maps_to_config appends; nothing is removed while the print lives, so a
+    /// reference handed out by `config()` stays valid.
+    configs: RefCell<Vec<Box<ToolOrderingPrintConfig>>>,
+    calib: ToolOrderingCalibParams,
+    ext_info: Vec<Vec<ToolOrderingPrintConfig>>,
+    usage: Vec<FilamentUsageType>,
+    print_time: UnorderedMapInt<UnorderedMapInt<f64>>,
+    loaded: Vec<NozzleLoadedFilamentInfo>,
+    dynamic_reorder: bool,
+    sequential: bool,
+    has_skirt: bool,
+    objects: Vec<ToolOrderingObject>,
+    custom_gcodes: custom_g_code::Info,
+    group: RefCell<Option<Arc<LayeredNozzleGroupResult>>>,
+    /// the write-back the chain asked for: "M" and the three maps, or "G"
+    write_back: RefCell<Option<Vec<String>>>,
+}
+
+impl GroupPrint {
+    fn current(&self) -> &ToolOrderingPrintConfig {
+        let v = self.configs.borrow();
+        let p: *const ToolOrderingPrintConfig = &**v.last().expect("a configuration");
+        // SAFETY: the boxes are never dropped, moved or changed while `self` lives (see `configs`).
+        unsafe { &*p }
+    }
+}
+
+impl ToolOrderingPrint for GroupPrint {
+    fn config(&self) -> &ToolOrderingPrintConfig {
+        self.current()
+    }
+    fn full_print_config(&self) -> &ToolOrderingPrintConfig {
+        self.current()
+    }
+    fn uses_multiple_nozzle_diameters(&self) -> bool {
+        // Print.cpp:606-643: no print regions and no support material in the hand-built prints, the list
+        // of filaments is empty.
+        false
+    }
+    fn object_extruders(&self) -> Vec<u32> {
+        // model objects without volumes
+        Vec::new()
+    }
+    fn curr_plate_custom_gcodes(&self) -> &custom_g_code::Info {
+        &self.custom_gcodes
+    }
+    fn get_layered_nozzle_group_result(&self) -> Option<Arc<LayeredNozzleGroupResult>> {
+        self.group.borrow().clone()
+    }
+    fn get_geometric_unprintable_filaments(&self) -> Vec<BTreeSet<i32>> {
+        // m_geometric_unprintable_filaments of a print that was not sliced
+        Vec::new()
+    }
+    fn get_physical_unprintable_filaments(&self, used_filaments: &[u32]) -> Vec<BTreeSet<i32>> {
+        // Print.cpp:3504-3535
+        let c = self.current();
+        let extruder_num =
+            c.option("nozzle_diameter").and_then(|o| o.as_any().downcast_ref::<slicer::config::ConfigOptionFloatsNullable>()).map(|o| o.values.len()).expect("nozzle_diameter");
+        let mut physical_unprintables: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); extruder_num];
+        if extruder_num < 2 {
+            return physical_unprintables;
+        }
+        let printable = ints_of(c, "filament_printable");
+        for &f in used_filaments {
+            let status = printable[f as usize];
+            if let Some(i) = (0..extruder_num as i32).find(|&i| (status >> i) & 1 == 0) {
+                physical_unprintables[i as usize].insert(f as i32);
+            }
+        }
+        physical_unprintables
+    }
+    fn get_filament_unprintable_flow(&self, used_filaments: &[u32]) -> BTreeMap<i32, BTreeSet<slicer::extruder::NozzleVolumeType>> {
+        // Print.cpp:3537-3566
+        use slicer::extruder::NozzleVolumeType;
+        use slicer::print_config::convert_to_nvt_type;
+        let c = self.current();
+        let strs = |key: &str| -> Vec<String> {
+            c.option(key).and_then(|o| o.as_any().downcast_ref::<slicer::config::ConfigOptionStrings>()).map(|o| o.values.clone()).unwrap_or_default()
+        };
+        let extruder_variant_list = strs("printer_extruder_variant");
+        let filament_variant_list = strs("filament_extruder_variant");
+        let filament_self_index: Vec<i32> =
+            if !c.has("filament_self_index") { vec![1; filament_variant_list.len()] } else { ints_of(c, "filament_self_index") };
+        let mut ret: BTreeMap<i32, BTreeSet<NozzleVolumeType>> = BTreeMap::new();
+        let mut filament_variant_map: BTreeMap<i32, BTreeSet<NozzleVolumeType>> = BTreeMap::new();
+        for i in 0..filament_variant_list.len() {
+            let volume = convert_to_nvt_type(&filament_variant_list[i]);
+            if volume != NozzleVolumeType::NvtHybrid {
+                filament_variant_map.entry(filament_self_index[i]).or_default().insert(volume);
+            }
+        }
+        for (first, volumes) in &filament_variant_map {
+            let fil_idx = first - 1;
+            if !used_filaments.iter().any(|&f| f as i32 == fil_idx) {
+                continue;
+            }
+            for v in &extruder_variant_list {
+                let exd_volume = convert_to_nvt_type(v);
+                if !volumes.contains(&exd_volume) && exd_volume != NozzleVolumeType::NvtHybrid {
+                    ret.entry(fil_idx).or_default().insert(exd_volume);
+                }
+            }
+        }
+        ret
+    }
+    fn calib_params(&self) -> ToolOrderingCalibParams {
+        self.calib
+    }
+    fn get_extruder_filament_info(&self) -> &[Vec<ToolOrderingPrintConfig>] {
+        &self.ext_info
+    }
+    fn get_filament_usage_type(&self) -> Vec<FilamentUsageType> {
+        self.usage.clone()
+    }
+    fn get_filament_print_time(&self) -> UnorderedMapInt<UnorderedMapInt<f64>> {
+        self.print_time.clone()
+    }
+    fn get_nozzle_loaded_filament_info(&self) -> &[NozzleLoadedFilamentInfo] {
+        &self.loaded
+    }
+    fn is_dynamic_group_reorder(&self) -> bool {
+        self.dynamic_reorder
+    }
+    fn is_sequential_print(&self) -> bool {
+        self.sequential
+    }
+    fn resolve_manual_nozzle_map(&self, _used_filaments: &[u32]) -> Result<(), slicer::exception::RuntimeError> {
+        // Print.cpp:3322-3345 returns at once unless the mode is fmmNozzleManual; "sorted_build" has no
+        // such line.
+        let mode = self.current().option("filament_map_mode").and_then(|o| o.get_int().ok()).expect("filament_map_mode");
+        assert!(mode != FilamentMapMode::FmmNozzleManual as i32, "resolve_manual_nozzle_map over fmmNozzleManual is not driven");
+        Ok(())
+    }
+    fn set_nozzle_group_result(&self, result: Arc<LayeredNozzleGroupResult>) {
+        *self.group.borrow_mut() = Some(result);
+    }
+    fn update_filament_maps_to_config(&self, f_maps: Vec<i32>, f_volume_maps: Vec<i32>, f_nozzle_maps: Vec<i32>) {
+        let mut rec = vec!["M".to_string()];
+        for m in [&f_maps, &f_volume_maps, &f_nozzle_maps] {
+            rec.push(m.len().to_string());
+            rec.extend(m.iter().map(|x| x.to_string()));
+        }
+        *self.write_back.borrow_mut() = Some(rec);
+        // Print.cpp:3243-3262: the three maps into m_config. What follows there (3264-3317) gives the
+        // filament options with variants the values of the new extruders; the grouping reads none of them.
+        let mut c = self.current().clone();
+        if ints_of(&c, "filament_map") != f_maps || ints_of(&c, "filament_volume_map") != f_volume_maps || ints_of(&c, "filament_nozzle_map") != f_nozzle_maps {
+            c.set_deserialize_strict("filament_map", &join_ints(&f_maps), false).expect("filament_map");
+            if !f_volume_maps.is_empty() {
+                c.set_deserialize_strict("filament_volume_map", &join_ints(&f_volume_maps), false).expect("filament_volume_map");
+            } else {
+                let mut v = ints_of(&c, "filament_volume_map");
+                v.resize(f_maps.len(), 0);
+                c.set_deserialize_strict("filament_volume_map", &join_ints(&v), false).expect("filament_volume_map");
+            }
+            if !f_nozzle_maps.is_empty() {
+                c.set_deserialize_strict("filament_nozzle_map", &join_ints(&f_nozzle_maps), false).expect("filament_nozzle_map");
+            }
+        }
+        self.configs.borrow_mut().push(Box::new(c));
+    }
+    fn update_to_config_by_nozzle_group_result(&self, _result: &LayeredNozzleGroupResult) {
+        // Print.cpp:3347-3400 changes the filament options with variants only.
+        *self.write_back.borrow_mut() = Some(vec!["G".to_string()]);
+    }
+}
+
+impl ToolOrderingPrintObjects for GroupPrint {
+    fn as_tool_ordering_print(&self) -> &dyn ToolOrderingPrint {
+        self
+    }
+    fn objects(&self) -> Vec<&ToolOrderingObject> {
+        self.objects.iter().collect()
+    }
+    fn has_skirt(&self) -> bool {
+        self.has_skirt
+    }
+    fn extruders(&self) -> Vec<u32> {
+        Vec::new()
+    }
+    fn nozzle_diameter_for_filament(&self, _filament: u32) -> f32 {
+        // not read: uses_multiple_nozzle_diameters() is false
+        0.4
+    }
+}
+
+/// The "P" block: what apply_print_state() gave the print, as write_print_state() wrote it.
+fn group_print(t: &mut Toks, cfg: ToolOrderingPrintConfig) -> GroupPrint {
+    assert_eq!(t.s(), "P");
+    let mut calib = ToolOrderingCalibParams::default();
+    calib.extruder_id = t.i() as i32;
+    calib.has_bowden_extruder = t.b();
+    calib.mode = match t.i() {
+        0 => slicer::calib::CalibMode::None,
+        1 => slicer::calib::CalibMode::PALine,
+        4 => slicer::calib::CalibMode::AutoPALine,
+        m => panic!("calib mode {m}"),
+    };
+    let ng = t.u();
+    let mut ext_info = Vec::new();
+    for _ in 0..ng {
+        let n = t.u();
+        let mut items = Vec::new();
+        for _ in 0..n {
+            let colour = t.text();
+            let ty = t.text();
+            let tray = t.text();
+            let support = t.text();
+            let id = t.text();
+            let mut d = ToolOrderingPrintConfig::new();
+            d.set_key_value("filament_colour", Box::new(slicer::config::ConfigOptionStrings::from_values(vec![colour])));
+            d.set_key_value("filament_type", Box::new(slicer::config::ConfigOptionStrings::from_values(vec![ty])));
+            d.set_key_value("tray_name", Box::new(slicer::config::ConfigOptionStrings::from_values(vec![tray])));
+            d.set_key_value("filament_is_support", Box::new(slicer::config::ConfigOptionBools::from_bools(&[support == "1"])));
+            d.set_key_value("filament_id", Box::new(slicer::config::ConfigOptionStrings::from_values(vec![id])));
+            items.push(d);
+        }
+        ext_info.push(items);
+    }
+    let usage: Vec<FilamentUsageType> = t.list_i32().into_iter().map(|v| usage_type(v as i64)).collect();
+    let n = t.u();
+    let mut print_time: UnorderedMapInt<UnorderedMapInt<f64>> = UnorderedMapInt::new();
+    for _ in 0..n {
+        let f = t.i() as i32;
+        let e = t.i() as i32;
+        let time = t.d();
+        *print_time.entry(f).entry(e) = time;
+    }
+    let n = t.u();
+    let mut loaded = Vec::new();
+    for _ in 0..n {
+        let mut l = NozzleLoadedFilamentInfo::default();
+        l.nozzle_id = t.i() as i32;
+        l.filament_id = t.text();
+        l.valid = t.b();
+        l.base.color = Color::from_hex_str(&t.text());
+        l.base.type_ = t.text();
+        l.base.is_support = t.b();
+        l.base.usage_type = usage_type(t.i());
+        l.base.diameter = t.f();
+        loaded.push(l);
+    }
+    let dynamic_reorder = t.b();
+    let sequential = t.b();
+    GroupPrint {
+        configs: RefCell::new(vec![Box::new(cfg)]),
+        calib,
+        ext_info,
+        usage,
+        print_time,
+        loaded,
+        dynamic_reorder,
+        sequential,
+        has_skirt: false,
+        objects: Vec::new(),
+        custom_gcodes: custom_g_code::Info::new(),
+        group: RefCell::new(None),
+        write_back: RefCell::new(None),
+    }
+}
+
+fn layer_filaments(t: &mut Toks) -> Vec<Vec<u32>> {
+    let n = t.u();
+    (0..n).map(|_| t.list_u32()).collect()
+}
+
+fn sets(t: &mut Toks) -> Vec<BTreeSet<i32>> {
+    let n = t.u();
+    (0..n).map(|_| t.list_i32().into_iter().collect()).collect()
+}
+
+/// write_group_inputs(): the physical and geometric unprintables, the unprintable volumes and the nozzle
+/// status as insertion steps.
+struct GroupInputs {
+    phys: Vec<BTreeSet<i32>>,
+    geom: Vec<BTreeSet<i32>>,
+    vols: BTreeMap<i32, BTreeSet<slicer::extruder::NozzleVolumeType>>,
+    status: UnorderedMapInt<i32>,
+    status_steps: Vec<(i32, i32)>,
+}
+
+fn status_map(steps: &[(i32, i32)]) -> UnorderedMapInt<i32> {
+    let mut m: UnorderedMapInt<i32> = UnorderedMapInt::new();
+    for &(k, v) in steps {
+        *m.entry(k) = v;
+    }
+    m
+}
+
+fn group_inputs(t: &mut Toks) -> GroupInputs {
+    let phys = sets(t);
+    let geom = sets(t);
+    let n = t.u();
+    let mut vols = BTreeMap::new();
+    for _ in 0..n {
+        let k = t.i() as i32;
+        let v: BTreeSet<slicer::extruder::NozzleVolumeType> =
+            t.list_i32().into_iter().map(slicer::extruder::NozzleVolumeType::from_i32).collect();
+        vols.insert(k, v);
+    }
+    let n = t.u();
+    let status_steps: Vec<(i32, i32)> = (0..n).map(|_| (t.i() as i32, t.i() as i32)).collect();
+    GroupInputs { phys, geom, vols, status: status_map(&status_steps), status_steps }
+}
+
+fn nozzles_installed(t: &mut Toks) -> Vec<NozzleInfo> {
+    let n = t.u();
+    (0..n)
+        .map(|_| {
+            let mut ni = NozzleInfo::default();
+            ni.diameter = t.text();
+            ni.volume_type = slicer::extruder::NozzleVolumeType::from_i32(t.i() as i32);
+            ni.extruder_id = t.i() as i32;
+            ni.group_id = t.i() as i32;
+            ni.installed = t.b();
+            ni
+        })
+        .collect()
+}
+
+fn dump_nozzles_installed(o: &mut Out, list: &[NozzleInfo]) {
+    o.i(list.len() as i64);
+    for n in list {
+        o.text(&n.diameter);
+        o.i(n.volume_type as i64);
+        o.i(n.extruder_id as i64);
+        o.i(n.group_id as i64);
+        o.i(n.installed as i64);
+    }
+}
+
+fn dump_sets(o: &mut Out, v: &[BTreeSet<i32>]) {
+    o.i(v.len() as i64);
+    for s in v {
+        o.list(&s.iter().copied().collect::<Vec<i32>>());
+    }
+}
+
+/// write_ctx() of gen.cpp
+fn dump_ctx(o: &mut Out, ctx: &FilamentGroupContext) {
+    let m = &ctx.model_info;
+    o.i(m.flush_matrix.len() as i64);
+    for fm in &m.flush_matrix {
+        o.i(fm.len() as i64);
+        for row in fm {
+            o.i(row.len() as i64);
+            for &v in row {
+                o.f(v);
+            }
+        }
+    }
+    o.i(m.layer_filaments.len() as i64);
+    for l in &m.layer_filaments {
+        o.list(l);
+    }
+    o.i(m.filament_info.len() as i64);
+    for f in &m.filament_info {
+        o.text(&f.color.to_hex_str(true));
+        o.text(&f.type_);
+        o.i(f.is_support as i64);
+        o.i(f.usage_type as i64);
+        o.f(f.diameter);
+    }
+    o.i(m.filament_ids.len() as i64);
+    for s in &m.filament_ids {
+        o.text(s);
+    }
+    o.i(m.selected_nozzle_diameters.len() as i64);
+    for s in &m.selected_nozzle_diameters {
+        o.text(s);
+    }
+    dump_sets(o, &m.unprintable_filaments);
+    o.i(m.unprintable_volumes.len() as i64);
+    for (k, v) in &m.unprintable_volumes {
+        o.i(*k as i64);
+        o.list(&v.iter().map(|&t| t as i32).collect::<Vec<i32>>());
+    }
+    let g = &ctx.group_info;
+    o.i(g.total_filament_num as i64);
+    o.d(g.max_gap_threshold);
+    o.i(g.mode as i64);
+    o.i(g.strategy as i64);
+    o.i(g.ignore_ext_filament as i64);
+    o.i(g.has_filament_switcher as i64);
+    o.list(&g.filament_volume_map);
+    let mi = &ctx.machine_info;
+    o.list(&mi.max_group_size);
+    o.i(mi.machine_filament_info.len() as i64);
+    for e in &mi.machine_filament_info {
+        o.i(e.len() as i64);
+        for f in e {
+            o.text(&f.color.to_hex_str(true));
+            o.text(&f.type_);
+            o.i(f.is_support as i64);
+            o.i(f.extruder_id as i64);
+            o.i(f.is_extended as i64);
+            o.text(&f.filament_id);
+        }
+    }
+    o.i(mi.nozzle_loaded_filaments.len() as i64);
+    o.list(&mi.prefer_non_model_filament.iter().map(|&b| b as i32).collect::<Vec<i32>>());
+    o.i(mi.master_extruder_id as i64);
+    let sp = &ctx.speed_info;
+    o.i(sp.filament_print_time.len() as i64);
+    for (k, v) in sp.filament_print_time.iter() {
+        o.i(k as i64);
+        o.i(v.len() as i64);
+        for (k2, v2) in v.iter() {
+            o.i(k2 as i64);
+            o.d(*v2);
+        }
+    }
+    o.d(sp.extruder_change_time);
+    o.d(sp.filament_change_time);
+    o.i(sp.group_with_time as i64);
+    o.f(sp.change_time_params.selector_load_time);
+    o.f(sp.change_time_params.selector_unload_time);
+    o.f(sp.change_time_params.standard_load_time);
+    o.f(sp.change_time_params.standard_unload_time);
+    o.i(sp.ams_preload_enabled.len() as i64);
+    let ni = &ctx.nozzle_info;
+    o.i(ni.extruder_nozzle_list.len() as i64);
+    for (k, v) in &ni.extruder_nozzle_list {
+        o.i(*k as i64);
+        o.list(v);
+    }
+    dump_nozzles_installed(o, &ni.nozzle_list);
+    o.i(ni.nozzle_status.len() as i64);
+    for (k, v) in ni.nozzle_status.iter() {
+        o.i(k as i64);
+        o.i(*v as i64);
+    }
+    o.list(&ni.per_nozzle_capacity);
+}
+
+/// write_group() of gen.cpp
+fn dump_group(o: &mut Out, r: &LayeredNozzleGroupResult) {
+    o.i(r.is_support_dynamic_nozzle_map() as i64);
+    o.i(r.is_handle_nozzle_as_extruder() as i64);
+    o.list(&r.get_used_filaments());
+    o.list(&r.get_extruder_map(true, -1));
+    o.list(&r.get_nozzle_map(-1));
+    o.list(&r.get_volume_map(-1));
+    o.i(r.get_layer_count() as i64);
+    for m in r.get_layer_filament_nozzle_maps() {
+        o.list(m);
+    }
+    o.i(r.get_layer_filament_sequences().len() as i64);
+    for s in r.get_layer_filament_sequences() {
+        o.list(s);
+    }
+    for f in r.get_used_filaments() {
+        match r.get_nozzle_for_filament(f as i32, -1) {
+            Some(n) => {
+                o.s("N");
+                o.text(&n.diameter);
+                o.i(n.volume_type as i64);
+                o.i(n.extruder_id as i64);
+                o.i(n.group_id as i64);
+                o.i(n.installed as i64);
+            }
+            None => o.s("-"),
+        }
+    }
+}
+
+/// write_build_print() of gen.cpp: `has_skirt` and the hand-built objects.
+fn build_objects(t: &mut Toks) -> (bool, Vec<ToolOrderingObject>) {
+    let has_skirt = t.b();
+    let nobj = t.u();
+    let mut objects = Vec::new();
+    for key in 0..nobj {
+        let support_filament = t.i() as u32;
+        let support_interface_filament = t.i() as u32;
+        let support_interface_not_for_body = t.b();
+        let flush_into_objects = t.b();
+        let flush_into_infill = t.b();
+        let flush_into_support = t.b();
+        let line_width = t.d();
+        let layer_height = t.d();
+        let has_brim = t.b();
+        let nreg = t.u();
+        let nl = t.u();
+        let mut layers = Vec::new();
+        for _ in 0..nl {
+            let id = t.u();
+            let print_z = t.d();
+            let height = t.d();
+            let has_extrusions = t.b();
+            let nr = t.u();
+            let mut regions = Vec::new();
+            for _ in 0..nr {
+                let mut rc = slicer::region_config::PrintRegionConfig::default();
+                rc.wall_filament = t.u();
+                rc.sparse_infill_filament = t.u();
+                rc.solid_infill_filament = t.u();
+                let perimeters = coll(t);
+                let fills = coll(t);
+                let raw_slices = expolys(t);
+                let slices_empty = t.b();
+                regions.push(ToolOrderingLayerRegion {
+                    region: slicer::print_region::PrintRegion::new(rc),
+                    gradient_volume_id: None,
+                    perimeters,
+                    fills,
+                    raw_slices,
+                    slices_empty,
+                    adaptive_merge_patches: Vec::new(),
+                });
+            }
+            layers.push(ToolOrderingLayer { id, print_z, height, has_extrusions, regions });
+        }
+        let ns = t.u();
+        let mut support_layers = Vec::new();
+        for _ in 0..ns {
+            let print_z = t.d();
+            let support_fills = coll(t);
+            let planned_filament_id = t.i() as i32;
+            let planned_interface_filament_id = t.i() as i32;
+            support_layers.push(ToolOrderingSupportLayer { print_z, support_fills, planned_filament_id, planned_interface_filament_id });
+        }
+        objects.push(ToolOrderingObject {
+            key,
+            layers,
+            support_layers,
+            raft_layers: 0,
+            max_layer_height_inputs: ObjectMaxLayerHeightInputs {
+                single_diameter_layering_nozzle: 0.0,
+                slicing_max_layer_height: 0.0,
+                layer_height,
+            },
+            printing_region_bridge_flows: vec![1.0; nreg],
+            support_filament,
+            support_interface_filament,
+            support_interface_not_for_body,
+            flush_into_objects,
+            flush_into_infill,
+            flush_into_support,
+            line_width,
+            has_brim,
+        });
+    }
+    (has_skirt, objects)
+}
+
+/// write_sorted() of gen.cpp
+fn dump_sorted(o: &mut Out, print: &GroupPrint, to: &ToolOrdering, orig: &ToolOrderingPrintConfig) {
+    dump_build(o, to);
+    dump_group(o, &to.nozzle_group_result);
+    for mode in [FilamentChangeMode::SingleExt, FilamentChangeMode::MultiExtCurr, FilamentChangeMode::MultiExtBest] {
+        let s = to.get_filament_change_stats(mode);
+        o.i(s.filament_flush_weight as i64);
+        o.i(s.flush_filament_change_count as i64);
+        o.i(s.filament_change_count as i64);
+    }
+    o.i(to.get_most_used_extruder() as i32 as i64);
+    let g = print.get_layered_nozzle_group_result();
+    o.i(g.is_some() as i64);
+    if let Some(g) = &g {
+        dump_group(o, g);
+    }
+    if !print.is_sequential_print() {
+        // What the chain handed to Print::update_filament_maps_to_config or
+        // update_to_config_by_nozzle_group_result; when it returned before the write-back, what the
+        // generator derives from the configuration and the group result.
+        if let Some(rec) = print.write_back.borrow().as_ref() {
+            for tok in rec {
+                o.s(tok.clone());
+            }
+        } else {
+            let lf: Vec<Vec<u32>> = to.layer_tools().iter().map(|lt| lt.extruders.clone()).collect();
+            let used = slicer::filament_group::collect_sorted_used_filaments(&lf);
+            let gr = &to.nozzle_group_result;
+            if !gr.is_support_dynamic_nozzle_map() {
+                o.s("M");
+                o.list(&slicer::filament_group_utils::update_used_filament_values(&ints_of(orig, "filament_map"), &gr.get_extruder_map(false, -1), &used));
+                o.list(&slicer::filament_group_utils::update_used_filament_values(&ints_of(orig, "filament_volume_map"), &gr.get_volume_map(-1), &used));
+                let keep = orig.opt_bool("handle_hotend_as_extruder")
+                    && orig.option("filament_map_mode").and_then(|x| x.get_int().ok()).expect("filament_map_mode") == FilamentMapMode::FmmNozzleManual as i32;
+                o.list(&if keep { ints_of(orig, "filament_nozzle_map") } else { gr.get_nozzle_map(-1) });
+            } else {
+                o.s("G");
+            }
+        }
+    }
+}
+
 /// Runs one line; `Some((got, want))` when they differ.
 fn run_line(line: &str) -> Option<(String, String)> {
     let (inp, want) = line.split_once(" => ").expect("=>");
@@ -870,80 +1492,7 @@ fn run_line(line: &str) -> Option<(String, String)> {
         }
         "build" => {
             let cfg = t.cfg();
-            let has_skirt = t.b();
-            let nobj = t.u();
-            let mut objects = Vec::new();
-            for key in 0..nobj {
-                let support_filament = t.i() as u32;
-                let support_interface_filament = t.i() as u32;
-                let support_interface_not_for_body = t.b();
-                let flush_into_objects = t.b();
-                let flush_into_infill = t.b();
-                let flush_into_support = t.b();
-                let line_width = t.d();
-                let layer_height = t.d();
-                let has_brim = t.b();
-                let nreg = t.u();
-                let nl = t.u();
-                let mut layers = Vec::new();
-                for _ in 0..nl {
-                    let id = t.u();
-                    let print_z = t.d();
-                    let height = t.d();
-                    let has_extrusions = t.b();
-                    let nr = t.u();
-                    let mut regions = Vec::new();
-                    for _ in 0..nr {
-                        let mut rc = slicer::region_config::PrintRegionConfig::default();
-                        rc.wall_filament = t.u();
-                        rc.sparse_infill_filament = t.u();
-                        rc.solid_infill_filament = t.u();
-                        let perimeters = coll(&mut t);
-                        let fills = coll(&mut t);
-                        let raw_slices = expolys(&mut t);
-                        let slices_empty = t.b();
-                        regions.push(ToolOrderingLayerRegion {
-                            region: slicer::print_region::PrintRegion::new(rc),
-                            gradient_volume_id: None,
-                            perimeters,
-                            fills,
-                            raw_slices,
-                            slices_empty,
-                            adaptive_merge_patches: Vec::new(),
-                        });
-                    }
-                    layers.push(ToolOrderingLayer { id, print_z, height, has_extrusions, regions });
-                }
-                let ns = t.u();
-                let mut support_layers = Vec::new();
-                for _ in 0..ns {
-                    let print_z = t.d();
-                    let support_fills = coll(&mut t);
-                    let planned_filament_id = t.i() as i32;
-                    let planned_interface_filament_id = t.i() as i32;
-                    support_layers.push(ToolOrderingSupportLayer { print_z, support_fills, planned_filament_id, planned_interface_filament_id });
-                }
-                objects.push(ToolOrderingObject {
-                    key,
-                    layers,
-                    support_layers,
-                    raft_layers: 0,
-                    max_layer_height_inputs: ObjectMaxLayerHeightInputs {
-                        single_diameter_layering_nozzle: 0.0,
-                        slicing_max_layer_height: 0.0,
-                        layer_height,
-                    },
-                    printing_region_bridge_flows: vec![1.0; nreg],
-                    support_filament,
-                    support_interface_filament,
-                    support_interface_not_for_body,
-                    flush_into_objects,
-                    flush_into_infill,
-                    flush_into_support,
-                    line_width,
-                    has_brim,
-                });
-            }
+            let (has_skirt, objects) = build_objects(&mut t);
             let first = t.i() as u32;
             let prime = t.b();
             let print = BuildPrint { config: cfg.clone(), has_skirt, objects, custom_gcodes: custom_g_code::Info::new() };
@@ -956,6 +1505,164 @@ fn run_line(line: &str) -> Option<(String, String)> {
                 let (to, out) = ToolOrdering::from_object(object, &print, first, prime);
                 dump_build(&mut o, &to);
                 dump_outputs(&mut o, &out);
+            }
+        }
+        "build_manual_nozzle_map" => {
+            let cfg = t.cfg();
+            let mut list = nozzles_installed(&mut t);
+            let used = t.list_u32();
+            let mode = FilamentMapMode::from_i32(t.i() as i32);
+            let ams_idx = t.i() as i32;
+            let ams_cap = t.i() as i32;
+            let nf = t.u();
+            let map = group_reorder::build_manual_nozzle_map(&cfg, &mut list, &used, mode, ams_idx, ams_cap, nf);
+            o.list(&map);
+            dump_nozzles_installed(&mut o, &list);
+        }
+        "build_filament_group_context" => {
+            let cfg = t.cfg();
+            let print = group_print(&mut t, cfg);
+            let lf = layer_filaments(&mut t);
+            let inp = group_inputs(&mut t);
+            let mode = FilamentMapMode::from_i32(t.i() as i32);
+            match group_reorder::build_filament_group_context(&print, &lf, &inp.phys, &inp.geom, &inp.vols, mode, &inp.status) {
+                Ok(ctx) => {
+                    o.s("ok");
+                    dump_ctx(&mut o, &ctx);
+                }
+                Err(e) => {
+                    o.s("ERR");
+                    o.text(&e.to_string());
+                }
+            }
+        }
+        "get_recommended_filament_maps" => {
+            let cfg = t.cfg();
+            let print = group_print(&mut t, cfg);
+            let lf = layer_filaments(&mut t);
+            let inp = group_inputs(&mut t);
+            let mode = FilamentMapMode::from_i32(t.i() as i32);
+            match ToolOrdering::get_recommended_filament_maps(&print, &lf, mode, &inp.phys, &inp.geom, &inp.vols, &inp.status) {
+                Ok(r) => {
+                    o.s("ok");
+                    dump_group(&mut o, &r);
+                }
+                Err(e) => {
+                    o.s("ERR");
+                    o.text(&e.to_string());
+                }
+            }
+        }
+        "refine_groups_by_Nozzle_State" => {
+            use slicer::multi_nozzle_utils::CreateFromNozzleMap;
+            let cfg = t.cfg();
+            let print = group_print(&mut t, cfg);
+            let lf = layer_filaments(&mut t);
+            let inp = group_inputs(&mut t);
+            let gmap = t.list_i32();
+            let handle = t.b();
+            let n = t.u();
+            let ns: Vec<(i32, i32)> = (0..n).map(|_| (t.i() as i32, t.i() as i32)).collect();
+            let ctx = group_reorder::build_filament_group_context(&print, &lf, &inp.phys, &inp.geom, &inp.vols, FilamentMapMode::FmmAutoForFlush, &inp.status)
+                .expect("the generator wrote the line after the context was built");
+            let used = slicer::filament_group::collect_sorted_used_filaments(&lf);
+            let group = <LayeredNozzleGroupResult as CreateFromNozzleMap>::create(&gmap, &ctx.nozzle_info.nozzle_list, &used, handle)
+                .expect("the generator wrote the line after the group was created");
+            let r = refine_groups_by_nozzle_state(&ctx, &group, &status_map(&ns));
+            dump_group(&mut o, &r);
+        }
+        "plan_filament_mapping_and_order_by_combo_ranges" => {
+            let cfg = t.cfg();
+            let print = group_print(&mut t, cfg);
+            let lf = layer_filaments(&mut t);
+            let inp = group_inputs(&mut t);
+            let reorder_first = t.b();
+            let n = t.u();
+            let calls: Vec<(i32, i32, i32)> = (0..n).map(|_| (t.i() as i32, t.i() as i32, t.i() as i32)).collect();
+            let cur_ext = t.i() as i32;
+            let ctx = group_reorder::build_filament_group_context(&print, &lf, &inp.phys, &inp.geom, &inp.vols, FilamentMapMode::FmmAutoForFlush, &inp.status)
+                .expect("the generator wrote the line after the context was built");
+            let mut to = ToolOrdering::cpp_default();
+            for l in &lf {
+                let mut lt = LayerTools::new(0.2 * (to.layer_tools().len() + 1) as f64);
+                lt.extruders = l.clone();
+                to.layer_tools_mut().push(lt);
+            }
+            let octx = to.prepare_ordering_context(print.config(), reorder_first);
+            let mut rec = NozzleStatusRecorder::new();
+            for &(nozzle, filament, extruder) in &calls {
+                rec.set_nozzle_status(nozzle, filament, extruder);
+            }
+            rec.set_current_extruder_id(cur_ext);
+            let _ = &inp.status_steps;
+            match plan_filament_mapping_and_order_by_combo_ranges(&print, &ctx, &octx, FilamentMapMode::FmmAutoForFlush, &inp.phys, &inp.geom, &inp.vols, Some(&mut rec)) {
+                Ok(res) => {
+                    o.s("ok");
+                    o.i(res.len() as i64);
+                    for r in &res {
+                        o.list(&r.fil_order);
+                        o.list(&r.fil_nozzle_match);
+                    }
+                    // write_recorder
+                    o.i(rec.get_current_extruder_id() as i64);
+                    o.i(rec.get_nozzle_filament_map().len() as i64);
+                    for (k, v) in rec.get_nozzle_filament_map().iter() {
+                        o.i(k as i64);
+                        o.i(*v as i64);
+                    }
+                    o.i(rec.get_extruder_nozzle_map().len() as i64);
+                    for (k, v) in rec.get_extruder_nozzle_map().iter() {
+                        o.i(k as i64);
+                        o.i(*v as i64);
+                    }
+                }
+                Err(e) => {
+                    o.s("ERR");
+                    o.text(&e.to_string());
+                }
+            }
+        }
+        "sorted_build" => {
+            let cfg = t.cfg();
+            let start = t.i;
+            let mut make = |t: &mut Toks| -> GroupPrint {
+                t.i = start;
+                let mut print = group_print(t, cfg.clone());
+                let (has_skirt, objects) = build_objects(t);
+                print.has_skirt = has_skirt;
+                print.objects = objects;
+                print
+            };
+            let print = make(&mut t);
+            let print2 = make(&mut t);
+            let first = t.i() as u32;
+            let prime = t.b();
+            {
+                let (mut to, _) = ToolOrdering::from_print(&print, ToolOrderingConfigPtr(Arc::new(cfg.clone())), first, prime);
+                match SortAndBuildData::<&dyn ToolOrderingPrintObjects>::sort_and_build_data(&mut to, &print, first, prime) {
+                    Ok(()) => {
+                        o.s("ok");
+                        dump_sorted(&mut o, &print, &to, &cfg);
+                    }
+                    Err(e) => {
+                        o.s("ERR");
+                        o.text(&e.to_string());
+                    }
+                }
+            }
+            {
+                let object = &print2.objects[0];
+                let (mut to, _) = ToolOrdering::from_object(object, &print2, first, prime);
+                match SortAndBuildData::<(&ToolOrderingObject, &dyn ToolOrderingPrintObjects)>::sort_and_build_data(&mut to, (object, &print2), first, prime) {
+                    Ok(()) => {
+                        o.s("ok");
+                        dump_sorted(&mut o, &print2, &to, &cfg);
+                    }
+                    Err(e) => {
+                        o.s("ERR");
+                        o.text(&e.to_string());
+                    }
+                }
             }
         }
         _ => panic!("unknown op {op}"),

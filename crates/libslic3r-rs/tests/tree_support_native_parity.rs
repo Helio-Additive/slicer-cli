@@ -9,6 +9,13 @@
 //! and `tree_support_node_disk`. The lines of the vectors that start with "in" are the inputs (the
 //! configuration keys, the layers, the arguments), which this test reads back; every other line it has
 //! to reproduce.
+//!
+//! The scenarios from 4 on reach the branches of `generate_contact_points` and `drop_nodes` the first four
+//! leave out (branches that land on the object, build plate only, the strong style, big flat and thin
+//! plate overhangs of the hybrid style, expanded supports, sharp tails, islands of two nodes, more than a
+//! hundred layers, a raft without a top gap, enforcer points). Their long lines are in the vectors as "#"
+//! and the FNV-1a hash of the text; `TREE_SUPPORT_PARITY_VECTORS` names a file the generator wrote with
+//! every line in full (`gen <file> full`), for finding the first token that differs.
 
 use slicer::config::{
     ConfigBase, ConfigOptionInts, ConfigOptionResolver, ConfigOptionStrings, ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule,
@@ -90,6 +97,9 @@ impl<'a> Tok<'a> {
     fn b(&mut self) -> bool {
         self.s() == "1"
     }
+    fn f(&mut self) -> f32 {
+        f32::from_bits(u32::from_str_radix(self.s(), 16).expect("float"))
+    }
     fn poly(&mut self) -> Polygon {
         let n = self.i();
         let mut p = Polygon::new();
@@ -121,6 +131,18 @@ struct Run {
     pos: usize,
     lines: Vec<String>,
     surplus: usize,
+    /// The vectors carry every line in full ("in mode full").
+    full: bool,
+}
+
+/// gen.cpp `fnv(s)`
+fn fnv(s: &str) -> String {
+    let mut h: u64 = 1469598103934665603;
+    for c in s.bytes() {
+        h ^= c as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    format!("{h:016x}")
 }
 impl Run {
     /// The next input line when it is the input `prefix`; it is echoed. The results produced since the
@@ -144,6 +166,14 @@ impl Run {
     }
     fn out(&mut self, s: String) {
         self.lines.push(s);
+    }
+    /// gen.cpp `outb(head, body, hashed)`
+    fn outb(&mut self, head: String, body: String, hashed: bool) {
+        if hashed && !self.full {
+            self.lines.push(format!("{head} #{}", fnv(&body)));
+        } else {
+            self.lines.push(format!("{head} {body}"));
+        }
     }
 }
 
@@ -332,17 +362,90 @@ fn node_s(nodes: &[SupportNode], id: NodeId) -> String {
 }
 
 /// gen.cpp `dump_nodes(tag, contact_nodes)`
-fn dump_nodes(r: &mut Run, tag: &str, nodes: &[SupportNode], contact_nodes: &[Vec<NodeId>]) {
+fn dump_nodes(r: &mut Run, tag: &str, nodes: &[SupportNode], contact_nodes: &[Vec<NodeId>], hashed: bool) {
     for (layer_nr, layer) in contact_nodes.iter().enumerate() {
         if layer.is_empty() {
             continue;
         }
         let mut lines: Vec<String> = layer.iter().map(|&n| node_s(nodes, n)).collect();
         lines.sort();
+        if hashed && !r.full {
+            let mut all = String::new();
+            for l in &lines {
+                all += l;
+                all.push('\n');
+            }
+            r.out(format!("{tag} layer {} {} #{}", layer_nr, lines.len(), fnv(&all)));
+            continue;
+        }
         r.out(format!("{tag} layer {} {}", layer_nr, lines.len()));
         for l in lines {
             r.out(format!("{tag} node {l}"));
         }
+    }
+}
+
+/// gen.cpp `BBOX(b)`
+fn bbox_s(b: &BoundingBox) -> String {
+    format!("{} {} {}", hb(b.is_defined()), pt(&b.min), pt(&b.max))
+}
+
+/// gen.cpp `AREA_GROUPS(l)`
+fn area_groups_s(l: &slicer::print::faithful::SupportLayer) -> String {
+    let mut o = format!("{}", l.area_groups.len());
+    for g in &l.area_groups {
+        o += &format!(
+            " {} {} {} {} {} {} {} {}",
+            g.type_,
+            g.area,
+            g.interface_id,
+            hd(g.dist_to_top),
+            hb(g.need_infill),
+            hb(g.need_extra_wall),
+            hb(g.need_cooling),
+            hd(g.line_width)
+        );
+    }
+    o
+}
+
+/// gen.cpp `dump_support_layers(tag, obj)`
+fn dump_support_layers(r: &mut Run, tag: &str, obj: &PrintObject) {
+    let layers = obj.support_layers();
+    r.out(format!("{tag} {}", layers.len()));
+    for (i, sl) in layers.iter().enumerate() {
+        let mut body = format!(
+            "base {} roof {} roof1 {} floor {} gap {} islands {} bboxes {}",
+            expolys_s(&sl.base_areas),
+            expolys_s(&sl.roof_areas),
+            expolys_s(&sl.roof_1st_layer),
+            expolys_s(&sl.floor_areas),
+            expolys_s(&sl.roof_gap_areas),
+            expolys_s(&sl.support_islands),
+            sl.layer.lslices_bboxes.len()
+        );
+        for b in &sl.layer.lslices_bboxes {
+            body += &format!(" {}", bbox_s(b));
+        }
+        body += &format!(" groups {}", area_groups_s(sl));
+        let id_of = |idx: Option<usize>| idx.map(|i| layers[i].layer.id() as i64).unwrap_or(-1);
+        r.outb(
+            format!(
+                "{tag} layer {} {} {} {} {} {} {} {} {} {}",
+                i,
+                sl.layer.id(),
+                sl.interface_id(),
+                hd(sl.layer.print_z),
+                hd(sl.layer.height),
+                hd(sl.layer.slice_z),
+                id_of(sl.layer.lower_layer_id),
+                id_of(sl.layer.upper_layer_id),
+                hd(sl.base_slab_height),
+                hd(sl.interface_slab_height)
+            ),
+            body,
+            true,
+        );
     }
 }
 
@@ -418,6 +521,8 @@ fn run_helpers(r: &mut Run) {
 /// gen.cpp `run_scenario(scenario)`
 fn run_scenario(r: &mut Run, scenario: usize) {
     let s = format!("s{scenario}");
+    // gen.cpp `FIRST_HASHED`: the long lines of this scenario are hashed.
+    let h = scenario >= 4;
     let line = r.input(&format!("in {s} model")).expect("model");
     let mut t = Tok::new(&line);
     let (sx, sy, sz, ix, iy) = (t.i() as f64, t.i() as f64, t.i() as f64, t.i() as f64, t.i() as f64);
@@ -516,36 +621,40 @@ fn run_scenario(r: &mut Run, scenario: usize) {
         let d = &ts.m_ts_data;
         r.out(format!("{s} data {} {} {} {}", hd(d.m_xy_distance), hd(d.m_radius_sample_resolution), hd(d.branch_scale_factor), d.m_layer_outlines.len()));
         for l in [0, 9, 10, 20, n_layers - 12, n_layers - 1] {
-            r.out(format!(
-                "{s} outline {} {} {} {} {} {}",
-                l,
-                hd(d.m_max_move_distances[l]),
-                expolys_s(&d.m_layer_outlines[l]),
-                expolys_s(&d.m_layer_outlines_below[l]),
-                polys_s(&d.get_contours(l)),
-                polys_s(&d.get_contours_with_holes(l))
-            ));
+            r.outb(
+                format!("{s} outline {} {}", l, hd(d.m_max_move_distances[l])),
+                format!(
+                    "{} {} {} {}",
+                    expolys_s(&d.m_layer_outlines[l]),
+                    expolys_s(&d.m_layer_outlines_below[l]),
+                    polys_s(&d.get_contours(l)),
+                    polys_s(&d.get_contours_with_holes(l))
+                ),
+                h,
+            );
         }
         for radius in [0., 0.1, 0.2, 0.25, 0.4, 0.45000000000000001, 1.3, 2.0000001, 5.55] {
             r.out(format!("{s} ceil_radius {} {}", hd(radius), hd(d.ceil_radius(radius))));
         }
         for radius in [0., 0.4, 1.3] {
             for l in [0, 3, 11, n_layers - 13, n_layers - 12, n_layers - 2] {
-                r.out(format!("{s} collision {} {} {}", hd(radius), l, expolys_s(&d.get_collision(radius, l))));
+                r.outb(format!("{s} collision {} {}", hd(radius), l), expolys_s(&d.get_collision(radius, l)), h);
             }
         }
         for radius in [0.4, 2.] {
             for l in [0, 5, n_layers - 13, n_layers - 12] {
-                r.out(format!(
-                    "{s} avoidance {} {} {} {}",
-                    hd(radius),
-                    l,
-                    expolys_s(&d.get_avoidance(radius, l, 0)),
-                    expolys_s(&ts.get_avoidance(radius, l))
-                ));
+                r.outb(
+                    format!("{s} avoidance {} {}", hd(radius), l),
+                    format!("{} {}", expolys_s(&d.get_avoidance(radius, l, 0)), expolys_s(&ts.get_avoidance(radius, l))),
+                    h,
+                );
             }
         }
-        r.out(format!("{s} collision_polys {} {}", polys_s(&ts.get_collision_polys(0.4, 3)), expolys_s(&ts.get_collision(0.4, 3))));
+        r.outb(
+            format!("{s} collision_polys"),
+            format!("{} {}", polys_s(&ts.get_collision_polys(0.4, 3)), expolys_s(&ts.get_collision(0.4, 3))),
+            h,
+        );
     }
 
     // The radii of a branch.
@@ -579,7 +688,7 @@ fn run_scenario(r: &mut Run, scenario: usize) {
         for clamp in [false, true] {
             let mut collision: ExPolygons = (*ts.get_collision(0., l)).clone();
             ts.union_outlines_within_top_z(&mut collision, l, clamp);
-            r.out(format!("{s} union_outlines_within_top_z {} {} {}", l, hb(clamp), expolys_s(&collision)));
+            r.outb(format!("{s} union_outlines_within_top_z {} {}", l, hb(clamp)), expolys_s(&collision), h);
         }
     }
     r.out(format!("{s} support_flare_step_width {} {}", hd(ts.support_flare_step_width(3.2, 0.2)), hd(ts.support_flare_step_width(0.2, 0.2))));
@@ -594,9 +703,26 @@ fn run_scenario(r: &mut Run, scenario: usize) {
         r.out(line);
     }
     ts.m_ts_data.is_slim = ts.is_slim;
+    // The enforcer points detect_overhangs() collects.
+    if h {
+        let line = r.input(&format!("in {s} enforcer_points")).expect("enforcer_points");
+        let mut t = Tok::new(&line);
+        let n = t.i();
+        for _ in 0..n {
+            let pt = [t.f(), t.f(), t.f()];
+            let normal = [t.f(), t.f(), t.f()];
+            ts.m_vertical_enforcer_points.push((pt, normal));
+        }
+    }
     ts.generate_contact_points();
-    r.out(format!("{s} contact_points {} {} {}", ts.contact_nodes.len(), ts.avg_node_per_layer, ts.m_ts_data.contact_nodes.len()));
-    dump_nodes(r, &format!("{s} contact"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes);
+    r.out(format!(
+        "{s} contact_points {} {} {}{}",
+        ts.contact_nodes.len(),
+        ts.avg_node_per_layer,
+        ts.m_ts_data.contact_nodes.len(),
+        if h { format!(" {}", hf(ts.nodes_angle)) } else { String::new() }
+    ));
+    dump_nodes(r, &format!("{s} contact"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes, h);
 
     ts.m_ts_data.layer_heights = ts.plan_layer_heights();
     {
@@ -621,14 +747,14 @@ fn run_scenario(r: &mut Run, scenario: usize) {
         }
         r.out(line);
     }
-    dump_nodes(r, &format!("{s} planned"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes);
+    dump_nodes(r, &format!("{s} planned"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes, h);
 
     ts.drop_nodes();
     r.out(format!("{s} dropped {} {}", ts.m_ts_data.contact_nodes.len(), hd(SupportNode::diameter_angle_scale_factor())));
-    dump_nodes(r, &format!("{s} drop"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes);
+    dump_nodes(r, &format!("{s} drop"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes, h);
 
     ts.smooth_nodes();
-    dump_nodes(r, &format!("{s} smooth"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes);
+    dump_nodes(r, &format!("{s} smooth"), &ts.m_ts_data.contact_nodes, &ts.contact_nodes, h);
 
     // insert_dropped_node: a node already in the layer, and one that is not.
     for layer_nr in 0..ts.contact_nodes.len() - 1 {
@@ -673,17 +799,56 @@ fn run_scenario(r: &mut Run, scenario: usize) {
                     })
                     .collect();
                 lines.sort();
-                for l in lines {
-                    r.out(format!("{s} disk {layer_nr} {l}"));
+                if h && !r.full {
+                    let mut all = String::new();
+                    for l in &lines {
+                        all += l;
+                        all.push('\n');
+                    }
+                    r.out(format!("{s} disk {layer_nr} {} #{}", lines.len(), fnv(&all)));
+                } else {
+                    for l in lines {
+                        r.out(format!("{s} disk {layer_nr} {l}"));
+                    }
                 }
                 done += 1;
             }
             layer_nr += 7;
         }
     }
+
+    // The support areas: the steps of TreeSupport::generate() after smooth_nodes() (no plan to fold the nodes by).
+    ts.draw_circles();
+    dump_support_layers(r, &format!("{s} draw_circles"), ts.m_object);
+    {
+        let mut zs: Vec<(f64, usize)> = ts.print_z_to_lightninglayer.iter().map(|(k, v)| (f64::from_bits(*k), *v)).collect();
+        zs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mut line = format!("{s} lightning {}", zs.len());
+        for z in &zs {
+            line += &format!(" {} {}", hd(z.0), z.1);
+        }
+        r.out(line);
+        // The generator of the lightning infill is not made here: what draw_circles() hands its constructor
+        // (Fill/Lightning/Generator.cpp:99-130: the radius of the density, the overhangs).
+        if let Some(line) = r.input(&format!("in {s} lightning_width")) {
+            let m_infill_extrusion_width = Tok::new(&line).f();
+            let density = ts.lightning_support_density.max(0.15);
+            let m_supporting_radius = ((m_infill_extrusion_width / density) as i64).max((0.05 / slicer::libslic3r::SCALING_FACTOR) as i64);
+            let mut body = format!("{} {}", m_supporting_radius, ts.lightning_overhangs.len());
+            for polys in &ts.lightning_overhangs {
+                body += &format!(" {}", polys_s(polys));
+            }
+            r.outb(format!("{s} lightning_generator"), body, true);
+        }
+    }
 }
 
 fn read_vectors() -> Vec<String> {
+    // A diagnostic: a file of the generator with every line in full.
+    if let Ok(path) = std::env::var("TREE_SUPPORT_PARITY_VECTORS") {
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        return text.lines().map(|l| l.to_string()).collect();
+    }
     let path = format!("{}/tests/data/tree_support/vectors.txt.gz", env!("CARGO_MANIFEST_DIR"));
     let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     let mut text = String::new();
@@ -693,10 +858,21 @@ fn read_vectors() -> Vec<String> {
 
 #[test]
 fn tree_support_native_parity() {
-    let mut r = Run { expected: read_vectors(), pos: 0, lines: Vec::new(), surplus: 0 };
-    run_helpers(&mut r);
-    for scenario in 0..4 {
-        run_scenario(&mut r, scenario);
+    let mut r = Run { expected: read_vectors(), pos: 0, lines: Vec::new(), surplus: 0, full: false };
+    r.full = r.input("in mode").expect("mode") == "full";
+    // A diagnostic: one scenario only, of a file the generator wrote for that scenario.
+    let only: Option<usize> = std::env::var("TREE_SUPPORT_PARITY_ONLY").ok().and_then(|v| v.parse().ok());
+    if only.is_none() {
+        run_helpers(&mut r);
+    }
+    match only {
+        Some(scenario) => run_scenario(&mut r, scenario),
+        // gen.cpp `NUM_SCENARIOS`
+        None => {
+            for scenario in 0..45 {
+                run_scenario(&mut r, scenario);
+            }
+        }
     }
     // A diagnostic: the lines this test produced, written where TREE_SUPPORT_PARITY_DUMP names a file.
     if let Ok(path) = std::env::var("TREE_SUPPORT_PARITY_DUMP") {

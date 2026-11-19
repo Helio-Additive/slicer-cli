@@ -29,7 +29,6 @@ use crate::geometry::{
     get_extents_expoly, turn90_ccw, BoundingBox, ExPolygon, ExPolygons, Line, Lines, Point, Polygon,
     Polygons,
 };
-use crate::minimum_spanning_tree::MinimumSpanningTree;
 use crate::{Coord, CoordF};
 use crate::config::{ConfigOption, ConfigOptionFloat, ConfigOptionResolver};
 use crate::layer::Layer;
@@ -327,6 +326,220 @@ pub fn projection_onto(polygons: &[ExPolygon], from: &Point) -> Point {
         }
     }
     projected_pt
+}
+
+// ============================================================================
+// The ClipperUtils.cpp / ClipperUtils.hpp overloads the functions below call, each on the building blocks
+// of `crate::clipper_utils` (`_clipper_ex`, `expolygons_offset_pt`, ... over the ClipperLib port
+// `crate::clipper`), named after the C++ argument types. Which overload a call resolves to matters:
+// `offset_ex({expolygon}, delta)` is the overload of one ExPolygon, not the one of ExPolygons.
+// ============================================================================
+mod cx {
+    use crate::clipper::{ClipType, EndType, IntPoint, JoinType, Path, Paths, PolyFillType, PolyTree};
+    use crate::clipper_utils as u;
+    use crate::clipper_utils::ApplySafetyOffset;
+    use crate::geometry::{BoundingBox, ExPolygon, ExPolygons, Point, Polygon, Polygons, Polyline, Polylines};
+
+    const NON_ZERO: PolyFillType = PolyFillType::pftNonZero;
+    /// ClipperUtils.hpp:31 `DefaultJoinType = jtMiter`
+    pub const DEFAULT_JOIN_TYPE: JoinType = JoinType::jtMiter;
+    /// ClipperUtils.hpp:37 `DefaultMiterLimit = 3.`
+    pub const DEFAULT_MITER_LIMIT: f64 = 3.;
+
+    fn path_of(points: &[Point]) -> Path {
+        points.iter().map(|p| IntPoint::new(p.x as _, p.y as _)).collect()
+    }
+    fn points_of(path: &Path) -> Vec<Point> {
+        path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()
+    }
+    /// `ClipperUtils::PolygonsProvider`
+    pub fn polygons_provider(polygons: &[Polygon]) -> Paths {
+        polygons.iter().map(|p| path_of(&p.points)).collect()
+    }
+    /// `ClipperUtils::ExPolygonsProvider` / `ExPolygonProvider`: per expolygon its contour, then its holes.
+    pub fn expolygons_provider(expolygons: &[ExPolygon]) -> Paths {
+        let mut out = Paths::new();
+        for expoly in expolygons {
+            out.push(path_of(&expoly.contour.points));
+            for hole in &expoly.holes {
+                out.push(path_of(&hole.points));
+            }
+        }
+        out
+    }
+    /// `ClipperUtils::PolylinesProvider`
+    pub fn polylines_provider(polylines: &[Polyline]) -> Paths {
+        polylines.iter().map(|p| path_of(&p.points)).collect()
+    }
+    /// ClipperUtils.cpp `Polygons to_polygons(ClipperLib::Paths &&paths)`
+    pub fn to_polygons(paths: &Paths) -> Polygons {
+        paths.iter().map(|p| Polygon::from_points(points_of(p))).collect()
+    }
+    fn to_polylines_of_paths(paths: &Paths) -> Polylines {
+        paths.iter().map(|p| Polyline::from_points(points_of(p))).collect()
+    }
+    fn expolygon_paths(expolygons: &[ExPolygon]) -> Vec<(Path, Paths)> {
+        expolygons.iter().map(|e| (path_of(&e.contour.points), e.holes.iter().map(|h| path_of(&h.points)).collect())).collect()
+    }
+
+    /// ClipperUtils.cpp:755 `diff_ex(const ExPolygons &subject, const ExPolygons &clip)`
+    pub fn diff_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+        u::_clipper_ex(ClipType::ctDifference, &expolygons_provider(subject), &expolygons_provider(clip), ApplySafetyOffset::No, NON_ZERO)
+    }
+    /// ClipperUtils.cpp:753 `diff_ex(const ExPolygons &subject, const Polygons &clip)`
+    pub fn diff_ex_polygons(subject: &[ExPolygon], clip: &[Polygon]) -> ExPolygons {
+        u::_clipper_ex(ClipType::ctDifference, &expolygons_provider(subject), &polygons_provider(clip), ApplySafetyOffset::No, NON_ZERO)
+    }
+    /// ClipperUtils.cpp:802 `intersection_ex(const ExPolygons &subject, const ExPolygons &clip)` and
+    /// ClipperUtils.cpp:798 `intersection_ex(const ExPolygons &subject, const ExPolygon &clip)` on a slice of one.
+    pub fn intersection_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+        u::_clipper_ex(ClipType::ctIntersection, &expolygons_provider(subject), &expolygons_provider(clip), ApplySafetyOffset::No, NON_ZERO)
+    }
+    /// ClipperUtils.cpp:815 `union_ex(const ExPolygons &subject)`
+    pub fn union_ex(subject: &[ExPolygon]) -> ExPolygons {
+        u::poly_tree_to_ex_polygons(&u::clipper_do_polytree(ClipType::ctUnion, &expolygons_provider(subject), &Paths::new(), NON_ZERO))
+    }
+    /// ClipperUtils.cpp:813 `union_ex(const Polygons &subject, PolyFillType fill_type = pftNonZero)`
+    pub fn union_ex_polygons(subject: &[Polygon]) -> ExPolygons {
+        u::_clipper_ex(ClipType::ctUnion, &polygons_provider(subject), &Paths::new(), ApplySafetyOffset::No, NON_ZERO)
+    }
+    /// ClipperUtils.cpp:825-831 `union_ex(const ExPolygons &poly1, const ExPolygons &poly2, bool safety_offset_ = false)`
+    /// (BBS: the two concatenated, then `union_ex`).
+    pub fn union_ex_2(poly1: &[ExPolygon], poly2: &[ExPolygon]) -> ExPolygons {
+        let mut expolys: ExPolygons = poly1.to_vec();
+        for expoly in poly2 {
+            expolys.push(expoly.clone());
+        }
+        union_ex(&expolys)
+    }
+    /// ClipperUtils.cpp:721 `union_(const Polygons &subject)`
+    pub fn union_(subject: &[Polygon]) -> Polygons {
+        to_polygons(&u::clipper_do_safety_offset::<Paths>(ClipType::ctUnion, &polygons_provider(subject), &Paths::new(), NON_ZERO, ApplySafetyOffset::No))
+    }
+    /// ClipperUtils.cpp:727-734 `union_(const Polygons &subject, const Polygons &subject2)` (BBS: the two
+    /// concatenated, then `union_`).
+    pub fn union_2(subject: &[Polygon], subject2: &[Polygon]) -> Polygons {
+        let mut polys: Polygons = subject.to_vec();
+        for poly in subject2 {
+            polys.push(poly.clone());
+        }
+        union_(&polys)
+    }
+    /// ClipperUtils.cpp:570 `offset_ex(const ExPolygons &expolygons, const float delta, JoinType, double miterLimit)`
+    pub fn offset_ex(expolygons: &[ExPolygon], delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+        u::poly_tree_to_ex_polygons(&u::expolygons_offset_pt(&expolygon_paths(expolygons), delta as f64, join_type, miter_limit))
+    }
+    /// ClipperUtils.cpp:567-569 `offset_ex(const ExPolygon &expolygon, const float delta, JoinType, double miterLimit)`:
+    /// `ClipperPaths_to_Slic3rExPolygons(expolygon_offset(...))`, an even-odd union.
+    pub fn offset_ex_expolygon(expolygon: &ExPolygon, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+        let (contour, holes) = expolygon_paths(std::slice::from_ref(expolygon)).pop().unwrap();
+        u::clipper_paths_to_slic3r_ex_polygons(&u::expolygon_offset(&contour, &holes, delta as f64, join_type, miter_limit), false)
+    }
+    /// ClipperUtils.cpp:410 `offset(const Polygon &polygon, const float delta, JoinType, double miterLimit)`
+    pub fn offset_polygon(polygon: &Polygon, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+        to_polygons(&u::raw_offset(&vec![path_of(&polygon.points)], delta as f64, join_type, miter_limit, EndType::etClosedPolygon))
+    }
+    /// ClipperUtils.cpp:420 `offset(const Polylines &polylines, const float delta, JoinType, double miterLimit, EndType)`
+    pub fn offset_polylines(polylines: &[Polyline], delta: f32, join_type: JoinType, miter_limit: f64, end_type: EndType) -> Polygons {
+        to_polygons(&u::clipper_union::<Paths>(
+            &u::raw_offset_polyline(&polylines_provider(polylines), delta as f64, join_type, miter_limit, end_type),
+            NON_ZERO,
+        ))
+    }
+    /// ClipperUtils.cpp:581-584 `offset2_ex(const ExPolygons &expolygons, const float delta1, const float delta2, JoinType,
+    /// double miterLimit)`
+    pub fn offset2_ex(expolygons: &[ExPolygon], delta1: f32, delta2: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+        u::poly_tree_to_ex_polygons(&u::offset_paths::<PolyTree>(
+            &u::expolygons_offset(&expolygon_paths(expolygons), delta1 as f64, join_type, miter_limit),
+            delta2 as f64,
+            join_type,
+            miter_limit,
+        ))
+    }
+    /// ClipperUtils.cpp:161-172 `clip_clipper_polygons_with_subject_bbox(const ExPolygons &src, const BoundingBox &bbox)`
+    pub fn clip_clipper_polygons_with_subject_bbox(src: &[ExPolygon], bbox: &BoundingBox) -> Polygons {
+        u::clip_clipper_polygons_with_subject_bbox_expolygons(src, bbox, false)
+    }
+    /// ClipperUtils.cpp:683-686 `diff_clipped(const ExPolygons &subject, const ExPolygons &clip)`:
+    /// `diff_ex(subject, clip_clipper_polygons_with_subject_bbox(clip, get_extents(subject).inflated(SCALED_EPSILON)))`
+    pub fn diff_clipped(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+        let mut bbox = super::get_extents_expolygons(subject);
+        // inflated(coordf_t): `Point v(delta, delta)` rounds
+        let eps = (crate::libslic3r::EPSILON / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64;
+        bbox.min = Point::new(bbox.min.x - eps, bbox.min.y - eps);
+        bbox.max = Point::new(bbox.max.x + eps, bbox.max.y + eps);
+        diff_ex_polygons(subject, &clip_clipper_polygons_with_subject_bbox(clip, &bbox))
+    }
+    /// ExPolygon.hpp:214-229 `to_polylines(const ExPolygon &src)`: every ring closed.
+    pub fn to_polylines(src: &ExPolygon) -> Polylines {
+        let mut polylines: Polylines = Vec::with_capacity(src.holes.len() + 1);
+        let mut pl = Polyline::from_points(src.contour.points.clone());
+        pl.points.push(pl.points[0]);
+        polylines.push(pl);
+        for hole in &src.holes {
+            let mut pl = Polyline::from_points(hole.points.clone());
+            pl.points.push(hole.points[0]);
+            polylines.push(pl);
+        }
+        polylines
+    }
+    /// ClipperUtils.cpp:927 `intersection_pl(const Polylines &subject, const ExPolygon &clip)`
+    pub fn intersection_pl(subject: &[Polyline], clip: &ExPolygon) -> Polylines {
+        to_polylines_of_paths(&u::_clipper_pl_open(ClipType::ctIntersection, &polylines_provider(subject), &expolygons_provider(std::slice::from_ref(clip))))
+    }
+    /// ExPolygon.cpp:109-119 `ExPolygon::contains(const Point &point, bool border_result = true)`
+    pub fn contains(expoly: &ExPolygon, point: &Point, border_result: bool) -> bool {
+        if !crate::geometry::contains_polygon(&expoly.contour, point, border_result) {
+            // Outside the outer contour, not on the contour boundary.
+            return false;
+        }
+        for hole in &expoly.holes {
+            if crate::geometry::contains_polygon(hole, point, !border_result) {
+                // Inside a hole, not on the hole boundary.
+                return false;
+            }
+        }
+        true
+    }
+    /// ExPolygon.cpp:158-184 `ExPolygon::overlaps(const ExPolygon &other)`
+    pub fn overlaps(this: &ExPolygon, other: &ExPolygon) -> bool {
+        if this.contour.points.is_empty() || other.contour.points.is_empty() {
+            return false;
+        }
+        let pl_out = intersection_pl(&to_polylines(other), this);
+        // See unit test SCENARIO("Clipper diff with polyline", "[Clipper]")
+        // for in which case the intersection_pl produces any intersection.
+        !pl_out.is_empty() ||
+            // If *this is completely inside other, then pl_out is empty, but the expolygons overlap. Test for that situation.
+            contains(other, &this.contour.points[0], true)
+    }
+    /// ExPolygon.cpp:186-195 `overlaps(const ExPolygons &expolys1, const ExPolygons &expolys2)`
+    pub fn overlaps_expolygons(expolys1: &[ExPolygon], expolys2: &[ExPolygon]) -> bool {
+        for expoly1 in expolys1 {
+            for expoly2 in expolys2 {
+                if overlaps(expoly1, expoly2) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+// ExPolygon.cpp:495-504 `BoundingBox get_extents(const ExPolygons &expolygons)`: the box of the contours; a
+// default constructed BoundingBox, (0, 0)-(0, 0) and not defined (BoundingBox.hpp:20), when there is none.
+fn get_extents_expolygons(expolygons: &[ExPolygon]) -> BoundingBox {
+    let mut bbox = BoundingBox::new();
+    for expolygon in expolygons {
+        if !expolygon.contour.points.is_empty() {
+            bbox.merge(&BoundingBox::from_points(&expolygon.contour.points));
+        }
+    }
+    if !bbox.is_defined() {
+        bbox.min = Point::new(0, 0);
+        bbox.max = Point::new(0, 0);
+    }
+    bbox
 }
 
 // ============================================================================
@@ -921,6 +1134,158 @@ pub fn normal(pt: Point, scale_factor: f64) -> Point {
     let length = scale_(vsize2_with_unscale(pt).sqrt());
     // return pt * (scale / length);  `pt` is a non-const Point: the member operator* (lrint).
     point_mul(pt, scale_factor / length)
+}
+
+// ============================================================================
+// MinimumSpanningTree.hpp:18-74, MinimumSpanningTree.cpp:22-138 `class MinimumSpanningTree`. A local copy:
+// `crate::minimum_spanning_tree` takes the squared distance of two vertices as `(x / 1e5)^2 + (y / 1e5)^2`
+// without the contraction, where MinimumSpanningTree.cpp:12-20 has the one expression
+// `unscale_(a(0)) * unscale_(b(0)) + unscale_(a(1)) * unscale_(b(1))` (the text of TreeSupport.cpp:56-64,
+// `vsize2_with_unscale` below). The nodes of an overhang sit on a regular grid, whose equal distances then
+// compare differently and connect to other neighbours.
+// ============================================================================
+
+/// MinimumSpanningTree.hpp:20-36 `struct Edge`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MinimumSpanningTreeEdge {
+    start: Point,
+    end: Point,
+}
+
+/// MinimumSpanningTree.hpp:18-74 `class MinimumSpanningTree`
+///
+/// `adjacency_graph` is a `std::unordered_map<Point, std::vector<Edge>, PointHash>`; `m_keys` keeps its
+/// keys in the order they were inserted, which `leaves()` and `vertices()` walk (the C++ walks the hash
+/// table, an order nothing but the debug drawings of TreeSupport.cpp depends on).
+#[derive(Debug, Clone, Default)]
+pub struct MinimumSpanningTree {
+    adjacency_graph: HashMap<Point, Vec<MinimumSpanningTreeEdge>>,
+    m_keys: Vec<Point>,
+}
+
+impl MinimumSpanningTree {
+    /// MinimumSpanningTree.hpp:38 `MinimumSpanningTree() = default;`
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// MinimumSpanningTree.cpp:22-25 `MinimumSpanningTree::MinimumSpanningTree(std::vector<Point> vertices)`
+    pub fn from_vertices(vertices: Vec<Point>) -> Self {
+        let mut this = Self::default();
+        this.prim(vertices);
+        this
+    }
+
+    /// `result[point]` of prim(): the edges of the point, added when missing.
+    fn edges_of(&mut self, point: Point) -> &mut Vec<MinimumSpanningTreeEdge> {
+        if !self.adjacency_graph.contains_key(&point) {
+            self.m_keys.push(point);
+        }
+        self.adjacency_graph.entry(point).or_default()
+    }
+
+    /// MinimumSpanningTree.cpp:27-103 `auto MinimumSpanningTree::prim(std::vector<Point> vertices) const -> AdjacencyGraph_t`
+    ///
+    /// The maps of the C++ are keyed by the address of a vertex in `vertices_list`: here by its index.
+    /// `std::min_element` walks the hash table with a comparator that orders by distance, x and y, so
+    /// its result does not depend on the order of the walk unless two vertices are the same point.
+    fn prim(&mut self, vertices: Vec<Point>) {
+        if vertices.is_empty() {
+            return; //No vertices, so we can't create edges either.
+        }
+        // If there's only one vertex, we can't go creating any edges so just add the point to the adjacency list with no
+        // edges
+        if vertices.len() == 1 {
+            self.edges_of(vertices[0]);
+            return;
+        }
+        let vertices_list: Vec<Point> = vertices;
+
+        //The shortest distance to the current tree.
+        let mut smallest_distance: Vec<Option<CoordF>> = vec![None; vertices_list.len()];
+        //Which point the shortest distance goes towards.
+        let mut smallest_distance_to: Vec<usize> = vec![0; vertices_list.len()];
+        for vertex_index in 1..vertices_list.len() {
+            let vert = vertices_list[vertex_index];
+            smallest_distance[vertex_index] = Some(vsize2_with_unscale(Point::new(vert.x - vertices_list[0].x, vert.y - vertices_list[0].y)));
+            smallest_distance_to[vertex_index] = 0;
+        }
+
+        //All of the vertices need to be in the tree at the end.
+        while self.adjacency_graph.len() < vertices_list.len() {
+            //Choose the closest vertex to connect to that is not yet in the tree.
+            let mut closest: Option<usize> = None;
+            for (index, distance) in smallest_distance.iter().enumerate() {
+                let Some(distance) = *distance else { continue };
+                let less = match closest {
+                    None => true,
+                    Some(best) => {
+                        let best_distance = smallest_distance[best].unwrap();
+                        let (a, b) = (vertices_list[index], vertices_list[best]);
+                        if distance != best_distance {
+                            distance < best_distance
+                        } else if a.x != b.x {
+                            a.x < b.x
+                        } else {
+                            a.y < b.y
+                        }
+                    }
+                };
+                if less {
+                    closest = Some(index);
+                }
+            }
+            // `std::min_element` of an empty map is end(), which the C++ dereferences: the vertices were not
+            // distinct points.
+            let Some(closest) = closest else { break };
+
+            //Add this point to the graph and remove it from the candidates.
+            let closest_point = vertices_list[closest];
+            let other_end = vertices_list[smallest_distance_to[closest]];
+            self.edges_of(closest_point).push(MinimumSpanningTreeEdge { start: closest_point, end: other_end });
+            self.edges_of(other_end).push(MinimumSpanningTreeEdge { start: other_end, end: closest_point });
+            smallest_distance[closest] = None; //Remove it so we don't check for these points again.
+
+            //Update the distances of all points that are not in the graph.
+            for index in 0..vertices_list.len() {
+                let Some(old_distance) = smallest_distance[index] else { continue };
+                let p = vertices_list[index];
+                let new_distance: CoordF = vsize2_with_unscale(Point::new(closest_point.x - p.x, closest_point.y - p.y));
+                if new_distance < old_distance {
+                    //New point is closer.
+                    smallest_distance[index] = Some(new_distance);
+                    smallest_distance_to[index] = closest;
+                }
+            }
+        }
+    }
+
+    /// MinimumSpanningTree.cpp:105-116 `std::vector<Point> MinimumSpanningTree::adjacent_nodes(Point node) const`
+    pub fn adjacent_nodes(&self, node: Point) -> Vec<Point> {
+        let mut result: Vec<Point> = Vec::new();
+        if let Some(edges) = self.adjacency_graph.get(&node) {
+            for e in edges {
+                result.push(if e.start == node { e.end } else { e.start });
+            }
+        }
+        result
+    }
+
+    /// MinimumSpanningTree.cpp:118-129 `std::vector<Point> MinimumSpanningTree::leaves() const`
+    pub fn leaves(&self) -> Vec<Point> {
+        let mut result: Vec<Point> = Vec::new();
+        for node in &self.m_keys {
+            if self.adjacency_graph[node].len() <= 1 {
+                result.push(*node);
+            }
+        }
+        result
+    }
+
+    /// MinimumSpanningTree.cpp:131-138 `std::vector<Point> MinimumSpanningTree::vertices() const`
+    pub fn vertices(&self) -> Vec<Point> {
+        self.m_keys.clone()
+    }
 }
 
 // TreeSupport.cpp:157-183
@@ -1879,6 +2244,18 @@ pub struct TreeSupport<'a> {
     pub m_fold_slab_of_layer: Vec<i32>,
     pub m_base_only_fold_layers: Vec<usize>,
 
+    /// TreeSupport.hpp:432 `std::unique_ptr<FillLightning::Generator> generator;`
+    pub generator: Option<crate::fill::lightning::generator::Generator>,
+    /// TreeSupport.hpp:433 `std::unordered_map<double, size_t> printZ_to_lightninglayer;`, keyed by the bits of the
+    /// double (0.0 and -0.0 are one key).
+    pub print_z_to_lightninglayer: HashMap<u64, usize>,
+    /// What makes the `FillLightning::Generator` of draw_circles(), see `LightningSupportGenerator`; and the
+    /// arguments draw_circles() hands its constructor.
+    pub lightning_support_generator: Option<Box<dyn LightningSupportGenerator + 'a>>,
+    pub lightning_contours: Vec<Polygons>,
+    pub lightning_overhangs: Vec<Polygons>,
+    pub lightning_support_density: f32,
+
     /// `m_object->print()->canceled()`: the crate's Print keeps its cancel state private.
     pub canceled: Box<dyn Fn() -> bool + 'a>,
     /// SupportParameters.hpp:338 `ConfigOptionFloat support_base_width`
@@ -2028,6 +2405,12 @@ impl<'a> TreeSupport<'a> {
             m_fold_carriers: Vec::new(),
             m_fold_slab_of_layer: Vec::new(),
             m_base_only_fold_layers: Vec::new(),
+            generator: None,
+            print_z_to_lightninglayer: HashMap::new(),
+            lightning_support_generator: None,
+            lightning_contours: Vec::new(),
+            lightning_overhangs: Vec::new(),
+            lightning_support_density: 0.0,
             canceled: Box::new(|| false),
             support_base_width,
             preset_nozzle_diameter,
@@ -4602,6 +4985,1368 @@ impl<'a> TreeSupport<'a> {
                 }
             }
         }
+    }
+}
+
+// ============================================================================
+// TreeSupport::draw_circles (TreeSupport.cpp:3905-4607) and resolve_material_covered_by_folded_interfaces
+// (TreeSupport.cpp:4635-4901)
+// ============================================================================
+
+/// TreeSupport.cpp:3957-3961 `struct WidenedArea` of draw_circles(). BBS multi-diameter: disk of a node whose
+/// wall is widened at a nozzle change.
+#[derive(Debug, Clone)]
+struct WidenedArea {
+    area: ExPolygon,
+    bbox: BoundingBox,
+    width: CoordF,
+}
+
+/// TreeSupport.cpp:3964-3977 `struct LayerDrawData` of draw_circles(). BBS multi-diameter: the per layer state
+/// handed from drawing the nodes to finishing the areas.
+#[derive(Debug, Clone, Default)]
+struct LayerDrawData {
+    obj_layer_nr: usize,
+    max_layers_above_base: CoordF,
+    max_layers_above_roof: CoordF,
+    max_layers_above_roof1: CoordF,
+    interface_id: i32,
+    collision_base: ExPolygons,
+    area_poly: ExPolygons,
+    extra_wall_area: ExPolygons,
+    cooldown_area: ExPolygons,
+    // Sorted by width, widest first.
+    widened_areas: Vec<WidenedArea>,
+}
+
+/// The collision areas the lambdas `get_collision` and `get_node_collision` of draw_circles() cache per layer
+/// (TreeSupport.cpp:4015-4016, 4037-4038).
+#[derive(Default)]
+struct DrawCirclesCollision {
+    collision_sharp_tails: ExPolygons,
+    collision_base: ExPolygons,
+    collision_sharp_tails_span: ExPolygons,
+    collision_base_span: ExPolygons,
+}
+
+/// Which of the cached areas of `DrawCirclesCollision` a lambda returned a reference to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DrawCirclesCollisionSlot {
+    SharpTails,
+    Base,
+    SharpTailsSpan,
+    BaseSpan,
+}
+
+impl DrawCirclesCollision {
+    fn get(&self, slot: DrawCirclesCollisionSlot) -> &ExPolygons {
+        match slot {
+            DrawCirclesCollisionSlot::SharpTails => &self.collision_sharp_tails,
+            DrawCirclesCollisionSlot::Base => &self.collision_base,
+            DrawCirclesCollisionSlot::SharpTailsSpan => &self.collision_sharp_tails_span,
+            DrawCirclesCollisionSlot::BaseSpan => &self.collision_base_span,
+        }
+    }
+}
+
+/// `FillLightning::Generator(PrintObject *m_object, std::vector<Polygons> &contours, std::vector<Polygons> &overhangs,
+/// const std::function<void()> &throw_on_cancel_callback, float density)` (Fill/Lightning/Generator.cpp:100-143), the
+/// constructor draw_circles() makes `TreeSupport::generator` with. The crate's `fill::lightning::generator::Generator`
+/// has no constructor yet (its `generateTreesforSupport` waits on Fill/Lightning/Layer.cpp), so the caller hands it in.
+pub trait LightningSupportGenerator {
+    fn generate(&self, object: &PrintObject, print: &Print, contours: &mut Vec<Polygons>, overhangs: &mut Vec<Polygons>, density: f32)
+        -> crate::fill::lightning::generator::Generator;
+}
+
+// `std::unordered_map<double, size_t>`: the key of a double; 0.0 and -0.0 are one key.
+#[inline]
+fn f64_key(v: f64) -> u64 {
+    if v == 0.0 {
+        0
+    } else {
+        v.to_bits()
+    }
+}
+
+// `config.<key>.values` of a floats option.
+fn cfg_floats(config: &DynamicPrintConfig, key: &str) -> Vec<f64> {
+    match config.option(key) {
+        Some(opt) => {
+            if let Some(o) = opt.as_any().downcast_ref::<crate::config::ConfigOptionFloats>() {
+                o.values.clone()
+            } else if let Some(o) = opt.as_any().downcast_ref::<crate::config::ConfigOptionFloatsNullable>() {
+                o.values.clone()
+            } else {
+                Vec::new()
+            }
+        }
+        None => Vec::new(),
+    }
+}
+
+impl<'a> TreeSupport<'a> {
+    // TreeSupport.cpp:4017-4029 the lambda `get_collision` of draw_circles(): fills the area of the layer when it is
+    // empty and tells which one it is.
+    fn draw_circles_get_collision(&self, c: &mut DrawCirclesCollision, obj_layer_nr: usize, sharp_tail: bool) -> DrawCirclesCollisionSlot {
+        let empty = if sharp_tail { c.collision_sharp_tails.is_empty() } else { c.collision_base.is_empty() };
+        if empty {
+            let delta: f64 = if sharp_tail {
+                scale_(self.top_z_at(obj_layer_nr) as f64)
+            } else {
+                scale_(if obj_layer_nr == 0 { cfg_float(self.object_config(), "support_object_first_layer_gap") } else { self.m_ts_data.m_xy_distance })
+            };
+            let mut collision =
+                cx::offset_ex(&self.m_ts_data.m_layer_outlines[obj_layer_nr], delta as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+            // the top layers may be too close to interface with adaptive layer heights and very small overhang angle.
+            // On the object first layer, clamp that expansion so a smaller support_object_first_layer_gap
+            // is not cancelled. Sharp tails keep the top-z clearance.
+            self.union_outlines_within_top_z(&mut collision, obj_layer_nr, !sharp_tail && obj_layer_nr == 0);
+            if sharp_tail {
+                c.collision_sharp_tails = collision;
+            } else {
+                c.collision_base = collision;
+            }
+        }
+        if sharp_tail {
+            DrawCirclesCollisionSlot::SharpTails
+        } else {
+            DrawCirclesCollisionSlot::Base
+        }
+    }
+
+    // TreeSupport.cpp:4039-4053 the lambda `get_node_collision` of draw_circles().
+    //
+    // BBS multi-diameter: fold_nodes_multi_diameter() may have made this layer the carrier of a slab. A slab is one
+    // extrusion over its whole Z span, so it has to clear the object everywhere in that span and not only at the
+    // face its cross-section was taken from. Only the folded nodes get that treatment.
+    fn draw_circles_get_node_collision(
+        &self,
+        c: &mut DrawCirclesCollision,
+        obj_layer_nr: usize,
+        node: &SupportNode,
+        sharp_tail: bool,
+    ) -> DrawCirclesCollisionSlot {
+        if node.slab_height <= EPSILON || node.slab_bottom_obj_layer >= obj_layer_nr {
+            return self.draw_circles_get_collision(c, obj_layer_nr, sharp_tail);
+        }
+        let empty = if sharp_tail { c.collision_sharp_tails_span.is_empty() } else { c.collision_base_span.is_empty() };
+        if empty {
+            let slot = self.draw_circles_get_collision(c, obj_layer_nr, sharp_tail);
+            let mut collision: ExPolygons = c.get(slot).clone();
+            for layer_id in node.slab_bottom_obj_layer..obj_layer_nr {
+                let delta: f64 = if sharp_tail {
+                    scale_(self.top_z_at(layer_id) as f64)
+                } else {
+                    scale_(if layer_id == 0 { cfg_float(self.object_config(), "support_object_first_layer_gap") } else { self.m_ts_data.m_xy_distance })
+                };
+                collision = cx::union_ex_2(
+                    &collision,
+                    &cx::offset_ex(&self.m_ts_data.m_layer_outlines[layer_id], delta as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                );
+            }
+            if sharp_tail {
+                c.collision_sharp_tails_span = collision;
+            } else {
+                c.collision_base_span = collision;
+            }
+        }
+        if sharp_tail {
+            DrawCirclesCollisionSlot::SharpTailsSpan
+        } else {
+            DrawCirclesCollisionSlot::BaseSpan
+        }
+    }
+
+    /// TreeSupport.cpp:3905-4607 `void TreeSupport::draw_circles()`
+    ///
+    /// FIDELITY-NOTE: the two `tbb::parallel_for` over the layers write per layer state only; here the layers are
+    /// taken in order. `print->objects()` is `m_print.objects()` and the object under work, which the caller holds
+    /// apart from the Print (the brim and skirt tests are an any_of and a maximum, so counting it twice is the same).
+    /// `holePropagationInfos` is keyed by the address of a hole (`const Polygon*`), which a later `push_back` into
+    /// the same `holes` vector invalidates when the vector grows; here the key is the hole's position and the
+    /// generation of the vector's buffer (libc++ doubles the capacity), so a pointer into a freed buffer never
+    /// matches, where in C++ it would if the allocator handed that address out again to another vector of holes.
+    /// The lightning generator is made by `lightning_support_generator` when the caller set one, see
+    /// `LightningSupportGenerator`; its inputs are kept in `lightning_contours` / `lightning_overhangs` /
+    /// `lightning_support_density`.
+    pub fn draw_circles(&mut self) {
+        use crate::print::faithful::{SupportLayerAreaGroup, SupportLayerAreaType};
+        let has_brim = self.m_print.has_brim() || self.m_object.has_brim();
+        let bottom_gap_layers: i32 = (self.m_slicing_params.gap_object_support / self.m_slicing_params.layer_height).round() as i32;
+        let branch_radius: CoordF = cfg_float(self.object_config(), "tree_support_branch_diameter") / 2.0;
+        let branch_radius_scaled: CoordF = scale_(branch_radius);
+        let on_buildplate_only = cfg_bool(self.object_config(), "support_on_build_plate_only");
+        //Pre-generate a circle with correct diameter so that we don't have to recompute those (co)sines every time.
+        let mut branch_circle = Polygon::new();
+
+        let z_overrides = cfg_bool(self.m_print.config(), "top_z_overrides_xy_distance");
+
+        // Use square support if there are too many nodes per layer because circle support needs much longer time to compute
+        // Hower circle support can be printed faster, so we prefer circle for fewer nodes case.
+        let square_support = self.avg_node_per_layer > 200;
+        // The number of vertices in each circle.
+        let circle_resolution: i32 = if square_support { 4 } else { 25 };
+
+        for i in 0..circle_resolution {
+            let angle: f64 = if square_support {
+                // `(double) i / CIRCLE_RESOLUTION * TAU + PI / 4.0 + nodes_angle`: the product is contracted with the first sum
+                (i as f64 / circle_resolution as f64).mul_add(TAU, M_PI / 4.0) + self.nodes_angle as f64
+            } else {
+                i as f64 / circle_resolution as f64 * TAU
+            };
+            // cos(angle) and sin(angle) of one argument: one `__sincos_stret` call
+            let (sin_a, cos_a) = crate::clipper::sin_cos(angle);
+            branch_circle.points.push(point_from_f64(cos_a * branch_radius_scaled, sin_a * branch_radius_scaled));
+        }
+
+        // Performance optimization. Only generate lslices for brim and skirt.
+        let mut brim_skirt_layers: usize = if has_brim { 1 } else { 0 };
+        {
+            let print_config = self.m_print.config();
+            let has_infinite_skirt = self.m_print.has_infinite_skirt();
+            let skirt_height = cfg_int(print_config, "skirt_height") as i64 as usize;
+            for object in self.m_print.objects().iter().chain(std::iter::once(&*self.m_object)) {
+                let skirt_layers: usize = if has_infinite_skirt { object.layer_count() } else { skirt_height.min(object.layer_count()) };
+                brim_skirt_layers = brim_skirt_layers.max(skirt_layers);
+            }
+        }
+
+        // generate areas
+        let top_interface_layers: usize = cfg_int(self.object_config(), "support_interface_top_layers") as i64 as usize;
+        let bottom_interface_layers: usize = 0; //config.support_interface_bottom_layers.value;
+        let with_lightning_infill = self.m_support_params.base_fill_pattern == crate::print_config::InfillPattern::Lightning;
+        let support_extrusion_width: CoordF = self.m_support_params.support_extrusion_width;
+        let line_width_scaled: CoordF = scale_(support_extrusion_width);
+        let tree_brim_width: f32 = cfg_float(self.object_config(), "raft_first_layer_expansion") as f32;
+        let tree_support_wall_count = cfg_int(self.object_config(), "tree_support_wall_count");
+        let bottom_expand_enabled = tree_support_wall_count > 1 || tree_support_wall_count < 0;
+        let do_not_mover_under_mm: f64 = self.do_not_mover_under_mm as f64;
+        let num_top_interface_layers: usize = self.m_support_params.num_top_interface_layers;
+        let support_speed0: f64 = cfg_floats(self.object_config(), "support_speed").first().copied().unwrap_or(0.0);
+
+        if self.m_object.support_layer_count() <= self.m_raft_layers {
+            return;
+        }
+
+        let n_layers = self.m_ts_data.layer_heights.len();
+        let mut layer_draw_data: Vec<LayerDrawData> = vec![LayerDrawData::default(); n_layers];
+
+        for layer_nr in 0..n_layers {
+            if (self.canceled)() {
+                break;
+            }
+
+            let ts_idx = layer_nr + self.m_raft_layers;
+
+            // skip if current layer has no points. This fixes potential crash in get_collision (see jira BBL001-355)
+            if self.contact_nodes[layer_nr].is_empty() {
+                let ts_layer = &mut self.m_object.m_support_layers[ts_idx];
+                ts_layer.layer.print_z = 0.0;
+                ts_layer.layer.height = 0.0;
+                continue;
+            }
+
+            let obj_layer_nr: usize = self.m_ts_data.layer_heights[layer_nr].obj_layer_nr;
+            {
+                let (print_z, height) = (self.m_ts_data.layer_heights[layer_nr].print_z, self.m_ts_data.layer_heights[layer_nr].height);
+                let ts_layer = &mut self.m_object.m_support_layers[ts_idx];
+                ts_layer.layer.print_z = print_z;
+                ts_layer.layer.height = height;
+                if ts_layer.layer.height < EPSILON {
+                    continue;
+                }
+            }
+
+            // `ExPolygons& base_areas = ts_layer->base_areas;` and the like: taken out of the layer, put back below
+            let mut base_areas: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].base_areas);
+            let mut roof_areas: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].roof_areas);
+            let mut roof_1st_layer: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].roof_1st_layer);
+            let mut roof_gap_areas: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].roof_gap_areas);
+            let mut max_layers_above_base: CoordF = 0.0;
+            let mut max_layers_above_roof: CoordF = 0.0;
+            let mut max_layers_above_roof1: CoordF = 0.0;
+            let mut interface_id: i32 = 0;
+            let mut _has_circle_node = false;
+            let mut collision = DrawCirclesCollision::default();
+            // A folded interface is one extrusion over the slab span as well. Its areas come from the overhang
+            // and skip the node collision, so the span has to be cleared when the roof segments are joined.
+            let mut roof_span_node: Option<NodeId> = None;
+
+            //Draw the support areas and add the roofs appropriately to the support roof instead of normal areas.
+            let mut area_poly: ExPolygons = Vec::new(); // the polygon node area which will be printed as normal support
+            let mut extra_wall_area: ExPolygons = Vec::new(); //where nodes would have extra walls
+            let mut cooldown_area: ExPolygons = Vec::new();
+            let mut widened_areas: Vec<WidenedArea> = Vec::new();
+            let curr_layer_nodes: Vec<NodeId> = self.contact_nodes[layer_nr].clone();
+            for &p_node in &curr_layer_nodes {
+                if (self.canceled)() {
+                    break;
+                }
+
+                let node: &SupportNode = &self.m_ts_data.contact_nodes[p_node];
+                let mut area: ExPolygons = Vec::new();
+                let mut brim_width: f64 = tree_brim_width as f64;
+                // Generate directly from overhang polygon if one of the following is true:
+                // 1) node is a normal part of hybrid support
+                // 2) node is virtual
+                if node.type_ == TreeNodeType::EPolygon || (node.distance_to_top < 0 && !node.is_sharp_tail) {
+                    // `offset_ex({node.overhang}, ...)`: the overload of one ExPolygon
+                    area = cx::offset_ex_expolygon(
+                        &node.overhang,
+                        scale_(self.m_ts_data.m_xy_distance) as f32,
+                        cx::DEFAULT_JOIN_TYPE,
+                        cx::DEFAULT_MITER_LIMIT,
+                    );
+                    let slot = self.draw_circles_get_node_collision(&mut collision, obj_layer_nr, node, node.is_sharp_tail && node.distance_to_top <= 0);
+                    area = cx::diff_clipped(&area, collision.get(slot));
+                    if node.type_ == TreeNodeType::EPolygon {
+                        append(&mut area_poly, area.clone());
+                        if node.need_extra_wall {
+                            append(&mut extra_wall_area, area.clone());
+                        }
+                    }
+                } else {
+                    // merge overhang to get a smoother interface surface
+                    // Do not merge when buildplate_only is on, because some underneath nodes may have been deleted.
+                    if top_interface_layers > 0
+                        && (node.support_roof_layers_below > 1 || (node.support_roof_layers_below >= 0 && !node.is_sharp_tail))
+                        && !on_buildplate_only
+                    {
+                        if node.overhang.contour.points.len() > 100 || node.overhang.holes.len() > 1 {
+                            area.push(node.overhang.clone());
+                        } else {
+                            area = cx::offset_ex_expolygon(
+                                &node.overhang,
+                                scale_(self.m_ts_data.m_xy_distance) as f32,
+                                cx::DEFAULT_JOIN_TYPE,
+                                cx::DEFAULT_MITER_LIMIT,
+                            );
+                        }
+                    } else {
+                        let slot =
+                            self.draw_circles_get_node_collision(&mut collision, obj_layer_nr, node, node.is_sharp_tail && node.distance_to_top <= 0);
+                        area = avoid_object_remove_extra_small_parts(
+                            &tree_support_node_disk(node, &branch_circle, branch_radius, branch_radius_scaled, square_support, 0.0),
+                            collision.get(slot),
+                        );
+                    }
+
+                    if !area.is_empty() {
+                        _has_circle_node = true;
+                    }
+                    if node.need_extra_wall
+                        || (bottom_expand_enabled && node.print_z < do_not_mover_under_mm && node.dist_mm_to_top > do_not_mover_under_mm)
+                    {
+                        append(&mut extra_wall_area, area.clone());
+                    }
+                    if node.overhang_degree >= 2.0 {
+                        append(&mut cooldown_area, area.clone());
+                    }
+                }
+
+                // BBS multi-diameter: a folded slab is emitted on its top layer, so the bed band no longer lives on
+                // support layer 0. Ask the node whether its material reaches the bed instead of trusting the
+                // layer index, or the first layer expansion is skipped for every folded print.
+                if self.m_raft_layers == 0 && (if self.m_fold_carriers.is_empty() { layer_nr == 0 } else { node.print_z - node.height <= EPSILON }) {
+                    if tree_brim_width >= 0.0 {
+                        brim_width = tree_brim_width as f64;
+                    } else {
+                        for expoly in &area {
+                            brim_width = brim_width.max(expoly.map_moment_to_expansion(support_speed0, node.dist_mm_to_top));
+                        }
+                    }
+                    let slot = self.draw_circles_get_node_collision(&mut collision, obj_layer_nr, node, false);
+                    area = safe_offset_inc(
+                        &area,
+                        scale_(brim_width) as i32 as Coord,
+                        collision.get(slot),
+                        scale_(TS_MIN_BRANCH_RADIUS * 0.5) as i32 as Coord,
+                        0,
+                        1,
+                    );
+                }
+                if obj_layer_nr > 0 && node.distance_to_top < 0 {
+                    append(&mut roof_gap_areas, area);
+                } else if num_top_interface_layers > 0
+                    && obj_layer_nr > 0
+                    && (node.support_roof_layers_below == 0 || node.support_roof_layers_below == 1)
+                    // `int >= size_t`: compared as unsigned
+                    && (node.distance_to_top as i64 as usize) >= num_top_interface_layers
+                {
+                    append(&mut roof_1st_layer, area);
+                    max_layers_above_roof1 = max_layers_above_roof1.max(node.dist_mm_to_top);
+                    if node.slab_height > EPSILON {
+                        roof_span_node = Some(p_node);
+                    }
+                } else if num_top_interface_layers > 0 && obj_layer_nr > 0 && node.support_roof_layers_below > 0 {
+                    append(&mut roof_areas, area);
+                    if node.slab_height > EPSILON {
+                        roof_span_node = Some(p_node);
+                    }
+                    max_layers_above_roof = if self.top_z_distance == 0.0 { node.height } else { max_layers_above_roof.max(node.dist_mm_to_top) };
+                    // BBS multi-diameter: consecutive folded slabs sit several object layers apart, so the
+                    // object layer number modulo the interface layer count repeats and the interface pattern
+                    // stops alternating. The folded ladder position still steps by one per printed layer.
+                    let num = if node.slab_index >= 0 { node.slab_index } else { node.obj_layer_nr };
+                    let den = top_interface_layers as i32;
+                    interface_id = if den == 0 { num } else { num.wrapping_rem(den) };
+                } else {
+                    if node.line_width > EPSILON {
+                        for expoly in &area {
+                            widened_areas.push(WidenedArea {
+                                area: expoly.clone(),
+                                bbox: BoundingBox::from_points(&expoly.contour.points),
+                                width: node.line_width,
+                            });
+                        }
+                    }
+                    append(&mut base_areas, area);
+                    max_layers_above_base = max_layers_above_base.max(node.dist_mm_to_top);
+                }
+            }
+
+            // join roof segments
+            // the lambda `get_roof_collision` (TreeSupport.cpp:4153-4155)
+            let roof_collision = |this: &Self, collision: &mut DrawCirclesCollision, sharp_tail: bool| -> DrawCirclesCollisionSlot {
+                match roof_span_node {
+                    Some(n) => this.draw_circles_get_node_collision(collision, obj_layer_nr, &this.m_ts_data.contact_nodes[n], sharp_tail),
+                    None => this.draw_circles_get_collision(collision, obj_layer_nr, sharp_tail),
+                }
+            };
+            let lw = line_width_scaled as f32;
+            {
+                let closed = cx::offset2_ex(&roof_areas, lw, -lw, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                let slot = roof_collision(self, &mut collision, z_overrides);
+                roof_areas = cx::diff_clipped(&closed, collision.get(slot));
+            }
+            roof_areas = cx::intersection_ex(&roof_areas, std::slice::from_ref(&self.m_machine_border));
+            roof_areas = cx::union_ex(&roof_areas);
+            {
+                let closed = cx::offset2_ex(&roof_1st_layer, lw, -lw, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                let clip: ExPolygons = if z_overrides {
+                    let slot = roof_collision(self, &mut collision, z_overrides);
+                    cx::offset_ex(collision.get(slot), (line_width_scaled / 2.0) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT)
+                } else {
+                    let slot = roof_collision(self, &mut collision, false);
+                    collision.get(slot).clone()
+                };
+                roof_1st_layer = cx::diff_clipped(&closed, &clip);
+            }
+
+            // roof_1st_layer and roof_areas may intersect, so need to subtract roof_areas from roof_1st_layer
+            roof_1st_layer = cx::diff_ex_polygons(
+                &roof_1st_layer,
+                &cx::clip_clipper_polygons_with_subject_bbox(&roof_areas, &get_extents_expolygons(&roof_1st_layer)),
+            );
+            roof_1st_layer = cx::intersection_ex(&roof_1st_layer, std::slice::from_ref(&self.m_machine_border));
+
+            {
+                let ts_layer = &mut self.m_object.m_support_layers[ts_idx];
+                ts_layer.base_areas = base_areas;
+                ts_layer.roof_areas = roof_areas;
+                ts_layer.roof_1st_layer = roof_1st_layer;
+                ts_layer.roof_gap_areas = roof_gap_areas;
+            }
+
+            let data = &mut layer_draw_data[layer_nr];
+            data.obj_layer_nr = obj_layer_nr;
+            data.max_layers_above_base = max_layers_above_base;
+            data.max_layers_above_roof = max_layers_above_roof;
+            data.max_layers_above_roof1 = max_layers_above_roof1;
+            data.interface_id = interface_id;
+            data.collision_base = std::mem::take(&mut collision.collision_base);
+            data.area_poly = area_poly;
+            data.extra_wall_area = extra_wall_area;
+            data.cooldown_area = cooldown_area;
+            // std::sort(..., a.width > b.width): the order of libc++ for equal widths
+            {
+                let mut order: Vec<usize> = (0..widened_areas.len()).collect();
+                crate::clipper::libcxx_sort(&mut order, |a: &usize, b: &usize| widened_areas[*a].width > widened_areas[*b].width);
+                data.widened_areas = order.into_iter().map(|i| widened_areas[i].clone()).collect();
+            }
+        }
+
+        // BBS multi-diameter: the gap areas of the layers a slab swallowed, keyed by every carrier whose
+        // extrusion spans their Z. Folding moves the roof up to the carrier but leaves the virtual gap nodes
+        // on their own fine layers, so a carrier has to clear the gaps of its whole span and not only the ones
+        // that happen to land on its own layer.
+        let mut swallowed_gap_by_carrier: HashMap<i32, ExPolygons> = HashMap::new();
+        for swallowed_nr in 0..self.m_fold_slab_of_layer.len() {
+            if self.m_fold_slab_of_layer[swallowed_nr] < 0 {
+                continue;
+            }
+            let swallowed = match self.m_object.m_support_layers.get(swallowed_nr + self.m_raft_layers) {
+                Some(l) => l,
+                None => continue,
+            };
+            if swallowed.roof_gap_areas.is_empty() {
+                continue;
+            }
+            for carrier in self.fold_carriers_above(swallowed_nr) {
+                swallowed_gap_by_carrier.entry(carrier as i32).or_default().extend(swallowed.roof_gap_areas.iter().cloned());
+            }
+        }
+
+        // The capacity of the `holes` vector of every area group of a layer, for holePropagationInfos below: the
+        // number of holes each expolygon was made with (PolyTreeToExPolygons resizes `holes` once, a copy takes
+        // exactly its size), before the small ones are erased.
+        let mut holes_capacity: Vec<Vec<usize>> = vec![Vec::new(); self.m_object.m_support_layers.len()];
+
+        for layer_nr in 0..n_layers {
+            if (self.canceled)() {
+                break;
+            }
+
+            let ts_idx = layer_nr + self.m_raft_layers;
+            if self.contact_nodes[layer_nr].is_empty() || self.m_object.m_support_layers[ts_idx].layer.height < EPSILON {
+                continue;
+            }
+
+            let data = &layer_draw_data[layer_nr];
+            let obj_layer_nr: usize = data.obj_layer_nr;
+            let max_layers_above_base: CoordF = data.max_layers_above_base;
+            let max_layers_above_roof: CoordF = data.max_layers_above_roof;
+            let max_layers_above_roof1: CoordF = data.max_layers_above_roof1;
+            let interface_id: i32 = data.interface_id;
+            let collision_base: &ExPolygons = &data.collision_base;
+            let area_poly: &ExPolygons = &data.area_poly;
+            let extra_wall_area: &ExPolygons = &data.extra_wall_area;
+            let cooldown_area: &ExPolygons = &data.cooldown_area;
+            let mut base_areas: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].base_areas);
+            let mut roof_areas: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].roof_areas);
+            let mut roof_1st_layer: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].roof_1st_layer);
+            let mut floor_areas: ExPolygons = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].floor_areas);
+            let roof_gap_areas: ExPolygons = self.m_object.m_support_layers[ts_idx].roof_gap_areas.clone();
+
+            // The gap under an overhang may carry no material at all, so it carves the base below. A folded
+            // carrier answers for its whole slab span, hence the gaps the swallowed layers left behind are pulled
+            // in as well. The interface must not be carved.
+            let mut gap_keep_out: ExPolygons = roof_gap_areas;
+            if !self.m_fold_carriers.is_empty() {
+                if let Some(swallowed) = swallowed_gap_by_carrier.get(&(layer_nr as i32)) {
+                    append(&mut gap_keep_out, swallowed.clone());
+                }
+            }
+
+            let mut roofs: ExPolygons = Vec::new();
+            append(&mut roofs, roof_1st_layer.clone());
+            append(&mut roofs, roof_areas.clone());
+            append(&mut roofs, gap_keep_out);
+
+            // slightly slow down the slicing speed
+            base_areas = if collision_base.is_empty() {
+                cx::diff_ex(&base_areas, &self.m_ts_data.get_collision(0.0, obj_layer_nr))
+            } else {
+                cx::diff_ex(&base_areas, collision_base)
+            };
+
+            base_areas = cx::diff_ex_polygons(&base_areas, &cx::clip_clipper_polygons_with_subject_bbox(&roofs, &get_extents_expolygons(&base_areas)));
+            base_areas = cx::intersection_ex(&base_areas, std::slice::from_ref(&self.m_machine_border));
+
+            if square_support {
+                // simplify support contours
+                // `area.simplify(tolerance, &base_areas_simplified)` of every area (ExPolygon.cpp:253-261)
+                base_areas = expolygons_simplify(&base_areas, scale_(support_extrusion_width / 2.0));
+            }
+            //Subtract support floors. We can only compute floor_areas here instead of with roof_areas,
+            // or we'll get much wider floor than necessary.
+            // `size_t + int`: unsigned
+            let gap_layers_u: usize = bottom_gap_layers as i64 as usize;
+            if bottom_interface_layers.wrapping_add(gap_layers_u) > 0 {
+                if layer_nr >= bottom_interface_layers.wrapping_add(gap_layers_u) {
+                    // find the lowest interface layer
+                    // TODO the gap may not be exact when "independent support layer height" is enabled
+                    let layer_nr_next: usize = layer_nr - bottom_interface_layers;
+                    let obj_layer_nr_next: usize = self.m_ts_data.layer_heights[layer_nr_next].obj_layer_nr;
+                    let mut i: usize = 0;
+                    while i <= gap_layers_u && i <= obj_layer_nr_next {
+                        let below_layer = self.m_object.get_layer((obj_layer_nr_next - i) as i32);
+                        let bottom_interface: ExPolygons = cx::intersection_ex(&base_areas, &below_layer.lslices);
+                        floor_areas.extend(bottom_interface);
+                        i += 1;
+                    }
+                }
+                if !floor_areas.is_empty() {
+                    base_areas = cx::diff_ex(&base_areas, &cx::offset_ex(&floor_areas, 10.0, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT));
+                }
+            }
+            if bottom_gap_layers > 0 && self.m_ts_data.layer_heights[layer_nr].obj_layer_nr > gap_layers_u {
+                let below_layer = self.m_object.get_layer((self.m_ts_data.layer_heights[layer_nr].obj_layer_nr - gap_layers_u) as i32);
+                let bottom_gap_area: ExPolygons = cx::intersection_ex(&floor_areas, &below_layer.lslices);
+                if !bottom_gap_area.is_empty() {
+                    floor_areas = cx::diff_ex(&floor_areas, &bottom_gap_area);
+                }
+            }
+            // prune_floating_supports() pairs each area_group back with its region by walking the vector below
+            // in step with the group order, so the fills that follow have to keep appending in vector order
+            // and nothing may reorder or drop entries on either side afterwards.
+            let mut area_groups: Vec<SupportLayerAreaGroup> = std::mem::take(&mut self.m_object.m_support_layers[ts_idx].area_groups);
+            for (idx, expoly) in base_areas.iter().enumerate() {
+                //if (area(expoly) < SQ(scale_(1))) continue;
+                let mut group = SupportLayerAreaGroup::new(idx, SupportLayerAreaType::BaseType, max_layers_above_base);
+                group.need_infill = cx::overlaps_expolygons(std::slice::from_ref(expoly), area_poly);
+                let need_extra_wall = cx::overlaps_expolygons(std::slice::from_ref(expoly), extra_wall_area);
+                group.need_extra_wall = need_extra_wall && !group.need_infill;
+                group.need_cooling = cx::overlaps_expolygons(std::slice::from_ref(expoly), cooldown_area);
+                // The whole island takes the widest wall among the widened disks that overlap it.
+                let expoly_bbox = BoundingBox::from_points(&expoly.contour.points);
+                for widened in &data.widened_areas {
+                    if bbox_overlap(&widened.bbox, &expoly_bbox) && cx::overlaps(&widened.area, expoly) {
+                        group.line_width = widened.width;
+                        break;
+                    }
+                }
+                area_groups.push(group);
+            }
+            let mut new_roofs: ExPolygons = Vec::new();
+            for expoly in &roof_areas {
+                if expoly.area() < sq(scale_(1.0)) {
+                    if max_layers_above_roof > EPSILON {
+                        roof_1st_layer.push(expoly.clone());
+                    }
+                    continue;
+                }
+                new_roofs.push(expoly.clone());
+            }
+            roof_areas = new_roofs;
+            for idx in 0..roof_areas.len() {
+                let mut group = SupportLayerAreaGroup::new(idx, SupportLayerAreaType::RoofType, max_layers_above_roof);
+                group.interface_id = interface_id;
+                area_groups.push(group);
+            }
+            for idx in 0..floor_areas.len() {
+                //if (area(expoly) < SQ(scale_(1))) continue;
+                area_groups.push(SupportLayerAreaGroup::new(idx, SupportLayerAreaType::FloorType, 10000.0));
+            }
+            for idx in 0..roof_1st_layer.len() {
+                //if (area(expoly) < SQ(scale_(1))) continue;
+                area_groups.push(SupportLayerAreaGroup::new(idx, SupportLayerAreaType::Roof1stLayer, max_layers_above_roof1));
+            }
+
+            let ts_layer = &mut self.m_object.m_support_layers[ts_idx];
+            ts_layer.base_areas = base_areas;
+            ts_layer.roof_areas = roof_areas;
+            ts_layer.roof_1st_layer = roof_1st_layer;
+            ts_layer.floor_areas = floor_areas;
+
+            // A folded bed band reaches the bed from its carrier, which may sit well above the first layer, and the
+            // brim keeps off the support by these islands.
+            let keep_support_islands = layer_nr < brim_skirt_layers
+                || (has_brim
+                    && self.m_raft_layers == 0
+                    && !self.m_fold_carriers.is_empty()
+                    && ts_layer.layer.print_z - ts_layer.effective_print_height() <= EPSILON);
+            let mut capacities: Vec<usize> = Vec::with_capacity(area_groups.len());
+            for area_group in &area_groups {
+                let expoly = ts_layer.area_group_area_mut(area_group);
+                capacities.push(expoly.holes.len());
+                expoly.holes.retain(|hole| {
+                    let bbox_size = BoundingBox::from_points(&hole.points).size();
+                    !((bbox_size.x as f64) < scale_(2.0) && (bbox_size.y as f64) < scale_(2.0))
+                });
+
+                if keep_support_islands {
+                    let expoly = expoly.clone();
+                    ts_layer.support_islands.push(expoly);
+                }
+            }
+            holes_capacity[ts_idx] = capacities;
+            ts_layer.area_groups = area_groups;
+
+            ts_layer.support_islands = cx::union_ex(&ts_layer.support_islands);
+            //Must update bounding box which is used in avoid crossing perimeter
+            ts_layer.layer.lslices_bboxes.clear();
+            for expoly in &ts_layer.support_islands {
+                ts_layer.layer.lslices_bboxes.push(BoundingBox::from_points(&expoly.contour.points));
+            }
+            ts_layer.layer.backup_untyped_slices();
+        }
+
+        // prune_floating_supports() is not called. Its carrier test deletes bed-landing
+        // supports that still reach the plate, so those supports come out floating.
+        for ts_idx in self.resolve_material_covered_by_folded_interfaces() {
+            // a trimmed layer has its regions rebuilt: every `holes` vector is as large as it is full
+            let ts_layer = &self.m_object.m_support_layers[ts_idx];
+            holes_capacity[ts_idx] = ts_layer.area_groups.iter().map(|g| ts_layer.area_group_area(g).holes.len()).collect();
+        }
+
+        if with_lightning_infill {
+            let mut contours: Vec<Polygons> = Vec::new();
+            let mut overhangs: Vec<Polygons> = Vec::new();
+            // BBS multi-diameter: a swallowed layer is not a gap in the support - its material moved up to
+            // the slab carrier. FillLightning::Generator derives its prune and straightening lengths from a
+            // single object_config.layer_height and treats consecutive entries as adjacent layers, so
+            // skipping the swallowed ones would hand it a stack whose steps are a whole band apart and it
+            // would join trees across that band with one straight segment. Feeding the footprint of every
+            // carrier spanning those layers keeps the stack one nominal layer per step.
+            // Each layer is read up to three times below, and a folded footprint is a union, so build them once.
+            // Unfolded, the layer's own base_areas are read in place.
+            let mut folded_base: Vec<ExPolygons> = Vec::new();
+            if !self.m_fold_carriers.is_empty() {
+                folded_base.resize(self.contact_nodes.len(), Vec::new());
+                for layer_nr in 0..folded_base.len() {
+                    folded_base[layer_nr] = self.draw_circles_effective_base(layer_nr as i32);
+                }
+            }
+            let no_base: ExPolygons = Vec::new();
+            let raft_layers = self.m_raft_layers;
+            // the lambda `base_of` (TreeSupport.cpp:4400-4405)
+            let base_of = |this: &Self, layer_nr: i32| -> ExPolygons {
+                if !folded_base.is_empty() {
+                    return folded_base[layer_nr as usize].clone();
+                }
+                match this.m_object.m_support_layers.get(layer_nr as usize + raft_layers) {
+                    Some(ts) if !ts.area_groups.is_empty() => ts.base_areas.clone(),
+                    _ => no_base.clone(),
+                }
+            };
+            // A roof-only layer still has to be visited: its empty base turns the whole base below it into
+            // overhang, which is what grows the lightning tree up under the roof.
+            let has_nothing = |this: &Self, layer_nr: i32| -> bool {
+                if !base_of(this, layer_nr).is_empty() {
+                    return false;
+                }
+                match this.m_object.m_support_layers.get(layer_nr as usize + raft_layers) {
+                    Some(ts) => ts.area_groups.is_empty(),
+                    None => true,
+                }
+            };
+            for layer_nr in 1..self.contact_nodes.len() as i32 {
+                if (self.canceled)() {
+                    break;
+                }
+
+                // skip if current layer has no points. This fixes potential crash in get_collision (see jira BBL001-355)
+                if has_nothing(self, layer_nr) {
+                    continue;
+                }
+                let base_areas = base_of(self, layer_nr);
+
+                let mut layer_nr_lower: i32 = layer_nr - 1;
+                while layer_nr_lower >= 0 {
+                    if !has_nothing(self, layer_nr_lower) {
+                        break;
+                    }
+                    layer_nr_lower -= 1;
+                }
+                if layer_nr_lower <= 0 {
+                    continue;
+                }
+
+                let base_areas_lower = base_of(self, layer_nr_lower);
+
+                let mut overhang: ExPolygons =
+                    cx::diff_ex(&crate::clipper2_utils::offset_ex_2(&base_areas_lower, -2.5 * line_width_scaled), &base_areas);
+                let mut it = 0;
+                while it < overhang.len() {
+                    overhang[it].remove_colinear_points();
+                    if overhang[it].contour.points.is_empty() {
+                        overhang.remove(it);
+                    } else {
+                        it += 1;
+                    }
+                }
+
+                overhangs.push(to_polygons(&overhang));
+                contours.push(to_polygons(&base_areas_lower));
+                // draw_circles() zeroes print_z on a layer that got no node, which is every swallowed layer,
+                // so key the entry by the Z the plan gave it. Those entries are never looked up - a
+                // swallowed layer extrudes nothing - but a shared key of 0 would let them overwrite each
+                // other and, worse, collide with a layer that really does print at 0.
+                let lower_print_z: CoordF = if (layer_nr_lower as usize) < self.m_ts_data.layer_heights.len() {
+                    self.m_ts_data.layer_heights[layer_nr_lower as usize].print_z
+                } else {
+                    self.m_object.m_support_layers[layer_nr_lower as usize + raft_layers].layer.print_z
+                };
+                self.print_z_to_lightninglayer.insert(f64_key(lower_print_z), overhangs.len() - 1);
+            }
+
+            let m_support_material_flow =
+                crate::support::support_parameters::support_material_flow_of(self.m_object, self.m_print, self.m_slicing_params.layer_height as f32)
+                    .expect("support_material_flow");
+            let support_spacing: CoordF = cfg_float(self.object_config(), "support_base_pattern_spacing") + m_support_material_flow.spacing();
+            // for lightning infill the density is defined differently, so need to double it
+            let support_density: CoordF = (1.0_f64).min(m_support_material_flow.spacing() / support_spacing * 2.0);
+            self.lightning_support_density = support_density as f32;
+            if let Some(factory) = self.lightning_support_generator.as_ref() {
+                self.generator = Some(factory.generate(self.m_object, self.m_print, &mut contours, &mut overhangs, support_density as f32));
+            }
+            self.lightning_contours = contours;
+            self.lightning_overhangs = overhangs;
+        } else if !self.with_infill {
+            // move the holes to contour so they can be well supported
+
+            // check if poly's contour intersects with expoly's contour
+            // the lambda `intersects_contour` (TreeSupport.cpp:4468-4490)
+            let intersects_contour =
+                |poly: &Polygon, expoly: &ExPolygon, pt_on_poly: &mut Point, pt_on_expoly: &mut Point, pt_far_on_poly: &mut Point, dist_thresh: f32| -> bool {
+                    let pl_out = cx::intersection_pl(&cx::to_polylines(expoly), &ExPolygon::new(poly.clone()));
+                    if pl_out.is_empty() {
+                        return false;
+                    }
+                    let mut min_dist: f32 = f32::MAX;
+                    let mut max_dist: f32 = 0.0;
+                    for &from in &poly.points {
+                        for i in 0..expoly.num_contours() {
+                            let candidate = match polygon_closest_vertex(contour_or_hole(expoly, i), &from) {
+                                Some(c) => c,
+                                None => continue,
+                            };
+                            let dist2: f64 = vsize2_with_unscale(Point::new(candidate.x - from.x, candidate.y - from.y));
+                            if dist2 < min_dist as f64 {
+                                min_dist = dist2 as f32;
+                                *pt_on_poly = from;
+                                *pt_on_expoly = candidate;
+                            }
+                            if dist2 > max_dist as f64 {
+                                max_dist = dist2 as f32;
+                                *pt_far_on_poly = from;
+                            }
+                            if dist2 < dist_thresh as f64 {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                };
+
+            // polygon pointer: depth, direction, farPoint
+            // `std::map<const Polygon*, std::tuple<int, Point, Point>>`: the pointer is (support layer, area group,
+            // generation of the buffer of its `holes`, index of the hole)
+            let mut hole_propagation_infos: HashMap<(usize, usize, u32, usize), (i32, Point, Point)> = HashMap::new();
+            let mut holes_generation: Vec<Vec<u32>> = holes_capacity.iter().map(|c| vec![0u32; c.len()]).collect();
+            let mut layer_nr: i32 = self.contact_nodes.len() as i32 - 1;
+            while layer_nr > 0 {
+                let this_layer_nr = layer_nr;
+                layer_nr -= 1;
+                let layer_nr = this_layer_nr;
+                if (self.canceled)() {
+                    break;
+                }
+
+                let ts_idx = layer_nr as usize + self.m_raft_layers;
+
+                // skip if current layer has no points. This fixes potential crash in get_collision (see jira BBL001-355)
+                if self.contact_nodes[layer_nr as usize].is_empty() {
+                    continue;
+                }
+                if self.m_object.m_support_layers[ts_idx].layer.height < EPSILON {
+                    continue;
+                }
+                if self.m_object.m_support_layers[ts_idx].area_groups.is_empty() {
+                    continue;
+                }
+
+                let mut layer_nr_lower: i32 = layer_nr - 1;
+                while layer_nr_lower >= 0 {
+                    if !self.m_object.m_support_layers[layer_nr_lower as usize + self.m_raft_layers].area_groups.is_empty() {
+                        break;
+                    }
+                    layer_nr_lower -= 1;
+                }
+                if layer_nr_lower < 0 {
+                    continue;
+                }
+                let lower_idx = layer_nr_lower as usize + self.m_raft_layers;
+                let n_groups_lower = self.m_object.m_support_layers[lower_idx].area_groups.len();
+
+                for group_idx in 0..self.m_object.m_support_layers[ts_idx].area_groups.len() {
+                    let area_group = self.m_object.m_support_layers[ts_idx].area_groups[group_idx].clone();
+                    if area_group.type_ != SupportLayerAreaType::BaseType {
+                        continue;
+                    }
+                    // the holes of `area`, which this loop does not change
+                    let holes: Polygons = self.m_object.m_support_layers[ts_idx].area_group_area(&area_group).holes.clone();
+                    for (hole_idx, hole) in holes.iter().enumerate() {
+                        // `&hole`
+                        let hole_key = (ts_idx, group_idx, holes_generation[ts_idx][group_idx], hole_idx);
+                        for group_lower_idx in 0..n_groups_lower {
+                            let area_group_lower = self.m_object.m_support_layers[lower_idx].area_groups[group_lower_idx].clone();
+                            let mut pt_on_poly = Point::new(0, 0);
+                            let mut pt_on_expoly = Point::new(0, 0);
+                            let mut pt_far_on_poly = Point::new(0, 0);
+                            // if a hole doesn't intersect with lower layer's contours, add a hole to lower layer and move it slightly to the contour
+                            let contour_contains_front;
+                            let intersects;
+                            {
+                                let base_area_lower = self.m_object.m_support_layers[lower_idx].area_group_area(&area_group_lower);
+                                contour_contains_front = crate::geometry::contains_polygon(&base_area_lower.contour, &hole.points[0], true);
+                                intersects = contour_contains_front
+                                    && intersects_contour(
+                                        hole,
+                                        base_area_lower,
+                                        &mut pt_on_poly,
+                                        &mut pt_on_expoly,
+                                        &mut pt_far_on_poly,
+                                        // `0.01 + unscale_(line_width_scaled) * (need_extra_wall ? 2. : 0.5)`: contracted, narrowed to float
+                                        (line_width_scaled * SCALING_FACTOR).mul_add(if area_group.need_extra_wall { 2.0 } else { 0.5 }, 0.01) as f32,
+                                    );
+                            }
+                            if contour_contains_front && !intersects {
+                                let mut hole_lower: Polygon = hole.clone();
+                                let direction = normal(Point::new(pt_on_expoly.x - pt_on_poly.x, pt_on_expoly.y - pt_on_poly.y), line_width_scaled / 2.0);
+                                hole_lower.translate(direction);
+                                // note to expand a hole, we need to do negative offset
+                                let mut hole_expanded =
+                                    cx::offset_polygon(&hole_lower, (-line_width_scaled / 4.0) as f32, crate::clipper::JoinType::jtSquare, cx::DEFAULT_MITER_LIMIT);
+                                if !hole_expanded.is_empty() {
+                                    let lower_layer = &mut self.m_object.m_support_layers[lower_idx];
+                                    let base_area_lower = lower_layer.area_group_area_mut(&area_group_lower);
+                                    // push_back: the buffer of the vector is replaced when it is full
+                                    if base_area_lower.holes.len() == holes_capacity[lower_idx][group_lower_idx] {
+                                        holes_capacity[lower_idx][group_lower_idx] =
+                                            (2 * holes_capacity[lower_idx][group_lower_idx]).max(base_area_lower.holes.len() + 1);
+                                        holes_generation[lower_idx][group_lower_idx] += 1;
+                                    }
+                                    base_area_lower.holes.push(hole_expanded.swap_remove(0));
+                                    hole_propagation_infos
+                                        .entry((lower_idx, group_lower_idx, holes_generation[lower_idx][group_lower_idx], base_area_lower.holes.len() - 1))
+                                        .or_insert((25, direction, pt_far_on_poly));
+                                }
+                                break;
+                            } else if hole_propagation_infos.get(&hole_key).map(|info| {
+                                info.0 > 0
+                                    && crate::geometry::contains_polygon(
+                                        &self.m_object.m_support_layers[lower_idx].area_group_area(&area_group_lower).contour,
+                                        &info.2,
+                                        true,
+                                    )
+                            }) == Some(true)
+                            {
+                                // after the hole connects to contour, shrink it gradually until it vanishes while moving it outwards. The moving direction is defined in the previous step
+                                let info = hole_propagation_infos[&hole_key];
+                                let mut hole_lower: Polygon = hole.clone();
+                                let direction = info.1;
+                                hole_lower.translate(direction);
+                                // note to shrink a hole, we need to do positive offset
+                                let mut hole_expanded =
+                                    cx::offset_polygon(&hole_lower, (line_width_scaled / 2.0) as f32, crate::clipper::JoinType::jtSquare, cx::DEFAULT_MITER_LIMIT);
+                                // `direction * 2`: Eigen's integer product
+                                let far_point = Point::new(info.2.x + direction.x * 2, info.2.y + direction.y * 2);
+                                if !hole_expanded.is_empty() {
+                                    let lower_layer = &mut self.m_object.m_support_layers[lower_idx];
+                                    let base_area_lower = lower_layer.area_group_area_mut(&area_group_lower);
+                                    if base_area_lower.holes.len() == holes_capacity[lower_idx][group_lower_idx] {
+                                        holes_capacity[lower_idx][group_lower_idx] =
+                                            (2 * holes_capacity[lower_idx][group_lower_idx]).max(base_area_lower.holes.len() + 1);
+                                        holes_generation[lower_idx][group_lower_idx] += 1;
+                                    }
+                                    base_area_lower.holes.push(hole_expanded.swap_remove(0));
+                                    hole_propagation_infos
+                                        .entry((lower_idx, group_lower_idx, holes_generation[lower_idx][group_lower_idx], base_area_lower.holes.len() - 1))
+                                        .or_insert((info.0 - 1, direction, far_point));
+                                }
+                                break;
+                            }
+                        }
+                        {
+                            // if roof1 interface is inside a hole, need to expand the interface
+                            let n_roof1 = self.m_object.m_support_layers[ts_idx].roof_1st_layer.len();
+                            for roof1_idx in 0..n_roof1 {
+                                let roof1_contour: Polygon = self.m_object.m_support_layers[ts_idx].roof_1st_layer[roof1_idx].contour.clone();
+                                let is_inside_hole = roof1_contour.points.iter().all(|pt| crate::geometry::contains_polygon(hole, pt, true));
+                                if is_inside_hole {
+                                    let mut hole_reoriented: Polygon = hole.clone();
+                                    if roof1_contour.is_counter_clockwise() {
+                                        hole_reoriented.make_counter_clockwise();
+                                    } else if roof1_contour.is_clockwise() {
+                                        hole_reoriented.make_clockwise();
+                                    }
+                                    let tmp = cx::union_(&[roof1_contour.clone(), hole_reoriented]);
+                                    if !tmp.is_empty() {
+                                        self.m_object.m_support_layers[ts_idx].roof_1st_layer[roof1_idx].contour = tmp[0].clone();
+                                    }
+
+                                    // make sure 1) roof1 and object 2) roof1 and roof, won't intersect
+                                    // Note: We can't replace roof1 directly, as we have recorded its address.
+                                    //       So instead we need to replace its members one by one.
+                                    let roof1: ExPolygon = self.m_object.m_support_layers[ts_idx].roof_1st_layer[roof1_idx].clone();
+                                    let collision = self.get_collision(0.0, self.m_ts_data.layer_heights[layer_nr as usize].obj_layer_nr);
+                                    let mut tmp1 = cx::diff_ex(std::slice::from_ref(&roof1), &collision);
+                                    tmp1 = cx::diff_ex(&tmp1, &self.m_object.m_support_layers[ts_idx].roof_areas);
+                                    if !tmp1.is_empty() {
+                                        let first = tmp1.swap_remove(0);
+                                        let roof1 = &mut self.m_object.m_support_layers[ts_idx].roof_1st_layer[roof1_idx];
+                                        roof1.contour = first.contour;
+                                        roof1.holes = first.holes;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only remove empty non-raft support layers. Raft layers (first m_raft_layers entries)
+        // must be preserved to avoid support_layer_count < m_raft_layers mismatch.
+        {
+            let raft_layers = self.m_raft_layers;
+            let ts_layers = &mut self.m_object.m_support_layers;
+            let mut idx = 0usize;
+            ts_layers.retain(|ts_layer| {
+                let keep = idx < raft_layers || !(ts_layer.layer.height < EPSILON);
+                idx += 1;
+                keep
+            });
+            let n = ts_layers.len();
+            for layer_nr in 0..n {
+                ts_layers[layer_nr].layer.upper_layer_id = if layer_nr != n - 1 { Some(layer_nr + 1) } else { None };
+                ts_layers[layer_nr].layer.lower_layer_id = if layer_nr > 0 { Some(layer_nr - 1) } else { None };
+            }
+        }
+    }
+
+    // TreeSupport.cpp:4369-4388 the lambda `effective_base` of draw_circles()
+    fn draw_circles_effective_base(&self, layer_nr: i32) -> ExPolygons {
+        if layer_nr < 0 {
+            return Vec::new();
+        }
+        let ts = self.m_object.m_support_layers.get(layer_nr as usize + self.m_raft_layers);
+        let spanning: Vec<usize> = self.fold_carriers_above(layer_nr as usize);
+        if spanning.is_empty() {
+            return match ts {
+                Some(ts) if !ts.area_groups.is_empty() => ts.base_areas.clone(),
+                _ => Vec::new(),
+            };
+        }
+        // A layer inside a folded slab contributes its own regions only while it still prints a column
+        // of its own - a carrier, or a column whose carrier refused. Reading the footprint of a layer
+        // without one would make the stack jump from a sliver to the full slab and invent an overhang.
+        let own_column = self.contact_nodes[layer_nr as usize].iter().any(|&node| self.m_ts_data.contact_nodes[node].distance_to_top >= 0);
+        let mut footprint: ExPolygons = Vec::new();
+        if own_column {
+            if let Some(ts) = ts {
+                if !ts.area_groups.is_empty() {
+                    footprint = ts.base_areas.clone();
+                }
+            }
+        }
+        for carrier_nr in spanning {
+            if let Some(carrier) = self.m_object.m_support_layers.get(carrier_nr + self.m_raft_layers) {
+                append(&mut footprint, carrier.base_areas.clone());
+            }
+        }
+        cx::union_ex(&footprint)
+    }
+}
+
+// ExPolygon.cpp `BoundingBox get_extents(const ExPolygon &expolygon)`: the box of the contour, a default
+// constructed box when it has no points.
+fn get_extents_expolygon(expolygon: &ExPolygon) -> BoundingBox {
+    get_extents_expolygons(std::slice::from_ref(expolygon))
+}
+
+// TreeSupport.cpp:4643-4655 the lambda `sync_support_islands` of resolve_material_covered_by_folded_interfaces()
+fn sync_support_islands(layer: &mut crate::print::faithful::SupportLayer) {
+    if layer.support_islands.is_empty() {
+        return;
+    }
+    let mut islands: ExPolygons = Vec::with_capacity(layer.area_groups.len());
+    for area_group in &layer.area_groups {
+        islands.push(layer.area_group_area(area_group).clone());
+    }
+    layer.support_islands = cx::union_ex(&islands);
+    layer.layer.lslices_bboxes.clear();
+    for expoly in &layer.support_islands {
+        layer.layer.lslices_bboxes.push(get_extents_expolygon(expoly));
+    }
+}
+
+// TreeSupport.cpp:4669-4752 the lambda `trim_layer` of resolve_material_covered_by_folded_interfaces()
+fn trim_layer(layer: &mut crate::print::faithful::SupportLayer, base_cut: &[ExPolygon], interface_cut: &[ExPolygon]) -> bool {
+    use crate::print::faithful::{SupportLayerAreaGroup, SupportLayerAreaType};
+    if base_cut.is_empty() && interface_cut.is_empty() {
+        return false;
+    }
+
+    const NUM_AREA_TYPES: usize = (SupportLayerAreaType::Roof1stLayer + 1) as usize;
+    // `ExPolygons *regions_by_type[num_area_types] { &layer.base_areas, &layer.roof_areas, &layer.floor_areas, &layer.roof_1st_layer }`
+    let regions_len = |layer: &crate::print::faithful::SupportLayer, type_: usize| -> usize {
+        match type_ {
+            0 => layer.base_areas.len(),
+            1 => layer.roof_areas.len(),
+            2 => layer.floor_areas.len(),
+            _ => layer.roof_1st_layer.len(),
+        }
+    };
+    let mut kept_regions: [ExPolygons; NUM_AREA_TYPES] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let base_cut_bboxes: Vec<BoundingBox> = base_cut.iter().map(get_extents_expolygon).collect();
+    let interface_cut_bboxes: Vec<BoundingBox> = interface_cut.iter().map(get_extents_expolygon).collect();
+    let mut kept_groups: Vec<SupportLayerAreaGroup> = Vec::with_capacity(layer.area_groups.len());
+    let mut changed = false;
+    let mut source_index: [usize; NUM_AREA_TYPES] = [0; NUM_AREA_TYPES];
+    for area_group in &layer.area_groups {
+        let type_ = area_group.type_;
+        if type_ < SupportLayerAreaType::BaseType || type_ > SupportLayerAreaType::Roof1stLayer {
+            continue;
+        }
+        let index = source_index[type_ as usize];
+        source_index[type_ as usize] += 1;
+        // `area_group.area == regions_by_type[type]->data() + index`
+        let mapping_valid = index < regions_len(layer, type_ as usize) && area_group.area == index;
+        debug_assert!(mapping_valid);
+        if !mapping_valid {
+            // BOOST_LOG_TRIVIAL(error) << "Cannot trim folded support overlap: stale area-group mapping";
+            return false;
+        }
+
+        let (cut, cut_bboxes): (Option<&[ExPolygon]>, Option<&Vec<BoundingBox>>) = if type_ == SupportLayerAreaType::BaseType {
+            (Some(base_cut), Some(&base_cut_bboxes))
+        } else if type_ == SupportLayerAreaType::RoofType || type_ == SupportLayerAreaType::Roof1stLayer {
+            (Some(interface_cut), Some(&interface_cut_bboxes))
+        } else {
+            (None, None)
+        };
+        let area: &ExPolygon = layer.area_group_area(area_group);
+        let area_bbox = get_extents_expolygon(area);
+        let mut local_cut: ExPolygons = Vec::new();
+        if let (Some(cut), Some(cut_bboxes)) = (cut, cut_bboxes) {
+            for cut_idx in 0..cut.len() {
+                if bbox_overlap(&cut_bboxes[cut_idx], &area_bbox) {
+                    local_cut.push(cut[cut_idx].clone());
+                }
+            }
+        }
+        let pieces: ExPolygons = if !local_cut.is_empty() { cx::diff_ex(std::slice::from_ref(area), &local_cut) } else { vec![area.clone()] };
+        changed |= !local_cut.is_empty();
+
+        for piece in pieces {
+            kept_regions[type_ as usize].push(piece);
+            // `kept.area = nullptr;` until the regions are in place
+            kept_groups.push(area_group.clone());
+        }
+    }
+
+    for type_ in 0..NUM_AREA_TYPES {
+        let mapping_complete = source_index[type_] == regions_len(layer, type_);
+        debug_assert!(mapping_complete);
+        if !mapping_complete {
+            // BOOST_LOG_TRIVIAL(error) << "Cannot trim folded support overlap: incomplete area-group mapping";
+            return false;
+        }
+    }
+    if !changed {
+        return false;
+    }
+
+    let [base, roof, floor, roof1] = kept_regions;
+    layer.base_areas = base;
+    layer.roof_areas = roof;
+    layer.floor_areas = floor;
+    layer.roof_1st_layer = roof1;
+    let mut next_index: [usize; NUM_AREA_TYPES] = [0; NUM_AREA_TYPES];
+    for area_group in kept_groups.iter_mut() {
+        area_group.area = next_index[area_group.type_ as usize];
+        next_index[area_group.type_ as usize] += 1;
+    }
+    layer.area_groups = kept_groups;
+
+    if layer.roof_areas.is_empty() && layer.roof_1st_layer.is_empty() {
+        layer.planned_interface_filament_id = 0;
+        layer.planned_interface_nozzle_diameter = 0.;
+        layer.interface_slab_height = 0.;
+    }
+    if layer.base_areas.is_empty() {
+        layer.planned_filament_id = 0;
+        layer.planned_nozzle_diameter = 0.;
+        layer.base_slab_height = 0.;
+    }
+    sync_support_islands(layer);
+    true
+}
+
+impl<'a> TreeSupport<'a> {
+    /// TreeSupport.cpp:4635-4901 `void TreeSupport::resolve_material_covered_by_folded_interfaces()`
+    ///
+    /// Remove fine-grid interface and ordinary base material already occupied by a folded interface slab.
+    /// Runs after all typed areas are finalized and before later support passes read them back.
+    ///
+    /// Returns the positions in `m_object->support_layers()` of the layers it trimmed (the C++ counts them for
+    /// its log line): draw_circles() follows the buffers of their `holes`.
+    pub fn resolve_material_covered_by_folded_interfaces(&mut self) -> Vec<usize> {
+        let mut trimmed_layers: Vec<usize> = Vec::new();
+        if self.m_fold_carriers.is_empty() {
+            return trimmed_layers;
+        }
+        let raft_layers = self.m_raft_layers;
+        let n_layers = self.m_object.m_support_layers.len();
+        if n_layers <= raft_layers {
+            return trimmed_layers;
+        }
+
+        use crate::print::faithful::SupportLayer;
+        let is_folded_interface = |layer: &SupportLayer| -> bool {
+            layer.interface_slab_height > layer.layer.height + EPSILON && (!layer.roof_areas.is_empty() || !layer.roof_1st_layer.is_empty())
+        };
+        let interface_height =
+            |layer: &SupportLayer| -> CoordF { if layer.interface_slab_height > EPSILON { layer.interface_slab_height } else { layer.layer.height } };
+        let base_height = |layer: &SupportLayer| -> CoordF { if layer.base_slab_height > EPSILON { layer.base_slab_height } else { layer.layer.height } };
+
+        let mut base_cut: Vec<ExPolygons> = vec![Vec::new(); n_layers];
+        let mut interface_cut: Vec<ExPolygons> = vec![Vec::new(); n_layers];
+        let mut source_idx = n_layers;
+        while source_idx > raft_layers {
+            source_idx -= 1;
+            if trim_layer(&mut self.m_object.m_support_layers[source_idx], &base_cut[source_idx], &interface_cut[source_idx]) {
+                trimmed_layers.push(source_idx);
+            }
+
+            {
+                let source = &self.m_object.m_support_layers[source_idx];
+                if !source.base_areas.is_empty() && (!source.roof_areas.is_empty() || !source.roof_1st_layer.is_empty()) {
+                    let mut base_priority_cut: ExPolygons = source.roof_areas.clone();
+                    append(&mut base_priority_cut, source.roof_1st_layer.clone());
+                    if !base_priority_cut.is_empty()
+                        && bbox_overlap(&get_extents_expolygons(&source.base_areas), &get_extents_expolygons(&base_priority_cut))
+                        && !cx::intersection_ex(&source.base_areas, &base_priority_cut).is_empty()
+                        && trim_layer(&mut self.m_object.m_support_layers[source_idx], &base_priority_cut, &[])
+                    {
+                        trimmed_layers.push(source_idx);
+                    }
+                }
+            }
+
+            // Nested folded bases share a complete Z interval, so the outer carrier already extrudes their XY
+            // intersection. Trim that duplicate from the shorter layer using the final rendered geometry. True
+            // partial-Z overlaps and interface-over-base conflicts were rejected before folding.
+            if self.m_object.m_support_layers[source_idx].base_slab_height > self.m_object.m_support_layers[source_idx].layer.height + EPSILON
+                && !self.m_object.m_support_layers[source_idx].base_areas.is_empty()
+            {
+                let source_top: CoordF = self.m_object.m_support_layers[source_idx].layer.print_z;
+                let source_bottom: CoordF = source_top - self.m_object.m_support_layers[source_idx].base_slab_height;
+                // The base-only fold layers of the second round keep clear of the interfaces that stay on the fine
+                // grid inside their slab: the fine base carries those, the coarse layer leaves their projection empty.
+                if self.m_base_only_fold_layers.binary_search(&(source_idx - raft_layers)).is_ok() {
+                    let base_bbox = get_extents_expolygons(&self.m_object.m_support_layers[source_idx].base_areas);
+                    let mut fine_interface: ExPolygons = Vec::new();
+                    let mut victim_idx = source_idx;
+                    while victim_idx > raft_layers {
+                        victim_idx -= 1;
+                        let victim = &self.m_object.m_support_layers[victim_idx];
+                        if victim.layer.height < EPSILON {
+                            continue;
+                        }
+                        if victim.layer.print_z <= source_bottom + EPSILON {
+                            break;
+                        }
+                        for areas in [&victim.roof_areas, &victim.roof_1st_layer] {
+                            for area in areas {
+                                if bbox_overlap(&base_bbox, &get_extents_expolygon(area)) {
+                                    fine_interface.push(area.clone());
+                                }
+                            }
+                        }
+                    }
+                    if !fine_interface.is_empty() && trim_layer(&mut self.m_object.m_support_layers[source_idx], &cx::union_ex(&fine_interface), &[]) {
+                        trimmed_layers.push(source_idx);
+                    }
+                }
+                let source_base: ExPolygons = self.m_object.m_support_layers[source_idx].base_areas.clone();
+                let source_bbox = get_extents_expolygons(&source_base);
+
+                let mut victim_idx = source_idx;
+                while victim_idx > raft_layers {
+                    victim_idx -= 1;
+                    if (self.canceled)() {
+                        return trimmed_layers;
+                    }
+                    let victim = &self.m_object.m_support_layers[victim_idx];
+                    if victim.layer.height < EPSILON || victim.base_areas.is_empty() {
+                        continue;
+                    }
+                    let victim_top: CoordF = victim.layer.print_z;
+                    let victim_bottom: CoordF = victim_top - base_height(victim);
+                    if victim_top <= source_bottom + EPSILON {
+                        break;
+                    }
+                    if !bbox_overlap(&source_bbox, &get_extents_expolygons(&victim.base_areas)) {
+                        continue;
+                    }
+
+                    let overlap: ExPolygons = cx::intersection_ex(&victim.base_areas, &source_base);
+                    if overlap.is_empty() {
+                        continue;
+                    }
+                    if source_bottom <= victim_bottom + EPSILON && source_top >= victim_top - EPSILON {
+                        append(&mut base_cut[victim_idx], overlap);
+                    }
+                    // else: BOOST_LOG_TRIVIAL(warning) << "Folded support base overlaps only part of a base Z span ...; keeping both regions"
+                }
+            }
+            if !is_folded_interface(&self.m_object.m_support_layers[source_idx]) {
+                continue;
+            }
+
+            let source_top: CoordF = self.m_object.m_support_layers[source_idx].layer.print_z;
+            let source_bottom: CoordF = source_top - self.m_object.m_support_layers[source_idx].interface_slab_height;
+            let mut footprint: ExPolygons = self.m_object.m_support_layers[source_idx].roof_areas.clone();
+            append(&mut footprint, self.m_object.m_support_layers[source_idx].roof_1st_layer.clone());
+            if footprint.is_empty() {
+                continue;
+            }
+            let footprint_bbox = get_extents_expolygons(&footprint);
+
+            // the lambda `collect_cut` (TreeSupport.cpp:4840-4869)
+            let collect_cut = |victim_print_z: CoordF, victim_height: CoordF, victim_areas: &ExPolygons, cut: &mut ExPolygons| {
+                if victim_height < EPSILON || victim_areas.is_empty() {
+                    return;
+                }
+                let victim_top: CoordF = victim_print_z;
+                let victim_bottom: CoordF = victim_top - victim_height;
+                if source_top.min(victim_top) <= source_bottom.max(victim_bottom) + EPSILON {
+                    return;
+                }
+                if !bbox_overlap(&footprint_bbox, &get_extents_expolygons(victim_areas)) {
+                    return;
+                }
+
+                let xy_overlap: ExPolygons = cx::intersection_ex(victim_areas, &footprint);
+                if xy_overlap.is_empty() {
+                    return;
+                }
+                let fully_covered = source_bottom <= victim_bottom + EPSILON && source_top >= victim_top - EPSILON;
+                if fully_covered {
+                    append(cut, xy_overlap);
+                }
+                // else: keep both regions in this unexpected fallback path. The carrier precheck handles known
+                // partial overlaps; aborting here is worse than accepting localized over-extrusion.
+            };
+
+            {
+                let source = &self.m_object.m_support_layers[source_idx];
+                collect_cut(source.layer.print_z, base_height(source), &source.base_areas, &mut base_cut[source_idx]);
+            }
+
+            let mut victim_idx = source_idx;
+            while victim_idx > raft_layers {
+                victim_idx -= 1;
+                if (self.canceled)() {
+                    return trimmed_layers;
+                }
+                let victim = &self.m_object.m_support_layers[victim_idx];
+                if victim.layer.height < EPSILON {
+                    continue;
+                }
+
+                let victim_top: CoordF = victim.layer.print_z;
+                if victim_top <= source_bottom + EPSILON {
+                    break;
+                }
+                collect_cut(victim_top, interface_height(victim), &victim.roof_areas, &mut interface_cut[victim_idx]);
+                collect_cut(victim_top, interface_height(victim), &victim.roof_1st_layer, &mut interface_cut[victim_idx]);
+                collect_cut(victim_top, base_height(victim), &victim.base_areas, &mut base_cut[victim_idx]);
+            }
+
+            if !base_cut[source_idx].is_empty() {
+                if trim_layer(&mut self.m_object.m_support_layers[source_idx], &base_cut[source_idx], &[]) {
+                    trimmed_layers.push(source_idx);
+                }
+                base_cut[source_idx].clear();
+            }
+        }
+        trimmed_layers
     }
 }
 

@@ -12,7 +12,8 @@
 //   c++ <the build's defines and include directories> -std=c++17 -O3 -DNDEBUG \
 //       -include $REPO/libslic3r/bambustudio/cgal_54_compat.hpp -c $DATA/gen.cpp -o gen.o
 //   c++ gen.o $BUILD/libslic3r_core.a <the libraries libslic3r_core links> -o gen
-//   ./gen > vectors.txt && gzip -9 -n -c vectors.txt > $DATA/vectors.txt.gz
+//   ./gen 2>/dev/null | grep -v '^\[' > vectors.txt && gzip -9 -n -c vectors.txt > $DATA/vectors.txt.gz
+// (the grouping writes log lines, which start with '[', to the standard output)
 //
 // ToolOrdering.cpp is included here with private and protected members made public, so that its
 // file-static functions and the private members of ToolOrdering are reachable; its definitions
@@ -1484,6 +1485,930 @@ static void case_build()
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The filament grouping of ToolOrdering.cpp: GroupReorder::build_manual_nozzle_map and
+// build_filament_group_context, refine_groups_by_Nozzle_State, plan_filament_mapping_and_order_by_combo_ranges,
+// ToolOrdering::get_recommended_filament_maps, and sort_and_build_data (reorder_extruders_for_minimum_flush_volume,
+// calculate_and_store_statistics) over hand-built prints. Inputs stay small so that FilamentGroup always takes its
+// enumeration path (no time limit is reached).
+//
+// A grouping configuration is "C" (above) then the Print state "P": calib extruder_id has_bowden mode,
+// the extruder filament info (n groups, per group n items: colour type tray is_support filament_id texts),
+// the filament usage types list, the filament print time as insertion steps (n, then filament extruder
+// time), the nozzle loaded filaments (n, then nozzle_id filament_id valid colour type is_support usage
+// diameter), is_dynamic_group_reorder, is_sequential_print.
+// ---------------------------------------------------------------------------------------------
+
+static std::string rand_colour()
+{
+    static const char *d = "0123456789ABCDEF";
+    std::string s = "#";
+    for (int i = 0; i < 6; ++i)
+        s += d[ri(0, 15)];
+    return s;
+}
+
+static const std::vector<std::string> k_ftypes{"PLA", "PETG", "ABS", "PLA-S", "Sup.PLA", "TPU"};
+
+struct GroupPrintState
+{
+    int                                            calib_extruder = 0;
+    bool                                           calib_bowden   = false;
+    int                                            calib_mode     = 0;
+    std::vector<std::vector<std::vector<std::string>>> ext_items; // per extruder, per item: colour type tray support id
+    std::vector<std::tuple<int, int, double>>      print_time;
+    std::vector<FilamentGroupUtils::NozzleLoadedFilamentInfo> loaded;
+};
+
+// A random grouping configuration: kind 0 = one nozzle per extruder (1 or 2 extruders), 1 = two
+// extruders, the second with several nozzles, 2 = one extruder driving several nozzles (hotend as
+// extruder, per-slot nozzle parameters).
+static Cfg rand_group_cfg(int kind, int nf, int &ne_out, int &nozzle_cnt_out, const std::string &mode_name)
+{
+    const std::vector<std::string> vtn{"Standard", "High Flow", "Hybrid", "TPU High Flow"};
+    int ne = kind == 0 ? ri(1, 2) : (kind == 1 ? 2 : 1);
+    ne_out = ne;
+    std::vector<double> nd;
+    std::vector<int>    maxc;
+    std::vector<std::string> nvt, etype, stats, amsc;
+    for (int e = 0; e < ne; ++e) {
+        nd.push_back(rb(80) ? 0.4 : 0.2);
+        maxc.push_back(kind == 0 ? 1 : (kind == 1 ? (e == 0 ? 1 : ri(2, 4)) : ri(2, 4)));
+        nvt.push_back(kind == 1 && e == 1 && rb(40) ? "Hybrid" : vtn[size_t(ri(0, 1))]);
+        etype.push_back(rb(25) ? "Bowden" : "Direct Drive");
+        std::string st;
+        if (kind == 1 && e == 1) {
+            if (nvt.back() == "Hybrid")
+                st = "Standard#" + std::to_string(ri(1, 2)) + "|High Flow#" + std::to_string(ri(1, 2));
+            else
+                st = nvt.back() + "#" + std::to_string(maxc.back());
+        }
+        stats.push_back(st);
+        int r = ri(0, 3);
+        amsc.push_back(r == 0 ? std::string() : (r == 1 ? "1#0" : (r == 2 ? "4#1" : "1#1|4#1")));
+    }
+    int nozzle_cnt = 0;
+    for (int m : maxc)
+        nozzle_cnt += m;
+    nozzle_cnt_out = nozzle_cnt;
+    std::vector<std::string> col, ft, fid, sel;
+    std::vector<int> sup, fmap, fvol, fnoz;
+    std::vector<double> fdia;
+    for (int f = 0; f < nf; ++f) {
+        col.push_back(rand_colour());
+        ft.push_back(k_ftypes[size_t(ri(0, (int) k_ftypes.size() - 1))]);
+        fid.push_back(std::vector<std::string>{"GFA00", "GFL99", "GFB00", ""}[ri(0, 3)]);
+        sel.push_back(rb(80) ? std::string() : (rb(70) ? "0.4" : "0.2"));
+        sup.push_back(rb(20));
+        fmap.push_back(ri(1, ne));
+        fvol.push_back(ri(0, 2));
+        fnoz.push_back(ri(0, nozzle_cnt - 1));
+        fdia.push_back(rb(90) ? 1.75 : 2.85);
+    }
+    std::vector<double> fvm;
+    for (int e = 0; e < ne; ++e)
+        for (int i = 0; i < nf; ++i)
+            for (int j = 0; j < nf; ++j)
+                fvm.push_back(i == j ? 0. : double(ri(20, 900)));
+    Cfg c{{"nozzle_diameter", join_d(nd)},
+          {"extruder_max_nozzle_count", join(maxc)},
+          {"nozzle_volume_type", join(nvt)},
+          {"extruder_type", join(etype)},
+          {"extruder_nozzle_stats", join_s(stats)},
+          {"extruder_ams_count", join_s(amsc)},
+          {"filament_colour", join_s(col)},
+          {"filament_type", join_s(ft)},
+          {"filament_ids", join_s(fid)},
+          {"filament_is_support", join(sup)},
+          {"filament_diameter", join_d(fdia)},
+          {"filament_map", join(fmap)},
+          {"filament_volume_map", join(fvol)},
+          {"filament_nozzle_map", join(fnoz)},
+          {"filament_diameter_map", join_s(sel)},
+          {"filament_map_mode", mode_name},
+          {"master_extruder_id", std::to_string(ri(1, ne))},
+          {"flush_volumes_matrix", join_d(fvm)},
+          {"flush_multiplier", join_d(std::vector<double>(ne, rb(70) ? 1.0 : 0.8))},
+          {"group_algo_with_time", rb(30) ? "1" : "0"},
+          {"machine_load_filament_time", std::to_string(ri(10, 30))},
+          {"machine_unload_filament_time", std::to_string(ri(10, 30))},
+          {"machine_switch_extruder_time", std::to_string(ri(5, 20))},
+          {"has_filament_switcher", rb(10) ? "1" : "0"},
+          {"enable_filament_dynamic_map", rb(25) ? "1" : "0"},
+          {"multi_nozzle_diameter_mode", rb(15) ? "1" : "0"},
+          {"printer_variant", "0.4"},
+          {"handle_hotend_as_extruder", kind == 2 ? "1" : (rb(20) ? "1" : "0")}};
+    if (kind == 2 || (kind == 1 && rb(50))) {
+        // per-slot nozzle parameters
+        std::vector<int> cnt, slots;
+        std::vector<std::string> svt;
+        std::vector<double> sdia;
+        int total = 0;
+        for (int e = 0; e < ne; ++e) {
+            int k = rb(80) ? maxc[size_t(e)] : std::max(1, maxc[size_t(e)] - 1);
+            cnt.push_back(k);
+            total += k;
+        }
+        std::vector<int> perm((size_t) nozzle_cnt);
+        for (int i = 0; i < nozzle_cnt; ++i)
+            perm[size_t(i)] = i;
+        for (int i = nozzle_cnt - 1; i > 0; --i)
+            std::swap(perm[size_t(i)], perm[size_t(ri(0, i))]);
+        for (int i = 0; i < total; ++i) {
+            svt.push_back(vtn[size_t(ri(0, 1))]);
+            sdia.push_back(rb(80) ? 0.4 : 0.2);
+            slots.push_back(perm[size_t(i)]);
+        }
+        c.emplace_back("extruder_nozzle_count", join(cnt));
+        c.emplace_back("extruder_nozzle_volume_type", join(svt));
+        if (rb(70))
+            c.emplace_back("extruder_nozzle_diameter", join_d(sdia));
+        if (rb(70))
+            c.emplace_back("extruder_nozzle_slot", join(slots));
+        if (kind == 2)
+            c.emplace_back("ams_nozzle_idx", std::to_string(rb(25) ? -1 : ri(0, nozzle_cnt - 1)));
+    }
+    return c;
+}
+
+static GroupPrintState rand_print_state(int ne, int nf, int nozzle_cnt)
+{
+    GroupPrintState st;
+    st.calib_extruder = ri(-1, 1);
+    st.calib_bowden   = rb(15);
+    st.calib_mode     = rb(80) ? 0 : std::vector<int>{1, 4}[ri(0, 1)];
+    int ng = rb(70) ? 2 : ne;
+    for (int g = 0; g < ng; ++g) {
+        std::vector<std::vector<std::string>> items;
+        for (int k = 0; k < ri(0, 4); ++k)
+            items.push_back({rb(10) ? std::string() : rand_colour(), k_ftypes[size_t(ri(0, (int) k_ftypes.size() - 1))],
+                             std::vector<std::string>{"A1", "B2", "Ext", ""}[ri(0, 3)], rb(20) ? "1" : "0",
+                             std::vector<std::string>{"GFA00", "GFL99", ""}[ri(0, 2)]});
+        st.ext_items.push_back(items);
+    }
+    std::vector<int> fl((size_t) nf);
+    for (int f = 0; f < nf; ++f)
+        fl[size_t(f)] = f;
+    for (int i = nf - 1; i > 0; --i)
+        std::swap(fl[size_t(i)], fl[size_t(ri(0, i))]);
+    if (rb(70))
+        for (int f : fl) {
+            if (rb(20))
+                continue;
+            for (int e = 0; e < std::max(ne, nozzle_cnt); ++e)
+                if (rb(80))
+                    st.print_time.emplace_back(f, e, rd(10.0, 500.0));
+        }
+    for (int k = 0; k < ri(0, 3); ++k) {
+        FilamentGroupUtils::NozzleLoadedFilamentInfo l;
+        l.nozzle_id   = ri(0, nozzle_cnt);
+        l.filament_id = std::vector<std::string>{"GFA00", "GFL99", ""}[ri(0, 2)];
+        l.valid       = rb(80);
+        l.color       = FilamentGroupUtils::Color(rand_colour());
+        l.type        = k_ftypes[size_t(ri(0, (int) k_ftypes.size() - 1))];
+        l.is_support  = rb(20);
+        l.usage_type  = FilamentUsageType(ri(0, 2));
+        l.diameter    = rb(90) ? 1.75f : 2.85f;
+        st.loaded.push_back(l);
+    }
+    return st;
+}
+
+static void apply_print_state(Print &print, const Cfg &c, const GroupPrintState &st)
+{
+    print.m_config.apply(make_cfg(c), true);
+    print.m_full_print_config     = make_dyn(c);
+    print.m_ori_full_print_config = make_dyn(c);
+    print.m_calib_params.extruder_id         = st.calib_extruder;
+    print.m_calib_params.has_bowden_extruder = st.calib_bowden;
+    print.m_calib_params.mode                = CalibMode(st.calib_mode);
+    print.m_extruder_filament_info.clear();
+    for (auto &g : st.ext_items) {
+        std::vector<DynamicPrintConfig> items;
+        for (auto &it : g) {
+            DynamicPrintConfig d;
+            d.set_key_value("filament_colour", new ConfigOptionStrings({it[0]}));
+            d.set_key_value("filament_type", new ConfigOptionStrings({it[1]}));
+            d.set_key_value("tray_name", new ConfigOptionStrings({it[2]}));
+            d.set_key_value("filament_is_support", new ConfigOptionBools({it[3] == "1"}));
+            d.set_key_value("filament_id", new ConfigOptionStrings({it[4]}));
+            items.push_back(d);
+        }
+        print.m_extruder_filament_info.push_back(items);
+    }
+    print.m_filament_print_time.clear();
+    for (auto &t : st.print_time)
+        print.m_filament_print_time[std::get<0>(t)][std::get<1>(t)] = std::get<2>(t);
+    print.m_nozzle_loaded_filament_info = st.loaded;
+}
+
+static void write_print_state(const Print &print, const GroupPrintState &st)
+{
+    tok("P");
+    ti(st.calib_extruder);
+    ti(st.calib_bowden);
+    ti(st.calib_mode);
+    ti((long long) st.ext_items.size());
+    for (auto &g : st.ext_items) {
+        ti((long long) g.size());
+        for (auto &it : g)
+            for (auto &s : it)
+                ts(s);
+    }
+    std::vector<int> usage;
+    for (auto u : print.get_filament_usage_type())
+        usage.push_back((int) u);
+    tlist_u(usage);
+    ti((long long) st.print_time.size());
+    for (auto &t : st.print_time) {
+        ti(std::get<0>(t));
+        ti(std::get<1>(t));
+        td(std::get<2>(t));
+    }
+    ti((long long) st.loaded.size());
+    for (auto &l : st.loaded) {
+        ti(l.nozzle_id);
+        ts(l.filament_id);
+        ti(l.valid);
+        ts(l.color.to_hex_str(true));
+        ts(l.type);
+        ti(l.is_support);
+        ti((int) l.usage_type);
+        tf(l.diameter);
+    }
+    ti(print.is_dynamic_group_reorder());
+    ti(print.is_sequential_print());
+}
+
+static void write_nozzles_installed(const std::vector<MultiNozzleUtils::NozzleInfo> &list)
+{
+    ti((long long) list.size());
+    for (auto &n : list) {
+        ts(n.diameter);
+        ti((int) n.volume_type);
+        ti(n.extruder_id);
+        ti(n.group_id);
+        ti(n.installed);
+    }
+}
+
+static void write_sets(const std::vector<std::set<int>> &v)
+{
+    ti((long long) v.size());
+    for (auto &s : v)
+        tlist_u(std::vector<int>(s.begin(), s.end()));
+}
+
+static void write_ctx(const FilamentGroupContext &ctx)
+{
+    const auto &m = ctx.model_info;
+    ti((long long) m.flush_matrix.size());
+    for (auto &fm : m.flush_matrix) {
+        ti((long long) fm.size());
+        for (auto &row : fm) {
+            ti((long long) row.size());
+            for (float v : row)
+                tf(v);
+        }
+    }
+    ti((long long) m.layer_filaments.size());
+    for (auto &l : m.layer_filaments)
+        tlist_u(l);
+    ti((long long) m.filament_info.size());
+    for (auto &f : m.filament_info) {
+        ts(f.color.to_hex_str(true));
+        ts(f.type);
+        ti(f.is_support);
+        ti((int) f.usage_type);
+        tf(f.diameter);
+    }
+    ti((long long) m.filament_ids.size());
+    for (auto &s : m.filament_ids)
+        ts(s);
+    ti((long long) m.selected_nozzle_diameters.size());
+    for (auto &s : m.selected_nozzle_diameters)
+        ts(s);
+    write_sets(m.unprintable_filaments);
+    ti((long long) m.unprintable_volumes.size());
+    for (auto &kv : m.unprintable_volumes) {
+        ti(kv.first);
+        std::vector<int> v;
+        for (auto t : kv.second)
+            v.push_back((int) t);
+        tlist_u(v);
+    }
+    const auto &g = ctx.group_info;
+    ti(g.total_filament_num);
+    td(g.max_gap_threshold);
+    ti((int) g.mode);
+    ti((int) g.strategy);
+    ti(g.ignore_ext_filament);
+    ti(g.has_filament_switcher);
+    tlist_u(g.filament_volume_map);
+    const auto &mi = ctx.machine_info;
+    tlist_u(mi.max_group_size);
+    ti((long long) mi.machine_filament_info.size());
+    for (auto &e : mi.machine_filament_info) {
+        ti((long long) e.size());
+        for (auto &f : e) {
+            ts(f.color.to_hex_str(true));
+            ts(f.type);
+            ti(f.is_support);
+            ti(f.extruder_id);
+            ti(f.is_extended);
+            ts(f.filament_id);
+        }
+    }
+    ti((long long) mi.nozzle_loaded_filaments.size());
+    std::vector<int> pref;
+    for (bool b : mi.prefer_non_model_filament)
+        pref.push_back(b);
+    tlist_u(pref);
+    ti(mi.master_extruder_id);
+    const auto &sp = ctx.speed_info;
+    ti((long long) sp.filament_print_time.size());
+    for (auto &kv : sp.filament_print_time) {
+        ti(kv.first);
+        ti((long long) kv.second.size());
+        for (auto &kv2 : kv.second) {
+            ti(kv2.first);
+            td(kv2.second);
+        }
+    }
+    td(sp.extruder_change_time);
+    td(sp.filament_change_time);
+    ti(sp.group_with_time);
+    tf(sp.change_time_params.selector_load_time);
+    tf(sp.change_time_params.selector_unload_time);
+    tf(sp.change_time_params.standard_load_time);
+    tf(sp.change_time_params.standard_unload_time);
+    ti((long long) sp.ams_preload_enabled.size());
+    const auto &ni = ctx.nozzle_info;
+    ti((long long) ni.extruder_nozzle_list.size());
+    for (auto &kv : ni.extruder_nozzle_list) {
+        ti(kv.first);
+        tlist_u(kv.second);
+    }
+    write_nozzles_installed(ni.nozzle_list);
+    ti((long long) ni.nozzle_status.size());
+    for (auto &kv : ni.nozzle_status) {
+        ti(kv.first);
+        ti(kv.second);
+    }
+    tlist_u(ni.per_nozzle_capacity);
+}
+
+static void write_group(const MultiNozzleUtils::LayeredNozzleGroupResult &r)
+{
+    ti(r.is_support_dynamic_nozzle_map());
+    ti(r.is_handle_nozzle_as_extruder());
+    tlist_u(r.get_used_filaments());
+    tlist_u(r.get_extruder_map(true, -1));
+    tlist_u(r.get_nozzle_map(-1));
+    tlist_u(r.get_volume_map(-1));
+    ti((long long) r.get_layer_count());
+    for (auto &m : r.get_layer_filament_nozzle_maps())
+        tlist_u(m);
+    ti((long long) r.get_layer_filament_sequences().size());
+    for (auto &s : r.get_layer_filament_sequences())
+        tlist_u(s);
+    for (auto f : r.get_used_filaments()) {
+        auto n = r.get_nozzle_for_filament(int(f));
+        if (n) {
+            tok("N");
+            ts(n->diameter);
+            ti((int) n->volume_type);
+            ti(n->extruder_id);
+            ti(n->group_id);
+            ti(n->installed);
+        } else
+            tok("-");
+    }
+}
+
+static std::vector<std::vector<unsigned int>> rand_layer_filaments(int nl, int nf)
+{
+    std::vector<std::vector<unsigned int>> lf;
+    for (int l = 0; l < nl; ++l) {
+        std::vector<unsigned int> v;
+        for (int f = 0; f < nf; ++f)
+            if (rb(55))
+                v.push_back(unsigned(f));
+        if (v.empty() && rb(80))
+            v.push_back(unsigned(ri(0, nf - 1)));
+        for (size_t i = v.size(); i > 1; --i)
+            std::swap(v[i - 1], v[size_t(ri(0, int(i) - 1))]);
+        lf.push_back(v);
+    }
+    return lf;
+}
+
+static void write_layer_filaments(const std::vector<std::vector<unsigned int>> &lf)
+{
+    ti((long long) lf.size());
+    for (auto &l : lf)
+        tlist_u(l);
+}
+
+struct GroupInputs
+{
+    std::vector<std::set<int>>                phys, geom;
+    std::map<int, std::set<NozzleVolumeType>> vols;
+    std::vector<std::pair<int, int>>          status; // nozzle -> filament, insertion order
+};
+
+static GroupInputs rand_group_inputs(int ne, int nf, int nozzle_cnt)
+{
+    GroupInputs in;
+    auto rset = [&](int pct) {
+        std::set<int> s;
+        for (int f = 0; f < nf; ++f)
+            if (rb(pct))
+                s.insert(f);
+        return s;
+    };
+    int np = ri(0, ne), ng = ri(0, ne);
+    for (int e = 0; e < np; ++e)
+        in.phys.push_back(rset(12));
+    for (int e = 0; e < ng; ++e)
+        in.geom.push_back(rset(10));
+    for (int f = 0; f < nf; ++f)
+        if (rb(10)) {
+            std::set<NozzleVolumeType> s;
+            s.insert(NozzleVolumeType(ri(0, 1)));
+            in.vols[f] = s;
+        }
+    if (rb(50))
+        for (int k = 0; k < ri(1, 3); ++k)
+            in.status.emplace_back(ri(0, nozzle_cnt - 1), ri(-1, nf - 1));
+    return in;
+}
+
+static void write_group_inputs(const GroupInputs &in)
+{
+    write_sets(in.phys);
+    write_sets(in.geom);
+    ti((long long) in.vols.size());
+    for (auto &kv : in.vols) {
+        ti(kv.first);
+        std::vector<int> v;
+        for (auto t : kv.second)
+            v.push_back((int) t);
+        tlist_u(v);
+    }
+    ti((long long) in.status.size());
+    for (auto &p : in.status) {
+        ti(p.first);
+        ti(p.second);
+    }
+}
+
+static std::unordered_map<int, int> status_map(const std::vector<std::pair<int, int>> &s)
+{
+    std::unordered_map<int, int> m;
+    for (auto &p : s)
+        m[p.first] = p.second;
+    return m;
+}
+
+static const std::vector<std::string> k_modes{"Auto For Flush", "Auto For Match", "Manual", "Nozzle Manual", "Auto For Quality"};
+
+static void case_build_manual_nozzle_map()
+{
+    for (int it = 0; it < 200; ++it) {
+        int nf = ri(1, 4), ne = 0, nz = 0;
+        Cfg c = rand_group_cfg(2, nf, ne, nz, rb(50) ? "Manual" : "Nozzle Manual");
+        PrintConfig pc = make_cfg(c);
+        auto list = MultiNozzleUtils::build_nozzle_list_from_extruder_nozzles(pc);
+        if (list.empty())
+            list = rand_nozzles(1, ri(1, 4));
+        for (auto &n : list)
+            if (rb(15))
+                n.installed = false;
+        std::vector<unsigned int> used;
+        for (int f = 0; f < nf; ++f)
+            if (rb(75))
+                used.push_back(unsigned(f));
+        FilamentMapMode mode = rb(50) ? fmmManual : fmmNozzleManual;
+        int ams_idx = ri(-1, (int) list.size());
+        int ams_cap = ri(0, 3);
+        tok("build_manual_nozzle_map");
+        write_cfg(c);
+        write_nozzles_installed(list);
+        tlist_u(used);
+        ti((int) mode);
+        ti(ams_idx);
+        ti(ams_cap);
+        ti(nf);
+        arrow();
+        auto map = GroupReorder::build_manual_nozzle_map(pc, list, used, mode, ams_idx, ams_cap, size_t(nf));
+        tlist_u(map);
+        write_nozzles_installed(list);
+        endl_();
+    }
+}
+
+static void case_build_filament_group_context()
+{
+    for (int it = 0; it < 300; ++it) {
+        int kind = ri(0, 2), nf = kind == 0 ? ri(1, 6) : ri(1, 4), ne = 0, nz = 0;
+        std::string mode_name = k_modes[size_t(ri(0, 4))];
+        Cfg c = rand_group_cfg(kind, nf, ne, nz, mode_name);
+        GroupPrintState st = rand_print_state(ne, nf, nz);
+        Print print;
+        apply_print_state(print, c, st);
+        auto lf = rand_layer_filaments(ri(1, 5), nf);
+        GroupInputs in = rand_group_inputs(ne, nf, nz);
+        FilamentMapMode mode = FilamentMapMode(ri(0, 4));
+        tok("build_filament_group_context");
+        write_cfg(c);
+        write_print_state(print, st);
+        write_layer_filaments(lf);
+        write_group_inputs(in);
+        ti((int) mode);
+        arrow();
+        try {
+            auto ctx = GroupReorder::build_filament_group_context(&print, lf, in.phys, in.geom, in.vols, mode, status_map(in.status));
+            tok("ok");
+            write_ctx(ctx);
+        } catch (const std::exception &e) {
+            tok("ERR");
+            ts(e.what());
+        }
+        endl_();
+    }
+}
+
+static void case_get_recommended_filament_maps()
+{
+    for (int it = 0; it < 400; ++it) {
+        int kind = ri(0, 2), nf = kind == 0 ? ri(1, 6) : ri(1, 4), ne = 0, nz = 0;
+        std::string mode_name = k_modes[size_t(ri(0, 4))];
+        Cfg c = rand_group_cfg(kind, nf, ne, nz, mode_name);
+        GroupPrintState st = rand_print_state(ne, nf, nz);
+        Print print;
+        apply_print_state(print, c, st);
+        auto lf = rand_layer_filaments(ri(1, 5), nf);
+        GroupInputs in = rand_group_inputs(ne, nf, nz);
+        FilamentMapMode mode = rb(70) ? print.m_config.filament_map_mode.value : FilamentMapMode(ri(0, 4));
+        tok("get_recommended_filament_maps");
+        write_cfg(c);
+        write_print_state(print, st);
+        write_layer_filaments(lf);
+        write_group_inputs(in);
+        ti((int) mode);
+        arrow();
+        try {
+            auto r = ToolOrdering::get_recommended_filament_maps(&print, lf, mode, in.phys, in.geom, in.vols, status_map(in.status));
+            tok("ok");
+            write_group(r);
+        } catch (const std::exception &e) {
+            tok("ERR");
+            ts(e.what());
+        }
+        endl_();
+    }
+}
+
+static void case_refine_groups()
+{
+    for (int it = 0; it < 200; ++it) {
+        int kind = ri(1, 2), nf = ri(1, 4), ne = 0, nz = 0;
+        Cfg c = rand_group_cfg(kind, nf, ne, nz, "Auto For Flush");
+        GroupPrintState st = rand_print_state(ne, nf, nz);
+        Print print;
+        apply_print_state(print, c, st);
+        auto lf = rand_layer_filaments(ri(1, 5), nf);
+        GroupInputs in = rand_group_inputs(ne, nf, nz);
+        FilamentGroupContext ctx;
+        try {
+            ctx = GroupReorder::build_filament_group_context(&print, lf, in.phys, in.geom, in.vols, fmmAutoForFlush, status_map(in.status));
+        } catch (const std::exception &) {
+            continue;
+        }
+        if (ctx.nozzle_info.nozzle_list.empty())
+            continue;
+        std::vector<int> gmap;
+        for (int f = 0; f < nf; ++f)
+            gmap.push_back(ri(0, (int) ctx.nozzle_info.nozzle_list.size() - 1));
+        std::vector<std::pair<int, int>> ns;
+        for (int k = 0; k < ri(0, 4); ++k)
+            ns.emplace_back(ri(0, (int) ctx.nozzle_info.nozzle_list.size() - 1), ri(-1, nf));
+        auto used = collect_sorted_used_filaments(lf);
+        auto group = MultiNozzleUtils::LayeredNozzleGroupResult::create(gmap, ctx.nozzle_info.nozzle_list, used, rb(30));
+        if (!group)
+            continue;
+        tok("refine_groups_by_Nozzle_State");
+        write_cfg(c);
+        write_print_state(print, st);
+        write_layer_filaments(lf);
+        write_group_inputs(in);
+        tlist_u(gmap);
+        ti(group->is_handle_nozzle_as_extruder());
+        ti((long long) ns.size());
+        for (auto &p : ns) {
+            ti(p.first);
+            ti(p.second);
+        }
+        arrow();
+        auto r = refine_groups_by_Nozzle_State(ctx, *group, status_map(ns));
+        write_group(r);
+        endl_();
+    }
+}
+
+static void write_recorder(const MultiNozzleUtils::NozzleStatusRecorder &r)
+{
+    ti(r.get_current_extruder_id());
+    ti((long long) r.get_nozzle_filament_map().size());
+    for (auto &kv : r.get_nozzle_filament_map()) {
+        ti(kv.first);
+        ti(kv.second);
+    }
+    ti((long long) r.get_extruder_nozzle_map().size());
+    for (auto &kv : r.get_extruder_nozzle_map()) {
+        ti(kv.first);
+        ti(kv.second);
+    }
+}
+
+static void case_plan_combo_ranges()
+{
+    for (int it = 0; it < 150; ++it) {
+        int kind = ri(0, 1), nf = ri(1, 4), ne = 0, nz = 0;
+        Cfg c = rand_group_cfg(kind, nf, ne, nz, "Auto For Flush");
+        c.emplace_back("other_layers_print_sequence_nums", "0");
+        GroupPrintState st = rand_print_state(ne, nf, nz);
+        Print print;
+        apply_print_state(print, c, st);
+        auto lf = rand_layer_filaments(ri(1, 6), nf);
+        if (rb(50) && lf.size() > 2)
+            lf[2] = lf[1];
+        GroupInputs in = rand_group_inputs(ne, nf, nz);
+        FilamentGroupContext ctx;
+        try {
+            ctx = GroupReorder::build_filament_group_context(&print, lf, in.phys, in.geom, in.vols, fmmAutoForFlush, status_map(in.status));
+        } catch (const std::exception &) {
+            continue;
+        }
+        ToolOrdering to{};
+        for (auto &l : lf) {
+            LayerTools lt(0.2 * double(to.m_layer_tools.size() + 1));
+            lt.extruders = l;
+            to.m_layer_tools.push_back(lt);
+        }
+        bool reorder_first = rb(50);
+        auto octx = to.prepare_ordering_context(print.config(), reorder_first);
+        MultiNozzleUtils::NozzleStatusRecorder rec;
+        std::vector<std::tuple<int, int, int>> calls;
+        for (auto &p : in.status)
+            if (p.second >= 0)
+                calls.emplace_back(p.first, p.second, ri(-1, ne - 1));
+        int cur_ext = ri(-1, ne - 1);
+        for (auto &cl : calls)
+            rec.set_nozzle_status(std::get<0>(cl), std::get<1>(cl), std::get<2>(cl));
+        rec.set_current_extruder_id(cur_ext);
+        tok("plan_filament_mapping_and_order_by_combo_ranges");
+        write_cfg(c);
+        write_print_state(print, st);
+        write_layer_filaments(lf);
+        write_group_inputs(in);
+        ti(reorder_first);
+        ti((long long) calls.size());
+        for (auto &cl : calls) {
+            ti(std::get<0>(cl));
+            ti(std::get<1>(cl));
+            ti(std::get<2>(cl));
+        }
+        ti(cur_ext);
+        arrow();
+        try {
+            auto res = plan_filament_mapping_and_order_by_combo_ranges(&print, ctx, octx, fmmAutoForFlush, in.phys, in.geom, in.vols, &rec);
+            tok("ok");
+            ti((long long) res.size());
+            for (auto &r : res) {
+                tlist_u(r.fil_order);
+                tlist_u(r.fil_nozzle_match);
+            }
+            write_recorder(rec);
+        } catch (const std::exception &e) {
+            tok("ERR");
+            ts(e.what());
+        }
+        endl_();
+    }
+}
+
+// sort_and_build_data over hand-built prints (the objects of case_build) with a grouping configuration.
+static Print *rand_build_print(const Cfg &c, const GroupPrintState &st, int nf)
+{
+    const std::vector<ExtrusionRole> peri{erPerimeter, erExternalPerimeter, erOverhangPerimeter};
+    const std::vector<ExtrusionRole> fill{erInternalInfill, erSolidInfill, erTopSolidInfill, erBridgeInfill, erGapFill, erBottomSurface};
+    const std::vector<ExtrusionRole> supp{erSupportMaterial, erSupportMaterialInterface, erSupportTransition};
+    Print *print = new Print();
+    apply_print_state(*print, c, st);
+    Model *model = new Model();
+    int nobj = ri(1, 2);
+    for (int o = 0; o < nobj; ++o) {
+        ModelObject   *mo = model->add_object();
+        ModelInstance *mi = mo->add_instance();
+        PrintInstances insts;
+        insts.push_back(PrintInstance{nullptr, mi, Point(0, 0)});
+        PrintObject *obj = new PrintObject(print, mo, Transform3d::Identity(), std::move(insts));
+        obj->m_config.support_filament.value           = rb(60) ? 0 : ri(1, nf);
+        obj->m_config.support_interface_filament.value = obj->m_config.support_filament.value > 0 && rb(50) ? ri(1, nf) : 0;
+        obj->m_config.support_interface_not_for_body.value = rb(30);
+        obj->m_config.flush_into_objects.value = rb(30);
+        obj->m_config.flush_into_infill.value  = rb(40);
+        obj->m_config.flush_into_support.value = rb(50);
+        obj->m_config.line_width.value         = 0.42;
+        obj->m_config.layer_height.value       = 0.2;
+        obj->m_config.raft_layers.value        = 0;
+        obj->m_config.brim_type.value          = rb(50) ? btNoBrim : btOuterOnly;
+        obj->m_config.brim_width.value         = rb(80) ? 5. : 0.;
+        PrintObjectRegions *regs = new PrintObjectRegions();
+        int nreg = ri(1, 3);
+        for (int r = 0; r < nreg; ++r) {
+            PrintRegionConfig rc;
+            rc.wall_filament.value          = ri(1, nf);
+            rc.sparse_infill_filament.value = rb(10) ? 0 : ri(1, nf);
+            rc.solid_infill_filament.value  = rb(10) ? 0 : ri(1, nf);
+            regs->all_regions.push_back(std::make_unique<PrintRegion>(rc));
+        }
+        obj->m_shared_regions = regs;
+        int nl = ri(1, 6);
+        for (int l = 0; l < nl; ++l) {
+            double h = 0.2;
+            double pz = l == 0 ? 0.2 : obj->m_layers.back()->print_z + h;
+            Layer *layer = new Layer(size_t(l), obj, h, pz, pz - h / 2);
+            obj->m_layers.push_back(layer);
+            for (int r = 0; r < nreg; ++r) {
+                if (rb(20))
+                    continue;
+                LayerRegion *lr = layer->add_region(&obj->printing_region(size_t(r)));
+                if (rb(80))
+                    lr->perimeters.append(rand_island(peri, pz));
+                if (rb(70))
+                    lr->fills.append(rand_island(fill, pz));
+                double x0 = rd(-50, 50), y0 = rd(-50, 50), w = rd(1.0, 20.0);
+                Polygon poly{Point::new_scale(x0, y0), Point::new_scale(x0 + w, y0), Point::new_scale(x0 + w, y0 + w), Point::new_scale(x0, y0 + w)};
+                lr->raw_slices.emplace_back(poly);
+            }
+        }
+        if (rb(30)) {
+            int ns = ri(1, 3);
+            for (int k = 0; k < ns; ++k) {
+                double pz = k < (int) obj->m_layers.size() ? obj->m_layers[size_t(k)]->print_z : 0.2 * (k + 1);
+                SupportLayer *sl = obj->add_support_layer(k, k, 0.2, pz);
+                sl->support_fills.append(rand_island(supp, pz));
+                sl->planned_filament_id           = 0;
+                sl->planned_interface_filament_id = 0;
+            }
+        }
+        print->m_objects.push_back(obj);
+    }
+    return print;
+}
+
+static void write_build_print(const Print *print)
+{
+    ti(print->has_skirt());
+    ti((long long) print->m_objects.size());
+    for (PrintObject *obj : print->m_objects) {
+        ti(obj->config().support_filament.value);
+        ti(obj->config().support_interface_filament.value);
+        ti(obj->config().support_interface_not_for_body.value);
+        ti(obj->config().flush_into_objects.value);
+        ti(obj->config().flush_into_infill.value);
+        ti(obj->config().flush_into_support.value);
+        td(obj->config().line_width.value);
+        td(obj->config().layer_height.value);
+        ti(obj->has_brim());
+        ti((long long) obj->num_printing_regions());
+        ti((long long) obj->layers().size());
+        for (const Layer *layer : obj->layers()) {
+            ti((long long) layer->id());
+            td(layer->print_z);
+            td(layer->height);
+            ti(layer->has_extrusions());
+            ti((long long) layer->regions().size());
+            for (const LayerRegion *lr : layer->regions()) {
+                ti(lr->region().config().wall_filament.value);
+                ti(lr->region().config().sparse_infill_filament.value);
+                ti(lr->region().config().solid_infill_filament.value);
+                write_coll(lr->perimeters, 0);
+                write_coll(lr->fills, 0);
+                write_expolys(lr->raw_slices);
+                ti(lr->slices.empty());
+            }
+        }
+        ti((long long) obj->support_layers().size());
+        for (const SupportLayer *sl : obj->support_layers()) {
+            td(sl->print_z);
+            write_coll(sl->support_fills, 0);
+            ti(sl->planned_filament_id);
+            ti(sl->planned_interface_filament_id);
+        }
+    }
+}
+
+static void write_sorted(Print *print, ToolOrdering &to, const Cfg &c)
+{
+    write_layer_tools_build(to);
+    write_group(to.m_nozzle_group_result);
+    for (auto *s : {&to.m_stats_by_single_extruder, &to.m_stats_by_multi_extruder_curr, &to.m_stats_by_multi_extruder_best}) {
+        ti(s->filament_flush_weight);
+        ti(s->flush_filament_change_count);
+        ti(s->filament_change_count);
+    }
+    ti(to.m_most_used_extruder);
+    auto g = print->get_layered_nozzle_group_result();
+    ti(g != nullptr);
+    if (g)
+        write_group(*g);
+    // The arguments of the write-back (Print::update_filament_maps_to_config or
+    // update_to_config_by_nozzle_group_result), from the configuration before the call.
+    if (!print->is_sequential_print()) {
+        PrintConfig orig = make_cfg(c);
+        std::vector<std::vector<unsigned int>> lf;
+        for (auto &lt : to.m_layer_tools)
+            lf.push_back(lt.extruders);
+        auto used = collect_sorted_used_filaments(lf);
+        const auto &gr = to.m_nozzle_group_result;
+        if (!gr.is_support_dynamic_nozzle_map()) {
+            tok("M");
+            tlist_u(FilamentGroupUtils::update_used_filament_values(orig.filament_map.values, gr.get_extruder_map(false), used));
+            tlist_u(FilamentGroupUtils::update_used_filament_values(orig.filament_volume_map.values, gr.get_volume_map(), used));
+            bool keep = orig.handle_hotend_as_extruder && orig.filament_map_mode.value == fmmNozzleManual;
+            tlist_u(keep ? orig.filament_nozzle_map.values : gr.get_nozzle_map());
+        } else
+            tok("G");
+    }
+}
+
+static void case_sorted_build()
+{
+    for (int it = 0; it < 200; ++it) {
+        int kind = ri(0, 1), nf = kind == 0 ? ri(1, 5) : ri(1, 4), ne = 0, nz = 0;
+        std::string mode_name = std::vector<std::string>{"Auto For Flush", "Auto For Match", "Manual", "Auto For Quality"}[ri(0, 3)];
+        Cfg c = rand_group_cfg(kind, nf, ne, nz, mode_name);
+        std::vector<int> sol;
+        for (int f = 0; f < nf; ++f)
+            sol.push_back(rb(10));
+        c.emplace_back("filament_soluble", join(sol));
+        // Print::get_physical_unprintable_filaments (Print.cpp:3512) indexes filament_printable by the
+        // filament without a bound check: one entry per filament, as the presets give it.
+        std::vector<int> printable;
+        for (int f = 0; f < nf; ++f)
+            printable.push_back(rb(85) ? 3 : ri(1, 2));
+        c.emplace_back("filament_printable", join(printable));
+        // calc_max_layer_height (ToolOrdering.cpp:233) indexes max_layer_height by the extruder.
+        std::vector<double> mlh;
+        for (int e = 0; e < ne; ++e)
+            mlh.push_back(rb(50) ? 0. : std::vector<double>{0.12, 0.2, 0.28, 0.32}[ri(0, 3)]);
+        c.emplace_back("max_layer_height", join_d(mlh));
+        c.emplace_back("enable_prime_tower", rb(50) ? "1" : "0");
+        c.emplace_back("skirt_loops", rb(50) ? "1" : "0");
+        c.emplace_back("initial_layer_line_width", "0.42");
+        GroupPrintState st = rand_print_state(ne, nf, nz);
+        // first_extruder is a 0-based filament (GCode.cpp passes initial_extruder_id), or -1 for none
+        unsigned int first = rb(50) ? (unsigned int) -1 : unsigned(ri(0, nf - 1));
+        bool         prime = rb(30);
+        uint64_t seed = g_seed;
+        Print *print = rand_build_print(c, st, nf);
+        g_seed = seed;
+        Print *print2 = rand_build_print(c, st, nf);
+
+        tok("sorted_build");
+        write_cfg(c);
+        write_print_state(*print, st);
+        write_build_print(print);
+        ti((long long) first);
+        ti(prime);
+        arrow();
+        try {
+            ToolOrdering to(*print, first, prime);
+            to.sort_and_build_data(*print, first, prime);
+            tok("ok");
+            write_sorted(print, to, c);
+        } catch (const std::exception &e) {
+            tok("ERR");
+            ts(e.what());
+        }
+        try {
+            PrintObject *obj = print2->m_objects.front();
+            ToolOrdering to(*obj, first, prime);
+            to.sort_and_build_data(*obj, first, prime);
+            tok("ok");
+            write_sorted(print2, to, c);
+        } catch (const std::exception &e) {
+            tok("ERR");
+            ts(e.what());
+        }
+        endl_();
+    }
+}
+
 int main()
 {
     case_calc_max_layer_height();
@@ -1509,5 +2434,11 @@ int main()
     case_resolve_mixed();
     case_assign_custom_gcodes();
     case_build();
+    case_build_manual_nozzle_map();
+    case_build_filament_group_context();
+    case_get_recommended_filament_maps();
+    case_refine_groups();
+    case_plan_combo_ranges();
+    case_sorted_build();
     return 0;
 }

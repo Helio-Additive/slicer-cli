@@ -3038,5 +3038,149 @@
    "TreeSupportData::get_contours_with_holes",
    "TreeSupportData::ceil_radius"
   ]
+ },
+ {
+  "unit": "Support/TreeSupport",
+  "round": 918,
+  "evidence": "tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ",
+  "functions": [
+   "tree_support_node_disk",
+   "TreeSupport::draw_circles",
+   "TreeSupport::drop_nodes",
+   "TreeSupport::smooth_nodes",
+   "TreeSupport::plan_layer_heights",
+   "TreeSupport::generate_contact_points",
+   "TreeSupport::insert_dropped_node",
+   "TreeSupport::calc_branch_radius"
+  ]
+ },
+ {
+  "unit": "Support/SupportParameters",
+  "round": 918,
+  "evidence": "tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit",
+  "functions": [
+   "config_flag_or_false",
+   "resolved_support_object_xy_distance",
+   "resolve_support_style",
+   "SupportParameters::has_contacts",
+   "SupportParameters::has_interfaces",
+   "SupportParameters::has_base_interfaces",
+   "SupportParameters::num_top_interface_layers_only",
+   "SupportParameters::num_bottom_interface_layers_only",
+   "SupportParameters::support_material_flow_for_nozzle",
+   "SupportParameters::support_material_interface_flow_for_nozzle",
+   "SupportParameters::support_material_first_layer_flow_for_nozzle",
+   "SupportParameters::raft_interface_angle",
+   "SupportParameters::support_interface_angle"
+  ]
+ },
+ {
+  "unit": "Support/SupportCommon",
+  "round": 918,
+  "evidence": "tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ",
+  "functions": [
+   "compact_layers",
+   "generate_interface_layers",
+   "safe_offset_inc",
+   "generate_raft_base",
+   "draw_perimeters",
+   "tree_supports_generate_paths",
+   "fill_expolygons_with_sheath_generate_paths",
+   "keep_polylines_near_bbox",
+   "modulate_extrusion_by_overlapping_layers",
+   "generate_support_layers",
+   "generate_support_toolpaths",
+   "safe_union",
+   "LoopInterfaceProcessor::generate",
+   "SupportGeneratorLayerExtruded::set_polygons_to_extrude",
+   "SupportGeneratorLayerExtruded::could_merge",
+   "SupportGeneratorLayerExtruded::merge",
+   "SupportGeneratorLayerExtruded::polygons_append"
+  ]
+ },
+ {
+  "unit": "GCode/ToolOrderUtils",
+  "round": 918,
+  "evidence": "tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included",
+  "functions": [
+   "solve_extruder_order_with_greedy",
+   "solve_extruder_order_with_forcast",
+   "solve_extruder_order",
+   "get_extruders_order",
+   "reorder_filaments_for_minimum_flush_volume_base",
+   "reorder_filaments_for_minimum_flush_volume",
+   "solve_extruder_order_with_MCMF",
+   "get_nozzle_match_in_given_order",
+   "reorder_filaments_for_multi_nozzle_extruder",
+   "GeneralMinCostLowerBoundsSolver::solve",
+   "GeneralMinCostSolver::solve",
+   "GroupMinCostFlowSolver::solve",
+   "MatchModeGroupSolver::solve",
+   "MaxFlowSolver::solve",
+   "MinFlushFlowSolver::solve"
+  ]
+ },
+ {
+  "unit": "GCode/AvoidCrossingPerimeters",
+  "round": 918,
+  "evidence": "tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains)",
+  "functions": [
+   "inner_offset",
+   "init_boundary",
+   "precompute_polygon_distances",
+   "get_closest_lines_in_radius",
+   "extend_for_closest_lines",
+   "simplify_travel",
+   "any_expolygon_contains"
+  ]
+ },
+ {
+  "unit": "GCode/ToolOrdering",
+  "round": 918,
+  "evidence": "tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)",
+  "functions": [
+   "build_manual_nozzle_map",
+   "build_filament_group_context",
+   "refine_groups_by_Nozzle_State",
+   "plan_filament_mapping_and_order_by_combo_ranges",
+   "ToolOrdering::sort_and_build_data",
+   "ToolOrdering::get_recommended_filament_maps",
+   "ToolOrdering::prepare_ordering_context"
+  ]
+ },
+ {
+  "unit": "CutSurface",
+  "round": 918,
+  "evidence": "tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types",
+  "functions": [
+   "IntersectionSources::intersection_point_detected",
+   "IntersectionSources::new_vertex_added",
+   "ModelCut2index::get_count",
+   "Slic3r::cut_surface",
+   "Slic3r::cut2model",
+   "Slic3r::its_cut_AoI",
+   "priv::set_skip_for_out_of_aoi",
+   "priv::set_skip_by_angle",
+   "priv::to_cgal",
+   "priv::set_face_type",
+   "priv::cut_from_model",
+   "priv::flood_fill_inner",
+   "priv::create_reduce_map",
+   "priv::create_cut_area_of_interests",
+   "priv::calc_distances",
+   "priv::calc_size_sq",
+   "priv::find_close_point",
+   "priv::choose_best_distance",
+   "priv::create_face_types",
+   "priv::bounding_box",
+   "priv::create_trees",
+   "priv::diff_models",
+   "priv::select_patches",
+   "priv::merge_patches",
+   "priv::ModelCut2index::calc_index",
+   "priv::ModelCut2index::calc_id",
+   "priv::Visitor::intersection_point_detected",
+   "priv::Visitor::new_vertex_added"
+  ]
  }
 ]

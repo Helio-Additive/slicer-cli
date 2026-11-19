@@ -11,22 +11,22 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**66.4% of the named C++ functions are ported or verified (6357 of 9574); 59.2% by size of body.**
+**67.7% of the named C++ functions are ported or verified (6484 of 9574); 62.6% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 824 | 8.6% | 16.7% |
-| partial `[~]` | 2393 | 25.0% | 24.1% |
-| ported `[x]` | 3941 | 41.2% | 29.6% |
-| verified `[v]` | 2416 | 25.2% | 29.6% |
+| not started `[ ]` | 710 | 7.4% | 13.1% |
+| partial `[~]` | 2380 | 24.9% | 24.3% |
+| ported `[x]` | 3967 | 41.4% | 29.5% |
+| verified `[v]` | 2517 | 26.3% | 33.1% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
 | no Rust file of that name | 4 |
-| partial | 239 |
+| partial | 238 |
 | every named function ported | 61 |
-| every named function verified | 13 |
+| every named function verified | 14 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -128,7 +128,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `CSGMesh/VoxelizeCSGMesh` | 3 | `csg_mesh/voxelize_csg_mesh.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `CurveAnalyzer` | 3 | `curve_analyzer.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `CustomGCode` | 1 | `custom_g_code.rs` | partial | 6 | 1 | 1 | 4 | 0 |
-| `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 77 | 8 | 7 | 0 |
+| `CutSurface` | 3 | `cut_surface.rs` | partial | 92 | 13 | 0 | 48 | 31 |
 | `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 6 | 12 | 1 | 0 |
 | `Debounce` | 3 | `debounce.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
@@ -197,7 +197,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Frustum` | 3 | `frustum.rs` | partial | 11 | 0 | 8 | 3 | 0 |
 | `FuzzySkin` | 2 | `fuzzy_skin.rs` | partial | 10 | 2 | 2 | 6 | 0 |
 | `GCode` | 1 | `g_code.rs` | partial | 152 | 18 | 20 | 93 | 21 |
-| `GCode/AvoidCrossingPerimeters` | 1 | `gcode/avoid_crossing_perimeters.rs` | partial | 59 | 0 | 10 | 49 | 0 |
+| `GCode/AvoidCrossingPerimeters` | 1 | `gcode/avoid_crossing_perimeters.rs` | partial | 59 | 0 | 7 | 44 | 8 |
 | `GCode/BedExcludeChecker` | 1 | `gcode/bed_exclude_checker.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `GCode/ConflictChecker` | 1 | `gcode/conflict_checker.rs` | partial | 19 | 0 | 3 | 16 | 0 |
 | `GCode/CoolingBuffer` | 1 | `gcode/cooling_buffer.rs` | partial | 5 | 0 | 2 | 3 | 0 |
@@ -212,8 +212,8 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `GCode/SpiralVase` | 1 | `gcode/spiral_vase.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `GCode/ThumbnailData` | 1 | `gcode/thumbnail_data.rs` | ported | 9 | 0 | 0 | 9 | 0 |
 | `GCode/TimelapsePosPicker` | 1 | `gcode/timelapse_pos_picker.rs` | ported | 20 | 0 | 0 | 19 | 1 |
-| `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 1 | 4 | 41 | 39 |
-| `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | ported | 32 | 0 | 0 | 32 | 0 |
+| `GCode/ToolOrdering` | 1 | `gcode/tool_ordering.rs` | partial | 85 | 1 | 3 | 34 | 47 |
+| `GCode/ToolOrderUtils` | 1 | `gcode/tool_order_utils.rs` | ported | 32 | 0 | 0 | 15 | 17 |
 | `GCode/WipeTower` | 1 | `gcode/wipe_tower.rs` | partial | 218 | 0 | 10 | 116 | 92 |
 | `GCodeReader` | 1 | `g_code_reader.rs` | partial | 71 | 0 | 8 | 63 | 0 |
 | `GCodeSender` | 3 | `gcode_sender.rs` | partial | 24 | 0 | 13 | 11 | 0 |
@@ -296,7 +296,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 0 | 4 | 11 | 62 |
 | `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 5 | 26 | 15 | 91 |
 | `PrintObject` | 1 | `print_object.rs` | partial | 82 | 12 | 29 | 41 | 0 |
-| `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 20 | 3 | 1 | 0 |
+| `PrintObjectSlice` | 1 | `print_object_slice.rs` | partial | 24 | 0 | 2 | 22 | 0 |
 | `PrintRegion` | 1 | `print_region.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `ProjectTask` | 1 | `project_task.rs` | partial | 11 | 0 | 5 | 6 | 0 |
 | `QuadricEdgeCollapse` | 3 | `quadric_edge_collapse.rs` | partial | 28 | 3 | 3 | 22 | 0 |
@@ -331,12 +331,12 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `SlicesToTriangleMesh` | 3 | `slices_to_triangle_mesh.rs` | partial | 7 | 0 | 4 | 3 | 0 |
 | `Slicing` | 1 | `slicing.rs` | partial | 22 | 0 | 1 | 21 | 0 |
 | `SlicingAdaptive` | 2 | `slicing_adaptive.rs` | ported | 6 | 0 | 0 | 6 | 0 |
-| `Support/SupportCommon` | 2 | `support/support_common.rs` | partial | 31 | 19 | 9 | 3 | 0 |
+| `Support/SupportCommon` | 2 | `support/support_common.rs` | partial | 31 | 0 | 6 | 8 | 17 |
 | `Support/SupportLayer` | 2 | `support/support_layer.rs` | ported | 4 | 0 | 0 | 4 | 0 |
 | `Support/SupportMaterial` | 2 | `support/support_material.rs` | partial | 51 | 34 | 13 | 4 | 0 |
-| `Support/SupportParameters` | 2 | `support/support_parameters.rs` | partial | 13 | 7 | 0 | 6 | 0 |
+| `Support/SupportParameters` | 2 | `support/support_parameters.rs` | verified | 13 | 0 | 0 | 0 | 13 |
 | `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 4 | 17 | 13 | 0 |
-| `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 15 | 7 | 32 | 18 |
+| `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 11 | 10 | 26 | 25 |
 | `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 44 | 15 | 17 | 0 |
 | `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 3 | 1 | 11 | 0 |
 | `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
@@ -609,10 +609,10 @@ Rust file: `app_config.rs`. Status: **partial**. Not listed: 1 constructors.
 - [x] `reset` (line 84) → `app_config.rs:190`
 - [~] `get` (line 84) → `any_ptr.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [x] `get_bool` (line 86) → `app_config.rs:1289`
-- [~] `set` (line 87) → `color.rs, config.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 87) → `color.rs, config.rs, cut_surface.rs` — not in the paired file
 - [~] `set_defaults` (line 91) → `app_config.rs:199` — divergent
 - [x] `set_str` (line 104) → `app_config.rs:1310`
-- [~] `set` (line 121) → `color.rs, config.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 121) → `color.rs, config.rs, cut_surface.rs` — not in the paired file
 - [x] `set` (line 131) → `app_config.rs:1295`
 - [x] `set_bool` (line 134) → `app_config.rs:1323`
 - [x] `has` (line 139) → `app_config.rs:1343`
@@ -2143,7 +2143,7 @@ Rust file: `clipper2_utils.rs`. Status: **partial**.
 - [x] `intersection_pl_2` (line 138) → `clipper2_utils.rs:349`
 - [x] `diff_pl_2` (line 140) → `clipper2_utils.rs:357`
 - [~] `union_ex_2` (line 143) → `clipper2_utils.rs:381` — divergent
-- [~] `union_ex_2` (line 158) → `support/support_common.rs` — not in the paired file
+- [~] `union_ex_2` (line 158) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [x] `offset_ex_2` (line 174) → `clipper2_utils.rs:426`
 - [x] `offset2_ex_2` (line 186) → `clipper2_utils.rs:462`
 
@@ -2184,9 +2184,9 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 131) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `clip_clipper_polygon_with_subject_bbox` (line 133) → `clipper_utils.rs` — another overload of the name is ported
 - [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:3164`
-- [~] `clip_clipper_polygons_with_subject_bbox` (line 144) → `fill/fill_floating_concentric.rs` — not in the paired file
-- [~] `clip_clipper_polygons_with_subject_bbox` (line 152) → `fill/fill_floating_concentric.rs` — not in the paired file
-- [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `fill/fill_floating_concentric.rs` — not in the paired file
+- [~] `clip_clipper_polygons_with_subject_bbox` (line 144) → `fill/fill_floating_concentric.rs, support/tree_support.rs` — not in the paired file
+- [~] `clip_clipper_polygons_with_subject_bbox` (line 152) → `fill/fill_floating_concentric.rs, support/tree_support.rs` — not in the paired file
+- [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `fill/fill_floating_concentric.rs, support/tree_support.rs` — not in the paired file
 - [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:849`
 - [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:889`
 - [~] `has_duplicate_points` (line 233) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
@@ -2197,7 +2197,7 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `clipper_do` (line 325) → `clipper_utils.rs` — another overload of the name is ported
 - [x] `clipper_union` (line 340) → `clipper_utils.rs:1019`
 - [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1037`
-- [~] `offset_ex` (line 358) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `offset_ex` (line 358) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
 - [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1048`
 - [x] `expand_paths` (line 367) → `clipper_utils.rs:1062`
 - [~] `union_safety_offset` (line 370) → `bridge_detector.rs, support/support_common.rs` — not in the paired file
@@ -2215,25 +2215,25 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [x] `offset_paths` (line 400) → `clipper_utils.rs:1125`
 - [x] `closing` (line 407) → `clipper_utils.rs:610`
-- [~] `closing_ex` (line 410) → `support/support_common.rs` — not in the paired file
+- [~] `closing_ex` (line 410) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [~] `offset` (line 410) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `closing_ex` (line 412) → `support/support_common.rs` — not in the paired file
+- [~] `closing_ex` (line 412) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [~] `offset` (line 413) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `closing_ex` (line 414) → `support/support_common.rs` — not in the paired file
-- [~] `offset_ex` (line 415) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `closing_ex` (line 414) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
+- [~] `offset_ex` (line 415) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
 - [~] `offset` (line 418) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
 - [~] `offset` (line 420) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `opening` (line 422) → `support/support_common.rs` — not in the paired file
+- [~] `opening` (line 422) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
 - [x] `opening` (line 424) → `clipper_utils.rs:429`
-- [~] `opening` (line 426) → `support/support_common.rs` — not in the paired file
+- [~] `opening` (line 426) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs, gcode/timelapse_pos_picker.rs, support/tree_support.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
 - [x] `opening_ex` (line 430) → `clipper_utils.rs:444`
 - [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1193`
 - [~] `diff_ex` (line 470) → `clipper_utils.rs:461` — partial
-- [~] `diff_ex` (line 480) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 488) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `diff_ex` (line 480) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 488) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [ ] `diff_ln` (line 496) → `clipper_utils.rs`
 - [~] `offset_expolygon_inner` (line 508) → `clipper_utils.rs` — another overload of the name is ported
 - [~] `offset_expolygon_inner` (line 510) → `clipper_utils.rs` — another overload of the name is ported
@@ -2247,21 +2247,21 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `offset` (line 561) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
 - [~] `offset` (line 563) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
 - [~] `offset` (line 565) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `offset_ex` (line 567) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset_ex` (line 570) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset_ex` (line 572) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset_ex` (line 574) → `bridge_detector.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `offset_ex` (line 567) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
+- [~] `offset_ex` (line 570) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
+- [~] `offset_ex` (line 572) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
+- [~] `offset_ex` (line 574) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
 - [~] `offset2` (line 577) → `clipper_utils.rs:633` — divergent
-- [~] `offset2_ex` (line 581) → `support/tree_support.rs` — not in the paired file
-- [~] `offset2_ex` (line 585) → `support/tree_support.rs` — not in the paired file
+- [~] `offset2_ex` (line 581) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `offset2_ex` (line 585) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [~] `closing` (line 592) → `support/support_common.rs` — not in the paired file
-- [~] `closing_ex` (line 598) → `support/support_common.rs` — not in the paired file
-- [~] `closing_ex` (line 604) → `support/support_common.rs` — not in the paired file
+- [~] `closing_ex` (line 598) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
+- [~] `closing_ex` (line 604) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [ ] `foreach_node` (line 604) → `clipper_utils.rs`
 - [ ] `traverse_pt` (line 612) → `clipper_utils.rs`
-- [~] `opening` (line 613) → `support/support_common.rs` — not in the paired file
-- [~] `opening` (line 619) → `support/support_common.rs` — not in the paired file
-- [~] `opening` (line 625) → `support/support_common.rs` — not in the paired file
+- [~] `opening` (line 613) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
+- [~] `opening` (line 619) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
+- [~] `opening` (line 625) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [ ] `traverse_pt` (line 625) → `clipper_utils.rs`
 - [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1426`
 - [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
@@ -2292,39 +2292,39 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `union_` (line 727) → `clipper_utils.rs:81` — divergent
 - [~] `union_` (line 735) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
 - [v] `_clipper_ex` (line 738) → `clipper_utils.rs:1467` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
-- [~] `diff_ex` (line 741) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 743) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 745) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 747) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 749) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 751) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 753) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 755) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 757) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 759) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 761) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 763) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 765) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 767) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 770) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `diff_ex` (line 778) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 788) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 790) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 792) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 794) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 796) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 798) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 800) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 802) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 804) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 806) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `diff_ex` (line 741) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 743) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 745) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 747) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 749) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 751) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 753) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 755) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 757) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 759) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 761) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 763) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 765) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 767) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 770) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `diff_ex` (line 778) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 788) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 790) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 792) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 794) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 796) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 798) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 800) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 802) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 804) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 806) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `intersection_ex` (line 808) → `clipper_utils.rs:549` — partial
-- [~] `intersection_ex` (line 810) → `bridge_detector.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `union_ex` (line 813) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `union_ex` (line 815) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 810) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `union_ex` (line 813) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `union_ex` (line 815) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `union_ex` (line 817) → `clipper_utils.rs:99` — divergent
-- [~] `union_ex` (line 822) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `union_ex` (line 825) → `emboss.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `union_ex` (line 822) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `union_ex` (line 825) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [ ] `xor_ex` (line 833) → `clipper_utils.rs`
 - [ ] `xor_ex` (line 836) → `clipper_utils.rs`
 - [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:1502`
@@ -2477,8 +2477,8 @@ Rust file: `color.rs`. Status: **partial**. Not listed: 5 constructors, 14 opera
 - [ ] `complementary` (line 311) → `color.rs`
 - [ ] `saturate` (line 316) → `color.rs`
 - [ ] `saturate` (line 326) → `color.rs`
-- [~] `opposite` (line 331) → `geometry/voronoi_utils_cgal.rs, surface_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
-- [~] `opposite` (line 349) → `geometry/voronoi_utils_cgal.rs, surface_mesh.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `opposite` (line 331) → `cut_surface.rs, geometry/voronoi_utils_cgal.rs, surface_mesh.rs` — not in the paired file
+- [~] `opposite` (line 349) → `cut_surface.rs, geometry/voronoi_utils_cgal.rs, surface_mesh.rs` — not in the paired file
 - [x] `can_decode_color` (line 375) → `color.rs:968`
 - [ ] `decode_color` (line 380) → `color.rs`
 - [ ] `decode_color` (line 390) → `color.rs`
@@ -2634,8 +2634,8 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [v] `diff` (line 511) → `config.rs:6664` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `equal` (line 524) → `config.rs:6680` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `opt_serialize` (line 565) → `config.rs:6695` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `set` (line 583) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 595) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 583) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
+- [~] `set` (line 595) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
 - [v] `set_deserialize_nothrow` (line 606) → `config.rs:6783` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set_deserialize` (line 624) → `config.rs:6807` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set_deserialize` (line 630) → `model.rs, print_config.rs, region_config.rs` — not in the paired file
@@ -2663,9 +2663,9 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [~] `option_throw` (line 2564) → `config.rs` — another overload of the name is ported
 - [~] `option_throw` (line 2573) → `config.rs` — another overload of the name is ported
 - [v] `apply` (line 2584) → `config.rs:6581` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `set` (line 2603) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 2607) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
-- [~] `set` (line 2609) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 2603) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
+- [~] `set` (line 2607) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
+- [~] `set` (line 2609) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
 - [v] `set_deserialize_strict` (line 2617) → `config.rs:6824` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [~] `set_deserialize_strict` (line 2634) → `config.rs` — another overload of the name is ported
 
@@ -2965,11 +2965,11 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 **class `ConfigOptionVector`**
 
 - [v] `set` (line 400) → `config.rs:4802` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what() (the body reads as partial to the estimate)
-- [~] `set` (line 412) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 412) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
 - [v] `set_at` (line 431) → `config.rs:1943` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set_at_to_nil` (line 453) → `config.rs:4219` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `append` (line 455) → `config.rs:1967` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
-- [~] `set` (line 471) → `app_config.rs, color.rs, enum_bitmask.rs` — not in the paired file
+- [~] `set` (line 471) → `app_config.rs, color.rs, cut_surface.rs` — not in the paired file
 - [v] `set_with_restore` (line 492) → `config.rs:2007` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set_with_restore_2` (line 522) → `config.rs:2048` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
 - [v] `set_only_diff` (line 573) → `config.rs:2110` — R910: tests/config_native_parity.rs: 23,250 cases against the pin's Config.cpp linked from the engine build (every option class's deserialize/serialize/hash/clone, option and vector operations, ConfigBase set/apply/diff/load/save, INI, G-code and JSON loading with nlohmann's error texts, read_cli, ConfigDef), texts byte-equal, doubles bit-equal, same exception class and what()
@@ -3162,105 +3162,105 @@ Rust file: `cut_surface.rs`. Status: **partial**. Not listed: 2 constructors.
 
 **free functions**
 
-- [~] `to_vec3d` (line 82) → `open_vdb_utils.rs, sla/concave_hull.rs` — not in the paired file
+- [x] `to_vec3d` (line 82) → `cut_surface.rs:1858`
 
 **class `IntersectingElement`**
 
-- [ ] `set_is_first` (line 176) → `cut_surface.rs`
-- [ ] `set_is_last` (line 177) → `cut_surface.rs`
-- [~] `get_type` (line 178) → `format/assembly_steps_json.rs, measure.rs` — not in the paired file
-- [ ] `is_first` (line 179) → `cut_surface.rs`
-- [~] `is_last` (line 180) → `format/assembly_steps_json.rs` — not in the paired file
+- [x] `set_is_first` (line 176) → `cut_surface.rs:1934`
+- [x] `set_is_last` (line 177) → `cut_surface.rs:1938`
+- [x] `get_type` (line 178) → `cut_surface.rs:1942`
+- [x] `is_first` (line 179) → `cut_surface.rs:1946`
+- [x] `is_last` (line 180) → `cut_surface.rs:1950`
 
 **class `IntersectionSources`**
 
-- [ ] `intersection_point_detected` (line 2348) → `cut_surface.rs`
-- [ ] `new_vertex_added` (line 2398) → `cut_surface.rs`
-- [ ] `before_subface_creations` (line 2410) → `cut_surface.rs`
-- [ ] `after_subface_created` (line 2411) → `cut_surface.rs`
-- [ ] `after_subface_creations` (line 2412) → `cut_surface.rs`
-- [ ] `before_subface_created` (line 2413) → `cut_surface.rs`
-- [ ] `before_edge_split` (line 2414) → `cut_surface.rs`
-- [ ] `edge_split` (line 2415) → `cut_surface.rs`
-- [ ] `after_edge_split` (line 2416) → `cut_surface.rs`
-- [ ] `add_retriangulation_edge` (line 2417) → `cut_surface.rs`
+- [v] `intersection_point_detected` (line 2348) → `cut_surface.rs:4265` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `new_vertex_added` (line 2398) → `cut_surface.rs:4306` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `before_subface_creations` (line 2410) → `cut_surface.rs:4320`
+- [x] `after_subface_created` (line 2411) → `cut_surface.rs:4322`
+- [x] `after_subface_creations` (line 2412) → `cut_surface.rs:4324`
+- [x] `before_subface_created` (line 2413) → `cut_surface.rs:4326`
+- [x] `before_edge_split` (line 2414) → `cut_surface.rs:4328`
+- [x] `edge_split` (line 2415) → `cut_surface.rs:4330`
+- [x] `after_edge_split` (line 2416) → `cut_surface.rs:4332`
+- [x] `add_retriangulation_edge` (line 2417) → `cut_surface.rs:4334`
 
 **class `ModelCut2index`**
 
-- [~] `get_count` (line 333) → `ex_polygons_index.rs` — not in the paired file
+- [v] `get_count` (line 333) → `cut_surface.rs:2916` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
 
 **class `Slic3r`**
 
-- [ ] `cut_surface` (line 525) → `cut_surface.rs`
-- [x] `cut2model` (line 619) → `cut_surface.rs:104`
-- [x] `its_mask` (line 821) → `cut_surface.rs:404`
-- [x] `its_cut_AoI` (line 861) → `cut_surface.rs:483`
-- [ ] `corefine_test` (line 4084) → `cut_surface.rs`
+- [v] `cut_surface` (line 525) → `cut_surface.rs:2333` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `cut2model` (line 619) → `cut_surface.rs:2406` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `its_mask` (line 821) → `cut_surface.rs:2605`
+- [v] `its_cut_AoI` (line 861) → `cut_surface.rs:2654` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `corefine_test` (line 4084) → `cut_surface.rs:5791`
 
 **class `priv`**
 
-- [x] `is_out_of` (line 709) → `cut_surface.rs:221`
-- [x] `is_all_on_one_side` (line 717) → `cut_surface.rs:234`
-- [x] `set_skip_for_out_of_aoi` (line 731) → `cut_surface.rs:260`
-- [x] `set_skip_by_angle` (line 872) → `cut_surface.rs:508`
-- [ ] `to_cgal` (line 897) → `cut_surface.rs`
-- [ ] `exist_duplicit_vertex` (line 970) → `cut_surface.rs`
-- [ ] `to_cgal` (line 990) → `cut_surface.rs`
-- [ ] `is_face_inside` (line 1311) → `cut_surface.rs`
-- [ ] `set_face_type` (line 1377) → `cut_surface.rs`
-- [ ] `cut_from_model` (line 1400) → `cut_surface.rs`
-- [ ] `flood_fill_inner` (line 1445) → `cut_surface.rs`
-- [ ] `collect_surface_data` (line 1510) → `cut_surface.rs`
-- [ ] `create_reduce_map` (line 1560) → `cut_surface.rs`
-- [ ] `create_cut_area_of_interests` (line 1653) → `cut_surface.rs`
-- [ ] `calc_distance` (line 1707) → `cut_surface.rs`
-- [ ] `calc_distances` (line 1738) → `cut_surface.rs`
-- [ ] `calc_size_sq` (line 1825) → `cut_surface.rs`
-- [ ] `create_search_data` (line 1830) → `cut_surface.rs`
-- [ ] `get_closest_point_index` (line 1866) → `cut_surface.rs`
-- [ ] `find_closest_point_index` (line 1914) → `cut_surface.rs`
-- [ ] `find_closest_point_pair` (line 1952) → `cut_surface.rs`
-- [ ] `get_closest_projection` (line 2023) → `cut_surface.rs`
-- [ ] `fill_polygon_distances` (line 2040) → `cut_surface.rs`
-- [ ] `fill_shape_distances` (line 2107) → `cut_surface.rs`
-- [ ] `find_close_point` (line 2179) → `cut_surface.rs`
-- [ ] `choose_best_distance` (line 2218) → `cut_surface.rs`
-- [ ] `create_face_types` (line 2462) → `cut_surface.rs`
-- [ ] `clip_cut` (line 2559) → `cut_surface.rs`
-- [~] `bounding_box` (line 2610) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
-- [~] `bounding_box` (line 2626) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
-- [~] `bounding_box` (line 2640) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
-- [ ] `create_surface_patch` (line 2644) → `cut_surface.rs`
-- [ ] `create_bbs` (line 2843) → `cut_surface.rs`
-- [ ] `create_trees` (line 2863) → `cut_surface.rs`
-- [ ] `has_bb_intersection` (line 2875) → `cut_surface.rs`
-- [ ] `is_patch_inside_of_model` (line 2890) → `cut_surface.rs`
-- [ ] `get_shape_point_index` (line 2918) → `cut_surface.rs`
-- [ ] `separate_patch` (line 2935) → `cut_surface.rs`
-- [ ] `divide_patch` (line 2954) → `cut_surface.rs`
-- [ ] `collect_open_edges` (line 3015) → `cut_surface.rs`
-- [ ] `diff_models` (line 3040) → `cut_surface.rs`
-- [ ] `is_over_whole_expoly` (line 3137) → `cut_surface.rs`
-- [ ] `is_over_whole_expoly` (line 3148) → `cut_surface.rs`
-- [ ] `select_patches` (line 3232) → `cut_surface.rs`
-- [ ] `create_loops` (line 3404) → `cut_surface.rs`
-- [ ] `unproject_loops` (line 3467) → `cut_surface.rs`
-- [ ] `to_expoly` (line 3512) → `cut_surface.rs`
-- [ ] `patch2cut` (line 3535) → `cut_surface.rs`
-- [~] `append` (line 3589) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [ ] `merge_patches` (line 3608) → `cut_surface.rs`
+- [x] `is_out_of` (line 709) → `cut_surface.rs:2484`
+- [x] `is_all_on_one_side` (line 717) → `cut_surface.rs:2493`
+- [v] `set_skip_for_out_of_aoi` (line 731) → `cut_surface.rs:2512` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `set_skip_by_angle` (line 872) → `cut_surface.rs:2667` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `to_cgal` (line 897) → `cut_surface.rs:2694` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `exist_duplicit_vertex` (line 970) → `cut_surface.rs:2770`
+- [v] `to_cgal` (line 990) → `cut_surface.rs:2791` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `is_face_inside` (line 1311) → `cut_surface.rs:3042`
+- [v] `set_face_type` (line 1377) → `cut_surface.rs:3101` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `cut_from_model` (line 1400) → `cut_surface.rs:3133` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `flood_fill_inner` (line 1445) → `cut_surface.rs:3179` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `collect_surface_data` (line 1510) → `cut_surface.rs:3254`
+- [v] `create_reduce_map` (line 1560) → `cut_surface.rs:3308` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `create_cut_area_of_interests` (line 1653) → `cut_surface.rs:3407` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `calc_distance` (line 1707) → `cut_surface.rs:3446`
+- [v] `calc_distances` (line 1738) → `cut_surface.rs:3479` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `calc_size_sq` (line 1825) → `cut_surface.rs:3706` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `create_search_data` (line 1830) → `cut_surface.rs:3740`
+- [x] `get_closest_point_index` (line 1866) → `cut_surface.rs:3779`
+- [x] `find_closest_point_index` (line 1914) → `cut_surface.rs:3819`
+- [x] `find_closest_point_pair` (line 1952) → `cut_surface.rs:3856`
+- [x] `get_closest_projection` (line 2023) → `cut_surface.rs:3928`
+- [x] `fill_polygon_distances` (line 2040) → `cut_surface.rs:3945`
+- [x] `fill_shape_distances` (line 2107) → `cut_surface.rs:4017`
+- [v] `find_close_point` (line 2179) → `cut_surface.rs:4086` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `choose_best_distance` (line 2218) → `cut_surface.rs:4123` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `create_face_types` (line 2462) → `cut_surface.rs:4342` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `clip_cut` (line 2559) → `cut_surface.rs:4461`
+- [v] `bounding_box` (line 2610) → `cut_surface.rs:4516` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `bounding_box` (line 2626) → `cut_surface.rs:4542` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `bounding_box` (line 2640) → `cut_surface.rs:4566` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `create_surface_patch` (line 2644) → `cut_surface.rs:4586`
+- [x] `create_bbs` (line 2843) → `cut_surface.rs:4718`
+- [v] `create_trees` (line 2863) → `cut_surface.rs:4738` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `has_bb_intersection` (line 2875) → `cut_surface.rs:4751`
+- [x] `is_patch_inside_of_model` (line 2890) → `cut_surface.rs:4769`
+- [x] `get_shape_point_index` (line 2918) → `cut_surface.rs:4788`
+- [x] `separate_patch` (line 2935) → `cut_surface.rs:4813`
+- [x] `divide_patch` (line 2954) → `cut_surface.rs:4836`
+- [x] `collect_open_edges` (line 3015) → `cut_surface.rs:4917`
+- [v] `diff_models` (line 3040) → `cut_surface.rs:4949` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `is_over_whole_expoly` (line 3137) → `cut_surface.rs:4572`
+- [x] `is_over_whole_expoly` (line 3148) → `cut_surface.rs:5055`
+- [v] `select_patches` (line 3232) → `cut_surface.rs:5231` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [x] `create_loops` (line 3404) → `cut_surface.rs:5405`
+- [x] `unproject_loops` (line 3467) → `cut_surface.rs:5477`
+- [x] `to_expoly` (line 3512) → `cut_surface.rs:5535`
+- [x] `patch2cut` (line 3535) → `cut_surface.rs:5563`
+- [x] `append` (line 3589) → `cut_surface.rs:5619`
+- [v] `merge_patches` (line 3608) → `cut_surface.rs:5645` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
 - [ ] `prepare_dir` (line 3620) → `cut_surface.rs`
 - [ ] `initialize_store` (line 3637) → `cut_surface.rs`
 - [ ] `store` (line 3647) → `cut_surface.rs`
 - [ ] `store` (line 3678) → `cut_surface.rs`
 - [ ] `store` (line 3705) → `cut_surface.rs`
 - [ ] `store` (line 3710) → `cut_surface.rs`
-- [ ] `create_indexed_triangle_set` (line 3737) → `cut_surface.rs`
+- [x] `create_indexed_triangle_set` (line 3737) → `cut_surface.rs:5662`
 - [ ] `store` (line 3771) → `cut_surface.rs`
 - [ ] `store` (line 3831) → `cut_surface.rs`
 - [ ] `store` (line 3886) → `cut_surface.rs`
-- [ ] `get_triangle_tip` (line 3948) → `cut_surface.rs`
-- [ ] `create_contour_its` (line 3975) → `cut_surface.rs`
+- [x] `get_triangle_tip` (line 3948) → `cut_surface.rs:5702`
+- [x] `create_contour_its` (line 3975) → `cut_surface.rs:5748`
 - [ ] `store` (line 4033) → `cut_surface.rs`
 - [ ] `store` (line 4044) → `cut_surface.rs`
 - [ ] `store` (line 4053) → `cut_surface.rs`
@@ -3268,13 +3268,13 @@ Rust file: `cut_surface.rs`. Status: **partial**. Not listed: 2 constructors.
 
 **class `priv::ModelCut2index`**
 
-- [ ] `calc_index` (line 1075) → `cut_surface.rs`
-- [ ] `calc_id` (line 1085) → `cut_surface.rs`
+- [v] `calc_index` (line 1075) → `cut_surface.rs:2889` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `calc_id` (line 1085) → `cut_surface.rs:2901` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
 
 **class `priv::Visitor`**
 
-- [ ] `intersection_point_detected` (line 1248) → `cut_surface.rs`
-- [ ] `new_vertex_added` (line 1300) → `cut_surface.rs`
+- [v] `intersection_point_detected` (line 1248) → `cut_surface.rs:2974` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
+- [v] `new_vertex_added` (line 1300) → `cut_surface.rs:3029` — R918: tests/cut_surface_native_parity.rs: Slic3r::cut_surface over 13 cases stage by stage against the pin's CutSurface.cpp compiled into the generator (CGAL's corefine and clip replayed from the vectors through the trait PolygonMeshProcessing): skip flags, the to_cgal meshes with every halfedge, the visitor's sources, face types after each pass, areas of interest, reduction maps, patches, distances, the chosen distances, the surface cut and cut2model, 409 records, none differ; direct vectors for calc_size_sq, find_close_point, create_trees, ModelCut2index and create_face_types
 
 ### `CutUtils` (.cpp+.hpp)
 
@@ -3647,8 +3647,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `to_lines` (line 135) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_linesf` (line 152) → `emboss.rs` — not in the paired file
 - [ ] `to_unscaled_linesf` (line 180) → `ex_polygon.rs`
-- [~] `overlaps` (line 186) → `geometry/polygon.rs, sla/agg/basics.rs, sla/support_point_generator.rs` — not in the paired file
-- [~] `overlaps` (line 197) → `geometry/polygon.rs, sla/agg/basics.rs, sla/support_point_generator.rs` — not in the paired file
+- [~] `overlaps` (line 186) → `geometry/polygon.rs, print_object_slice.rs, sla/agg/basics.rs` — not in the paired file
+- [~] `overlaps` (line 197) → `geometry/polygon.rs, print_object_slice.rs, sla/agg/basics.rs` — not in the paired file
 - [~] `to_points` (line 201) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [x] `projection_onto` (line 206) → `ex_polygon.rs:526`
 - [~] `to_polylines` (line 214) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
@@ -3661,8 +3661,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [ ] `to_polygon_ptrs` (line 316) → `ex_polygon.rs`
 - [~] `to_polygons` (line 328) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `to_polygons` (line 339) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `to_expolygons` (line 352) → `sla/concave_hull.rs, surface.rs, surface_collection.rs` — not in the paired file
-- [~] `to_expolygons` (line 361) → `sla/concave_hull.rs, surface.rs, surface_collection.rs` — not in the paired file
+- [~] `to_expolygons` (line 352) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
+- [~] `to_expolygons` (line 361) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
 - [~] `to_points` (line 370) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `translate` (line 380) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `polygons_append` (line 385) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
@@ -3852,7 +3852,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [~] `extrusion_paths_append` (line 626) → `overhang_detector.rs` — not in the paired file
 - [~] `extrusion_paths_append` (line 637) → `overhang_detector.rs` — not in the paired file
 - [x] `extrusion_entities_append_paths` (line 647) → `extrusion_entity.rs:2478`
-- [~] `extrusion_entities_append_paths` (line 658) → `extrusion_entity.rs` — another overload of the name is ported
+- [~] `extrusion_entities_append_paths` (line 658) → `support/support_common.rs` — not in the paired file
 - [~] `extrusion_entities_append_paths_with_wipe` (line 671) → `extrusion_entity.rs:2399` — partial
 - [ ] `extrusion_entities_append_loops` (line 732) → `extrusion_entity.rs`
 - [ ] `extrusion_entities_append_loops_and_paths` (line 746) → `extrusion_entity.rs`
@@ -3864,7 +3864,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `can_reverse` (line 166) → `extrusion_entity.rs:2071`
 - [x] `can_sort` (line 167) → `extrusion_entity.rs:2220`
 - [x] `set_reverse` (line 168) → `extrusion_entity.rs:2238`
-- [~] `polygons_covered_by_width` (line 183) → `extrusion_entity_collection.rs` — not in the paired file
+- [~] `polygons_covered_by_width` (line 183) → `extrusion_entity_collection.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 185) → `extrusion_entity_collection.rs` — not in the paired file
 - [ ] `as_polylines` (line 192) → `extrusion_entity.rs`
 - [x] `get_customize_flag` (line 199) → `extrusion_entity.rs:649`
@@ -3901,7 +3901,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `role` (line 535) → `extrusion_entity.rs:1470`
 - [x] `loop_role` (line 536) → `extrusion_entity.rs:1479`
 - [x] `set_loop_role` (line 537) → `extrusion_entity.rs:1484`
-- [~] `polygons_covered_by_width` (line 545) → `extrusion_entity_collection.rs` — not in the paired file
+- [~] `polygons_covered_by_width` (line 545) → `extrusion_entity_collection.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 547) → `extrusion_entity_collection.rs` — not in the paired file
 - [x] `as_polyline` (line 551) → `extrusion_entity.rs:1489`
 - [x] `collect_polylines` (line 552) → `extrusion_entity.rs:2124`
@@ -3934,7 +3934,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `size` (line 461) → `extrusion_entity.rs:862`
 - [x] `empty` (line 462) → `extrusion_entity.rs:867`
 - [x] `role` (line 464) → `extrusion_entity.rs:872`
-- [~] `polygons_covered_by_width` (line 472) → `extrusion_entity_collection.rs` — not in the paired file
+- [~] `polygons_covered_by_width` (line 472) → `extrusion_entity_collection.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 474) → `extrusion_entity_collection.rs` — not in the paired file
 - [x] `collect_polylines` (line 479) → `extrusion_entity.rs:2087`
 - [~] `collect_points` (line 480) → `gcode/seam_placer.rs` — not in the paired file
@@ -3959,7 +3959,7 @@ Rust file: `extrusion_entity.rs`. Status: **partial**. Not listed: 27 constructo
 - [x] `empty` (line 320) → `extrusion_entity.rs:550`
 - [x] `is_closed` (line 321) → `extrusion_entity.rs:555`
 - [x] `role` (line 331) → `extrusion_entity.rs:2027`
-- [~] `polygons_covered_by_width` (line 339) → `extrusion_entity_collection.rs` — not in the paired file
+- [~] `polygons_covered_by_width` (line 339) → `extrusion_entity_collection.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 341) → `extrusion_entity_collection.rs` — not in the paired file
 - [x] `min_mm3_per_mm` (line 344) → `extrusion_entity.rs:565`
 - [x] `as_polyline` (line 345) → `extrusion_entity.rs:570`
@@ -4009,20 +4009,20 @@ Rust file: `extrusion_entity_collection.rs`. Status: **partial**. Not listed: 4 
 - [~] `reverse` (line 67) → `arachne/utils/extrusion_line.rs, circle.rs, extrusion_entity.rs` — not in the paired file
 - [~] `set_reverse` (line 70) → `extrusion_entity.rs` — not in the paired file
 - [~] `empty` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `append` (line 74) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 75) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 76) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 74) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 75) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 76) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `replace` (line 77) → `extrusion_entity_collection.rs:273`
-- [~] `append` (line 81) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 81) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `remove` (line 83) → `extrusion_entity_collection.rs:284` — partial
 - [x] `chained_path_from` (line 89) → `extrusion_entity_collection.rs:473`
-- [~] `append` (line 89) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 94) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 89) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 94) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `polygons_covered_by_width` (line 101) → `extrusion_entity_collection.rs:295`
 - [~] `chained_path_from` (line 102) → `g_code.rs` — not in the paired file
 - [x] `polygons_covered_by_spacing` (line 107) → `extrusion_entity_collection.rs:316`
 - [x] `items_count` (line 114) → `extrusion_entity_collection.rs:334`
-- [~] `polygons_covered_by_width` (line 114) → `extrusion_entity.rs` — not in the paired file
+- [~] `polygons_covered_by_width` (line 114) → `extrusion_entity.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_covered_by_spacing` (line 116) → `extrusion_entity.rs` — not in the paired file
 - [~] `total_volume` (line 124) → `extrusion_entity.rs` — not in the paired file
 - [x] `flatten` (line 126) → `extrusion_entity_collection.rs:359`
@@ -5052,7 +5052,7 @@ Rust file: `flow.rs`. Status: **partial**. Not listed: 7 constructors, 3 operato
 - [x] `support_transition_flow` (line 262) → `flow.rs:1057`
 - [x] `support_material_1st_layer_flow` (line 269) → `flow.rs:1066`
 - [~] `support_material_interface_flow` (line 282) → `flow.rs:1104` — partial
-- [~] `support_nozzle_diameter` (line 293) → `support/tree_support.rs` — not in the paired file
+- [~] `support_nozzle_diameter` (line 293) → `support/support_parameters.rs, support/tree_support.rs` — not in the paired file
 
 **class `Flow`**
 
@@ -6119,8 +6119,8 @@ Rust file: `gcode/avoid_crossing_perimeters.rs`. Status: **partial**. Not listed
 
 **free functions**
 
-- [x] `get_closest_lines_in_radius` (line 160) → `gcode/avoid_crossing_perimeters.rs:301`
-- [x] `extend_for_closest_lines` (line 174) → `gcode/avoid_crossing_perimeters.rs:331`
+- [v] `get_closest_lines_in_radius` (line 160) → `gcode/avoid_crossing_perimeters.rs:301` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains)
+- [v] `extend_for_closest_lines` (line 174) → `gcode/avoid_crossing_perimeters.rs:331` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains)
 - [x] `find_first_different_vertex` (line 299) → `gcode/avoid_crossing_perimeters.rs:544`
 - [x] `three_points_inward_normal` (line 316) → `gcode/avoid_crossing_perimeters.rs:575`
 - [x] `get_polygon_vertex_inward_normal` (line 324) → `gcode/avoid_crossing_perimeters.rs:599`
@@ -6131,29 +6131,29 @@ Rust file: `gcode/avoid_crossing_perimeters.rs`. Status: **partial**. Not listed
 - [x] `export_travel_to_svg` (line 378) → `gcode/avoid_crossing_perimeters.rs:675`
 - [x] `get_shortest_direction` (line 391) → `gcode/avoid_crossing_perimeters.rs:690`
 - [x] `ConvertBBoxToPolyline` (line 423) → `gcode/avoid_crossing_perimeters.rs:749`
-- [~] `simplify_travel` (line 435) → `gcode/avoid_crossing_perimeters.rs:760` — partial
+- [v] `simplify_travel` (line 435) → `gcode/avoid_crossing_perimeters.rs:760` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains) (the body reads as partial to the estimate)
 - [~] `get_default_perimeter_spacing` (line 480) → `gcode/avoid_crossing_perimeters.rs:821` — partial
 - [x] `get_perimeter_spacing` (line 492) → `gcode/avoid_crossing_perimeters.rs:843`
 - [x] `get_perimeter_spacing_external` (line 511) → `gcode/avoid_crossing_perimeters.rs:910`
 - [x] `get_external_perimeter_width` (line 531) → `gcode/avoid_crossing_perimeters.rs:944`
 - [~] `avoid_perimeters_inner` (line 549) → `gcode/avoid_crossing_perimeters.rs:2427` — partial
 - [~] `avoid_perimeters` (line 691) → `gcode/avoid_crossing_perimeters.rs:1198` — partial
-- [x] `any_expolygon_contains` (line 716) → `gcode/avoid_crossing_perimeters.rs:1257`
-- [~] `any_expolygon_contains` (line 741) → `gcode/avoid_crossing_perimeters.rs:1228` — partial
+- [v] `any_expolygon_contains` (line 716) → `gcode/avoid_crossing_perimeters.rs:1257` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains)
+- [v] `any_expolygon_contains` (line 741) → `gcode/avoid_crossing_perimeters.rs:1228` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains) (the body reads as partial to the estimate)
 - [x] `need_wipe` (line 768) → `gcode/avoid_crossing_perimeters.rs:1292`
 - [x] `resample_polygon` (line 802) → `gcode/avoid_crossing_perimeters.rs:1331`
 - [x] `resample_expolygon` (line 835) → `gcode/avoid_crossing_perimeters.rs:1374`
 - [x] `resample_expolygons` (line 842) → `gcode/avoid_crossing_perimeters.rs:1382`
-- [x] `precompute_polygon_distances` (line 848) → `gcode/avoid_crossing_perimeters.rs:1389`
+- [v] `precompute_polygon_distances` (line 848) → `gcode/avoid_crossing_perimeters.rs:1389` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains)
 - [x] `precompute_expolygon_distances` (line 856) → `gcode/avoid_crossing_perimeters.rs:1410`
 - [~] `contour_distance` (line 865) → `gcode/avoid_crossing_perimeters.rs:1635` — partial
-- [~] `inner_offset` (line 1014) → `gcode/avoid_crossing_perimeters.rs:1756` — divergent
+- [v] `inner_offset` (line 1014) → `gcode/avoid_crossing_perimeters.rs:1756` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains) (the body reads as divergent to the estimate)
 - [x] `get_support_polygons` (line 1097) → `gcode/avoid_crossing_perimeters.rs:1783`
 - [x] `get_boundary` (line 1116) → `gcode/avoid_crossing_perimeters.rs:1818`
 - [~] `compute_object_boundary_local` (line 1167) → `gcode/avoid_crossing_perimeters.rs:1880` — partial
 - [x] `get_boundary_external` (line 1285) → `gcode/avoid_crossing_perimeters.rs:1988`
 - [x] `init_boundary_distances` (line 1312) → `gcode/avoid_crossing_perimeters.rs:2031`
-- [x] `init_boundary` (line 1319) → `gcode/avoid_crossing_perimeters.rs:2042`
+- [v] `init_boundary` (line 1319) → `gcode/avoid_crossing_perimeters.rs:2042` — R918: tests/avoid_crossing_perimeters_native_parity.rs: the functions that need neither a Layer nor a GCode against the pin's AvoidCrossingPerimeters.cpp included in the generator: 3,360 cases over generated polygons (boundary parameters, closest lines, extension of the closest lines, simplify_travel, inner_offset, any_expolygon_contains)
 - [~] `init_boundary` (line 1333) → `gcode/avoid_crossing_perimeters.rs` — another overload of the name is ported
 - [x] `SaveInitTravelToSVG` (line 1353) → `gcode/avoid_crossing_perimeters.rs:2085`
 - [x] `travel_length` (line 1478) → `gcode/avoid_crossing_perimeters.rs:2414`
@@ -6870,12 +6870,12 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [v] `calc_filament_change_info_by_toolorder` (line 244) → `gcode/tool_ordering.rs:2776` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `create_custom_seq_function` (line 1560) → `gcode/tool_ordering.rs:3683` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `build_nozzle_groups` (line 1588) → `gcode/tool_ordering.rs:3717` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [~] `build_manual_nozzle_map` (line 1617) → `gcode/tool_ordering.rs:3762` — partial
+- [v] `build_manual_nozzle_map` (line 1617) → `gcode/tool_ordering.rs:3762` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error) (the body reads as partial to the estimate)
 - [v] `build_default_nozzle_list` (line 1694) → `gcode/tool_ordering.rs:3863` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [x] `build_filament_group_context` (line 1710) → `gcode/tool_ordering.rs:3881`
+- [v] `build_filament_group_context` (line 1710) → `gcode/tool_ordering.rs:3881` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)
 - [v] `prepare_flush_matrices` (line 2176) → `gcode/tool_ordering.rs:4356` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [x] `refine_groups_by_Nozzle_State` (line 2204) → `gcode/tool_ordering.rs:4409`
-- [x] `plan_filament_mapping_and_order_by_combo_ranges` (line 2347) → `gcode/tool_ordering.rs:4573`
+- [v] `refine_groups_by_Nozzle_State` (line 2204) → `gcode/tool_ordering.rs:4409` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)
+- [v] `plan_filament_mapping_and_order_by_combo_ranges` (line 2347) → `gcode/tool_ordering.rs:4573` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)
 - [v] `validate_manual_diameter_or_throw` (line 2470) → `gcode/tool_ordering.rs:4722` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `snap_to_simple_fraction` (line 2875) → `gcode/tool_ordering.rs:5252` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 
@@ -6910,8 +6910,8 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2188`
 - [v] `handle_dontcare_extruder` (line 383) → `gcode/tool_ordering.rs:2936` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end (the body reads as partial to the estimate)
 - [x] `set_nozzle_status` (line 420) → `gcode/tool_ordering.rs:3499`
-- [x] `sort_and_build_data` (line 447) → `gcode/tool_ordering.rs:6605`
-- [x] `sort_and_build_data` (line 478) → `gcode/tool_ordering.rs:6645`
+- [v] `sort_and_build_data` (line 447) → `gcode/tool_ordering.rs:6605` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)
+- [v] `sort_and_build_data` (line 478) → `gcode/tool_ordering.rs:6645` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)
 - [v] `generate_first_layer_tool_order` (line 642) → `gcode/tool_ordering.rs:6470` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `generate_first_layer_tool_order` (line 730) → `gcode/tool_ordering.rs:6536` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `initialize_layers` (line 814) → `gcode/tool_ordering.rs:1430` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
@@ -6923,11 +6923,11 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [v] `cal_max_additional_fan` (line 1472) → `gcode/tool_ordering.rs:3552` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `cal_non_support_filaments` (line 1490) → `gcode/tool_ordering.rs:3570` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `has_non_support_filament` (line 1548) → `gcode/tool_ordering.rs:3658` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
-- [x] `get_recommended_filament_maps` (line 2511) → `gcode/tool_ordering.rs:4787`
+- [v] `get_recommended_filament_maps` (line 2511) → `gcode/tool_ordering.rs:4787` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error)
 - [x] `get_filament_change_stats` (line 2692) → `gcode/tool_ordering.rs:2133`
 - [x] `calculate_and_store_statistics` (line 2709) → `gcode/tool_ordering.rs:5014`
 - [x] `collect_layer_and_unprintable_data` (line 2789) → `gcode/tool_ordering.rs:5167`
-- [x] `prepare_ordering_context` (line 2815) → `gcode/tool_ordering.rs:5192` — read against the C++ in R914 (the estimate says partial)
+- [v] `prepare_ordering_context` (line 2815) → `gcode/tool_ordering.rs:5192` — R918: tests/tool_ordering_native_parity.rs: the filament grouping chain against the pin: build_manual_nozzle_map 200 cases, build_filament_group_context 300, get_recommended_filament_maps 400, refine_groups_by_Nozzle_State 197, plan_filament_mapping_and_order_by_combo_ranges 150, ToolOrdering(print) with sort_and_build_data 200 (344 that succeed, 56 that throw the same error) (the body reads as partial to the estimate)
 - [x] `execute_filament_ordering` (line 2844) → `gcode/tool_ordering.rs:5217`
 - [v] `resolve_mixed_filaments` (line 2893) → `gcode/tool_ordering.rs:5276` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
 - [v] `enforce_mixed_component_order` (line 3424) → `gcode/tool_ordering.rs:5865` — R914: tests/tool_ordering_native_parity.rs: 6,200 cases against the pin's ToolOrdering.cpp: the free functions, LayerTools filament slots and mixed groups, ToolOrdering's dont-care handling, layer initialisation, wipe tower partitions, skirt layers, statistics, mixed filaments and custom G-code assignment, and 300 hand-built prints run through both constructors end to end
@@ -6966,44 +6966,44 @@ Rust file: `gcode/tool_order_utils.rs`. Status: **ported**. Not listed: 7 constr
 
 **free functions**
 
-- [x] `solve_extruder_order_with_greedy` (line 786) → `gcode/tool_order_utils.rs:1485`
-- [x] `solve_extruder_order_with_forcast` (line 826) → `gcode/tool_order_utils.rs:1561`
-- [x] `solve_extruder_order` (line 896) → `gcode/tool_order_utils.rs:1725`
-- [x] `collect_filaments_in_groups` (line 968) → `gcode/tool_order_utils.rs:1866`
-- [x] `get_extruders_order` (line 979) → `gcode/tool_order_utils.rs:1889`
-- [x] `reorder_filaments_for_minimum_flush_volume_base` (line 1012) → `gcode/tool_order_utils.rs:1950`
-- [x] `reorder_filaments_for_minimum_flush_volume` (line 1120) → `gcode/tool_order_utils.rs:2169`
-- [x] `solve_extruder_order_with_MCMF` (line 1304) → `gcode/tool_order_utils.rs:2512`
-- [x] `get_extruders_order` (line 1348) → `gcode/tool_order_utils.rs:2581`
-- [x] `get_nozzle_match_in_given_order` (line 1358) → `gcode/tool_order_utils.rs:2593`
-- [x] `reorder_filaments_for_multi_nozzle_extruder` (line 1399) → `gcode/tool_order_utils.rs:2664`
-- [x] `reorder_filaments_for_multi_nozzle_extruder` (line 1546) → `gcode/tool_order_utils.rs:2925`
+- [v] `solve_extruder_order_with_greedy` (line 786) → `gcode/tool_order_utils.rs:1486` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `solve_extruder_order_with_forcast` (line 826) → `gcode/tool_order_utils.rs:1563` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `solve_extruder_order` (line 896) → `gcode/tool_order_utils.rs:1728` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [x] `collect_filaments_in_groups` (line 968) → `gcode/tool_order_utils.rs:1867`
+- [v] `get_extruders_order` (line 979) → `gcode/tool_order_utils.rs:1890` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `reorder_filaments_for_minimum_flush_volume_base` (line 1012) → `gcode/tool_order_utils.rs:1952` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `reorder_filaments_for_minimum_flush_volume` (line 1120) → `gcode/tool_order_utils.rs:2171` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `solve_extruder_order_with_MCMF` (line 1304) → `gcode/tool_order_utils.rs:2515` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `get_extruders_order` (line 1348) → `gcode/tool_order_utils.rs:2584` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `get_nozzle_match_in_given_order` (line 1358) → `gcode/tool_order_utils.rs:2597` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `reorder_filaments_for_multi_nozzle_extruder` (line 1399) → `gcode/tool_order_utils.rs:2668` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
+- [v] `reorder_filaments_for_multi_nozzle_extruder` (line 1546) → `gcode/tool_order_utils.rs:2929` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 
 **class `GeneralMinCostLowerBoundsSolver`**
 
-- [x] `solve` (line 390) → `gcode/tool_order_utils.rs:773`
+- [v] `solve` (line 390) → `gcode/tool_order_utils.rs:773` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 - [x] `build_feasible_graph` (line 418) → `gcode/tool_order_utils.rs:819`
 - [x] `build_graph_with_feasible_result` (line 492) → `gcode/tool_order_utils.rs:958`
 - [x] `add_edge_with_lower_bound` (line 530) → `gcode/tool_order_utils.rs:1031`
 
 **class `GeneralMinCostSolver`**
 
-- [x] `solve` (line 364) → `gcode/tool_order_utils.rs:692`
+- [v] `solve` (line 364) → `gcode/tool_order_utils.rs:692` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 
 **class `GroupMinCostFlowSolver`**
 
 - [x] `get_flush_cost` (line 562) → `gcode/tool_order_utils.rs:1095`
 - [x] `build_graph` (line 570) → `gcode/tool_order_utils.rs:1109`
-- [x] `solve` (line 657) → `gcode/tool_order_utils.rs:1253`
+- [v] `solve` (line 657) → `gcode/tool_order_utils.rs:1253` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 
 **class `MatchModeGroupSolver`**
 
-- [x] `solve` (line 780) → `gcode/tool_order_utils.rs:1476`
+- [v] `solve` (line 780) → `gcode/tool_order_utils.rs:1476` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 
 **class `MaxFlowSolver`**
 
 - [x] `add_edge` (line 267) → `gcode/tool_order_utils.rs:107`
-- [x] `solve` (line 276) → `gcode/tool_order_utils.rs:538`
+- [v] `solve` (line 276) → `gcode/tool_order_utils.rs:538` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 
 **class `MaxFlowWithLowerBounds`**
 
@@ -7021,7 +7021,7 @@ Rust file: `gcode/tool_order_utils.rs`. Status: **ported**. Not listed: 7 constr
 
 **class `MinFlushFlowSolver`**
 
-- [x] `solve` (line 731) → `gcode/tool_order_utils.rs:1386`
+- [v] `solve` (line 731) → `gcode/tool_order_utils.rs:1386` — R918: tests/tool_order_utils_native_parity.rs: the flow solvers and the filament ordering functions against the pin's ToolOrderUtils.cpp on 9,700 generated cases (16 tests), the DEBUG_MULTI_NOZZLE_MCMF block included
 
 ### `GCode/WipeTower` (.cpp+.hpp)
 
@@ -7776,8 +7776,8 @@ Rust file: `geometry/voronoi.rs`. Status: **partial**. Not listed: 1 constructor
 - [~] `get_state` (line 65) → `geometry/voronoi_diagram.rs, triangle_selector.rs` — not in the paired file
 - [~] `is_valid` (line 67) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `clear` (line 71) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs, texture_to_color/cgal_utils.rs` — not in the paired file
-- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs, geometry/voronoi_utils.rs, texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `num_vertices` (line 77) → `boost_polygon_voronoi.rs, cut_surface.rs, geometry/voronoi_utils.rs` — not in the paired file
+- [~] `num_edges` (line 79) → `boost_polygon_voronoi.rs, cut_surface.rs, geometry/voronoi_utils.rs` — not in the paired file
 - [~] `num_cells` (line 81) → `arachne/utils/sparse_grid.rs, boost_polygon_voronoi.rs, geometry/voronoi_utils.rs` — not in the paired file
 - [~] `copy_to_local` (line 86) → `geometry/voronoi_diagram.rs` — not in the paired file
 - [~] `construct_voronoi` (line 92) → `boost_polygon_voronoi.rs, geometry/voronoi_diagram.rs` — not in the paired file
@@ -7946,7 +7946,7 @@ Rust file: `interlocking/interlocking_generator.rs`. Status: **partial**. Not li
 - [~] `growBorderAreasPerpendicular` (line 121) → `interlocking/interlocking_generator.rs:415` — partial
 - [x] `handleThinAreas` (line 143) → `interlocking/interlocking_generator.rs:460`
 - [x] `generateInterlockingwall` (line 201) → `interlocking/interlocking_generator.rs:611`
-- [~] `generateInterlockingStructure` (line 228) → `interlocking/interlocking_generator.rs` — another overload of the name is ported
+- [~] `generateInterlockingStructure` (line 228) → `print_object_slice.rs` — not in the paired file
 - [x] `getLayerShellVoxels` (line 258) → `interlocking/interlocking_generator.rs:728`
 - [x] `getShellVoxels` (line 272) → `interlocking/interlocking_generator.rs:770`
 - [x] `addLayerBoundaryCells` (line 295) → `interlocking/interlocking_generator.rs:818`
@@ -8063,57 +8063,57 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2336`
-- [x] `zs_from_layers` (line 411) → `layer.rs:4812`
-- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:4800`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2343`
+- [x] `zs_from_layers` (line 411) → `layer.rs:4819`
+- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:4807`
 - [~] `get_extents` (line 750) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `get_extents` (line 761) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 
 **class `ContinuitiousDistancer`**
 
-- [x] `distance_from_perimeter` (line 428) → `layer.rs:4759`
-- [x] `to_lines` (line 446) → `layer.rs:4786`
+- [x] `distance_from_perimeter` (line 428) → `layer.rs:4766`
+- [x] `to_lines` (line 446) → `layer.rs:4793`
 
 **class `Layer`**
 
-- [x] `empty` (line 25) → `layer.rs:1926`
+- [x] `empty` (line 25) → `layer.rs:1933`
 - [x] `add_region` (line 34) → `layer.rs:1920`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2490` — divergent
-- [x] `make_slices` (line 47) → `layer.rs:2243`
-- [~] `backup_untyped_slices` (line 84) → `layer.rs:2346` — partial
-- [~] `restore_untyped_slices` (line 104) → `layer.rs:2385` — partial
-- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2414`
-- [x] `merged` (line 150) → `layer.rs:2441`
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2497` — divergent
+- [x] `make_slices` (line 47) → `layer.rs:2250`
+- [~] `backup_untyped_slices` (line 84) → `layer.rs:2353` — partial
+- [~] `restore_untyped_slices` (line 104) → `layer.rs:2392` — partial
+- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2421`
+- [x] `merged` (line 150) → `layer.rs:2448`
 - [x] `id` (line 158) → `layer.rs:1819`
 - [x] `set_id` (line 159) → `layer.rs:1825`
 - [~] `object` (line 160) → `g_code.rs` — not in the paired file
 - [x] `object` (line 161) → `layer.rs:1842`
 - [x] `bottom_z` (line 169) → `layer.rs:1884`
-- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:1956` — partial
+- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:1963` — partial
 - [x] `region_count` (line 193) → `layer.rs:1890`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
 - [x] `get_region` (line 195) → `layer.rs:1896`
-- [~] `make_perimeters` (line 203) → `layer.rs:2039` — divergent
-- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:4823`
-- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:4833`
-- [x] `make_fills` (line 223) → `layer.rs:2764`
-- [x] `has_extrusions` (line 239) → `layer.rs:4844`
-- [x] `effective_print_height` (line 242) → `layer.rs:4855`
-- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:4874`
-- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:4888`
-- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:4895`
-- [x] `idx_higher_or_equal` (line 278) → `layer.rs:4909`
-- [x] `calculate_perimeter_continuity` (line 469) → `layer.rs:2516`
-- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2666`
-- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5048`
-- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5072`
-- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5079`
-- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5110`
-- [~] `simplify_support_path` (line 638) → `layer.rs:5124` — partial
-- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5136` — partial
-- [~] `simplify_support_loop` (line 670) → `layer.rs:5150` — partial
-- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5164`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2703` — partial
+- [~] `make_perimeters` (line 203) → `layer.rs:2046` — divergent
+- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:4830`
+- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:4840`
+- [x] `make_fills` (line 223) → `layer.rs:2771`
+- [x] `has_extrusions` (line 239) → `layer.rs:4851`
+- [x] `effective_print_height` (line 242) → `layer.rs:4862`
+- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:4881`
+- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:4895`
+- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:4902`
+- [x] `idx_higher_or_equal` (line 278) → `layer.rs:4916`
+- [x] `calculate_perimeter_continuity` (line 469) → `layer.rs:2523`
+- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2673`
+- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5055`
+- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5079`
+- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5086`
+- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5117`
+- [~] `simplify_support_path` (line 638) → `layer.rs:5131` — partial
+- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5143` — partial
+- [~] `simplify_support_loop` (line 670) → `layer.rs:5157` — partial
+- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5171`
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2710` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs, print.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs, print.rs` — not in the paired file
 
@@ -8130,7 +8130,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
 - [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
 - [~] `interface_id` (line 372) → `print.rs` — not in the paired file
-- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5177`
+- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5184`
 
 ### `LayerRegion` (.cpp)
 
@@ -8178,8 +8178,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 **free functions**
 
 - [x] `unscale` (line 112) → `libslic3r.rs:52`
-- [~] `append` (line 131) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 140) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 131) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 140) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [ ] `clear_and_shrink` (line 153) → `libslic3r.rs`
 - [ ] `append_reversed` (line 163) → `libslic3r.rs`
 - [ ] `append_reversed` (line 173) → `libslic3r.rs`
@@ -8219,7 +8219,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [ ] `get_a` (line 38) → `geometry/line.rs`
 - [~] `get_b` (line 39) → `gcode_sender.rs` — not in the paired file
 - [~] `distance_to_squared` (line 43) → `geometry/line.rs:252` — divergent
-- [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs` — not in the paired file
+- [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:285` — read against the C++ in R871 (the estimate says divergent)
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
@@ -8248,14 +8248,14 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `clipper2/clipper_h.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — not in the paired file
 - [x] `midpoint` (line 164) → `geometry/line.rs:592`
-- [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs` — not in the paired file
-- [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs` — not in the paired file
+- [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
+- [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 170) → `geometry/line.rs` — another overload of the name is ported
 - [x] `atan2_` (line 176) → `geometry/line.rs:59`
 - [~] `vector` (line 179) → `texture_to_color/cgal_utils.rs` — not in the paired file
 - [x] `normal` (line 180) → `geometry/line.rs:136` — read against the C++ in R872 (the estimate says divergent)
-- [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs` — not in the paired file
+- [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
 - [~] `distance_to` (line 188) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
 - [x] `distance_to_infinite` (line 193) → `geometry/line.rs:304`
@@ -9227,7 +9227,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `MMU_Graph::Node`**
 
-- [~] `remove_edge` (line 82) → `boost_polygon_voronoi.rs, clipper.rs` — not in the paired file
+- [~] `remove_edge` (line 82) → `boost_polygon_voronoi.rs, clipper.rs, cut_surface.rs` — not in the paired file
 
 **class `PaintedLineVisitor`**
 
@@ -9353,11 +9353,11 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `closest_point` (line 68) → `edge_grid.rs, geometry/aabb_tree.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `distance_to` (line 71) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `clear` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `append` (line 82) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 82) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `has_boundary_point` (line 83) → `multi_point.rs:224`
-- [~] `append` (line 83) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 84) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 85) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 83) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 84) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 85) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `bounding_box` (line 89) → `multi_point.rs:236`
 - [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
@@ -9378,12 +9378,12 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `MultiPoint3`**
 
-- [~] `append` (line 116) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 116) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `is_valid` (line 122) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
 - [~] `translate` (line 388) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `translate` (line 396) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [~] `length` (line 401) → `clipper2/clipper_h.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — not in the paired file
-- [~] `bounding_box` (line 409) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
+- [~] `bounding_box` (line 409) → `arrange.rs, build_volume.rs, cut_surface.rs` — not in the paired file
 - [~] `remove_duplicate_points` (line 414) → `multi_point.rs:258` — partial
 
 ### `MutablePolygon` (.cpp+.hpp)
@@ -9419,7 +9419,7 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 - [x] `end` (line 176) → `mutable_polygon.rs:279`
 - [x] `cend` (line 177) → `mutable_polygon.rs:290`
 - [~] `end` (line 178) → `arachne/utils/extrusion_line.rs, preset.rs, print_apply.rs` — not in the paired file
-- [~] `remove` (line 182) → `arachne/utils/extrusion_line.rs, extrusion_entity_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `remove` (line 182) → `arachne/utils/extrusion_line.rs, cut_surface.rs, extrusion_entity_collection.rs` — not in the paired file
 - [~] `insert` (line 185) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
 - [x] `assign_inner` (line 207) → `mutable_polygon.rs:365`
 - [x] `remove` (line 221) → `mutable_polygon.rs:389`
@@ -10252,8 +10252,8 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `ccw` (line 118) → `geometry/point.rs:284` — partial
 - [~] `ccw` (line 125) → `geometry/line.rs` — not in the paired file
 - [x] `ccw_angle` (line 132) → `geometry/point.rs:311`
-- [~] `projection_onto` (line 141) → `ex_polygon.rs` — not in the paired file
-- [~] `projection_onto` (line 157) → `ex_polygon.rs` — not in the paired file
+- [~] `projection_onto` (line 141) → `ex_polygon.rs, support/tree_support.rs` — not in the paired file
+- [~] `projection_onto` (line 157) → `ex_polygon.rs, support/tree_support.rs` — not in the paired file
 - [x] `is_in_lines` (line 183) → `geometry/point.rs:465`
 - [x] `new_scale` (line 185) → `geometry/point.rs:59`
 - [~] `new_scale` (line 186) → `geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
@@ -10290,7 +10290,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `area` (line 130) → `geometry/polygon.rs:1712`
 - [~] `area` (line 132) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `polygons_append` (line 151) → `geometry/polygon.rs:1729` — partial
-- [~] `polygons_append` (line 153) → `bridge_detector.rs, geometry/expolygon.rs, surface.rs` — not in the paired file
+- [~] `polygons_append` (line 153) → `bridge_detector.rs, geometry/expolygon.rs, support/support_common.rs` — not in the paired file
 - [x] `polygons_rotate` (line 165) → `geometry/polygon.rs:1734`
 - [x] `polygons_reverse` (line 173) → `geometry/polygon.rs:1744`
 - [x] `to_points` (line 179) → `geometry/polygon.rs:1768`
@@ -10423,12 +10423,12 @@ Rust file: `geometry/polyline.rs`. Status: **partial**. Not listed: 8 constructo
 - [x] `reverse` (line 34) → `geometry/polyline.rs:255`
 - [x] `new_scale` (line 49) → `geometry/polyline.rs:76`
 - [x] `clip_end` (line 52) → `geometry/polyline.rs:289`
-- [~] `append` (line 59) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 59) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `append_before` (line 67) → `geometry/polyline.rs:845`
-- [~] `append` (line 82) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 89) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 82) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 89) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `clip_start` (line 95) → `geometry/polyline.rs:370`
-- [~] `append` (line 97) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 97) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `extend_end` (line 103) → `geometry/polyline.rs:382` — partial
 - [x] `extend_start` (line 111) → `geometry/polyline.rs:404`
 - [x] `clear` (line 114) → `geometry/polyline.rs:156`
@@ -10443,7 +10443,7 @@ Rust file: `geometry/polyline.rs`. Status: **partial**. Not listed: 8 constructo
 - [x] `split_at_length` (line 300) → `geometry/polyline.rs:678`
 - [x] `is_straight` (line 346) → `geometry/polyline.rs:750`
 - [x] `append` (line 358) → `geometry/polyline.rs:767`
-- [~] `append` (line 381) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 381) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `append_fitting_result_after_append_points` (line 406) → `geometry/polyline.rs:892`
 - [x] `append_fitting_result_after_append_polyline` (line 419) → `geometry/polyline.rs:915`
 - [x] `reset_to_linear_move` (line 441) → `geometry/polyline.rs:948`
@@ -10778,20 +10778,20 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 **free functions**
 
 - [ ] `layered_print_cleareance_valid` (line 1124) → `print.rs`
-- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:10006`
-- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:10024`
-- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:9660`
-- [x] `getObjectExtruderMap` (line 2150) → `print.rs:9693`
-- [x] `convex_outline_gap` (line 3749) → `print.rs:9721`
-- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:9737`
-- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:9770`
-- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:9790`
-- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:9840`
-- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:9878`
-- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:9890`
-- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:9904`
-- [x] `print_instance_hull` (line 3912) → `print.rs:9910`
-- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:9937`
+- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:10072`
+- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:10090`
+- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:9726`
+- [x] `getObjectExtruderMap` (line 2150) → `print.rs:9759`
+- [x] `convex_outline_gap` (line 3749) → `print.rs:9787`
+- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:9803`
+- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:9836`
+- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:9856`
+- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:9906`
+- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:9944`
+- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:9956`
+- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:9970`
+- [x] `print_instance_hull` (line 3912) → `print.rs:9976`
+- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:10003`
 - [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:4899`
 - [~] `to_json` (line 4596) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4604) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
@@ -10820,7 +10820,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [x] `empty` (line 1387) → `print.rs:9764`
+- [x] `empty` (line 1387) → `print.rs:9830`
 
 **class `ConstVectorOfPtrsAdaptor`**
 
@@ -10852,16 +10852,16 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [v] `object_extruders` (line 482) → `print.rs:7818` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [v] `support_material_extruders` (line 523) → `print.rs:7852` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [v] `extruders` (line 558) → `print.rs:7888` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `printed_filaments` (line 578) → `print.rs:8931` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `printed_filaments` (line 578) → `print.rs:8997` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:7909` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:8963` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:9029` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [v] `num_object_instances` (line 713) → `print.rs:7953` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [v] `max_allowed_layer_height` (line 721) → `print.rs:7962` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [x] `print_object_ids` (line 732) → `print.rs:7972`
 - [v] `has_infinite_skirt` (line 742) → `print.rs:7981` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [v] `has_skirt` (line 747) → `print.rs:7987` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [v] `has_brim` (line 752) → `print.rs:7993` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `layers_sorted_for_object` (line 758) → `print.rs:9048`
+- [x] `layers_sorted_for_object` (line 758) → `print.rs:9114`
 - [ ] `sequential_print_clearance_valid` (line 777) → `print.rs`
 - [x] `technology` (line 910) → `print.rs:7998`
 - [v] `empty` (line 918) → `print.rs:8003` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
@@ -10909,29 +10909,29 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [~] `get_config_index` (line 1360) → `print.rs` — another overload of the name is ported
 - [x] `get_config_index` (line 1385) → `print.rs:8259`
 - [~] `validate` (line 1413) → `print.rs:2176` — divergent
-- [x] `bounding_box` (line 1849) → `print.rs:9078`
-- [x] `total_bounding_box` (line 1864) → `print.rs:9094`
+- [x] `bounding_box` (line 1849) → `print.rs:9144`
+- [x] `total_bounding_box` (line 1864) → `print.rs:9160`
 - [v] `skirt_first_layer_height` (line 1903) → `print.rs:8298` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `brim_flow` (line 1918) → `print.rs:9137` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9172` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9188` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `skirt_flow` (line 2001) → `print.rs:9222` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `brim_flow` (line 1918) → `print.rs:9203` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9238` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9254` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `skirt_flow` (line 2001) → `print.rs:9288` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [~] `skirt_flow` (line 2017) → `print.rs` — another overload of the name is ported
 - [~] `skirt_flow` (line 2022) → `print.rs` — another overload of the name is ported
-- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9264` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9330` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [v] `has_support_material` (line 2048) → `print.rs:8314` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [x] `auto_assign_extruders` (line 2058) → `print.rs:8326`
 - [~] `process` (line 2178) → `print.rs:2275` — divergent
 - [~] `export_gcode` (line 2839) → `print.rs:641` — divergent
 - [~] `_make_skirt` (line 2869) → `print.rs:3469` — divergent
-- [x] `first_layer_islands` (line 3061) → `print.rs:9277`
+- [x] `first_layer_islands` (line 3061) → `print.rs:9343`
 - [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:8766`
 - [x] `translate_to_print_space` (line 3107) → `print.rs:8341`
 - [~] `translate_to_print_space` (line 3112) → `print.rs` — another overload of the name is ported
 - [~] `get_filament_temp_type` (line 3116) → `print.rs:3835` — divergent
 - [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8357` — divergent
-- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9304` — partial
-- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9359`
+- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9370` — partial
+- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9425`
 - [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8376` — divergent
 - [ ] `resolve_manual_nozzle_map` (line 3322) → `print.rs`
 - [ ] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs`
@@ -10955,8 +10955,8 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:8707` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
 - [v] `has_wipe_tower` (line 3655) → `print.rs:8737` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
 - [v] `enable_timelapse_print` (line 3742) → `print.rs:8759` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9464`
-- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9539`
+- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9530`
+- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9605`
 - [x] `_make_wipe_tower` (line 4157) → `print.rs:5326`
 - [x] `output_filename` (line 4402) → `print.rs:8797`
 - [~] `set_gcode_file_ready` (line 4414) → `print.rs:8808` — partial
@@ -11484,33 +11484,33 @@ Rust file: `print_object_slice.rs`. Status: **partial**.
 
 **free functions**
 
-- [x] `new_layers` (line 37) → `print_object_slice.rs:83`
-- [ ] `slice_volume` (line 63) → `print_object_slice.rs`
-- [ ] `slice_volume` (line 133) → `print_object_slice.rs`
-- [ ] `model_volume_needs_slicing` (line 171) → `print_object_slice.rs`
-- [ ] `slice_volumes_inner` (line 181) → `print_object_slice.rs`
-- [ ] `overlap_in_xy` (line 299) → `print_object_slice.rs`
-- [ ] `layer_range_first` (line 305) → `print_object_slice.rs`
-- [ ] `layer_range_next` (line 319) → `print_object_slice.rs`
-- [ ] `slices_to_regions` (line 330) → `print_object_slice.rs`
-- [ ] `groupingVolumes` (line 651) → `print_object_slice.rs`
-- [ ] `findPartVolumes` (line 866) → `print_object_slice.rs`
-- [ ] `applyNegtiveVolumes` (line 880) → `print_object_slice.rs`
-- [ ] `reGroupingLayerPolygons` (line 899) → `print_object_slice.rs`
-- [~] `fix_slicing_errors` (line 945) → `print_object_slice.rs:149` — partial
-- [ ] `groupingVolumesForBrim` (line 1067) → `print_object_slice.rs`
-- [ ] `normalize_mm_segmentation_to_layer_bands` (line 1173) → `print_object_slice.rs`
-- [ ] `apply_mm_segmentation` (line 1852) → `print_object_slice.rs`
-- [ ] `apply_fuzzy_skin_segmentation` (line 1979) → `print_object_slice.rs`
-- [ ] `should_skip_filament_shrink` (line 2087) → `print_object_slice.rs`
+- [x] `new_layers` (line 37) → `print_object_slice.rs:524`
+- [x] `slice_volume` (line 63) → `print_object_slice.rs:604`
+- [~] `slice_volume` (line 133) → `print_object_slice.rs` — another overload of the name is ported
+- [x] `model_volume_needs_slicing` (line 171) → `print_object_slice.rs:727`
+- [x] `slice_volumes_inner` (line 181) → `print_object_slice.rs:750`
+- [x] `overlap_in_xy` (line 299) → `print_object_slice.rs:883`
+- [x] `layer_range_first` (line 305) → `print_object_slice.rs:890`
+- [x] `layer_range_next` (line 319) → `print_object_slice.rs:907`
+- [x] `slices_to_regions` (line 330) → `print_object_slice.rs:939`
+- [x] `groupingVolumes` (line 651) → `print_object_slice.rs:1288`
+- [x] `findPartVolumes` (line 866) → `print_object_slice.rs:1534`
+- [x] `applyNegtiveVolumes` (line 880) → `print_object_slice.rs:1552`
+- [x] `reGroupingLayerPolygons` (line 899) → `print_object_slice.rs:1574`
+- [x] `fix_slicing_errors` (line 945) → `print_object_slice.rs:1623`
+- [x] `groupingVolumesForBrim` (line 1067) → `print_object_slice.rs:1776`
+- [~] `normalize_mm_segmentation_to_layer_bands` (line 1173) → `print_object_slice.rs:2629` — divergent
+- [x] `apply_mm_segmentation` (line 1852) → `print_object_slice.rs:1793`
+- [x] `apply_fuzzy_skin_segmentation` (line 1979) → `print_object_slice.rs:1941`
+- [x] `should_skip_filament_shrink` (line 2087) → `print_object_slice.rs:2063`
 
 **class `PrintObject`**
 
-- [~] `slice` (line 1086) → `print_object.rs, sla/support_tree.rs, slicer.rs` — not in the paired file
-- [ ] `slice_volumes` (line 2109) → `print_object_slice.rs`
-- [~] `_shrink_contour_holes` (line 2416) → `print_object_slice.rs:359` — partial
-- [ ] `support_shrinkage_scale` (line 2449) → `print_object_slice.rs`
-- [ ] `slice_support_volumes` (line 2479) → `print_object_slice.rs`
+- [x] `slice` (line 1086) → `print_object_slice.rs:2087`
+- [x] `slice_volumes` (line 2109) → `print_object_slice.rs:2172`
+- [x] `_shrink_contour_holes` (line 2416) → `print_object_slice.rs:2489`
+- [x] `support_shrinkage_scale` (line 2449) → `print_object_slice.rs:2523`
+- [x] `slice_support_volumes` (line 2479) → `print_object_slice.rs:2558`
 
 ### `PrintRegion` (.cpp)
 
@@ -12553,43 +12553,43 @@ Rust file: `support/support_common.rs`. Status: **partial**. Not listed: 1 const
 
 **free functions**
 
-- [ ] `compact_layers` (line 52) → `support/support_common.rs`
-- [ ] `generate_interface_layers` (line 59) → `support/support_common.rs`
+- [v] `compact_layers` (line 52) → `support/support_common.rs:1255` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
+- [v] `generate_interface_layers` (line 59) → `support/support_common.rs:1348` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
 - [x] `idx_higher_or_equal` (line 133) → `support/support_common.rs:72`
 - [~] `idx_higher_or_equal` (line 159) → `layer.rs` — not in the paired file
 - [x] `idx_lower_or_equal` (line 170) → `support/support_common.rs:118`
 - [~] `idx_lower_or_equal` (line 196) → `support/support_common.rs` — another overload of the name is ported
 - [~] `safe_offset_inc` (line 219) → `support/tree_support.rs` — not in the paired file
-- [ ] `generate_raft_base` (line 300) → `support/support_common.rs`
-- [ ] `fill_expolygon_generate_paths` (line 478) → `support/support_common.rs`
-- [ ] `fill_expolygons_generate_paths` (line 501) → `support/support_common.rs`
-- [ ] `fill_expolygons_generate_paths` (line 514) → `support/support_common.rs`
-- [ ] `draw_perimeters` (line 528) → `support/support_common.rs`
-- [ ] `tree_supports_generate_paths` (line 546) → `support/support_common.rs`
-- [ ] `fill_expolygons_with_sheath_generate_paths` (line 767) → `support/support_common.rs`
-- [ ] `dbg_index_to_color` (line 1124) → `support/support_common.rs`
-- [ ] `keep_polylines_near_bbox` (line 1148) → `support/support_common.rs`
-- [ ] `modulate_extrusion_paths_by_overlapping_layers` (line 1194) → `support/support_common.rs`
-- [ ] `modulate_extrusion_by_overlapping_layers` (line 1446) → `support/support_common.rs`
-- [ ] `merged_band_footprint` (line 1518) → `support/support_common.rs`
-- [ ] `merge_support_layers_multi_diameter` (line 1528) → `support/support_common.rs`
-- [ ] `generate_support_layers` (line 2189) → `support/support_common.rs`
-- [ ] `generate_support_toolpaths` (line 2270) → `support/support_common.rs`
-- [~] `safe_union` (line 3004) → `support/support_common.rs:228` — partial
-- [~] `safe_union` (line 3037) → `support/support_common.rs` — another overload of the name is ported
-- [x] `safe_offset_inc` (line 3062) → `support/support_common.rs:325`
+- [v] `generate_raft_base` (line 300) → `support/support_common.rs:1646` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [x] `fill_expolygon_generate_paths` (line 478) → `support/support_common.rs:2198`
+- [x] `fill_expolygons_generate_paths` (line 501) → `support/support_common.rs:2246`
+- [~] `fill_expolygons_generate_paths` (line 514) → `support/support_common.rs` — another overload of the name is ported
+- [v] `draw_perimeters` (line 528) → `support/support_common.rs:2063` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [v] `tree_supports_generate_paths` (line 546) → `support/support_common.rs:2343` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
+- [v] `fill_expolygons_with_sheath_generate_paths` (line 767) → `support/support_common.rs:2550` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [x] `dbg_index_to_color` (line 1124) → `support/support_common.rs:2082`
+- [v] `keep_polylines_near_bbox` (line 1148) → `support/support_common.rs:2009` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [x] `modulate_extrusion_paths_by_overlapping_layers` (line 1194) → `support/support_common.rs:3133`
+- [v] `modulate_extrusion_by_overlapping_layers` (line 1446) → `support/support_common.rs:3330` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [~] `merged_band_footprint` (line 1518) → `support/support_common.rs:1996` — partial
+- [x] `merge_support_layers_multi_diameter` (line 1528) → `support/support_common.rs:4765`
+- [v] `generate_support_layers` (line 2189) → `support/support_common.rs:1896` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [v] `generate_support_toolpaths` (line 2270) → `support/support_common.rs:3672` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [v] `safe_union` (line 3004) → `support/support_common.rs:228` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
+- [~] `safe_union` (line 3037) → `support/tree_support.rs` — not in the paired file
+- [v] `safe_offset_inc` (line 3062) → `support/support_common.rs:331` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 
 **class `LoopInterfaceProcessor`**
 
-- [~] `generate` (line 918) → `arachne/wall_tool_paths.rs, debug/validation.rs, fill/fill_plane_path.rs` — not in the paired file
+- [v] `generate` (line 918) → `support/support_common.rs:2744` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 
 **class `SupportGeneratorLayerExtruded`**
 
-- [~] `empty` (line 827) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `set_polygons_to_extrude` (line 831) → `support/support_common.rs`
-- [ ] `could_merge` (line 840) → `support/support_common.rs`
-- [~] `merge` (line 847) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
-- [~] `polygons_append` (line 875) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [x] `empty` (line 827) → `support/support_common.rs:2646`
+- [v] `set_polygons_to_extrude` (line 831) → `support/support_common.rs:2654` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ (the body reads as partial to the estimate)
+- [v] `could_merge` (line 840) → `support/support_common.rs:2667` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [v] `merge` (line 847) → `support/support_common.rs:2676` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
+- [v] `polygons_append` (line 875) → `support/support_common.rs:2705` — R918: tests/support_common_native_parity.rs: the polygon helpers and, on 14 scenarios built with the pin's Print::apply, the steps generate() runs once the layers exist (compact_layers, generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths) and the path helpers one by one, with a recording filler on both sides, against the pin's SupportCommon.cpp run on one thread: 2,838 lines, none differ
 
 ### `Support/SupportLayer` (.hpp)
 
@@ -12671,26 +12671,26 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 
 ### `Support/SupportParameters` (.hpp)
 
-Rust file: `support/support_parameters.rs`. Status: **partial**. Not listed: 1 constructors.
+Rust file: `support/support_parameters.rs`. Status: **verified**. Not listed: 1 constructors.
 
 **free functions**
 
-- [ ] `config_flag_or_false` (line 15) → `support/support_parameters.rs`
-- [ ] `resolved_support_object_xy_distance` (line 21) → `support/support_parameters.rs`
-- [ ] `resolve_support_style` (line 33) → `support/support_parameters.rs`
+- [v] `config_flag_or_false` (line 15) → `support/support_parameters.rs:812` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `resolved_support_object_xy_distance` (line 21) → `support/support_parameters.rs:820` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit (the body reads as partial to the estimate)
+- [v] `resolve_support_style` (line 33) → `support/support_parameters.rs:835` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
 
 **class `SupportParameters`**
 
-- [x] `has_contacts` (line 325) → `support/support_parameters.rs:675`
-- [x] `has_interfaces` (line 326) → `support/support_parameters.rs:680`
-- [x] `has_base_interfaces` (line 327) → `support/support_parameters.rs:685`
-- [x] `num_top_interface_layers_only` (line 328) → `support/support_parameters.rs:690`
-- [x] `num_bottom_interface_layers_only` (line 329) → `support/support_parameters.rs:698`
-- [ ] `support_material_flow_for_nozzle` (line 342) → `support/support_parameters.rs`
-- [ ] `support_material_interface_flow_for_nozzle` (line 347) → `support/support_parameters.rs`
-- [ ] `support_material_first_layer_flow_for_nozzle` (line 352) → `support/support_parameters.rs`
-- [x] `raft_interface_angle` (line 393) → `support/support_parameters.rs:705`
-- [ ] `support_interface_angle` (line 397) → `support/support_parameters.rs`
+- [v] `has_contacts` (line 325) → `support/support_parameters.rs:695` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `has_interfaces` (line 326) → `support/support_parameters.rs:700` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `has_base_interfaces` (line 327) → `support/support_parameters.rs:705` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `num_top_interface_layers_only` (line 328) → `support/support_parameters.rs:710` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `num_bottom_interface_layers_only` (line 329) → `support/support_parameters.rs:718` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `support_material_flow_for_nozzle` (line 342) → `support/support_parameters.rs:1304` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `support_material_interface_flow_for_nozzle` (line 347) → `support/support_parameters.rs:1316` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `support_material_first_layer_flow_for_nozzle` (line 352) → `support/support_parameters.rs:1328` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `raft_interface_angle` (line 393) → `support/support_parameters.rs:726` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
+- [v] `support_interface_angle` (line 397) → `support/support_parameters.rs:1341` — R918: tests/support_parameters_native_parity.rs: SupportParameters(object) on nine configurations built with the pin's Print::apply: every member, the interface angles, the flows for a nozzle and the free functions of the header, bit for bit
 
 ### `Support/TreeModelVolumes` (.cpp+.hpp)
 
@@ -12748,93 +12748,93 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 
 **free functions**
 
-- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:834`
-- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:842`
-- [x] `normal` (line 66) → `support/tree_support.rs:850`
-- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:859`
+- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:1116`
+- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:1124`
+- [x] `normal` (line 66) → `support/tree_support.rs:1132`
+- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:1293`
 - [ ] `draw_contours_and_nodes_to_svg` (line 184) → `support/tree_support.rs`
 - [ ] `draw_layer_mst` (line 246) → `support/tree_support.rs`
-- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:907`
-- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1033`
-- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1202`
-- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1232`
+- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:1341`
+- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1467`
+- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1636`
+- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1666`
 - [~] `is_inside_ex` (line 550) → `support/tree_support.rs` — another overload of the name is ported
-- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1254`
-- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1267`
-- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1313`
-- [v] `add_overhang` (line 779) → `support/tree_support.rs:2163` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `is_stable` (line 785) → `support/tree_support.rs:1319`
-- [ ] `fill_expolygon_generate_paths` (line 1598) → `support/tree_support.rs`
-- [ ] `fill_expolygons_generate_paths` (line 1625) → `support/tree_support.rs`
+- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1689`
+- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1702`
+- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1748`
+- [v] `add_overhang` (line 779) → `support/tree_support.rs:2616` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `is_stable` (line 785) → `support/tree_support.rs:1754`
+- [~] `fill_expolygon_generate_paths` (line 1598) → `support/support_common.rs` — not in the paired file
+- [~] `fill_expolygons_generate_paths` (line 1625) → `support/support_common.rs` — not in the paired file
 - [ ] `_make_loops` (line 1641) → `support/tree_support.rs`
 - [ ] `make_perimeter_and_inner_brim` (line 1676) → `support/tree_support.rs`
 - [ ] `make_perimeter_and_infill` (line 1683) → `support/tree_support.rs`
-- [x] `tree_support_node_disk` (line 1758) → `support/tree_support.rs:2222`
+- [v] `tree_support_node_disk` (line 1758) → `support/tree_support.rs:2675` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 - [ ] `deleteDirectoryContents` (line 3498) → `support/tree_support.rs`
-- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1404`
-- [v] `carried_area` (line 4613) → `support/tree_support.rs:2263` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `carried_area_ratio` (line 4628) → `support/tree_support.rs:2285` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `smooth_filter` (line 5103) → `support/tree_support.rs:2301` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `densify_polygon` (line 5124) → `support/tree_support.rs:2334` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1839`
+- [v] `carried_area` (line 4613) → `support/tree_support.rs:2716` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `carried_area_ratio` (line 4628) → `support/tree_support.rs:2738` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `smooth_filter` (line 5103) → `support/tree_support.rs:2754` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `densify_polygon` (line 5124) → `support/tree_support.rs:2787` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 
 **class `LayerHeightData`**
 
-- [x] `bottom_z` (line 35) → `support/tree_support.rs:296`
+- [x] `bottom_z` (line 35) → `support/tree_support.rs:578`
 
 **class `SupportNode`**
 
-- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:566`
+- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:848`
 
 **class `TreeSupport`**
 
-- [x] `create_node` (line 416) → `support/tree_support.rs:1973`
-- [x] `init_top_z_by_nozzle` (line 651) → `support/tree_support.rs:2004`
-- [v] `top_z_at` (line 715) → `support/tree_support.rs:2076` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `top_z_for_overhang` (line 724) → `support/tree_support.rs:2088` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `union_outlines_within_top_z` (line 744) → `support/tree_support.rs:2118` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `create_node` (line 416) → `support/tree_support.rs:2426`
+- [x] `init_top_z_by_nozzle` (line 651) → `support/tree_support.rs:2457`
+- [v] `top_z_at` (line 715) → `support/tree_support.rs:2529` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `top_z_for_overhang` (line 724) → `support/tree_support.rs:2541` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `union_outlines_within_top_z` (line 744) → `support/tree_support.rs:2571` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 - [~] `detect_overhangs` (line 796) → `support/mod.rs` — not in the paired file
-- [v] `create_tree_support_layers` (line 1554) → `support/tree_support.rs:2361` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `support_flare_step_width` (line 1745) → `support/tree_support.rs:2408` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `create_tree_support_layers` (line 1554) → `support/tree_support.rs:2814` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `support_flare_step_width` (line 1745) → `support/tree_support.rs:2861` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 - [ ] `fold_nodes_multi_diameter` (line 1806) → `support/tree_support.rs`
 - [ ] `smooth_line_width_multi_diameter` (line 2894) → `support/tree_support.rs`
-- [x] `fold_carriers_above` (line 2978) → `support/tree_support.rs:2433`
+- [x] `fold_carriers_above` (line 2978) → `support/tree_support.rs:2886`
 - [~] `generate_toolpaths` (line 2990) → `arachne/skeletal_trapezoidation.rs` — not in the paired file
 - [ ] `move_bounds_to_contact_nodes` (line 3505) → `support/tree_support.rs`
 - [~] `generate` (line 3534) → `arachne/wall_tool_paths.rs, debug/validation.rs, fill/fill_plane_path.rs` — not in the paired file
-- [v] `calc_branch_radius` (line 3702) → `support/tree_support.rs:2468` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
+- [v] `calc_branch_radius` (line 3702) → `support/tree_support.rs:2921` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ (the body reads as partial to the estimate)
 - [~] `calc_branch_radius` (line 3722) → `support/tree_support.rs` — another overload of the name is ported
-- [v] `calc_radius` (line 3745) → `support/tree_support.rs:2485` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `get_radius` (line 3750) → `support/tree_support.rs:2490`
-- [v] `get_avoidance` (line 3757) → `support/tree_support.rs:2499` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
-- [v] `get_collision` (line 3774) → `support/tree_support.rs:2504` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
-- [v] `get_collision_polys` (line 3791) → `support/tree_support.rs:2509` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
+- [v] `calc_radius` (line 3745) → `support/tree_support.rs:2938` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `get_radius` (line 3750) → `support/tree_support.rs:2943`
+- [v] `get_avoidance` (line 3757) → `support/tree_support.rs:2952` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
+- [v] `get_collision` (line 3774) → `support/tree_support.rs:2957` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
+- [v] `get_collision_polys` (line 3791) → `support/tree_support.rs:2962` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
 - [ ] `get_trim_support_regions` (line 3829) → `support/tree_support.rs`
-- [ ] `draw_circles` (line 3905) → `support/tree_support.rs`
-- [ ] `resolve_material_covered_by_folded_interfaces` (line 4635) → `support/tree_support.rs`
+- [v] `draw_circles` (line 3905) → `support/tree_support.rs:5172` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [~] `resolve_material_covered_by_folded_interfaces` (line 4635) → `support/tree_support.rs:6168` — partial
 - [ ] `prune_floating_supports` (line 4903) → `support/tree_support.rs`
-- [x] `drop_nodes` (line 5147) → `support/tree_support.rs:3451`
-- [x] `smooth_nodes` (line 6036) → `support/tree_support.rs:2521`
+- [v] `drop_nodes` (line 5147) → `support/tree_support.rs:4043` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `smooth_nodes` (line 6036) → `support/tree_support.rs:2974` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 - [~] `smooth_nodes` (line 6138) → `support/tree_support.rs` — another overload of the name is ported
-- [x] `plan_layer_heights` (line 6257) → `support/tree_support.rs:2620`
-- [x] `generate_contact_points` (line 6389) → `support/tree_support.rs:3047`
-- [x] `insert_dropped_node` (line 6693) → `support/tree_support.rs:2772`
+- [v] `plan_layer_heights` (line 6257) → `support/tree_support.rs:3073` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `generate_contact_points` (line 6389) → `support/tree_support.rs:3639` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `insert_dropped_node` (line 6693) → `support/tree_support.rs:3225` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 
 **class `TreeSupportData`**
 
-- [v] `get_contours` (line 6786) → `support/tree_support.rs:1590` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `get_contours_with_holes` (line 6796) → `support/tree_support.rs:1599` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `create_node` (line 6806) → `support/tree_support.rs:1611`
-- [x] `clear_nodes` (line 6819) → `support/tree_support.rs:1650`
-- [v] `ceil_radius` (line 6825) → `support/tree_support.rs:1655` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `get_contours` (line 6786) → `support/tree_support.rs:2025` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `get_contours_with_holes` (line 6796) → `support/tree_support.rs:2034` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `create_node` (line 6806) → `support/tree_support.rs:2046`
+- [x] `clear_nodes` (line 6819) → `support/tree_support.rs:2085`
+- [v] `ceil_radius` (line 6825) → `support/tree_support.rs:2090` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 
 **class `TreeSupportProfiler`**
 
-- [x] `stage_start` (line 103) → `support/tree_support.rs:747`
-- [x] `stage_finish` (line 111) → `support/tree_support.rs:759`
-- [x] `tic` (line 120) → `support/tree_support.rs:772`
-- [~] `toc` (line 121) → `support/tree_support.rs:777` — partial
-- [x] `stage_add` (line 125) → `support/tree_support.rs:784`
-- [x] `report` (line 132) → `support/tree_support.rs:795`
+- [x] `stage_start` (line 103) → `support/tree_support.rs:1029`
+- [x] `stage_finish` (line 111) → `support/tree_support.rs:1041`
+- [x] `tic` (line 120) → `support/tree_support.rs:1054`
+- [~] `toc` (line 121) → `support/tree_support.rs:1059` — partial
+- [x] `stage_add` (line 125) → `support/tree_support.rs:1066`
+- [x] `report` (line 132) → `support/tree_support.rs:1077`
 
 ### `Support/TreeSupport3D` (.cpp+.hpp)
 
@@ -13023,8 +13023,8 @@ Rust file: `surface.rs`. Status: **partial**. Not listed: 7 constructors.
 - [x] `to_polygons` (line 131) → `surface.rs:449`
 - [~] `to_polygons` (line 146) → `bridge_detector.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `to_expolygons` (line 161) → `surface.rs:483`
-- [~] `to_expolygons` (line 170) → `sla/concave_hull.rs, surface_collection.rs` — not in the paired file
-- [~] `to_expolygons` (line 180) → `sla/concave_hull.rs, surface_collection.rs` — not in the paired file
+- [~] `to_expolygons` (line 170) → `print_object_slice.rs, sla/concave_hull.rs, surface_collection.rs` — not in the paired file
+- [~] `to_expolygons` (line 180) → `print_object_slice.rs, sla/concave_hull.rs, surface_collection.rs` — not in the paired file
 - [x] `number_polygons` (line 191) → `surface.rs:505`
 - [~] `number_polygons` (line 198) → `geometry/expolygon.rs` — not in the paired file
 - [x] `polygons_append` (line 207) → `surface.rs:535`
@@ -13081,15 +13081,15 @@ Rust file: `surface_collection.rs`. Status: **partial**. Not listed: 2 construct
 - [~] `filter_by_type` (line 63) → `surface_collection.rs` — another overload of the name is ported
 - [~] `set` (line 63) → `app_config.rs, color.rs, config.rs` — not in the paired file
 - [~] `set` (line 64) → `app_config.rs, color.rs, config.rs` — not in the paired file
-- [~] `append` (line 66) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 67) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 66) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 67) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `append` (line 68) → `surface_collection.rs:127`
-- [~] `append` (line 69) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 70) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 69) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 70) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `keep_type` (line 70) → `surface_collection.rs` — another overload of the name is ported
-- [~] `append` (line 71) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 72) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
-- [~] `append` (line 73) → `config.rs, ex_polygon_collection.rs, extrusion_entity.rs` — not in the paired file
+- [~] `append` (line 71) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 72) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `append` (line 73) → `config.rs, cut_surface.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `keep_type` (line 86) → `surface_collection.rs:318`
 - [x] `keep_types` (line 100) → `surface_collection.rs:342`
 - [x] `remove_type` (line 113) → `surface_collection.rs:366`
@@ -13114,13 +13114,13 @@ Rust file: `surface_mesh.rs`. Status: **partial**. Not listed: 5 constructors, 2
 - [x] `next` (line 71) → `surface_mesh.rs:242`
 - [x] `prev` (line 72) → `surface_mesh.rs:251`
 - [x] `halfedge` (line 73) → `surface_mesh.rs:260`
-- [~] `halfedge` (line 74) → `texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `halfedge` (line 74) → `cut_surface.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 - [x] `opposite` (line 75) → `surface_mesh.rs:280`
 - [x] `next_around_target` (line 96) → `surface_mesh.rs:314`
 - [x] `prev_around_target` (line 97) → `surface_mesh.rs:322`
 - [x] `next_around_source` (line 98) → `surface_mesh.rs:334`
 - [x] `prev_around_source` (line 99) → `surface_mesh.rs:346`
-- [~] `halfedge` (line 100) → `texture_to_color/cgal_utils.rs` — not in the paired file
+- [~] `halfedge` (line 100) → `cut_surface.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 - [ ] `degree` (line 122) → `surface_mesh.rs`
 - [ ] `degree` (line 141) → `surface_mesh.rs`
 - [x] `is_border` (line 153) → `surface_mesh.rs:457`
@@ -13609,7 +13609,7 @@ Rust file: `triangle_mesh.rs`. Status: **partial**. Not listed: 6 constructors, 
 - [v] `merge` (line 467) → `triangle_mesh.rs:3581` — R917: tests/triangle_mesh_native_parity.rs: the its_* helpers, writers, merges, splits, volumes, projections and mesh methods on synthetic meshes against the pin's TriangleMesh.cpp, bit for bit (default gates)
 - [ ] `horizontal_projection` (line 475) → `triangle_mesh.rs`
 - [v] `convex_hull` (line 481) → `triangle_mesh.rs:3172` — R917: tests/triangle_mesh_native_parity.rs: the its_* helpers, writers, merges, splits, volumes, projections and mesh methods on synthetic meshes against the pin's TriangleMesh.cpp, bit for bit (default gates)
-- [~] `bounding_box` (line 492) → `arrange.rs, build_volume.rs, geometry/expolygon.rs` — not in the paired file
+- [~] `bounding_box` (line 492) → `arrange.rs, build_volume.rs, cut_surface.rs` — not in the paired file
 - [~] `transformed_bounding_box` (line 501) → `model.rs` — not in the paired file
 - [v] `transformed_bounding_box` (line 509) → `triangle_mesh.rs:3028` — R917: tests/triangle_mesh_native_parity.rs: the its_* helpers, writers, merges, splits, volumes, projections and mesh methods on synthetic meshes against the pin's TriangleMesh.cpp, bit for bit (default gates)
 - [~] `convex_hull_3d` (line 560) → `geometry/convex_hull.rs, model.rs` — not in the paired file
@@ -13652,7 +13652,7 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [x] `is_equal_for_sort` (line 50) → `triangle_mesh_slicer.rs:2910`
 - [~] `is_equal` (line 54) → `circle.rs, geometry/voronoi_utils_cgal.rs, multi_material_segmentation.rs` — not in the paired file
 - [x] `slice_mesh_ex` (line 78) → `triangle_mesh_slicer.rs:2083`
-- [~] `slice_mesh_ex` (line 86) → `triangle_mesh_slicer.rs` — another overload of the name is ported
+- [~] `slice_mesh_ex` (line 86) → `print_object_slice.rs` — not in the paired file
 - [x] `slice_facet` (line 156) → `triangle_mesh_slicer.rs:209`
 - [x] `slice_facet_for_cut_mesh` (line 323) → `triangle_mesh_slicer.rs:2929`
 - [x] `slice_facet_at_zs` (line 476) → `triangle_mesh_slicer.rs:391`
@@ -13679,7 +13679,7 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [ ] `transform_mesh_vertices_for_slicing` (line 1958) → `triangle_mesh_slicer.rs`
 - [~] `slice_mesh` (line 1982) → `triangle_mesh_slicer.rs:2060` — divergent
 - [~] `slice_mesh` (line 2059) → `triangle_mesh_slicer.rs` — another overload of the name is ported
-- [~] `slice_mesh_ex` (line 2121) → `triangle_mesh_slicer.rs` — another overload of the name is ported
+- [~] `slice_mesh_ex` (line 2121) → `print_object_slice.rs` — not in the paired file
 - [~] `slice_mesh_slabs` (line 2177) → `triangle_mesh_slicer.rs:2626` — partial
 - [x] `triangulate_slice` (line 2280) → `triangle_mesh_slicer.rs:3173`
 - [ ] `project_mesh` (line 2403) → `triangle_mesh_slicer.rs`
