@@ -895,6 +895,7 @@ add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_pla
     cli_engine_events.cpp
     cli_legacy_gcode.cpp
     cli_json_config.cpp
+    cli_filament_config.cpp
     cli_project_load.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 # Both engines build a program called slicer_cli; the package renames the
