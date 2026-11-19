@@ -992,7 +992,7 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
 
         // --pipe: the files are loaded (BambuStudio.cpp 4923-4926;
         // OrcaSlicer.cpp 4185), before the transforms.
-        pipe_files_loaded(rs);
+        pipe_files_loaded(rs.progress);
 
         // The transforms on the command line, in its order, then orient
         // (cli_run_steps.cpp). Before any placement, as the official CLI
@@ -1142,7 +1142,8 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
             emit_project_plan_event(plan, trailing_port);
         }
 
-        PreparedPlate prepared{context, o, rs, config, project_settings, outcome};
+        PreparedPlate prepared{context, o, rs.project, rs.settings, rs.layout, rs.progress, rs.outputs,
+                               config, project_settings, outcome};
 
         // --slice: the official per-plate gate before apply (BambuStudio.cpp
         // 6527-6567 at 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803). An
@@ -1369,7 +1370,7 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
             }
             // --pipe: the slice action starts, before the first plate's
             // checks (BambuStudio.cpp 6455-6458; OrcaSlicer.cpp 5580).
-            pipe_prepare_slicing(rs);
+            pipe_prepare_slicing(rs.progress);
         }
         // The run-level steps are done: the prepare call stops here, before
         // any plate is checked.
@@ -1389,7 +1390,7 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         // out of the print, as the official CLI's apply() leaves them out.
         if (o.slice_mode && !calib_self_geometry) {
             RunPlate& run_plate = rs.layout.plate(plate_id);
-            pipe_prepare_slicing(rs);
+            pipe_prepare_slicing(rs.progress);
             // A plate with none of the run's instances: the refusal a load of
             // that plate alone gave (above, "No objects found in model").
             if (!run_plate.all && run_plate.members.empty()) {

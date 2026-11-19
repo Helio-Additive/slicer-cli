@@ -11,13 +11,21 @@ namespace slicer_cli {
 
 enum class ActionPhase;
 struct CliRunContext;
-struct RunState;
+struct LoadedProject;
+struct RunSettings;
+struct RunPlatePlan;
+struct RunPipeProgress;
+struct RunActionOutputs;
 struct PlateOutcome;
 
 struct PreparedPlate {
     CliRunContext& context;
     const CliOptions& o;
-    RunState& rs;
+    LoadedProject& loaded_project;
+    RunSettings& run_settings;
+    RunPlatePlan& plate_plan;
+    RunPipeProgress& pipe_progress;
+    RunActionOutputs& action_outputs;
     Slic3r::DynamicPrintConfig& config;
     const std::optional<Slic3r::DynamicPrintConfig>& project_settings;
     PlateOutcome& outcome;
@@ -28,7 +36,7 @@ struct PreparedPlate {
                     std::chrono::steady_clock::time_point plate_started, bool calib_enabled);
 };
 
-void pipe_files_loaded(RunState& rs);
-void pipe_prepare_slicing(RunState& rs);
+void pipe_files_loaded(RunPipeProgress& progress);
+void pipe_prepare_slicing(RunPipeProgress& progress);
 
 } // namespace slicer_cli
