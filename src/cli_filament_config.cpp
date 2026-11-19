@@ -150,6 +150,146 @@ bool apply_explicit_nozzle_mapping(
     return true;
 }
 
+static void initialize_filament_setting_defaults(Slic3r::DynamicPrintConfig& config) {
+    // CRITICAL: Initialize ALL keys from filament_options_with_variant to prevent crashes
+    // update_values_to_printer_extruders_for_multiple_filaments loops through these keys
+    // and calls opt->get_at(variant_index) - if the option doesn't exist or is empty, it crashes/hangs
+    /// PrintConfig.cpp:8155-8200
+    /// C++: for (auto& key: key_set) { opt->get_at(variant_index[f_index]); }
+    // These are the keys from the global filament_options_with_variant set
+
+    auto init_filament_opt_float = [&config](const std::string& key, double default_val) {
+        auto opt = config.option<Slic3r::ConfigOptionFloats>(key, true);
+        if (!opt || opt->values.empty()) {
+            config.set_key_value(key, new Slic3r::ConfigOptionFloats({default_val}));
+        }
+    };
+
+    auto init_filament_opt_int = [&config](const std::string& key, int default_val) {
+        auto opt = config.option<Slic3r::ConfigOptionInts>(key, true);
+        if (!opt || opt->values.empty()) {
+            config.set_key_value(key, new Slic3r::ConfigOptionInts({default_val}));
+        }
+    };
+
+    auto init_filament_opt_bool = [&config](const std::string& key, bool default_val) {
+        // First try nullable (most filament bool options are nullable)
+        auto opt_n = config.option<Slic3r::ConfigOptionBoolsNullable>(key, false);
+        if (opt_n) {
+            if (opt_n->values.empty()) {
+                opt_n->values.push_back((unsigned char)default_val);
+            }
+            return;
+        }
+        // Fallback to non-nullable
+        auto opt = config.option<Slic3r::ConfigOptionBools>(key, false);
+        if (opt) {
+            if (opt->values.empty()) {
+                opt->values.push_back((unsigned char)default_val);
+            }
+            return;
+        }
+        // Option doesn't exist yet — check if definition says nullable
+        const auto* def = Slic3r::print_config_def.get(key);
+        if (def && def->nullable) {
+            config.set_key_value(key, new Slic3r::ConfigOptionBoolsNullable({(unsigned char)default_val}));
+        } else {
+            config.set_key_value(key, new Slic3r::ConfigOptionBools({default_val}));
+        }
+    };
+
+    auto init_filament_opt_percent = [&config](const std::string& key, double default_val) {
+        auto opt = config.option<Slic3r::ConfigOptionPercents>(key, true);
+        if (!opt || opt->values.empty()) {
+            config.set_key_value(key, new Slic3r::ConfigOptionPercents({default_val}));
+        }
+    };
+
+    // Initialize all filament_options_with_variant keys with safe defaults
+    // Use correct types: coFloats, coInts, coBools, coPercents
+    init_filament_opt_float("filament_flow_ratio", 1.0);  // coFloats, ratio (1.0 = 100%)
+    init_filament_opt_float("filament_max_volumetric_speed", 0.0);
+    init_filament_opt_float("filament_ramming_volumetric_speed", 0.0);
+    init_filament_opt_int("filament_pre_cooling_temperature", 0);
+    init_filament_opt_float("filament_ramming_travel_time", 0.0);
+    init_filament_opt_float("filament_ramming_volumetric_speed_nc", 0.0);
+    init_filament_opt_int("filament_pre_cooling_temperature_nc", 0);
+    init_filament_opt_float("filament_ramming_travel_time_nc", 0.0);
+    // filament_extruder_variant already initialized above
+    init_filament_opt_float("filament_retraction_length", 0.8);
+    init_filament_opt_float("filament_retract_length_nc", 0.0);
+    init_filament_opt_float("filament_z_hop", 0.0);
+    // filament_z_hop_types is enum - skip for now
+    init_filament_opt_float("filament_retract_restart_extra", 0.0);
+    init_filament_opt_float("filament_retraction_speed", 20.0);
+    init_filament_opt_float("filament_deretraction_speed", 20.0);
+    init_filament_opt_float("filament_retraction_minimum_travel", 0.0);
+    init_filament_opt_bool("filament_retract_when_changing_layer", false);
+    init_filament_opt_bool("filament_wipe", false);
+    init_filament_opt_float("filament_wipe_distance", 0.0);
+    init_filament_opt_percent("filament_retract_before_wipe", 0.0);
+    init_filament_opt_bool("filament_long_retractions_when_cut", false);
+    init_filament_opt_float("filament_retraction_distances_when_cut", 0.0);
+    init_filament_opt_bool("long_retractions_when_ec", false);
+    init_filament_opt_float("retraction_distances_when_ec", 0.0);
+    // nozzle_temperature and nozzle_temperature_initial_layer already initialized
+    init_filament_opt_float("filament_flush_volumetric_speed", 0.0);
+
+    // CRITICAL: Initialize nullable filament/overhang speed options
+    // These are ConfigOptionBoolsNullable/FloatsNullable in PrintConfig and will crash
+    // with SIGSEGV in PerimeterGenerator::is_enable_overhang_speed if empty
+    // PerimeterGenerator.cpp:273-276
+    // C++: bool use_filament_overhang_speed = perimeter_generator.print_config->override_process_overhang_speed.get_at(filament_idx);
+    init_filament_opt_bool("override_process_overhang_speed", false);
+    init_filament_opt_bool("filament_enable_overhang_speed", false);
+    init_filament_opt_bool("filament_adaptive_volumetric_speed", false);
+    init_filament_opt_float("filament_bridge_speed", 0.0);
+    init_filament_opt_float("filament_overhang_1_4_speed", 0.0);
+    init_filament_opt_float("filament_overhang_2_4_speed", 0.0);
+    init_filament_opt_float("filament_overhang_3_4_speed", 0.0);
+    init_filament_opt_float("filament_overhang_4_4_speed", 0.0);
+    init_filament_opt_float("filament_overhang_totally_speed", 0.0);
+}
+
+static void initialize_printer_templates_and_temperatures(Slic3r::DynamicPrintConfig& config) {
+    // Set printer technology
+    /// PresetBundle.cpp:3149
+    /// C++: out.option<ConfigOptionEnumGeneric>("printer_technology", true)->value = ptFFF;
+    config.option<Slic3r::ConfigOptionEnumGeneric>("printer_technology", true)->value = Slic3r::ptFFF;
+
+    // Set minimal G-code templates to prevent export crashes
+    /// These are required for GCode::_do_export to work properly
+    /// If empty, placeholder parser may fail
+    if (!config.has("machine_start_gcode") || config.opt_string("machine_start_gcode").empty()) {
+        config.set_key_value("machine_start_gcode", new Slic3r::ConfigOptionString(
+            "; Minimal start G-code\n"
+            "G28 ; home all axes\n"
+            "G1 Z5 F5000 ; lift nozzle\n"
+        ));
+    }
+
+    if (!config.has("machine_end_gcode") || config.opt_string("machine_end_gcode").empty()) {
+        config.set_key_value("machine_end_gcode", new Slic3r::ConfigOptionString(
+            "; Minimal end G-code\n"
+            "G1 E-1 F300 ; retract\n"
+            "G28 X0 Y0 ; home X Y\n"
+            "M84 ; disable motors\n"
+        ));
+    }
+
+    // Ensure temperature settings exist (prevent null pointer access)
+    auto ensure_temp_opt = [&config](const std::string& key, int default_val) {
+        if (!config.has(key)) {
+            config.set_key_value(key, new Slic3r::ConfigOptionInts({default_val}));
+        }
+    };
+
+    ensure_temp_opt("nozzle_temperature", 200);
+    ensure_temp_opt("nozzle_temperature_initial_layer", 200);
+    ensure_temp_opt("bed_temperature", 60);
+    ensure_temp_opt("bed_temperature_initial_layer", 60);
+}
+
 // Initialize configuration with BambuStudio defaults
 void set_default_config(Slic3r::DynamicPrintConfig& config) {
     /// Initialize config following BambuStudio's PresetBundle::full_fff_config pattern
@@ -280,141 +420,9 @@ void set_default_config(Slic3r::DynamicPrintConfig& config) {
         config.set_key_value("print_extruder_id", new Slic3r::ConfigOptionInts({1}));
     }
 
-    // CRITICAL: Initialize ALL keys from filament_options_with_variant to prevent crashes
-    // update_values_to_printer_extruders_for_multiple_filaments loops through these keys
-    // and calls opt->get_at(variant_index) - if the option doesn't exist or is empty, it crashes/hangs
-    /// PrintConfig.cpp:8155-8200
-    /// C++: for (auto& key: key_set) { opt->get_at(variant_index[f_index]); }
-    // These are the keys from the global filament_options_with_variant set
+    initialize_filament_setting_defaults(config);
 
-    auto init_filament_opt_float = [&config](const std::string& key, double default_val) {
-        auto opt = config.option<Slic3r::ConfigOptionFloats>(key, true);
-        if (!opt || opt->values.empty()) {
-            config.set_key_value(key, new Slic3r::ConfigOptionFloats({default_val}));
-        }
-    };
-
-    auto init_filament_opt_int = [&config](const std::string& key, int default_val) {
-        auto opt = config.option<Slic3r::ConfigOptionInts>(key, true);
-        if (!opt || opt->values.empty()) {
-            config.set_key_value(key, new Slic3r::ConfigOptionInts({default_val}));
-        }
-    };
-
-    auto init_filament_opt_bool = [&config](const std::string& key, bool default_val) {
-        // First try nullable (most filament bool options are nullable)
-        auto opt_n = config.option<Slic3r::ConfigOptionBoolsNullable>(key, false);
-        if (opt_n) {
-            if (opt_n->values.empty()) {
-                opt_n->values.push_back((unsigned char)default_val);
-            }
-            return;
-        }
-        // Fallback to non-nullable
-        auto opt = config.option<Slic3r::ConfigOptionBools>(key, false);
-        if (opt) {
-            if (opt->values.empty()) {
-                opt->values.push_back((unsigned char)default_val);
-            }
-            return;
-        }
-        // Option doesn't exist yet — check if definition says nullable
-        const auto* def = Slic3r::print_config_def.get(key);
-        if (def && def->nullable) {
-            config.set_key_value(key, new Slic3r::ConfigOptionBoolsNullable({(unsigned char)default_val}));
-        } else {
-            config.set_key_value(key, new Slic3r::ConfigOptionBools({default_val}));
-        }
-    };
-
-    auto init_filament_opt_percent = [&config](const std::string& key, double default_val) {
-        auto opt = config.option<Slic3r::ConfigOptionPercents>(key, true);
-        if (!opt || opt->values.empty()) {
-            config.set_key_value(key, new Slic3r::ConfigOptionPercents({default_val}));
-        }
-    };
-
-    // Initialize all filament_options_with_variant keys with safe defaults
-    // Use correct types: coFloats, coInts, coBools, coPercents
-    init_filament_opt_float("filament_flow_ratio", 1.0);  // coFloats, ratio (1.0 = 100%)
-    init_filament_opt_float("filament_max_volumetric_speed", 0.0);
-    init_filament_opt_float("filament_ramming_volumetric_speed", 0.0);
-    init_filament_opt_int("filament_pre_cooling_temperature", 0);
-    init_filament_opt_float("filament_ramming_travel_time", 0.0);
-    init_filament_opt_float("filament_ramming_volumetric_speed_nc", 0.0);
-    init_filament_opt_int("filament_pre_cooling_temperature_nc", 0);
-    init_filament_opt_float("filament_ramming_travel_time_nc", 0.0);
-    // filament_extruder_variant already initialized above
-    init_filament_opt_float("filament_retraction_length", 0.8);
-    init_filament_opt_float("filament_retract_length_nc", 0.0);
-    init_filament_opt_float("filament_z_hop", 0.0);
-    // filament_z_hop_types is enum - skip for now
-    init_filament_opt_float("filament_retract_restart_extra", 0.0);
-    init_filament_opt_float("filament_retraction_speed", 20.0);
-    init_filament_opt_float("filament_deretraction_speed", 20.0);
-    init_filament_opt_float("filament_retraction_minimum_travel", 0.0);
-    init_filament_opt_bool("filament_retract_when_changing_layer", false);
-    init_filament_opt_bool("filament_wipe", false);
-    init_filament_opt_float("filament_wipe_distance", 0.0);
-    init_filament_opt_percent("filament_retract_before_wipe", 0.0);
-    init_filament_opt_bool("filament_long_retractions_when_cut", false);
-    init_filament_opt_float("filament_retraction_distances_when_cut", 0.0);
-    init_filament_opt_bool("long_retractions_when_ec", false);
-    init_filament_opt_float("retraction_distances_when_ec", 0.0);
-    // nozzle_temperature and nozzle_temperature_initial_layer already initialized
-    init_filament_opt_float("filament_flush_volumetric_speed", 0.0);
-
-    // CRITICAL: Initialize nullable filament/overhang speed options
-    // These are ConfigOptionBoolsNullable/FloatsNullable in PrintConfig and will crash
-    // with SIGSEGV in PerimeterGenerator::is_enable_overhang_speed if empty
-    // PerimeterGenerator.cpp:273-276
-    // C++: bool use_filament_overhang_speed = perimeter_generator.print_config->override_process_overhang_speed.get_at(filament_idx);
-    init_filament_opt_bool("override_process_overhang_speed", false);
-    init_filament_opt_bool("filament_enable_overhang_speed", false);
-    init_filament_opt_bool("filament_adaptive_volumetric_speed", false);
-    init_filament_opt_float("filament_bridge_speed", 0.0);
-    init_filament_opt_float("filament_overhang_1_4_speed", 0.0);
-    init_filament_opt_float("filament_overhang_2_4_speed", 0.0);
-    init_filament_opt_float("filament_overhang_3_4_speed", 0.0);
-    init_filament_opt_float("filament_overhang_4_4_speed", 0.0);
-    init_filament_opt_float("filament_overhang_totally_speed", 0.0);
-
-    // Set printer technology
-    /// PresetBundle.cpp:3149
-    /// C++: out.option<ConfigOptionEnumGeneric>("printer_technology", true)->value = ptFFF;
-    config.option<Slic3r::ConfigOptionEnumGeneric>("printer_technology", true)->value = Slic3r::ptFFF;
-
-    // Set minimal G-code templates to prevent export crashes
-    /// These are required for GCode::_do_export to work properly
-    /// If empty, placeholder parser may fail
-    if (!config.has("machine_start_gcode") || config.opt_string("machine_start_gcode").empty()) {
-        config.set_key_value("machine_start_gcode", new Slic3r::ConfigOptionString(
-            "; Minimal start G-code\n"
-            "G28 ; home all axes\n"
-            "G1 Z5 F5000 ; lift nozzle\n"
-        ));
-    }
-
-    if (!config.has("machine_end_gcode") || config.opt_string("machine_end_gcode").empty()) {
-        config.set_key_value("machine_end_gcode", new Slic3r::ConfigOptionString(
-            "; Minimal end G-code\n"
-            "G1 E-1 F300 ; retract\n"
-            "G28 X0 Y0 ; home X Y\n"
-            "M84 ; disable motors\n"
-        ));
-    }
-
-    // Ensure temperature settings exist (prevent null pointer access)
-    auto ensure_temp_opt = [&config](const std::string& key, int default_val) {
-        if (!config.has(key)) {
-            config.set_key_value(key, new Slic3r::ConfigOptionInts({default_val}));
-        }
-    };
-
-    ensure_temp_opt("nozzle_temperature", 200);
-    ensure_temp_opt("nozzle_temperature_initial_layer", 200);
-    ensure_temp_opt("bed_temperature", 60);
-    ensure_temp_opt("bed_temperature_initial_layer", 60);
+    initialize_printer_templates_and_temperatures(config);
 }
 
 // Ensure critical vector options have minimum sizes
@@ -784,53 +792,8 @@ size_t align_per_filament_maps(Slic3r::DynamicPrintConfig& config, size_t filame
     return extended;
 }
 
-// filament_count is the roster the caller read out of project_filament_count()
-// before anything padded vector options; it is passed in rather than recomputed
-// here so values appended by that padding can never be counted as filaments the
-// project did not declare.
-bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config,
-                                       size_t filament_count, bool verbose) {
-    if (filament_count <= 1)
-        return false;   // one slot: the flat config already is the whole roster
-
-    size_t extended = 0;
-    for (const std::string& key : config.keys()) {
-        if (!is_per_filament_config_key(key))
-            continue;
-        auto* vec = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(config.option(key, false));
-        if (!vec || vec->size() == 0 || vec->size() >= filament_count)
-            continue;
-        vec->resize(filament_count);   // duplicates the front value, like get_at()
-        ++extended;
-    }
-
-    // The per-filament index maps are aligned by the same helper the front end
-    // calls before the nozzle-map derivation, so one implementation decides their
-    // cardinality in both places.  filament_map has just reached filament_count
-    // through the loop above, which leaves the repair of an entry below 1 here;
-    // filament_map_2 and filament_nozzle_map are still handled in full.
-    extended += align_per_filament_maps(config, filament_count);
-
-    // filament_self_index: only extend to a variant table that already covers the
-    // roster.  The slot count can be smaller than the filament count (one slot
-    // per extruder × nozzle volume), and growing it past the table would make
-    // PrintObject.cpp:342-345 index the shorter variant vector out of range.
-    // A one-slot-per-filament table has owners 1..N; extra variant slots have
-    // no derivable owner, so preserve the existing get_at() front fallback.
-    auto* variant_list = config.option<Slic3r::ConfigOptionStrings>("filament_extruder_variant", false);
-    auto* self_index = config.option<Slic3r::ConfigOptionInts>("filament_self_index", false);
-    if (variant_list && self_index) {
-        const size_t slots = variant_list->values.size();
-        if (slots >= filament_count && self_index->values.size() < slots) {
-            const size_t known = self_index->values.size();
-            self_index->values.resize(slots, 1);
-            for (size_t i = known; i < slots; ++i)
-                self_index->values[i] = slots == filament_count
-                    ? int(i) + 1 : self_index->values.front();
-            ++extended;
-        }
-    }
-
+static void align_filament_flush_arrays(Slic3r::DynamicPrintConfig& config, size_t filament_count,
+        size_t& extended) {
     // Flush arrays: two purge values per filament, and an N*N*nozzles matrix the
     // wipe-tower generator reads the filament count back out of.  Mirrors
     // PresetBundle::update_multi_material_filament_presets()
@@ -992,6 +955,56 @@ bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config,
             ++extended;
         }
     }
+}
+
+// filament_count is the roster the caller read out of project_filament_count()
+// before anything padded vector options; it is passed in rather than recomputed
+// here so values appended by that padding can never be counted as filaments the
+// project did not declare.
+bool align_per_filament_config_vectors(Slic3r::DynamicPrintConfig& config,
+                                       size_t filament_count, bool verbose) {
+    if (filament_count <= 1)
+        return false;   // one slot: the flat config already is the whole roster
+
+    size_t extended = 0;
+    for (const std::string& key : config.keys()) {
+        if (!is_per_filament_config_key(key))
+            continue;
+        auto* vec = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(config.option(key, false));
+        if (!vec || vec->size() == 0 || vec->size() >= filament_count)
+            continue;
+        vec->resize(filament_count);   // duplicates the front value, like get_at()
+        ++extended;
+    }
+
+    // The per-filament index maps are aligned by the same helper the front end
+    // calls before the nozzle-map derivation, so one implementation decides their
+    // cardinality in both places.  filament_map has just reached filament_count
+    // through the loop above, which leaves the repair of an entry below 1 here;
+    // filament_map_2 and filament_nozzle_map are still handled in full.
+    extended += align_per_filament_maps(config, filament_count);
+
+    // filament_self_index: only extend to a variant table that already covers the
+    // roster.  The slot count can be smaller than the filament count (one slot
+    // per extruder × nozzle volume), and growing it past the table would make
+    // PrintObject.cpp:342-345 index the shorter variant vector out of range.
+    // A one-slot-per-filament table has owners 1..N; extra variant slots have
+    // no derivable owner, so preserve the existing get_at() front fallback.
+    auto* variant_list = config.option<Slic3r::ConfigOptionStrings>("filament_extruder_variant", false);
+    auto* self_index = config.option<Slic3r::ConfigOptionInts>("filament_self_index", false);
+    if (variant_list && self_index) {
+        const size_t slots = variant_list->values.size();
+        if (slots >= filament_count && self_index->values.size() < slots) {
+            const size_t known = self_index->values.size();
+            self_index->values.resize(slots, 1);
+            for (size_t i = known; i < slots; ++i)
+                self_index->values[i] = slots == filament_count
+                    ? int(i) + 1 : self_index->values.front();
+            ++extended;
+        }
+    }
+
+    align_filament_flush_arrays(config, filament_count, extended);
 
     if (verbose && extended)
         std::cout << "Filament alignment: " << extended

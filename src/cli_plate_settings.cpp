@@ -125,6 +125,59 @@ bool manual_map_extruders_fit(const Slic3r::DynamicPrintConfig& config, const Sl
 #endif
 
 #if defined(ENGINE_BAMBU)
+static void disable_unused_prime_tower(Slic3r::DynamicPrintConfig& config, size_t project_filaments) {
+    // Disable prime tower when there is no actual multi-material printing.
+    //
+    // BambuStudio (BambuStudio.cpp:3885-3913) disables prime tower when
+    // all loaded filament presets are the same AND all filament colors are
+    // the same.  The GUI also disables it when all filament slots map to the
+    // same physical extruder (filament_map all equal) and all colors match.
+    //
+    // A prime tower with no tool changes (ToolOrdering::has_wipe_tower()==false)
+    // causes Print::has_wipe_tower()==true to take a different code path in
+    // psWipeTower: it builds m_wipe_tower_data.tool_ordering but leaves
+    // m_tool_ordering empty.  psSkirtBrim then reads the empty m_tool_ordering,
+    // producing initial_extruder_id==-1 and wrong path ordering.  Disabling
+    // enable_prime_tower forces the correct code path.
+    {
+        auto* ept = config.option<Slic3r::ConfigOptionBool>("enable_prime_tower", false);
+        if (ept && ept->value) {
+            bool disable = false;
+
+            // Single filament slot: trivially no multi-material.  This asks
+            // the roster the project declared (filament_colour /
+            // settings_id / ids / type / diameter), in the snapshot taken
+            // from project_filament_count() before any normalization ran —
+            // not one array's own current length, which the alignment below
+            // has already grown to that same count.  A project that declares
+            // no identity key at all still reads as zero here, not as one.
+            if (project_filaments <= 1)
+                disable = true;
+
+            // Multiple slots: disable when all filament colors are the same
+            // AND all filament_map values point to the same extruder.
+            // This covers: same-preset AMS prints (tests 20-23, 18-19),
+            // same-extruder different-preset prints (tests 24-25), etc.
+            // Multi-color AMS prints (test 10) have different colors → kept enabled.
+            if (!disable) {
+                auto* fc = config.option<Slic3r::ConfigOptionStrings>("filament_colour", false);
+                auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", false);
+                bool all_same_color = fc && !fc->values.empty() &&
+                    std::all_of(fc->values.begin(), fc->values.end(),
+                                [&](const std::string& c){ return c == fc->values[0]; });
+                bool all_same_extruder = fm && !fm->values.empty() &&
+                    std::all_of(fm->values.begin(), fm->values.end(),
+                                [&](int v){ return v == fm->values[0]; });
+                if (all_same_color && all_same_extruder)
+                    disable = true;
+            }
+
+            if (disable)
+                ept->value = false;
+        }
+    }
+}
+
 static int apply_bambu_plate_filament_map(const CliOptions& o, RunSettings& run_settings, PlateOutcome& outcome,
             int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::PlateDataPtrs& plate_data,
             std::optional<Slic3r::DynamicPrintConfig>& project_settings) {
@@ -277,56 +330,7 @@ static int apply_bambu_plate_filament_map(const CliOptions& o, RunSettings& run_
         std::cout << "Nozzle-map derivation: skipped mode=" << mode_name << "\n";
     }
 
-    // Disable prime tower when there is no actual multi-material printing.
-    //
-    // BambuStudio (BambuStudio.cpp:3885-3913) disables prime tower when
-    // all loaded filament presets are the same AND all filament colors are
-    // the same.  The GUI also disables it when all filament slots map to the
-    // same physical extruder (filament_map all equal) and all colors match.
-    //
-    // A prime tower with no tool changes (ToolOrdering::has_wipe_tower()==false)
-    // causes Print::has_wipe_tower()==true to take a different code path in
-    // psWipeTower: it builds m_wipe_tower_data.tool_ordering but leaves
-    // m_tool_ordering empty.  psSkirtBrim then reads the empty m_tool_ordering,
-    // producing initial_extruder_id==-1 and wrong path ordering.  Disabling
-    // enable_prime_tower forces the correct code path.
-    {
-        auto* ept = config.option<Slic3r::ConfigOptionBool>("enable_prime_tower", false);
-        if (ept && ept->value) {
-            bool disable = false;
-
-            // Single filament slot: trivially no multi-material.  This asks
-            // the roster the project declared (filament_colour /
-            // settings_id / ids / type / diameter), in the snapshot taken
-            // from project_filament_count() before any normalization ran —
-            // not one array's own current length, which the alignment below
-            // has already grown to that same count.  A project that declares
-            // no identity key at all still reads as zero here, not as one.
-            if (project_filaments <= 1)
-                disable = true;
-
-            // Multiple slots: disable when all filament colors are the same
-            // AND all filament_map values point to the same extruder.
-            // This covers: same-preset AMS prints (tests 20-23, 18-19),
-            // same-extruder different-preset prints (tests 24-25), etc.
-            // Multi-color AMS prints (test 10) have different colors → kept enabled.
-            if (!disable) {
-                auto* fc = config.option<Slic3r::ConfigOptionStrings>("filament_colour", false);
-                auto* fm = config.option<Slic3r::ConfigOptionInts>("filament_map", false);
-                bool all_same_color = fc && !fc->values.empty() &&
-                    std::all_of(fc->values.begin(), fc->values.end(),
-                                [&](const std::string& c){ return c == fc->values[0]; });
-                bool all_same_extruder = fm && !fm->values.empty() &&
-                    std::all_of(fm->values.begin(), fm->values.end(),
-                                [&](int v){ return v == fm->values[0]; });
-                if (all_same_color && all_same_extruder)
-                    disable = true;
-            }
-
-            if (disable)
-                ept->value = false;
-        }
-    }
+    disable_unused_prime_tower(config, project_filaments);
     return 0;
 }
 #endif
