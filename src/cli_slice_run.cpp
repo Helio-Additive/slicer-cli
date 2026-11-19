@@ -293,7 +293,8 @@ static void slice_selected_plates(CliRunContext& context, const CliOptions& o,
 }
 
 static void export_slice_mode_project(CliRunContext& context, const CliOptions& o, const fs::path& outdir,
-        std::vector<PlateOutcome>& outcomes, int& code, std::string& error_string, RunState& rs,
+        std::vector<PlateOutcome>& outcomes, int& code, std::string& error_string, LoadedProject& loaded_project,
+        RunPlatePlan& plate_plan, const RunSettings& run_settings,
         long long& export_ms) {
     if (code == 0 && !o.export_3mf.empty()) {
         const auto export_started = std::chrono::steady_clock::now();
@@ -304,7 +305,7 @@ static void export_slice_mode_project(CliRunContext& context, const CliOptions& 
         slicer_cli::pipe_update(97, "Exporting 3mf");   // BambuStudio.cpp 8128-8133
         std::string export_error;
         try {
-            Slic3r::DynamicPrintConfig project = rs.settings.base;
+            Slic3r::DynamicPrintConfig project = run_settings.base;
             apply_command_line_overrides(project, o.overrides, /*report_rejections=*/false);
             // The settings the command line gave: the official setting flags
             // and what this command line's own short flags changed. They are
@@ -313,15 +314,15 @@ static void export_slice_mode_project(CliRunContext& context, const CliOptions& 
             // file or a project sliced as saved brings values of its own, and
             // then every setting that differs from the presets is listed.
             std::set<std::string> given_settings;
-            for (const std::string& key : rs.settings.extra.keys())
+            for (const std::string& key : run_settings.extra.keys())
                 given_settings.insert(key);
-            for (const std::string& key : rs.settings.base.diff(project))
+            for (const std::string& key : run_settings.base.diff(project))
                 given_settings.insert(key);
             const bool settings_files = !o.machine_config.empty() || !o.filament_config.empty() ||
                                         !o.process_config.empty() || !o.bundle_config.empty() ||
                                         o.given_flag("load_settings") || o.given_flag("load_filaments");
             const bool presets_only = !settings_files &&
-                                      (rs.project.project_loaded_like_desktop || !input_is_3mf(o.input_file) ||
+                                      (loaded_project.project_loaded_like_desktop || !input_is_3mf(o.input_file) ||
                                        slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::GeometryOnly);
 #ifdef ENGINE_SNAPMAKER
             // The switch trimmed each plate's filament list and remapped the
@@ -331,7 +332,8 @@ static void export_slice_mode_project(CliRunContext& context, const CliOptions& 
             if (slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
                 slicer_cli::trim_project_roster_for_switch(project);
 #endif
-            code = export_sliced_3mf(context, o, outdir, rs, outcomes, project, presets_only ? &given_settings : nullptr,
+            code = export_sliced_3mf(context, o, outdir, loaded_project, plate_plan, run_settings.settings_merge,
+                                      outcomes, project, presets_only ? &given_settings : nullptr,
                                      export_error);
         } catch (const std::exception& e) {
             code = CLI_EXPORT_3MF_ERROR;
@@ -463,7 +465,8 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     if (code == 0 && slicer_cli::pipe_started())
         slicer_cli::pipe_set_plate_info(0, int(plates.size()));
     long long export_ms = 0;
-    export_slice_mode_project(context, o, outdir, outcomes, code, error_string, rs, export_ms);
+    export_slice_mode_project(context, o, outdir, outcomes, code, error_string, rs.project, rs.layout,
+                              rs.settings, export_ms);
     return write_slice_mode_result(context, o, outdir, outcomes, code, error_string, export_ms, run_started);
 }
 
