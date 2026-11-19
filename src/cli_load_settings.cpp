@@ -759,7 +759,7 @@ static StepResult read_machine_and_process_files(LoadedSettingsPresets& presets,
     return {};
 }
 
-static StepResult load_estimate_filaments(const LoadedSettingsPresets& presets, ProjectFacts& facts,
+static StepResult load_estimate_filaments(LoadedSettingsPresets& presets, ProjectFacts& facts,
         std::vector<std::string>& load_filaments, bool estimate_mode, bool& use_first_fila_as_default) {
 #ifndef ENGINE_ORCA
     // --estimate-mode with no --load-filaments: each slot's filament for the
@@ -1219,7 +1219,7 @@ static StepResult check_process_compatibility(const LoadedSettingsPresets& prese
     return {};
 }
 
-static StepResult check_mixed_nozzle_diameters(const LoadedFilamentSettings& filaments,
+static StepResult check_mixed_nozzle_diameters(LoadedFilamentSettings& filaments,
         const ProjectFacts& facts, DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
         int filament_count) {
 #ifndef ENGINE_ORCA
