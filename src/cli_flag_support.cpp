@@ -159,7 +159,7 @@ std::string setting_flag_refusal(const std::string& key) {
     //   extruder_nozzle_slot and ams_nozzle_idx rebuild the nozzle layout with
     //   extruder_nozzle_count / extruder_nozzle_volume_type (7104-7172).
     // slicer_cli and slicer_cli-orcaslicer take filament_map (with Manual
-    // mode, cli_filament_map.cpp and main.cpp's apply_filament_map_flag).
+    // mode, cli_filament_map.cpp and cli_slice_plate.cpp's apply_filament_map_flag).
     // slicer_cli takes every one of them as the official CLI does
     // (cli_nozzle_options.cpp, cli_filament_map.cpp, cli_load_settings.cpp).
     // slicer_cli-orcaslicer takes the three its official CLI reads; the rack

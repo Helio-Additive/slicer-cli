@@ -184,7 +184,7 @@ StepResult apply_transforms(const CliOptions& o, Slic3r::Model& model,
                 for (Slic3r::ModelObject* obj : model.objects)
                     orients_requirement.emplace(obj->id().id, orient_option == 1);
         } else if (opt_key == "arrange") {
-            // Read where the arrange runs (main.cpp, CliOptions::arrange).
+            // Read where the arrange runs (cli_slice_plate.cpp, CliOptions::arrange).
         } else if (opt_key == "ensure_on_bed") {
             // The value is used after the arrange (ensure_on_bed_if_asked).
         } else if (opt_key == "rotate" || opt_key == "rotate_x" || opt_key == "rotate_y") {

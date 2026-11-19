@@ -95,7 +95,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 #                     BambuStudio: src/        (admesh, clipper, …)
 #                     OrcaSlicer:  deps_src/   (admesh, clipper, …)
 #   * ENGINE_BAMBU / ENGINE_ORCA compile define → gates the divergent front-end
-#     blocks in src/main.cpp (preset/staging resolution, toolchanger normalizations).
+#     blocks in the front end (preset/staging resolution, toolchanger normalizations).
 set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio), orca (OrcaSlicer) or snapmaker (Snapmaker Orca)")
 set_property(CACHE ENGINE PROPERTY STRINGS bambu orca snapmaker)
 set(ENGINE_EXTRA_LIBS "")   # engine-specific extra link libraries (populated below)
@@ -118,7 +118,7 @@ elseif(ENGINE STREQUAL "snapmaker")
   set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # OrcaSlicer branch: sub-libs under deps_src/
   # Snapmaker Orca is a Snapmaker fork of OrcaSlicer, so the OrcaSlicer driver
   # paths are the right ones; ENGINE_SNAPMAKER marks the OrcaSlicer-2.4 APIs the
-  # fork does not have (see the ENGINE_SNAPMAKER guards in src/main.cpp).
+  # fork does not have (see the ENGINE_SNAPMAKER guards in the front end).
   add_compile_definitions(ENGINE_ORCA ENGINE_SNAPMAKER)
   message(STATUS "ENGINE = snapmaker (Snapmaker Orca)")
 else()

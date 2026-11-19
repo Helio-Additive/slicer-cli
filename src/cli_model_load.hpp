@@ -1,7 +1,7 @@
 // cli_model_load.hpp — model files other than a project 3MF.
 //
 // A project 3MF (one that carries Metadata/project_settings.config) loads in
-// main.cpp's 3MF path. Every other model file loads here: STL, OBJ, AMF, a
+// cli_load_slice_inputs.cpp. Every other model file loads here: STL, OBJ, AMF, a
 // 3MF that holds only geometry, STEP, and on the BambuStudio build GLB, glTF
 // and FBX; several of them in one call. Placement on the bed is the desktop
 // app's (desktop_place_on_bed) unless --arrange 0 or 1 is given: then the

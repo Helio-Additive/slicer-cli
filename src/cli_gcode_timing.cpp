@@ -164,8 +164,8 @@ class OutputSilencer {
     bool m_stderr_redirected = false;
 };
 
-// The program names result.json and --engine-info already use (main.cpp
-// 3350-3354 and 6358-6362), so a caller correlates the documents without a
+// The program names result.json and --engine-info already use (cli_result_json.cpp
+// and cli_file_info.cpp), so a caller correlates the documents without a
 // mapping table.
 const char *engine_name() {
 #ifdef ENGINE_SNAPMAKER

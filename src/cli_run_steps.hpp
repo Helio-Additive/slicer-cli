@@ -2,17 +2,17 @@
 //
 // CLI::run works through the command line in this order (BambuStudio.cpp at
 // 5873b5f; OrcaSlicer.cpp at 31f6803):
-//   1. load the model files and the settings      (main.cpp, cli_model_load.cpp)
+//   1. load the model files and the settings      (cli_load_slice_inputs.cpp, cli_model_load.cpp)
 //   2. the transforms, in command-line order      apply_transforms
 //        BambuStudio.cpp 4929-5208 / OrcaSlicer.cpp 4190-4470
 //   3. orient the objects asked for               apply_transforms (end)
 //        BambuStudio.cpp 5213-5234 / OrcaSlicer.cpp 4474-4495
-//   4. arrange and duplicate                      main.cpp, cli_repetitions.cpp
+//   4. arrange and duplicate                      cli_slice_plate.cpp, cli_repetitions.cpp
 //   5. ensure_on_bed                              ensure_on_bed_if_asked
 //        BambuStudio.cpp 6188-6194 / OrcaSlicer.cpp 5443-5455
 //   6. the actions, in command-line order         run_model_actions, then the
 //        BambuStudio.cpp 6336-6437 / OrcaSlicer.cpp 5471-5561   plate loop
-// Each function below is one of those steps; main.cpp calls them in that order.
+// Each function below is one of those steps; cli_slice_plate.cpp calls them in that order.
 #pragma once
 
 #include <string>

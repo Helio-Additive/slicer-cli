@@ -22,7 +22,9 @@ Read first, and change here rather than copy: [README.md](README.md),
 
 | Path | What it is |
 |-|-|
-| `src/main.cpp` | The front end: option parsing, run modes, the engine-specific blocks (`ENGINE_BAMBU` / `ENGINE_ORCA` / `ENGINE_SNAPMAKER`) |
+| `src/main.cpp` | Program startup, command-line validation and run mode selection |
+| `src/cli_load_slice_inputs.cpp`, `src/cli_slice_run.cpp`, `src/cli_slice_plate.cpp` | Load the run’s inputs and settings, run the plate loop, prepare and slice each plate |
+| `src/cli_slice_export.cpp`, `src/cli_result_json.cpp`, `src/cli_run_cleanup.cpp` | Export the project, report results and clean up staging folders |
 | `src/cli_snapmaker.cpp` | The Snapmaker Orca build's desktop rules (mixed filaments, paint remap, pre-slice checks, the prime tower) and its profile lookup |
 | `src/cli_command_line.cpp`, `src/cli_flag_support.cpp` | Flag table, `--help`, the refusal sentences for flags a program does not take |
 | `src/cli_load_settings.cpp`, `src/desktop_presets.cpp` | Preset/profile resolution, `inherits` chains, desktop-equivalent selection |

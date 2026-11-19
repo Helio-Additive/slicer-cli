@@ -1,5 +1,5 @@
 // --filament-map (slicer_cli): the command line's filament-to-nozzle map on a
-// two-nozzle Bambu printer. The check runs before slicing; main.cpp's plate
+// two-nozzle Bambu printer. The check runs before slicing; cli_slice_plate.cpp's plate
 // block applies the map with Manual mode.
 #pragma once
 

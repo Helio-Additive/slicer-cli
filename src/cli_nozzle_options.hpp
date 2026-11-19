@@ -1,6 +1,6 @@
 // The nozzle and filament-grouping settings the official command lines read
 // from the command line, and the Bambu Studio dialog's grouping on a printer
-// with one extruder and a nozzle rack. main.cpp calls these where the official
+// with one extruder and a nozzle rack. cli_slice_plate.cpp calls these where the official
 // CLI runs the matching block; cli_filament_map.cpp checks --filament-map.
 #pragma once
 

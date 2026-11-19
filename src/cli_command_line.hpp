@@ -53,7 +53,7 @@ struct FileOption {
 
 /// The official flags that read a file (settings to merge, the assemble list,
 /// the custom G-codes, --downward-settings): the run opens these, so
-/// result.json's guard (named_input_files, main.cpp) and the walk below name
+/// result.json's guard (named_input_files, cli_result_json.cpp) and the walk below name
 /// the same set.
 const std::vector<FileOption>& file_options();
 

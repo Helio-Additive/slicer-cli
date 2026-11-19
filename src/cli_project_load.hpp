@@ -1,5 +1,5 @@
 // What a desktop app does to a project's settings when it opens the project,
-// beyond loading them over the presets (main.cpp's project block): the prime
+// beyond loading them over the presets (cli_load_slice_inputs.cpp): the prime
 // tower Bambu Studio puts back inside the plate, and the list of the settings
 // the load replaced.
 #pragma once

@@ -23,7 +23,7 @@ std::string filament_map_flag_refusal(const std::vector<int>& map,
     // only; on any other printer with several extruders filament N prints
     // with extruder N whatever the map says
     // (ToolOrdering::get_recommended_filament_maps, ToolOrdering.cpp 1154 and
-    // 1208-1210 at 8500fcd; the G-code's tool is the filament's own). main.cpp
+    // 1208-1210 at 8500fcd; the G-code's tool is the filament's own). cli_slice_plate.cpp
     // tells the engine a Bambu Lab printer by the same printer_model rule.
     if (const auto* model = config.option<Slic3r::ConfigOptionString>("printer_model");
         extruders >= 2 && (model == nullptr || model->value.rfind("Bambu Lab", 0) != 0))

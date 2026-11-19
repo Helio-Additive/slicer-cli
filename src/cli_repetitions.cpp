@@ -89,7 +89,7 @@ RepetitionsResult arrange_repetitions(Slic3r::Model& model, Slic3r::DynamicPrint
     // The search runs on a copy of the model, and only the iteration it settles
     // on is run once more on the model itself. A retry used to put the saved
     // model back with `model = original_model`, which frees every object and
-    // instance the model held: the caller's PlateScope (main.cpp) and the run's
+    // instance the model held: the caller's PlateScope (cli_plate_scope.cpp) and the run's
     // plate lists still name them (a plate of a multi-plate project that is not
     // the whole model), so the assignment was a use-after-free — ~PlateScope
     // wrote through the freed objects, and the next plate's members were gone.

@@ -17,7 +17,7 @@ inline void write_event_now(const std::string& payload) {
     std::fflush(stdout);
 }
 
-// While set, every event (emit_event in main.cpp and slicer_cli::emit both
+// While set, every event (emit_event in cli_engine_events.cpp and slicer_cli::emit both
 // end in write_event) is kept here instead of written: --slice 0's check pass
 // over several plates (run_slice_mode), whose plates the slice pass runs
 // again. One run, one thread.

@@ -1646,7 +1646,7 @@ jobs:
           test -n "$(find "$P/THIRD_PARTY_LICENSES" -type f -print -quit)"
           cp -R references/BambuStudio/resources/profiles/BBL "$P/resources/profiles/BBL"
           # The vendor index: the PresetBundle rebuild loads vendors from the
-          # profiles directory's *.json entries only (src/main.cpp, load_vendor_configs_from_json).
+          # profiles directory's *.json entries only (src/cli_named_presets.cpp, load_vendor_configs_from_json).
           cp references/BambuStudio/resources/profiles/BBL.json "$P/resources/profiles/BBL.json"
           # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
           # slice-resolvable by name via the orca engine. The browse listing is
@@ -1826,7 +1826,7 @@ jobs:
           if (-not (Get-ChildItem "$P\THIRD_PARTY_LICENSES" -Recurse -File)) { throw "missing third-party dependency records" }
           Copy-Item -Recurse references\BambuStudio\resources\profiles\BBL "$P\resources\profiles\BBL"
           # The vendor index: the PresetBundle rebuild loads vendors from the
-          # profiles directory's *.json entries only (src/main.cpp, load_vendor_configs_from_json).
+          # profiles directory's *.json entries only (src/cli_named_presets.cpp, load_vendor_configs_from_json).
           Copy-Item references\BambuStudio\resources\profiles\BBL.json "$P\resources\profiles\BBL.json"
           # Full OrcaSlicer profile tree (~67 MB): all 64 vendors, every one
           # slice-resolvable by name via the orca engine. Browse listing is

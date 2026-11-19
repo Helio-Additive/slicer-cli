@@ -47,7 +47,7 @@ using namespace Slic3r;
 using namespace Slic3r::arrangement;
 
 // MAX_PLATE_COUNT: the most plates a project holds (Bambu PartPlate.hpp; the
-// project-wide arrange's create_plate limit, main.cpp plan_project_plates).
+// project-wide arrange's create_plate limit, cli_plate_plan.cpp plan_project_plates).
 static constexpr int kMaxBeds = 36;
 
 // ─── Cancellation ────────────────────────────────────────────────────────────
@@ -869,7 +869,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
     // (preprocess_exclude_areas, ArrangeJob.cpp 265-266), both inflated by
     // update_unselected_items_inflation (process(), ArrangeJob.cpp 669), and
     // the exclusion areas as excluded regions too (ArrangeJob.cpp 675). The
-    // tower is the rectangle the official CLI builds for it (main.cpp
+    // tower is the rectangle the official CLI builds for it (cli_plate_arrange.cpp
     // arrange_on_bed, BambuStudio.cpp 5770-5878): its box grown by its brim,
     // a virtual wipe-tower item that never moves. A v1/v2 request keeps
     // today's arrange: the locked items alone.

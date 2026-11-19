@@ -1,3 +1,4 @@
+#include <boost/log/trivial.hpp>
 #include "cli_layout_command.hpp"
 #include "cli_json_config.hpp"
 #include "cli_named_presets.hpp"

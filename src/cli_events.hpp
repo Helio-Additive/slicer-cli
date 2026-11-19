@@ -1,6 +1,6 @@
-// cli_events.hpp — the [[SLICER_EVENT]] stream, for files other than main.cpp.
+// cli_events.hpp — the [[SLICER_EVENT]] stream, for front-end modules.
 //
-// Same record as main.cpp's emit_event: one JSON object per line on stdout,
+// Same record as cli_engine_events.cpp's emit_event: one JSON object per line on stdout,
 // invalid UTF-8 replaced, and never the reason a run fails.
 #pragma once
 

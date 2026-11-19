@@ -9,6 +9,7 @@ namespace Slic3r { class ModelInstance; class Model; class Semver; }
 namespace slicer_cli {
 
 struct CliRunContext;
+struct PlateOutcome;
 /// A project 3MF followed by model files (`project.3mf part.stl`): what the
 /// official CLI does with them, for both engines.
 ///  - Each file loads into its own model, and is_bbl_3mf is reset for every
