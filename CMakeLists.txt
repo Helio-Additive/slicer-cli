@@ -889,6 +889,7 @@ add_library(libslic3r ALIAS libslic3r_core)
 
 # ─── CLI executable ────────────────────────────────────────────────────────
 add_executable(slicer_cli src/cli_result_json.cpp
+    src/cli_run_cleanup.cpp
     src/main.cpp src/cli_staging_folders.cpp src/startup_logging.cpp src/calib_args.cpp src/layout_plan.cpp
     src/cli_command_line.cpp src/cli_flag_support.cpp src/desktop_presets.cpp src/cli_model_load.cpp src/cli_run_steps.cpp src/cli_load_settings.cpp src/cli_repetitions.cpp src/cli_simplify.cpp src/cli_list_flags.cpp src/cli_engine_info.cpp
     src/cli_assemble.cpp src/cli_layer_ranges.cpp src/cli_pipe.cpp src/cli_failure_reason.cpp src/cli_snapmaker.cpp
