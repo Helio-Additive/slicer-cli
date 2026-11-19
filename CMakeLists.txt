@@ -900,6 +900,7 @@ add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_pla
     cli_printer_catalog.cpp
     cli_list_settings.cpp
     cli_setting_overrides.cpp
+    cli_arrange_geometry.cpp
     cli_project_load.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 # Both engines build a program called slicer_cli; the package renames the

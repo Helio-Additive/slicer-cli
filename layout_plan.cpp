@@ -38,10 +38,7 @@
 #include <string>
 #include <unordered_set>
 
-// The bed exclusion areas as fixed arrange items and excluded regions
-// (main.cpp: PartPlateList::preprocess_exclude_areas, shared with --arrange).
-void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out, const Slic3r::DynamicPrintConfig& config,
-                               double inflation, int num_beds);
+#include "cli_arrange_geometry.hpp"
 
 namespace layout_plan {
 
@@ -916,7 +913,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
                 extra.emplace_back(std::move(tower));
             }
         }
-        ::arrange_add_exclude_areas(extra, cfg, 0., num_beds);
+        slicer_cli::arrange_add_exclude_areas(extra, cfg, 0., num_beds);
         // The front strip the printer scans its first layer and calibrates
         // in, kept clear when the printer scans (avoid_extrusion_cali_region,
         // true by default in ArrangeParams, Arrange.hpp 134 at Bambu 926a719,
@@ -966,7 +963,7 @@ int run_layout_plan(const LayoutProblemV1& problem) {
 #else
         update_unselected_items_inflation(extra, cfg, params);
 #endif
-        ::arrange_add_exclude_areas(params.excluded_regions, cfg, scale_(1), 1);
+        slicer_cli::arrange_add_exclude_areas(params.excluded_regions, cfg, scale_(1), 1);
         fixed.insert(fixed.end(), extra.begin(), extra.end());
     }
     arrangement::arrange(unlocked_input, fixed, bed_pts, params);
