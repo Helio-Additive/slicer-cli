@@ -649,35 +649,56 @@ static std::string uptodate_system_presets_missing() {
            " --load-settings/--load-filaments.";
 }
 
-StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_in, const std::string& profiles_dir,
-                                 DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
-                                 const std::vector<Preset*>& project_presets, SettingsMerge& out) {
-    ProjectFacts facts = facts_in;
-    const auto& cfg = o.cli;
-    const std::vector<std::string>& load_configs       = cfg.option<ConfigOptionStrings>("load_settings")->values;
-    const std::vector<std::string>& uptodate_configs   = cfg.option<ConfigOptionStrings>("uptodate_settings")->values;
-    const std::vector<std::string>& uptodate_filaments = cfg.option<ConfigOptionStrings>("uptodate_filaments")->values;
-    std::vector<std::string> load_filaments            = cfg.option<ConfigOptionStrings>("load_filaments")->values;
-    const bool up_config_to_date        = o.given_flag("uptodate") && cfg.opt_bool("uptodate");
-    bool use_first_fila_as_default      = o.given_flag("load_defaultfila") && cfg.opt_bool("load_defaultfila");
-    const bool skip_modified_gcodes     = o.given_flag("skip_modified_gcodes") && cfg.opt_bool("skip_modified_gcodes");
-#ifndef ENGINE_ORCA
-    const bool estimate_mode            = o.given_flag("estimate_mode") && cfg.opt_bool("estimate_mode");
-#else
-    const bool estimate_mode            = false;
-#endif
-    const bool is_bbl_3mf = facts.is_bbl_3mf;
-    std::string why;
-
+struct LoadedSettingsPresets {
     std::string new_printer_name, new_printer_system_name, new_process_name, new_process_system_name, printer_model,
         printer_model_id, new_default_process_name, different_process_setting;
     bool new_printer_config_is_system = true, new_process_config_is_system = true;
     std::vector<std::string> new_print_compatible_printers;
     DynamicPrintConfig load_process_config, load_machine_config;
-    std::vector<std::string> upward_compatible_printers        = facts.upward_compatible_printers;
-    std::vector<std::string> current_print_compatible_printers = facts.current_print_compatible_printers;
-    int filament_count = facts.filament_count;
+};
 
+struct LoadedFilamentSettings {
+    int load_filament_count;
+    std::vector<int> load_filaments_index;
+    std::set<std::string> load_filaments_set;
+    bool disable_wipe_tower_after_mapping = false;
+    std::vector<DynamicPrintConfig> load_filaments_config;
+    std::vector<std::string> load_filaments_id, load_filaments_name, load_filaments_inherit;
+    int current_index = 0;
+#ifndef ENGINE_ORCA
+    std::string machine_nozzle_diameter;
+    bool cli_has_map = false;
+#endif
+};
+
+struct MergedExtruders {
+    int new_extruder_count = 1, new_printer_variant_count = 1;
+    bool new_is_multi_extruder = false;
+    std::vector<std::string> new_printer_extruder_variants;
+};
+
+// The filaments the run has when the project names none: the ones the
+// settings already carry (a model file with named presets, a settings
+// file), as the largest per-filament list. Starts from the project's own
+// count, not the load count that replaced a zero above: a replacement
+// file over named presets keeps the other presets' slots.
+static int retained_filament_count(const ProjectFacts& facts, DynamicPrintConfig& m_print_config,
+        DynamicPrintConfig& m_extra_config) {
+    int count = facts.filament_count;
+    if (count == 0)
+        for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
+                                "filament_type", "filament_diameter"})
+            if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
+                count = std::max(count, int(vec->size()));
+    // --filament-colour names one filament per colour (B 2877 for an OBJ's colours).
+    if (const auto* colours = m_extra_config.option<ConfigOptionStrings>("filament_colour"))
+        count = std::max(count, int(colours->values.size()));
+    return count;
+}
+
+static StepResult read_machine_and_process_files(LoadedSettingsPresets& presets,
+        const std::string& profiles_dir, const std::vector<std::string>& load_configs, bool is_bbl_3mf,
+        std::string& why) {
     // --load-settings: one machine and one process at most (B 2316-2406; O 1948-2023).
     for (const std::string& file : load_configs) {
         DynamicPrintConfig config;
@@ -685,58 +706,62 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (int ret = load_settings_file(profiles_dir, file, config, config_type, config_name, filament_id, config_from, why); ret)
             return fail(ret, why);
         if (config_type == "machine") {
-            if (!new_printer_name.empty())
+            if (!presets.new_printer_name.empty())
                 return fail(CLI_CONFIG_FILE_ERROR, "--load-settings names two machine files; " + file +
                                                        " is the second; give one machine file");
-            new_printer_name = config_name;
+            presets.new_printer_name = config_name;
             if (config_from == "system") {
-                new_printer_system_name = new_printer_name;
-                new_printer_config_is_system = true;
+                presets.new_printer_system_name = presets.new_printer_name;
+                presets.new_printer_config_is_system = true;
             } else {
-                new_printer_system_name = config.option<ConfigOptionString>("inherits", true)->value;
-                new_printer_config_is_system = false;
+                presets.new_printer_system_name = config.option<ConfigOptionString>("inherits", true)->value;
+                presets.new_printer_config_is_system = false;
             }
-            config.set("printer_settings_id", new_printer_name, true);
-            printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
-            printer_model_id = printer_model_id_for(printer_model);
+            config.set("printer_settings_id", presets.new_printer_name, true);
+            presets.printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
+            presets.printer_model_id = printer_model_id_for(presets.printer_model);
             if (config.option<ConfigOptionString>("default_print_profile"))
-                new_default_process_name = config.option<ConfigOptionString>("default_print_profile")->value;
-            load_machine_config = std::move(config);
+                presets.new_default_process_name = config.option<ConfigOptionString>("default_print_profile")->value;
+            presets.load_machine_config = std::move(config);
         } else if (config_type == "process") {
-            if (!new_process_name.empty())
+            if (!presets.new_process_name.empty())
                 return fail(CLI_CONFIG_FILE_ERROR, "--load-settings names two process files; " + file +
                                                        " is the second; give one process file");
-            new_process_name = config_name;
+            presets.new_process_name = config_name;
             if (config_from == "system") {
-                new_process_system_name = new_process_name;
-                new_process_config_is_system = true;
+                presets.new_process_system_name = presets.new_process_name;
+                presets.new_process_config_is_system = true;
             } else {
-                new_process_system_name = config.option<ConfigOptionString>("inherits", true)->value;
-                new_process_config_is_system = false;
+                presets.new_process_system_name = config.option<ConfigOptionString>("inherits", true)->value;
+                presets.new_process_config_is_system = false;
             }
-            config.set("print_settings_id", new_process_name, true);
-            new_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
+            config.set("print_settings_id", presets.new_process_name, true);
+            presets.new_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
             if (!is_bbl_3mf && config.option<ConfigOptionStrings>("different_settings_to_system")) {
                 const std::vector<std::string> diff_settings = config.option<ConfigOptionStrings>("different_settings_to_system")->values;
                 if (!diff_settings.empty())
-                    different_process_setting = diff_settings[0];
+                    presets.different_process_setting = diff_settings[0];
 #ifndef ENGINE_ORCA
                 config.erase("different_settings_to_system");   // B 2390
 #endif
             }
-            load_process_config = std::move(config);
+            presets.load_process_config = std::move(config);
         } else {
             return fail(CLI_CONFIG_FILE_ERROR, file + " is a filament file; give it with --load-filaments");
         }
     }
+    return {};
+}
 
+static StepResult load_estimate_filaments(const LoadedSettingsPresets& presets, ProjectFacts& facts,
+        std::vector<std::string>& load_filaments, bool estimate_mode, bool& use_first_fila_as_default) {
 #ifndef ENGINE_ORCA
     // --estimate-mode with no --load-filaments: each slot's filament for the
     // new machine from filament_full (B 2408-2444). Without that folder no
     // preset is found, so the step refuses as the official does.
     if (estimate_mode && load_filaments.empty()) {
         std::string new_machine_bbl_tag;
-        if (auto* fp = load_machine_config.option<ConfigOptionStrings>("default_filament_profile"); fp && !fp->values.empty()) {
+        if (auto* fp = presets.load_machine_config.option<ConfigOptionStrings>("default_filament_profile"); fp && !fp->values.empty()) {
             const std::string& def = fp->values[0];
             if (auto pos = def.find(" @BBL "); pos != std::string::npos)
                 new_machine_bbl_tag = def.substr(pos + 6);
@@ -752,15 +777,14 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         use_first_fila_as_default = true;
     }
 #endif
+    return {};
+}
 
-    // --load-filaments (B 2446-2571; O 2024-2111).
-    int load_filament_count = int(load_filaments.size());
-    std::vector<int> load_filaments_index;
-    std::set<std::string> load_filaments_set;
-    bool disable_wipe_tower_after_mapping = false;
-    std::vector<DynamicPrintConfig> load_filaments_config;
-    std::vector<std::string> load_filaments_id, load_filaments_name, load_filaments_inherit;
-    int current_index = 0;
+static StepResult read_filament_settings_files(LoadedSettingsPresets& presets,
+        LoadedFilamentSettings& filaments, const CliOptions& o, const ProjectFacts& facts,
+        const std::string& profiles_dir, DynamicPrintConfig& m_print_config,
+        DynamicPrintConfig& m_extra_config, const std::vector<std::string>& load_filaments,
+        bool& use_first_fila_as_default, std::string& why) {
     std::string default_load_fila_name, default_load_fila_id, default_filament_file, default_filament_inherit;
     DynamicPrintConfig default_load_fila_config;
 #ifndef ENGINE_ORCA
@@ -769,17 +793,17 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // (--filament-diameter-map) wins; without one every loaded slot takes the
     // machine preset's diameter, --load-settings' machine before the project's,
     // which still describes the previous printer.
-    const bool cli_has_map = m_extra_config.has("filament_diameter_map");
-    const bool machine_from_settings = !new_printer_name.empty();
-    const DynamicPrintConfig& machine_config = machine_from_settings ? load_machine_config : m_print_config;
+    filaments.cli_has_map = m_extra_config.has("filament_diameter_map");
+    const bool machine_from_settings = !presets.new_printer_name.empty();
+    const DynamicPrintConfig& machine_config = machine_from_settings ? presets.load_machine_config : m_print_config;
     const std::string machine_preset_name = machine_from_settings
-        ? (new_printer_system_name.empty() ? new_printer_name : new_printer_system_name)
+        ? (presets.new_printer_system_name.empty() ? presets.new_printer_name : presets.new_printer_system_name)
         : (facts.current_printer_system_name.empty() ? facts.current_printer_name : facts.current_printer_system_name);
-    const std::string machine_nozzle_diameter = default_filament_nozzle_diameter(machine_preset_name, machine_config);
+    filaments.machine_nozzle_diameter = default_filament_nozzle_diameter(machine_preset_name, machine_config);
     std::string default_filament_diameter;
 #endif
     if (use_first_fila_as_default) {
-        for (int index = 0; index < load_filament_count; index++) {
+        for (int index = 0; index < filaments.load_filament_count; index++) {
             const std::string& file = load_filaments[index];
             if (default_filament_file.empty() && !file.empty()) {
                 DynamicPrintConfig config;
@@ -797,14 +821,14 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #ifndef ENGINE_ORCA
                 // B 2723-2725: with a command-line map an empty slot takes the
                 // default filament's own diameter, else the machine's.
-                default_filament_diameter = cli_has_map
+                default_filament_diameter = filaments.cli_has_map
                     ? filament_preset_nozzle_diameter(default_load_fila_name, default_load_fila_config)
-                    : machine_nozzle_diameter;
+                    : filaments.machine_nozzle_diameter;
 #endif
                 break;
             }
         }
-        if (load_filament_count > 0 && default_filament_file.empty()) {
+        if (filaments.load_filament_count > 0 && default_filament_file.empty()) {
             // The flags the user gave decide the sentence: --load-defaultfila
             // never was given when --estimate-mode filled this list itself
             // (BambuStudio.cpp 2408-2444 takes each slot from filament_full), so
@@ -812,7 +836,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             // is this package's missing filament_full folder.
             if (!o.given_flag("load_defaultfila")) {
                 std::string machine;
-                if (const auto* fp = load_machine_config.option<ConfigOptionStrings>("default_filament_profile");
+                if (const auto* fp = presets.load_machine_config.option<ConfigOptionStrings>("default_filament_profile");
                     fp && !fp->values.empty())
                     machine = " (" + fp->values[0] + ")";
                 return fail(CLI_CONFIG_FILE_ERROR,
@@ -827,18 +851,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #ifndef ENGINE_ORCA
     // B 2738-2746: the map the slots are filled into; a project map missing
     // or shorter than --load-filaments grows to one entry per loaded slot.
-    ConfigOptionStrings* dia_map = cli_has_map
+    ConfigOptionStrings* dia_map = filaments.cli_has_map
         ? m_extra_config.option<ConfigOptionStrings>("filament_diameter_map")
         : m_print_config.option<ConfigOptionStrings>("filament_diameter_map");
-    if (!cli_has_map && !machine_nozzle_diameter.empty() && load_filament_count > 0) {
+    if (!filaments.cli_has_map && !filaments.machine_nozzle_diameter.empty() && filaments.load_filament_count > 0) {
         dia_map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map", true);
-        if (dia_map->values.size() < static_cast<size_t>(load_filament_count))
-            dia_map->values.resize(static_cast<size_t>(load_filament_count));
+        if (dia_map->values.size() < static_cast<size_t>(filaments.load_filament_count))
+            dia_map->values.resize(static_cast<size_t>(filaments.load_filament_count));
     }
 #endif
-    for (int index = 0; index < load_filament_count; index++) {
+    for (int index = 0; index < filaments.load_filament_count; index++) {
         const std::string& file = load_filaments[index];
-        current_index++;
+        filaments.current_index++;
         if (!file.empty()) {
             DynamicPrintConfig config;
             std::string config_type, config_name, filament_id, config_from;
@@ -871,23 +895,23 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             }
 #ifndef ENGINE_ORCA
             // B 2802-2805: no command-line map, so the slot takes the machine's diameter.
-            if (!cli_has_map && !machine_nozzle_diameter.empty() && dia_map != nullptr &&
+            if (!filaments.cli_has_map && !filaments.machine_nozzle_diameter.empty() && dia_map != nullptr &&
                 static_cast<size_t>(index) < dia_map->values.size())
-                dia_map->values[index] = machine_nozzle_diameter;
+                dia_map->values[index] = filaments.machine_nozzle_diameter;
 #endif
-            load_filaments_inherit.push_back(inherits);
-            load_filaments_id.push_back(filament_id);
-            load_filaments_name.push_back(config_name);
-            load_filaments_config.push_back(std::move(config));
-            load_filaments_index.push_back(current_index);
-            load_filaments_set.emplace(config_name);
+            filaments.load_filaments_inherit.push_back(inherits);
+            filaments.load_filaments_id.push_back(filament_id);
+            filaments.load_filaments_name.push_back(config_name);
+            filaments.load_filaments_config.push_back(std::move(config));
+            filaments.load_filaments_index.push_back(filaments.current_index);
+            filaments.load_filaments_set.emplace(config_name);
         } else if (use_first_fila_as_default) {
-            load_filaments_id.push_back(default_load_fila_id);
-            load_filaments_name.push_back(default_load_fila_name);
-            load_filaments_config.push_back(default_load_fila_config);
-            load_filaments_index.push_back(current_index);
-            load_filaments_inherit.push_back(default_filament_inherit);
-            load_filaments_set.emplace(default_load_fila_name);
+            filaments.load_filaments_id.push_back(default_load_fila_id);
+            filaments.load_filaments_name.push_back(default_load_fila_name);
+            filaments.load_filaments_config.push_back(default_load_fila_config);
+            filaments.load_filaments_index.push_back(filaments.current_index);
+            filaments.load_filaments_inherit.push_back(default_filament_inherit);
+            filaments.load_filaments_set.emplace(default_load_fila_name);
 #ifndef ENGINE_ORCA
             // B 2828-2840: an empty slot takes the default filament's diameter;
             // with none known the slot stays empty.
@@ -902,29 +926,33 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     if (const auto* cli_map = m_extra_config.option<ConfigOptionStrings>("filament_diameter_map"))
         m_print_config.option<ConfigOptionStrings>("filament_diameter_map", true)->values = cli_map->values;
 #endif
+    return {};
+}
 
+static StepResult extend_filaments_for_obj_colours(LoadedFilamentSettings& filaments,
+        DynamicPrintConfig& m_extra_config, SettingsMerge& out) {
 #ifndef ENGINE_ORCA
     // The colours of an assemble list's OBJ files (B 2573-2620): one filament
     // per colour, copies of the first loaded filament where too few were
     // given, each coloured as the OBJ is. OrcaSlicer's CLI leaves them out.
     if (!out.input_obj_colours.empty()) {
         const int input_color_count = int(out.input_obj_colours.size());
-        if (load_filament_count == 0 || load_filaments_config.empty())
+        if (filaments.load_filament_count == 0 || filaments.load_filaments_config.empty())
             return fail(CLI_INVALID_PARAMS, "The assemble list's OBJ files carry colours, which become filaments: "
                                             "give the filaments with --load-filaments.");
         if (m_extra_config.option<ConfigOptionStrings>("filament_colour"))
             return fail(CLI_INVALID_PARAMS, "The assemble list's OBJ files set the filament colours; "
                                             "--filament-colour cannot be given with them.");
-        if (load_filament_count < input_color_count) {
-            const int delta = input_color_count - load_filament_count;
+        if (filaments.load_filament_count < input_color_count) {
+            const int delta = input_color_count - filaments.load_filament_count;
             for (int index = 0; index < delta; index++) {
-                load_filaments_id.push_back(load_filaments_id[0]);
-                load_filaments_name.push_back(load_filaments_name[0]);
-                load_filaments_config.push_back(load_filaments_config[0]);
-                load_filaments_index.push_back(index + 1 + load_filament_count);
-                load_filaments_inherit.push_back(load_filaments_inherit[0]);
+                filaments.load_filaments_id.push_back(filaments.load_filaments_id[0]);
+                filaments.load_filaments_name.push_back(filaments.load_filaments_name[0]);
+                filaments.load_filaments_config.push_back(filaments.load_filaments_config[0]);
+                filaments.load_filaments_index.push_back(index + 1 + filaments.load_filament_count);
+                filaments.load_filaments_inherit.push_back(filaments.load_filaments_inherit[0]);
             }
-            load_filament_count = input_color_count;
+            filaments.load_filament_count = input_color_count;
         }
         std::vector<std::string>& filament_colors =
             m_extra_config.option<ConfigOptionStrings>("filament_colour", true)->values;
@@ -938,30 +966,15 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         }
     }
 #endif
-    if (filament_count == 0)
-        filament_count = load_filament_count;
-    // The filaments the run has when the project names none: the ones the
-    // settings already carry (a model file with named presets, a settings
-    // file), as the largest per-filament list. Starts from the project's own
-    // count, not the load count that replaced a zero above: a replacement
-    // file over named presets keeps the other presets' slots.
-    const auto retained_filament_count = [&]() {
-        int count = facts.filament_count;
-        if (count == 0)
-            for (const char* key : {"filament_colour", "filament_settings_id", "filament_ids",
-                                    "filament_type", "filament_diameter"})
-                if (const auto* vec = dynamic_cast<const ConfigOptionVectorBase*>(m_print_config.option(key, false)))
-                    count = std::max(count, int(vec->size()));
-        // --filament-colour names one filament per colour (B 2877 for an OBJ's colours).
-        if (const auto* colours = m_extra_config.option<ConfigOptionStrings>("filament_colour"))
-            count = std::max(count, int(colours->values.size()));
-        return count;
-    };
-    if (is_bbl_3mf && load_filament_count > 0 && load_filaments_set.size() == 1 && !estimate_mode)
-        disable_wipe_tower_after_mapping = true;   // B 2630-2634; O 2252-2256
+    return {};
+}
 
-    // --uptodate (B 2636-2870; O 2258-2420).
-    bool fetch_compatible_values = false, fetch_upward_values = false;
+static StepResult update_project_presets(LoadedSettingsPresets& presets, LoadedFilamentSettings& filaments,
+        ProjectFacts& facts, const std::string& profiles_dir,
+        const std::vector<std::string>& uptodate_configs, const std::vector<std::string>& uptodate_filaments,
+        std::vector<std::string>& upward_compatible_printers,
+        std::vector<std::string>& current_print_compatible_printers, bool up_config_to_date, bool is_bbl_3mf,
+        std::string& why, int& filament_count, bool& fetch_compatible_values, bool& fetch_upward_values) {
     if (up_config_to_date && !is_bbl_3mf)
         // The official step is inside its own `is_bbl_3mf` test
         // (BambuStudio.cpp 2638 at 5873b5f, OrcaSlicer.cpp 2290 at 31f6803): it
@@ -990,10 +1003,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                                            "', not the project's '" + facts.current_printer_system_name +
                                                            "'; give the project's own machine file");
                     upward_compatible_printers = config.option<ConfigOptionStrings>("upward_compatible_machine", true)->values;
-                    if (new_printer_name.empty() && !facts.current_printer_system_name.empty()) {
+                    if (presets.new_printer_name.empty() && !facts.current_printer_system_name.empty()) {
                         config.set("printer_settings_id", config_name, true);
-                        printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
-                        printer_model_id = printer_model_id_for(printer_model);
+                        presets.printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
+                        presets.printer_model_id = printer_model_id_for(presets.printer_model);
                         int orig_w = 0, orig_d = 0, orig_h = 0;
                         const Pointfs orig_area = config.option<ConfigOptionPoints>("printable_area", true)->values;
                         if (orig_area.size() >= 4) {
@@ -1007,7 +1020,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                         "Printer Settings: the printable size {" + std::to_string(facts.old_printable_width) + ", " +
                                         std::to_string(facts.old_printable_depth) + ", " + std::to_string(facts.old_printable_height) +
                                         "} exceeds the default size.");
-                        load_machine_config = std::move(config);
+                        presets.load_machine_config = std::move(config);
                     }
                 } else if (config_type == "process") {
                     if (config_name != facts.current_process_system_name)
@@ -1015,9 +1028,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                                            "', not the project's '" + facts.current_process_system_name +
                                                            "'; give the project's own process file");
                     current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
-                    if (new_process_name.empty() && !facts.current_process_system_name.empty()) {
+                    if (presets.new_process_name.empty() && !facts.current_process_system_name.empty()) {
                         config.set("print_settings_id", config_name, true);
-                        load_process_config = std::move(config);
+                        presets.load_process_config = std::move(config);
                     }
                 } else
                     return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-settings: " + file +
@@ -1026,7 +1039,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         } else {
             // The project's own system presets from machine_full / process_full
             // (B 2723-2786); missing folders keep the file's settings.
-            if (new_printer_name.empty() && !facts.current_printer_system_name.empty()) {
+            if (presets.new_printer_name.empty() && !facts.current_printer_system_name.empty()) {
                 const std::string path = full_preset_path("machine_full", facts.current_printer_system_name);
                 if (boost::filesystem::exists(path)) {
                     DynamicPrintConfig config;
@@ -1035,9 +1048,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         return fail(ret, why);
                     upward_compatible_printers = config.option<ConfigOptionStrings>("upward_compatible_machine", true)->values;
                     config.set("printer_settings_id", config_name, true);
-                    printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
-                    printer_model_id = printer_model_id_for(printer_model);
-                    load_machine_config = std::move(config);
+                    presets.printer_model = config.option<ConfigOptionString>("printer_model", true)->value;
+                    presets.printer_model_id = printer_model_id_for(presets.printer_model);
+                    presets.load_machine_config = std::move(config);
                     ++system_files_read;
                 } else
                     emit({{"event", "preset_warning"}, {"tag", "SystemPresetFileMissing"}, {"path", path},
@@ -1045,7 +1058,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                       "'; the project's printer settings are kept"}});
             } else
                 fetch_upward_values = true;
-            if (new_process_name.empty() && !facts.current_process_system_name.empty()) {
+            if (presets.new_process_name.empty() && !facts.current_process_system_name.empty()) {
                 const std::string path = full_preset_path("process_full", facts.current_process_system_name);
                 if (boost::filesystem::exists(path)) {
                     DynamicPrintConfig config;
@@ -1054,7 +1067,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         return fail(ret, why);
                     current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
                     config.set("print_settings_id", config_name, true);
-                    load_process_config = std::move(config);
+                    presets.load_process_config = std::move(config);
                     ++system_files_read;
                 } else
                     emit({{"event", "preset_warning"}, {"tag", "SystemPresetFileMissing"}, {"path", path},
@@ -1063,7 +1076,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             } else
                 fetch_compatible_values = true;
         }
-        if (load_filament_count == 0) {
+        if (filaments.load_filament_count == 0) {
             if (!uptodate_filaments.empty()) {
                 if (uptodate_filaments.size() != (size_t)filament_count)
                     return fail(CLI_INVALID_PARAMS, "--uptodate-filaments gives " + std::to_string(uptodate_filaments.size()) +
@@ -1087,14 +1100,14 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         return fail(CLI_CONFIG_FILE_ERROR, "--uptodate-filaments: " + file + " is filament '" + config_name +
                                                            "', not the project's filament " + std::to_string(index + 1) +
                                                            "; give the project's own filament files, in the project's order");
-                    load_filaments_id.push_back(filament_id);
-                    load_filaments_name.push_back(config_name);
-                    load_filaments_config.push_back(std::move(config));
-                    load_filaments_index.push_back(index + 1);
-                    load_filaments_inherit.push_back(config_name);
+                    filaments.load_filaments_id.push_back(filament_id);
+                    filaments.load_filaments_name.push_back(config_name);
+                    filaments.load_filaments_config.push_back(std::move(config));
+                    filaments.load_filaments_index.push_back(index + 1);
+                    filaments.load_filaments_inherit.push_back(config_name);
                 }
             } else {
-                current_index = 0;
+                filaments.current_index = 0;
 #ifdef ENGINE_ORCA
                 const std::vector<std::string>& names = facts.current_filaments_system_name;
 #else
@@ -1102,7 +1115,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #endif
                 for (size_t index = 0; index < names.size(); index++) {
                     const std::string path = full_preset_path("filament_full", names[index]);
-                    current_index++;
+                    filaments.current_index++;
                     if (!boost::filesystem::exists(path))
                         continue;
                     DynamicPrintConfig config;
@@ -1111,11 +1124,11 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         return fail(ret, why);
                     if (config_type != "filament")
                         return fail(CLI_CONFIG_FILE_ERROR, path + " is not a filament file; give it with --load-filaments");
-                    load_filaments_id.push_back(filament_id);
-                    load_filaments_name.push_back(config_name);
-                    load_filaments_config.push_back(std::move(config));
-                    load_filaments_index.push_back(current_index);
-                    load_filaments_inherit.push_back(config_name);
+                    filaments.load_filaments_id.push_back(filament_id);
+                    filaments.load_filaments_name.push_back(config_name);
+                    filaments.load_filaments_config.push_back(std::move(config));
+                    filaments.load_filaments_index.push_back(filaments.current_index);
+                    filaments.load_filaments_inherit.push_back(config_name);
                     ++system_files_read;
                 }
             }
@@ -1132,6 +1145,13 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         fetch_upward_values = true;
         fetch_compatible_values = true;
     }
+    return {};
+}
+
+static StepResult read_preset_compatibility(const ProjectFacts& facts, const std::string& profiles_dir,
+        std::vector<std::string>& upward_compatible_printers,
+        std::vector<std::string>& current_print_compatible_printers, std::string& why,
+        bool& fetch_compatible_values, bool& fetch_upward_values) {
     // B 2872-2914; O 2422-2486.
     if (fetch_upward_values && !facts.current_printer_system_name.empty()) {
         const std::string path = full_preset_path("machine_full", facts.current_printer_system_name);
@@ -1153,35 +1173,40 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
         }
     }
+    return {};
+}
 
-    // The process must suit the printer (B 2916-3010; O 2488-2584).
-    bool process_compatible = false, machine_upwards = false, machine_switch = false;
+static StepResult check_process_compatibility(const LoadedSettingsPresets& presets,
+        const ProjectFacts& facts, const std::vector<std::string>& upward_compatible_printers,
+        const std::vector<std::string>& current_print_compatible_printers, bool& machine_switch,
+        bool& machine_upwards) {
+    bool process_compatible = false;
     auto contains = [](const std::vector<std::string>& list, const std::string& name) {
         return std::find(list.begin(), list.end(), name) != list.end();
     };
-    if (!new_printer_name.empty()) {
-        process_compatible = !new_process_name.empty() ? contains(new_print_compatible_printers, new_printer_system_name)
-                                                       : contains(current_print_compatible_printers, new_printer_system_name);
-    } else if (!new_process_name.empty()) {
-        process_compatible = contains(new_print_compatible_printers, facts.current_printer_system_name);
+    if (!presets.new_printer_name.empty()) {
+        process_compatible = !presets.new_process_name.empty() ? contains(presets.new_print_compatible_printers, presets.new_printer_system_name)
+                                                       : contains(current_print_compatible_printers, presets.new_printer_system_name);
+    } else if (!presets.new_process_name.empty()) {
+        process_compatible = contains(presets.new_print_compatible_printers, facts.current_printer_system_name);
     } else {
         process_compatible = contains(current_print_compatible_printers, facts.current_printer_system_name);
         if (!process_compatible && current_print_compatible_printers.empty())
             process_compatible = true;   // an old 3MF lists no compatible printers
     }
-    if (!process_compatible && !new_printer_name.empty() && !facts.current_printer_name.empty() &&
-        new_printer_name != facts.current_printer_name) {
-        if (new_process_name.empty())
+    if (!process_compatible && !presets.new_printer_name.empty() && !facts.current_printer_name.empty() &&
+        presets.new_printer_name != facts.current_printer_name) {
+        if (presets.new_process_name.empty())
             process_compatible = true;
         machine_switch = true;
         if (!upward_compatible_printers.empty()) {
-            if (contains(upward_compatible_printers, new_printer_system_name)) {
+            if (contains(upward_compatible_printers, presets.new_printer_system_name)) {
                 process_compatible = true;
                 machine_upwards = true;
             }
             if (!process_compatible)
                 return fail(CLI_3MF_NEW_MACHINE_NOT_SUPPORTED,
-                            "The project cannot move to printer '" + new_printer_name +
+                            "The project cannot move to printer '" + presets.new_printer_name +
                                 "'; give a process that printer suits (--load-settings or --process-preset), "
                                 "or keep the project's own printer");
         }
@@ -1190,6 +1215,12 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         return fail(CLI_PROCESS_NOT_COMPATIBLE,
                     "The process does not suit the printer; give a process that printer suits "
                     "(--load-settings or --process-preset)");
+    return {};
+}
+
+static StepResult check_mixed_nozzle_diameters(const LoadedFilamentSettings& filaments,
+        const ProjectFacts& facts, DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
+        int& filament_count) {
 #ifndef ENGINE_ORCA
     // Mixed nozzle diameters (B 3289-3401 at v02.09.01.70). The project's
     // multi_nozzle_diameter_mode decides, or the command line's, which wins
@@ -1204,12 +1235,12 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             file_multi_mode = cli_multi_mode;
         const bool multi_nozzle_diameter_mode = file_multi_mode != nullptr && file_multi_mode->value;
         if (file_multi_mode != nullptr && !file_multi_mode->value) {
-            if (!machine_nozzle_diameter.empty()) {
+            if (!filaments.machine_nozzle_diameter.empty()) {
                 auto* forced_map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map", true);
                 const size_t slot_count = std::max(forced_map->values.size(),
                                                    std::max(static_cast<size_t>(std::max(filament_count, 0)),
-                                                            static_cast<size_t>(std::max(load_filament_count, 0))));
-                forced_map->values.assign(slot_count, machine_nozzle_diameter);
+                                                            static_cast<size_t>(std::max(filaments.load_filament_count, 0))));
+                forced_map->values.assign(slot_count, filaments.machine_nozzle_diameter);
             }
         } else if (multi_nozzle_diameter_mode) {
             const std::set<std::string> used_diameters = selected_filament_map_diameters(m_print_config);
@@ -1227,22 +1258,22 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             // line needs one entry per filament of the run: the project's or
             // the named presets', plus any slot --load-filaments adds.
             const auto* map = m_print_config.option<ConfigOptionStrings>("filament_diameter_map");
-            const size_t roster = static_cast<size_t>(std::max(retained_filament_count(), load_filament_count));
-            if (map != nullptr && cli_has_map && map->values.size() != roster)
+            const size_t roster = static_cast<size_t>(std::max(retained_filament_count(facts, m_print_config, m_extra_config), filaments.load_filament_count));
+            if (map != nullptr && filaments.cli_has_map && map->values.size() != roster)
                 return fail(CLI_CONFIG_FILE_ERROR,
                             "filament_diameter_map has " + std::to_string(map->values.size()) + " entries; the run has " +
                                 std::to_string(roster) + " filaments. Give one nozzle diameter per filament");
             if (map != nullptr) {
-                for (size_t index = 0; index < load_filaments_config.size(); ++index) {
-                    const size_t slot_index = index < load_filaments_index.size() && load_filaments_index[index] > 0
-                                                  ? static_cast<size_t>(load_filaments_index[index] - 1) : index;
-                    const std::string filament_name = index < load_filaments_name.size() ? load_filaments_name[index] : "";
+                for (size_t index = 0; index < filaments.load_filaments_config.size(); ++index) {
+                    const size_t slot_index = index < filaments.load_filaments_index.size() && filaments.load_filaments_index[index] > 0
+                                                  ? static_cast<size_t>(filaments.load_filaments_index[index] - 1) : index;
+                    const std::string filament_name = index < filaments.load_filaments_name.size() ? filaments.load_filaments_name[index] : "";
                     const std::string slot = "filament " + std::to_string(slot_index + 1) + " (" + filament_name + ")";
                     if (slot_index >= map->values.size() || map->values[slot_index].empty())
                         return fail(CLI_CONFIG_FILE_ERROR, "filament_diameter_map names no nozzle diameter for " + slot +
                                                                " in multi-diameter mode");
                     const std::string& raw = map->values[slot_index];
-                    const auto* compatible = load_filaments_config[index].option<ConfigOptionStrings>("compatible_printers");
+                    const auto* compatible = filaments.load_filaments_config[index].option<ConfigOptionStrings>("compatible_printers");
                     if (compatible == nullptr || compatible->values.empty())
                         return fail(CLI_CONFIG_FILE_ERROR, "The preset of " + slot + " names no compatible_printers, so its"
                                                                " nozzle diameter '" + raw + "' cannot be checked");
@@ -1261,10 +1292,22 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         }
     }
 #endif
+    return {};
+}
+
+static StepResult check_estimate_printer_switch(const LoadedSettingsPresets& presets,
+        const ProjectFacts& facts, bool estimate_mode) {
 #ifndef ENGINE_ORCA
-    if (estimate_mode && (new_printer_name.empty() || facts.current_printer_name.empty() || new_printer_name == facts.current_printer_name))
+    if (estimate_mode && (presets.new_printer_name.empty() || facts.current_printer_name.empty() || presets.new_printer_name == facts.current_printer_name))
         return fail(CLI_INVALID_PARAMS, "--estimate-mode needs --load-settings with a different printer");   // B 3041-3045
 #endif
+    return {};
+}
+
+static StepResult apply_project_printer_switch(LoadedSettingsPresets& presets, ProjectFacts& facts,
+        DynamicPrintConfig& m_print_config, const std::vector<Preset*>& project_presets, SettingsMerge& out,
+        std::vector<std::string>& upward_compatible_printers,
+        std::vector<std::string>& current_print_compatible_printers, bool is_bbl_3mf, bool& machine_switch) {
     out.upward_machines = upward_compatible_printers;
 
     // The "(auto)" process the exported project carries after a printer change
@@ -1280,13 +1323,13 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (current_preset) {
             *new_preset = *current_preset;
             std::vector<std::string>& compatible = new_preset->config.option<ConfigOptionStrings>("compatible_printers", true)->values;
-            if (!contains(compatible, new_printer_system_name))
-                compatible.push_back(new_printer_system_name);
+            if (!contains(compatible, presets.new_printer_system_name))
+                compatible.push_back(presets.new_printer_system_name);
         } else {
             new_preset->config.apply_only(m_print_config, Preset::print_options());
             std::vector<std::string>& compatible = new_preset->config.option<ConfigOptionStrings>("compatible_printers", true)->values;
             compatible = current_print_compatible_printers;
-            compatible.push_back(new_printer_system_name);
+            compatible.push_back(presets.new_printer_system_name);
             if (facts.current_process_system_name != facts.current_process_name)
                 new_preset->config.option<ConfigOptionString>("inherits", true)->value = facts.current_process_system_name;
             new_preset->is_project_embedded = true;
@@ -1297,65 +1340,43 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         m_print_config.set("print_settings_id", new_preset->name, true);
         out.new_preset = new_preset;
     }
+    return {};
+}
 
-    // The two lists carry one entry per preset in the project's order — process,
-    // filament 1 .. filament N, printer (B 3208-3210). The desktop collects them
-    // the same way and writes the key only when some entry is non-empty
-    // (PresetBundle.cpp 3490-3523, add_if_some_non_empty).
-    //
-    // filament_count is the count the merge works from: the project 3MF's own
-    // filaments, or the files --load-filaments brings (B 2627-2628). It stays 0
-    // when the roster comes from the named presets (--filament-preset) and no
-    // settings file names the filaments, which is this command line's whole
-    // preset path: the lists were then sized (0 + 2) and carried two empty
-    // entries. The official CLI reads them as N + 2 entries, sizes the filament
-    // system names to size - 2 (B 2001-2040) and then reads
-    // converted_filaments_system_name[f_index] for every filament (B 2043-2046):
-    // a two-entry list is an out-of-bounds read, SIGSEGV (rc 139) on every
-    // --slice N of the exported project. Size them from the roster the settings
-    // already carry instead, exactly as the file-fed path already did.
-    // The metadata lists hold one entry per filament the run ends with: the
-    // retained roster, or the loaded files when there are more of them.
-    const int inherits_count = std::max(retained_filament_count(), filament_count);
-
-    std::vector<std::string>& different_settings = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
-    std::vector<std::string>& inherits_group     = m_print_config.option<ConfigOptionStrings>("inherits_group", true)->values;
-    inherits_group.resize(inherits_count + 2, std::string());
-    different_settings.resize(inherits_count + 2, std::string());
-    if (!is_bbl_3mf && !different_process_setting.empty())
-        different_settings[0] = different_process_setting;
-
-    std::vector<int> new_variant_index;
-    bool variant_count_changed = false;
+static StepResult merge_machine_preset_values(LoadedSettingsPresets& presets, ProjectFacts& facts,
+        DynamicPrintConfig& m_print_config, bool up_config_to_date, bool skip_modified_gcodes,
+        int inherits_count, std::vector<std::string>& different_settings,
+        std::vector<std::string>& inherits_group, std::vector<int>& new_variant_index,
+        bool& variant_count_changed) {
     // The machine into the print settings (B 3216-3338; O 2752-2870).
-    if (!new_printer_name.empty() || up_config_to_date) {
+    if (!presets.new_printer_name.empty() || up_config_to_date) {
         std::vector<std::string> different_keys;
-        if (new_printer_name.empty()) {
+        if (presets.new_printer_name.empty()) {
             if (!different_settings.empty())
                 unescape_strings_cstyle(different_settings[inherits_count + 1], different_keys);
         } else {
             different_settings[inherits_count + 1] = "";
-            inherits_group[inherits_count + 1] = new_printer_config_is_system ? "" : new_printer_system_name;
+            inherits_group[inherits_count + 1] = presets.new_printer_config_is_system ? "" : presets.new_printer_system_name;
         }
         std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
         int ret = 0;
-        load_default_gcodes_to_config(load_machine_config, Preset::TYPE_PRINTER);
-        if (new_printer_name.empty()) {
+        load_default_gcodes_to_config(presets.load_machine_config, Preset::TYPE_PRINTER);
+        if (presets.new_printer_name.empty()) {
             const size_t diff_keys_size = different_keys_set.size();
 #ifndef ENGINE_SNAPMAKER
-            compute_variant_index(m_print_config, load_machine_config, "printer_extruder_id", "printer_extruder_variant",
+            compute_variant_index(m_print_config, presets.load_machine_config, "printer_extruder_id", "printer_extruder_variant",
                                   new_variant_index, variant_count_changed);
 #endif
-            ret = update_full_config(m_print_config, load_machine_config, different_keys_set, variant_count_changed,
+            ret = update_full_config(m_print_config, presets.load_machine_config, different_keys_set, variant_count_changed,
                                      printer_options_with_variant_1, printer_options_with_variant_2, new_variant_index, false,
                                      skip_modified_gcodes);
             if (diff_keys_size != different_keys_set.size())
                 different_settings[inherits_count + 1] =
                     escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
         } else {
-            ret = update_full_config(m_print_config, load_machine_config, different_keys_set, variant_count_changed,
+            ret = update_full_config(m_print_config, presets.load_machine_config, different_keys_set, variant_count_changed,
                                      printer_options_with_variant_1, printer_options_with_variant_2, new_variant_index, true);
-            if (new_printer_name != facts.current_printer_name) {
+            if (presets.new_printer_name != facts.current_printer_name) {
                 // The printer's safe machine limits from cli_config.json (B 3263-3331).
                 const std::string cli_config_file = resources_dir() + "/profiles/BBL/cli_config.json";
                 if (boost::filesystem::exists(cli_config_file)) {
@@ -1363,9 +1384,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                         json root_json;
                         boost::nowide::ifstream ifs(cli_config_file);
                         ifs >> root_json;
-                        if (root_json.contains("printer") && !printer_model.empty() && root_json["printer"].contains(printer_model) &&
-                            root_json["printer"][printer_model].contains("machine_limits")) {
-                            const auto params = root_json["printer"][printer_model]["machine_limits"].get<std::map<std::string, std::string>>();
+                        if (root_json.contains("printer") && !presets.printer_model.empty() && root_json["printer"].contains(presets.printer_model) &&
+                            root_json["printer"][presets.printer_model].contains("machine_limits")) {
+                            const auto params = root_json["printer"][presets.printer_model]["machine_limits"].get<std::map<std::string, std::string>>();
                             for (const auto& [param, value] : params) {
                                 std::string key = param;
                                 key.replace(0, 8, "machine_max");
@@ -1386,18 +1407,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (ret)
             return fail(ret, "Merging the machine settings failed.");
     }
+    return {};
+}
 
-    int new_extruder_count = 1, new_printer_variant_count = 1;
-    bool new_is_multi_extruder = false;
-    std::vector<std::string> new_printer_extruder_variants;
+static void read_merged_extruder_count(MergedExtruders& merged_extruders, DynamicPrintConfig& m_print_config) {
 #ifdef ENGINE_ORCA
     // O 995-1000 of the block: the extruder count from the merged nozzles.
     if (m_print_config.option<ConfigOptionFloats>("nozzle_diameter")) {
-        new_extruder_count = int(m_print_config.option<ConfigOptionFloats>("nozzle_diameter")->values.size());
-        new_is_multi_extruder = new_extruder_count > 1;
+        merged_extruders.new_extruder_count = int(m_print_config.option<ConfigOptionFloats>("nozzle_diameter")->values.size());
+        merged_extruders.new_is_multi_extruder = merged_extruders.new_extruder_count > 1;
 #ifndef ENGINE_SNAPMAKER
-        new_printer_extruder_variants = m_print_config.option<ConfigOptionStrings>("printer_extruder_variant", true)->values;
-        new_printer_variant_count = int(new_printer_extruder_variants.size());
+        merged_extruders.new_printer_extruder_variants = m_print_config.option<ConfigOptionStrings>("printer_extruder_variant", true)->values;
+        merged_extruders.new_printer_variant_count = int(merged_extruders.new_printer_extruder_variants.size());
 #else
         // No printer_extruder_variant option at bac6fd5 (option(key, true)
         // returns null for a key the engine does not define): one variant,
@@ -1405,13 +1426,17 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #endif
     }
 #endif
+}
 
-    // The process into the print settings (B 3340-3406; O 2881-2945).
-    int current_print_variant_count = facts.current_print_variant_count;
-    std::vector<std::string>& print_compatible_printers = m_print_config.option<ConfigOptionStrings>("print_compatible_printers", true)->values;
-    if (!new_process_name.empty() || up_config_to_date) {
+static StepResult merge_process_preset_values(LoadedSettingsPresets& presets,
+        DynamicPrintConfig& m_print_config, std::vector<std::string>& current_print_compatible_printers,
+        bool up_config_to_date, bool skip_modified_gcodes, std::vector<std::string>& different_settings,
+        std::vector<std::string>& inherits_group, std::vector<int>& new_variant_index,
+        bool& variant_count_changed, int& current_print_variant_count,
+        std::vector<std::string>& print_compatible_printers) {
+    if (!presets.new_process_name.empty() || up_config_to_date) {
         std::vector<std::string> different_keys;
-        if (new_process_name.empty()) {
+        if (presets.new_process_name.empty()) {
             if (!different_settings.empty()) {
                 unescape_strings_cstyle(different_settings[0], different_keys);
                 auto it = std::find(different_keys.begin(), different_keys.end(), "compatible_printers");
@@ -1426,26 +1451,26 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #ifdef ENGINE_ORCA
             different_settings[0] = "";
 #else
-            different_settings[0] = different_process_setting;
+            different_settings[0] = presets.different_process_setting;
 #endif
-            inherits_group[0] = new_process_config_is_system ? "" : new_process_system_name;
-            print_compatible_printers = new_print_compatible_printers;
+            inherits_group[0] = presets.new_process_config_is_system ? "" : presets.new_process_system_name;
+            print_compatible_printers = presets.new_print_compatible_printers;
         }
         std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
         int ret = 0;
-        load_default_gcodes_to_config(load_process_config, Preset::TYPE_PRINT);
-        if (new_process_name.empty()) {
+        load_default_gcodes_to_config(presets.load_process_config, Preset::TYPE_PRINT);
+        if (presets.new_process_name.empty()) {
             const size_t diff_keys_size = different_keys_set.size();
 #ifndef ENGINE_SNAPMAKER
-            compute_variant_index(m_print_config, load_process_config, "print_extruder_id", "print_extruder_variant",
+            compute_variant_index(m_print_config, presets.load_process_config, "print_extruder_id", "print_extruder_variant",
                                   new_variant_index, variant_count_changed);
 #endif
-            ret = update_full_config(m_print_config, load_process_config, different_keys_set, variant_count_changed,
+            ret = update_full_config(m_print_config, presets.load_process_config, different_keys_set, variant_count_changed,
                                      print_options_with_variant, empty_options, new_variant_index, false, skip_modified_gcodes);
             if (diff_keys_size != different_keys_set.size())
                 different_settings[0] = escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
         } else {
-            ret = update_full_config(m_print_config, load_process_config, different_keys_set, variant_count_changed,
+            ret = update_full_config(m_print_config, presets.load_process_config, different_keys_set, variant_count_changed,
                                      print_options_with_variant, empty_options, new_variant_index, true);
         }
 #ifndef ENGINE_SNAPMAKER
@@ -1454,16 +1479,21 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         if (ret)
             return fail(ret, "Merging the process settings failed.");
     }
+    return {};
+}
 
-    // Nozzle volume types of the new setup (B 3408-3458; O 2947-2972).
-    std::vector<NozzleVolumeType> new_nozzle_volume_type;
+static void read_nozzle_volume_types(MergedExtruders& merged_extruders, const ProjectFacts& facts,
+        DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config, SettingsMerge& out,
+        bool& machine_switch, std::vector<NozzleVolumeType>& new_nozzle_volume_type,
+        std::vector<std::string>& new_extruder_variants,
+        std::vector<NozzleVolumeType>& current_nozzle_volume_type) {
 #ifndef ENGINE_ORCA
     sync_nozzle_volume_type_to_extruder_count(m_print_config, m_extra_config.has("nozzle_volume_type"));
-    const bool different_extruder = m_print_config.support_different_extruders(new_extruder_count);
+    const bool different_extruder = m_print_config.support_different_extruders(merged_extruders.new_extruder_count);
     (void)different_extruder;
-    new_is_multi_extruder = new_extruder_count > 1;
-    new_printer_extruder_variants = m_print_config.option<ConfigOptionStrings>("printer_extruder_variant", true)->values;
-    new_printer_variant_count = int(new_printer_extruder_variants.size());
+    merged_extruders.new_is_multi_extruder = merged_extruders.new_extruder_count > 1;
+    merged_extruders.new_printer_extruder_variants = m_print_config.option<ConfigOptionStrings>("printer_extruder_variant", true)->values;
+    merged_extruders.new_printer_variant_count = int(merged_extruders.new_printer_extruder_variants.size());
 #endif
     if (m_extra_config.has("nozzle_volume_type")) {
         if (auto* opt = dynamic_cast<const ConfigOptionEnumsGeneric*>(m_extra_config.option("nozzle_volume_type")))
@@ -1472,24 +1502,24 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     } else {
 #ifndef ENGINE_ORCA
         auto* opt_print_nvt = dynamic_cast<const ConfigOptionEnumsGeneric*>(m_print_config.option("nozzle_volume_type"));
-        if (opt_print_nvt && opt_print_nvt->values.size() >= size_t(new_extruder_count)) {
-            for (int i = 0; i < new_extruder_count; i++)
+        if (opt_print_nvt && opt_print_nvt->values.size() >= size_t(merged_extruders.new_extruder_count)) {
+            for (int i = 0; i < merged_extruders.new_extruder_count; i++)
                 new_nozzle_volume_type.push_back(NozzleVolumeType(opt_print_nvt->values[i]));
         } else {
             if (!machine_switch)
                 for (int v : facts.current_nozzle_volume_type)
                     new_nozzle_volume_type.push_back(NozzleVolumeType(v));
-            new_nozzle_volume_type.resize(new_extruder_count, nvtStandard);
+            new_nozzle_volume_type.resize(merged_extruders.new_extruder_count, nvtStandard);
         }
 #else
-        new_nozzle_volume_type.resize(new_extruder_count, nvtStandard);
+        new_nozzle_volume_type.resize(merged_extruders.new_extruder_count, nvtStandard);
 #endif
     }
-    new_nozzle_volume_type.resize(std::max<size_t>(new_nozzle_volume_type.size(), size_t(new_extruder_count)), nvtStandard);
-    std::vector<std::string> new_extruder_variants(new_extruder_count, "");
+    new_nozzle_volume_type.resize(std::max<size_t>(new_nozzle_volume_type.size(), size_t(merged_extruders.new_extruder_count)), nvtStandard);
+    new_extruder_variants.resize(merged_extruders.new_extruder_count, "");
 #ifndef ENGINE_SNAPMAKER
     const auto* opt_extruder_type = dynamic_cast<const ConfigOptionEnumsGeneric*>(m_print_config.option("extruder_type"));
-    for (int e = 0; e < new_extruder_count; e++) {
+    for (int e = 0; e < merged_extruders.new_extruder_count; e++) {
         const ExtruderType extruder_type = opt_extruder_type ? (ExtruderType)(opt_extruder_type->get_at(e)) : etDirectDrive;
         new_extruder_variants[e] = get_extruder_variant_string(extruder_type, new_nozzle_volume_type[e]);
     }
@@ -1497,7 +1527,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // No ExtruderType enum and no get_extruder_variant_string at bac6fd5, so
     // this engine names no extruder variant.
 #endif
-    std::vector<NozzleVolumeType> current_nozzle_volume_type;
+
     for (int v : facts.current_nozzle_volume_type)
         current_nozzle_volume_type.push_back(NozzleVolumeType(v));
     if (current_nozzle_volume_type.empty())
@@ -1507,9 +1537,16 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #else
     // No print_extruder_variant option at bac6fd5: no variant names to carry.
 #endif
+}
 
+static StepResult switch_process_extruder_variants(LoadedSettingsPresets& presets,
+        MergedExtruders& merged_extruders, ProjectFacts& facts, const std::string& profiles_dir,
+        DynamicPrintConfig& m_print_config, std::vector<std::string>& current_print_compatible_printers,
+        std::string& why, bool& machine_switch, std::vector<std::string>& different_settings,
+        int& current_print_variant_count, std::vector<std::string>& print_compatible_printers,
+        std::vector<std::string>& new_extruder_variants) {
     if (machine_switch) {
-        print_compatible_printers.push_back(new_printer_system_name);
+        print_compatible_printers.push_back(presets.new_printer_system_name);
         const std::string old_setting = different_settings[0];
         if (old_setting.empty())
             different_settings[0] = "compatible_printers";
@@ -1535,7 +1572,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         // Both engines run that rule; the process_full file is read only where
         // the desktop pick found nothing and the extruder count changed, which
         // is the case the official CLI's own branch is for.
-        if (new_process_name.empty()) {
+        if (presets.new_process_name.empty()) {
             // The process list to search is the NEW printer's vendor's, not
             // the project's: the desktop tags every loaded preset with the
             // vendor bundle it came from (PresetBundle.cpp 4992) and a printer
@@ -1545,11 +1582,11 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             // (PresetBundle::find_preset_vendor, OrcaSlicer PresetBundle.cpp
             // 244-318 at 31f6803). With no bundle naming the preset the
             // project's vendor list is searched, as before.
-            std::string new_vendor = desktop_printer_vendor(profiles_dir, new_printer_system_name);
+            std::string new_vendor = desktop_printer_vendor(profiles_dir, presets.new_printer_system_name);
             if (new_vendor.empty())
                 new_vendor = "BBL";
             const DesktopProcessSwitch picked = desktop_printer_switch_process(
-                profiles_dir, new_vendor, new_printer_system_name, new_default_process_name, m_print_config,
+                profiles_dir, new_vendor, presets.new_printer_system_name, presets.new_default_process_name, m_print_config,
                 current_print_compatible_printers, facts.current_process_system_name);
             if (picked.replaced) {
                 // The whole preset, less its bookkeeping key.
@@ -1564,9 +1601,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 // The pick, on the record.
                 emit({{"event","presets_resolved"},
                       {"tag","ProcessSwitched"},
-                      {"printer", new_printer_system_name},
+                      {"printer", presets.new_printer_system_name},
                       {"process", picked.name},
-                      {"message","The printer '" + new_printer_system_name + "' does not take the project's process; "
+                      {"message","The printer '" + presets.new_printer_system_name + "' does not take the project's process; "
                                  "it takes '" + picked.name + "'"}});
             }
 #ifdef ENGINE_BAMBU
@@ -1580,12 +1617,12 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             // inside the package. With no such file the desktop rule stands:
             // the pick above found no compatible preset of its own, so the
             // project's process is kept.
-            else if (!new_default_process_name.empty() &&
-                     boost::filesystem::exists(full_preset_path("process_full", new_default_process_name)) &&
-                     (facts.current_extruder_count != new_extruder_count ||
-                      current_print_variant_count != new_printer_variant_count)) {
+            else if (!presets.new_default_process_name.empty() &&
+                     boost::filesystem::exists(full_preset_path("process_full", presets.new_default_process_name)) &&
+                     (facts.current_extruder_count != merged_extruders.new_extruder_count ||
+                      current_print_variant_count != merged_extruders.new_printer_variant_count)) {
                 // The official branch: the printer's own default process.
-                const std::string file_path = full_preset_path("process_full", new_default_process_name);
+                const std::string file_path = full_preset_path("process_full", presets.new_default_process_name);
                 DynamicPrintConfig config;
                 std::string config_type, config_name, filament_id, config_from;
                 if (int ret = load_settings_file(profiles_dir, file_path, config, config_type, config_name, filament_id, config_from, why); ret)
@@ -1595,7 +1632,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                                                                    "process preset from the package's profiles");
                 int ret = 0;
                 std::set<std::string> keys = print_options_with_variant;
-                if (!facts.current_is_multi_extruder && new_is_multi_extruder && current_print_variant_count == 1)
+                if (!facts.current_is_multi_extruder && merged_extruders.new_is_multi_extruder && current_print_variant_count == 1)
                     ret = m_print_config.update_values_from_single_to_multi(config, keys, "print_extruder_id", "print_extruder_variant");
                 else
                     ret = m_print_config.update_values_from_multi_to_multi(config, keys, "print_extruder_id", "print_extruder_variant",
@@ -1607,16 +1644,182 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
             else {
                 emit({{"event","presets_resolved"},
                       {"tag","ProcessKept"},
-                      {"printer", new_printer_system_name},
+                      {"printer", presets.new_printer_system_name},
                       {"process", facts.current_process_system_name},
-                      {"message","The printer '" + new_printer_system_name + "' suits the project's process; "
+                      {"message","The printer '" + presets.new_printer_system_name + "' suits the project's process; "
                                  "it is kept"}});
             }
         }
     }
+    return {};
+}
 
+static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
+        DynamicPrintConfig& m_print_config, bool skip_modified_gcodes, int& filament_count,
+        std::vector<std::string>& different_settings, std::vector<std::string>& inherits_group,
+        std::vector<int>& old_variant_counts, std::vector<int>& old_start_indice,
+        std::vector<int>& new_variant_counts) {
+    for (size_t index = 0; index < filaments.load_filaments_config.size(); index++) {
+        DynamicPrintConfig& config = filaments.load_filaments_config[index];
+        const int filament_index = filaments.load_filaments_index[index];
+        if (filament_index < 1 || filament_index > filament_count)
+            continue;
+        std::vector<std::string> different_keys;
+        load_default_gcodes_to_config(config, Preset::TYPE_FILAMENT);
+        if (filaments.load_filament_count > 0) {
+            auto* opt_filament_settings = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_settings_id", true));
+            ConfigOptionString filament_name_setting(filaments.load_filaments_name[index]);
+            if (int(opt_filament_settings->size()) < filament_count)
+                opt_filament_settings->resize(filament_count, &filament_name_setting);
+            opt_filament_settings->set_at(&filament_name_setting, filament_index - 1, 0);
+            config.erase("filament_settings_id");
+#ifdef ENGINE_ORCA
+            different_settings[filament_index] = "";   // O 3082-3083
+#else
+            if (config.option("different_settings_to_system")) {
+                const std::vector<std::string> fds = config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
+                different_settings[filament_index] = fds.empty() ? "" : fds[0];
+                config.erase("different_settings_to_system");
+            } else
+                different_settings[filament_index] = "";
+#endif
+            inherits_group[filament_index] = filaments.load_filaments_inherit[index];
+        } else if (!different_settings.empty()) {
+            unescape_strings_cstyle(different_settings[filament_index], different_keys);
+        }
+        {
+            auto* opt_filament_ids = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_ids", true));
+            ConfigOptionString filament_id_setting(filaments.load_filaments_id[index]);
+            if (int(opt_filament_ids->size()) < filament_count)
+                opt_filament_ids->resize(filament_count, &filament_id_setting);
+            opt_filament_ids->set_at(&filament_id_setting, filament_index - 1, 0);
+        }
+#ifdef ENGINE_SNAPMAKER
+        // No filament_extruder_variant option and no variant name at
+        // bac6fd5: one slot per filament, so there is no variant index to
+        // build and no variant stride for the bookkeeping below.
+        const int new_variant_count = 1;
+        const int old_variant_count = 1;
+#else
+        ConfigOptionStrings* curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant");
+        if (!curr_variant_opt) {
+            curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant", true);
+            curr_variant_opt->values.resize(filament_count, get_extruder_variant_string(etDirectDrive, nvtStandard));
+        }
+        const auto* new_variant_opt = dynamic_cast<const ConfigOptionStrings*>(config.option("filament_extruder_variant", true));
+        const int new_variant_count = int(new_variant_opt->size());
+        const int old_variant_count = old_variant_counts[filament_index - 1];
+        std::vector<int> new_variant_indice(new_variant_count, -1);
+        for (int i = 0; i < new_variant_count; i++)
+            for (int j = old_start_indice[filament_index - 1]; j < old_start_indice[filament_index - 1] + old_variant_count &&
+                                                               j < int(curr_variant_opt->values.size()); j++)
+                if (curr_variant_opt->values[j] == new_variant_opt->values[i]) {
+                    new_variant_indice[i] = j;
+                    break;
+                }
+#endif // ENGINE_SNAPMAKER
+        std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
+#ifdef ENGINE_SNAPMAKER
+        std::set<std::string> flow_variant_copy;   // merged by group below
+#endif
+        const size_t diff_keys_size = different_keys_set.size();
+        for (const t_config_option_key& opt_key : config.keys()) {
+            const ConfigOption* source_opt = config.option(opt_key);
+            if (source_opt == nullptr)
+                return fail(CLI_CONFIG_FILE_ERROR, "Filament " + std::to_string(filament_index) + " has no value for " + opt_key + ".");
+            if (filaments.load_filament_count == 0 && !different_keys_set.empty()) {
+                auto iter = different_keys_set.find(opt_key);
+                if (iter != different_keys_set.end()) {
+                    if (skip_modified_gcodes && gcodes_key_set.count(opt_key)) {
+                        different_keys_set.erase(iter);
+                    } else {
+#ifndef ENGINE_SNAPMAKER
+                        // ConfigOptionVectorBase::set_with_restore_2 is
+                        // OrcaSlicer 2.4 only, and this engine has no
+                        // variant tables, so this branch never runs; the
+                        // key is copied by the plain path below.
+                        if (filament_options_with_variant.count(opt_key)) {
+                            ConfigOption* opt = m_print_config.option(opt_key);
+                            if (opt == nullptr)
+                                return fail(CLI_CONFIG_FILE_ERROR, "The project has no value for " + opt_key + ".");
+                            auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
+                            auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
+#ifdef ENGINE_ORCA
+                            opt_vec_dst->set_with_restore_2(opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
+#else
+                            opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
+#endif
+                        }
+#endif // ENGINE_SNAPMAKER
+                        continue;
+                    }
+                }
+            }
+            if (source_opt->is_scalar()) {
+                if (opt_key == "compatible_printers_condition") {
+                    auto* dst = static_cast<ConfigOptionStrings*>(m_print_config.option("compatible_machine_expression_group", true));
+                    ConfigOptionString empty;
+                    if (dst->size() == 0)
+                        dst->resize(filament_count + 2, &empty);
+                    dst->set_at(source_opt, filament_index, 0);
+                } else if (opt_key == "compatible_prints_condition") {
+                    auto* dst = static_cast<ConfigOptionStrings*>(m_print_config.option("compatible_process_expression_group", true));
+                    ConfigOptionString empty;
+                    if (dst->size() == 0)
+                        dst->resize(filament_count, &empty);
+                    dst->set_at(source_opt, filament_index - 1, 0);
+                }
+                continue;
+            }
+            if (opt_key == "compatible_prints" || opt_key == "compatible_printers" || opt_key == "model_id" ||
+                opt_key == "dev_model_name" || opt_key == "filament_settings_id")
+                continue;
+            ConfigOption* opt = m_print_config.option(opt_key, true);
+            if (opt == nullptr)
+                return fail(CLI_CONFIG_FILE_ERROR, "Cannot take " + opt_key + " from filament " + std::to_string(filament_index) + ".");
+            auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
+            auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
+#ifndef ENGINE_SNAPMAKER
+            // No variant tables in this engine: every filament option is
+            // copied straight to the filament's own slot, as below.
+            if (filament_options_with_variant.count(opt_key)) {
+                std::vector<int> temp_variant_indice(new_variant_count, -1);
+#ifdef ENGINE_ORCA
+                opt_vec_dst->set_with_restore_2(opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
+#else
+                opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
+#endif
+                if (opt_key == "filament_extruder_variant")
+                    new_variant_counts[filament_index - 1] = int(opt_vec_src->size());
+            } else
+#endif // ENGINE_SNAPMAKER
+#ifdef ENGINE_SNAPMAKER
+            if (is_filament_flow_variant_option(opt_key) || opt_key == "filament_flow_support")
+                flow_variant_copy.insert(opt_key);
+            else
+#endif
+                opt_vec_dst->set_at(opt_vec_src, filament_index - 1, 0);
+        }
+#ifdef ENGINE_SNAPMAKER
+        merge_flow_variant_group(m_print_config, config, size_t(filament_index - 1), size_t(filament_count),
+                                 flow_variant_copy);
+#endif
+        if (old_variant_count != new_variant_count)
+            for (int i = int(index) + 1; i < filament_count; i++)
+                old_start_indice[i] += new_variant_count - old_variant_count;
+        if (diff_keys_size != different_keys_set.size())
+            different_settings[filament_index] =
+                escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
+    }
+    return {};
+}
+
+static StepResult merge_filament_preset_values(LoadedFilamentSettings& filaments,
+        DynamicPrintConfig& m_print_config, bool up_config_to_date, bool skip_modified_gcodes,
+        int& filament_count, std::vector<std::string>& different_settings,
+        std::vector<std::string>& inherits_group) {
     // The filaments into the print settings (B 3524-3757; O 3041-3264).
-    if (load_filament_count > 0 || up_config_to_date) {
+    if (filaments.load_filament_count > 0 || up_config_to_date) {
         std::vector<int> old_start_indice(filament_count, 0);
         std::vector<int> old_variant_counts(filament_count, 1), new_variant_counts;
 #ifdef ENGINE_SNAPMAKER
@@ -1648,158 +1851,10 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 old_variant_counts[k] = old_variant_counts[k] + 1;
         }
         new_variant_counts = old_variant_counts;
-        for (size_t index = 0; index < load_filaments_config.size(); index++) {
-            DynamicPrintConfig& config = load_filaments_config[index];
-            const int filament_index = load_filaments_index[index];
-            if (filament_index < 1 || filament_index > filament_count)
-                continue;
-            std::vector<std::string> different_keys;
-            load_default_gcodes_to_config(config, Preset::TYPE_FILAMENT);
-            if (load_filament_count > 0) {
-                auto* opt_filament_settings = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_settings_id", true));
-                ConfigOptionString filament_name_setting(load_filaments_name[index]);
-                if (int(opt_filament_settings->size()) < filament_count)
-                    opt_filament_settings->resize(filament_count, &filament_name_setting);
-                opt_filament_settings->set_at(&filament_name_setting, filament_index - 1, 0);
-                config.erase("filament_settings_id");
-#ifdef ENGINE_ORCA
-                different_settings[filament_index] = "";   // O 3082-3083
-#else
-                if (config.option("different_settings_to_system")) {
-                    const std::vector<std::string> fds = config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
-                    different_settings[filament_index] = fds.empty() ? "" : fds[0];
-                    config.erase("different_settings_to_system");
-                } else
-                    different_settings[filament_index] = "";
-#endif
-                inherits_group[filament_index] = load_filaments_inherit[index];
-            } else if (!different_settings.empty()) {
-                unescape_strings_cstyle(different_settings[filament_index], different_keys);
-            }
-            {
-                auto* opt_filament_ids = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_ids", true));
-                ConfigOptionString filament_id_setting(load_filaments_id[index]);
-                if (int(opt_filament_ids->size()) < filament_count)
-                    opt_filament_ids->resize(filament_count, &filament_id_setting);
-                opt_filament_ids->set_at(&filament_id_setting, filament_index - 1, 0);
-            }
-#ifdef ENGINE_SNAPMAKER
-            // No filament_extruder_variant option and no variant name at
-            // bac6fd5: one slot per filament, so there is no variant index to
-            // build and no variant stride for the bookkeeping below.
-            const int new_variant_count = 1;
-            const int old_variant_count = 1;
-#else
-            ConfigOptionStrings* curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant");
-            if (!curr_variant_opt) {
-                curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant", true);
-                curr_variant_opt->values.resize(filament_count, get_extruder_variant_string(etDirectDrive, nvtStandard));
-            }
-            const auto* new_variant_opt = dynamic_cast<const ConfigOptionStrings*>(config.option("filament_extruder_variant", true));
-            const int new_variant_count = int(new_variant_opt->size());
-            const int old_variant_count = old_variant_counts[filament_index - 1];
-            std::vector<int> new_variant_indice(new_variant_count, -1);
-            for (int i = 0; i < new_variant_count; i++)
-                for (int j = old_start_indice[filament_index - 1]; j < old_start_indice[filament_index - 1] + old_variant_count &&
-                                                                   j < int(curr_variant_opt->values.size()); j++)
-                    if (curr_variant_opt->values[j] == new_variant_opt->values[i]) {
-                        new_variant_indice[i] = j;
-                        break;
-                    }
-#endif // ENGINE_SNAPMAKER
-            std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
-#ifdef ENGINE_SNAPMAKER
-            std::set<std::string> flow_variant_copy;   // merged by group below
-#endif
-            const size_t diff_keys_size = different_keys_set.size();
-            for (const t_config_option_key& opt_key : config.keys()) {
-                const ConfigOption* source_opt = config.option(opt_key);
-                if (source_opt == nullptr)
-                    return fail(CLI_CONFIG_FILE_ERROR, "Filament " + std::to_string(filament_index) + " has no value for " + opt_key + ".");
-                if (load_filament_count == 0 && !different_keys_set.empty()) {
-                    auto iter = different_keys_set.find(opt_key);
-                    if (iter != different_keys_set.end()) {
-                        if (skip_modified_gcodes && gcodes_key_set.count(opt_key)) {
-                            different_keys_set.erase(iter);
-                        } else {
-#ifndef ENGINE_SNAPMAKER
-                            // ConfigOptionVectorBase::set_with_restore_2 is
-                            // OrcaSlicer 2.4 only, and this engine has no
-                            // variant tables, so this branch never runs; the
-                            // key is copied by the plain path below.
-                            if (filament_options_with_variant.count(opt_key)) {
-                                ConfigOption* opt = m_print_config.option(opt_key);
-                                if (opt == nullptr)
-                                    return fail(CLI_CONFIG_FILE_ERROR, "The project has no value for " + opt_key + ".");
-                                auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
-                                auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
-#ifdef ENGINE_ORCA
-                                opt_vec_dst->set_with_restore_2(opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
-#else
-                                opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
-#endif
-                            }
-#endif // ENGINE_SNAPMAKER
-                            continue;
-                        }
-                    }
-                }
-                if (source_opt->is_scalar()) {
-                    if (opt_key == "compatible_printers_condition") {
-                        auto* dst = static_cast<ConfigOptionStrings*>(m_print_config.option("compatible_machine_expression_group", true));
-                        ConfigOptionString empty;
-                        if (dst->size() == 0)
-                            dst->resize(filament_count + 2, &empty);
-                        dst->set_at(source_opt, filament_index, 0);
-                    } else if (opt_key == "compatible_prints_condition") {
-                        auto* dst = static_cast<ConfigOptionStrings*>(m_print_config.option("compatible_process_expression_group", true));
-                        ConfigOptionString empty;
-                        if (dst->size() == 0)
-                            dst->resize(filament_count, &empty);
-                        dst->set_at(source_opt, filament_index - 1, 0);
-                    }
-                    continue;
-                }
-                if (opt_key == "compatible_prints" || opt_key == "compatible_printers" || opt_key == "model_id" ||
-                    opt_key == "dev_model_name" || opt_key == "filament_settings_id")
-                    continue;
-                ConfigOption* opt = m_print_config.option(opt_key, true);
-                if (opt == nullptr)
-                    return fail(CLI_CONFIG_FILE_ERROR, "Cannot take " + opt_key + " from filament " + std::to_string(filament_index) + ".");
-                auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
-                auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
-#ifndef ENGINE_SNAPMAKER
-                // No variant tables in this engine: every filament option is
-                // copied straight to the filament's own slot, as below.
-                if (filament_options_with_variant.count(opt_key)) {
-                    std::vector<int> temp_variant_indice(new_variant_count, -1);
-#ifdef ENGINE_ORCA
-                    opt_vec_dst->set_with_restore_2(opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
-#else
-                    opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
-#endif
-                    if (opt_key == "filament_extruder_variant")
-                        new_variant_counts[filament_index - 1] = int(opt_vec_src->size());
-                } else
-#endif // ENGINE_SNAPMAKER
-#ifdef ENGINE_SNAPMAKER
-                if (is_filament_flow_variant_option(opt_key) || opt_key == "filament_flow_support")
-                    flow_variant_copy.insert(opt_key);
-                else
-#endif
-                    opt_vec_dst->set_at(opt_vec_src, filament_index - 1, 0);
-            }
-#ifdef ENGINE_SNAPMAKER
-            merge_flow_variant_group(m_print_config, config, size_t(filament_index - 1), size_t(filament_count),
-                                     flow_variant_copy);
-#endif
-            if (old_variant_count != new_variant_count)
-                for (int i = int(index) + 1; i < filament_count; i++)
-                    old_start_indice[i] += new_variant_count - old_variant_count;
-            if (diff_keys_size != different_keys_set.size())
-                different_settings[filament_index] =
-                    escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
-        }
+        if (auto step = merge_filament_slot_values(filaments, m_print_config,
+                skip_modified_gcodes, filament_count, different_settings, inherits_group,
+                old_variant_counts, old_start_indice, new_variant_counts); step.code)
+            return step;
 #ifndef ENGINE_SNAPMAKER
         // filament_extruder_variant / filament_self_index are OrcaSlicer 2.4
         // only; without variant tables each filament is its own slot.
@@ -1814,7 +1869,134 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         }
 #endif // ENGINE_SNAPMAKER
     }
+    return {};
+}
 
+static StepResult calculate_filament_flush_matrix(const MergedExtruders& merged_extruders,
+        DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
+        const std::vector<std::string>& project_colors, size_t project_filament_count) {
+    ConfigOptionBools* filament_is_support = m_print_config.option<ConfigOptionBools>("filament_is_support", true);
+    const std::vector<int> min_flush_volumes = get_min_flush_volumes(m_print_config, 0, project_filament_count);
+    if (filament_is_support->size() != project_filament_count)
+        return fail(CLI_CONFIG_FILE_ERROR, "filament_is_support has " + std::to_string(filament_is_support->size()) +
+                                           " values for " + std::to_string(project_filament_count) + " filament colours.");
+    std::vector<double>& flush_vol_matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix", true)->values;
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker's CLI computes one filament-by-filament matrix with a
+    // single flush_multiplier of 1 (a scalar there), and no per-nozzle
+    // flush dataset, which the engine does not define
+    // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:2839-2896 at bac6fd5).
+    flush_vol_matrix.resize(project_filament_count * project_filament_count, 0.f);
+    m_print_config.option<ConfigOptionFloat>("flush_multiplier", true)->value = 1.f;
+    for (size_t from_idx = 0; from_idx < project_filament_count; from_idx++) {
+        unsigned char from_rgb[4] = {};
+        parse_color4(project_colors[from_idx], from_rgb);
+        const bool is_from_support = filament_is_support->get_at(from_idx);
+        for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
+            const bool is_to_support = filament_is_support->get_at(to_idx);
+            if (from_idx == to_idx) {
+                flush_vol_matrix[project_filament_count * from_idx + to_idx] = 0.f;
+                continue;
+            }
+            int flushing_volume = 0;
+            if (is_to_support) {
+                flushing_volume = g_flush_volume_to_support;
+            } else {
+                unsigned char to_rgb[4] = {};
+                parse_color4(project_colors[to_idx], to_rgb);
+                FlushVolCalculator calculator(min_flush_volumes[from_idx], g_max_flush_volume);
+                flushing_volume = calculator.calc_flush_vol(from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
+                if (is_from_support)
+                    flushing_volume = std::max(g_min_flush_volume_from_support, flushing_volume);
+            }
+            flush_vol_matrix[project_filament_count * from_idx + to_idx] = flushing_volume;
+        }
+    }
+    (void)merged_extruders.new_extruder_count;
+#else
+    flush_vol_matrix.resize(project_filament_count * project_filament_count * merged_extruders.new_extruder_count, 0.f);
+#ifndef ENGINE_ORCA
+    const std::vector<std::string>& flush_filament_ids = m_print_config.option<ConfigOptionStrings>("filament_ids", true)->values;
+    auto get_flush_filament_id = [&flush_filament_ids](int idx) -> std::string {
+        return (idx >= 0 && idx < (int)flush_filament_ids.size()) ? flush_filament_ids[idx] : std::string();
+    };
+#endif
+    m_print_config.option<ConfigOptionFloats>("flush_multiplier", true)->values.resize(merged_extruders.new_extruder_count, 1.f);
+#ifndef ENGINE_ORCA
+    m_print_config.option<ConfigOptionFloats>("flush_multiplier_fast", true)->values.resize(merged_extruders.new_extruder_count, 1.2f);
+#endif
+    std::vector<int> nozzle_flush_dataset(merged_extruders.new_extruder_count, 0);
+    {
+        std::vector<int> nozzle_flush_dataset_full = m_print_config.option<ConfigOptionIntsNullable>("nozzle_flush_dataset", true)->values;
+        if (m_print_config.has("printer_extruder_variant"))
+            nozzle_flush_dataset_full.resize(merged_extruders.new_printer_variant_count, 0);
+        else
+            nozzle_flush_dataset_full.resize(1, 0);
+        std::vector<int> extruders;
+        if (m_print_config.has("extruder_type"))
+            extruders = m_print_config.option<ConfigOptionEnumsGeneric>("extruder_type")->values;
+        else
+            extruders.resize(1, int(ExtruderType::etDirectDrive));
+        std::vector<int> volume_types;
+        if (m_print_config.has("nozzle_volume_type"))
+            volume_types = m_print_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type")->values;
+        else
+            volume_types.resize(1, int(NozzleVolumeType::nvtStandard));
+        if (m_extra_config.has("nozzle_volume_type"))
+            volume_types = m_extra_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type")->values;
+        extruders.resize(std::max<size_t>(extruders.size(), size_t(merged_extruders.new_extruder_count)), extruders.empty() ? 0 : extruders.back());
+        volume_types.resize(std::max<size_t>(volume_types.size(), size_t(merged_extruders.new_extruder_count)), volume_types.empty() ? 0 : volume_types.back());
+        for (int eidx = 0; eidx < merged_extruders.new_extruder_count; ++eidx) {
+            int idx = 0;
+            if (m_print_config.has("printer_extruder_id") && m_print_config.has("printer_extruder_variant"))
+                idx = m_print_config.get_index_for_extruder(eidx + 1, "printer_extruder_id", ExtruderType(extruders[eidx]),
+                                                             NozzleVolumeType(volume_types[eidx]), "printer_extruder_variant");
+            if (idx >= 0 && idx < int(nozzle_flush_dataset_full.size()))
+                nozzle_flush_dataset[eidx] = nozzle_flush_dataset_full[idx];
+        }
+    }
+    for (size_t nozzle_id = 0; nozzle_id < size_t(merged_extruders.new_extruder_count); ++nozzle_id) {
+        std::vector<double> flush_vol_mtx = get_flush_volumes_matrix(flush_vol_matrix, nozzle_id, merged_extruders.new_extruder_count);
+        for (size_t from_idx = 0; from_idx < project_filament_count; from_idx++) {
+            unsigned char from_rgb[4] = {};
+            parse_color4(project_colors[from_idx], from_rgb);
+            const bool is_from_support = filament_is_support->get_at(from_idx);
+            for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
+                const bool is_to_support = filament_is_support->get_at(to_idx);
+                if (from_idx == to_idx) {
+                    flush_vol_mtx[project_filament_count * from_idx + to_idx] = 0.f;
+                    continue;
+                }
+                int flushing_volume = 0;
+                if (is_to_support) {
+                    flushing_volume = g_flush_volume_to_support;
+                } else {
+                    unsigned char to_rgb[4] = {};
+                    parse_color4(project_colors[to_idx], to_rgb);
+                    FlushVolCalculator calculator(min_flush_volumes[from_idx], g_max_flush_volume, nozzle_flush_dataset[nozzle_id]);
+#ifdef ENGINE_ORCA
+                    flushing_volume = calculator.calc_flush_vol(from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
+#else
+                    flushing_volume = calculator.calc_flush_vol(get_flush_filament_id(int(from_idx)), get_flush_filament_id(int(to_idx)),
+                                                                from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
+#endif
+                    if (is_from_support)
+                        flushing_volume = std::max(g_min_flush_volume_from_support, flushing_volume);
+                }
+                flush_vol_mtx[project_filament_count * from_idx + to_idx] = flushing_volume;
+            }
+        }
+        set_flush_volumes_matrix(flush_vol_matrix, flush_vol_mtx, nozzle_id, merged_extruders.new_extruder_count);
+    }
+#endif // ENGINE_SNAPMAKER
+    return {};
+}
+
+static StepResult merge_filament_colours_and_flush_volumes(LoadedSettingsPresets& presets,
+        LoadedFilamentSettings& filaments, const MergedExtruders& merged_extruders,
+        const ProjectFacts& facts, DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
+        SettingsMerge& out, int& filament_count, std::vector<NozzleVolumeType>& new_nozzle_volume_type,
+        std::vector<NozzleVolumeType>& current_nozzle_volume_type, bool& filament_color_changed) {
     // The flush volumes, when the colours, the nozzles or the matrix change
     // (B 3759-3941; O 3266-3420).
     ConfigOptionStrings* selected_colors_option = m_extra_config.option<ConfigOptionStrings>("filament_colour");
@@ -1837,7 +2019,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
         // Created empty, then sized (B 3765-3767; O 3272-3274).
         project_colors_option->values.assign(filament_count, "#FFFFFF");
     }
-    bool filament_color_changed = false;
+
 #ifdef ENGINE_SNAPMAKER
     // Switching to a Snapmaker U1 keeps the project's own flush matrix and
     // vector verbatim: the desktop saves them before the switch and puts them
@@ -1849,7 +2031,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     // describes; the fork's own CLI recomputes an N*N matrix from the project
     // (Snapmaker_Orca.cpp:2839-2845 at bac6fd5), which is what happens when the
     // count changed.
-    const bool switched_to_u1 = new_printer_name.find("Snapmaker U1") != std::string::npos;
+    const bool switched_to_u1 = presets.new_printer_name.find("Snapmaker U1") != std::string::npos;
     std::vector<double> kept_flush_matrix, kept_flush_vector;
     if (const auto* matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix"))
         kept_flush_matrix = matrix->values;
@@ -1874,18 +2056,18 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 #endif
     if (project_colors_option &&
         (selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix") ||
-         facts.current_extruder_count != new_extruder_count || new_nozzle_volume_type != current_nozzle_volume_type)) {
+         facts.current_extruder_count != merged_extruders.new_extruder_count || new_nozzle_volume_type != current_nozzle_volume_type)) {
         std::vector<std::string> selected_colors;
         if (selected_colors_option) {
             selected_colors = selected_colors_option->values;
             m_extra_config.erase("filament_colour");
-            if (disable_wipe_tower_after_mapping) {
+            if (filaments.disable_wipe_tower_after_mapping) {
                 std::set<std::string> color_set;
                 for (const std::string& c : selected_colors)
                     if (!c.empty())
                         color_set.emplace(c);
                 if (color_set.size() > 1)
-                    disable_wipe_tower_after_mapping = false;
+                    filaments.disable_wipe_tower_after_mapping = false;
             }
         }
         std::vector<std::string>& project_colors = project_colors_option->values;
@@ -1901,120 +2083,9 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                     project_colors[index] = selected_colors[index];
                 }
             }
-            ConfigOptionBools* filament_is_support = m_print_config.option<ConfigOptionBools>("filament_is_support", true);
-            const std::vector<int> min_flush_volumes = get_min_flush_volumes(m_print_config, 0, project_filament_count);
-            if (filament_is_support->size() != project_filament_count)
-                return fail(CLI_CONFIG_FILE_ERROR, "filament_is_support has " + std::to_string(filament_is_support->size()) +
-                                                   " values for " + std::to_string(project_filament_count) + " filament colours.");
-            std::vector<double>& flush_vol_matrix = m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix", true)->values;
-#ifdef ENGINE_SNAPMAKER
-            // Snapmaker's CLI computes one filament-by-filament matrix with a
-            // single flush_multiplier of 1 (a scalar there), and no per-nozzle
-            // flush dataset, which the engine does not define
-            // (references/SnapmakerOrca/src/Snapmaker_Orca.cpp:2839-2896 at bac6fd5).
-            flush_vol_matrix.resize(project_filament_count * project_filament_count, 0.f);
-            m_print_config.option<ConfigOptionFloat>("flush_multiplier", true)->value = 1.f;
-            for (size_t from_idx = 0; from_idx < project_filament_count; from_idx++) {
-                unsigned char from_rgb[4] = {};
-                parse_color4(project_colors[from_idx], from_rgb);
-                const bool is_from_support = filament_is_support->get_at(from_idx);
-                for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
-                    const bool is_to_support = filament_is_support->get_at(to_idx);
-                    if (from_idx == to_idx) {
-                        flush_vol_matrix[project_filament_count * from_idx + to_idx] = 0.f;
-                        continue;
-                    }
-                    int flushing_volume = 0;
-                    if (is_to_support) {
-                        flushing_volume = g_flush_volume_to_support;
-                    } else {
-                        unsigned char to_rgb[4] = {};
-                        parse_color4(project_colors[to_idx], to_rgb);
-                        FlushVolCalculator calculator(min_flush_volumes[from_idx], g_max_flush_volume);
-                        flushing_volume = calculator.calc_flush_vol(from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
-                        if (is_from_support)
-                            flushing_volume = std::max(g_min_flush_volume_from_support, flushing_volume);
-                    }
-                    flush_vol_matrix[project_filament_count * from_idx + to_idx] = flushing_volume;
-                }
-            }
-            (void)new_extruder_count;
-#else
-            flush_vol_matrix.resize(project_filament_count * project_filament_count * new_extruder_count, 0.f);
-#ifndef ENGINE_ORCA
-            const std::vector<std::string>& flush_filament_ids = m_print_config.option<ConfigOptionStrings>("filament_ids", true)->values;
-            auto get_flush_filament_id = [&flush_filament_ids](int idx) -> std::string {
-                return (idx >= 0 && idx < (int)flush_filament_ids.size()) ? flush_filament_ids[idx] : std::string();
-            };
-#endif
-            m_print_config.option<ConfigOptionFloats>("flush_multiplier", true)->values.resize(new_extruder_count, 1.f);
-#ifndef ENGINE_ORCA
-            m_print_config.option<ConfigOptionFloats>("flush_multiplier_fast", true)->values.resize(new_extruder_count, 1.2f);
-#endif
-            std::vector<int> nozzle_flush_dataset(new_extruder_count, 0);
-            {
-                std::vector<int> nozzle_flush_dataset_full = m_print_config.option<ConfigOptionIntsNullable>("nozzle_flush_dataset", true)->values;
-                if (m_print_config.has("printer_extruder_variant"))
-                    nozzle_flush_dataset_full.resize(new_printer_variant_count, 0);
-                else
-                    nozzle_flush_dataset_full.resize(1, 0);
-                std::vector<int> extruders;
-                if (m_print_config.has("extruder_type"))
-                    extruders = m_print_config.option<ConfigOptionEnumsGeneric>("extruder_type")->values;
-                else
-                    extruders.resize(1, int(ExtruderType::etDirectDrive));
-                std::vector<int> volume_types;
-                if (m_print_config.has("nozzle_volume_type"))
-                    volume_types = m_print_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type")->values;
-                else
-                    volume_types.resize(1, int(NozzleVolumeType::nvtStandard));
-                if (m_extra_config.has("nozzle_volume_type"))
-                    volume_types = m_extra_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type")->values;
-                extruders.resize(std::max<size_t>(extruders.size(), size_t(new_extruder_count)), extruders.empty() ? 0 : extruders.back());
-                volume_types.resize(std::max<size_t>(volume_types.size(), size_t(new_extruder_count)), volume_types.empty() ? 0 : volume_types.back());
-                for (int eidx = 0; eidx < new_extruder_count; ++eidx) {
-                    int idx = 0;
-                    if (m_print_config.has("printer_extruder_id") && m_print_config.has("printer_extruder_variant"))
-                        idx = m_print_config.get_index_for_extruder(eidx + 1, "printer_extruder_id", ExtruderType(extruders[eidx]),
-                                                                     NozzleVolumeType(volume_types[eidx]), "printer_extruder_variant");
-                    if (idx >= 0 && idx < int(nozzle_flush_dataset_full.size()))
-                        nozzle_flush_dataset[eidx] = nozzle_flush_dataset_full[idx];
-                }
-            }
-            for (size_t nozzle_id = 0; nozzle_id < size_t(new_extruder_count); ++nozzle_id) {
-                std::vector<double> flush_vol_mtx = get_flush_volumes_matrix(flush_vol_matrix, nozzle_id, new_extruder_count);
-                for (size_t from_idx = 0; from_idx < project_filament_count; from_idx++) {
-                    unsigned char from_rgb[4] = {};
-                    parse_color4(project_colors[from_idx], from_rgb);
-                    const bool is_from_support = filament_is_support->get_at(from_idx);
-                    for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
-                        const bool is_to_support = filament_is_support->get_at(to_idx);
-                        if (from_idx == to_idx) {
-                            flush_vol_mtx[project_filament_count * from_idx + to_idx] = 0.f;
-                            continue;
-                        }
-                        int flushing_volume = 0;
-                        if (is_to_support) {
-                            flushing_volume = g_flush_volume_to_support;
-                        } else {
-                            unsigned char to_rgb[4] = {};
-                            parse_color4(project_colors[to_idx], to_rgb);
-                            FlushVolCalculator calculator(min_flush_volumes[from_idx], g_max_flush_volume, nozzle_flush_dataset[nozzle_id]);
-#ifdef ENGINE_ORCA
-                            flushing_volume = calculator.calc_flush_vol(from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
-#else
-                            flushing_volume = calculator.calc_flush_vol(get_flush_filament_id(int(from_idx)), get_flush_filament_id(int(to_idx)),
-                                                                        from_rgb[3], from_rgb[0], from_rgb[1], from_rgb[2], to_rgb[3], to_rgb[0], to_rgb[1], to_rgb[2]);
-#endif
-                            if (is_from_support)
-                                flushing_volume = std::max(g_min_flush_volume_from_support, flushing_volume);
-                        }
-                        flush_vol_mtx[project_filament_count * from_idx + to_idx] = flushing_volume;
-                    }
-                }
-                set_flush_volumes_matrix(flush_vol_matrix, flush_vol_mtx, nozzle_id, new_extruder_count);
-            }
-#endif // ENGINE_SNAPMAKER
+            if (auto step = calculate_filament_flush_matrix(merged_extruders, m_print_config,
+                    m_extra_config, project_colors, project_filament_count); step.code)
+                return step;
         }
     }
 
@@ -2031,26 +2102,184 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
                 multiplier->value = kept_flush_multiplier;
     }
 #endif
+    return {};
+}
+
+static void report_merged_settings(const LoadedSettingsPresets& presets,
+        const LoadedFilamentSettings& filaments, const MergedExtruders& merged_extruders, SettingsMerge& out,
+        int& filament_count, bool& machine_switch, bool& machine_upwards, bool& filament_color_changed) {
     out.machine_switch                   = machine_switch;
     out.machine_upwards                  = machine_upwards;
-    out.disable_wipe_tower_after_mapping = disable_wipe_tower_after_mapping;
+    out.disable_wipe_tower_after_mapping = filaments.disable_wipe_tower_after_mapping;
     out.filament_color_changed           = filament_color_changed;
     out.filament_count                   = filament_count;
-    out.new_extruder_count               = new_extruder_count;
-    out.new_printer_variant_count        = new_printer_variant_count;
-    out.new_is_multi_extruder            = new_is_multi_extruder;
-    out.new_printer_name                 = new_printer_name;
-    out.new_printer_system_name          = new_printer_system_name;
-    out.new_process_name                 = new_process_name;
-    out.printer_model                    = printer_model;
-    out.printer_model_id                 = printer_model_id;
-    out.new_printer_extruder_variants    = new_printer_extruder_variants;
-    out.load_process_config              = load_process_config;
+    out.new_extruder_count               = merged_extruders.new_extruder_count;
+    out.new_printer_variant_count        = merged_extruders.new_printer_variant_count;
+    out.new_is_multi_extruder            = merged_extruders.new_is_multi_extruder;
+    out.new_printer_name                 = presets.new_printer_name;
+    out.new_printer_system_name          = presets.new_printer_system_name;
+    out.new_process_name                 = presets.new_process_name;
+    out.printer_model                    = presets.printer_model;
+    out.printer_model_id                 = presets.printer_model_id;
+    out.new_printer_extruder_variants    = merged_extruders.new_printer_extruder_variants;
+    out.load_process_config              = presets.load_process_config;
     emit({{"event", "config_normalized"}, {"tag", "SettingsFilesMerged"},
-          {"printer", new_printer_name}, {"process", new_process_name}, {"filaments", load_filaments_name},
+          {"printer", presets.new_printer_name}, {"process", presets.new_process_name}, {"filaments", filaments.load_filaments_name},
           {"machine_switch", machine_switch},
           {"message", "Merged the settings files into the project's settings" +
-                          std::string(machine_switch ? " (printer changed to " + new_printer_name + ")" : "")}});
+                          std::string(machine_switch ? " (printer changed to " + presets.new_printer_name + ")" : "")}});
+}
+
+StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_in, const std::string& profiles_dir,
+                                 DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
+                                 const std::vector<Preset*>& project_presets, SettingsMerge& out) {
+    ProjectFacts facts = facts_in;
+    const auto& cfg = o.cli;
+    const std::vector<std::string>& load_configs       = cfg.option<ConfigOptionStrings>("load_settings")->values;
+    const std::vector<std::string>& uptodate_configs   = cfg.option<ConfigOptionStrings>("uptodate_settings")->values;
+    const std::vector<std::string>& uptodate_filaments = cfg.option<ConfigOptionStrings>("uptodate_filaments")->values;
+    std::vector<std::string> load_filaments            = cfg.option<ConfigOptionStrings>("load_filaments")->values;
+    const bool up_config_to_date        = o.given_flag("uptodate") && cfg.opt_bool("uptodate");
+    bool use_first_fila_as_default      = o.given_flag("load_defaultfila") && cfg.opt_bool("load_defaultfila");
+    const bool skip_modified_gcodes     = o.given_flag("skip_modified_gcodes") && cfg.opt_bool("skip_modified_gcodes");
+#ifndef ENGINE_ORCA
+    const bool estimate_mode            = o.given_flag("estimate_mode") && cfg.opt_bool("estimate_mode");
+#else
+    const bool estimate_mode            = false;
+#endif
+    const bool is_bbl_3mf = facts.is_bbl_3mf;
+    std::string why;
+
+    LoadedSettingsPresets presets;
+    std::vector<std::string> upward_compatible_printers        = facts.upward_compatible_printers;
+    std::vector<std::string> current_print_compatible_printers = facts.current_print_compatible_printers;
+    int filament_count = facts.filament_count;
+
+    if (auto step = read_machine_and_process_files(presets, profiles_dir,
+            load_configs, is_bbl_3mf, why); step.code)
+        return step;
+
+    if (auto step = load_estimate_filaments(presets, facts, load_filaments,
+            estimate_mode, use_first_fila_as_default); step.code)
+        return step;
+
+    // --load-filaments (B 2446-2571; O 2024-2111).
+    LoadedFilamentSettings filaments{int(load_filaments.size())};
+    if (auto step = read_filament_settings_files(presets, filaments, o, facts,
+            profiles_dir, m_print_config, m_extra_config, load_filaments,
+            use_first_fila_as_default, why); step.code)
+        return step;
+
+    if (auto step = extend_filaments_for_obj_colours(filaments, m_extra_config, out); step.code)
+        return step;
+    if (filament_count == 0)
+        filament_count = filaments.load_filament_count;
+
+    if (is_bbl_3mf && filaments.load_filament_count > 0 && filaments.load_filaments_set.size() == 1 && !estimate_mode)
+        filaments.disable_wipe_tower_after_mapping = true;   // B 2630-2634; O 2252-2256
+
+    // --uptodate (B 2636-2870; O 2258-2420).
+    bool fetch_compatible_values = false, fetch_upward_values = false;
+    if (auto step = update_project_presets(presets, filaments, facts, profiles_dir,
+            uptodate_configs, uptodate_filaments, upward_compatible_printers,
+            current_print_compatible_printers, up_config_to_date, is_bbl_3mf, why,
+            filament_count, fetch_compatible_values, fetch_upward_values); step.code)
+        return step;
+    if (auto step = read_preset_compatibility(facts, profiles_dir,
+            upward_compatible_printers, current_print_compatible_printers, why,
+            fetch_compatible_values, fetch_upward_values); step.code)
+        return step;
+
+    // The process must suit the printer (B 2916-3010; O 2488-2584).
+    bool machine_upwards = false, machine_switch = false;
+    if (auto step = check_process_compatibility(presets, facts,
+            upward_compatible_printers, current_print_compatible_printers,
+            machine_switch, machine_upwards); step.code)
+        return step;
+    if (auto step = check_mixed_nozzle_diameters(filaments, facts, m_print_config,
+            m_extra_config, filament_count); step.code)
+        return step;
+    if (auto step = check_estimate_printer_switch(presets, facts, estimate_mode); step.code)
+        return step;
+    if (auto step = apply_project_printer_switch(presets, facts, m_print_config,
+            project_presets, out, upward_compatible_printers,
+            current_print_compatible_printers, is_bbl_3mf, machine_switch); step.code)
+        return step;
+
+    // The two lists carry one entry per preset in the project's order — process,
+    // filament 1 .. filament N, printer (B 3208-3210). The desktop collects them
+    // the same way and writes the key only when some entry is non-empty
+    // (PresetBundle.cpp 3490-3523, add_if_some_non_empty).
+    //
+    // filament_count is the count the merge works from: the project 3MF's own
+    // filaments, or the files --load-filaments brings (B 2627-2628). It stays 0
+    // when the roster comes from the named presets (--filament-preset) and no
+    // settings file names the filaments, which is this command line's whole
+    // preset path: the lists were then sized (0 + 2) and carried two empty
+    // entries. The official CLI reads them as N + 2 entries, sizes the filament
+    // system names to size - 2 (B 2001-2040) and then reads
+    // converted_filaments_system_name[f_index] for every filament (B 2043-2046):
+    // a two-entry list is an out-of-bounds read, SIGSEGV (rc 139) on every
+    // --slice N of the exported project. Size them from the roster the settings
+    // already carry instead, exactly as the file-fed path already did.
+    // The metadata lists hold one entry per filament the run ends with: the
+    // retained roster, or the loaded files when there are more of them.
+    const int inherits_count = std::max(retained_filament_count(facts, m_print_config, m_extra_config), filament_count);
+
+    std::vector<std::string>& different_settings = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
+    std::vector<std::string>& inherits_group     = m_print_config.option<ConfigOptionStrings>("inherits_group", true)->values;
+    inherits_group.resize(inherits_count + 2, std::string());
+    different_settings.resize(inherits_count + 2, std::string());
+    if (!is_bbl_3mf && !presets.different_process_setting.empty())
+        different_settings[0] = presets.different_process_setting;
+
+    std::vector<int> new_variant_index;
+    bool variant_count_changed = false;
+    if (auto step = merge_machine_preset_values(presets, facts, m_print_config,
+            up_config_to_date, skip_modified_gcodes, inherits_count,
+            different_settings, inherits_group, new_variant_index,
+            variant_count_changed); step.code)
+        return step;
+
+    MergedExtruders merged_extruders;
+    read_merged_extruder_count(merged_extruders, m_print_config);
+
+    // The process into the print settings (B 3340-3406; O 2881-2945).
+    int current_print_variant_count = facts.current_print_variant_count;
+    std::vector<std::string>& print_compatible_printers = m_print_config.option<ConfigOptionStrings>("print_compatible_printers", true)->values;
+    if (auto step = merge_process_preset_values(presets, m_print_config,
+            current_print_compatible_printers, up_config_to_date,
+            skip_modified_gcodes, different_settings, inherits_group,
+            new_variant_index, variant_count_changed, current_print_variant_count,
+            print_compatible_printers); step.code)
+        return step;
+
+    // Nozzle volume types of the new setup (B 3408-3458; O 2947-2972).
+    std::vector<NozzleVolumeType> new_nozzle_volume_type;
+    std::vector<NozzleVolumeType> current_nozzle_volume_type;
+    std::vector<std::string> new_extruder_variants;
+    read_nozzle_volume_types(merged_extruders, facts, m_print_config, m_extra_config, out, machine_switch,
+            new_nozzle_volume_type, new_extruder_variants, current_nozzle_volume_type);
+
+    if (auto step = switch_process_extruder_variants(presets, merged_extruders, facts,
+            profiles_dir, m_print_config, current_print_compatible_printers, why,
+            machine_switch, different_settings, current_print_variant_count,
+            print_compatible_printers, new_extruder_variants); step.code)
+        return step;
+
+    if (auto step = merge_filament_preset_values(filaments, m_print_config,
+            up_config_to_date, skip_modified_gcodes, filament_count,
+            different_settings, inherits_group); step.code)
+        return step;
+
+    bool filament_color_changed = false;
+    if (auto step = merge_filament_colours_and_flush_volumes(presets, filaments,
+            merged_extruders, facts, m_print_config, m_extra_config, out,
+            filament_count, new_nozzle_volume_type, current_nozzle_volume_type,
+            filament_color_changed); step.code)
+        return step;
+    report_merged_settings(presets, filaments, merged_extruders, out, filament_count, machine_switch,
+            machine_upwards, filament_color_changed);
     return StepResult();
 }
 
