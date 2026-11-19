@@ -897,6 +897,7 @@ add_executable(slicer_cli src/cli_result_json.cpp
     src/cli_plate_plan.cpp
     src/cli_file_info.cpp
     src/cli_slice_export.cpp
+    src/cli_plate_scope.cpp
     src/cli_slice_plate.cpp
     src/cli_slice_run.cpp
     src/cli_layout_command.cpp

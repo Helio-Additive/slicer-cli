@@ -1,6 +1,7 @@
 #include "cli_result_json.hpp"
 
 #include "cli_run_context.hpp"
+#include "cli_load_settings.hpp"
 #include "cli_assemble.hpp"
 #include "cli_command_line.hpp"
 #include "cli_model_load.hpp"
@@ -403,6 +404,29 @@ void emit_progress(const PlateOutcome& outcome, int plate_percent, const std::st
 /// (97 "Exporting 3mf", BambuStudio.cpp 8131; 100 "All done, Success", 8237).
 void emit_run_progress(const PlateOutcome& last, int total, const std::string& message) {
     emit_progress_event(last, total, 100, message);
+}
+
+/// The noted-value warning (InvalidValuesNoted) as the run announces it: the
+/// event and its line on stderr. --slice 0's check pass holds them until every
+/// plate has passed (RunState::noted_held), so the warning's "the run slices
+/// with them" is said only of a run that slices.
+void announce_noted_warning(const json& announcement) {
+    emit_event(announcement);
+    std::cerr << "Warning: " << announcement.value("message", std::string()) << "\n";
+}
+
+/// The settings check's warnings (InvalidValuesNoted) of the plate this
+/// result is for, once: any the outcome already holds (a carry from another
+/// plate's call) are replaced.
+void take_noted_warnings(PlateOutcome& outcome, const std::map<int, json>& noted, int plate_id) {
+    json& warnings = outcome.warnings;
+    warnings.erase(std::remove_if(warnings.begin(), warnings.end(),
+                                  [](const json& w) { return w.value("tag", "") == "InvalidValuesNoted"; }),
+                   warnings.end());
+    const int plate = outcome.plate_id > 0 ? outcome.plate_id : (plate_id > 0 ? plate_id : 1);
+    if (const auto it = noted.find(plate); it != noted.end())
+        for (const json& w : it->second)
+            warnings.push_back(w);
 }
 
 } // namespace slicer_cli

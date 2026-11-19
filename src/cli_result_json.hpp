@@ -121,4 +121,7 @@ bool write_result_json(CliRunContext& context, const std::string& outputdir, int
 void emit_progress(const PlateOutcome& outcome, int plate_percent, const std::string& message);
 void emit_run_progress(const PlateOutcome& last, int total, const std::string& message);
 
+void announce_noted_warning(const nlohmann::json& announcement);
+void take_noted_warnings(PlateOutcome& outcome, const std::map<int, nlohmann::json>& noted, int plate_id);
+
 } // namespace slicer_cli

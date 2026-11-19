@@ -2,6 +2,7 @@
 
 #include "cli_run_context.hpp"
 #include "cli_slice_state.hpp"
+#include "cli_plate_scope.hpp"
 #include "cli_options.hpp"
 #include "cli_assemble.hpp"
 #include "libslic3r/Print.hpp"
@@ -164,25 +165,6 @@ static bool load_plate_objects(CliRunContext& context, const std::string& input_
     return loaded;
 }
 
-/// The selected plate's own settings, as the official CLI lays them over the
-/// project's per plate (see the call site): the plate's PlateData::config
-/// without the filament-map keys (handled by the plate filament-map blocks
-/// of each build: mode always, map in a manual mode) and without keys this
-/// engine does not define. Empty
-/// without a named plate (plate_id 0 is a whole-file load, not one plate).
-static Slic3r::DynamicPrintConfig plate_own_settings(const Slic3r::PlateDataPtrs& plate_data, int plate_id) {
-    Slic3r::DynamicPrintConfig plate_config;
-    if (plate_id <= 0 || (int)plate_data.size() < plate_id || plate_data[plate_id - 1] == nullptr)
-        return plate_config;
-    plate_config = plate_data[plate_id - 1]->config;
-    for (const char* key : {"filament_map_mode", "filament_map", "filament_volume_map"})
-        plate_config.erase(key);
-    for (const std::string& key : plate_config.keys())
-        if (Slic3r::print_config_def.get(key) == nullptr)
-            plate_config.erase(key);
-    return plate_config;
-}
-
 /// Events held while it lives (diagnostics::held_events): dropped when the
 /// step they come from passes (drop()), sent when it stops early.
 class HeldEventsScope {
@@ -221,109 +203,6 @@ static void pipe_prepare_slicing(RunState& rs) {
     slicer_cli::pipe_update(3, "Prepare slicing");
 }
 
-/// One plate of the run's model in its own frame, for the steps the official
-/// CLI runs on one plate in the plate's coordinates (the move to a new bed,
-/// BambuStudio.cpp 4487-4533; the one-plate arrange, 5730-6176, with
-/// PartPlateList::preprocess_arrange_polygon taking the plate origin off and
-/// postprocess_arrange_polygon putting it back, PartPlate.cpp 5831-5871,
-/// 6107-6129; the bed check against the plate's shape, 6527): while the
-/// scope lives the model holds only this plate's instances, each moved by
-/// minus the plate's origin. On exit every instance goes back to the scene
-/// with the move the step made (an instance the step did not move keeps its
-/// exact offset), the other instances come back, and instances or objects
-/// the step added (--repetitions) are kept, on the plate. Instances are known
-/// by their ObjectID, which a copy of the model keeps (Model::assign_copy), so
-/// a step that puts back a saved copy of the model finds its instances again.
-/// Only a scope that holds the whole model may let its step replace the model's
-/// objects: nothing this model reaches through a scope may replace them (the
-/// repetitions search runs on a copy of the model for that reason,
-/// cli_repetitions.cpp).
-class PlateScope {
-public:
-    PlateScope(Slic3r::Model& model, const RunPlate& plate) : m_model(model), m_origin(plate.origin) {
-        m_whole = plate.all;
-        if (!m_whole) {
-            m_whole = true;
-            for (const Slic3r::ModelObject* object : model.objects)
-                for (const Slic3r::ModelInstance* inst : object->instances)
-                    m_whole = m_whole && plate.is_member(inst);
-        }
-        if (!m_whole) {
-            m_all_objects = model.objects;
-            std::vector<Slic3r::ModelObject*> kept;
-            for (Slic3r::ModelObject* object : model.objects) {
-                std::vector<Slic3r::ModelInstance*> mine;
-                for (Slic3r::ModelInstance* inst : object->instances)
-                    if (plate.is_member(inst))
-                        mine.push_back(inst);
-                if (mine.empty())
-                    continue;
-                m_instances[object] = object->instances;
-                object->instances = mine;
-                kept.push_back(object);
-            }
-            model.objects = kept;
-        }
-        for (Slic3r::ModelObject* object : model.objects)
-            for (Slic3r::ModelInstance* inst : object->instances) {
-                const Slic3r::Vec3d scene = inst->get_offset();
-                const Slic3r::Vec3d local = scene - Slic3r::Vec3d(m_origin.x(), m_origin.y(), 0.);
-                m_scene[inst->id().id] = scene;
-                m_local[inst->id().id] = local;
-                m_members.insert(inst);
-                if (m_origin.x() != 0. || m_origin.y() != 0.)
-                    inst->set_offset(local);
-            }
-    }
-    ~PlateScope() {
-        const Slic3r::Vec3d origin(m_origin.x(), m_origin.y(), 0.);
-        for (Slic3r::ModelObject* object : m_model.objects) {
-            for (Slic3r::ModelInstance* inst : object->instances) {
-                const auto it = m_scene.find(inst->id().id);
-                if (it == m_scene.end())
-                    inst->set_offset(inst->get_offset() + origin);   // added in the scope
-                else if (inst->get_offset() != m_local[it->first])
-                    inst->set_offset(it->second + (inst->get_offset() - m_local[it->first]));
-                else
-                    inst->set_offset(it->second);
-            }
-            object->invalidate_bounding_box();
-        }
-        if (m_whole)
-            return;
-        // The other plates' instances back in their places, the plate's own
-        // (and any the step added) where they were.
-        for (auto& [object, all] : m_instances) {
-            std::vector<Slic3r::ModelInstance*> now = object->instances;
-            std::vector<Slic3r::ModelInstance*> restored;
-            for (Slic3r::ModelInstance* inst : all)
-                if (!m_members.count(inst) || std::find(now.begin(), now.end(), inst) != now.end())
-                    restored.push_back(inst);
-            for (Slic3r::ModelInstance* inst : now)
-                if (std::find(all.begin(), all.end(), inst) == all.end())
-                    restored.push_back(inst);
-            object->instances = restored;
-        }
-        std::vector<Slic3r::ModelObject*> now = m_model.objects;
-        std::vector<Slic3r::ModelObject*> restored = m_all_objects;
-        for (Slic3r::ModelObject* object : now)
-            if (std::find(m_all_objects.begin(), m_all_objects.end(), object) == m_all_objects.end())
-                restored.push_back(object);
-        m_model.objects = restored;
-    }
-    PlateScope(const PlateScope&) = delete;
-    PlateScope& operator=(const PlateScope&) = delete;
-
-private:
-    Slic3r::Model& m_model;
-    Slic3r::Vec2d m_origin;
-    bool m_whole = true;
-    std::vector<Slic3r::ModelObject*> m_all_objects;
-    std::map<Slic3r::ModelObject*, std::vector<Slic3r::ModelInstance*>> m_instances;
-    std::set<const Slic3r::ModelInstance*> m_members;
-    std::map<size_t, Slic3r::Vec3d> m_scene, m_local;
-};
-
 /// --skip-objects on the placed objects (BambuStudio.cpp 6541-6581,
 /// CLI_NO_SUITABLE_OBJECTS_AFTER_SKIP when nothing is left; OrcaSlicer.cpp
 /// 5645-5720): inside the slice action, after the model actions. Its caller
@@ -353,42 +232,6 @@ static bool plate_triangle_limit(const CliOptions& o, const Slic3r::Model& model
     }
     return true;
 }
-
-/// The noted-value warning (InvalidValuesNoted) as the run announces it: the
-/// event and its line on stderr. --slice 0's check pass holds them until every
-/// plate has passed (RunState::noted_held), so the warning's "the run slices
-/// with them" is said only of a run that slices.
-void announce_noted_warning(const json& announcement) {
-    emit_event(announcement);
-    std::cerr << "Warning: " << announcement.value("message", std::string()) << "\n";
-}
-
-/// One slice of one plate from the run's one model and settings (RunState):
-/// the first call of a run loads the inputs and builds the settings base
-/// (`rs.loaded`) and runs the steps the official CLI runs once before its
-/// plate loop (`rs.prepared`: the transforms, the arrange, the actions before
-/// --slice); every call then lays the plate's own settings over a copy of the
-/// base and slices the plate with its origin, as the official plate loop does
-/// (BambuStudio.cpp 6437-7260; OrcaSlicer.cpp 5561-6200). The default call
-/// (`file [--plate N] -o out.gcode`) is one call; `--slice` makes a prepare
-/// call (outcome.prepare_pass, which stops before the plate checks) and then
-/// one call per plate. The return value is the process exit code of the
-/// default call; `outcome` carries what `--slice` mode reports on top.
-
-/// The settings check's warnings (InvalidValuesNoted) of the plate this
-/// result is for, once: any the outcome already holds (a carry from another
-/// plate's call) are replaced.
-static void take_noted_warnings(PlateOutcome& outcome, const std::map<int, json>& noted, int plate_id) {
-    json& warnings = outcome.warnings;
-    warnings.erase(std::remove_if(warnings.begin(), warnings.end(),
-                                  [](const json& w) { return w.value("tag", "") == "InvalidValuesNoted"; }),
-                   warnings.end());
-    const int plate = outcome.plate_id > 0 ? outcome.plate_id : (plate_id > 0 ? plate_id : 1);
-    if (const auto it = noted.find(plate); it != noted.end())
-        for (const json& w : it->second)
-            warnings.push_back(w);
-}
-
 
 #ifndef ENGINE_SNAPMAKER
 /// --filament-map-mode and --filament-map: the command line's mode and map win
@@ -487,6 +330,17 @@ static bool manual_map_extruders_fit(const Slic3r::DynamicPrintConfig& config, c
 }
 #endif
 
+/// One slice of one plate from the run's one model and settings (RunState):
+/// the first call of a run loads the inputs and builds the settings base
+/// (`rs.loaded`) and runs the steps the official CLI runs once before its
+/// plate loop (`rs.prepared`: the transforms, the arrange, the actions before
+/// --slice); every call then lays the plate's own settings over a copy of the
+/// base and slices the plate with its origin, as the official plate loop does
+/// (BambuStudio.cpp 6437-7260; OrcaSlicer.cpp 5561-6200). The default call
+/// (`file [--plate N] -o out.gcode`) is one call; `--slice` makes a prepare
+/// call (outcome.prepare_pass, which stops before the plate checks) and then
+/// one call per plate. The return value is the process exit code of the
+/// default call; `outcome` carries what `--slice` mode reports on top.
 int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_Params& calib_params, RunState& rs,
                            int plate_id, const std::string& output_file, PlateOutcome& outcome) {
     const std::string& input_file      = o.input_file;
