@@ -1,4 +1,5 @@
 #include "cli_slice_run.hpp"
+#include "diagnostic_output.hpp"
 
 #include "cli_run_context.hpp"
 #include "cli_slice_state.hpp"
@@ -8,7 +9,6 @@
 #include <iostream>
 #include <chrono>
 #include "cli_engine_events.hpp"
-#include "cli_events.hpp"
 #include "cli_model_load.hpp"
 #include "cli_pipe.hpp"
 #include "cli_plate_plan.hpp"

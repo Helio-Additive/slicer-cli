@@ -1,4 +1,5 @@
 #include "cli_named_presets.hpp"
+#include <boost/nowide/fstream.hpp>
 
 #include "cli_run_context.hpp"
 #include "cli_options.hpp"
@@ -10,11 +11,8 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include "cli_engine_events.hpp"
-#include "cli_events.hpp"
-#include "cli_percent_widths.hpp"
 #include "cli_preset_staging.hpp"
 #include "cli_printer_catalog.hpp"
-#include "cli_result_json.hpp"
 #include "cli_snapmaker.hpp"
 #include "desktop_presets.hpp"
 

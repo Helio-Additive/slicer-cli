@@ -2,8 +2,6 @@
 
 #include "cli_run_context.hpp"
 #include "cli_result_json.hpp"
-#include "cli_options.hpp"
-#include "cli_assemble.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/ModelArrange.hpp"
@@ -14,7 +12,6 @@
 #include "cli_engine_events.hpp"
 #include "cli_filament_map.hpp"
 #include "cli_load_settings.hpp"
-#include "cli_percent_widths.hpp"
 #include "cli_snapmaker.hpp"
 
 namespace slicer_cli {

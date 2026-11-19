@@ -12,17 +12,13 @@
 #include <boost/algorithm/string.hpp>
 #include <iostream>
 #include "cli_engine_events.hpp"
-#include "cli_events.hpp"
 #include "cli_legacy_gcode.hpp"
 #include "cli_model_load.hpp"
 #include "cli_named_presets.hpp"
-#include "cli_percent_widths.hpp"
 #include "cli_preset_staging.hpp"
 #include "cli_project_archive.hpp"
 #include "cli_run_cleanup.hpp"
 #include "cli_run_steps.hpp"
-#include "cli_snapmaker.hpp"
-#include "cli_staging_folders.hpp"
 #include "desktop_presets.hpp"
 
 namespace slicer_cli {

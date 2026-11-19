@@ -12,7 +12,8 @@
 #include <vector>
 
 #include "libslic3r/BoundingBox.hpp"
-#include "libslic3r/PrintConfig.hpp"
+
+namespace Slic3r { class DynamicPrintConfig; }
 
 namespace slicer_cli {
 

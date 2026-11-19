@@ -1,4 +1,5 @@
 #include "cli_plate_report.hpp"
+#include "cli_load_settings.hpp"
 
 #include "cli_run_context.hpp"
 #include "cli_result_json.hpp"
@@ -12,7 +13,6 @@
 #include <set>
 #include "cli_plate_arrange.hpp"
 #include "cli_plate_arrange.hpp"
-#include "cli_snapmaker.hpp"
 
 namespace slicer_cli {
 

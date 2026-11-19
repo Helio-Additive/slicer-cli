@@ -6,6 +6,8 @@
 #include <set>
 #include <vector>
 
+namespace Slic3r { class ModelInstance; }
+
 namespace slicer_cli {
 
 struct RunPlate;

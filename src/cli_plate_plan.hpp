@@ -4,6 +4,7 @@
 #include "libslic3r/BoundingBox.hpp"
 
 struct CliOptions;
+namespace Slic3r { class ModelInstance; class Model; class Semver; }
 
 namespace slicer_cli {
 

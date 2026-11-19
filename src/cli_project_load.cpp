@@ -1,4 +1,5 @@
 #include "cli_project_load.hpp"
+#include "libslic3r/PrintConfig.hpp"
 
 #include <algorithm>
 

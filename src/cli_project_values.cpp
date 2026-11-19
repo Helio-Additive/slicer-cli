@@ -4,8 +4,6 @@
 #include "libslic3r/Preset.hpp"
 #include <iostream>
 #include "cli_engine_events.hpp"
-#include "cli_options.hpp"
-#include "cli_snapmaker.hpp"
 
 namespace slicer_cli {
 

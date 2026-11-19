@@ -1,4 +1,5 @@
 #include "cli_setting_overrides.hpp"
+#include "libslic3r/PrintConfig.hpp"
 
 #include "cli_engine_events.hpp"
 #include <iostream>

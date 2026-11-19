@@ -9,11 +9,9 @@
 #include "cli_arrange_geometry.hpp"
 #include "cli_engine_events.hpp"
 #include "cli_model_load.hpp"
-#include "cli_percent_widths.hpp"
 #include "cli_plate_arrange.hpp"
 #include "cli_result_json.hpp"
 #include "cli_run_steps.hpp"
-#include "cli_snapmaker.hpp"
 
 namespace slicer_cli {
 
