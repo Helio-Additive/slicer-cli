@@ -127,7 +127,7 @@ bool PreparedPlate::outputs_ok(bool after_slice_actions_only) {
 }
 
 static void set_plate_printer_vendor(LoadedProject& loaded_project, const SettingsMerge& settings_merge, int plate_id,
-            const Slic3r::DynamicPrintConfig& config, Slic3r::Print& print) {
+            Slic3r::DynamicPrintConfig& config, Slic3r::Print& print) {
     auto& model = loaded_project.model;
 
 
