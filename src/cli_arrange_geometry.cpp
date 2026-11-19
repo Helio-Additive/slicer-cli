@@ -118,19 +118,9 @@ void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
     }
 }
 
-/// The filaments this plate's objects use, as PartPlate::get_extruders_under_cli
-/// (true, config) lists them (Bambu PartPlate.cpp 1275-1428; Orca PartPlate.cpp
-/// 1625-1739): each printable instance's volumes, its layer ranges, its support
-/// filaments when it has support, the plate's tool-change G-codes, sorted and
-/// unique. The model holds only this plate's objects (load_bbs_3mf with the
-/// plate id), so every instance is the plate's. Bambu (v02.09.01.70): the
-/// global wall / sparse-infill / solid-infill filaments count for every
-/// volume (GlobalFeatureFilaments::from_full_config, Model.cpp 3409-3413;
-/// PartPlate.cpp 1321, 1336) and a layer range may name them too (1343).
-std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
-                                                const Slic3r::DynamicPrintConfig& full_config, int plate_index) {
+static void collect_object_extruders(const Slic3r::Model& model,
+        const Slic3r::DynamicPrintConfig& full_config, std::vector<int>& plate_extruders) {
     using namespace Slic3r;
-    std::vector<int> plate_extruders;
     const int glb_support_intf_extr = arrange_opt(full_config, "support_interface_filament")->getInt();
     const int glb_support_extr      = arrange_opt(full_config, "support_filament")->getInt();
 #ifndef ENGINE_ORCA
@@ -306,7 +296,11 @@ std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
 #endif
         }
     }
+}
 
+static void collect_plate_tool_changes(const Slic3r::Model& model,
+        const Slic3r::DynamicPrintConfig& full_config, int plate_index, std::vector<int>& plate_extruders) {
+    using namespace Slic3r;
     // conside_custom_gcode: the plate's tool changes.
 #ifndef ENGINE_SNAPMAKER
     // Snapmaker's CLI passes conside_custom_gcode = false and only logs that it
@@ -323,6 +317,24 @@ std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
         }
     }
 #endif
+}
+
+/// The filaments this plate's objects use, as PartPlate::get_extruders_under_cli
+/// (true, config) lists them (Bambu PartPlate.cpp 1275-1428; Orca PartPlate.cpp
+/// 1625-1739): each printable instance's volumes, its layer ranges, its support
+/// filaments when it has support, the plate's tool-change G-codes, sorted and
+/// unique. The model holds only this plate's objects (load_bbs_3mf with the
+/// plate id), so every instance is the plate's. Bambu (v02.09.01.70): the
+/// global wall / sparse-infill / solid-infill filaments count for every
+/// volume (GlobalFeatureFilaments::from_full_config, Model.cpp 3409-3413;
+/// PartPlate.cpp 1321, 1336) and a layer range may name them too (1343).
+std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
+                                                const Slic3r::DynamicPrintConfig& full_config, int plate_index) {
+    using namespace Slic3r;
+    std::vector<int> plate_extruders;
+    collect_object_extruders(model, full_config, plate_extruders);
+
+    collect_plate_tool_changes(model, full_config, plate_index, plate_extruders);
 
     std::sort(plate_extruders.begin(), plate_extruders.end());
     auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());

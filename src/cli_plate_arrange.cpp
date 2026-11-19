@@ -424,99 +424,13 @@ Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& config,
     return plate_bbox;
 }
 
-/// --arrange 1: place this plate's objects on the bed the way the official CLI
-/// arranges one plate (`--arrange 1` with a plate to slice; BambuStudio.cpp
-/// 5730-5952 at 5873b5f, OrcaSlicer.cpp 4990-5210 at 31f6803):
-///   - each printable instance is an item from get_instance_arrange_poly
-///     (libslic3r/ModelArrange.cpp 119, both engines), which carries its
-///     height, temperatures, name and a brim width from its support settings;
-///     unprintable instances are arranged on their own;
-///   - the prime tower, when the plate needs one, is a fixed item where the
-///     plate's wipe_tower_x/y put it, clamped inside the bed, and the clamped
-///     position is written back to the plate's wipe_tower_x/y entry;
-///   - the bed exclusion boxes (and the wrapping-detection area when it is on)
-///     are fixed items and excluded regions;
-///   - the arrange settings are the official ones (min_obj_distance 0 so the
-///     items' own inflation applies, print-by-object, I3 alignment, the
-///     printer's clearances), then update_arrange_params,
-///     update_selected_items_inflation, update_unselected_items_inflation,
-///     (Orca) update_selected_items_axis_align and get_shrink_bedpts.
-/// An object larger than the bed is refused first, with the official -50
-/// sentence plus its size against the bed; objects that do not all land on
-/// the bed are refused with the official arrange sentence (-21,
-/// BambuStudio.cpp 5938-5944; OrcaSlicer.cpp 5198-5204).
-/// `landed_out`, for --repetitions: how many printable items landed on the
-/// plate; the arrange is applied even when some did not, and those are
-/// left off the plate (not printed), as the official copies loop does.
-bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
-                           int plate_index, size_t sliced_filament_count, PlateOutcome& outcome,
-                           int* landed_out) {
+static void place_arrange_wipe_tower(CliRunContext& context, Slic3r::Model& model,
+        Slic3r::DynamicPrintConfig& config, int plate_index, Slic3r::arrangement::ArrangePolygons& selected,
+        Slic3r::arrangement::ArrangePolygons& unselected, Slic3r::arrangement::ArrangeParams& params,
+        size_t sliced_filament_count, const Slic3r::BoundingBoxf& bed, double bed_height,
+        const Slic3r::ConfigOptionPoints* area) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
-    const auto* area = config.option<ConfigOptionPoints>("printable_area");
-    if (!area || area->values.size() < 3) {
-        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, "The printer states no bed shape (printable_area).");
-        return false;
-    }
-    BoundingBoxf bed;
-    for (const Vec2d& pt : area->values) bed.merge(pt);
-    const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
-    // Each instance on its own: the arrange places every instance as its own
-    // item, so copies that start far apart are not one object wider than the bed.
-    // A part counts as larger than the bed only when it fits in neither
-    // orientation. Whether one that fits only turned 90 degrees is turned is
-    // the arrange's call, and the engines differ: Bambu's arrange offers a
-    // too-big item its minimum-area rotation even with rotations off
-    // (Arrange.cpp 937-941 at 5873b5f), Orca's only with rotations on
-    // (Arrange.cpp 995-1004 at 31f6803), and both turn a long part onto Y on
-    // I3 printers. When the arrange leaves it off the bed, -21 below says why.
-    for (ModelObject* object : model.objects) {
-        object->ensure_on_bed();
-        for (size_t i = 0; i < object->instances.size(); ++i) {
-            const BoundingBoxf3 box = object->instance_bounding_box(i);
-            const Vec3d size = box.size();
-            const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
-            const bool fits_turned = size.y() <= bed.size().x() + EPSILON && size.x() <= bed.size().y() + EPSILON;
-            const bool too_wide = !fits_as_is && !fits_turned;
-            const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
-            if (too_wide || too_tall) {
-                const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
-                                           "; the bed is " + bed_size_text(config) +
-                                           ". Scale the object down, split it across plates, or use a bigger printer.";
-                set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
-                emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
-                            {"object", object->name}, {"message", detail}});
-                return false;
-            }
-        }
-    }
-
-    // A fresh set of arrange settings (BambuStudio.cpp 5579; OrcaSlicer.cpp
-    // 4839), with the progress callback quiet: its default prints to stdout.
-    ArrangeParams params;
-    params.progressind = [](unsigned, std::string) {};
-    // Print by object, from the plate's own sequence or else the project's
-    // (get_print_sequence, BambuStudio.cpp 4403-4416, called at 5624;
-    // OrcaSlicer.cpp 4883). The caller has already laid the plate's own
-    // print_sequence (plate_N.json is_seq_print, the plate's settings) over
-    // the config.
-    if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
-        params.is_seq_print = seq->value == PrintSequence::ByObject;
-
-    // Step 1: the items (BambuStudio.cpp 5734-5767; OrcaSlicer.cpp 4994-5027).
-    ArrangePolygons selected, unselected, unprintable;
-    ModelInstancePtrs selected_instances, unprintable_instances;
-    for (ModelObject* mo : model.objects) {
-        for (ModelInstance* minst : mo->instances) {
-            ArrangePolygon ap = get_instance_arrange_poly(minst, config);
-            ArrangePolygons& cont = minst->printable ? selected : unprintable;
-            ModelInstancePtrs& owners = minst->printable ? selected_instances : unprintable_instances;
-            ap.itemid = cont.size();
-            cont.emplace_back(std::move(ap));
-            owners.emplace_back(minst);
-        }
-    }
-
     const BoundingBoxf3 plate_box(Vec3d(bed.min.x(), bed.min.y(), 0.), Vec3d(bed.max.x(), bed.max.y(), bed_height));
     const std::vector<BoundingBoxf> exclude_boxes = arrange_exclude_boxes(config);
     const auto* wrapping_opt = config.option<ConfigOptionBool>("enable_wrapping_detection");
@@ -632,10 +546,13 @@ bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::Dynami
             unselected.emplace_back(std::move(wipe_tower_ap));
         }
     }
+}
 
-    // The exclusion areas as fixed items (BambuStudio.cpp 5882; OrcaSlicer.cpp 5138).
-    arrange_add_exclude_areas(unselected, config, 0.);
-
+static void arrange_bed_polygons(CliRunContext& context, Slic3r::DynamicPrintConfig& config,
+        Slic3r::arrangement::ArrangePolygons& selected, Slic3r::arrangement::ArrangePolygons& unselected,
+        Slic3r::arrangement::ArrangePolygons& unprintable, Slic3r::arrangement::ArrangeParams& params) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
     // Step 2: the arrange settings (BambuStudio.cpp 5886-5909; OrcaSlicer.cpp
     // 5142-5166), with the official CLI's option values: allow_multicolor_oneplate
     // true and avoid_extrusion_cali_region false (their defaults, PrintConfig.cpp
@@ -692,6 +609,108 @@ bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::Dynami
     // Step 3 (BambuStudio.cpp 5925-5926; OrcaSlicer.cpp 5185-5186).
     arrangement::arrange(selected, unselected, beds, params);
     arrangement::arrange(unprintable, {}, beds, params);
+}
+
+/// --arrange 1: place this plate's objects on the bed the way the official CLI
+/// arranges one plate (`--arrange 1` with a plate to slice; BambuStudio.cpp
+/// 5730-5952 at 5873b5f, OrcaSlicer.cpp 4990-5210 at 31f6803):
+///   - each printable instance is an item from get_instance_arrange_poly
+///     (libslic3r/ModelArrange.cpp 119, both engines), which carries its
+///     height, temperatures, name and a brim width from its support settings;
+///     unprintable instances are arranged on their own;
+///   - the prime tower, when the plate needs one, is a fixed item where the
+///     plate's wipe_tower_x/y put it, clamped inside the bed, and the clamped
+///     position is written back to the plate's wipe_tower_x/y entry;
+///   - the bed exclusion boxes (and the wrapping-detection area when it is on)
+///     are fixed items and excluded regions;
+///   - the arrange settings are the official ones (min_obj_distance 0 so the
+///     items' own inflation applies, print-by-object, I3 alignment, the
+///     printer's clearances), then update_arrange_params,
+///     update_selected_items_inflation, update_unselected_items_inflation,
+///     (Orca) update_selected_items_axis_align and get_shrink_bedpts.
+/// An object larger than the bed is refused first, with the official -50
+/// sentence plus its size against the bed; objects that do not all land on
+/// the bed are refused with the official arrange sentence (-21,
+/// BambuStudio.cpp 5938-5944; OrcaSlicer.cpp 5198-5204).
+/// `landed_out`, for --repetitions: how many printable items landed on the
+/// plate; the arrange is applied even when some did not, and those are
+/// left off the plate (not printed), as the official copies loop does.
+bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+                           int plate_index, size_t sliced_filament_count, PlateOutcome& outcome,
+                           int* landed_out) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 3) {
+        set_outcome_failure(outcome, CLI_OBJECT_ARRANGE_FAILED, "The printer states no bed shape (printable_area).");
+        return false;
+    }
+    BoundingBoxf bed;
+    for (const Vec2d& pt : area->values) bed.merge(pt);
+    const double bed_height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    // Each instance on its own: the arrange places every instance as its own
+    // item, so copies that start far apart are not one object wider than the bed.
+    // A part counts as larger than the bed only when it fits in neither
+    // orientation. Whether one that fits only turned 90 degrees is turned is
+    // the arrange's call, and the engines differ: Bambu's arrange offers a
+    // too-big item its minimum-area rotation even with rotations off
+    // (Arrange.cpp 937-941 at 5873b5f), Orca's only with rotations on
+    // (Arrange.cpp 995-1004 at 31f6803), and both turn a long part onto Y on
+    // I3 printers. When the arrange leaves it off the bed, -21 below says why.
+    for (ModelObject* object : model.objects) {
+        object->ensure_on_bed();
+        for (size_t i = 0; i < object->instances.size(); ++i) {
+            const BoundingBoxf3 box = object->instance_bounding_box(i);
+            const Vec3d size = box.size();
+            const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
+            const bool fits_turned = size.y() <= bed.size().x() + EPSILON && size.x() <= bed.size().y() + EPSILON;
+            const bool too_wide = !fits_as_is && !fits_turned;
+            const bool too_tall = bed_height > 0. && size.z() > bed_height + EPSILON;
+            if (too_wide || too_tall) {
+                const std::string detail = "Object '" + object->name + "' is " + object_size_text(box) +
+                                           "; the bed is " + bed_size_text(config) +
+                                           ". Scale the object down, split it across plates, or use a bigger printer.";
+                set_outcome_failure(outcome, CLI_NO_SUITABLE_OBJECTS, detail);
+                emit_event({{"event","plate_error"}, {"tag","ObjectLargerThanBed"},
+                            {"object", object->name}, {"message", detail}});
+                return false;
+            }
+        }
+    }
+
+    // A fresh set of arrange settings (BambuStudio.cpp 5579; OrcaSlicer.cpp
+    // 4839), with the progress callback quiet: its default prints to stdout.
+    ArrangeParams params;
+    params.progressind = [](unsigned, std::string) {};
+    // Print by object, from the plate's own sequence or else the project's
+    // (get_print_sequence, BambuStudio.cpp 4403-4416, called at 5624;
+    // OrcaSlicer.cpp 4883). The caller has already laid the plate's own
+    // print_sequence (plate_N.json is_seq_print, the plate's settings) over
+    // the config.
+    if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
+        params.is_seq_print = seq->value == PrintSequence::ByObject;
+
+    // Step 1: the items (BambuStudio.cpp 5734-5767; OrcaSlicer.cpp 4994-5027).
+    ArrangePolygons selected, unselected, unprintable;
+    ModelInstancePtrs selected_instances, unprintable_instances;
+    for (ModelObject* mo : model.objects) {
+        for (ModelInstance* minst : mo->instances) {
+            ArrangePolygon ap = get_instance_arrange_poly(minst, config);
+            ArrangePolygons& cont = minst->printable ? selected : unprintable;
+            ModelInstancePtrs& owners = minst->printable ? selected_instances : unprintable_instances;
+            ap.itemid = cont.size();
+            cont.emplace_back(std::move(ap));
+            owners.emplace_back(minst);
+        }
+    }
+
+    place_arrange_wipe_tower(context, model, config, plate_index, selected, unselected, params,
+            sliced_filament_count, bed, bed_height, area);
+
+    // The exclusion areas as fixed items (BambuStudio.cpp 5882; OrcaSlicer.cpp 5138).
+    arrange_add_exclude_areas(unselected, config, 0.);
+
+    arrange_bed_polygons(context, config, selected, unselected, unprintable, params);
 
     // Every selected item must land on this plate (BambuStudio.cpp 5936-5945;
     // OrcaSlicer.cpp 5196-5205).

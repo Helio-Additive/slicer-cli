@@ -101,6 +101,190 @@ static int plan_plate_cols(int count) {
     return value > round_value ? (int)round_value + 1 : (int)round_value;
 }
 
+static void arrange_project_polygons(CliRunContext& context, Slic3r::Model& model,
+        Slic3r::DynamicPrintConfig& config, int filament_count, int file_plates,
+        Slic3r::arrangement::ArrangePolygons& selected, Slic3r::arrangement::ArrangePolygons& unselected,
+        Slic3r::arrangement::ArrangePolygons& unprintable, const Slic3r::Vec2d& plate_size) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    ArrangeParams params;
+    params.progressind = [](unsigned, std::string) {};
+    if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
+        params.is_seq_print = seq->value == PrintSequence::ByObject;
+    // The exclusion areas on 16 beds (preprocess_exclude_areas' default).
+    arrange_add_exclude_areas(unselected, config, 0., 16);
+    // The tower on every bed (BambuStudio.cpp 5668-5722; OrcaSlicer.cpp
+    // 4927-4981) when filaments are in use: the default corner on each file
+    // plate, clamped by estimate_wipe_tower_polygon with every object
+    // counted, and the last file plate's tower on the beds after it. The
+    // used filaments: on Bambu the project's and --load-filament-ids'
+    // (BambuStudio.cpp 2041-2046, 2083-2088); on Orca only
+    // --load-filament-ids' (OrcaSlicer.cpp 1734).
+    if (filament_count > 0) {
+#ifdef ENGINE_SNAPMAKER
+        // The one corner function, so this path and the assemble ones cannot
+        // drift apart (Snapmaker's x = 13 / y = depth/2, Snapmaker_Orca.cpp:
+        // 4206-4213 and 4296-4303 at bac6fd5).
+        const Vec2d snap_corner = tower_default_corner(context, config);
+        float x = (float) snap_corner.x();
+        float y = (float) snap_corner.y();
+#else
+        float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
+        if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+            structure && structure->value == PrinterStructure::psI3) {
+            x = 0.f;     // I3_WIPE_TOWER_DEFAULT_X_POS
+            y = 250.f;   // I3_WIPE_TOWER_DEFAULT_Y_POS
+        }
+#endif
+#ifdef ENGINE_ORCA
+        const float tower_margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat();
+#else
+        const float tower_margin = WIPE_TOWER_MARGIN;
+#endif
+        if (x < tower_margin) x = tower_margin;
+        if (y < tower_margin) y = tower_margin;
+        ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
+        auto* wipe_x_option = config.option<ConfigOptionFloats>("wipe_tower_x", true);
+        auto* wipe_y_option = config.option<ConfigOptionFloats>("wipe_tower_y", true);
+        for (int bedid = 0; bedid < 36; bedid++) {   // MAX_PLATE_COUNT
+            const int plate_index_valid = std::min(bedid, file_plates - 1);
+            if (bedid < file_plates) {
+                wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
+                wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
+            }
+            Vec2d pos;
+            ArrangePolygon wipe_tower_ap = estimate_tower_polygon_global(
+                model, config, plate_index_valid, filament_count, (int)plate_size.x(), (int)plate_size.y(), pos);
+            if (bedid < file_plates) {
+                wt_x_opt.value = pos.x();
+                wt_y_opt.value = pos.y();
+                wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
+                wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
+            }
+            wipe_tower_ap.bed_idx = bedid;
+            unselected.emplace_back(std::move(wipe_tower_ap));
+        }
+    }
+
+    // Step 2 (BambuStudio.cpp 5886-5915; OrcaSlicer.cpp 5142-5172): the
+    // same settings as the one-plate arrange (arrange_on_bed).
+    params.allow_rotations                     = context.g_arrange_switches.allow_rotations;
+    params.allow_multi_materials_on_same_plate = context.g_arrange_switches.allow_multicolor_oneplate;
+    params.avoid_extrusion_cali_region         = context.g_arrange_switches.avoid_extrusion_cali_region;
+    params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
+    params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
+#ifdef ENGINE_ORCA
+    params.clearance_radius                    = arrange_opt(config, "extruder_clearance_radius")->getFloat();
+#else
+    params.cleareance_radius                   = arrange_opt(config, "extruder_clearance_max_radius")->getFloat();
+#endif
+    params.printable_height                    = arrange_opt(config, "printable_height")->getFloat();
+    params.min_obj_distance = 0;
+    if (params.is_seq_print) {
+        params.bed_shrink_x = BED_SHRINK_SEQ_PRINT;
+        params.bed_shrink_y = BED_SHRINK_SEQ_PRINT;
+    }
+    if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
+        params.align_to_y_axis = (printer_structure_opt->value == PrinterStructure::psI3);
+#ifdef ENGINE_ORCA
+    update_arrange_params(params, &config, selected);
+    update_selected_items_inflation(selected, &config, params);
+    update_unselected_items_inflation(unselected, &config, params);
+    update_selected_items_axis_align(selected, &config, params);
+    Points beds = get_shrink_bedpts(&config, params);
+#else
+    update_arrange_params(params, config, selected);
+    update_selected_items_inflation(selected, config, params);
+    update_unselected_items_inflation(unselected, config, params);
+    Points beds = get_shrink_bedpts(config, params);
+#endif
+    arrange_add_exclude_areas(params.excluded_regions, config, scale_(1));
+
+    // Step 3.
+    arrangement::arrange(selected, unselected, beds, params);
+    arrangement::arrange(unprintable, {}, beds, params);
+}
+
+static void apply_project_arrangement(Slic3r::Model& model, Slic3r::arrangement::ArrangePolygons& selected,
+        Slic3r::arrangement::ArrangePolygons& unprintable, Slic3r::arrangement::ArrangePolygons& locked_aps,
+        const Slic3r::Vec2d& plate_size, std::vector<bool>& locked, int& plate_count, ProjectPlan& plan) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    // Step 4 (BambuStudio.cpp 5946-6006; OrcaSlicer.cpp 5189-5262): each
+    // selected item's bed past the locked plates, adding plates while the
+    // bed is past the last one (postprocess_bed_index_for_selected and
+    // create_plate, at most MAX_PLATE_COUNT, Bambu PartPlate.cpp 6009-6051,
+    // 4834-4842).
+    const auto create_plate = [&]() -> int {
+        if (plate_count >= 36)
+            return -1;
+        locked.push_back(false);
+        return plate_count++;
+    };
+    int bed_idx_max = 0;
+    for (ArrangePolygon& ap : selected) {
+        if (ap.bed_idx != -1) {
+            bool placed = false;
+            for (int i = 0; i < plate_count; ++i) {
+                if (locked[i]) {
+                    ap.bed_idx += 1;
+                } else if (ap.bed_idx <= i) {
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                int plate_index = create_plate();
+                while (plate_index != -1) {
+                    if (ap.bed_idx <= plate_index)
+                        break;
+                    plate_index = create_plate();
+                }
+            }
+        }
+        bed_idx_max = std::max(ap.bed_idx, bed_idx_max);
+    }
+    // postprocess_arrange_polygon (Bambu PartPlate.cpp 6107-6129): onto
+    // its plate in the grid of the plates there are now; an item the
+    // arrange could not place goes past the last plate.
+    const int cols = plan_plate_cols(plate_count);
+    const auto to_grid = [&](ArrangePolygon& ap) {
+        const Vec2d origin = plan_plate_origin(plate_size, ap.bed_idx, cols);
+        ap.translation(X) += scaled<double>(origin.x());
+        ap.translation(Y) += scaled<double>(origin.y());
+    };
+    for (ArrangePolygon& ap : locked_aps) {
+        bed_idx_max = std::max(ap.bed_idx, bed_idx_max);
+        to_grid(ap);
+        ap.apply();
+    }
+    for (ArrangePolygon& ap : selected) {
+        if (ap.bed_idx == -1) {
+            ap.bed_idx = plate_count;
+            const BoundingBox apbox = get_extents(ap.transformed_poly());
+            const auto apbox_size = apbox.size();
+            ap.translation(X) = 0.5 * apbox_size[0];
+            ap.translation(Y) = scaled<double>(static_cast<double>((int)plate_size.y())) - 0.5 * apbox_size[1];
+        }
+        to_grid(ap);
+        ap.apply();
+    }
+    for (ArrangePolygon& ap : unprintable) {
+        ap.bed_idx = bed_idx_max + 1;
+        to_grid(ap);
+        ap.apply();
+    }
+    // rebuild_plates_after_arrangement (Bambu PartPlate.cpp 6803-6860;
+    // Orca 6005-6037): the objects in arrange order (stable here, where the
+    // official's std::sort leaves equal orders in any order).
+    std::stable_sort(model.objects.begin(), model.objects.end(), [](const ModelObject* a, const ModelObject* b) {
+        const int ao = a->instances.empty() ? 0 : a->instances[0]->arrange_order;
+        const int bo = b->instances.empty() ? 0 : b->instances[0]->arrange_order;
+        return ao < bo;
+    });
+    plan.arranged = true;
+}
+
 /// The plan of a project 3MF with model files after it (see ProjectPlan).
 /// `model` holds every plate's objects at their scene places followed by the
 /// model files' objects, and the arrange moves them in place; `config` is the
@@ -198,176 +382,10 @@ bool plan_project_plates(CliRunContext& context, Slic3r::Model& model, Slic3r::D
                 }
             }
         }
-        ArrangeParams params;
-        params.progressind = [](unsigned, std::string) {};
-        if (const auto* seq = config.option<ConfigOptionEnum<PrintSequence>>("print_sequence"))
-            params.is_seq_print = seq->value == PrintSequence::ByObject;
-        // The exclusion areas on 16 beds (preprocess_exclude_areas' default).
-        arrange_add_exclude_areas(unselected, config, 0., 16);
-        // The tower on every bed (BambuStudio.cpp 5668-5722; OrcaSlicer.cpp
-        // 4927-4981) when filaments are in use: the default corner on each file
-        // plate, clamped by estimate_wipe_tower_polygon with every object
-        // counted, and the last file plate's tower on the beds after it. The
-        // used filaments: on Bambu the project's and --load-filament-ids'
-        // (BambuStudio.cpp 2041-2046, 2083-2088); on Orca only
-        // --load-filament-ids' (OrcaSlicer.cpp 1734).
-        if (filament_count > 0) {
-#ifdef ENGINE_SNAPMAKER
-            // The one corner function, so this path and the assemble ones cannot
-            // drift apart (Snapmaker's x = 13 / y = depth/2, Snapmaker_Orca.cpp:
-            // 4206-4213 and 4296-4303 at bac6fd5).
-            const Vec2d snap_corner = tower_default_corner(context, config);
-            float x = (float) snap_corner.x();
-            float y = (float) snap_corner.y();
-#else
-            float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
-            if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
-                structure && structure->value == PrinterStructure::psI3) {
-                x = 0.f;     // I3_WIPE_TOWER_DEFAULT_X_POS
-                y = 250.f;   // I3_WIPE_TOWER_DEFAULT_Y_POS
-            }
-#endif
-#ifdef ENGINE_ORCA
-            const float tower_margin = WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat();
-#else
-            const float tower_margin = WIPE_TOWER_MARGIN;
-#endif
-            if (x < tower_margin) x = tower_margin;
-            if (y < tower_margin) y = tower_margin;
-            ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
-            auto* wipe_x_option = config.option<ConfigOptionFloats>("wipe_tower_x", true);
-            auto* wipe_y_option = config.option<ConfigOptionFloats>("wipe_tower_y", true);
-            for (int bedid = 0; bedid < 36; bedid++) {   // MAX_PLATE_COUNT
-                const int plate_index_valid = std::min(bedid, file_plates - 1);
-                if (bedid < file_plates) {
-                    wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
-                    wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
-                }
-                Vec2d pos;
-                ArrangePolygon wipe_tower_ap = estimate_tower_polygon_global(
-                    model, config, plate_index_valid, filament_count, (int)plate_size.x(), (int)plate_size.y(), pos);
-                if (bedid < file_plates) {
-                    wt_x_opt.value = pos.x();
-                    wt_y_opt.value = pos.y();
-                    wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
-                    wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
-                }
-                wipe_tower_ap.bed_idx = bedid;
-                unselected.emplace_back(std::move(wipe_tower_ap));
-            }
-        }
+        arrange_project_polygons(context, model, config, filament_count, file_plates, selected, unselected,
+                unprintable, plate_size);
 
-        // Step 2 (BambuStudio.cpp 5886-5915; OrcaSlicer.cpp 5142-5172): the
-        // same settings as the one-plate arrange (arrange_on_bed).
-        params.allow_rotations                     = context.g_arrange_switches.allow_rotations;
-        params.allow_multi_materials_on_same_plate = context.g_arrange_switches.allow_multicolor_oneplate;
-        params.avoid_extrusion_cali_region         = context.g_arrange_switches.avoid_extrusion_cali_region;
-        params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
-        params.clearance_height_to_lid             = arrange_opt(config, "extruder_clearance_height_to_lid")->getFloat();
-#ifdef ENGINE_ORCA
-        params.clearance_radius                    = arrange_opt(config, "extruder_clearance_radius")->getFloat();
-#else
-        params.cleareance_radius                   = arrange_opt(config, "extruder_clearance_max_radius")->getFloat();
-#endif
-        params.printable_height                    = arrange_opt(config, "printable_height")->getFloat();
-        params.min_obj_distance = 0;
-        if (params.is_seq_print) {
-            params.bed_shrink_x = BED_SHRINK_SEQ_PRINT;
-            params.bed_shrink_y = BED_SHRINK_SEQ_PRINT;
-        }
-        if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
-            params.align_to_y_axis = (printer_structure_opt->value == PrinterStructure::psI3);
-#ifdef ENGINE_ORCA
-        update_arrange_params(params, &config, selected);
-        update_selected_items_inflation(selected, &config, params);
-        update_unselected_items_inflation(unselected, &config, params);
-        update_selected_items_axis_align(selected, &config, params);
-        Points beds = get_shrink_bedpts(&config, params);
-#else
-        update_arrange_params(params, config, selected);
-        update_selected_items_inflation(selected, config, params);
-        update_unselected_items_inflation(unselected, config, params);
-        Points beds = get_shrink_bedpts(config, params);
-#endif
-        arrange_add_exclude_areas(params.excluded_regions, config, scale_(1));
-
-        // Step 3.
-        arrangement::arrange(selected, unselected, beds, params);
-        arrangement::arrange(unprintable, {}, beds, params);
-
-        // Step 4 (BambuStudio.cpp 5946-6006; OrcaSlicer.cpp 5189-5262): each
-        // selected item's bed past the locked plates, adding plates while the
-        // bed is past the last one (postprocess_bed_index_for_selected and
-        // create_plate, at most MAX_PLATE_COUNT, Bambu PartPlate.cpp 6009-6051,
-        // 4834-4842).
-        const auto create_plate = [&]() -> int {
-            if (plate_count >= 36)
-                return -1;
-            locked.push_back(false);
-            return plate_count++;
-        };
-        int bed_idx_max = 0;
-        for (ArrangePolygon& ap : selected) {
-            if (ap.bed_idx != -1) {
-                bool placed = false;
-                for (int i = 0; i < plate_count; ++i) {
-                    if (locked[i]) {
-                        ap.bed_idx += 1;
-                    } else if (ap.bed_idx <= i) {
-                        placed = true;
-                        break;
-                    }
-                }
-                if (!placed) {
-                    int plate_index = create_plate();
-                    while (plate_index != -1) {
-                        if (ap.bed_idx <= plate_index)
-                            break;
-                        plate_index = create_plate();
-                    }
-                }
-            }
-            bed_idx_max = std::max(ap.bed_idx, bed_idx_max);
-        }
-        // postprocess_arrange_polygon (Bambu PartPlate.cpp 6107-6129): onto
-        // its plate in the grid of the plates there are now; an item the
-        // arrange could not place goes past the last plate.
-        const int cols = plan_plate_cols(plate_count);
-        const auto to_grid = [&](ArrangePolygon& ap) {
-            const Vec2d origin = plan_plate_origin(plate_size, ap.bed_idx, cols);
-            ap.translation(X) += scaled<double>(origin.x());
-            ap.translation(Y) += scaled<double>(origin.y());
-        };
-        for (ArrangePolygon& ap : locked_aps) {
-            bed_idx_max = std::max(ap.bed_idx, bed_idx_max);
-            to_grid(ap);
-            ap.apply();
-        }
-        for (ArrangePolygon& ap : selected) {
-            if (ap.bed_idx == -1) {
-                ap.bed_idx = plate_count;
-                const BoundingBox apbox = get_extents(ap.transformed_poly());
-                const auto apbox_size = apbox.size();
-                ap.translation(X) = 0.5 * apbox_size[0];
-                ap.translation(Y) = scaled<double>(static_cast<double>((int)plate_size.y())) - 0.5 * apbox_size[1];
-            }
-            to_grid(ap);
-            ap.apply();
-        }
-        for (ArrangePolygon& ap : unprintable) {
-            ap.bed_idx = bed_idx_max + 1;
-            to_grid(ap);
-            ap.apply();
-        }
-        // rebuild_plates_after_arrangement (Bambu PartPlate.cpp 6803-6860;
-        // Orca 6005-6037): the objects in arrange order (stable here, where the
-        // official's std::sort leaves equal orders in any order).
-        std::stable_sort(model.objects.begin(), model.objects.end(), [](const ModelObject* a, const ModelObject* b) {
-            const int ao = a->instances.empty() ? 0 : a->instances[0]->arrange_order;
-            const int bo = b->instances.empty() ? 0 : b->instances[0]->arrange_order;
-            return ao < bo;
-        });
-        plan.arranged = true;
+        apply_project_arrangement(model, selected, unprintable, locked_aps, plate_size, locked, plate_count, plan);
     }
 
     // reload_all_objects (Bambu PartPlate.cpp 5668-5710): each instance on
