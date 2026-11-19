@@ -6,7 +6,6 @@
 #include <boost/log/trivial.hpp>
 #include "libslic3r/Thread.hpp"
 #include "libslic3r/Utils.hpp"
-#include "libslic3r/calib.hpp"
 
 #include <algorithm>
 #include <iostream>
