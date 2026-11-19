@@ -1726,10 +1726,10 @@ static int select_nozzle_and_plate(CliRunContext& context, const CliOptions& o, 
 }
 
 static int validate_loaded_plate_settings(PlateWarnings& plate_warnings, PlateOutcome& outcome, int plate_id,
-            const std::map<std::string, std::string>& overrides, const PlateLoadSettings& settings,
+            const std::map<std::string, std::string>& overrides, PlateLoadSettings& settings,
             const Slic3r::DynamicPrintConfig& extra, const Slic3r::PlateDataPtrs& plate_data, const PlateLoadInputs& inputs,
             const Slic3r::DynamicPrintConfig& settings_before_flags) {
-    const auto& config = settings.config;
+    auto& config = settings.config;
     const auto& unknown_values = settings.unknown_values;
     const auto& unknown_items = settings.unknown_items;
 
