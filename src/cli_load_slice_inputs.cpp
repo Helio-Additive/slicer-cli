@@ -9,6 +9,8 @@
 #include "libslic3r/Print.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/BuildVolume.hpp"
+#include <set>
+#include <functional>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>

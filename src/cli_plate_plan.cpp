@@ -5,6 +5,7 @@
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/BuildVolume.hpp"
+#include <set>
 #include <iostream>
 #include "cli_arrange_geometry.hpp"
 #include "cli_events.hpp"

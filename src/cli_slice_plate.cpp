@@ -13,6 +13,7 @@
 #include "libslic3r/ModelArrange.hpp"
 #include "libslic3r/GCode/WipeTower.hpp"
 #include "libslic3r/BuildVolume.hpp"
+#include <set>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>

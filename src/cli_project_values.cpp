@@ -2,6 +2,7 @@
 
 #include "cli_run_context.hpp"
 #include "libslic3r/Preset.hpp"
+#include <boost/algorithm/string.hpp>
 #include <iostream>
 #include "cli_events.hpp"
 

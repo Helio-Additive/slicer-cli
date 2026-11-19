@@ -5,6 +5,7 @@
 #include "cli_slice_state.hpp"
 #include "cli_options.hpp"
 #include "cli_assemble.hpp"
+#include <set>
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <chrono>

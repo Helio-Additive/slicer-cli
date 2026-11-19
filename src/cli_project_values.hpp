@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cli_project_settings.hpp"
+#include <functional>
 #include <nlohmann/json.hpp>
 namespace Slic3r { class DynamicPrintConfig; class Model; }
 
