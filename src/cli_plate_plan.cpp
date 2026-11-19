@@ -101,6 +101,104 @@ static int plan_plate_cols(int count) {
     return value > round_value ? (int)round_value + 1 : (int)round_value;
 }
 
+struct ProjectPlateGrid {
+    const Slic3r::Vec2d& plate_size;
+    const Slic3r::Vec2d& first_point;
+    double plate_height;
+
+    // PartPlate::get_build_volume (Bambu PartPlate.cpp 3263-3285): the
+    // plate's origin plus the bed's first point, the plate list's size.
+    Slic3r::BoundingBoxf3 plate_box(int index, int count) const {
+        using namespace Slic3r;
+        const Vec2d origin = plan_plate_origin(plate_size, index, plan_plate_cols(count));
+        const double eps = BuildVolume::SceneEpsilon;
+        return BoundingBoxf3(Vec3d(origin.x() + first_point.x() - eps, origin.y() + first_point.y() - eps, -eps),
+                             Vec3d(origin.x() + first_point.x() + plate_size.x() + eps,
+                                   origin.y() + first_point.y() + plate_size.y() + eps, plate_height + eps));
+    }
+};
+
+static bool record_project_plate_members(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
+        int filament_count, int file_plates, const Slic3r::Vec2d& plate_size, std::vector<bool>& locked,
+        int& plate_count, ProjectPlan& plan, const ProjectPlateGrid& grid, bool need_arrange) {
+    using namespace Slic3r;
+    using namespace Slic3r::arrangement;
+    // reload_all_objects (Bambu PartPlate.cpp 5668-5710): each instance on
+    // the first plate its box meets.
+    std::vector<std::vector<std::pair<int, int>>> members(plate_count);
+    int off_plates = 0;
+    for (size_t oi = 0; oi < model.objects.size(); ++oi)
+        for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
+            const BoundingBoxf3 box = model.objects[oi]->instance_convex_hull_bounding_box(ii);
+            int k = 0;
+            for (; k < plate_count; ++k)
+                if (grid.plate_box(k, plate_count).intersects(box)) {
+                    members[k].emplace_back(int(oi), int(ii));
+                    break;
+                }
+            if (k == plate_count)
+                ++off_plates;
+        }
+    // Each instance's place on its plate, which a plate keeps when the plates
+    // before it go (delete_plate moves a plate with its objects).
+    std::vector<std::vector<Vec3d>> on_plate_offset(plate_count);
+    for (int k = 0; k < plate_count; ++k) {
+        const Vec2d origin = plan_plate_origin(plate_size, k, plan_plate_cols(plate_count));
+        for (const auto& [oi, ii] : members[k])
+            on_plate_offset[k].push_back(model.objects[oi]->instances[ii]->get_offset() - Vec3d(origin.x(), origin.y(), 0.));
+    }
+    if (need_arrange) {
+        // Recycle the empty plates (Bambu PartPlate.cpp 6837-6858: every empty
+        // plate after the first; Orca 6018-6037: from the last plate back to the
+        // first that holds a printable object, past locked ones).
+        const auto printable_on = [&](int k) {
+            for (const auto& [oi, ii] : members[k])
+                if (model.objects[oi]->instances[ii]->printable)
+                    return true;
+            return false;
+        };
+        for (int i = plate_count - 1; i > 0; --i) {
+            if (members[i].empty() || !printable_on(i)) {
+                off_plates += (int)members[i].size();
+                members.erase(members.begin() + i);
+                on_plate_offset.erase(on_plate_offset.begin() + i);
+                locked.erase(locked.begin() + i);
+            } else if (locked[i]) {
+                continue;
+            } else {
+#ifdef ENGINE_ORCA
+                break;
+#else
+                continue;
+#endif
+            }
+        }
+        plate_count = (int)members.size();
+    }
+    plan.origins.clear();
+    plan.members.assign(plate_count, {});
+    const int final_cols = plan_plate_cols(plate_count);
+    for (int k = 0; k < plate_count; ++k) {
+        const Vec2d origin = plan_plate_origin(plate_size, k, final_cols);
+        plan.origins.push_back(origin);
+        for (size_t m = 0; m < members[k].size(); ++m) {
+            const auto& [oi, ii] = members[k][m];
+            ModelInstance* inst = model.objects[oi]->instances[ii];
+            inst->set_offset(on_plate_offset[k][m] + Vec3d(origin.x(), origin.y(), 0.));
+            plan.members[k].push_back(inst);
+        }
+    }
+    plan.file_plate_count = file_plates;
+    plan.plate_count = plate_count;
+    plan.off_plates = off_plates;
+    if (plan.arranged && filament_count > 0) {
+        if (const auto* wx = config.option<ConfigOptionFloats>("wipe_tower_x")) plan.tower_x = wx->values;
+        if (const auto* wy = config.option<ConfigOptionFloats>("wipe_tower_y")) plan.tower_y = wy->values;
+    }
+    plan.done = true;
+    return true;
+}
+
 static void arrange_project_polygons(CliRunContext& context, Slic3r::Model& model,
         Slic3r::DynamicPrintConfig& config, int filament_count, int file_plates,
         Slic3r::arrangement::ArrangePolygons& selected, Slic3r::arrangement::ArrangePolygons& unselected,
@@ -308,15 +406,7 @@ bool plan_project_plates(CliRunContext& context, Slic3r::Model& model, Slic3r::D
     }
     const Vec2d first_point = area->values.front();
     const double plate_height = file_config.has("printable_height") ? file_config.opt_float("printable_height") : 0.;
-    // PartPlate::get_build_volume (Bambu PartPlate.cpp 3263-3285): the
-    // plate's origin plus the bed's first point, the plate list's size.
-    const auto plate_box = [&](int index, int count) {
-        const Vec2d origin = plan_plate_origin(plate_size, index, plan_plate_cols(count));
-        const double eps = BuildVolume::SceneEpsilon;
-        return BoundingBoxf3(Vec3d(origin.x() + first_point.x() - eps, origin.y() + first_point.y() - eps, -eps),
-                             Vec3d(origin.x() + first_point.x() + plate_size.x() + eps,
-                                   origin.y() + first_point.y() + plate_size.y() + eps, plate_height + eps));
-    };
+    const ProjectPlateGrid grid{plate_size, first_point, plate_height};
 
     // The plate each instance is on, as the file states it: the plate's
     // identify ids, else the first plate its box meets (load_plate_objects).
@@ -338,7 +428,7 @@ bool plan_project_plates(CliRunContext& context, Slic3r::Model& model, Slic3r::D
             if (on_plate.count({int(oi), int(ii)})) continue;
             const BoundingBoxf3 box = model.objects[oi]->instance_convex_hull_bounding_box(ii);
             for (int k = 0; k < file_plates; ++k)
-                if (plate_box(k, file_plates).intersects(box)) {
+                if (grid.plate_box(k, file_plates).intersects(box)) {
                     on_plate.emplace(std::make_pair(int(oi), int(ii)), k);
                     break;
                 }
@@ -388,80 +478,8 @@ bool plan_project_plates(CliRunContext& context, Slic3r::Model& model, Slic3r::D
         apply_project_arrangement(model, selected, unprintable, locked_aps, plate_size, locked, plate_count, plan);
     }
 
-    // reload_all_objects (Bambu PartPlate.cpp 5668-5710): each instance on
-    // the first plate its box meets.
-    std::vector<std::vector<std::pair<int, int>>> members(plate_count);
-    int off_plates = 0;
-    for (size_t oi = 0; oi < model.objects.size(); ++oi)
-        for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
-            const BoundingBoxf3 box = model.objects[oi]->instance_convex_hull_bounding_box(ii);
-            int k = 0;
-            for (; k < plate_count; ++k)
-                if (plate_box(k, plate_count).intersects(box)) {
-                    members[k].emplace_back(int(oi), int(ii));
-                    break;
-                }
-            if (k == plate_count)
-                ++off_plates;
-        }
-    // Each instance's place on its plate, which a plate keeps when the plates
-    // before it go (delete_plate moves a plate with its objects).
-    std::vector<std::vector<Vec3d>> on_plate_offset(plate_count);
-    for (int k = 0; k < plate_count; ++k) {
-        const Vec2d origin = plan_plate_origin(plate_size, k, plan_plate_cols(plate_count));
-        for (const auto& [oi, ii] : members[k])
-            on_plate_offset[k].push_back(model.objects[oi]->instances[ii]->get_offset() - Vec3d(origin.x(), origin.y(), 0.));
-    }
-    if (need_arrange) {
-        // Recycle the empty plates (Bambu PartPlate.cpp 6837-6858: every empty
-        // plate after the first; Orca 6018-6037: from the last plate back to the
-        // first that holds a printable object, past locked ones).
-        const auto printable_on = [&](int k) {
-            for (const auto& [oi, ii] : members[k])
-                if (model.objects[oi]->instances[ii]->printable)
-                    return true;
-            return false;
-        };
-        for (int i = plate_count - 1; i > 0; --i) {
-            if (members[i].empty() || !printable_on(i)) {
-                off_plates += (int)members[i].size();
-                members.erase(members.begin() + i);
-                on_plate_offset.erase(on_plate_offset.begin() + i);
-                locked.erase(locked.begin() + i);
-            } else if (locked[i]) {
-                continue;
-            } else {
-#ifdef ENGINE_ORCA
-                break;
-#else
-                continue;
-#endif
-            }
-        }
-        plate_count = (int)members.size();
-    }
-    plan.origins.clear();
-    plan.members.assign(plate_count, {});
-    const int final_cols = plan_plate_cols(plate_count);
-    for (int k = 0; k < plate_count; ++k) {
-        const Vec2d origin = plan_plate_origin(plate_size, k, final_cols);
-        plan.origins.push_back(origin);
-        for (size_t m = 0; m < members[k].size(); ++m) {
-            const auto& [oi, ii] = members[k][m];
-            ModelInstance* inst = model.objects[oi]->instances[ii];
-            inst->set_offset(on_plate_offset[k][m] + Vec3d(origin.x(), origin.y(), 0.));
-            plan.members[k].push_back(inst);
-        }
-    }
-    plan.file_plate_count = file_plates;
-    plan.plate_count = plate_count;
-    plan.off_plates = off_plates;
-    if (plan.arranged && filament_count > 0) {
-        if (const auto* wx = config.option<ConfigOptionFloats>("wipe_tower_x")) plan.tower_x = wx->values;
-        if (const auto* wy = config.option<ConfigOptionFloats>("wipe_tower_y")) plan.tower_y = wy->values;
-    }
-    plan.done = true;
-    return true;
+    return record_project_plate_members(model, config, filament_count, file_plates, plate_size, locked,
+            plate_count, plan, grid, need_arrange);
 }
 
 /// The event for a project 3MF's plan: the plates the run slices and the
