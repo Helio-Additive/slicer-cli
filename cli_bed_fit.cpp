@@ -93,7 +93,7 @@ std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& ob
 }
 
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  const Slic3r::DynamicPrintConfig& config, bool rotation_given) {
+                                  const Slic3r::DynamicPrintConfig& config, bool rotation_given, bool arranged) {
     using namespace Slic3r;
     std::ostringstream formatted;
     formatted.imbue(std::locale::classic());
@@ -112,7 +112,9 @@ std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& obj
         flag_alone = (linear * quarter_turn).isApprox(quarter_turn * linear);
     }
     BoundingBoxf bed;
-    if (flag_alone && rectangular_bed(config, bed)) {
+    if (flag_alone && arranged) {
+        // The arrange places the turned part; the turn fits the bed's box.
+    } else if (flag_alone && rectangular_bed(config, bed)) {
         // The part turned the way the flag turns it, at the position it keeps.
         Model   scratch;
         ModelObject* turned = scratch.add_object(object);

@@ -3605,7 +3605,7 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
             else
                 detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
             if (turn)
-                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, config, rotation_given);
+                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, config, rotation_given, arranged);
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
                         {"object", object->name}, {"message", detail}});
@@ -4731,7 +4731,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
         const size_t instance_index = size_t(it - object->instances.begin());
         if (const auto turn = slicer_cli::oversized_fitting_z_rotation(*object, instance_index, config)) {
-            turn_advice += " " + object->name + ":" + slicer_cli::full_size_turn_advice(*turn, *object, instance_index, config, rotation_given);
+            turn_advice += " " + object->name + ":" + slicer_cli::full_size_turn_advice(*turn, *object, instance_index, config, rotation_given, true);
             continue;
         }
         const BoundingBoxf3 box = object->instance_bounding_box(instance_index);
