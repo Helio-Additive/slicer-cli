@@ -919,6 +919,26 @@ add_executable(slicer_cli src/cli_result_json.cpp
     src/cli_percent_widths.cpp
     src/cli_project_settings.cpp src/cli_project_load.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
+
+# Cache the engine headers shared by the front end. Boost.Log declarations must
+# be visible before Bambu Studio's Log.hpp installs its logging macro.
+if(MSVC)
+  target_precompile_headers(slicer_cli PRIVATE "${_nowide_fwd}")
+endif()
+target_precompile_headers(slicer_cli PRIVATE
+    <boost/log/trivial.hpp>
+    <libslic3r/PrintConfig.hpp>
+    <libslic3r/Model.hpp>
+    <libslic3r/PresetBundle.hpp>
+    <nlohmann/json.hpp>)
+
+# These files compile independently of the engine headers.
+set_source_files_properties(
+    src/cli_failure_reason.cpp src/startup_logging.cpp src/cli_pipe.cpp
+    src/cli_printer_catalog.cpp src/cli_project_archive.cpp
+    src/cli_preset_staging.cpp src/cli_staging_folders.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
 # Both engines build a program called slicer_cli; the package renames the
 # OrcaSlicer one to slicer_cli-orcaslicer. Give the Snapmaker build its own name
 # at build time so it is not mistaken for either.
