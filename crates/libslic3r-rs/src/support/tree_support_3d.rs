@@ -6,31 +6,26 @@
 // Copyright (c) 2021 Ultimaker B.V.
 // CuraEngine is released under the terms of the AGPLv3 or higher.
 
-//! Faithful 1:1 port of BambuStudio `Support/TreeSupport3D.cpp`.
+//! Port of BambuStudio's `src/libslic3r/Support/TreeSupport3D.{hpp,cpp}` (namespace
+//! `Slic3r::TreeSupport3D`) at the pin, over the classes of `crate::print::faithful`, the settings of
+//! `tree_support_common.rs` (TreeSupportCommon.hpp) and the volumes of `tree_model_volumes.rs`.
 //!
-//! This module ports the tractable, geometry-only core of the C++ tree support
-//! algorithm: the avoidance/line helpers, the per-layer influence-area increase
-//! (`increase_single_area` / `increase_areas_one_layer`), the branch merging
-//! (`merge_*`), the downward pathing (`create_layer_pathing`) and the node
-//! placement (`create_nodes_from_area`).
+//! The file has two parts:
+//!  * the port of the pin: the types of TreeSupport3D.hpp (`AreaIncreaseSettings`,
+//!    `SupportElementStateBits`, `SupportElementState`, `SupportElement`) and the functions of
+//!    TreeSupport3D.cpp under their C++ names, each citing the lines it ports;
+//!  * `legacy`: the generator the crate had before (`TreeSupport3D`, `TreeSupport3DConfig`,
+//!    `TreeSupport3DResult` and the functions they run, over the types of `tree_support_settings.rs`),
+//!    which `support/mod.rs` still drives. It is kept as it was so that what the engine puts out for a
+//!    tree support does not change while the port of the pin is completed and compared.
 //!
-//! Functions are kept in the same order, with the same names (snake_case),
-//! same control flow, same constants and the same integer-vs-float behaviour as
-//! the C++. Each ported statement carries a `// TreeSupport3D.cpp:NNN` line ref.
-//!
-//! BLOCKED symbols (not ported here — see the report `divergences`): everything
-//! that requires `Print` / `PrintObject` / `Layer` (`group_meshes`,
-//! `generate_overhangs`, `precalculate`, `generate_raft_contact`,
-//! `finalize_raft_contact`, `generate_tree_support_3D`,
-//! `generate_support_areas`), the `Fill` engine (`generate_support_infill_lines`),
-//! the `InterfacePlacer` / `RichInterfacePlacer` / `SupportGeneratorLayer`
-//! machinery (`sample_overhang_area`, `generate_initial_areas`), and the
-//! `TriangleMeshSlicer` / mesh extrusion drawing pipeline
-//! (`generate_branch_areas`, `smooth_branch_areas`, `draw_areas`,
-//! `triangulate_*`, `discretize_*`, `extrude_branch`, `draw_branches`,
-//! `slice_branches`, `organic_smooth_branches_avoid_collisions`,
-//! `organic_draw_branches`).
+//! `coord_t` is `Coord` (i64), `LayerIndex` is `i32`, `Polygons` is `Vec<Polygon>`. A `tbb::parallel_for`
+//! runs its items one after the other, in the order the pin takes them on one thread.
 
+/// The generator the crate had before the port of the pin (see the head of the file): an earlier
+/// TreeSupport3D.cpp over the types of `tree_support_settings.rs`, with tips sampled from the outlines of
+/// the overhangs and circles for branches. `support/mod.rs` drives it.
+pub mod legacy {
 use crate::geometry::{
     self, area_polygons, contains_polygons, get_extents_polygons, make_circle, perp,
     polygons_simplify, BoundingBox, ExPolygon, ExPolygons, Point, Polygon, Polygons,
@@ -2837,4 +2832,1939 @@ fn _refs(volumes: &TreeModelVolumes, p: Point) -> bool {
     let _ = geometry::area_polygons(&[]);
     let _ = VolAvoidanceType::Fast;
     point_inside_polygons(p, &volumes.get_collision(0, 0, true))
+}
+}
+
+pub use legacy::{LayerSupportElements, TreeSupport3D, TreeSupport3DConfig, TreeSupport3DResult};
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.hpp
+// =============================================================================
+
+use crate::geometry::{ExPolygon, Point, Polygon, Polygons, Polyline, Polylines};
+use crate::libslic3r::{EPSILON, SCALED_EPSILON, SCALING_FACTOR};
+use crate::print::faithful as pf;
+use crate::support::support_common::{cu, InfillFailedException, SupportFillFactory};
+use crate::support::support_parameters::SupportParameters;
+use crate::support::tree_model_volumes::{AvoidanceType, ThrowOnCancel, TreeModelVolumes};
+use crate::support::tree_support_common::{
+    tree_supports_show_error, LayerIndex, LineStatus, TreeSupportMeshGroupSettings, TreeSupportSettings, SOLUBLE,
+};
+use crate::{Coord, CoordF};
+
+/// TreeSupport3D.cpp:90 `using LineInformation = std::vector<std::pair<Point, LineStatus>>;`
+pub type LineInformation = Vec<(Point, LineStatus)>;
+/// TreeSupport3D.cpp:91 `using LineInformations = std::vector<LineInformation>;`
+pub type LineInformations = Vec<LineInformation>;
+
+/// TreeSupport3D.hpp:49-72 `struct AreaIncreaseSettings`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AreaIncreaseSettings {
+    pub increase_speed: Coord,
+    // Packing for smaller memory footprint of SupportElementState && SupportElementMerging
+    /// `TreeModelVolumes::AvoidanceType type`
+    pub type_: AvoidanceType,
+    pub increase_radius: bool,
+    pub no_error: bool,
+    pub use_min_distance: bool,
+    /// `bool move`
+    pub move_: bool,
+}
+
+impl AreaIncreaseSettings {
+    /// TreeSupport3D.hpp:51-54 `AreaIncreaseSettings(TreeModelVolumes::AvoidanceType type = Fast, coord_t
+    /// increase_speed = 0, bool increase_radius = false, bool no_error = false, bool use_min_distance = false,
+    /// bool move = false)`
+    pub fn new(type_: AvoidanceType, increase_speed: Coord, increase_radius: bool, no_error: bool, use_min_distance: bool, move_: bool) -> Self {
+        Self { increase_speed, type_, increase_radius, no_error, use_min_distance, move_ }
+    }
+}
+
+impl Default for AreaIncreaseSettings {
+    fn default() -> Self {
+        Self::new(AvoidanceType::Fast, 0, false, false, false, false)
+    }
+}
+
+/// TreeSupport3D.hpp:77-134 `struct SupportElementStateBits`
+// C++17 does not support in place initializers of bit values, thus a constructor zeroing the bits is provided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SupportElementStateBits {
+    /// The element trys to reach the buildplate
+    pub to_buildplate: bool,
+    /// Will the branch be able to rest completely on a flat surface, be it buildplate or model ?
+    pub to_model_gracious: bool,
+    /// Whether the min_xy_distance can be used to get avoidance or similar. Will only be true if support_xy_overrides_z=Z overrides X/Y.
+    pub use_min_xy_dist: bool,
+    /// True if this Element or any parent provides support to a support roof.
+    pub supports_roof: bool,
+    /// An influence area is considered safe when it can use the holefree avoidance <=> It will not have to encounter holes on its way downward.
+    pub can_use_safe_radius: bool,
+    /// Skip the ovalisation to parent and children when generating the final circles.
+    pub skip_ovalisation: bool,
+    // TREE_SUPPORTS_TRACK_LOST
+    /// Likely a lost branch, debugging information.
+    pub lost: bool,
+    pub verylost: bool,
+    /// Not valid anymore, to be deleted.
+    pub deleted: bool,
+    /// General purpose flag marking a visited element.
+    pub marked: bool,
+}
+
+/// TreeSupport3D.hpp:136-216 `struct SupportElementState : public SupportElementStateBits`
+///
+/// The bits of the base class are the member `bits`, which the state dereferences to. The members the
+/// C++ leaves without an initializer (`target_height` and what follows it) are zero here.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SupportElementState {
+    pub bits: SupportElementStateBits,
+    /// `int type = 0;`
+    pub type_: i32,
+    pub radius: CoordF,
+    pub print_z: f32,
+    pub xy_min_distance: Coord,
+    /// The layer this support elements wants reach
+    pub target_height: LayerIndex,
+    /// The position this support elements wants to support on layer=target_height
+    pub target_position: Point,
+    /// The next position this support elements wants to reach. NOTE: This is mainly a suggestion regarding direction inside the influence area.
+    pub next_position: Point,
+    /// The next height this support elements wants to reach
+    pub layer_idx: LayerIndex,
+    /// The Effective distance to top of this element regarding radius increases and collision calculations.
+    pub effective_radius_height: u32,
+    /// The amount of layers this element is below the topmost layer of this branch.
+    pub distance_to_top: u32,
+    /// The resulting center point around which a circle will be drawn later.
+    /// Will be set by setPointsOnAreas
+    pub result_on_layer: Point,
+    /// The amount of extra radius we got from merging branches that could have reached the buildplate, but merged with ones that can not.
+    pub increased_to_model_radius: Coord, // how much to model we increased only relevant for merging
+    /// Counter about the times the elephant foot was increased. Can be fractions for merge reasons.
+    pub elephant_foot_increases: f64,
+    /// The element trys not to move until this dtt is reached, is set to 0 if the element had to move.
+    pub dont_move_until: u32,
+    /// Settings used to increase the influence area to its current state.
+    pub last_area_increase: AreaIncreaseSettings,
+    /// Amount of roof layers that were not yet added, because the branch needed to move.
+    pub missing_roof_layers: u32,
+}
+
+impl Default for SupportElementState {
+    fn default() -> Self {
+        Self {
+            bits: SupportElementStateBits::default(),
+            type_: 0,
+            radius: 0.,
+            print_z: 0.,
+            xy_min_distance: 0,
+            target_height: 0,
+            target_position: Point::new(0, 0),
+            next_position: Point::new(0, 0),
+            layer_idx: 0,
+            effective_radius_height: 0,
+            distance_to_top: 0,
+            // Point result_on_layer{ std::numeric_limits<coord_t>::max(), std::numeric_limits<coord_t>::max() };
+            result_on_layer: Point::new(Coord::MAX, Coord::MAX),
+            increased_to_model_radius: 0,
+            elephant_foot_increases: 0.,
+            dont_move_until: 0,
+            last_area_increase: AreaIncreaseSettings::default(),
+            missing_roof_layers: 0,
+        }
+    }
+}
+
+impl std::ops::Deref for SupportElementState {
+    type Target = SupportElementStateBits;
+    fn deref(&self) -> &SupportElementStateBits {
+        &self.bits
+    }
+}
+
+impl std::ops::DerefMut for SupportElementState {
+    fn deref_mut(&mut self) -> &mut SupportElementStateBits {
+        &mut self.bits
+    }
+}
+
+impl SupportElementState {
+    /// TreeSupport3D.hpp:178
+    pub fn result_on_layer_is_set(&self) -> bool {
+        self.result_on_layer != Point::new(Coord::MAX, Coord::MAX)
+    }
+
+    /// TreeSupport3D.hpp:179
+    pub fn result_on_layer_reset(&mut self) {
+        self.result_on_layer = Point::new(Coord::MAX, Coord::MAX);
+    }
+
+    /// TreeSupport3D.hpp:205-215 `static SupportElementState propagate_down(const SupportElementState& src)`
+    // called by increase_single_area() and increaseAreas()
+    #[must_use]
+    pub fn propagate_down(src: &SupportElementState) -> SupportElementState {
+        let mut dst = src.clone();
+        dst.distance_to_top = dst.distance_to_top.wrapping_add(1);
+        dst.layer_idx -= 1;
+        // set to invalid as we are a new node on a new layer
+        dst.result_on_layer_reset();
+        dst.skip_ovalisation = false;
+        dst
+    }
+}
+
+/// TreeSupport3D.hpp:260-288 `struct SupportElement`
+#[derive(Debug, Clone, PartialEq)]
+pub struct SupportElement {
+    pub state: SupportElementState,
+    /// All elements in the layer above the current one that are supported by this element
+    pub parents: ParentIndices,
+    /// The resulting influence area.
+    /// Will only be set in the results of createLayerPathing, and will be nullptr inside!
+    pub influence_area: Polygons,
+}
+
+/// TreeSupport3D.hpp:262-269 `using ParentIndices = boost::container::small_vector<int32_t, 4>;`
+pub type ParentIndices = Vec<i32>;
+
+impl SupportElement {
+    /// TreeSupport3D.hpp:272 `SupportElement(const SupportElementState &state, Polygons &&influence_area)`
+    pub fn new(state: SupportElementState, influence_area: Polygons) -> Self {
+        Self { state, parents: Vec::new(), influence_area }
+    }
+
+    /// TreeSupport3D.hpp:273-274 `SupportElement(const SupportElementState &state, ParentIndices &&parents, Polygons
+    /// &&influence_area)`
+    pub fn with_parents(state: SupportElementState, parents: ParentIndices, influence_area: Polygons) -> Self {
+        Self { state, parents, influence_area }
+    }
+}
+
+/// TreeSupport3D.hpp:292 `using SupportElements = std::deque<SupportElement>;`
+pub type SupportElements = Vec<SupportElement>;
+
+/// What the overloads of `support_element_radius` and `support_element_collision_radius` take: a
+/// `SupportElementState` or a `SupportElement` (TreeSupport3D.hpp:294-302 hand the state of the element on).
+pub trait SupportElementStateRef {
+    fn support_element_state(&self) -> &SupportElementState;
+}
+impl SupportElementStateRef for SupportElementState {
+    fn support_element_state(&self) -> &SupportElementState {
+        self
+    }
+}
+impl SupportElementStateRef for SupportElement {
+    fn support_element_state(&self) -> &SupportElementState {
+        &self.state
+    }
+}
+
+/// TreeSupport3D.hpp:224-229 `size_t getEffectiveDTT(const TreeSupportSettings &settings, const SupportElementState &elem)`
+///
+/// Get the Distance to top regarding the real radius this part will have. This is different from distance_to_top,
+/// which is can be used to calculate the top most layer of the branch.
+#[must_use]
+pub fn get_effective_dtt(settings: &TreeSupportSettings, elem: &SupportElementState) -> usize {
+    if (elem.effective_radius_height as usize) < settings.increase_radius_until_layer {
+        if (elem.distance_to_top as usize) < settings.increase_radius_until_layer {
+            elem.distance_to_top as usize
+        } else {
+            settings.increase_radius_until_layer
+        }
+    } else {
+        elem.effective_radius_height as usize
+    }
+}
+
+/// TreeSupport3D.hpp:236-239, 294-297 `coord_t support_element_radius(const TreeSupportSettings &settings, const
+/// SupportElementState &elem)` and its overload for a `SupportElement`.
+#[must_use]
+pub fn support_element_radius(settings: &TreeSupportSettings, elem: &impl SupportElementStateRef) -> Coord {
+    let elem = elem.support_element_state();
+    settings.get_radius(get_effective_dtt(settings, elem), elem.elephant_foot_increases)
+}
+
+/// TreeSupport3D.hpp:246-249, 299-302 `coord_t support_element_collision_radius(const TreeSupportSettings &settings,
+/// const SupportElementState &elem)` and its overload for a `SupportElement`.
+#[must_use]
+pub fn support_element_collision_radius(settings: &TreeSupportSettings, elem: &impl SupportElementStateRef) -> Coord {
+    let elem = elem.support_element_state();
+    settings.get_radius(elem.effective_radius_height as usize, elem.elephant_foot_increases)
+}
+
+/// TreeSupport3D.hpp:251-258 `coord_t support_element_model_collision_radius(const TreeSupportSettings &settings,
+/// const SupportElementState &elem)`
+#[must_use]
+pub fn support_element_model_collision_radius(settings: &TreeSupportSettings, elem: &SupportElementState) -> Coord {
+    let radius = support_element_collision_radius(settings, elem);
+    if elem.use_min_xy_dist {
+        radius + std::cmp::max(0, elem.xy_min_distance - settings.xy_min_distance)
+    } else {
+        radius
+    }
+}
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp
+// =============================================================================
+
+// `scaled<double>(v)` (Point.hpp): `v / SCALING_FACTOR`.
+#[inline]
+fn scaled_f64(v: f64) -> f64 {
+    v / SCALING_FACTOR
+}
+
+// `Vec2d` of Eigen as a pair. Its sums of products (`squaredNorm()`, `dot()`) are a packet of the two
+// products and their sum: nothing is contracted.
+type Vec2d = (f64, f64);
+
+#[inline]
+fn vec2d(p: Point) -> Vec2d {
+    (p.x as f64, p.y as f64)
+}
+#[inline]
+fn squared_norm2(v: Vec2d) -> f64 {
+    v.0 * v.0 + v.1 * v.1
+}
+#[inline]
+fn norm2(v: Vec2d) -> f64 {
+    squared_norm2(v).sqrt()
+}
+#[inline]
+fn dot2(a: Vec2d, b: Vec2d) -> f64 {
+    a.0 * b.0 + a.1 * b.1
+}
+// `(a - b).cast<int64_t>().squaredNorm()`
+#[inline]
+fn squared_norm_i64(v: Point) -> i64 {
+    v.x.wrapping_mul(v.x).wrapping_add(v.y.wrapping_mul(v.y))
+}
+// `a.cast<int64_t>().dot(b.cast<int64_t>())`
+#[inline]
+fn dot_i64(a: Point, b: Point) -> i64 {
+    a.x.wrapping_mul(b.x).wrapping_add(a.y.wrapping_mul(b.y))
+}
+// Polygon.hpp `bool contains(const Polygons &polygons, const Point &p, bool border_result = true)`
+#[inline]
+fn contains(polygons: &[Polygon], p: &Point) -> bool {
+    crate::geometry::contains_polygons(polygons, p, true)
+}
+
+/// What `validate_range` takes (TreeSupport3D.cpp:94-134): a point, points, a multi point, polygons,
+/// polylines, a line information, line informations.
+pub trait ValidateRange {
+    /// Throws `ClipperLib::clipperException("Coordinate outside allowed range")` (a panic that carries the
+    /// exception) when a coordinate is outside of the range.
+    fn validate_range(&self);
+}
+
+impl ValidateRange for Point {
+    // TreeSupport3D.cpp:94-99 `static inline void validate_range(const Point &pt)`
+    fn validate_range(&self) {
+        const HI: i64 = 65536 * 16384;
+        if self.x > HI || self.y > HI || -self.x > HI || -self.y > HI {
+            std::panic::panic_any(crate::clipper::ClipperException("Coordinate outside allowed range"));
+        }
+    }
+}
+
+impl ValidateRange for [Point] {
+    // TreeSupport3D.cpp:101-105 `static inline void validate_range(const Points &points)`
+    fn validate_range(&self) {
+        for p in self {
+            p.validate_range();
+        }
+    }
+}
+
+impl ValidateRange for Polygon {
+    // TreeSupport3D.cpp:107-110 `static inline void validate_range(const MultiPoint &mp)`
+    fn validate_range(&self) {
+        self.points.as_slice().validate_range();
+    }
+}
+
+impl ValidateRange for Polyline {
+    // TreeSupport3D.cpp:107-110 `static inline void validate_range(const MultiPoint &mp)`
+    fn validate_range(&self) {
+        self.points.as_slice().validate_range();
+    }
+}
+
+impl ValidateRange for [Polygon] {
+    // TreeSupport3D.cpp:112-116 `static inline void validate_range(const Polygons &polygons)`
+    fn validate_range(&self) {
+        for p in self {
+            p.validate_range();
+        }
+    }
+}
+
+impl ValidateRange for [Polyline] {
+    // TreeSupport3D.cpp:118-122 `static inline void validate_range(const Polylines &polylines)`
+    fn validate_range(&self) {
+        for p in self {
+            p.validate_range();
+        }
+    }
+}
+
+impl ValidateRange for [(Point, LineStatus)] {
+    // TreeSupport3D.cpp:124-128 `static inline void validate_range(const LineInformation &lines)`
+    fn validate_range(&self) {
+        for p in self {
+            p.0.validate_range();
+        }
+    }
+}
+
+impl ValidateRange for [LineInformation] {
+    // TreeSupport3D.cpp:130-134 `static inline void validate_range(const LineInformations &lines)`
+    fn validate_range(&self) {
+        for l in self {
+            l.as_slice().validate_range();
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:94-134 `validate_range(...)`, every overload.
+#[inline]
+pub fn validate_range<T: ValidateRange + ?Sized>(v: &T) {
+    v.validate_range();
+}
+
+/// TreeSupport3D.cpp:136-148 `static inline void check_self_intersections(const Polygons &polygons, const
+/// std::string_view message)` and its overload for an `ExPolygon`: the bodies are compiled only with
+/// `TREE_SUPPORT_SHOW_ERRORS_WIN32`.
+#[inline]
+pub fn check_self_intersections<T: ?Sized>(_polygons: &T, _message: &str) {}
+
+/// TreeSupport3D.cpp:150 `static constexpr const auto tiny_area_threshold = sqr(scaled<double>(0.001));`
+#[inline]
+pub fn tiny_area_threshold() -> f64 {
+    let s = scaled_f64(0.001);
+    s * s
+}
+
+/// TreeSupport3D.cpp:152-209 `static std::vector<std::pair<TreeSupportSettings, std::vector<size_t>>>
+/// group_meshes(const Print &print, const std::vector<size_t> &print_object_ids)`
+///
+/// An exception of the C++ (a flow that cannot be made) is the `Err`.
+pub fn group_meshes(print: &pf::Print, print_object_ids: &[usize]) -> crate::flow::FlowResult<Vec<(TreeSupportSettings, Vec<usize>)>> {
+    let mut grouped_meshes: Vec<(TreeSupportSettings, Vec<usize>)> = Vec::new();
+
+    //FIXME this is ugly, it does not belong here.
+    for &object_id in print_object_ids {
+        let print_object = print.get_object(object_id);
+        let object_config = print_object.config();
+        if cfg_float(object_config, "support_top_z_distance") < EPSILON {
+            // || min_feature_size < scaled<coord_t>(0.1) that is the minimum line width
+            SOLUBLE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    let mut largest_printed_mesh_idx: usize = 0;
+
+    // Group all meshes that can be processed together. NOTE this is different from mesh-groups! Only one setting object is needed per group,
+    // as different settings in the same group may only occur in the tip, which uses the original settings objects from the meshes.
+    for &object_id in print_object_ids {
+        let print_object = print.get_object(object_id);
+        // Support must be enabled and set to Tree style.
+        let found_existing_group = false;
+        let next_settings =
+            TreeSupportSettings::new(&TreeSupportMeshGroupSettings::new(print_object, print)?, print_object.slicing_parameters());
+        //FIXME for now only a single object per group is enabled.
+        if !found_existing_group {
+            grouped_meshes.push((next_settings, vec![object_id]));
+        }
+
+        // no need to do this per mesh group as adaptive layers and raft setting are not setable per mesh.
+        if print.get_object(largest_printed_mesh_idx).layers().last().unwrap().print_z < print_object.layers().last().unwrap().print_z {
+            largest_printed_mesh_idx = object_id;
+        }
+    }
+
+    Ok(grouped_meshes)
+}
+
+// `config.<key>.value` of a float or percent option.
+fn cfg_float(config: &crate::print_config::config_def::DynamicPrintConfig, key: &str) -> f64 {
+    use crate::config::{ConfigOption, ConfigOptionResolver};
+    config.option(key).and_then(|o| o.get_float().ok()).unwrap_or(0.0)
+}
+
+/// TreeSupport3D.cpp:213-223 `static std::string getPolygonAsString(const Polygons& poly)` (the C++ has it
+/// under `#if 0`).
+// todo remove as only for debugging relevant
+#[must_use]
+pub fn get_polygon_as_string(poly: &[Polygon]) -> String {
+    let mut ret = String::new();
+    for path in poly {
+        for p in &path.points {
+            if !ret.is_empty() {
+                ret += ",";
+            }
+            ret += &format!("({},{})", p.x, p.y);
+        }
+    }
+    ret
+}
+
+/// TreeSupport3D.cpp:349-370 `static LayerIndex precalculate(const Print &print, const std::vector<Polygons>
+/// &overhangs, const TreeSupportSettings &config, const std::vector<size_t> &object_ids, TreeModelVolumes
+/// &volumes, std::function<void()> throw_on_cancel)`
+///
+/// Precalculates all avoidances, that could be required.
+#[must_use]
+pub fn precalculate(
+    print: &pf::Print,
+    overhangs: &[Polygons],
+    config: &TreeSupportSettings,
+    object_ids: &[usize],
+    volumes: &mut TreeModelVolumes,
+    throw_on_cancel: ThrowOnCancel,
+) -> LayerIndex {
+    // calculate top most layer that is relevant for support
+    let mut max_layer: LayerIndex = 0;
+    for &object_id in object_ids {
+        let print_object = print.get_object(object_id);
+        let num_raft_layers = config.raft_layers.len() as i32;
+        let num_layers = print_object.layer_count() as i32 + num_raft_layers;
+        let mut max_support_layer_id: i32 = 0;
+        for layer_id in std::cmp::max(num_raft_layers, 1)..num_layers {
+            if !overhangs[layer_id as usize].is_empty() {
+                max_support_layer_id = layer_id;
+            }
+        }
+        max_layer = std::cmp::max(max_support_layer_id - config.z_distance_top_layers as i32, 0);
+    }
+    if max_layer > 0 {
+        // The actual precalculation happens in TreeModelVolumes.
+        volumes.precalculate(print.get_object(object_ids[0]), max_layer, throw_on_cancel);
+    }
+    max_layer
+}
+
+/// TreeSupport3D.cpp:372-395 `LineStatus get_avoidance_status(const Point& p, coord_t radius, LayerIndex layer_idx,
+/// const TreeModelVolumes& volumes, const TreeSupportSettings& config, coord_t xy_min_distance = -1)`
+// picked from convert_lines_to_internal()
+#[must_use]
+pub fn get_avoidance_status(
+    p: &Point,
+    mut radius: Coord,
+    layer_idx: LayerIndex,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    mut xy_min_distance: Coord,
+) -> LineStatus {
+    if xy_min_distance < 0 {
+        xy_min_distance = config.xy_min_distance;
+    }
+    let min_xy_dist = config.xy_distance > xy_min_distance;
+    radius += if min_xy_dist { std::cmp::max(0, xy_min_distance - config.xy_min_distance) } else { 0 };
+
+    let mut type_ = LineStatus::INVALID;
+
+    if !contains(&volumes.get_avoidance(radius, layer_idx, AvoidanceType::FastSafe, false, min_xy_dist), p) {
+        type_ = LineStatus::TO_BP_SAFE;
+    } else if !contains(&volumes.get_avoidance(radius, layer_idx, AvoidanceType::Fast, false, min_xy_dist), p) {
+        type_ = LineStatus::TO_BP;
+    } else if config.support_rests_on_model
+        && !contains(&volumes.get_avoidance(radius, layer_idx, AvoidanceType::FastSafe, true, min_xy_dist), p)
+    {
+        type_ = LineStatus::TO_MODEL_GRACIOUS_SAFE;
+    } else if config.support_rests_on_model
+        && !contains(&volumes.get_avoidance(radius, layer_idx, AvoidanceType::Fast, true, min_xy_dist), p)
+    {
+        type_ = LineStatus::TO_MODEL_GRACIOUS;
+    } else if config.support_rests_on_model && !contains(&volumes.get_collision(radius, layer_idx, min_xy_dist), p) {
+        type_ = LineStatus::TO_MODEL;
+    }
+
+    type_
+}
+
+/// TreeSupport3D.cpp:397-443 `static LineInformations convert_lines_to_internal(const TreeModelVolumes &volumes,
+/// const TreeSupportSettings &config, const Polylines &polylines, LayerIndex layer_idx, coord_t xy_min_distance = -1)`
+///
+/// Converts a Polygons object representing a line into the internal format.
+// Called by generate_initial_areas()
+#[must_use]
+pub fn convert_lines_to_internal(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    polylines: &[Polyline],
+    layer_idx: LayerIndex,
+    mut xy_min_distance: Coord,
+) -> LineInformations {
+    if xy_min_distance < 0 {
+        xy_min_distance = config.xy_min_distance;
+    }
+    let min_xy_dist = config.xy_distance > xy_min_distance;
+    let collision_radius: Coord =
+        config.get_radius(0, 0.) + if min_xy_dist { std::cmp::max(0, xy_min_distance - config.xy_min_distance) } else { 0 };
+
+    let mut result: LineInformations = Vec::new();
+    // Also checks if the position is valid, if it is NOT, it deletes that point
+    for line in polylines {
+        let mut res_line: LineInformation = Vec::new();
+        for &p in &line.points {
+            if !contains(&volumes.get_avoidance(collision_radius, layer_idx, AvoidanceType::FastSafe, false, min_xy_dist), &p) {
+                res_line.push((p, LineStatus::TO_BP_SAFE));
+            } else if !contains(&volumes.get_avoidance(collision_radius, layer_idx, AvoidanceType::Fast, false, min_xy_dist), &p) {
+                res_line.push((p, LineStatus::TO_BP));
+            } else if config.support_rests_on_model
+                && !contains(&volumes.get_avoidance(collision_radius, layer_idx, AvoidanceType::FastSafe, true, min_xy_dist), &p)
+            {
+                res_line.push((p, LineStatus::TO_MODEL_GRACIOUS_SAFE));
+            } else if config.support_rests_on_model
+                && !contains(&volumes.get_avoidance(collision_radius, layer_idx, AvoidanceType::Fast, true, min_xy_dist), &p)
+            {
+                res_line.push((p, LineStatus::TO_MODEL_GRACIOUS));
+            } else if config.support_rests_on_model && !contains(&volumes.get_collision(collision_radius, layer_idx, min_xy_dist), &p) {
+                res_line.push((p, LineStatus::TO_MODEL));
+            } else if !res_line.is_empty() {
+                result.push(res_line.clone());
+                res_line.clear();
+            }
+        }
+        if !res_line.is_empty() {
+            result.push(res_line.clone());
+            res_line.clear();
+        }
+    }
+
+    validate_range(result.as_slice());
+    result
+}
+
+/// TreeSupport3D.cpp:446-463 `static Polylines convert_internal_to_lines(LineInformations lines)` (the C++ has it
+/// under `#if 0`).
+///
+/// Converts lines in internal format into a Polygons object representing these lines.
+#[must_use]
+pub fn convert_internal_to_lines(lines: &[LineInformation]) -> Polylines {
+    let mut result: Polylines = Vec::new();
+    for line in lines {
+        let mut path = Polyline::new();
+        for point_data in line {
+            path.points.push(point_data.0);
+        }
+        result.push(path);
+    }
+    validate_range(result.as_slice());
+    result
+}
+
+/// TreeSupport3D.cpp:466-491 `static bool evaluate_point_for_next_layer_function(const TreeModelVolumes &volumes,
+/// const TreeSupportSettings &config, size_t current_layer, const std::pair<Point, LineStatus> &p, coord_t
+/// xy_min_distance = -1)`
+///
+/// Evaluates if a point has to be added now. Required for a split_lines call in generate_initial_areas().
+#[must_use]
+pub fn evaluate_point_for_next_layer_function(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    current_layer: usize,
+    p: &(Point, LineStatus),
+    mut xy_min_distance: Coord,
+) -> bool {
+    if xy_min_distance < 0 {
+        xy_min_distance = config.xy_min_distance;
+    }
+    let min_xy_dist = config.xy_distance > xy_min_distance;
+    let collision_radius: Coord =
+        config.get_radius(0, 0.) + if min_xy_dist { std::cmp::max(0, xy_min_distance - config.xy_min_distance) } else { 0 };
+    // `current_layer - 1` is a `size_t` handed to a `LayerIndex`.
+    let layer_below = (current_layer.wrapping_sub(1)) as LayerIndex;
+    if !contains(
+        &volumes.get_avoidance(
+            collision_radius,
+            layer_below,
+            if p.1 == LineStatus::TO_BP_SAFE { AvoidanceType::FastSafe } else { AvoidanceType::Fast },
+            false,
+            min_xy_dist,
+        ),
+        &p.0,
+    ) {
+        return true;
+    }
+    if config.support_rests_on_model && (p.1 != LineStatus::TO_BP && p.1 != LineStatus::TO_BP_SAFE) {
+        return !contains(
+            &if p.1 == LineStatus::TO_MODEL_GRACIOUS || p.1 == LineStatus::TO_MODEL_GRACIOUS_SAFE {
+                volumes.get_avoidance(
+                    collision_radius,
+                    layer_below,
+                    if p.1 == LineStatus::TO_MODEL_GRACIOUS_SAFE { AvoidanceType::FastSafe } else { AvoidanceType::Fast },
+                    true,
+                    min_xy_dist,
+                )
+            } else {
+                volumes.get_collision(collision_radius, layer_below, min_xy_dist)
+            },
+            &p.0,
+        );
+    }
+    false
+}
+
+/// TreeSupport3D.cpp:493-524 `template<typename EvaluatePointFn> static std::pair<LineInformations,
+/// LineInformations> split_lines(const LineInformations &lines, EvaluatePointFn evaluatePoint)`
+///
+/// Evaluates which points of some lines are not valid one layer below and which are. Assumes all points are valid
+/// on the current layer. Validity is evaluated using supplied lambda. Returns a pair with which points are still
+/// valid in the first slot and which are not in the second slot.
+#[must_use]
+pub fn split_lines<F>(lines: &[LineInformation], mut evaluate_point: F) -> (LineInformations, LineInformations)
+where
+    F: FnMut(&(Point, LineStatus)) -> bool,
+{
+    // assumes all Points on the current line are valid
+
+    let mut keep: LineInformations = Vec::new();
+    let mut set_free: LineInformations = Vec::new();
+    for line in lines {
+        let mut current_keep = true;
+        let mut resulting_line: LineInformation = Vec::new();
+        for me in line {
+            if evaluate_point(me) != current_keep {
+                if !resulting_line.is_empty() {
+                    (if current_keep { &mut keep } else { &mut set_free }).push(std::mem::take(&mut resulting_line));
+                }
+                current_keep = !current_keep;
+            }
+            resulting_line.push(*me);
+        }
+        if !resulting_line.is_empty() {
+            (if current_keep { &mut keep } else { &mut set_free }).push(resulting_line);
+        }
+    }
+    validate_range(keep.as_slice());
+    validate_range(set_free.as_slice());
+    (keep, set_free)
+}
+
+/// TreeSupport3D.cpp:526-573 `static std::optional<std::pair<Point, size_t>>
+/// polyline_sample_next_point_at_distance(const Points &polyline, const Point &start_pt, size_t start_idx, double dist)`
+// Ported from CURA's PolygonUtils::getNextPointWithDistance()
+// Sample a next point at distance "dist" from start_pt on polyline segment (start_idx, start_idx + 1).
+// Returns sample point and start index of its segment on polyline if such sample exists.
+pub fn polyline_sample_next_point_at_distance(polyline: &[Point], start_pt: &Point, start_idx: usize, dist: f64) -> Option<(Point, usize)> {
+    let dist2 = dist * dist;
+    let dist2i = dist2 as i64;
+    let eps = scaled_f64(0.01);
+
+    for i in (start_idx + 1)..polyline.len() {
+        let p1 = polyline[i];
+        if squared_norm_i64(p1 - *start_pt) >= dist2i {
+            // The end point is outside the circle with center "start_pt" and radius "dist".
+            let p0 = polyline[i - 1];
+            let v: Vec2d = vec2d(p1 - p0);
+            let l2v = squared_norm2(v);
+            if l2v < eps * eps {
+                // Very short segment.
+                let c = Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
+                if (norm2(vec2d(*start_pt - c)) - dist).abs() < eps {
+                    return Some((c, i - 1));
+                } else {
+                    continue;
+                }
+            }
+            let p0f: Vec2d = vec2d(*start_pt - p0);
+            // Foot point of start_pt into v.
+            let s = dot2(p0f, v) / l2v;
+            let foot_pt: Vec2d = (v.0 * s, v.1 * s);
+            // Vector from foot point of "start_pt" to "start_pt".
+            let xf: Vec2d = (p0f.0 - foot_pt.0, p0f.1 - foot_pt.1);
+            // Squared distance of "start_pt" from the ray (p0, p1).
+            let l2_from_line = squared_norm2(xf);
+            // Squared distance of an intersection point of a circle with center at the foot point.
+            let mut l2_intersection = dist2 - l2_from_line;
+            if l2_intersection > -SCALED_EPSILON {
+                // The ray (p0, p1) touches or intersects a circle centered at "start_pt" with radius "dist".
+                // Distance of the circle intersection point from the foot point.
+                l2_intersection = if l2_intersection < 0. { 0. } else { l2_intersection };
+                if squared_norm2((v.0 - foot_pt.0, v.1 - foot_pt.1)) >= l2_intersection {
+                    // Intersection of the circle with the segment (p0, p1) is on the right side (close to p1) from the foot point.
+                    let k = (l2_intersection / l2v).sqrt();
+                    let p = p0 + Point::new((foot_pt.0 + v.0 * k) as Coord, (foot_pt.1 + v.1 * k) as Coord);
+                    validate_range(&p);
+                    return Some((p, i - 1));
+                }
+            }
+        }
+    }
+    None
+}
+
+// MultiPoint.hpp:134-142 `inline double length(const Points &pts)`
+fn length(pts: &[Point]) -> f64 {
+    let mut total = 0.;
+    for i in 1..pts.len() {
+        total += norm2(vec2d(pts[i] - pts[i - 1]));
+    }
+    total
+}
+
+/// TreeSupport3D.cpp:575-675 `static Polylines ensure_maximum_distance_polyline(const Polylines &input, double
+/// distance, size_t min_points)`
+///
+/// Eensures that every line segment is about distance in length. The resulting lines may differ from the original
+/// but all points are on the original
+#[must_use]
+pub fn ensure_maximum_distance_polyline(input: &[Polyline], distance: f64, min_points: usize) -> Polylines {
+    let mut result: Polylines = Vec::new();
+    for part in input {
+        let mut part: Polyline = part.clone();
+        if part.points.is_empty() {
+            continue;
+        }
+
+        let len = length(&part.points);
+        let mut line = Polyline::new();
+        // std::max(distance, scaled<double>(0.1))
+        let mut current_distance = if distance < scaled_f64(0.1) { scaled_f64(0.1) } else { distance };
+        if len < 2. * distance && min_points <= 1 {
+            // Insert the opposite point of the first one.
+            //FIXME pretty expensive
+            let mut pl = part.clone();
+            pl.clip_end(len / 2.);
+            line.points.push(*pl.points.last().unwrap());
+        } else {
+            let mut optimal_end_index = part.points.len() - 1;
+
+            if part.points[0] == part.points[part.points.len() - 1] {
+                let mut optimal_start_index: usize = 0;
+                // If the polyline was a polygon, there is a high chance it was an overhang. Overhangs that are <60� tend to be very thin areas, so lets get the beginning and end of them and ensure that they are supported.
+                // The first point of the line will always be supported, so rotate the order of points in this polyline that one of the two corresponding points that are furthest from each other is in the beginning.
+                // The other will be manually added (optimal_end_index)
+                // `coord_t max_dist2_between_vertecies`: the squared norms are doubles, the stored one is truncated.
+                let mut max_dist2_between_vertecies: Coord = 0;
+                for idx in 0..(part.points.len() - 1) {
+                    for inner_idx in 0..(part.points.len() - 1) {
+                        if squared_norm2(vec2d(part.points[idx] - part.points[inner_idx])) > max_dist2_between_vertecies as f64 {
+                            optimal_start_index = idx;
+                            optimal_end_index = inner_idx;
+                            max_dist2_between_vertecies = squared_norm2(vec2d(part.points[idx] - part.points[inner_idx])) as Coord;
+                        }
+                    }
+                }
+                // std::rotate(part.begin(), part.begin() + optimal_start_index, part.end() - 1);
+                let n = part.points.len();
+                part.points[..n - 1].rotate_left(optimal_start_index);
+                part.points[n - 1] = part.points[0]; // restore that property that this polyline ends where it started.
+                optimal_end_index = (part.points.len() + optimal_end_index - optimal_start_index - 1) % (part.points.len() - 1);
+            }
+
+            while line.points.len() < min_points && current_distance >= scaled_f64(0.1) {
+                line.points.clear();
+                let mut current_point = part.points[0];
+                line.points.push(part.points[0]);
+                if min_points > 1 || norm2(vec2d(part.points[0] - part.points[optimal_end_index])) > current_distance {
+                    line.points.push(part.points[optimal_end_index]);
+                }
+                let mut current_index: usize = 0;
+                let mut next_distance = current_distance;
+                // Get points so that at least min_points are added and they each are current_distance away from each other. If that is impossible, decrease current_distance a bit.
+                // The input are lines, that means that the line from the last to the first vertex does not have to exist, so exclude all points that are on this line!
+                while let Some(next_point) = polyline_sample_next_point_at_distance(&part.points, &current_point, current_index, next_distance) {
+                    // Not every point that is distance away, is valid, as it may be much closer to another point. This is especially the case when the overhang is very thin.
+                    // So this ensures that the points are actually a certain distance from each other.
+                    // This assurance is only made on a per polygon basis, as different but close polygon may not be able to use support below the other polygon.
+                    let mut min_distance_to_existing_point = f64::MAX;
+                    for p in &line.points {
+                        let d = norm2(vec2d(*p - next_point.0));
+                        // std::min(a, b): `(b < a) ? b : a`
+                        if d < min_distance_to_existing_point {
+                            min_distance_to_existing_point = d;
+                        }
+                    }
+                    if min_distance_to_existing_point >= current_distance {
+                        // viable point was found. Add to possible result.
+                        line.points.push(next_point.0);
+                        current_point = next_point.0;
+                        current_index = next_point.1;
+                        next_distance = current_distance;
+                    } else {
+                        if current_point == next_point.0 {
+                            // In case a fixpoint is encountered, better aggressively overcompensate so the code does not become stuck here...
+                            tree_supports_show_error("Encountered issue while placing tips. Some tips may be missing.", true);
+                            if next_distance > 2. * current_distance {
+                                // This case should never happen, but better safe than sorry.
+                                break;
+                            }
+                            next_distance += current_distance;
+                            continue;
+                        }
+                        // if the point was too close, the next possible viable point is at least distance-min_distance_to_existing_point away from the one that was just checked.
+                        let d = current_distance - min_distance_to_existing_point;
+                        next_distance = if d < scaled_f64(0.1) { scaled_f64(0.1) } else { d };
+                        current_point = next_point.0;
+                        current_index = next_point.1;
+                    }
+                }
+                current_distance *= 0.9;
+            }
+        }
+        result.push(line);
+    }
+    validate_range(result.as_slice());
+    result
+}
+
+/// TreeSupport3D.cpp:677-767 `static Polylines generate_support_infill_lines(const Polygons &polygon, const
+/// SupportParameters &support_params, bool roof, LayerIndex layer_idx, coord_t support_infill_distance)`
+///
+/// Returns Polylines representing the (infill) lines that will result in slicing the given area. `fillers` is
+/// `Fill::new_from_type`.
+#[must_use]
+pub fn generate_support_infill_lines(
+    polygon: &[Polygon],
+    support_params: &SupportParameters,
+    roof: bool,
+    layer_idx: LayerIndex,
+    support_infill_distance: Coord,
+    fillers: &dyn SupportFillFactory,
+) -> Polylines {
+    let flow = if roof { &support_params.support_material_interface_flow } else { &support_params.support_material_flow };
+    let mut filler = fillers.new_from_type(if roof { support_params.interface_fill_pattern } else { support_params.base_fill_pattern });
+    let mut fill_params = crate::fill::FillParams::default();
+
+    filler.fill_mut().layer_id = layer_idx as usize;
+    filler.fill_mut().spacing = flow.spacing();
+    filler.fill_mut().angle = if roof {
+        //fixme support_layer.interface_id() instead of layer_idx
+        // `(support_params.interface_angle + (layer_idx & 1) ? float(- M_PI / 4.) : float(+ M_PI / 4.))`: the sum is
+        // the condition.
+        if support_params.interface_angle + (layer_idx & 1) as f32 != 0. {
+            (-std::f64::consts::PI / 4.) as f32
+        } else {
+            (std::f64::consts::PI / 4.) as f32
+        }
+    } else {
+        support_params.base_angle
+    };
+
+    // `float(roof ? support_params.interface_density : scaled<float>(filler->spacing) / (scaled<float>(filler->spacing)
+    // + float(support_infill_distance)))`
+    fill_params.density = (if roof {
+        support_params.interface_density
+    } else {
+        let scaled_spacing = (filler.fill().spacing / SCALING_FACTOR) as f32;
+        (scaled_spacing / (scaled_spacing + support_infill_distance as f32)) as f64
+    }) as f32 as f64;
+    fill_params.dont_adjust = true;
+
+    let mut out: Polylines = Vec::new();
+    for expoly in cu::union_ex(polygon) {
+        // The surface type does not matter.
+        check_self_intersections(&expoly, "generate_support_infill_lines");
+        let surface = crate::surface::Surface::new(crate::surface::SurfaceType::Internal, expoly);
+        match filler.fill_surface(&surface, &fill_params) {
+            Ok(pl) => out.extend(pl),
+            Err(InfillFailedException) => {}
+        }
+    }
+    validate_range(out.as_slice());
+    out
+}
+
+/// TreeSupport3D.cpp:1429-1530 `static unsigned int move_inside(const Polygons &polygons, Point &from, int distance
+/// = 0, int64_t maxDist2 = std::numeric_limits<int64_t>::max())`
+pub fn move_inside(polygons: &[Polygon], from: &mut Point, distance: i32, max_dist2: i64) -> u32 {
+    let mut ret = *from;
+    let mut best_dist2 = f64::MAX;
+    let mut best_poly: u32 = u32::MAX;
+    let mut is_already_on_correct_side_of_boundary = false; // whether [from] is already on the right side of the boundary
+    for poly_idx in 0..polygons.len() as u32 {
+        let poly = &polygons[poly_idx as usize];
+        if poly.points.len() < 2 {
+            continue;
+        }
+        let mut p0 = poly.points[poly.points.len() - 2];
+        let mut p1 = *poly.points.last().unwrap();
+        // because we compare with vSize2 here (no division by zero), we also need to compare by vSize2 inside the loop
+        // to avoid integer rounding edge cases
+        let mut projected_p_beyond_prev_segment = dot_i64(p1 - p0, *from - p0) >= squared_norm_i64(p1 - p0);
+        for &p2 in &poly.points {
+            // X = A + Normal(B-A) * (((B-A) dot (P-A)) / VSize(B-A));
+            //   = A +       (B-A) *  ((B-A) dot (P-A)) / VSize2(B-A);
+            // X = P projected on AB
+            let a = p1;
+            let b = p2;
+            let p = *from;
+            let ab = b - a;
+            let ap = p - a;
+            let ab_length2: i64 = squared_norm_i64(ab);
+            if ab_length2 <= 0 {
+                //A = B, i.e. the input polygon had two adjacent points on top of each other.
+                p1 = p2; //Skip only one of the points.
+                continue;
+            }
+            let dot_prod: i64 = dot_i64(ab, ap);
+            if dot_prod <= 0 {
+                // x is projected to before ab
+                if projected_p_beyond_prev_segment {
+                    //  case which looks like:   > .
+                    projected_p_beyond_prev_segment = false;
+                    let x = p1;
+
+                    let dist2 = squared_norm_i64(x - p);
+                    if (dist2 as f64) < best_dist2 {
+                        best_dist2 = dist2 as f64;
+                        best_poly = poly_idx;
+                        if distance == 0 {
+                            ret = x;
+                        } else {
+                            let abd: Vec2d = vec2d(ab);
+                            let p1p2: Vec2d = vec2d(p1 - p0);
+                            let lab = norm2(abd);
+                            let lp1p2 = norm2(p1p2);
+                            // inward direction irrespective of sign of [distance]
+                            let sa = scaled_f64(10.0) / lab;
+                            let sb = scaled_f64(10.0) / lp1p2;
+                            let sum: Vec2d = (abd.0 * sa + p1p2.0 * sb, abd.1 * sa + p1p2.1 * sb);
+                            // perp(v): (-v.y, v.x)
+                            let inward_dir: Vec2d = (-sum.1, sum.0);
+                            // MM2INT(10.0) to retain precision for the eventual normalization
+                            let k = distance as f64 / norm2(inward_dir);
+                            ret = x + Point::new((inward_dir.0 * k) as Coord, (inward_dir.1 * k) as Coord);
+                            is_already_on_correct_side_of_boundary = dot2(inward_dir, vec2d(p - x)) * distance as f64 >= 0.;
+                        }
+                    }
+                } else {
+                    projected_p_beyond_prev_segment = false;
+                    p0 = p1;
+                    p1 = p2;
+                    continue;
+                }
+            } else if dot_prod >= ab_length2 {
+                // x is projected to beyond ab
+                projected_p_beyond_prev_segment = true;
+                p0 = p1;
+                p1 = p2;
+                continue;
+            } else {
+                // x is projected to a point properly on the line segment (not onto a vertex). The case which looks like | .
+                projected_p_beyond_prev_segment = false;
+                let t = dot_prod as f64 / ab_length2 as f64;
+                let x = a + Point::new((ab.x as f64 * t) as Coord, (ab.y as f64 * t) as Coord);
+                let dist2 = squared_norm_i64(p - x);
+                if (dist2 as f64) < best_dist2 {
+                    best_dist2 = dist2 as f64;
+                    best_poly = poly_idx;
+                    if distance == 0 {
+                        ret = x;
+                    } else {
+                        let abd: Vec2d = vec2d(ab);
+                        let k = distance as f64 / norm2(abd);
+                        // inward or outward depending on the sign of [distance]
+                        let inward_dir: Vec2d = (-(abd.1 * k), abd.0 * k);
+                        ret = x + Point::new(inward_dir.0 as Coord, inward_dir.1 as Coord);
+                        is_already_on_correct_side_of_boundary = dot2(inward_dir, vec2d(p - x)) >= 0.;
+                    }
+                }
+            }
+            p0 = p1;
+            p1 = p2;
+        }
+    }
+    // when the best point is already inside and we're moving inside, or when the best point is already outside and we're moving outside
+    if is_already_on_correct_side_of_boundary {
+        // `distance * distance` is a product of two ints.
+        if best_dist2 < distance.wrapping_mul(distance) as f64 {
+            *from = ret;
+        } else {
+            // from = from; // original point stays unaltered. It is already inside by enough distance
+        }
+        return best_poly;
+    } else if best_dist2 < max_dist2 as f64 {
+        *from = ret;
+        return best_poly;
+    }
+    u32::MAX
+}
+
+/// TreeSupport3D.cpp:1532-1537 `static Point move_inside_if_outside(const Polygons &polygons, Point from, int
+/// distance = 0, int64_t maxDist2 = std::numeric_limits<int64_t>::max())`: the last two arguments are not handed
+/// on to `move_inside`.
+pub fn move_inside_if_outside(polygons: &[Polygon], mut from: Point, _distance: i32, _max_dist2: i64) -> Point {
+    if !contains(polygons, &from) {
+        move_inside(polygons, &mut from, 0, i64::MAX);
+    }
+    from
+}
+
+// -----------------------------------------------------------------------------
+// TreeSupport3D.cpp:769-1427: the tips of the trees
+// -----------------------------------------------------------------------------
+
+use crate::support::support_common::safe_offset_inc;
+use crate::support::support_layer::{SupportGeneratorLayerStorage, SupportGeneratorLayersPtr};
+use crate::support::tree_support_common::{InterfacePlacer, SUPPORT_GENERATOR_LAYER_PTR_NULL, SUPPORT_TREE_CIRCLE_RESOLUTION};
+
+/// The outputs an `InterfacePlacer` of the C++ holds references to (TreeSupportCommon.hpp:811-815): the
+/// storage of the generator layers and the top contact, top interface and top base interface layers.
+pub struct InterfacePlacerOutputs<'a> {
+    pub layer_storage: &'a mut SupportGeneratorLayerStorage,
+    pub top_contacts: &'a mut SupportGeneratorLayersPtr,
+    pub top_interfaces: &'a mut SupportGeneratorLayersPtr,
+    pub top_base_interfaces: &'a mut SupportGeneratorLayersPtr,
+}
+
+/// TreeSupport3D.cpp:769-931 `class RichInterfacePlacer : public InterfacePlacer`
+pub struct RichInterfacePlacer<'a, 'b> {
+    /// The base class.
+    pub interface_placer: InterfacePlacer<'a>,
+    /// The outputs of the base class.
+    pub outputs: InterfacePlacerOutputs<'b>,
+    pub volumes: &'a TreeModelVolumes,
+    // Radius of the tree tip is large enough to be covered by an interface.
+    pub force_tip_to_roof: bool,
+    // Outputs
+    move_bounds: &'b mut Vec<SupportElements>,
+    // Temps
+    m_base_circle: Polygon,
+    // Mutexes, guards
+    m_already_inserted: Vec<std::collections::HashSet<Point>>,
+    /// `Fill::new_from_type`
+    fillers: &'a dyn SupportFillFactory,
+}
+
+impl<'a, 'b> RichInterfacePlacer<'a, 'b> {
+    /// TreeSupport3D.cpp:925 `static constexpr const auto m_base_radius = scaled<int>(0.01);`
+    pub fn m_base_radius() -> i32 {
+        (0.01 / SCALING_FACTOR) as i32
+    }
+
+    /// TreeSupport3D.cpp:771-782 `RichInterfacePlacer(const InterfacePlacer &interface_placer, const TreeModelVolumes
+    /// &volumes, bool force_tip_to_roof, size_t num_support_layers, std::vector<SupportElements> &move_bounds)`
+    pub fn new(
+        interface_placer: InterfacePlacer<'a>,
+        outputs: InterfacePlacerOutputs<'b>,
+        volumes: &'a TreeModelVolumes,
+        force_tip_to_roof: bool,
+        num_support_layers: usize,
+        move_bounds: &'b mut Vec<SupportElements>,
+        fillers: &'a dyn SupportFillFactory,
+    ) -> Self {
+        Self {
+            interface_placer,
+            outputs,
+            volumes,
+            force_tip_to_roof,
+            move_bounds,
+            // `make_circle(m_base_radius, SUPPORT_TREE_CIRCLE_RESOLUTION)`: Polygon.cpp:729 `make_circle(double radius,
+            // double error)`, the number of vertices of a circle taken as the error.
+            m_base_circle: crate::geometry::make_circle(Self::m_base_radius() as f64, SUPPORT_TREE_CIRCLE_RESOLUTION as f64),
+            m_already_inserted: vec![std::collections::HashSet::new(); num_support_layers],
+            fillers,
+        }
+    }
+
+    fn config(&self) -> &'a TreeSupportSettings {
+        self.interface_placer.config
+    }
+
+    /// TreeSupportCommon.hpp:772-780 `add_roofs` of the base class.
+    pub fn add_roofs(&mut self, new_roofs: Vec<Polygons>, insert_layer_idx: usize) {
+        self.interface_placer.add_roofs(
+            new_roofs,
+            insert_layer_idx,
+            self.outputs.layer_storage,
+            self.outputs.top_contacts,
+            self.outputs.top_interfaces,
+            self.outputs.top_base_interfaces,
+        );
+    }
+
+    /// TreeSupportCommon.hpp:782-786 `add_roof` of the base class.
+    pub fn add_roof(&mut self, new_roof: Polygons, insert_layer_idx: usize, dtt_tip: usize) {
+        self.interface_placer.add_roof(
+            new_roof,
+            insert_layer_idx,
+            dtt_tip,
+            self.outputs.layer_storage,
+            self.outputs.top_contacts,
+            self.outputs.top_interfaces,
+            self.outputs.top_base_interfaces,
+        );
+    }
+
+    /// TreeSupportCommon.hpp:789-793 `add_roof_build_plate` of the base class.
+    pub fn add_roof_build_plate(&mut self, overhang_areas: Polygons, dtt_roof: usize) {
+        self.interface_placer.add_roof_build_plate(
+            overhang_areas,
+            dtt_roof,
+            self.outputs.layer_storage,
+            self.outputs.top_contacts,
+            self.outputs.top_interfaces,
+            self.outputs.top_base_interfaces,
+        );
+    }
+
+    /// TreeSupport3D.cpp:788-867 `void add_points_along_lines(LineInformations lines, LayerIndex insert_layer_idx,
+    /// size_t roof_tip_layers, size_t supports_roof_layers, size_t dont_move_until, coord_t xy_min_distance)`
+    // called by sample_overhang_area()
+    pub fn add_points_along_lines(
+        &mut self,
+        // Insert points (tree tips or top contact interfaces) along these lines.
+        mut lines: LineInformations,
+        // Start at this layer.
+        insert_layer_idx: LayerIndex,
+        // Insert this number of interface layers.
+        roof_tip_layers: usize,
+        // True if an interface is already generated above these lines.
+        supports_roof_layers: usize,
+        // The element tries to not move until this dtt is reached.
+        dont_move_until: usize,
+        xy_min_distance: Coord,
+    ) {
+        validate_range(lines.as_slice());
+        let config = self.config();
+        let volumes = self.volumes;
+        // Add tip area as roof (happens when minimum roof area > minimum tip area) if possible
+        // `insert_layer_idx - dtt_roof_tip` is unsigned arithmetic (an int and a size_t).
+        let insert_layer_idx_u = insert_layer_idx as usize;
+        let mut dtt_roof_tip: usize = 0;
+        while dtt_roof_tip < roof_tip_layers && insert_layer_idx_u.wrapping_sub(dtt_roof_tip) >= 1 {
+            let this_layer_idx: usize = insert_layer_idx_u.wrapping_sub(dtt_roof_tip);
+            //FIXME Vojtech: The circle is just shifted, it has a known size, the infill should fit all the time!
+            let evaluate_roof_will_generate = |_p: &(Point, LineStatus)| true;
+
+            {
+                // keep all lines that are still valid on the next layer
+                let split = split_lines(&lines, |p| evaluate_point_for_next_layer_function(volumes, config, this_layer_idx, p, xy_min_distance));
+                let mut points: LineInformations = split.1;
+                // Not all roofs are guaranteed to actually generate lines, so filter these out and add them as points.
+                let split = split_lines(&split.0, evaluate_roof_will_generate);
+                lines = split.0;
+                points.extend(split.1);
+                // add all points that would not be valid
+                for line in &points {
+                    for point_data in line {
+                        self.add_point_as_influence_area(
+                            *point_data,
+                            this_layer_idx as LayerIndex,
+                            // don't move until
+                            roof_tip_layers - dtt_roof_tip,
+                            // supports roof
+                            dtt_roof_tip + supports_roof_layers > 0,
+                            // disable ovalization
+                            false,
+                            xy_min_distance,
+                        );
+                    }
+                }
+            }
+
+            // add all tips as roof to the roof storage
+            let mut new_roofs: Polygons = Vec::new();
+            for line in &lines {
+                //FIXME sweep the tip radius along the line?
+                for p in line {
+                    let mut roof_circle = self.m_base_circle.clone();
+                    // `roof_circle.scale(config.min_radius / m_base_radius)`: a quotient of integers; MultiPoint.cpp:6-10
+                    // scales with Point.hpp:199 `operator*=(const double &)`, which truncates.
+                    let factor = (config.min_radius / Self::m_base_radius() as Coord) as f64;
+                    for pt in roof_circle.points.iter_mut() {
+                        *pt = Point::new((pt.x as f64 * factor) as Coord, (pt.y as f64 * factor) as Coord);
+                    }
+                    roof_circle.translate(p.0);
+                    new_roofs.push(roof_circle);
+                }
+            }
+            self.add_roof(new_roofs, this_layer_idx, dtt_roof_tip + supports_roof_layers);
+            dtt_roof_tip += 1;
+        }
+
+        for line in &lines {
+            // If a line consists of enough tips, the assumption is that it is not a single tip, but part of a simulated support pattern.
+            // Ovalisation should be disabled for these to improve the quality of the lines when tip_diameter=line_width
+            let disable_ovalistation = config.min_radius < 3 * config.support_line_width && roof_tip_layers == 0 && dtt_roof_tip == 0 && line.len() > 5;
+            for point_data in line {
+                self.add_point_as_influence_area(
+                    *point_data,
+                    insert_layer_idx_u.wrapping_sub(dtt_roof_tip) as LayerIndex,
+                    // don't move until
+                    if dont_move_until > dtt_roof_tip { dont_move_until - dtt_roof_tip } else { 0 },
+                    // supports roof
+                    dtt_roof_tip + supports_roof_layers > 0,
+                    disable_ovalistation,
+                    xy_min_distance,
+                );
+            }
+        }
+    }
+
+    /// TreeSupport3D.cpp:870-919 `void add_point_as_influence_area(std::pair<Point, LineStatus> p, LayerIndex
+    /// insert_layer, size_t dont_move_until, bool roof, bool skip_ovalisation, coord_t xy_min_distance)`
+    // called by this->add_points_along_lines()
+    fn add_point_as_influence_area(
+        &mut self,
+        p: (Point, LineStatus),
+        insert_layer: LayerIndex,
+        dont_move_until: usize,
+        roof: bool,
+        skip_ovalisation: bool,
+        xy_min_distance: Coord,
+    ) {
+        let config = self.config();
+        let to_bp = p.1 == LineStatus::TO_BP || p.1 == LineStatus::TO_BP_SAFE;
+        let gracious = to_bp || p.1 == LineStatus::TO_MODEL_GRACIOUS || p.1 == LineStatus::TO_MODEL_GRACIOUS_SAFE;
+        let safe_radius = p.1 == LineStatus::TO_BP_SAFE || p.1 == LineStatus::TO_MODEL_GRACIOUS_SAFE;
+        if !config.support_rests_on_model && !to_bp {
+            tree_supports_show_error("Unable to add tip. Some overhang may not be supported correctly.", true);
+            return;
+        }
+        let mut circle: Polygons = vec![self.m_base_circle.clone()];
+        circle[0].translate(p.0);
+        {
+            // `p.first / ((config.min_radius + 1) / 10)`: integer divisions.
+            let d = (config.min_radius + 1) / 10;
+            let hash_pos = Point::new(p.0.x / d, p.0.y / d);
+            if !self.m_already_inserted[insert_layer as usize].contains(&hash_pos) {
+                // normalize the point a bit to also catch points which are so close that inserting it would achieve nothing
+                self.m_already_inserted[insert_layer as usize].insert(hash_pos);
+                const DTT: u32 = 0;
+                let mut state = SupportElementState::default();
+                state.target_height = insert_layer;
+                state.target_position = p.0;
+                state.next_position = p.0;
+                state.layer_idx = insert_layer;
+                state.effective_radius_height = DTT;
+                state.to_buildplate = to_bp;
+                state.distance_to_top = DTT;
+                state.result_on_layer = p.0;
+                state.increased_to_model_radius = 0;
+                state.to_model_gracious = gracious;
+                state.elephant_foot_increases = 0.;
+                state.use_min_xy_dist = config.xy_distance > xy_min_distance;
+                state.xy_min_distance = xy_min_distance;
+                state.supports_roof = roof;
+                state.dont_move_until = dont_move_until as u32;
+                state.can_use_safe_radius = safe_radius;
+                state.missing_roof_layers = if self.force_tip_to_roof { dont_move_until as u32 } else { 0 };
+                state.skip_ovalisation = skip_ovalisation;
+                self.move_bounds[insert_layer as usize].push(SupportElement::new(state, circle));
+            }
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:934-953 `int generate_raft_contact(const PrintObject &print_object, const TreeSupportSettings
+/// &config, InterfacePlacer &interface_placer)`
+pub fn generate_raft_contact(
+    print_object: &pf::PrintObject,
+    config: &TreeSupportSettings,
+    interface_placer: &mut InterfacePlacer,
+    outputs: &mut InterfacePlacerOutputs,
+) -> i32 {
+    let mut raft_contact_layer_idx: i32 = -1;
+    if print_object.has_raft() && print_object.layer_count() > 0 {
+        // Produce raft contact layer outside of the tree support loop, so that no trees will be generated for the raft contact layer.
+        // Raft layers supporting raft contact interface will be produced by the classic raft generator.
+        // Find the raft contact layer.
+        raft_contact_layer_idx = config.raft_layers.len() as i32 - 1;
+        while raft_contact_layer_idx > 0
+            && config.raft_layers[raft_contact_layer_idx as usize] > print_object.slicing_parameters().raft_contact_top_z + EPSILON
+        {
+            raft_contact_layer_idx -= 1;
+        }
+        // Create the raft contact layer.
+        let lslices = &print_object.get_layer(0).lslices;
+        let expansion: f64 = cfg_float(print_object.config(), "raft_expansion");
+        interface_placer.add_roof_unguarded(
+            if expansion > 0. {
+                // `offset(lslices, scaled<float>(expansion))`
+                cu::offset_expolygons(lslices, (expansion / SCALING_FACTOR) as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+            } else {
+                crate::geometry::to_polygons(lslices)
+            },
+            raft_contact_layer_idx as usize,
+            0,
+            outputs.layer_storage,
+            outputs.top_contacts,
+            outputs.top_interfaces,
+            outputs.top_base_interfaces,
+        );
+    }
+    raft_contact_layer_idx
+}
+
+/// TreeSupport3D.cpp:955-1006 `void finalize_raft_contact(const PrintObject &print_object, const int
+/// raft_contact_layer_idx, SupportGeneratorLayersPtr &top_contacts, std::vector<SupportElements> &move_bounds)`
+pub fn finalize_raft_contact(
+    print_object: &pf::PrintObject,
+    raft_contact_layer_idx: i32,
+    layer_storage: &SupportGeneratorLayerStorage,
+    top_contacts: &mut SupportGeneratorLayersPtr,
+    move_bounds: &mut Vec<SupportElements>,
+) {
+    if raft_contact_layer_idx >= 0 {
+        let first_tree_layer: usize = print_object.slicing_parameters().raft_layers() - 1;
+        // Remove tree tips that start below the raft contact,
+        // remove interface layers below the raft contact.
+        for i in 0..first_tree_layer {
+            top_contacts[i] = SUPPORT_GENERATOR_LAYER_PTR_NULL;
+            move_bounds[i].clear();
+        }
+        if raft_contact_layer_idx >= 0 && cfg_float(print_object.config(), "raft_expansion") > 0. {
+            // If any tips at first_tree_layer now are completely inside the expanded raft layer, remove them as well before they are propagated to the ground.
+            let raft_polygons = &layer_storage[top_contacts[raft_contact_layer_idx as usize]].polygons;
+            // EdgeGrid::Grid grid(get_extents(raft_polygons).inflated(SCALED_EPSILON));
+            // grid.create(raft_polygons, Polylines{}, coord_t(scale_(10.)));
+            let mut bbox = crate::geometry::get_extents_polygons(raft_polygons);
+            let eps = SCALED_EPSILON as Coord;
+            bbox.min = Point::new(bbox.min.x - eps, bbox.min.y - eps);
+            bbox.max = Point::new(bbox.max.x + eps, bbox.max.y + eps);
+            let mut grid = crate::edge_grid::EdgeGrid::new();
+            grid.set_bbox(bbox);
+            grid.create_from_polygons(raft_polygons, (10. / SCALING_FACTOR) as Coord);
+            let first_layer_move_bounds = &mut move_bounds[first_tree_layer];
+            let threshold: f64 = (cfg_float(print_object.config(), "raft_expansion") / SCALING_FACTOR) * 2.;
+            first_layer_move_bounds.retain(|el| {
+                // `grid.signed_distance_edges(el.state.result_on_layer, threshold, dist)`: the search radius is a `coord_t`.
+                if let Some((dist, _)) = grid.signed_distance_edges(&el.state.result_on_layer, threshold as Coord) {
+                    // Support point is inside the expanded raft, remove it.
+                    return !(dist < -0.);
+                }
+                true
+            });
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:1008-1158 `void sample_overhang_area(Polygons&& overhang_area, const bool large_horizontal_roof,
+/// const size_t layer_idx, const size_t num_support_roof_layers, const coord_t connect_length, const coord_t
+/// xy_min_distance, const TreeSupportMeshGroupSettings& mesh_group_settings, RichInterfacePlacer& interface_placer)`
+// Called by generate_initial_areas(), used in parallel by multiple layers.
+// Produce
+// 1) Maximum num_support_roof_layers roof (top interface & contact) layers.
+// 2) Tree tips supporting either the roof layers or the object itself.
+// num_support_roof_layers should always be respected:
+// If num_support_roof_layers contact layers could not be produced, then the tree tip
+// is augmented with SupportElementState::missing_roof_layers
+// and the top "missing_roof_layers" of such particular tree tips are supposed to be coverted to
+// roofs aka interface layers by the tool path generator.
+#[allow(clippy::too_many_arguments)]
+pub fn sample_overhang_area(
+    // Area to support
+    mut overhang_area: Polygons,
+    // If true, then the overhang_area is likely large and wide, thus it is worth to try
+    // to cover it with continuous interfaces supported by zig-zag patterned tree tips.
+    large_horizontal_roof: bool,
+    // Index of the top suport layer generated by this function.
+    layer_idx: usize,
+    // Maximum number of roof (contact, interface) layers between the overhang and tree tips to be generated.
+    num_support_roof_layers: usize,
+    //
+    connect_length: Coord,
+    xy_min_distance: Coord,
+    // Configuration classes
+    mesh_group_settings: &TreeSupportMeshGroupSettings,
+    // Configuration & Output
+    interface_placer: &mut RichInterfacePlacer,
+) {
+    // Assumption is that roof will support roof further up to avoid a lot of unnecessary branches. Each layer down it is checked whether the roof area
+    // is still large enough to be a roof and aborted as soon as it is not. This part was already reworked a few times, and there could be an argument
+    // made to change it again if there are actual issues encountered regarding supporting roofs.
+    // Main problem is that some patterns change each layer, so just calculating points and checking if they are still valid an layer below is not useful,
+    // as the pattern may be different one layer below. Same with calculating which points are now no longer being generated as result from
+    // a decreasing roof, as there is no guarantee that a line will be above these points. Implementing a separate roof support behavior
+    // for each pattern harms maintainability as it very well could be >100 LOC
+    let support_parameters = interface_placer.interface_placer.support_parameters;
+    let fillers = interface_placer.fillers;
+    let config = interface_placer.config();
+    let volumes = interface_placer.volumes;
+    let generate_roof_lines = |area: &[Polygon], layer_idx: LayerIndex| -> Polylines {
+        generate_support_infill_lines(area, support_parameters, true, layer_idx, mesh_group_settings.support_roof_line_distance, fillers)
+    };
+
+    let mut overhang_lines: LineInformations = Vec::new();
+    // Track how many top contact / interface layers were already generated.
+    let mut dtt_roof: usize = 0;
+    let mut layer_generation_dtt: usize = 0;
+
+    if large_horizontal_roof {
+        // Sometimes roofs could be empty as the pattern does not generate lines if the area is narrow enough (i am looking at you, concentric infill).
+        // To catch these cases the added roofs are saved to be evaluated later.
+        let mut added_roofs: Vec<Polygons> = vec![Vec::new(); num_support_roof_layers];
+        let mut last_overhang: Polygons = overhang_area.clone();
+        dtt_roof = 0;
+        while dtt_roof < num_support_roof_layers && layer_idx.wrapping_sub(dtt_roof) >= 1 {
+            // here the roof is handled. If roof can not be added the branches will try to not move instead
+            let forbidden_next: Polygons;
+            {
+                let min_xy_dist = config.xy_distance > xy_min_distance;
+                let collision_radius: Coord =
+                    config.get_radius(0, 0.) + if min_xy_dist { std::cmp::max(0, xy_min_distance - config.xy_min_distance) } else { 0 };
+                let layer_below = layer_idx.wrapping_sub(dtt_roof + 1) as LayerIndex;
+                let forbidden_next_raw = if config.support_rests_on_model {
+                    volumes.get_collision(collision_radius, layer_below, min_xy_dist)
+                } else {
+                    volumes.get_avoidance(collision_radius, layer_below, AvoidanceType::Fast, false, min_xy_dist)
+                };
+                // prevent rounding errors down the line
+                //FIXME maybe use SafetyOffset::Yes at the following diff() instead?
+                forbidden_next = cu::offset_expolygons(&cu::union_ex(&forbidden_next_raw), (0.005 / SCALING_FACTOR) as f32, crate::clipper::JoinType::jtMiter, 1.2);
+            }
+            let overhang_area_next: Polygons = cu::diff(&overhang_area, &forbidden_next, cu::ApplySafetyOffset::No);
+            if crate::geometry::area_polygons(&overhang_area_next) < mesh_group_settings.minimum_roof_area {
+                // Next layer down the roof area would be to small so we have to insert our roof support here.
+                if dtt_roof > 0 {
+                    let dtt_before = dtt_roof - 1;
+                    // Produce support head points supporting an interface layer: First produce the interface lines, then sample them.
+                    let layer = layer_idx - dtt_before;
+                    overhang_lines = split_lines(
+                        &convert_lines_to_internal(
+                            volumes,
+                            config,
+                            &ensure_maximum_distance_polyline(&generate_roof_lines(&last_overhang, layer as LayerIndex), connect_length as f64, 1),
+                            layer as LayerIndex,
+                            xy_min_distance,
+                        ),
+                        |p| evaluate_point_for_next_layer_function(volumes, config, layer, p, xy_min_distance),
+                    )
+                    .0;
+                }
+                break;
+            }
+            added_roofs[dtt_roof] = overhang_area.clone();
+            last_overhang = overhang_area;
+            overhang_area = overhang_area_next;
+            dtt_roof += 1;
+        }
+
+        layer_generation_dtt = std::cmp::max(dtt_roof, 1) - 1; // 1 inside max and -1 outside to avoid underflow. layer_generation_dtt=dtt_roof-1 if dtt_roof!=0;
+        // if the roof should be valid, check that the area does generate lines. This is NOT guaranteed.
+        if overhang_lines.is_empty() && dtt_roof != 0 && generate_roof_lines(&overhang_area, (layer_idx - layer_generation_dtt) as LayerIndex).is_empty() {
+            for idx in 0..dtt_roof {
+                // check for every roof area that it has resulting lines. Remember idx 1 means the 2. layer of roof => higher idx == lower layer
+                if generate_roof_lines(&added_roofs[idx], (layer_idx - idx) as LayerIndex).is_empty() {
+                    dtt_roof = idx;
+                    layer_generation_dtt = std::cmp::max(dtt_roof, 1) - 1;
+                    break;
+                }
+            }
+        }
+        added_roofs.truncate(dtt_roof);
+        interface_placer.add_roofs(added_roofs, layer_idx);
+    }
+
+    if overhang_lines.is_empty() {
+        // support_line_width to form a line here as otherwise most will be unsupported. Technically this violates branch distance, but not only is this the only reasonable choice,
+        // but it ensures consistant behaviour as some infill patterns generate each line segment as its own polyline part causing a similar line forming behaviour.
+        // This is not doen when a roof is above as the roof will support the model and the trees only need to support the roof
+        let supports_roof = dtt_roof > 0;
+        let continuous_tips = !supports_roof && large_horizontal_roof;
+        let mut polylines: Polylines = ensure_maximum_distance_polyline(
+            &generate_support_infill_lines(
+                &overhang_area,
+                support_parameters,
+                supports_roof,
+                (layer_idx - layer_generation_dtt) as LayerIndex,
+                if supports_roof { mesh_group_settings.support_roof_line_distance } else { mesh_group_settings.support_tree_branch_distance },
+                fillers,
+            ),
+            (if continuous_tips { config.min_radius / 2 } else { connect_length }) as f64,
+            1,
+        );
+        let mut point_count: usize = 0;
+        for poly in &polylines {
+            point_count += poly.points.len();
+        }
+        // std::max(coord_t(1), std::min(coord_t(3), coord_t(total_length(overhang_area) / connect_length)))
+        let min_support_points: usize =
+            std::cmp::max(1, std::cmp::min(3, (total_length(&overhang_area) / connect_length as f64) as Coord)) as usize;
+        if point_count <= min_support_points {
+            // add the outer wall (of the overhang) to ensure it is correct supported instead. Try placing the support points in a way that they fully support the outer wall, instead of just the with half of the the support line width.
+            // I assume that even small overhangs are over one line width wide, so lets try to place the support points in a way that the full support area generated from them
+            // will support the overhang (if this is not done it may only be half). This WILL NOT be the case when supporting an angle of about < 60 degrees so there is a fallback,
+            // as some support is better than none.
+            let reduced_overhang_area: Polygons = cu::offset_expolygons(
+                &cu::union_ex(&overhang_area),
+                (-(config.support_line_width as f64) / 2.2) as f32,
+                crate::clipper::JoinType::jtMiter,
+                1.2,
+            );
+            let tiny = scaled_f64(0.001);
+            polylines = ensure_maximum_distance_polyline(
+                &to_polylines(
+                    if !reduced_overhang_area.is_empty()
+                        && crate::geometry::area_polygons(&cu::offset_expolygons(
+                            &cu::diff_ex(&overhang_area, &reduced_overhang_area, cu::ApplySafetyOffset::No),
+                            std::cmp::max(config.support_line_width, connect_length) as f32,
+                            crate::clipper::JoinType::jtMiter,
+                            1.2,
+                        )) < tiny * tiny
+                    {
+                        &reduced_overhang_area
+                    } else {
+                        &overhang_area
+                    },
+                ),
+                connect_length as f64,
+                min_support_points,
+            );
+        }
+        overhang_lines = convert_lines_to_internal(volumes, config, &polylines, (layer_idx.wrapping_sub(dtt_roof)) as LayerIndex, xy_min_distance);
+    }
+
+    if dtt_roof >= layer_idx && large_horizontal_roof {
+        // Reached buildplate when generating contact, interface and base interface layers.
+        interface_placer.add_roof_build_plate(overhang_area, dtt_roof);
+    } else {
+        // normal trees have to be generated
+        let roof_enabled = num_support_roof_layers > 0;
+        let force_tip_to_roof = interface_placer.force_tip_to_roof;
+        interface_placer.add_points_along_lines(
+            // Sample along these lines
+            overhang_lines,
+            // First layer index to insert the tree tips or interfaces.
+            (layer_idx - dtt_roof) as LayerIndex,
+            // Remaining roof tip layers.
+            if force_tip_to_roof { num_support_roof_layers.wrapping_sub(dtt_roof) } else { 0 },
+            // Supports roof already? How many roof layers were already produced above these tips?
+            dtt_roof,
+            // Don't move until the following distance to top is reached.
+            if roof_enabled { num_support_roof_layers.wrapping_sub(dtt_roof) } else { 0 },
+            xy_min_distance,
+        );
+    }
+}
+
+// Polygon.hpp:122-128 `inline double total_length(const Polygons &polylines)`: the sum of `Polygon::length()`
+// (Polygon.cpp: the lengths of the edges, the closing one included).
+fn total_length(polygons: &[Polygon]) -> f64 {
+    let mut total = 0.;
+    for polygon in polygons {
+        // double Polygon::length() const
+        let mut l = 0.;
+        if polygon.points.len() > 1 {
+            l = norm2(vec2d(*polygon.points.last().unwrap() - polygon.points[0]));
+            for i in 1..polygon.points.len() {
+                l += norm2(vec2d(polygon.points[i] - polygon.points[i - 1]));
+            }
+        }
+        total += l;
+    }
+    total
+}
+
+// Polygon.hpp:230-240 `inline Polylines to_polylines(const Polygons &polygons)`: every polygon closed by its first point.
+fn to_polylines(polygons: &[Polygon]) -> Polylines {
+    let mut out: Polylines = Vec::with_capacity(polygons.len());
+    for polygon in polygons {
+        let mut pl = Polyline::new();
+        pl.points = polygon.points.clone();
+        if let Some(front) = polygon.points.first() {
+            pl.points.push(*front);
+        }
+        out.push(pl);
+    }
+    out
+}
+
+/// TreeSupport3D.cpp:1161-1427 `void generate_initial_areas(const PrintObject &print_object, const TreeModelVolumes
+/// &volumes, const TreeSupportSettings &config, const std::vector<Polygons> &overhangs, std::vector<SupportElements>
+/// &move_bounds, InterfacePlacer &interface_placer, std::function<void()> throw_on_cancel)`
+///
+/// Creates the initial influence areas (that can later be propagated down) by placing them below the overhang.
+/// Generates Points where the Model should be supported and creates the areas where these points have to be placed.
+///
+/// `print_object.print()` is `print`; `outputs` are the outputs of the interface placer; `fillers` is
+/// `Fill::new_from_type`. An exception of the C++ (a flow that cannot be made) is the `Err`.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_initial_areas(
+    print_object: &pf::PrintObject,
+    print: &pf::Print,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    overhangs: &[Polygons],
+    move_bounds: &mut Vec<SupportElements>,
+    interface_placer: &mut InterfacePlacer,
+    mut outputs: InterfacePlacerOutputs,
+    fillers: &dyn SupportFillFactory,
+    throw_on_cancel: ThrowOnCancel,
+) -> crate::flow::FlowResult<()> {
+    use std::f64::consts::PI as M_PI;
+    let mesh_group_settings = TreeSupportMeshGroupSettings::new(print_object, print)?;
+    let split_overhangs_by_region = print.uses_multiple_nozzle_diameters()
+        && config.xy_min_distance_per_region.len() == print_object.num_printing_regions()
+        // std::adjacent_find(..., [](coord_t lhs, coord_t rhs) { return lhs != rhs; }) != end()
+        && config.xy_min_distance_per_region.windows(2).any(|w| w[0] != w[1]);
+
+    let z_distance_delta: usize = config.z_distance_top_layers + 1;
+
+    // `(config.support_line_width * 100. / mesh_group_settings.support_tree_top_rate) + std::max(2. * config.min_radius -
+    // 1.0 * config.support_line_width, 0.0)`: the difference of the two products with the left one fused.
+    let connect_length: Coord = {
+        let d = 2.0_f64.mul_add(config.min_radius as f64, -(1.0 * config.support_line_width as f64));
+        ((config.support_line_width as f64 * 100. / mesh_group_settings.support_tree_top_rate) + if d < 0.0 { 0.0 } else { d }) as Coord
+    };
+    // As r*r=x*x+y*y (circle equation): If a circle with center at (0,0) the top most point is at (0,r) as in y=r.
+    // This calculates how far one has to move on the x-axis so that y=r-support_line_width/2.
+    // In other words how far does one need to move on the x-axis to be support_line_width/2 away from the circle line.
+    // As a circle is round this length is identical for every axis as long as the 90 degrees angle between both remains.
+    let circle_length_to_half_linewidth_change: Coord = if config.min_radius < config.support_line_width {
+        config.min_radius / 2
+    } else {
+        // scale_(sqrt(sqr(unscale<double>(config.min_radius)) - sqr(unscale<double>(config.min_radius - config.support_line_width / 2))))
+        let a = config.min_radius as f64 * SCALING_FACTOR;
+        let b = (config.min_radius - config.support_line_width / 2) as f64 * SCALING_FACTOR;
+        ((a * a - b * b).sqrt() / SCALING_FACTOR) as Coord
+    };
+    // Extra support offset to compensate for larger tip radiis. Also outset a bit more when z overwrites xy, because supporting something with a part of a support line is better than not supporting it at all.
+    //FIXME Vojtech: This is not sufficient for support enforcers to work.
+    //FIXME There is no account for the support overhang angle.
+    //FIXME There is no account for the width of the collision regions.
+    let num_support_roof_layers: usize = mesh_group_settings.support_roof_layers as usize;
+    let roof_enabled = num_support_roof_layers > 0;
+    let force_tip_to_roof = roof_enabled
+        && (interface_placer.support_parameters.soluble_interface
+            || (config.min_radius as f64 * config.min_radius as f64) * M_PI > mesh_group_settings.minimum_roof_area);
+    // cap for how much layer below the overhang a new support point may be added, as other than with regular support every new inserted point
+    // may cause extra material and time cost.  Could also be an user setting or differently calculated. Idea is that if an overhang
+    // does not turn valid in double the amount of layers a slope of support angle would take to travel xy_distance, nothing reasonable will come from it.
+    // The 2*z_distance_delta is only a catch for when the support angle is very high.
+    // Used only if not min_xy_dist.
+    // (`max_overhang_insert_lag` is read only by a block the C++ compiles out.)
+
+    let num_support_layers: usize;
+    let raft_contact_layer_idx: i32;
+    // Layers with their overhang regions.
+    struct RawOverhang {
+        layer_idx: usize,
+        polygons: Polygons,
+        xy_min_distance: Coord,
+    }
+    let mut raw_overhangs: Vec<RawOverhang> = Vec::new();
+
+    {
+        let num_raft_layers: usize = config.raft_layers.len();
+        let first_support_layer: usize = std::cmp::max(num_raft_layers as i32 - z_distance_delta as i32, 1) as usize;
+        num_support_layers = std::cmp::max(0, print_object.layer_count() as i32 + num_raft_layers as i32 - z_distance_delta as i32) as usize;
+        raft_contact_layer_idx = generate_raft_contact(print_object, config, interface_placer, &mut outputs);
+        // Enumerate layers for which the support tips may be generated from overhangs above.
+        for layer_idx in first_support_layer..num_support_layers {
+            let overhang_idx = layer_idx + z_distance_delta;
+            if overhangs[overhang_idx].is_empty() {
+                continue;
+            }
+
+            let mut remaining: Polygons = overhangs[overhang_idx].clone();
+            let object_layer_idx = overhang_idx - num_raft_layers;
+            if split_overhangs_by_region && object_layer_idx < print_object.layer_count() {
+                let object_layer = print_object.get_layer(object_layer_idx as i32);
+                let mut region_areas: Vec<(Coord, Polygons)> = Vec::with_capacity(object_layer.regions().len());
+                for layerm in object_layer.regions() {
+                    let region_id = layerm.region().print_region_id() as usize;
+                    if region_id >= config.xy_min_distance_per_region.len() {
+                        continue;
+                    }
+                    let mut region_area: Polygons = Vec::new();
+                    if layerm.adaptive_merge_patches.is_empty() {
+                        // to_polygons(layerm->slices.surfaces)
+                        for surface in &layerm.slices.surfaces {
+                            region_area.push(surface.expolygon.contour.clone());
+                            region_area.extend(surface.expolygon.holes.iter().cloned());
+                        }
+                    } else {
+                        for patch in &layerm.adaptive_merge_patches {
+                            region_area.extend(crate::geometry::to_polygons(patch.area()));
+                        }
+                    }
+                    region_areas.push((config.xy_min_distance_per_region[region_id], region_area));
+                }
+                // std::sort(region_areas.begin(), region_areas.end(), [](const auto &lhs, const auto &rhs) { return lhs.first <
+                // rhs.first; }), as libc++ orders equal keys.
+                let mut order: Vec<usize> = (0..region_areas.len()).collect();
+                crate::clipper::libcxx_sort(&mut order, |&lhs, &rhs| region_areas[lhs].0 < region_areas[rhs].0);
+                for &i in &order {
+                    let (xy_min_distance, region_area) = &region_areas[i];
+                    let part: Polygons = cu::intersection(&remaining, region_area, cu::ApplySafetyOffset::No);
+                    if !part.is_empty() {
+                        raw_overhangs.push(RawOverhang { layer_idx, polygons: part, xy_min_distance: *xy_min_distance });
+                        remaining = cu::diff(&remaining, region_area, cu::ApplySafetyOffset::No);
+                    }
+                }
+            }
+            if !remaining.is_empty() {
+                raw_overhangs.push(RawOverhang { layer_idx, polygons: remaining, xy_min_distance: config.xy_min_distance });
+            }
+        }
+    }
+
+    {
+        let mut rich_interface_placer = RichInterfacePlacer::new(
+            InterfacePlacer::new(interface_placer.slicing_parameters, interface_placer.support_parameters, interface_placer.config),
+            InterfacePlacerOutputs {
+                layer_storage: &mut *outputs.layer_storage,
+                top_contacts: &mut *outputs.top_contacts,
+                top_interfaces: &mut *outputs.top_interfaces,
+                top_base_interfaces: &mut *outputs.top_base_interfaces,
+            },
+            volumes,
+            force_tip_to_roof,
+            num_support_layers,
+            &mut *move_bounds,
+            fillers,
+        );
+
+        // tbb::parallel_for over the raw overhangs: on one thread the pin takes them in their order.
+        for raw_overhang in &raw_overhangs {
+            let layer_idx: usize = raw_overhang.layer_idx;
+            let overhang_raw: &Polygons = &raw_overhang.polygons;
+            let xy_min_distance: Coord = raw_overhang.xy_min_distance;
+            let min_xy_dist = config.xy_distance > xy_min_distance;
+            let collision_radius: Coord =
+                config.get_radius(0, 0.) + if min_xy_dist { std::cmp::max(0, xy_min_distance - config.xy_min_distance) } else { 0 };
+            let extra_outset: Coord = std::cmp::max(0, config.min_radius - config.support_line_width / 2)
+                + if min_xy_dist { config.support_line_width / 2 } else { 0 };
+
+            // take the least restrictive avoidance possible
+            let relevant_forbidden: Polygons;
+            {
+                let relevant_forbidden_raw = if config.support_rests_on_model {
+                    volumes.get_collision(collision_radius, layer_idx as LayerIndex, min_xy_dist)
+                } else {
+                    volumes.get_avoidance(collision_radius, layer_idx as LayerIndex, AvoidanceType::Fast, false, min_xy_dist)
+                };
+                // prevent rounding errors down the line, points placed directly on the line of the forbidden area may not be added otherwise.
+                relevant_forbidden =
+                    cu::offset_expolygons(&cu::union_ex(&relevant_forbidden_raw), (0.005 / SCALING_FACTOR) as f32, crate::clipper::JoinType::jtMiter, 1.2);
+            }
+
+            // every overhang has saved if a roof should be generated for it. This can NOT be done in the for loop as an area may NOT have a roof
+            // even if it is larger than the minimum_roof_area when it is only larger because of the support horizontal expansion and
+            // it would not have a roof if the overhang is offset by support roof horizontal expansion instead. (At least this is the current behavior of the regular support)
+            let mut overhang_regular: Polygons;
+            {
+                // When support_offset = 0 safe_offset_inc will only be the difference between overhang_raw and relevant_forbidden, that has to be calculated anyway.
+                overhang_regular = safe_offset_inc(
+                    overhang_raw,
+                    mesh_group_settings.support_offset,
+                    &relevant_forbidden,
+                    (config.min_radius as f64).mul_add(1.75, xy_min_distance as f64) as Coord,
+                    0,
+                    1,
+                );
+
+                // offset ensures that areas that could be supported by a part of a support line, are not considered unsupported overhang
+                let mut remaining_overhang: Polygons = cu::intersection(
+                    &cu::diff(
+                        &if mesh_group_settings.support_offset == 0 {
+                            overhang_raw.clone()
+                        } else {
+                            cu::offset_expolygons(
+                                &cu::union_ex(overhang_raw),
+                                mesh_group_settings.support_offset as f32,
+                                crate::clipper::JoinType::jtMiter,
+                                1.2,
+                            )
+                        },
+                        &cu::offset_expolygons(
+                            &cu::union_ex(&overhang_regular),
+                            (config.support_line_width as f64 * 0.5) as f32,
+                            crate::clipper::JoinType::jtMiter,
+                            1.2,
+                        ),
+                        cu::ApplySafetyOffset::No,
+                    ),
+                    &relevant_forbidden,
+                    cu::ApplySafetyOffset::No,
+                );
+
+                // Offset the area to compensate for large tip radiis. Offset happens in multiple steps to ensure the tip is as close to the original overhang as possible.
+                //+config.support_line_width / 80  to avoid calculating very small (useless) offsets because of rounding errors.
+                //FIXME likely a better approach would be to find correspondences between the full overhang and the trimmed overhang
+                // and if there is no correspondence, project the missing points to the clipping curve.
+                let mut extra_total_offset_acc: Coord = 0;
+                while !remaining_overhang.is_empty() && extra_total_offset_acc + config.support_line_width / 8 < extra_outset {
+                    let offset_current_step: Coord = std::cmp::min(
+                        if extra_total_offset_acc + 2 * config.support_line_width > config.min_radius {
+                            config.support_line_width / 8
+                        } else {
+                            circle_length_to_half_linewidth_change
+                        },
+                        extra_outset - extra_total_offset_acc,
+                    );
+                    extra_total_offset_acc += offset_current_step;
+                    let raw_collision = volumes.get_collision(0, layer_idx as LayerIndex, true);
+                    let offset_step: Coord = xy_min_distance + config.support_line_width;
+                    // Reducing the remaining overhang by the areas already supported.
+                    //FIXME 1.5 * extra_total_offset_acc seems to be too much, it may remove some remaining overhang without being supported at all.
+                    remaining_overhang = cu::diff(
+                        &remaining_overhang,
+                        &safe_offset_inc(&overhang_regular, (1.5 * extra_total_offset_acc as f64) as Coord, &raw_collision, offset_step, 0, 1),
+                        cu::ApplySafetyOffset::No,
+                    );
+                    // Extending the overhangs by the inflated remaining overhangs.
+                    overhang_regular = cu::union_2(
+                        &overhang_regular,
+                        &cu::diff(
+                            &safe_offset_inc(&remaining_overhang, extra_total_offset_acc, &raw_collision, offset_step, 0, 1),
+                            &relevant_forbidden,
+                            cu::ApplySafetyOffset::No,
+                        ),
+                    );
+                }
+            }
+
+            throw_on_cancel();
+
+            if roof_enabled {
+                const SUPPORT_ROOF_OFFSET: Coord = 0;
+                let mut overhang_roofs: Polygons = safe_offset_inc(
+                    overhang_raw,
+                    SUPPORT_ROOF_OFFSET,
+                    &relevant_forbidden,
+                    config.min_radius * 2 + xy_min_distance,
+                    0,
+                    1,
+                );
+                if mesh_group_settings.minimum_support_area > 0 {
+                    crate::geometry::polygon::remove_small(&mut overhang_roofs, mesh_group_settings.minimum_roof_area);
+                }
+                overhang_regular = cu::diff(&overhang_regular, &overhang_roofs, cu::ApplySafetyOffset::Yes);
+                for roof_part in cu::union_ex(&overhang_roofs) {
+                    sample_overhang_area(
+                        crate::geometry::to_polygons(std::slice::from_ref(&roof_part)),
+                        true,
+                        layer_idx,
+                        num_support_roof_layers,
+                        connect_length,
+                        xy_min_distance,
+                        &mesh_group_settings,
+                        &mut rich_interface_placer,
+                    );
+                    throw_on_cancel();
+                }
+            }
+            // Either the roof is not enabled, then these are all the overhangs to be supported,
+            // or roof is enabled and these are the thin overhangs at object slopes (not horizontal overhangs).
+            if mesh_group_settings.minimum_support_area > 0 {
+                crate::geometry::polygon::remove_small(&mut overhang_regular, mesh_group_settings.minimum_support_area as f64);
+            }
+
+            for support_part in cu::union_ex(&overhang_regular) {
+                sample_overhang_area(
+                    crate::geometry::to_polygons(std::slice::from_ref(&support_part)),
+                    false,
+                    layer_idx,
+                    num_support_roof_layers,
+                    connect_length,
+                    xy_min_distance,
+                    &mesh_group_settings,
+                    &mut rich_interface_placer,
+                );
+                throw_on_cancel();
+            }
+        }
+    }
+
+    finalize_raft_contact(print_object, raft_contact_layer_idx, outputs.layer_storage, outputs.top_contacts, move_bounds);
+    Ok(())
 }

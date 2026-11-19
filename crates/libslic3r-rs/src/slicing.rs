@@ -321,7 +321,11 @@ const LAYER_HEIGHT_CHANGE_STEP: f64 = 0.04;
 /// libslic3r.h:280-285
 #[inline]
 fn lerp(a: CoordF, b: CoordF, t: CoordF) -> CoordF {
-    // libslic3r.h:284
+    // libslic3r.h:284 `return (Number(1) - t) * a + t * b;`: clang (-ffp-contract=on) fuses the left
+    // product into the sum. SLICING_LERP_FMA=0 gives the unfused sum this file had before R919.
+    if crate::faithful_gate("SLICING_LERP_FMA") {
+        return (1.0 - t).mul_add(a, t * b);
+    }
     (1.0 - t) * a + t * b
 }
 

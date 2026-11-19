@@ -6443,6 +6443,8 @@ pub mod faithful {
         pub firstLayerObjSliceByGroups: Vec<groupedVolumeSlices>,
         /// Print.hpp:685 `SlicingParameters m_slicing_params`
         pub m_slicing_params: crate::slicing::SlicingParams,
+        /// Print.hpp:694 `bool m_typed_slices = false`
+        pub m_typed_slices: bool,
     }
 
     impl PrintObject {
@@ -6475,6 +6477,7 @@ pub mod faithful {
                 firstLayerObjSliceByVolume: Vec::new(),
                 firstLayerObjSliceByGroups: Vec::new(),
                 m_slicing_params: crate::slicing::SlicingParams::zero_initialized(),
+                m_typed_slices: false,
             }
         }
 

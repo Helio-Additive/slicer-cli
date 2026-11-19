@@ -8,7 +8,13 @@
 //! generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths. The
 //! first scenario also runs the path helpers one by one (tree_supports_generate_paths,
 //! fill_expolygons_with_sheath_generate_paths, LoopInterfaceProcessor::generate,
-//! SupportGeneratorLayerExtruded::merge, modulate_extrusion_by_overlapping_layers). The lines of the vectors
+//! SupportGeneratorLayerExtruded::merge, modulate_extrusion_by_overlapping_layers,
+//! modulate_extrusion_paths_by_overlapping_layers, idx_higher_or_equal, idx_lower_or_equal,
+//! fill_expolygon_generate_paths and the two overloads of fill_expolygons_generate_paths). Eight more
+//! scenarios ("m") build a Print in the mode of several nozzle diameters (in two of them of one diameter,
+//! where no plan is made) and run merged_band_footprint and merge_support_layers_multi_diameter on object
+//! layers and support generator layers written by hand; the plan `make_support_merge_plan` gave in the
+//! C++ is an input. The lines of the vectors
 //! that start with "in" are the inputs, which this test reads back; every other line it has to reproduce.
 //!
 //! The fillers are the generator's `RecFill` on both sides: it writes down what it is asked (the
@@ -32,7 +38,13 @@ use slicer::fill::FillParams;
 use slicer::flow::Flow;
 use slicer::print_config::InfillPattern;
 use slicer::surface::Surface;
+use ordered_float::OrderedFloat;
+use slicer::adaptive_layer_merge::{AdaptiveLayerBand, AdaptiveLayerHeightRange, AdaptiveMergePatch};
+use slicer::layer::{Layer, LayerRegion};
+use slicer::support_merge_plan::{Candidate, Slab, SupportMergePlan};
+use slicer::surface::SurfaceType;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 type Log = Rc<RefCell<Vec<String>>>;
@@ -343,6 +355,71 @@ fn run_path_helpers(r: &mut Run, p0: &SupportParameters) {
         let mut ents = tok_ents(&mut Tok::new(&line));
         modulate_extrusion_by_overlapping_layers(&mut ents, 0, &overlapping, &storage).expect("modulate_extrusion_by_overlapping_layers");
         r.out(format!("mod {}", ents_s(&ents)));
+        // modulate_extrusion_paths_by_overlapping_layers by itself, on paths only.
+        let line = r.input("in modp_ents").expect("modp_ents");
+        let mut paths = tok_ents(&mut Tok::new(&line));
+        modulate_extrusion_paths_by_overlapping_layers(&mut paths, 0, &overlapping, &storage).expect("modulate_extrusion_paths_by_overlapping_layers");
+        r.out(format!("modp {}", ents_s(&paths)));
+    }
+
+    // idx_higher_or_equal, idx_lower_or_equal: the binary search and the linear one from several starts.
+    {
+        let zs = [0.2, 0.4, 0.4, 0.75, 1.0, 1.3, 1.3, 2.0, 2.4];
+        for n in [0usize, 1, 2, 3, 9] {
+            let v = &zs[..n];
+            for thr in [-1., 0.2, 0.3, 0.4, 0.75, 1.3, 2.4, 5.] {
+                let ge = |z: &f64| *z >= thr;
+                let le = |z: &f64| *z <= thr;
+                let mut line = format!("idx {n} {} {}", hd(thr), idx_higher_or_equal(v, -1, ge));
+                for start in [0isize, 1, 4] {
+                    if start <= n as isize {
+                        line += &format!(" {}", idx_higher_or_equal(v, start, ge));
+                    }
+                }
+                line += &format!(" {}", idx_lower_or_equal(v, -2, le));
+                for start in [-1isize, 0, 2, 8] {
+                    if start < n as isize {
+                        line += &format!(" {}", idx_lower_or_equal(v, start, le));
+                    }
+                }
+                r.out(line);
+            }
+        }
+    }
+
+    // fill_expolygon_generate_paths and the two overloads of fill_expolygons_generate_paths.
+    while let Some(line) = r.input("in fegp") {
+        let mut t = Tok::new(&line);
+        let i = t.i() as usize;
+        let density = t.f();
+        let flow = flows[i % 3];
+        let pattern = match i % 3 {
+            1 => InfillPattern::Concentric,
+            2 => InfillPattern::Honeycomb,
+            _ => InfillPattern::Rectilinear,
+        };
+        let mut filler = factory.new_from_type(pattern);
+        filler.fill_mut().angle = 0.3f32 * i as f32;
+        filler.fill_mut().spacing = flow.spacing();
+        filler.fill_mut().link_max_length = 50 * i as i64;
+        filler.fill_mut().bounding_box = BoundingBox::from_points_minmax(Point::new(-3, -4), Point::new(21, 17));
+        let ex = cu::union_ex(&shapes[i]);
+        let mut fp = FillParams::new();
+        fp.density = density as f64;
+        fp.dont_adjust = i % 2 == 0;
+        let role = if i % 2 == 1 { ExtrusionRole::SupportMaterialInterface } else { ExtrusionRole::SupportMaterial };
+        let mut dst = Vec::new();
+        fill_expolygon_generate_paths(&mut dst, ex[0].clone(), filler.as_mut(), &fp, density, role, &flow).expect("fill_expolygon_generate_paths");
+        flush(r, &log);
+        r.out(format!("fegp {i} {}", ents_s(&dst)));
+        let mut dst = Vec::new();
+        fill_expolygons_generate_paths_params(&mut dst, ex.clone(), filler.as_mut(), &fp, density, role, &flow).expect("fill_expolygons_generate_paths");
+        flush(r, &log);
+        r.out(format!("fesgp {i} {}", ents_s(&dst)));
+        let mut dst = Vec::new();
+        fill_expolygons_generate_paths(&mut dst, ex.clone(), filler.as_mut(), density, role, &flow).expect("fill_expolygons_generate_paths");
+        flush(r, &log);
+        r.out(format!("fesgd {i} {}", ents_s(&dst)));
     }
 }
 
@@ -738,6 +815,254 @@ fn run_scenario(r: &mut Run, scenario: usize) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// merge_support_layers_multi_diameter, merged_band_footprint
+// ---------------------------------------------------------------------------------------------------------
+
+/// gen.cpp `CAND(c)`
+fn cand_s(c: &Candidate) -> String {
+    format!("{} {} {} {} {}", c.filament_id, hd(c.nozzle_diameter), hd(c.window.min_height), hd(c.window.max_height), c.band_size)
+}
+fn tok_cand(t: &mut Tok) -> Candidate {
+    Candidate {
+        filament_id: t.i() as i32,
+        nozzle_diameter: t.d(),
+        window: AdaptiveLayerHeightRange { min_height: t.d(), max_height: t.d() },
+        band_size: t.i() as usize,
+    }
+}
+/// gen.cpp `PLAN(plan)`
+fn tok_plan(t: &mut Tok) -> SupportMergePlan {
+    let mut plan = SupportMergePlan::default();
+    plan.enabled = t.b();
+    plan.interface_fold_enabled = t.b();
+    assert_eq!(t.s(), "PZ");
+    let n = t.i();
+    plan.layer_print_z = (0..n).map(|_| t.d()).collect();
+    assert_eq!(t.s(), "LH");
+    let n = t.i();
+    plan.layer_heights = (0..n).map(|_| t.d()).collect();
+    assert_eq!(t.s(), "CT");
+    let n = t.i();
+    let table: Vec<Candidate> = (0..n).map(|_| tok_cand(t)).collect();
+    for tag in ["CPL", "ICPL"] {
+        assert_eq!(t.s(), tag);
+        let layers = t.i();
+        let list: Vec<Vec<Candidate>> = (0..layers)
+            .map(|_| {
+                let n = t.i();
+                (0..n).map(|_| table[t.i() as usize]).collect()
+            })
+            .collect();
+        if tag == "CPL" {
+            plan.candidates_per_layer = list;
+        } else {
+            plan.interface_candidates_per_layer = list;
+        }
+    }
+    assert_eq!(t.s(), "FB");
+    for _ in 0..t.i() {
+        let filament_id = t.i() as i32;
+        let n = t.i();
+        let ladder: Vec<AdaptiveLayerBand> = (0..n).map(|_| AdaptiveLayerBand { bottom_idx: t.i() as usize, top_idx: t.i() as usize, merged_height: t.d() }).collect();
+        plan.fixed_bands_per_filament.insert(filament_id, ladder);
+    }
+    assert_eq!(t.s(), "SL");
+    let n = t.i();
+    plan.slabs = (0..n)
+        .map(|_| Slab {
+            bottom_idx: t.i() as usize,
+            top_idx: t.i() as usize,
+            top_z: t.d(),
+            height: t.d(),
+            filament_id: t.i() as i32,
+            nozzle_diameter: t.d(),
+            bottom_anchor: t.b(),
+        })
+        .collect();
+    assert_eq!(t.s(), "SI");
+    let n = t.i();
+    plan.slab_index_per_layer = (0..n).map(|_| t.i() as i32).collect();
+    plan
+}
+/// gen.cpp `CMAP(m)`
+fn cmap_s(m: &BTreeMap<OrderedFloat<f64>, Candidate>) -> String {
+    let mut o = format!("{}", m.len());
+    for (k, v) in m {
+        o += &format!(" {} {}", hd(k.0), cand_s(v));
+    }
+    o
+}
+/// gen.cpp `DMAP(m)`
+fn dmap_s(m: &BTreeMap<OrderedFloat<f64>, f64>) -> String {
+    let mut o = format!("{}", m.len());
+    for (k, v) in m {
+        o += &format!(" {} {}", hd(k.0), hd(*v));
+    }
+    o
+}
+/// gen.cpp `AREAS(v)`
+fn areas_s(v: &[ExPolygons]) -> String {
+    let mut o = format!("{}", v.len());
+    for e in v {
+        o += &format!(" {}", expolys_s(e));
+    }
+    o
+}
+fn tok_areas(t: &mut Tok) -> Vec<ExPolygons> {
+    let n = t.i();
+    (0..n).map(|_| t.expolys()).collect()
+}
+
+/// gen.cpp `run_merge(m, sc)`. The line "params": whether the Print uses several nozzle diameters, the gaps and
+/// the heights of its slicing parameters, as `Print::apply` leaves them in the mode of several diameters.
+fn run_merge(r: &mut Run, m: usize) {
+    let s = format!("m{m}");
+    let line = r.input(&format!("in {s} model")).expect("model");
+    let mut t = Tok::new(&line);
+    let (sx, sy, sz, ix, iy) = (t.i() as f64, t.i() as f64, t.i() as f64, t.i() as f64, t.i() as f64);
+    let mut model = Model::new();
+    {
+        let o = model.add_object_new();
+        o.name = "box".into();
+        o.add_volume_mesh(ModelMesh::from_its(box_its(sx, sy, sz, -(sx as f32) / 2.0, -(sy as f32) / 2.0, 0.0)), ModelVolumeType::ModelPart, true);
+        o.add_instance().set_offset(&slicer::geometry::geometry::Vec3d::new(ix, iy, 0.0));
+    }
+    let mut config = DynamicPrintConfig::full_print_config();
+    config.set_num_filaments(3).unwrap();
+    config.set_key_value(
+        "filament_colour",
+        Box::new(ConfigOptionStrings::from_values(vec!["#FF0000".into(), "#00FF00".into(), "#0000FF".into()])),
+    );
+    config.set_key_value("filament_map", Box::new(ConfigOptionInts::from_values(vec![1, 1, 1])));
+    while let Some(line) = r.input(&format!("in {s} cfg")) {
+        let (key, value) = line.split_once(' ').expect("key value");
+        deser(&mut config, key, value);
+    }
+    let mut print = assemble(&model, &config);
+    let mut sp = print.m_objects[0].slicing_parameters().clone();
+
+    let mut layer_id = 0usize;
+    while let Some(line) = r.input(&format!("in {s} layer")) {
+        let mut t = Tok::new(&line);
+        let (print_z, height, slice_z) = (t.d(), t.d(), t.d());
+        let mut layer = Layer::new(layer_id, print.m_objects[0].m_model_object, height, print_z, slice_z);
+        layer.lslices = t.expolys();
+        let mut lr = LayerRegion::new(layer_id, 0);
+        for e in &layer.lslices {
+            lr.slices.surfaces.push(Surface::new(SurfaceType::Internal, e.clone()));
+        }
+        let n = t.i();
+        for _ in 0..n {
+            let mut patch = AdaptiveMergePatch::default();
+            patch.bottom_idx = t.i() as usize;
+            patch.top_idx = t.i() as usize;
+            patch.set_area(t.expolys());
+            lr.adaptive_merge_patches.push(patch);
+        }
+        layer.add_region(lr);
+        print.m_objects[0].m_layers.push(layer);
+        layer_id += 1;
+    }
+    let n = layer_id;
+    let k = (n * 3) / 4;
+    let obj = &print.m_objects[0];
+
+    let line = r.input(&format!("in {s} plan")).expect("plan");
+    let plan = tok_plan(&mut Tok::new(&line));
+    let line = r.input(&format!("in {s} params")).expect("params");
+    let mut t = Tok::new(&line);
+    let mut p = SupportParameters::new(obj, &print).expect("SupportParameters");
+    r.out(format!(
+        "{s} params {} {} {} {} {} {}",
+        hb(print.uses_multiple_nozzle_diameters()),
+        hd(p.gap_xy),
+        hd(sp.gap_support_object),
+        hd(sp.raft_contact_top_z),
+        hd(sp.object_print_z_min),
+        hd(sp.layer_height)
+    ));
+    // What the merge reads of the two, as the C++ had it.
+    p.gap_xy = t.d();
+    sp.gap_support_object = t.d();
+    sp.raft_contact_top_z = t.d();
+
+    for i in 0..n {
+        if i % 3 == 0 || (i + 7 >= k && i < k) {
+            r.out(format!("{s} band {i} {}", polys_s(&merged_band_footprint(&obj.layers()[i], i))));
+        }
+    }
+
+    let mut storage = SupportGeneratorLayerStorage::new();
+    let line = r.input(&format!("in {s} storage")).expect("storage");
+    let count = Tok::new(&line).i();
+    for _ in 0..count {
+        let line = r.input(&format!("in {s} L")).expect("L");
+        read_layer(&mut storage, &line);
+    }
+    let line = r.input(&format!("in {s} lists")).expect("lists");
+    let mut t = Tok::new(&line);
+    let raft_layers = tok_list(&mut t);
+    let mut bottom_contacts = tok_list(&mut t);
+    let mut top_contacts = tok_list(&mut t);
+    let mut intermediate_layers = tok_list(&mut t);
+    let mut interface_layers = tok_list(&mut t);
+    let mut base_interface_layers = tok_list(&mut t);
+
+    let line = r.input(&format!("in {s} areas")).expect("areas");
+    let mut t = Tok::new(&line);
+    let by_z = t.b();
+    let nz = t.i();
+    let area_z: Vec<f64> = (0..nz).map(|_| t.d()).collect();
+    let mut cooldown = tok_areas(&mut t);
+    let mut lightning = tok_areas(&mut t);
+    let top_gap = t.d();
+
+    let mut planned_filaments: BTreeMap<OrderedFloat<f64>, Candidate> = BTreeMap::new();
+    let mut planned_interface_filaments: BTreeMap<OrderedFloat<f64>, Candidate> = BTreeMap::new();
+    let mut planned_base_heights: BTreeMap<OrderedFloat<f64>, f64> = BTreeMap::new();
+    let mut planned_interface_heights: BTreeMap<OrderedFloat<f64>, f64> = BTreeMap::new();
+    merge_support_layers_multi_diameter(
+        obj,
+        &plan,
+        &p,
+        &sp,
+        &raft_layers,
+        &mut bottom_contacts,
+        &mut top_contacts,
+        &mut intermediate_layers,
+        &mut interface_layers,
+        &mut base_interface_layers,
+        &mut planned_filaments,
+        &mut planned_interface_filaments,
+        &mut planned_base_heights,
+        &mut planned_interface_heights,
+        if by_z { Some(&area_z) } else { None },
+        Some(&mut cooldown),
+        if m == 4 { None } else { Some(&mut lightning) },
+        top_gap,
+        &mut storage,
+    );
+    dump_storage(r, &format!("{s} merge"), &storage);
+    r.out(format!(
+        "{s} merge lists {} {} {} {} {} {}",
+        list_s(&raft_layers),
+        list_s(&bottom_contacts),
+        list_s(&top_contacts),
+        list_s(&intermediate_layers),
+        list_s(&interface_layers),
+        list_s(&base_interface_layers)
+    ));
+    r.out(format!(
+        "{s} merge planned {} | {} | {} | {}",
+        cmap_s(&planned_filaments),
+        cmap_s(&planned_interface_filaments),
+        dmap_s(&planned_base_heights),
+        dmap_s(&planned_interface_heights)
+    ));
+    r.out(format!("{s} merge areas {} | {}", areas_s(&cooldown), areas_s(&lightning)));
+}
+
 #[test]
 fn support_common_native_parity() {
     let mut r = Run::load("support_common");
@@ -748,6 +1073,12 @@ fn support_common_native_parity() {
         scenario += 1;
     }
     assert_eq!(scenario, 14, "scenarios");
+    let mut merges = 0;
+    while r.expected[r.pos..].iter().any(|l| l.starts_with(&format!("in m{merges} model"))) {
+        run_merge(&mut r, merges);
+        merges += 1;
+    }
+    assert_eq!(merges, 8, "merge scenarios");
     let n = r.expected.iter().filter(|l| !l.starts_with("in ")).count();
     for tag in [
         "safe_union ",
@@ -762,6 +1093,11 @@ fn support_common_native_parity() {
         "lip ",
         "extruded_merge ",
         "mod ",
+        "modp ",
+        "idx ",
+        "fegp ",
+        "fesgp ",
+        "fesgd ",
         "fill_surface ",
     ] {
         let (total, ok) = r.tally(tag);
@@ -776,7 +1112,16 @@ fn support_common_native_parity() {
         }
         eprintln!("support_common: {stage}: {ok} of {total}");
     }
+    for stage in ["params", "band", "merge L", "merge lists", "merge planned", "merge areas"] {
+        let (mut total, mut ok) = (0, 0);
+        for sc in 0..merges {
+            let (t, o) = r.tally(&format!("m{sc} {stage} "));
+            total += t;
+            ok += o;
+        }
+        eprintln!("support_common: {stage}: {ok} of {total}");
+    }
     let bad = r.finish();
-    eprintln!("support_common: {} result lines over {} scenarios, {} differ", n, scenario, bad);
+    eprintln!("support_common: {} result lines over {} scenarios and {} merge scenarios, {} differ", n, scenario, merges, bad);
     assert_eq!(bad, 0);
 }

@@ -534,6 +534,14 @@ pub mod areas {
         cu::offset_ex(&temp, delta, join_type, miter_limit)
     }
 
+    /// ClipperUtils.hpp:388-391 `shrink_ex(const Polygons &, float delta, JoinType, double miterLimit)`:
+    /// `offset_ex(polygons, -delta, joinType, miterLimit)`. Its `assert(delta > 0)` is compiled out of the
+    /// release build the port follows, and Brim.cpp:412, 422 call it with a `brim_object_gap` of zero (the
+    /// default), so the assertion is not repeated here.
+    fn shrink_ex(polygons: &[Polygon], delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+        cu::offset_ex(polygons, -delta, join_type, miter_limit)
+    }
+
     /// ClipperUtils.hpp:409-415 `closing_ex(const ExPolygons & / const Surfaces &, float delta)`:
     /// `offset2_ex(polygons, delta, -delta, DefaultJoinType, DefaultMiterLimit)` (ClipperUtils.cpp:581-584).
     fn closing_ex_expolygons(expolygons: &[ExPolygon], delta: f32) -> ExPolygons {
@@ -858,7 +866,7 @@ pub mod areas {
                 let mut ex_poly_holes_reversed: Polygons = ex_poly.holes.clone();
                 polygons_reverse(&mut ex_poly_holes_reversed);
                 if brim_type == BT_OUTER_ONLY || brim_type == BT_NO_BRIM {
-                    no_brim_area_object.extend(cu::shrink_ex(&ex_poly_holes_reversed, no_brim_offset, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT));
+                    no_brim_area_object.extend(shrink_ex(&ex_poly_holes_reversed, no_brim_offset, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT));
                 }
 
                 if brim_type == BT_INNER_ONLY || brim_type == BT_NO_BRIM {
@@ -1138,8 +1146,8 @@ pub mod areas {
                 polygons_reverse(&mut ex_poly_holes_reversed);
                 if brim_type == BT_INNER_ONLY || brim_type == BT_OUTER_AND_INNER || brim_type == BT_AUTO_BRIM {
                     brim_area_object.extend(diff_ex_ee(
-                        &cu::shrink_ex(&ex_poly_holes_reversed, brim_object_gap, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT),
-                        &cu::shrink_ex(&ex_poly_holes_reversed, brim_width + brim_object_gap, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT),
+                        &shrink_ex(&ex_poly_holes_reversed, brim_object_gap, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT),
+                        &shrink_ex(&ex_poly_holes_reversed, brim_width + brim_object_gap, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT),
                     ));
                 }
 
@@ -1155,7 +1163,7 @@ pub mod areas {
                     // ClipperUtils.hpp:480-486 diff_ex(const ExPolygon &, const ExPolygons &)
                     no_brim_area_object.extend(diff_ex_ee(
                         &[expolygon_of_contour(&ex_poly.contour)],
-                        &cu::shrink_ex(&ex_poly_holes_reversed, no_brim_offset, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT),
+                        &shrink_ex(&ex_poly_holes_reversed, no_brim_offset, JoinType::jtSquare, cu::DEFAULT_MITER_LIMIT),
                     ));
                 }
 
@@ -1404,8 +1412,9 @@ pub mod auto_width {
         if !first_layer_regions.is_empty() {
             for region_ptr in first_layer_regions {
                 if region_ptr.has_extrusions() {
-                    extruders_first_layer
-                        .push(region_ptr.region().extruder(FlowRole::ExternalPerimeter).expect("extruder of the external perimeter") as usize);
+                    // `regionPtr->region()`: the PrintRegion of the object the layer region was made for
+                    // (PrintObjectSlice.cpp makes one LayerRegion per entry of `all_regions`, in order).
+                    extruders_first_layer.push(print_object.printing_region(region_ptr.region_id()).borrow().extruder(FlowRole::ExternalPerimeter) as usize);
                 }
             }
         }

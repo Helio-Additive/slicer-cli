@@ -1990,14 +1990,14 @@ pub fn generate_support_layers(
 // retained footprint from the band bottom up, so on its lower layers it occupies XY their lslices do not
 // hold. Only patches spanning the layer count: marker copies reach down to the band's planned floor, below a
 // locally clipped patch's own bottom_idx. Not unioned.
-//
-// FIDELITY-NOTE: the crate's LayerRegion has no `adaptive_merge_patches` member (Layer.hpp); the patches of
-// the regions of the layer are handed in: per patch `bottom_idx`, `top_idx` and `area()`.
-pub fn merged_band_footprint(patches: &[(usize, usize, ExPolygons)], layer_idx: usize) -> Polygons {
+// C++: `Polygons merged_band_footprint(const Layer &layer, size_t layer_idx)`
+pub fn merged_band_footprint(layer: &crate::layer::Layer, layer_idx: usize) -> Polygons {
     let mut band: Polygons = Vec::new();
-    for (bottom_idx, top_idx, area) in patches {
-        if *bottom_idx <= layer_idx && layer_idx <= *top_idx {
-            band.extend(crate::geometry::to_polygons(area));
+    for layerm in layer.regions() {
+        for patch in &layerm.adaptive_merge_patches {
+            if patch.bottom_idx <= layer_idx && layer_idx <= patch.top_idx {
+                band.extend(crate::geometry::to_polygons(patch.area()));
+            }
         }
     }
     band
@@ -4429,7 +4429,6 @@ struct SupportMergeState<'a> {
     plan: &'a SupportMergePlan,
     // const ConstLayerPtrsAdaptor object_layers = object.layers();
     object_layers: &'a [crate::layer::Layer],
-    adaptive_merge_patches: &'a [Vec<(usize, usize, ExPolygons)>],
     gap_xy_scaled: i32,
     top_gap: f64,
     // The object slices grown by the XY gap, per object layer. Every slab asks for the same layers again.
@@ -4471,10 +4470,7 @@ impl SupportMergeState<'_> {
     // SupportCommon.cpp:1646-1653, the lambda `band_keep_out`.
     fn band_keep_out(&mut self, object_layer_idx: usize) -> Polygons {
         if self.band_keep_out_cache[object_layer_idx].is_none() {
-            let band: Polygons = match self.adaptive_merge_patches.get(object_layer_idx) {
-                Some(patches) => merged_band_footprint(patches, object_layer_idx),
-                None => Vec::new(),
-            };
+            let band: Polygons = merged_band_footprint(&self.object_layers[object_layer_idx], object_layer_idx);
             self.band_keep_out_cache[object_layer_idx] = Some(if band.is_empty() {
                 Vec::new()
             } else {
@@ -4755,17 +4751,14 @@ fn map_erase_near<T>(map: &mut BTreeMap<OrderedFloat<f64>, T>, print_z: f64) {
 
 // SupportCommon.cpp:1528-2187
 //
-// `plan` is `make_support_merge_plan(object)` (SupportCommon.cpp:1547) and `adaptive_merge_patches[layer]` the
-// patches of the regions of an object layer, `bottom_idx`, `top_idx` and `area()` each, which
-// merged_band_footprint() reads.
+// `plan` is `make_support_merge_plan(object)` (SupportCommon.cpp:1547).
 //
 // FIDELITY-NOTE: the crate's `make_support_merge_plan` takes what it reads of the object as a record
-// (support_merge_plan.rs) and its LayerRegion has no `adaptive_merge_patches` member, so the two are handed in.
+// (support_merge_plan.rs), not the PrintObject, so the plan is handed in instead of being made here.
 #[allow(clippy::too_many_arguments)]
 pub fn merge_support_layers_multi_diameter(
     object: &pf::PrintObject,
     plan: &SupportMergePlan,
-    adaptive_merge_patches: &[Vec<(usize, usize, ExPolygons)>],
     support_params: &SupportParameters,
     slicing_params: &SlicingParameters,
     raft_layers: &SupportGeneratorLayersPtr,
@@ -4800,7 +4793,6 @@ pub fn merge_support_layers_multi_diameter(
         layer_storage,
         plan,
         object_layers,
-        adaptive_merge_patches,
         // scaled<coord_t>(support_params.gap_xy)
         gap_xy_scaled: scale_(support_params.gap_xy) as i32,
         top_gap,

@@ -395,6 +395,10 @@ mod cx {
     pub fn intersection_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
         u::_clipper_ex(ClipType::ctIntersection, &expolygons_provider(subject), &expolygons_provider(clip), ApplySafetyOffset::No, NON_ZERO)
     }
+    /// ClipperUtils.cpp:796 `intersection_ex(const ExPolygons &subject, const Polygons &clip)`
+    pub fn intersection_ex_polygons(subject: &[ExPolygon], clip: &[Polygon]) -> ExPolygons {
+        u::_clipper_ex(ClipType::ctIntersection, &expolygons_provider(subject), &polygons_provider(clip), ApplySafetyOffset::No, NON_ZERO)
+    }
     /// ClipperUtils.cpp:815 `union_ex(const ExPolygons &subject)`
     pub fn union_ex(subject: &[ExPolygon]) -> ExPolygons {
         u::poly_tree_to_ex_polygons(&u::clipper_do_polytree(ClipType::ctUnion, &expolygons_provider(subject), &Paths::new(), NON_ZERO))
@@ -2258,6 +2262,14 @@ pub struct TreeSupport<'a> {
 
     /// `m_object->print()->canceled()`: the crate's Print keeps its cancel state private.
     pub canceled: Box<dyn Fn() -> bool + 'a>,
+    /// Layer.hpp:172-174 `mutable ExPolygons sharp_tails; mutable ExPolygons cantilevers; mutable std::vector<float>
+    /// sharp_tails_height;` of every object layer, by its index, as detect_overhangs() fills them: the crate's
+    /// Layer declares them as `Polygons` and one `f64`.
+    pub layer_sharp_tails: Vec<ExPolygons>,
+    pub layer_sharp_tails_height: Vec<Vec<f32>>,
+    pub layer_cantilevers: Vec<ExPolygons>,
+    /// `PrintObject::project_and_append_custom_facets()` for detect_overhangs(), see `CustomFacetsProjector`.
+    pub custom_facets_projector: Option<Box<dyn CustomFacetsProjector + 'a>>,
     /// SupportParameters.hpp:338 `ConfigOptionFloat support_base_width`
     pub support_base_width: ConfigOptionFloat,
     /// SupportParameters.hpp:340 `float preset_nozzle_diameter`
@@ -2412,6 +2424,10 @@ impl<'a> TreeSupport<'a> {
             lightning_overhangs: Vec::new(),
             lightning_support_density: 0.0,
             canceled: Box::new(|| false),
+            layer_sharp_tails: Vec::new(),
+            layer_sharp_tails_height: Vec::new(),
+            layer_cantilevers: Vec::new(),
+            custom_facets_projector: None,
             support_base_width,
             preset_nozzle_diameter,
             multi_nozzle_diameter_mode,
@@ -7339,6 +7355,1635 @@ impl<'a> TreeSupport<'a> {
         }
         Ok(true)
     }
+}
+
+// ============================================================================
+// TreeSupport::detect_overhangs (TreeSupport.cpp:795-1550)
+// ============================================================================
+
+/// `void PrintObject::project_and_append_custom_facets(bool seam, EnforcerBlockerType type, std::vector<Polygons> &out,
+/// std::vector<std::pair<Vec3f, Vec3f>> *vertical_points) const` (PrintObject.cpp:6726-6765), which detect_overhangs()
+/// calls for the painted support blockers and enforcers. The crate has no port of it over the faithful PrintObject
+/// (its `slice_mesh_slabs` has no `vertical_points` output), so the caller hands it in; without one the object
+/// counts as not painted, which is what the C++ does for a model without painted facets.
+pub trait CustomFacetsProjector {
+    fn project_and_append_custom_facets(
+        &self,
+        object: &PrintObject,
+        print: &Print,
+        seam: bool,
+        type_: crate::triangle_selector::EnforcerBlockerType,
+        out: &mut Vec<Polygons>,
+        vertical_points: Option<&mut Vec<([f32; 3], [f32; 3])>>,
+    );
+}
+
+/// `BoundingBox` as BoundingBox.hpp has it: (0, 0)-(0, 0) and not defined when default constructed, defined by a
+/// range of points only when it has a positive area (BoundingBox.hpp:20, 88-102).
+#[derive(Debug, Clone, Copy)]
+struct BBoxCpp {
+    min: Point,
+    max: Point,
+    defined: bool,
+}
+
+impl BBoxCpp {
+    fn new() -> Self {
+        BBoxCpp { min: Point::new(0, 0), max: Point::new(0, 0), defined: false }
+    }
+    // BoundingBox.hpp:88-102 `construct<false>(out, from, to)`
+    fn from_points(points: &[Point]) -> Self {
+        let mut out = BBoxCpp::new();
+        if let Some(first) = points.first() {
+            out.min = *first;
+            out.max = out.min;
+            for vec in &points[1..] {
+                out.min = Point::new(out.min.x.min(vec.x), out.min.y.min(vec.y));
+                out.max = Point::new(out.max.x.max(vec.x), out.max.y.max(vec.y));
+            }
+            out.defined = out.min.x < out.max.x && out.min.y < out.max.y;
+        }
+        out
+    }
+    // BoundingBox.cpp `void BoundingBoxBase::merge(const BoundingBoxBase &bb)`
+    fn merge(&mut self, bb: &BBoxCpp) {
+        if bb.defined {
+            if self.defined {
+                self.min = Point::new(self.min.x.min(bb.min.x), self.min.y.min(bb.min.y));
+                self.max = Point::new(self.max.x.max(bb.max.x), self.max.y.max(bb.max.y));
+            } else {
+                self.min = bb.min;
+                self.max = bb.max;
+                self.defined = true;
+            }
+        }
+    }
+    // BoundingBox.cpp `PointClass BoundingBoxBase::size() const { return PointClass(this->max - this->min); }`
+    fn size(&self) -> Point {
+        Point::new(self.max.x - self.min.x, self.max.y - self.min.y)
+    }
+    // BoundingBox.hpp:44 `double area() const { return double(this->max(0) - this->min(0)) * (this->max(1) - this->min(1)); }`
+    fn area(&self) -> f64 {
+        (self.max.x - self.min.x) as f64 * (self.max.y - self.min.y) as f64
+    }
+    // BoundingBox.hpp:58-61
+    fn overlap(&self, other: &BBoxCpp) -> bool {
+        !(self.max.x < other.min.x || self.min.x > other.max.x || self.max.y < other.min.y || self.min.y > other.max.y)
+    }
+    // BoundingBox.hpp:51-54
+    fn contains(&self, point: &Point) -> bool {
+        point.x >= self.min.x && point.x <= self.max.x && point.y >= self.min.y && point.y <= self.max.y
+    }
+    // ExPolygon.cpp:490-493 `BoundingBox get_extents(const ExPolygon &expolygon)`
+    fn of_expolygon(expolygon: &ExPolygon) -> Self {
+        BBoxCpp::from_points(&expolygon.contour.points)
+    }
+    // ExPolygon.cpp:495-504 `BoundingBox get_extents(const ExPolygons &expolygons)`
+    fn of_expolygons(expolygons: &[ExPolygon]) -> Self {
+        let mut bbox = BBoxCpp::new();
+        for expolygon in expolygons {
+            if !expolygon.contour.points.is_empty() {
+                bbox.merge(&BBoxCpp::of_expolygon(expolygon));
+            }
+        }
+        bbox
+    }
+}
+
+// ExPolygon.hpp:486-492 `inline double area(const ExPolygons &polys)`
+fn area_of_expolygons(polys: &[ExPolygon]) -> f64 {
+    let mut s = 0.;
+    for p in polys {
+        s += p.area();
+    }
+    s
+}
+
+// ExPolygon.hpp:352-359 `inline ExPolygons to_expolygons(const Polygons &polys)`: every polygon a contour.
+fn to_expolygons_of_polygons(polys: &[Polygon]) -> ExPolygons {
+    polys.iter().map(|p| ExPolygon::new(p.clone())).collect()
+}
+
+// MultiPoint.hpp:53-74 `double MultiPoint::distance_to(const Point &point) const`: the distance to the closest of
+// the points (`closest_point_index`), not to the contour.
+fn multipoint_distance_to(points: &[Point], point: &Point) -> f64 {
+    let mut idx = 0usize;
+    let mut dist_min = point_dist(*point, points[0]);
+    for (i, p) in points.iter().enumerate().skip(1) {
+        let d = point_dist(*p, *point);
+        if d < dist_min {
+            dist_min = d;
+            idx = i;
+        }
+    }
+    point_dist(points[idx], *point)
+}
+
+/// TreeSupport.cpp:841-981 `struct OverhangCluster` of detect_overhangs(): for small overhang removal.
+struct OverhangCluster {
+    layer_overhangs: BTreeMap<i32, ExPolygons>,
+    merged_poly: ExPolygons,
+    merged_bbox: BBoxCpp,
+    min_layer: i32,
+    max_layer: i32,
+    offset: CoordF,
+    type_: OverhangType,
+    small_reason: Option<&'static str>,
+}
+
+impl OverhangCluster {
+    // 861-863 `OverhangCluster(const ExPolygon* expoly, int layer_nr)`
+    fn new(expoly: &ExPolygon, layer_nr: i32) -> Self {
+        let mut cluster = OverhangCluster {
+            layer_overhangs: BTreeMap::new(),
+            merged_poly: Vec::new(),
+            merged_bbox: BBoxCpp::new(),
+            min_layer: 10000000, // 1e7
+            max_layer: 0,
+            offset: 0.,
+            type_: OverhangType::NORMAL,
+            small_reason: None,
+        };
+        cluster.push_back(expoly, layer_nr);
+        cluster
+    }
+    #[allow(dead_code)]
+    fn is_cantilever(&self) -> bool {
+        self.type_.0 & OverhangType::CANTILEVER.0 != 0
+    }
+    #[allow(dead_code)]
+    fn is_sharp_tail(&self) -> bool {
+        self.type_.0 & OverhangType::SHARP_TAIL.0 != 0
+    }
+    fn is_type(&self, type_mask: OverhangType) -> bool {
+        self.type_.0 & type_mask.0 != 0
+    }
+    // 854-860
+    fn set_type(&mut self, type_mask: OverhangType, is: bool) {
+        if is {
+            self.type_ = OverhangType(self.type_.0 | type_mask.0);
+        } else {
+            self.type_ = OverhangType(self.type_.0 & !type_mask.0);
+        }
+    }
+    // 864-876
+    fn push_back(&mut self, expoly: &ExPolygon, layer_nr: i32) {
+        self.layer_overhangs.entry(layer_nr).or_default().push(expoly.clone());
+        // `offset_ex(*expoly, offset)`: the overload of one ExPolygon
+        let dilate1 = cx::offset_ex_expolygon(expoly, self.offset as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+        if !dilate1.is_empty() {
+            self.merged_poly = cx::union_ex_2(&self.merged_poly, &dilate1);
+        }
+        self.min_layer = self.min_layer.min(layer_nr);
+        self.max_layer = self.max_layer.max(layer_nr);
+        self.merged_bbox.merge(&BBoxCpp::of_expolygons(&dilate1));
+    }
+    // 877-879
+    fn height(&self) -> i32 {
+        self.max_layer - self.min_layer + 1
+    }
+    // 880-892
+    #[allow(dead_code)]
+    fn intersects(&mut self, region: &ExPolygon, layer_nr: i32, offset: CoordF) -> bool {
+        if layer_nr < 1 {
+            return false;
+        }
+        let Some(overhangs) = self.layer_overhangs.get(&(layer_nr - 1)).cloned() else {
+            return false;
+        };
+
+        self.offset = offset;
+        let dilate1 = cx::offset_ex_expolygon(region, offset as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+        let bbox = BBoxCpp::of_expolygons(&dilate1);
+        if !self.merged_bbox.overlap(&bbox) {
+            return false;
+        }
+        cx::overlaps_expolygons(&overhangs, &dilate1)
+    }
+    // 893-926 it's basically the combination of push_back and intersects, but saves an offset_ex
+    fn push_back_if_intersects(&mut self, region: &ExPolygon, layer_nr: i32, offset: CoordF, max_layer_gap: usize) -> bool {
+        let mut is_intersect = false;
+        self.offset = offset;
+        let mut dilate1: ExPolygons = Vec::new();
+        let mut bbox = BBoxCpp::new();
+        #[allow(clippy::never_loop)]
+        loop {
+            if layer_nr < 1 {
+                break;
+            }
+            // `auto it = layer_overhangs.lower_bound(layer_nr); if (it == layer_overhangs.begin()) break; -- it;`
+            let Some((key, overhangs)) = self.layer_overhangs.range(..layer_nr).next_back() else {
+                break;
+            };
+            if (layer_nr - *key) as usize > max_layer_gap {
+                break;
+            }
+
+            dilate1 = cx::offset_ex_expolygon(region, offset as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+            if dilate1.is_empty() {
+                break;
+            }
+            bbox = BBoxCpp::of_expolygons(&dilate1);
+            if !self.merged_bbox.overlap(&bbox) {
+                break;
+            }
+            is_intersect = cx::overlaps_expolygons(overhangs, &dilate1);
+            break;
+        }
+        if is_intersect {
+            self.layer_overhangs.entry(layer_nr).or_default().push(region.clone());
+            self.merged_poly = cx::union_ex_2(&self.merged_poly, &dilate1);
+            self.min_layer = self.min_layer.min(layer_nr);
+            self.max_layer = self.max_layer.max(layer_nr);
+            self.merged_bbox.merge(&bbox);
+        }
+        is_intersect
+    }
+    // 927-971
+    fn check_small_overhang(&mut self, extrusion_width_scaled: CoordF, length_thresh_small_overhang: f64, radius_thresh_small_overhang: f64) {
+        self.small_reason = None;
+        if self.type_.0 & OverhangType::SHARP_TAIL.0 != 0 || self.type_.0 & OverhangType::CANTILEVER.0 != 0 {
+            self.set_type(OverhangType::SMALL, false);
+            return;
+        }
+
+        let mut all_layers_are_small = true;
+        let mut avg_width: f32 = 0.;
+        let mut avg_area: f32 = 0.;
+        let mut num_layers: i32 = 0;
+        for overhangs in self.layer_overhangs.values() {
+            let erodel: ExPolygons = cx::offset_ex(overhangs, (-extrusion_width_scaled / 2.) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+            let mut narrow_width: Coord = 0;
+            for poly in &erodel {
+                let bbox_sz = BBoxCpp::of_expolygon(poly).size();
+                narrow_width = narrow_width.max(bbox_sz.x.min(bbox_sz.y));
+            }
+            if narrow_width as f64 > extrusion_width_scaled {
+                all_layers_are_small = false;
+            }
+            // `avg_width += narrow_width;`: the coord_t converted to float
+            avg_width += narrow_width as f32;
+            // `avg_area += area(overhangs);`: summed in doubles
+            avg_area = (avg_area as f64 + area_of_expolygons(overhangs)) as f32;
+            num_layers += 1;
+        }
+        avg_width /= num_layers as f32;
+        avg_area /= num_layers as f32;
+        let is_small_overhang = all_layers_are_small
+            && (avg_width as f64) < extrusion_width_scaled / 2.
+            && (avg_area as f64) < sq(length_thresh_small_overhang)
+            && self.height() < 3;
+        if is_small_overhang {
+            self.small_reason = Some("per-layer");
+            self.set_type(OverhangType::SMALL, true);
+            return;
+        }
+
+        let erodel: ExPolygons = cx::offset_ex(&self.merged_poly, (-radius_thresh_small_overhang) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+        let bbox_sz = BBoxCpp::of_expolygons(&erodel).size();
+        if erodel.is_empty()
+            || ((bbox_sz.x as f64) < length_thresh_small_overhang
+                && (bbox_sz.y as f64) < length_thresh_small_overhang
+                && (self.height() as f64) < length_thresh_small_overhang / 2.)
+        {
+            self.small_reason = Some(if erodel.is_empty() { "radius" } else { "bbox-height" });
+            self.set_type(OverhangType::SMALL, true);
+        }
+    }
+    // 973-980
+    fn check_polygon_node(&mut self, thresh_big_overhang: f32, m_layer_outlines_below: &ExPolygons) {
+        let outlines_below_eroded: ExPolygons = cx::offset_ex(m_layer_outlines_below, (-self.offset) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+        // `SQ(thresh_big_overhang)`: a product of floats
+        if area_of_expolygons(&self.merged_poly) > (thresh_big_overhang * thresh_big_overhang) as f64 {
+            self.set_type(OverhangType::BIG_FLAT, true);
+        } else {
+            // `merged_bbox.size().any_comp(thresh_big_overhang, ">")`: Point::any_comp(const coord_t val, ...)
+            let val = thresh_big_overhang as Coord;
+            let sz = self.merged_bbox.size();
+            if (sz.x > val || sz.y > val) && self.min_layer < 20 && !cx::overlaps_expolygons(&self.merged_poly, &outlines_below_eroded) {
+                self.set_type(OverhangType::THIN_PLATE, true);
+            }
+        }
+    }
+}
+
+// TreeSupport.cpp:994-1010 the lambda `find_and_insert_cluster` of detect_overhangs(): the index of the cluster.
+fn find_and_insert_cluster(region_clusters: &mut Vec<OverhangCluster>, region: &ExPolygon, layer_nr: i32, offset: CoordF, max_cluster_layer_gap: usize) -> usize {
+    for i in 0..region_clusters.len() {
+        if region_clusters[i].push_back_if_intersects(region, layer_nr, offset, max_cluster_layer_gap) {
+            return i;
+        }
+    }
+    region_clusters.push(OverhangCluster::new(region, layer_nr));
+    region_clusters.len() - 1
+}
+
+// ExtrusionEntity.hpp:192 `Polylines ExtrusionEntity::as_polylines() const` of a collection
+// (ExtrusionEntityCollection.hpp:132-135): a path its polyline (ExtrusionEntity.hpp:346), a multi path and a loop
+// their paths joined into one polyline (`as_polyline()`, ExtrusionEntity.hpp:479, 552); empty ones are left out.
+fn extrusion_entities_collect_polylines(entities: &[ExtrusionEntityType], dst: &mut crate::geometry::Polylines) {
+    use crate::geometry::Polyline;
+    // ExtrusionEntity.cpp `Polyline ExtrusionMultiPath::as_polyline() const` / `ExtrusionLoop::as_polyline() const`:
+    // the points of the first path, then of every other path its points but the first.
+    fn joined(paths: &[ExtrusionPath]) -> Polyline {
+        let mut out = Polyline::from_points(Vec::new());
+        if !paths.is_empty() {
+            out.points = paths[0].polyline.points.clone();
+            for path in &paths[1..] {
+                if path.polyline.points.len() > 1 {
+                    out.points.extend_from_slice(&path.polyline.points[1..]);
+                }
+            }
+        }
+        out
+    }
+    for entity in entities {
+        match entity {
+            ExtrusionEntityType::Path(path) => {
+                if !path.polyline.points.is_empty() {
+                    dst.push(path.polyline.clone());
+                }
+            }
+            ExtrusionEntityType::MultiPath(multipath) => {
+                let pl = joined(&multipath.paths);
+                if !pl.points.is_empty() {
+                    dst.push(pl);
+                }
+            }
+            ExtrusionEntityType::Loop(loop_) => {
+                let pl = joined(&loop_.paths);
+                if !pl.points.is_empty() {
+                    dst.push(pl);
+                }
+            }
+            ExtrusionEntityType::Collection(collection) => extrusion_entities_collect_polylines(&collection.entities, dst),
+        }
+    }
+}
+
+/// PrintObject.cpp:6360-6506 `template<typename PolysType> void PrintObject::remove_bridges_from_contacts(const Layer
+/// *lower_layer, const Layer *current_layer, float extrusion_width, PolysType *overhang_regions, float
+/// max_bridge_length, bool break_bridge, std::vector<std::pair<ExPolygon, int>> *overhang_regions_with_type)` with
+/// `PolysType = ExPolygons`, as detect_overhangs() calls it. The crate has no port of it over the faithful
+/// PrintObject, so it is here; `thick_bridges` is `current_layer->object()->config().thick_bridges`.
+///
+/// FIDELITY-NOTE: the loop over the regions of the layer is ported over the crate's `LayerRegion` and is not
+/// compared with the pin (the vectors' layers have no regions). `layerm->bridging_flow()` of the crate needs the
+/// configuration the slicing pipeline stamps on a region; a region without it is an `Err`.
+#[allow(clippy::too_many_arguments)]
+pub fn print_object_remove_bridges_from_contacts(
+    lower_layer: &Layer,
+    current_layer: &Layer,
+    extrusion_width: f32,
+    overhang_regions: &mut ExPolygons,
+    max_bridge_length: f32,
+    break_bridge: bool,
+    overhang_regions_with_type: Option<&mut Vec<(ExPolygon, i32)>>,
+    thick_bridges: bool,
+) -> crate::Result<()> {
+    use crate::clipper::JoinType;
+    use crate::clipper_utils::ApplySafetyOffset;
+    use crate::support::support_common::cu as scu;
+    // Extrusion width accounts for the roundings of the extrudates.
+    // It is the maximum widh of the extrudate.
+    let fw: f32 = extrusion_width;
+    // `Lines overhang_perimeters = to_lines(*overhang_regions);` is not read.
+    let lower_layer_polygons: Polygons = to_polygons(&lower_layer.lslices);
+
+    let mut all_bridges: Polygons = Vec::new();
+    for layerm in current_layer.regions() {
+        let mut bridges: Polygons = Vec::new();
+        // Surface supporting this layer, expanded by 0.5 * nozzle_diameter, as we consider this kind of overhang to be sufficiently supported.
+        let lower_grown_slices: Polygons = scu::offset(
+            &lower_layer_polygons,
+            //FIXME to mimic the decision in the perimeter generator, we should use half the external perimeter width.
+            0.5f32 * fw,
+            JoinType::jtSquare,
+            0.,
+        );
+        let mut perimeters: crate::geometry::Polylines = Vec::new();
+        extrusion_entities_collect_polylines(&layerm.perimeters.entities, &mut perimeters);
+        let mut overhang_perimeters: crate::geometry::Polylines = scu::diff_pl(&perimeters, &lower_grown_slices);
+        // only consider straight overhangs
+        // only consider overhangs having endpoints inside layer's slices
+        // convert bridging polylines into polygons by inflating them with their thickness
+        // since we're dealing with bridges, we can't assume width is larger than spacing,
+        // so we take the largest value and also apply safety offset to be ensure no gaps
+        // are left in between
+        let bridge_flow = layerm.bridging_flow(crate::flow::FlowRole::Perimeter, thick_bridges, current_layer.height)?;
+        let w: f32 = bridge_flow.scaled_width().max(bridge_flow.scaled_spacing()) as f32;
+        for polyline in overhang_perimeters.iter_mut() {
+            if polyline.is_straight() {
+                // This is a bridge
+                polyline.extend_start(fw as f64);
+                polyline.extend_end(fw as f64);
+                // Is the straight perimeter segment supported at both sides?
+                let pts = [polyline.first_point(), polyline.last_point()];
+                let mut supported = [false, false];
+                let mut i = 0;
+                while i < lower_layer.lslices.len() && !(supported[0] && supported[1]) {
+                    for j in 0..2 {
+                        // `lower_layer->lslices_bboxes[i].contains(pts[j])`
+                        let b = &lower_layer.lslices_bboxes[i];
+                        let in_bbox = pts[j].x >= b.min.x && pts[j].x <= b.max.x && pts[j].y >= b.min.y && pts[j].y <= b.max.y;
+                        if !supported[j] && in_bbox && cx::contains(&lower_layer.lslices[i], &pts[j], true)
+                        {
+                            supported[j] = true;
+                        }
+                    }
+                    i += 1;
+                }
+                if supported[0] && supported[1] {
+                    let mut lines: crate::geometry::Polylines = Vec::new();
+                    // `polyline.length() > max_bridge_length + 10`: the float sum against the double
+                    if polyline.length() > (max_bridge_length + 10.) as f64 {
+                        if break_bridge {
+                            // equally divide the polyline
+                            let len: f32 = (polyline.length() / (polyline.length() / max_bridge_length as f64).ceil()) as f32;
+                            lines = polyline.equally_spaced_lines(len as f64);
+                            for line in lines.iter_mut() {
+                                if line.is_valid() {
+                                    line.clip_start(fw as f64);
+                                }
+                                if line.is_valid() {
+                                    line.clip_end(fw as f64);
+                                }
+                            }
+                        }
+                    } else {
+                        lines.push(polyline.clone());
+                    }
+                    // Offset a polyline into a thick line.
+                    bridges.extend(scu::offset_polylines(
+                        &lines,
+                        0.5f32 * w + 10.,
+                        scu::DEFAULT_LINE_JOIN_TYPE,
+                        scu::DEFAULT_LINE_MITER_LIMIT,
+                        scu::DEFAULT_END_TYPE,
+                    ));
+                }
+            }
+        }
+        bridges = scu::union_(&bridges);
+
+        // remove the entire bridges and only support the unsupported edges
+        //FIXME the brided regions are already collected as layerm->bridged. Use it?
+        for surface in &layerm.fill_surfaces.surfaces {
+            // Surface.hpp `double bridge_angle = -1.`
+            let bridge_angle: f64 = surface.bridge_angle.unwrap_or(-1.);
+            if surface.surface_type == crate::surface::SurfaceType::BottomBridge && bridge_angle != -1. {
+                let bbox = BBoxCpp::of_expolygon(&surface.expolygon);
+                let bbox_size = bbox.size();
+                if (bbox_size.x as f32) < max_bridge_length && (bbox_size.y as f32) < max_bridge_length {
+                    bridges.extend(to_polygons(std::slice::from_ref(&surface.expolygon)));
+                } else if break_bridge {
+                    let mut holes: Polygons = Vec::new();
+                    let x0: Coord = bbox.min.x;
+                    let x1: Coord = bbox.max.x;
+                    let y0: Coord = bbox.min.y;
+                    let y1: Coord = bbox.max.y;
+                    let grid_lw: i32 = (w / 2.) as i32; // grid line width
+
+                    // `Vec2f bridge_direction{ cos(surface.bridge_angle),sin(surface.bridge_angle) }`
+                    let bridge_direction: [f32; 2] = [bridge_angle.cos() as f32, bridge_angle.sin() as f32];
+                    if bridge_direction[0].abs() > bridge_direction[1].abs() {
+                        // cut bridge along x-axis if bridge direction is aligned to x-axis more than to y-axis
+                        // Note: surface.bridge_angle may be pi, so we can't compare it to 0 & pi/2.
+                        // `int step = bbox_size(0) / ceil(bbox_size(0) / max_bridge_length);`
+                        let step: i32 = (bbox_size.x as f32 / (bbox_size.x as f32 / max_bridge_length).ceil()) as i32;
+                        // `for (int x = x0 + step; x < x1; x += step)`
+                        let mut x: i32 = (x0 + step as i64) as i32;
+                        while (x as i64) < x1 {
+                            holes.push(Polygon::from_points(vec![
+                                Point::new((x - grid_lw) as i64, y0),
+                                Point::new((x + grid_lw) as i64, y0),
+                                Point::new((x + grid_lw) as i64, y1),
+                                Point::new((x - grid_lw) as i64, y1),
+                            ]));
+                            x += step;
+                        }
+                    } else {
+                        let step: i32 = (bbox_size.y as f32 / (bbox_size.y as f32 / max_bridge_length).ceil()) as i32;
+                        let mut y: i32 = (y0 + step as i64) as i32;
+                        while (y as i64) < y1 {
+                            holes.push(Polygon::from_points(vec![
+                                Point::new(x0, (y - grid_lw) as i64),
+                                Point::new(x0, (y + grid_lw) as i64),
+                                Point::new(x1, (y + grid_lw) as i64),
+                                Point::new(x1, (y - grid_lw) as i64),
+                            ]));
+                            y += step;
+                        }
+                    }
+                    let expoly = scu::diff_ex_ep(std::slice::from_ref(&surface.expolygon), &holes, ApplySafetyOffset::No);
+                    bridges.extend(to_polygons(&expoly));
+                }
+            }
+        }
+        //FIXME add the gap filled areas. Extrude the gaps with a bridge flow?
+        // Remove the unsupported ends of the bridges from the bridged areas.
+        //FIXME add supports at regular intervals to support long bridges!
+        bridges = scu::diff(
+            &bridges,
+            // Offset unsupported edges into polygons.
+            // SupportMaterial.cpp:59 `#define SUPPORT_MATERIAL_MARGIN 1.2`
+            &scu::offset_polylines(&layerm.unsupported_bridge_edges, scale_(1.2) as f32, JoinType::jtSquare, 0., scu::DEFAULT_END_TYPE),
+            ApplySafetyOffset::No,
+        );
+        all_bridges.extend(bridges);
+    }
+    *overhang_regions = scu::diff_ex_ep(overhang_regions, &all_bridges, ApplySafetyOffset::Yes);
+
+    // Keep an optional typed overhang list in sync by diffing against the same bridge set.
+    // Skip items whose bbox doesn't overlap the bridges bbox to avoid unnecessary Clipper calls.
+    if let Some(overhang_regions_with_type) = overhang_regions_with_type {
+        if !overhang_regions_with_type.is_empty() && !all_bridges.is_empty() {
+            // Polygon.cpp `BoundingBox get_extents(const Polygons &polygons)`
+            let mut bridges_bbox = BBoxCpp::new();
+            if !all_bridges.is_empty() {
+                bridges_bbox = BBoxCpp::from_points(&all_bridges[0].points);
+                for poly in &all_bridges[1..] {
+                    bridges_bbox.merge(&BBoxCpp::from_points(&poly.points));
+                }
+            }
+            let mut kept: Vec<(ExPolygon, i32)> = Vec::with_capacity(overhang_regions_with_type.len());
+            let mut any_trimmed = false;
+            for overhang_part in overhang_regions_with_type.iter_mut() {
+                let part_bbox = BBoxCpp::of_expolygon(&overhang_part.0);
+                if !bridges_bbox.overlap(&part_bbox) {
+                    kept.push((std::mem::take(&mut overhang_part.0), overhang_part.1));
+                    continue;
+                }
+                let remaining: ExPolygons = scu::diff_ex_ep(std::slice::from_ref(&overhang_part.0), &all_bridges, ApplySafetyOffset::Yes);
+                any_trimmed = true;
+                for expoly in remaining {
+                    kept.push((expoly, overhang_part.1));
+                }
+            }
+            // `kept.emplace_back(std::move(overhang_part.first), ...)` above leaves the expolygon of a part that
+            // was not trimmed empty in the list, which stays as it is when no part was trimmed.
+            if any_trimmed {
+                *overhang_regions_with_type = kept;
+            }
+        }
+    }
+    Ok(())
+}
+
+impl<'a> TreeSupport<'a> {
+    /// TreeSupport.cpp:795-1550 `void TreeSupport::detect_overhangs(bool check_support_necessity)`
+    ///
+    /// The sharp tails, their heights and the cantilevers of the layers (`Layer::sharp_tails`,
+    /// `Layer::sharp_tails_height`, `Layer::cantilevers`, Layer.hpp:172-174) are kept in `layer_sharp_tails`,
+    /// `layer_sharp_tails_height` and `layer_cantilevers`, by the index of the layer: the crate's Layer declares
+    /// them as `Polygons` and one `f64`.
+    ///
+    /// FIDELITY-NOTE: the tbb::parallel_for loops run in layer order, which is what the pin does on one thread;
+    /// the loop of 1117-1283 turns the sharp tail detection and the small overhang removal off for the layers
+    /// after one with more than 100 overhangs (or after 30 seconds), so its result depends on that order.
+    /// `enforcers[layer_nr]` of a layer past the trimmed end of the enforcers (1159, 1308: `trim_tail_empty` cut
+    /// the empty tail off, the C++ reads the destroyed empty vectors) is empty.
+    pub fn detect_overhangs(&mut self, check_support_necessity: bool) -> crate::Result<()> {
+        use crate::clipper::JoinType;
+        use crate::print_config::config_def::{is_auto, is_tree};
+        use crate::support::support_common::cu as scu;
+        let tree_support_enable =
+            cfg_bool(self.object_config(), "enable_support") && is_tree(support_type_from_i32(cfg_int(self.object_config(), "support_type")));
+        if !tree_support_enable && !check_support_necessity {
+            // BOOST_LOG_TRIVIAL(info) << "Tree support is disabled.";
+            return Ok(());
+        }
+
+        let layer_count = self.m_object.layer_count();
+        // Clear and create Tree Support Layers
+        // m_object->clear_support_layers();  (PrintObject.cpp:1506-1518)
+        if self.m_object.m_shared_object.is_none() {
+            self.m_object.m_support_layers.clear();
+            self.layer_sharp_tails.clear();
+            self.layer_sharp_tails_height.clear();
+            self.layer_cantilevers.clear();
+        }
+        self.layer_sharp_tails.resize(layer_count, Vec::new());
+        self.layer_sharp_tails_height.resize(layer_count, Vec::new());
+        self.layer_cantilevers.resize(layer_count, Vec::new());
+        // m_object->clear_tree_support_preview_cache(): the cache of the object is `m_ts_data`, which the tree
+        // support keeps (the C++ holds a shared_ptr to it).
+
+        let config = self.object_config();
+        let stype: SupportType = support_type_from_i32(self.support_type);
+        // `const coordf_t radius_sample_resolution = g_config_tree_support_collision_resolution;`: the float
+        let radius_sample_resolution: CoordF = G_CONFIG_TREE_SUPPORT_COLLISION_RESOLUTION as f64;
+        let full_print_config = self.m_print.full_print_config();
+        let extrusion_width: CoordF = crate::flow::Flow::extrusion_width_for_nozzle(
+            &cfg_float_option(config, "line_width"),
+            crate::print_config::config_def::primary_nozzle_diameter(full_print_config) as f32,
+            support_nozzle_diameter(self.m_print, cfg_int(config, "support_filament") as u32),
+            crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(full_print_config),
+        );
+        let extrusion_width_scaled: CoordF = scale_(extrusion_width);
+        let max_bridge_length: CoordF = scale_(cfg_float(config, "max_bridge_length"));
+        let _bridge_no_support = max_bridge_length > 0.;
+        let support_critical_regions_only = cfg_bool(config, "support_critical_regions_only");
+        let mut config_remove_small_overhangs = cfg_bool(config, "support_remove_small_overhang");
+        // libslic3r.h:91 `static constexpr bool g_config_support_sharp_tails = true;`
+        const G_CONFIG_SUPPORT_SHARP_TAILS: bool = true;
+        let mut config_detect_sharp_tails = G_CONFIG_SUPPORT_SHARP_TAILS;
+        let enforce_support_layers: i32 = cfg_int(config, "enforce_support_layers");
+        let _area_thresh_well_supported: f64 = sq(scale_(6.));
+        let length_thresh_well_supported: f64 = scale_(6.);
+        let length_thresh_small_overhang: f64 = scale_(2.);
+        let radius_thresh_small_overhang: f64 = 2.5 * extrusion_width_scaled;
+        // `static const double sharp_tail_max_support_height = 16.f;`
+        const SHARP_TAIL_MAX_SUPPORT_HEIGHT: f64 = 16.;
+        // a region is considered well supported if the number of layers below it exceeds this threshold
+        let _thresh_layers_below: i32 = (10. / cfg_float(config, "layer_height")) as i32;
+        // +1 makes the threshold inclusive
+        let support_threshold_angle: i32 = cfg_int(config, "support_threshold_angle");
+        let mut thresh_angle: f64 = if support_threshold_angle as f64 > EPSILON { (support_threshold_angle + 1) as f64 } else { 30. };
+        thresh_angle = thresh_angle.min(89.); // should be smaller than 90
+        // Geometry.hpp:295 `deg2rad(angle)`: `T(PI) * angle / T(180.0)`
+        let threshold_rad: f64 = M_PI * thresh_angle / 180.0;
+        // Dilate painted enforcers by the effective tip, not the raw setting: tip_radius is already clamped
+        // to [support extrusion width, branch diameter], so a large tree_support_tip_diameter cannot blow this
+        // fudge offset up to 10mm. Enforcers are unioned back in after blockers are subtracted below, so an
+        // unclamped offset here would let a thick tip swallow nearby blockers.
+        // `scaled<double>(tip_radius * 2)`
+        let enforcer_overhang_offset: f64 = (self.tip_radius * 2.) / SCALING_FACTOR;
+        let thick_bridges = cfg_bool(config, "thick_bridges");
+        let thresh_big_overhang: f64 = self.m_support_params.thresh_big_overhang;
+
+        let mut overhang_clusters: Vec<OverhangCluster> = Vec::new();
+
+        // A coarse region only contributes overhangs at its band tops. Treat the swallowed fine-grid layers as
+        // adjacent here, matching how consecutive coarse layers are clustered in a single-diameter print.
+        let mut max_cluster_layer_gap: usize = 1;
+        for layer in self.m_object.layers() {
+            for region in layer.regions() {
+                for patch in &region.adaptive_merge_patches {
+                    if patch.group_top {
+                        max_cluster_layer_gap = max_cluster_layer_gap.max(patch.top_idx - patch.bottom_idx + 1);
+                    }
+                }
+            }
+        }
+
+        if !is_tree(stype) {
+            return Ok(());
+        }
+
+        self.max_cantilever_dist = 0.;
+        self.m_highest_overhang_layer = 0;
+
+        // calc the extrudable expolygons of each layer
+        for layer_nr in 0..layer_count {
+            if (self.canceled)() {
+                break;
+            }
+            let layer = &mut self.m_object.m_layers[layer_nr];
+            // Filter out areas whose diameter that is smaller than extrusion_width, but we don't want to lose any details.
+            layer.lslices_extrudable = cx::intersection_ex(
+                &layer.lslices,
+                &cx::offset2_ex(&layer.lslices, (-extrusion_width_scaled / 2.) as f32, extrusion_width_scaled as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+            );
+            layer.loverhangs.clear();
+            layer.loverhangs_with_type.clear();
+            self.layer_sharp_tails[layer_nr].clear();
+            self.layer_sharp_tails_height[layer_nr].clear();
+            self.layer_cantilevers[layer_nr].clear();
+        }
+
+        // main part of overhang detection can be parallel
+        let mut overhangs_all_layers: Vec<ExPolygons> = vec![Vec::new(); layer_count];
+
+        // `m_object->slice_support_enforcers()` / `slice_support_blockers()` (Print.hpp:544-545)
+        let mut enforcers: Vec<Polygons> = self
+            .m_object
+            .slice_support_volumes(self.m_print, crate::model::ModelVolumeType::SupportEnforcer)
+            .map_err(|e| crate::Error::Slicing(e.what().to_string()))?;
+        let mut blockers: Vec<Polygons> = self
+            .m_object
+            .slice_support_volumes(self.m_print, crate::model::ModelVolumeType::SupportBlocker)
+            .map_err(|e| crate::Error::Slicing(e.what().to_string()))?;
+        self.m_vertical_enforcer_points.clear();
+        if let Some(projector) = self.custom_facets_projector.take() {
+            use crate::triangle_selector::EnforcerBlockerType;
+            projector.project_and_append_custom_facets(self.m_object, self.m_print, false, EnforcerBlockerType::BLOCKER, &mut blockers, None);
+            projector.project_and_append_custom_facets(
+                self.m_object,
+                self.m_print,
+                false,
+                EnforcerBlockerType::ENFORCER,
+                &mut enforcers,
+                Some(&mut self.m_vertical_enforcer_points),
+            );
+            self.custom_facets_projector = Some(projector);
+        }
+        // 1042-1049 the lambda `trim_tail_empty`
+        let trim_tail_empty = |vec: &mut Vec<Polygons>| match vec.iter().rposition(|e| !e.is_empty()) {
+            Some(pos) => vec.truncate(pos + 1),
+            None => vec.clear(),
+        };
+        trim_tail_empty(&mut enforcers);
+        trim_tail_empty(&mut blockers);
+        // `enforcers[layer_nr]` past the end, see the note above.
+        let no_polygons: Polygons = Vec::new();
+
+        // Adaptive multi-nozzle layers are sliced on the finest Z grid, but a coarse nozzle extrudes one
+        // merged slab at the top of each band. Detecting overhangs from every fine-grid slice turns that slab's
+        // overhang into several narrow strips which organic-support avoidance may remove completely. Recreate
+        // the same overhang the coarse nozzle would see on its own: compare the retained slab footprint with
+        // the model below the band and place the result at the slab's physical bottom.
+        //
+        // Every layer reads only its own patches and the already finished lslices_extrudable, so the layers are
+        // processed in parallel. A slab's overhang belongs to the layer it starts on, not to the one that found
+        // it; those are collected per layer and handed over afterwards, in layer order, before the union.
+        let mut adaptive_region_slices: Vec<ExPolygons> = vec![Vec::new(); layer_count];
+        let mut adaptive_overhangs: Vec<ExPolygons> = vec![Vec::new(); layer_count];
+        let mut found_overhangs: Vec<Vec<(usize, ExPolygons)>> = vec![Vec::new(); layer_count];
+        for layer_nr in 0..layer_count {
+            if (self.canceled)() {
+                break;
+            }
+            let layer = self.m_object.get_layer(layer_nr as i32);
+            for layerm in layer.regions() {
+                if layerm.adaptive_merge_patches.is_empty() {
+                    continue;
+                }
+
+                for patch in &layerm.adaptive_merge_patches {
+                    // The region is physically represented by this retained coarse-slab footprint throughout
+                    // the band. LayerRegion::slices may already be empty on merged-out fine-grid layers, which
+                    // would let the normal detector process those layers again and fragment one coarse overhang.
+                    if !patch.area().is_empty() {
+                        adaptive_region_slices[layer_nr].extend(patch.area().iter().cloned());
+                    }
+                    if !patch.group_top || patch.bottom_idx == 0 || patch.area().is_empty() {
+                        continue;
+                    }
+
+                    let below_band = self.m_object.get_layer((patch.bottom_idx - 1) as i32);
+                    let support_offset: Coord = scale_(patch.merged_height / threshold_rad.tan()) as Coord;
+                    // Keep the same minimum-width filter as the normal detector. Comparing the raw patch against
+                    // a filtered lower layer turns a narrowing tip into a fully floating overhang once the lower
+                    // contour becomes thinner than the support extrusion width.
+                    let patch_extrudable: ExPolygons = cx::intersection_ex(
+                        patch.area(),
+                        &cx::offset2_ex(patch.area(), (-extrusion_width_scaled / 2.) as f32, extrusion_width_scaled as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                    );
+                    let overhangs: ExPolygons =
+                        cx::diff_ex(&patch_extrudable, &cx::offset_ex(&below_band.lslices_extrudable, support_offset as f32, JoinType::jtSquare, 0.));
+                    if !overhangs.is_empty() {
+                        found_overhangs[layer_nr].push((patch.bottom_idx, overhangs));
+                    }
+                }
+            }
+            if !adaptive_region_slices[layer_nr].is_empty() {
+                adaptive_region_slices[layer_nr] = cx::union_ex(&adaptive_region_slices[layer_nr]);
+            }
+        }
+        for found in found_overhangs.iter_mut() {
+            for overhang in found.drain(..) {
+                adaptive_overhangs[overhang.0].extend(overhang.1);
+            }
+        }
+        for layer_nr in 0..layer_count {
+            if !adaptive_overhangs[layer_nr].is_empty() {
+                adaptive_overhangs[layer_nr] = cx::union_ex(&adaptive_overhangs[layer_nr]);
+            }
+        }
+
+        // The 30 s budget checked below covers the per-layer detection only, not the enforcer projection and the
+        // coarse slab overhangs prepared above.
+        let t0 = std::time::Instant::now();
+        for layer_nr in 0..layer_count {
+            if (self.canceled)() {
+                break;
+            }
+            // FIXME the param enforce_support_layers is not set yet
+            // `layer_nr >= enforce_support_layers` / `layer_nr < enforce_support_layers`: the int converted to size_t
+            if !(is_auto(stype)
+                || (enforce_support_layers > 0 && layer_nr >= enforce_support_layers as usize)
+                || (layer_nr < enforcers.len() && !enforcers[layer_nr].is_empty()))
+            {
+                continue;
+            }
+
+            let layer = self.m_object.get_layer(layer_nr as i32);
+
+            let Some(lower_layer_nr) = layer.lower_layer_id else {
+                let mut curr_polys: ExPolygons = layer.lslices_extrudable.clone();
+                if layer_nr < blockers.len() && !blockers[layer_nr].is_empty() {
+                    curr_polys = cx::diff_ex(
+                        &curr_polys,
+                        &scu::offset_ex(&scu::union_(&blockers[layer_nr]), scale_(radius_sample_resolution) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                    );
+                }
+                let height = layer.height;
+                for slice in &curr_polys {
+                    let bbox_size = BBoxCpp::of_expolygon(slice).size();
+                    if !(bbox_size.x as f64 > length_thresh_well_supported || bbox_size.y as f64 > length_thresh_well_supported) && G_CONFIG_SUPPORT_SHARP_TAILS {
+                        self.layer_sharp_tails[layer_nr].push(slice.clone());
+                        self.layer_sharp_tails_height[layer_nr].push(height as f32);
+                    }
+                }
+                continue;
+            };
+
+            let lower_layer = self.m_object.get_layer(lower_layer_nr as i32);
+            // `layer_nr < enforce_support_layers ? -0.15 * extrusion_width : (float)lower_layer->height / tan(threshold_rad)`
+            let lower_layer_offset: CoordF = if (layer_nr as u64) < (enforce_support_layers as i64 as u64) {
+                -0.15 * extrusion_width
+            } else {
+                (lower_layer.height as f32) as f64 / threshold_rad.tan()
+            };
+            //lower_layer_offset = std::min(lower_layer_offset, extrusion_width);
+            let support_offset_scaled: CoordF = scale_(lower_layer_offset);
+            let curr_polys: ExPolygons = if adaptive_region_slices[layer_nr].is_empty() {
+                layer.lslices_extrudable.clone()
+            } else {
+                cx::diff_ex(&layer.lslices_extrudable, &adaptive_region_slices[layer_nr])
+            };
+            let lower_polys: &ExPolygons = &lower_layer.lslices_extrudable;
+            let mut lower_layer_offseted: ExPolygons = cx::offset_ex(lower_polys, support_offset_scaled as f32, JoinType::jtSquare, 0.);
+
+            // add enforcer
+            let mut enforced_overhangs: ExPolygons = Vec::new();
+            let mut blocker: ExPolygons = Vec::new();
+            if !enforcers.is_empty() {
+                enforced_overhangs = cx::intersection_ex_polygons(&cx::diff_ex(&layer.lslices_extrudable, &lower_layer.lslices_extrudable), enforcers.get(layer_nr).unwrap_or(&no_polygons));
+            }
+            if is_auto(stype) {
+                // normal overhang
+                overhangs_all_layers[layer_nr] = cx::diff_ex(&curr_polys, &lower_layer_offseted);
+                if !adaptive_overhangs[layer_nr].is_empty() {
+                    let mut combined: Polygons = to_polygons(&overhangs_all_layers[layer_nr]);
+                    combined.extend(to_polygons(&adaptive_overhangs[layer_nr]));
+                    overhangs_all_layers[layer_nr] = cx::union_ex_polygons(&combined);
+                }
+                // if is auto, add blocker first
+                if layer_nr < blockers.len() && !blockers[layer_nr].is_empty() {
+                    // Arthur: union_ is a must because after mirroring, the blocker polygons are in left-hand coordinates, ie clockwise,
+                    // which are not valid polygons, and will be removed by offset_ex. union_ can make these polygons right.
+                    blocker = scu::offset_ex(&scu::union_(&blockers[layer_nr]), scale_(radius_sample_resolution) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                    if !blocker.is_empty() {
+                        overhangs_all_layers[layer_nr] = cx::diff_ex(&overhangs_all_layers[layer_nr], &blocker);
+                    }
+                }
+                if !enforced_overhangs.is_empty() {
+                    enforced_overhangs = cx::diff_ex(
+                        &cx::offset_ex(&enforced_overhangs, enforcer_overhang_offset as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                        &lower_layer.lslices_extrudable,
+                    );
+                    overhangs_all_layers[layer_nr] = cx::union_ex_2(&overhangs_all_layers[layer_nr], &enforced_overhangs);
+                }
+            } else if layer_nr < enforcers.len() {
+                if !enforced_overhangs.is_empty() {
+                    // FIXME this is a hack to make enforcers work on steep overhangs. See STUDIO-7538.
+                    enforced_overhangs = cx::diff_ex(
+                        &cx::offset_ex(&enforced_overhangs, enforcer_overhang_offset as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                        &lower_layer.lslices_extrudable,
+                    );
+                    // `overhangs_all_layers[layer_nr] = std::move(enforced_overhangs);`
+                    overhangs_all_layers[layer_nr] = std::mem::take(&mut enforced_overhangs);
+                }
+            }
+
+            let duration: f64 = t0.elapsed().as_secs_f64();
+            if duration > 30. || overhangs_all_layers[layer_nr].len() > 100 {
+                // BOOST_LOG_TRIVIAL(info) << "detect_overhangs takes more than 30 secs, skip cantilever and sharp tails detection: layer_nr=" << layer_nr << " duration=" << duration;
+                config_detect_sharp_tails = false;
+                config_remove_small_overhangs = false;
+                continue;
+            }
+            if is_auto(stype) && config_detect_sharp_tails {
+                let mut curr: ExPolygons = curr_polys.clone();
+                if !blocker.is_empty() {
+                    curr = cx::diff_ex(&curr, &blocker);
+                }
+                if !enforced_overhangs.is_empty() {
+                    curr = cx::union_ex_2(&curr, &enforced_overhangs);
+                }
+                // BBS detect sharp tail
+                for expoly in &curr {
+                    let mut is_sharp_tail = false;
+                    // 1. nothing below
+                    // this is a sharp tail region if it's floating and non-ignorable
+                    // The (area && bbox) gate excludes "large looped structures" but also catches
+                    // thin-but-wide rings (small area, large bbox), which would otherwise be dropped
+                    // by check_small_overhang and end up unsupported. Rescue them here: if eroding by
+                    // radius_thresh_small_overhang (the same radius small-overhang detection uses)
+                    // makes the polygon vanish, treat it as a sharp tail regardless of bbox.
+                    if !cx::overlaps_expolygons(
+                        &cx::offset_ex_expolygon(expoly, (0.1 * extrusion_width_scaled) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                        lower_polys,
+                    ) && expoly.area() < sq(thresh_big_overhang)
+                        && (BBoxCpp::of_expolygon(expoly).area() < sq(thresh_big_overhang)
+                            || cx::offset_ex_expolygon(expoly, (-radius_thresh_small_overhang) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT).is_empty())
+                    {
+                        is_sharp_tail =
+                            !cx::offset_ex_expolygon(expoly, (-0.1 * extrusion_width_scaled) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT).is_empty();
+                    }
+                    if is_sharp_tail {
+                        if let Some(lower_lower_nr) = lower_layer.lower_layer_id {
+                            if cx::overlaps_expolygons(
+                                &cx::offset_ex_expolygon(expoly, (0.1 * extrusion_width_scaled) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                                &self.m_object.get_layer(lower_lower_nr as i32).lslices_extrudable,
+                            ) {
+                                is_sharp_tail = false;
+                            }
+                        }
+                    }
+                    if is_sharp_tail {
+                        self.layer_sharp_tails[layer_nr].push(expoly.clone());
+                        self.layer_sharp_tails_height[layer_nr].push(0.);
+
+                        self.has_sharp_tails = true;
+                    }
+                }
+            }
+
+            // check cantilever
+            let lower_layer_support_thresh: ExPolygons = cx::offset_ex(lower_polys, extrusion_width_scaled as f32, JoinType::jtSquare, 0.);
+            // lower_layer_offset may be very small, so we need to do max and then add 0.1
+            lower_layer_offseted = cx::offset_ex(
+                &lower_layer_offseted,
+                scale_((extrusion_width - lower_layer_offset).max(0.) + 0.1) as f32,
+                cx::DEFAULT_JOIN_TYPE,
+                cx::DEFAULT_MITER_LIMIT,
+            );
+            for poly in &overhangs_all_layers[layer_nr] {
+                // check if there is some contour that is totally floating
+                let mut is_cantilever = false;
+                let mut dist_max: f64 = 0.;
+                for i in 0..poly.num_contours() {
+                    let contour = contour_or_hole(poly, i);
+                    let mut is_floating = true;
+                    let mut tmp_dist_max: f64 = 0.;
+                    for pt in &contour.points {
+                        if is_inside_ex(&lower_layer_support_thresh, pt) {
+                            is_floating = false;
+                            break;
+                        } else {
+                            tmp_dist_max = tmp_dist_max.max(point_dist(projection_onto(&lower_layer_support_thresh, pt), *pt));
+                        }
+                    }
+                    if is_floating {
+                        is_cantilever = true;
+                        dist_max = tmp_dist_max;
+                        break;
+                    }
+                }
+                if !is_cantilever {
+                    dist_max = 0.;
+                    let cluster_boundary_ex = cx::intersection_ex(std::slice::from_ref(poly), &lower_layer_offseted);
+                    let cluster_boundary: Polygons = to_polygons(&cluster_boundary_ex);
+                    if cluster_boundary.is_empty() {
+                        continue;
+                    }
+
+                    for pt in &poly.contour.points {
+                        let mut dist_pt = f64::MAX;
+                        for ply in &cluster_boundary {
+                            let d = multipoint_distance_to(&ply.points, pt);
+                            dist_pt = dist_pt.min(d);
+                        }
+                        dist_max = dist_max.max(dist_pt);
+                    }
+                    is_cantilever = dist_max > scale_(3.);
+                }
+                // is cantilever if the farmost point is larger than 3mm away from base or some contour is totally floating
+                if is_cantilever {
+                    self.max_cantilever_dist = self.max_cantilever_dist.max(dist_max);
+                    self.layer_cantilevers[layer_nr].push(poly.clone());
+                    self.has_cantilever = true;
+                }
+            }
+        } // end tbb::parallel_for
+
+        // BOOST_LOG_TRIVIAL(info) << "max_cantilever_dist=" << max_cantilever_dist;
+        if check_support_necessity {
+            return Ok(());
+        }
+
+        // check if the sharp tails should be extended higher
+        if is_auto(stype) && config_detect_sharp_tails {
+            for layer_nr in 0..layer_count {
+                if (self.canceled)() {
+                    break;
+                }
+
+                let layer = self.m_object.get_layer(layer_nr as i32);
+                let Some(lower_layer_nr) = layer.lower_layer_id else {
+                    continue;
+                };
+                let lower_layer = self.m_object.get_layer(lower_layer_nr as i32);
+
+                // BBS detect sharp tail
+                let lower_layer_sharptails: ExPolygons = self.layer_sharp_tails[lower_layer_nr].clone();
+                let lower_layer_sharptails_height: Vec<f32> = self.layer_sharp_tails_height[lower_layer_nr].clone();
+
+                let mut curr_polys: ExPolygons = layer.lslices_extrudable.clone();
+                if !blockers.is_empty() && layer_nr < blockers.len() && !blockers[layer_nr].is_empty() {
+                    curr_polys = cx::diff_ex(
+                        &curr_polys,
+                        &scu::offset_ex(&scu::union_(&blockers[layer_nr]), scale_(radius_sample_resolution) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                    );
+                }
+                if !enforcers.is_empty() && layer_nr < enforcers.len() && !enforcers[layer_nr].is_empty() {
+                    curr_polys = cx::union_ex_2(
+                        &curr_polys,
+                        &cx::intersection_ex_polygons(&cx::diff_ex(&layer.lslices_extrudable, &lower_layer.lslices_extrudable), &enforcers[layer_nr]),
+                    );
+                }
+                let layer_height = layer.height;
+                for expoly in &curr_polys {
+                    let mut is_sharp_tail = false;
+                    let mut accum_height: f32 = layer_height as f32;
+                    #[allow(clippy::never_loop)]
+                    loop {
+                        // 2. something below
+                        // check whether this is above a sharp tail region.
+
+                        // 2.1 If no sharp tail below, this is considered as common region.
+                        let supported_by_lower: ExPolygons = cx::intersection_ex(std::slice::from_ref(expoly), &lower_layer_sharptails);
+                        if supported_by_lower.is_empty() {
+                            is_sharp_tail = false;
+                            break;
+                        }
+
+                        // 2.2 If sharp tail below, check whether it support this region enough.
+                        let bbox = BBoxCpp::of_expolygons(&supported_by_lower);
+                        if bbox.size().x as f64 > length_thresh_well_supported && bbox.size().y as f64 > length_thresh_well_supported {
+                            is_sharp_tail = false;
+                            break;
+                        }
+
+                        // 2.3 check whether sharp tail exceed the max height
+                        for i in 0..lower_layer_sharptails.len() {
+                            if cx::overlaps(&lower_layer_sharptails[i], expoly) {
+                                accum_height += lower_layer_sharptails_height[i];
+                                break;
+                            }
+                        }
+                        if accum_height as f64 > SHARP_TAIL_MAX_SUPPORT_HEIGHT {
+                            is_sharp_tail = false;
+                            break;
+                        }
+
+                        // 2.4 if the area grows fast than threshold, it get connected to other part or
+                        // it has a sharp slop and will be auto supported.
+                        let new_overhang_expolys: ExPolygons = cx::diff_ex(std::slice::from_ref(expoly), &lower_layer_sharptails);
+                        let (sa, sb) = (BBoxCpp::of_expolygons(&new_overhang_expolys).size(), BBoxCpp::of_expolygons(&lower_layer_sharptails).size());
+                        let d = Point::new(sa.x - sb.x, sa.y - sb.y);
+                        // `.both_comp(Point(scale_(5), scale_(5)), ">")`
+                        let five = point_from_f64(scale_(5.), scale_(5.));
+                        if (d.x > five.x && d.y > five.y)
+                            || !cx::offset_ex(&new_overhang_expolys, (-5.0 * extrusion_width_scaled) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT).is_empty()
+                        {
+                            is_sharp_tail = false;
+                            break;
+                        }
+
+                        // 2.5 mark the expoly as sharptail
+                        is_sharp_tail = true;
+                        break;
+                    }
+
+                    if is_sharp_tail {
+                        self.layer_sharp_tails[layer_nr].push(expoly.clone());
+                        self.layer_sharp_tails_height[layer_nr].push(accum_height);
+                    }
+                }
+            }
+        }
+
+        // group overhang clusters
+        for layer_nr in 0..layer_count {
+            if (self.canceled)() {
+                break;
+            }
+            for overhang in &overhangs_all_layers[layer_nr] {
+                let cluster = find_and_insert_cluster(&mut overhang_clusters, overhang, layer_nr as i32, extrusion_width_scaled, max_cluster_layer_gap);
+                if cx::overlaps_expolygons(std::slice::from_ref(overhang), &self.layer_cantilevers[layer_nr]) {
+                    overhang_clusters[cluster].set_type(OverhangType::CANTILEVER, true);
+                }
+            }
+        }
+
+        for cluster in overhang_clusters.iter_mut() {
+            let mut enforce_add = false;
+            // remove small overhangs
+            if is_auto(stype) && config_remove_small_overhangs {
+                // 3. check whether the small overhang is sharp tail
+                cluster.set_type(OverhangType::SHARP_TAIL, false);
+                // `cluster.layer_overhangs[layer_id]`: std::map::operator[] makes the entry of a layer that has none
+                for layer_id in cluster.min_layer as usize..=cluster.max_layer as usize {
+                    if cx::overlaps_expolygons(&self.layer_sharp_tails[layer_id], cluster.layer_overhangs.entry(layer_id as i32).or_default()) {
+                        cluster.set_type(OverhangType::SHARP_TAIL, true);
+                        break;
+                    }
+                }
+                if !enforcers.is_empty() && (cluster.min_layer as usize) < enforcers.len() {
+                    for layer_id in cluster.min_layer as usize..=cluster.max_layer as usize {
+                        if layer_id >= enforcers.len() {
+                            break;
+                        }
+                        if enforcers[layer_id].is_empty() {
+                            continue;
+                        }
+                        if cx::overlaps_expolygons(&to_expolygons_of_polygons(&enforcers[layer_id]), cluster.layer_overhangs.entry(layer_id as i32).or_default()) {
+                            enforce_add = true;
+                            break;
+                        }
+                    }
+                }
+
+                cluster.check_small_overhang(extrusion_width_scaled, length_thresh_small_overhang, radius_thresh_small_overhang);
+            }
+
+            if !cluster.is_type(OverhangType::SMALL) || enforce_add {
+                cluster.check_polygon_node(thresh_big_overhang as f32, &self.m_ts_data.m_layer_outlines_below[(cluster.min_layer - 1) as usize]);
+                let cluster_type = cluster.type_.0 as i32;
+                let is_small = cluster.is_type(OverhangType::SMALL);
+                for (layer_nr, overhangs) in cluster.layer_overhangs.iter() {
+                    let layer_nr = *layer_nr as usize;
+                    let mut overhangs: ExPolygons = overhangs.clone();
+                    if is_small {
+                        if layer_nr >= enforcers.len()
+                            || enforcers[layer_nr].is_empty()
+                            || !cx::overlaps_expolygons(&to_expolygons_of_polygons(&enforcers[layer_nr]), &overhangs)
+                        {
+                            continue;
+                        }
+                        overhangs = cx::intersection_ex_polygons(&overhangs, &enforcers[layer_nr]);
+                    }
+                    for overhang in &overhangs {
+                        add_overhang(&mut self.m_object.m_layers[layer_nr], overhang, cluster_type);
+                    }
+                }
+            }
+        }
+
+        let mut _layers_with_overhangs = 0;
+        let _layers_with_enforcers = 0;
+        for layer_nr in 0..layer_count {
+            if (self.canceled)() {
+                break;
+            }
+
+            let lower_layer_nr: Option<usize> = self.m_object.m_layers[layer_nr].lower_layer_id;
+
+            if support_critical_regions_only && is_auto(stype) {
+                if lower_layer_nr.is_none() || enforcers.is_empty() || layer_nr >= enforcers.len() || enforcers[layer_nr].is_empty() {
+                    let layer = &mut self.m_object.m_layers[layer_nr];
+                    layer.loverhangs.clear();
+                    layer.loverhangs_with_type.clear();
+                    for cantilever in &self.layer_cantilevers[layer_nr] {
+                        add_overhang(layer, cantilever, OverhangType::CANTILEVER.0 as i32);
+                    }
+                } else {
+                    let enforced_overhangs: ExPolygons =
+                        cx::offset_ex(&to_expolygons_of_polygons(&enforcers[layer_nr]), enforcer_overhang_offset as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                    let mut loverhangs_new: ExPolygons = Vec::new();
+                    let mut loverhangs_with_type_new: Vec<(ExPolygon, i32)> = Vec::new();
+                    let mut bigflat: ExPolygons = Vec::new();
+                    let layer = &mut self.m_object.m_layers[layer_nr];
+                    for overhang_part in &layer.loverhangs_with_type {
+                        let overhang = &overhang_part.0;
+                        let type_ = overhang_part.1;
+                        let mut overhangs: ExPolygons = Vec::new();
+                        if type_ & OverhangType::CANTILEVER.0 as i32 != 0 || type_ & OverhangType::SHARP_TAIL.0 as i32 != 0 {
+                            overhangs = vec![overhang.clone()];
+                        } else if enforced_overhangs.iter().any(|e| cx::overlaps(e, overhang)) {
+                            // `overlaps(const ExPolygons &expolys, const ExPolygon &expoly)` (ExPolygon.cpp:197-204)
+                            // `intersection_ex(const ExPolygons &subject, const ExPolygon &clip)`
+                            overhangs = cx::intersection_ex(&enforced_overhangs, std::slice::from_ref(overhang));
+                        }
+                        if !overhangs.is_empty() {
+                            if type_ & OverhangType::BIG_FLAT.0 as i32 != 0 {
+                                append(&mut bigflat, overhangs);
+                            } else {
+                                for expoly in &overhangs {
+                                    loverhangs_new.push(expoly.clone());
+                                    loverhangs_with_type_new.push((expoly.clone(), type_));
+                                }
+                            }
+                        }
+                    }
+                    for expoly in cx::union_ex(&bigflat) {
+                        loverhangs_new.push(expoly.clone());
+                        loverhangs_with_type_new.push((expoly, OverhangType::BIG_FLAT.0 as i32));
+                    }
+                    layer.loverhangs = loverhangs_new;
+                    layer.loverhangs_with_type = loverhangs_with_type_new;
+                }
+            }
+
+            // add support for every 1mm height for sharp tails
+            if let Some(lower_layer_nr) = lower_layer_nr {
+                // libslic3r.h:64 `SCALED_RESOLUTION (RESOLUTION / SCALING_FACTOR)`, RESOLUTION = 0.0125
+                let lower_layer_expanded: ExPolygons = cx::offset_ex(
+                    &self.m_object.m_layers[lower_layer_nr].lslices_extrudable,
+                    (0.0125 / SCALING_FACTOR) as f32,
+                    cx::DEFAULT_JOIN_TYPE,
+                    cx::DEFAULT_MITER_LIMIT,
+                );
+                for i in 0..self.layer_sharp_tails_height[layer_nr].len() {
+                    let areas: ExPolygons = cx::diff_clipped(std::slice::from_ref(&self.layer_sharp_tails[layer_nr][i]), &lower_layer_expanded);
+                    let accum_height: f32 = self.layer_sharp_tails_height[layer_nr][i];
+                    // `int(accum_height * 10) % 5 == 0`
+                    if !areas.is_empty() && ((accum_height * 10.) as i32) % 5 == 0 {
+                        self.has_sharp_tails = true;
+                        let type_ = if (accum_height as f64) < EPSILON {
+                            (OverhangType::SHARP_TAIL.0 | OverhangType::SHARP_TAIL_LOWESST.0) as i32
+                        } else {
+                            OverhangType::SHARP_TAIL.0 as i32
+                        };
+                        for area in &areas {
+                            add_overhang(&mut self.m_object.m_layers[layer_nr], area, type_);
+                        }
+                    }
+                }
+            }
+
+            if let Some(lower_layer_nr) = lower_layer_nr {
+                if max_bridge_length > 0. && !self.m_object.m_layers[layer_nr].loverhangs.is_empty() {
+                    // do not break bridge as the interface will be poor, see #4318
+                    let break_bridge = false;
+                    let mut loverhangs = std::mem::take(&mut self.m_object.m_layers[layer_nr].loverhangs);
+                    let mut loverhangs_with_type = std::mem::take(&mut self.m_object.m_layers[layer_nr].loverhangs_with_type);
+                    let res = print_object_remove_bridges_from_contacts(
+                        &self.m_object.m_layers[lower_layer_nr],
+                        &self.m_object.m_layers[layer_nr],
+                        extrusion_width_scaled as f32,
+                        &mut loverhangs,
+                        max_bridge_length as f32,
+                        break_bridge,
+                        Some(&mut loverhangs_with_type),
+                        thick_bridges,
+                    );
+                    self.m_object.m_layers[layer_nr].loverhangs = loverhangs;
+                    self.m_object.m_layers[layer_nr].loverhangs_with_type = loverhangs_with_type;
+                    res?;
+                }
+            }
+
+            let layer = &self.m_object.m_layers[layer_nr];
+            let _n_detected = layer.loverhangs.len();
+
+            if !layer.loverhangs_with_type.is_empty() {
+                _layers_with_overhangs += 1;
+                self.m_highest_overhang_layer = self.m_highest_overhang_layer.max(layer_nr);
+            }
+            if !self.layer_cantilevers[layer_nr].is_empty() {
+                self.has_cantilever = true;
+            }
+        }
+
+        // BOOST_LOG_TRIVIAL(info) << "Tree support overhang detection done. " << layers_with_overhangs << " layers with overhangs. nEnforced=" << layers_with_enforcers;
+        Ok(())
+    }
+}
+
+// ============================================================================
+// TreeSupport::get_trim_support_regions (TreeSupport.cpp:3829-3903) and
+// TreeSupport::prune_floating_supports (TreeSupport.cpp:4903-5099): members the pin defines and does not call.
+// ============================================================================
+
+impl<'a> TreeSupport<'a> {
+    /// TreeSupport.cpp:3829-3903 `Polygons TreeSupport::get_trim_support_regions(const PrintObject &object, SupportLayer
+    /// *support_layer_ptr, const coordf_t gap_extra_above, const coordf_t gap_extra_below, const coordf_t gap_xy)`
+    ///
+    /// `object_layer.sharp_tails` (3874) is `layer_sharp_tails` of the layer's index, see detect_overhangs():
+    /// `object` is the object of the tree support.
+    pub fn get_trim_support_regions(
+        &self,
+        object: &PrintObject,
+        support_layer: &crate::print::faithful::SupportLayer,
+        gap_extra_above: CoordF,
+        gap_extra_below: CoordF,
+        gap_xy: CoordF,
+    ) -> Polygons {
+        use crate::clipper::JoinType;
+        use crate::support::support_common::cu as scu;
+        // `static const double sharp_tail_xy_gap = 0.2f;` / `no_overlap_xy_gap = 0.2f`: the doubles of the float
+        const SHARP_TAIL_XY_GAP: f64 = 0.2f32 as f64;
+        const NO_OVERLAP_XY_GAP: f64 = 0.2f32 as f64;
+        let gap_xy_scaled: f64 = scale_(gap_xy);
+        let m_print_config = self.m_print_config;
+
+        // 3844-3856 the lambda `is_layers_overlap`
+        let is_layers_overlap = |support_layer: &crate::print::faithful::SupportLayer, object_layer: &Layer, bridging_height: CoordF| -> bool {
+            if (support_layer.layer.print_z - object_layer.print_z).abs() < EPSILON {
+                return true;
+            }
+
+            let object_lh: CoordF = if bridging_height > EPSILON { bridging_height } else { object_layer.height };
+            if support_layer.layer.print_z < object_layer.print_z && support_layer.layer.print_z > object_layer.print_z - object_lh {
+                return true;
+            }
+
+            if support_layer.layer.print_z > object_layer.print_z && support_layer.layer.bottom_z() < object_layer.print_z - EPSILON {
+                return true;
+            }
+
+            false
+        };
+
+        // Find the overlapping object layers including the extra above / below gap.
+        let z_threshold: CoordF = support_layer.layer.bottom_z() - gap_extra_below + EPSILON;
+        let layers = object.layers();
+        let idx_object_layer_overlapping: usize = Layer::idx_higher_or_equal(layers, usize::MAX, |layer: &Layer| layer.print_z >= z_threshold);
+        // Collect all the object layers intersecting with this layer.
+        let mut polygons_trimming: Polygons = Vec::new();
+        let mut i = idx_object_layer_overlapping;
+        let no_sharp_tails: ExPolygons = Vec::new();
+        while i < layers.len() {
+            let object_layer = &layers[i];
+            if object_layer.bottom_z() > support_layer.layer.print_z + gap_extra_above - EPSILON {
+                break;
+            }
+
+            let is_overlap = is_layers_overlap(support_layer, object_layer, 0.);
+            let sharp_tails = self.layer_sharp_tails.get(i).unwrap_or(&no_sharp_tails);
+            for expoly in &object_layer.lslices {
+                // BBS
+                let is_sharptail = !cx::intersection_ex(std::slice::from_ref(expoly), sharp_tails).is_empty();
+                let trimming_offset: CoordF = if is_sharptail {
+                    scale_(SHARP_TAIL_XY_GAP)
+                } else if is_overlap {
+                    gap_xy_scaled
+                } else {
+                    scale_(NO_OVERLAP_XY_GAP)
+                };
+                // `offset({ expoly }, trimming_offset, SUPPORT_SURFACES_OFFSET_PARAMETERS)`: the overload of one ExPolygon
+                polygons_trimming.extend(scu::offset_expolygon(expoly, trimming_offset as f32, JoinType::jtSquare, 0.));
+            }
+            i += 1;
+        }
+        if !self.m_slicing_params.soluble_interface && cfg_bool(self.object_config(), "thick_bridges") {
+            let nozzle_diameters: Vec<f64> = cfg_floats(m_print_config, "nozzle_diameter");
+            // Collect all bottom surfaces, which will be extruded with a bridging flow.
+            while i < layers.len() {
+                let object_layer = &layers[i];
+                let mut some_region_overlaps = false;
+                for region in object_layer.regions() {
+                    let bridging_height: CoordF = region.region().bridging_height_avg(&nozzle_diameters);
+                    if object_layer.print_z - bridging_height > support_layer.layer.print_z + gap_extra_above - EPSILON {
+                        break;
+                    }
+                    some_region_overlaps = true;
+
+                    let is_overlap = is_layers_overlap(support_layer, object_layer, bridging_height);
+                    let trimming_offset: CoordF = if is_overlap { gap_xy_scaled } else { scale_(NO_OVERLAP_XY_GAP) };
+                    // `offset(region->fill_surfaces.filter_by_type(stBottomBridge), ...)`: the overload of SurfacesPtr
+                    // (ClipperUtils.cpp:565), `to_polygons(expolygons_offset(surfaces, ...))`
+                    let bridges: ExPolygons = region
+                        .fill_surfaces
+                        .surfaces
+                        .iter()
+                        .filter(|surface| surface.surface_type == crate::surface::SurfaceType::BottomBridge)
+                        .map(|surface| surface.expolygon.clone())
+                        .collect();
+                    polygons_trimming.extend(scu::offset_expolygons(&bridges, trimming_offset as f32, JoinType::jtSquare, 0.));
+                }
+                if !some_region_overlaps {
+                    break;
+                }
+                i += 1;
+            }
+        }
+
+        polygons_trimming
+    }
+
+    /// TreeSupport.cpp:4903-5099 `void TreeSupport::prune_floating_supports()`
+    ///
+    /// Returns the number of regions it removed (the C++ writes it to the log).
+    pub fn prune_floating_supports(&mut self) -> usize {
+        use crate::print::faithful::{SupportLayerAreaGroup, SupportLayerAreaType};
+        let mut num_pruned: usize = 0;
+        if self.m_object.layers().is_empty() || self.m_object.m_support_layers.len() <= self.m_raft_layers {
+            return num_pruned;
+        }
+
+        // Regions are stored in one vector per area type, and area_groups holds raw pointers into those vectors, so
+        // both are pruned together and the pointers re-bound afterwards. The per type arrays below index by AreaType.
+        const NUM_AREA_TYPES: usize = (SupportLayerAreaType::Roof1stLayer + 1) as usize;
+
+        // A support layer is carried either by the support printed right below it, or by the model it came to rest
+        // on. That model top sits gap_object_support below the support bottom, since the gap is left on purpose.
+        // `std::max(0., m_slicing_params.gap_object_support)`
+        let gap_object_support: CoordF = if 0. < self.m_slicing_params.gap_object_support { self.m_slicing_params.gap_object_support } else { 0. };
+        // Support standing on the plate is carried by definition, and so is support resting on the raft, whose top
+        // is not among the object slices searched below. This cannot be keyed off the lowest entry left in ts_layers:
+        // draw_circles() drops the layers that got no node, so that entry may well be the first one up in the air.
+        let grounded_z: CoordF = if self.m_raft_layers > 0 { self.m_object.m_support_layers[self.m_raft_layers - 1].layer.print_z } else { 0. };
+
+        let branch_angle: f64 = cfg_float(self.object_config(), "tree_support_branch_angle") * M_PI / 180.;
+        // Branches may then move freely, so no region can be told apart as unsupported.
+        if branch_angle >= M_PI / 2. {
+            return num_pruned;
+        }
+        let tan_branch_angle: f64 = branch_angle.tan();
+        let wall_count: i32 = 1.max(cfg_int(self.object_config(), "tree_support_wall_count"));
+        // Footprint of the thinnest branch the tree will ever print, and hence the least support that can still be
+        // standing under a region rather than touching it by accident.
+        // `M_PI * SQ(scaled<double>(MIN_BRANCH_RADIUS))`
+        let min_anchor_area: f64 = M_PI * sq(MIN_BRANCH_RADIUS / SCALING_FACTOR);
+
+        let obj_print_z: Vec<CoordF> = self.m_object.layers().iter().map(|object_layer| object_layer.print_z).collect();
+
+        let mut support_below: ExPolygons = Vec::new(); // everything printed on the previous support layer
+        for layer_nr in self.m_raft_layers..self.m_object.m_support_layers.len() {
+            if (self.canceled)() {
+                return num_pruned;
+            }
+
+            let ts_layer = &self.m_object.m_support_layers[layer_nr];
+            // A layer that got no node keeps a zero height and is never printed, so it neither carries what is
+            // above it nor interrupts the layer that does.
+            if ts_layer.layer.height < EPSILON {
+                continue;
+            }
+            // Only what sits near this layer's own regions can carry them, so the candidates are clipped to their
+            // bounding box below. It stays undefined when the layer holds no region at all, or none with an extent,
+            // and either way there is nothing here to prune and nothing to carry the layer above.
+            let mut layer_bbox = BBoxCpp::new();
+            for area_group in &ts_layer.area_groups {
+                layer_bbox.merge(&BBoxCpp::of_expolygon(ts_layer.area_group_area(area_group)));
+            }
+            if !layer_bbox.defined {
+                support_below.clear();
+                continue;
+            }
+
+            // BBS multi-diameter: a folded layer carries a slab, so its material reaches down to the slab bottom
+            // rather than to its own layer bottom, and the branch is free to drift over that whole height before
+            // the layer below picks it up. Every bound here is taken from the carried height for that reason.
+            let carry_height: CoordF = std_max3(ts_layer.layer.height, ts_layer.base_slab_height, ts_layer.interface_slab_height);
+            let print_z: CoordF = ts_layer.layer.print_z;
+            let bottom_z: CoordF = print_z - carry_height;
+            let grounded: bool = bottom_z <= grounded_z + EPSILON;
+
+            // The support printed below and the model are both carriers, but they are not interchangeable, so the
+            // support one is kept apart: an interface may rest on nothing but the tip of the branch that spawned it,
+            // and that concession must not extend to a model wall the interface merely brushes past.
+            let mut carrier: ExPolygons = Vec::new();
+            let mut support_carrier: ExPolygons = Vec::new();
+            if !grounded {
+                // A region may stick out past whatever carries it, but only by so much. Grow the carrier by that
+                // much so legitimate growth is not counted as floating. drop_nodes() caps a step two different
+                // ways and this has to bound both of them, since too little slack prunes healthy branches:
+                //   - get_max_move_dist() caps how far a node may shift, by the node's own layer height;
+                //   - its layer wide max_move_distance is how fast a fading branch loses radius and how far a
+                //     polygon node may shrink or a merged node may escape, and that one scales with the wall count.
+                // Both are driven by a layer height, and this support layer's own is taken for it rather than
+                // config.layer_height, since independent_support_layer_height lets it run thicker than the
+                // nominal one and the bound has to hold for the thicker case.
+                // The last term is the line width gained under bottom expansion: passing the carried height makes
+                // support_flare_step_width() return the slab's own line width rather than one layer's share of it.
+                let flare_step_width: CoordF = self.support_flare_step_width(print_z, carry_height);
+                // `std::min(a, b)`: `(b < a) ? b : a`
+                let a = tan_branch_angle * carry_height;
+                let first = if flare_step_width < a { flare_step_width } else { a };
+                let carry_slack: CoordF = std_max3(first, tan_branch_angle * carry_height * wall_count as f64, flare_step_width / 2.);
+                // Assembling the carrier means a union and an offset over everything below, which is a clipper
+                // boolean across the whole layer. Clipping first keeps that off the parts of the layer that are too
+                // far away to matter: on a plate full of small parts the rest of it is pure overhead.
+                // `layer_bbox.offset(scale_(carry_slack) + SCALED_EPSILON)`: `PointClass v(delta, delta)` rounds
+                let delta = (scale_(carry_slack) + scale_(EPSILON)).round_ties_even() as Coord;
+                layer_bbox.min = Point::new(layer_bbox.min.x - delta, layer_bbox.min.y - delta);
+                layer_bbox.max = Point::new(layer_bbox.max.x + delta, layer_bbox.max.y + delta);
+                let clip_bbox = BoundingBox::from_points_minmax(layer_bbox.min, layer_bbox.max);
+
+                // `std::upper_bound(obj_print_z.begin(), obj_print_z.end(), bottom_z + EPSILON) - obj_print_z.begin()`
+                let z = bottom_z + EPSILON;
+                let top_obj_layer_nr: i32 = obj_print_z.partition_point(|v| !(z < *v)) as i32 - 1;
+                // Walk down by print_z instead of by a layer count. With adaptive layer height the object layers are
+                // thinner than m_slicing_params.layer_height, so a count derived from that nominal height spans less
+                // than the real gap and the model actually carrying this region would be missed, pruning it away.
+                // One local layer of slack on top of the gap, the support bottom need not line up with an object layer.
+                let lowest_z: CoordF =
+                    if top_obj_layer_nr >= 0 { bottom_z - gap_object_support - self.m_object.get_layer(top_obj_layer_nr).height } else { 0. };
+                let support_candidates: Polygons = cx::clip_clipper_polygons_with_subject_bbox(&support_below, &clip_bbox);
+                let mut candidates: Polygons = support_candidates.clone();
+                let mut obj_layer_nr = top_obj_layer_nr;
+                while obj_layer_nr >= 0 && obj_print_z[obj_layer_nr as usize] >= lowest_z - EPSILON {
+                    candidates.extend(cx::clip_clipper_polygons_with_subject_bbox(&self.m_object.get_layer(obj_layer_nr).lslices, &clip_bbox));
+                    obj_layer_nr -= 1;
+                }
+                carrier = cx::offset_ex(&cx::union_ex_polygons(&candidates), scale_(carry_slack) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+                support_carrier =
+                    cx::offset_ex(&cx::union_ex_polygons(&support_candidates), scale_(carry_slack) as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+            }
+            let carrier_bboxes: Vec<BoundingBox> = carrier.iter().map(get_extents_expolygon).collect();
+            let support_carrier_bboxes: Vec<BoundingBox> = support_carrier.iter().map(get_extents_expolygon).collect();
+
+            let ts_layer = &mut self.m_object.m_support_layers[layer_nr];
+            // `ExPolygons *regions_by_type[num_area_types] = {&ts_layer->base_areas, &ts_layer->roof_areas, &ts_layer->floor_areas, &ts_layer->roof_1st_layer};`
+            let mut regions_by_type: [ExPolygons; NUM_AREA_TYPES] = [
+                std::mem::take(&mut ts_layer.base_areas),
+                std::mem::take(&mut ts_layer.roof_areas),
+                std::mem::take(&mut ts_layer.floor_areas),
+                std::mem::take(&mut ts_layer.roof_1st_layer),
+            ];
+            let mut kept_regions: [ExPolygons; NUM_AREA_TYPES] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+            let mut kept_groups: Vec<SupportLayerAreaGroup> = Vec::with_capacity(ts_layer.area_groups.len());
+            let mut next_index: [usize; NUM_AREA_TYPES] = [0; NUM_AREA_TYPES];
+            for area_group in &ts_layer.area_groups {
+                let type_ = area_group.type_;
+                if type_ < SupportLayerAreaType::BaseType || type_ > SupportLayerAreaType::Roof1stLayer {
+                    continue;
+                }
+                let index = next_index[type_ as usize];
+                next_index[type_ as usize] += 1;
+                if index >= regions_by_type[type_ as usize].len() {
+                    continue;
+                }
+                // draw_circles() fills area_groups in vector order within each type and nothing reorders either
+                // side before this point. Were that to change, the pruning below would drop the wrong regions and
+                // the pointers would still re-bind, leaving no trace.
+                debug_assert!(area_group.area == index);
+                let region: &mut ExPolygon = &mut regions_by_type[type_ as usize][index];
+                // Regions are dropped whole, never trimmed: what is kept here feeds the next layer's carrier, so
+                // trimming would eat a little more off every layer and erode a healthy branch into a thread over a
+                // hundred layers. A branch landing on the edge of its carrier still prints, so only drop the ones
+                // mostly out in the air.
+                let is_interface = type_ == SupportLayerAreaType::RoofType || type_ == SupportLayerAreaType::Roof1stLayer;
+                let region_area: f64 = region.area();
+                let mut carried = grounded;
+                if !grounded && region_area > 0. {
+                    if is_interface {
+                        // An interface spans the whole overhang that spawned it, so it cannot be held to a fraction
+                        // of its own area: it routinely rests on nothing but a branch tip a fraction that wide. That
+                        // concession is what MIN_CARRIED_RATIO_INTERFACE buys, and it only makes sense measured
+                        // against the support below. Measured against the model too, an interface passing a wall on
+                        // its way up clears the bar on a few percent of incidental overlap, and once kept it becomes
+                        // the carrier for the layer above, so a single such region grows a floating stack. The model
+                        // still carries an interface that comes to rest on it, but then it has to do so as squarely
+                        // as a base standing on the same ledge would.
+                        carried = carried_area(&support_carrier, &support_carrier_bboxes, region) >= MIN_CARRIED_RATIO_INTERFACE * region_area
+                            || carried_area(&carrier, &carrier_bboxes, region) >= MIN_CARRIED_RATIO * region_area;
+                    } else {
+                        // A region is the union of everything the layer grew, so a branch standing on its own can end
+                        // up merged with an overhang area many times its size that a node spawned this layer. Judged
+                        // by fraction alone the union comes out mostly floating and the healthy branch is deleted
+                        // along with it, which orphans every layer above it for the rest of the object. A carried
+                        // patch as wide as the thinnest branch that can be printed is an anchor on its own, however
+                        // much unsupported area happens to share the region with it. Only the support below counts
+                        // as such an anchor: a region merely brushing a model wall meets it over an area that small
+                        // as well, and keeping it would grow the floating stack the interface rule guards against.
+                        carried = carried_area(&carrier, &carrier_bboxes, region) >= MIN_CARRIED_RATIO * region_area
+                            || carried_area(&support_carrier, &support_carrier_bboxes, region) >= min_anchor_area;
+                    }
+                }
+                if !carried {
+                    num_pruned += 1;
+                    continue;
+                }
+                kept_regions[type_ as usize].push(std::mem::take(region));
+                kept_groups.push(area_group.clone());
+            }
+
+            // `for (int type = 0; type < num_area_types; type++) *regions_by_type[type] = std::move(kept_regions[type]);`
+            let [base, roof, floor, roof1] = kept_regions;
+            ts_layer.base_areas = base;
+            ts_layer.roof_areas = roof;
+            ts_layer.floor_areas = floor;
+            ts_layer.roof_1st_layer = roof1;
+            let mut rebound_index: [usize; NUM_AREA_TYPES] = [0; NUM_AREA_TYPES];
+            for area_group in kept_groups.iter_mut() {
+                area_group.area = rebound_index[area_group.type_ as usize];
+                rebound_index[area_group.type_ as usize] += 1;
+            }
+            ts_layer.area_groups = kept_groups;
+
+            // support_islands feeds retraction avoidance, keep it in sync with what is left.
+            sync_support_islands(ts_layer);
+
+            support_below.clear();
+            support_below.reserve(ts_layer.area_groups.len());
+            for area_group in &ts_layer.area_groups {
+                support_below.push(ts_layer.area_group_area(area_group).clone());
+            }
+        }
+
+        // BOOST_LOG_TRIVIAL(info) << "Tree support floating region pruning done. " << num_pruned << " regions removed.";
+        num_pruned
+    }
+}
+
+// `std::max({a, b, c})`: the first of the greatest (std::max_element).
+fn std_max3(a: f64, b: f64, c: f64) -> f64 {
+    let mut largest = a;
+    if largest < b {
+        largest = b;
+    }
+    if largest < c {
+        largest = c;
+    }
+    largest
 }
 
 // @@TAIL@@

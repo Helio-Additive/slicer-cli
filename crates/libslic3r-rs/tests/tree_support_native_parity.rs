@@ -583,6 +583,33 @@ fn dump_support_layers(r: &mut Run, tag: &str, obj: &PrintObject) {
     }
 }
 
+/// gen.cpp `dump_detected(tag, ts, obj)`
+fn dump_detected(r: &mut Run, tag: &str, ts: &TreeSupport) {
+    let obj: &PrintObject = ts.m_object;
+    r.out(format!(
+        "{tag} {} {} {} {} {} {} {}",
+        hb(ts.has_sharp_tails),
+        hb(ts.has_cantilever),
+        hd(ts.max_cantilever_dist),
+        ts.m_highest_overhang_layer,
+        ts.m_vertical_enforcer_points.len(),
+        obj.support_layers().len(),
+        obj.layers().len()
+    ));
+    for (i, l) in obj.layers().iter().enumerate() {
+        let mut body = format!("ext {} ov {}", expolys_s(&l.lslices_extrudable), l.loverhangs_with_type.len());
+        for ov in &l.loverhangs_with_type {
+            body += &format!(" {} {}", ov.1, expoly_s(&ov.0));
+        }
+        body += &format!(" lo {} st {} h {}", expolys_s(&l.loverhangs), expolys_s(&ts.layer_sharp_tails[i]), ts.layer_sharp_tails_height[i].len());
+        for h in &ts.layer_sharp_tails_height[i] {
+            body += &format!(" {}", hf(*h));
+        }
+        body += &format!(" ca {}", expolys_s(&ts.layer_cantilevers[i]));
+        r.outb(format!("{tag} layer {i}"), body, true);
+    }
+}
+
 /// gen.cpp `run_helpers()`
 fn run_helpers(r: &mut Run) {
     let mut i = 0;
@@ -1010,6 +1037,34 @@ fn run_scenario(r: &mut Run, scenario: usize) {
             r.outb(format!("{tag} layer {} {} {}", i, hb(sl.support_fills.no_sort), sl.support_fills.entities.len()), ents_s(&sl.support_fills.entities), true);
         }
     }
+    // prune_floating_supports(), which the pin does not call: the areas of the support layers after it.
+    ts.prune_floating_supports();
+    dump_support_layers(r, &format!("{s} prune"), ts.m_object);
+    drop(ts);
+
+    // detect_overhangs() on the layers of the scenario, by a second tree support of the object.
+    {
+        let params = SupportParameters::new(&obj, &print).expect("SupportParameters");
+        let mut ts2 = TreeSupport::new(&mut obj, &print, &sp, params, &bed);
+        ts2.detect_overhangs(false).expect("detect_overhangs");
+        dump_detected(r, &format!("{s} detect"), &ts2);
+        // get_trim_support_regions(), which the pin does not call, for support layers at a few heights.
+        let layers = ts2.m_object.layers();
+        let zs = [0.6, 3.3, layers[layers.len() / 2].print_z, layers[layers.len() - 1].print_z - 0.9];
+        for (k, z) in zs.iter().enumerate() {
+            let h = if k == 1 { 0.3 } else { 0.2 };
+            let sl = slicer::print::faithful::SupportLayer::new(k, 0, ts2.m_object.m_model_object, h, *z, *z - h / 2.);
+            r.outb(
+                format!("{s} trim_regions {} {}", hd(*z), hd(h)),
+                format!(
+                    "{} {}",
+                    polys_s(&ts2.get_trim_support_regions(ts2.m_object, &sl, 0.2, 0.1, 0.35)),
+                    polys_s(&ts2.get_trim_support_regions(ts2.m_object, &sl, 0., 0.45, 0.8))
+                ),
+                true,
+            );
+        }
+    }
 }
 
 fn read_vectors() -> Vec<String> {
@@ -1039,6 +1094,10 @@ fn tree_support_native_parity() {
         // gen.cpp `NUM_SCENARIOS`
         None => {
             for scenario in 0..45 {
+                run_scenario(&mut r, scenario);
+            }
+            // gen.cpp `FIRST_EXTRA`, `NUM_EXTRA`
+            for scenario in 100000..100004 {
                 run_scenario(&mut r, scenario);
             }
         }

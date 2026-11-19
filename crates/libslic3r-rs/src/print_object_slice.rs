@@ -501,6 +501,35 @@ fn layer_merged(object: &PrintObject, layer: &Layer, offset_scaled: f32) -> ExPo
     out
 }
 
+/// ExPolygon.hpp:451-458 `ExPolygons expolygons_simplify(const ExPolygons &expolys, double tolerance)`:
+/// `ExPolygon::simplify(tolerance)` of every expolygon (ExPolygon.cpp:231-261), which is
+/// `union_ex(simplify_p(tolerance))`, `simplify_p` being the rings after `MultiPoint::_douglas_peucker`
+/// (closed by their first point) put through `simplify_polygons` (ClipperUtils.cpp:1026-1041,
+/// `ClipperLib::SimplifyPolygons(pftNonZero)`).
+fn expolygons_simplify(expolys: &[ExPolygon], tolerance: f64) -> ExPolygons {
+    let mut out = ExPolygons::with_capacity(expolys.len());
+    for exp in expolys {
+        let pp = exp.simplify_p_dp_rings_faithful(tolerance);
+        let simplified = to_polygons_paths(&cl::simplify_polygons(&polygons_provider(&pp), cl::PolyFillType::pftNonZero));
+        out.extend(union_ex(&simplified));
+    }
+    out
+}
+
+/// ElephantFootCompensation.cpp:620-635 `ExPolygons elephant_foot_compensation(const ExPolygons &input, const
+/// Flow &external_perimeter_flow, const double compensation)`: the expolygons simplified by SCALED_EPSILON,
+/// each compensated with `min_contour_width = double(flow.width() + flow.spacing())` (a sum of floats).
+fn elephant_foot_compensation(input: &ExPolygons, external_perimeter_flow: &Flow, compensation: f64) -> ExPolygons {
+    let simplified_exps = expolygons_simplify(input, EPSILON / SCALING_FACTOR);
+    let mut out = ExPolygons::with_capacity(simplified_exps.len());
+    // The contour shall be wide enough to apply the external perimeter plus compensation on both sides.
+    let min_contour_width = (external_perimeter_flow.width() as f32 + external_perimeter_flow.spacing() as f32) as f64;
+    for expoly in &simplified_exps {
+        out.push(crate::elephant_foot_compensation::elephant_foot_compensation_with_width(expoly, min_contour_width, compensation));
+    }
+    out
+}
+
 /// PrintBase.hpp `PrintObjectBaseWithState::active_step_add_warning(warning_level, message, message_id = 0)`
 fn active_step_add_warning(print: &Print, object: &mut PrintObject, warning_level: WarningLevel, message: &str) {
     let (step, update) = object.m_state.active_step_add_warning(warning_level, message, 0, print.base.base.state_mutex());
@@ -1811,11 +1840,15 @@ pub fn apply_mm_segmentation(
     let mut it_layer_range = layer_range_first(layer_ranges, z);
     // BBS
     let num_extruders = cfg_floats(print.config(), "filament_diameter").len();
-    #[derive(Default, Clone)]
+    #[derive(Clone)]
     struct ByExtruder {
         expolygons: ExPolygons,
         bbox: BoundingBox,
-        bbox_defined: bool,
+    }
+    impl Default for ByExtruder {
+        fn default() -> Self {
+            ByExtruder { expolygons: ExPolygons::new(), bbox: BoundingBox::new() }
+        }
     }
     #[derive(Default, Clone)]
     struct ByRegion {
@@ -1837,7 +1870,6 @@ pub fn apply_mm_segmentation(
             region.expolygons.extend(std::mem::take(&mut segmentation[layer_id][extruder_id]));
             if !region.expolygons.is_empty() {
                 region.bbox = get_extents(&region.expolygons);
-                region.bbox_defined = true;
                 layer_split = true;
             }
         }
@@ -1865,7 +1897,7 @@ pub fn apply_mm_segmentation(
             let mut self_extruder_id: i32 = -1;
             for extruder_id in 1..=by_extruder.len() as i32 {
                 let segmented = &by_extruder[extruder_id as usize - 1];
-                if segmented.bbox_defined && bbox_overlap(&bbox, &segmented.bbox) {
+                if segmented.bbox.is_defined() && bbox_overlap(&bbox, &segmented.bbox) {
                     // Find the target region.
                     while (layer_range.painted_regions[it_painted_region].extruder_id as i32) < extruder_id {
                         it_painted_region += 1;
@@ -1897,7 +1929,7 @@ pub fn apply_mm_segmentation(
                 let mut mine: Polygons = crate::surface::to_polygons(&layer.regions()[region_id as usize].slices.surfaces);
                 layer.regions_mut()[region_id as usize].slices.surfaces.clear();
                 for (idx, segmented) in by_extruder.iter().enumerate() {
-                    if idx as i32 + 1 != self_extruder_id && segmented.bbox_defined && bbox_overlap(&bbox, &segmented.bbox) {
+                    if idx as i32 + 1 != self_extruder_id && segmented.bbox.is_defined() && bbox_overlap(&bbox, &segmented.bbox) {
                         mine = diff_polygons_expolygons(&mine, &segmented.expolygons);
                         if mine.is_empty() {
                             break;
@@ -2104,7 +2136,7 @@ impl PrintObject {
             );
         }
         throw_if_canceled()?;
-        // m_typed_slices = false;
+        self.m_typed_slices = false;
         // this->clear_layers();
         self.m_layers.clear();
         self.m_layers = new_layers(
@@ -2248,7 +2280,7 @@ impl PrintObject {
         {
             // If XY Size compensation is also enabled, notify the user that XY Size compensation
             // would not be used because the object is multi-material painted.
-            if cfg_float(&self.m_config, "xy_hole_compensation") as f32 != 0. || cfg_float(&self.m_config, "xy_contour_compensation") as f32 != 0. {
+            if cfg_float(&self.m_config, "xy_hole_compensation") != 0. || cfg_float(&self.m_config, "xy_contour_compensation") != 0. {
                 active_step_add_warning(
                     print,
                     self,
@@ -2265,7 +2297,7 @@ impl PrintObject {
         if self.model_object(print).is_fuzzy_skin_painted() {
             // If XY Size compensation is also enabled, notify the user that XY Size compensation
             // would not be used because the object has custom fuzzy skin painted.
-            if cfg_float(&self.m_config, "xy_hole_compensation") as f32 != 0. || cfg_float(&self.m_config, "xy_contour_compensation") as f32 != 0. {
+            if cfg_float(&self.m_config, "xy_hole_compensation") != 0. || cfg_float(&self.m_config, "xy_contour_compensation") != 0. {
                 let message = format!(
                     "An object has enabled XY Size compensation which will not be used because it is also fuzzy skin painted.\nXY Size compensation cannot be combined with fuzzy skin painting.\nObject name: {}",
                     self.model_object(print).name
@@ -2361,11 +2393,8 @@ impl PrintObject {
                             lslices_1st_layer = self._shrink_contour_holes(0f32.min(xy_contour_scaled) as f64, 0f32.min(xy_hole_scaled) as f64, &lslices_1st_layer);
                         }
                         let flow = layer_region_flow(print, self, &self.m_layers[layer_id], 0, FlowRole::ExternalPerimeter)?;
-                        let compensated = crate::elephant_foot_compensation::elephant_foot_compensation_expolygons_with_flow(
-                            &lslices_1st_layer,
-                            &flow,
-                            elfoot as f64 * SCALING_FACTOR,
-                        );
+                        // unscale<double>(elfoot)
+                        let compensated = elephant_foot_compensation(&lslices_1st_layer, &flow, elfoot as f64 * SCALING_FACTOR);
                         self.m_layers[layer_id].regions_mut()[0].slices.set(&union_ex_expolygons(&compensated), SurfaceType::Internal);
                     } else {
                         // Apply the XY contour and hole size compensation.
@@ -2425,11 +2454,7 @@ impl PrintObject {
                         if elfoot > 0. {
                             lslices_1st_layer = offset_ex(&layer_merged(self, &self.m_layers[layer_id], eps), -eps as f64);
                             let flow = layer_region_flow(print, self, &self.m_layers[layer_id], 0, FlowRole::ExternalPerimeter)?;
-                            trimming = crate::elephant_foot_compensation::elephant_foot_compensation_expolygons_with_flow(
-                                &lslices_1st_layer,
-                                &flow,
-                                elfoot as f64 * SCALING_FACTOR,
-                            );
+                            trimming = elephant_foot_compensation(&lslices_1st_layer, &flow, elfoot as f64 * SCALING_FACTOR);
                         } else {
                             trimming = layer_merged(self, &self.m_layers[layer_id], (EPSILON / SCALING_FACTOR) as f32);
                         }
@@ -2623,20 +2648,682 @@ impl PrintObject {
 
 /// PrintObjectSlice.cpp:1159-1849 `static void normalize_mm_segmentation_to_layer_bands(PrintObject
 /// &print_object, std::vector<std::vector<ExPolygons>> &segmentation, const std::function<void()>
-/// &throw_on_cancel)`: the entry conditions (lines 1184-1191). The band normalisation itself (the
-/// multi-diameter adaptive layer ladders, lines 1192-1849) is not ported: a print that uses several
-/// nozzle diameters is refused here by name.
+/// &throw_on_cancel)`. `print` is `print_object.print()`. The `tbb::parallel_for` loops over the bands
+/// and over the layers run in order: a band reads and writes only the layers it covers, a layer only
+/// itself. What the C++ only logs (`[mm_band]`) is left out.
+///
+/// A nozzle coarser than the finest one on the plate does not print every layer: it covers a whole band of
+/// them with a single extrusion shaped like the band's top layer. Painting, however, is done in object space
+/// and knows nothing about that. Paint that never reaches a band top would be decimated away together with
+/// the layers it sits on, leaving a void that nobody fills, while paint that does reach one silently owns
+/// the layers underneath, where a finer nozzle would otherwise lay a second colour into the same Z.
+///
+/// Both are settled here, before the paint is cut into regions, by making each coarse extruder's paint
+/// constant across its own bands: empty on the band top means the paint is dropped and the area falls back
+/// to whoever owned it before painting, which is what never having painted it looks like. A coarse colour
+/// left thinner than its nozzle can extrude is finally handed to a neighbouring colour.
 pub fn normalize_mm_segmentation_to_layer_bands(
     print: &Print,
-    _print_object: &mut PrintObject,
+    print_object: &PrintObject,
     segmentation: &mut Vec<Vec<ExPolygons>>,
-    _throw_on_cancel: ThrowOnCancel,
+    throw_on_cancel: ThrowOnCancel,
 ) -> Result<(), CanceledException> {
+    use crate::adaptive_layer_merge::{
+        adaptive_layer_band_size, adaptive_layer_height_range, adaptive_printable_pieces, build_adaptive_layer_bands,
+        pull_adaptive_band_top_to_material, AdaptiveLayerBand, AdaptiveLayerHeightRange,
+    };
+    use crate::print::faithful::nozzle_diameter_for_filament;
+
+    // ExPolygon.hpp:488 `area(const ExPolygons &polys)`
+    let area_mm2 = |expolygons: &[ExPolygon]| -> f64 {
+        let mut s: f64 = 0.;
+        for p in expolygons {
+            s += p.area();
+        }
+        s * SCALING_FACTOR * SCALING_FACTOR
+    };
+    let printable_pieces = |pieces: ExPolygons, diameter: f64| -> ExPolygons { adaptive_printable_pieces(pieces, diameter) };
+
     let layer_count = segmentation.len();
     // Enter only when the print uses the adaptive diameter ladder. A single coarse filament may pass this
     // gate, but without a second painted diameter there is no cross-diameter segmentation to normalize.
     if layer_count < 2 || !print.uses_multiple_nozzle_diameters() {
         return Ok(());
     }
-    panic!("normalize_mm_segmentation_to_layer_bands: the band normalisation of a print with several nozzle diameters (PrintObjectSlice.cpp:1192-1849) is not ported");
+    let extruder_count = segmentation[0].len();
+    if extruder_count < 2 {
+        return Ok(());
+    }
+    for layer in segmentation.iter() {
+        if layer.len() != extruder_count {
+            return Ok(());
+        }
+    }
+
+    let print_config = print.config();
+    // `layerm->region().config().wall_filament` of a LayerRegion of the object.
+    let wall_filament = |layerm: &LayerRegion| -> u32 {
+        let region = print_object.printing_region(layerm.region_id());
+        let region = region.borrow();
+        cfg_int(region.config(), "wall_filament") as u32
+    };
+    // Only the extruders the paint actually hands area to take part. The region set carries an entry per
+    // filament of the plate, and an entry this object never prints has no filament to read a diameter from,
+    // so it would report a diameter the plate never uses.
+    let mut extruder_nozzles: Vec<f64> = vec![0.; extruder_count];
+    let mut min_nozzle: f64 = 0.;
+    let mut max_nozzle: f64 = 0.;
+    for extruder_id in 0..extruder_count {
+        let mut prints_anything = false;
+        for layer in segmentation.iter() {
+            if !layer[extruder_id].is_empty() {
+                prints_anything = true;
+                break;
+            }
+        }
+        if !prints_anything {
+            continue;
+        }
+        let diameter: f64 = nozzle_diameter_for_filament(print_config, extruder_id as u32 + 1) as f64;
+        if diameter <= EPSILON {
+            continue;
+        }
+        extruder_nozzles[extruder_id] = diameter;
+        if min_nozzle <= EPSILON || diameter < min_nozzle {
+            min_nozzle = diameter;
+        }
+        if diameter > max_nozzle {
+            max_nozzle = diameter;
+        }
+    }
+    // Whatever the paint leaves alone keeps its region's own filament. That area is absent from
+    // `segmentation`, yet it is extruded in bands like everything else, so its nozzle counts as in use too -
+    // without it an object painted with a single colour looks like a single nozzle here and nothing below
+    // is normalized at all.
+    let mut base_nozzles: Vec<f64> = Vec::new();
+    for layer_idx in 0..layer_count {
+        for layerm in print_object.get_layer(layer_idx as i32).regions() {
+            if layerm.slices.surfaces.is_empty() {
+                continue;
+            }
+            let diameter: f64 = nozzle_diameter_for_filament(print_config, wall_filament(layerm)) as f64;
+            if diameter <= EPSILON {
+                continue;
+            }
+            if !base_nozzles.iter().any(|&known| (known - diameter).abs() <= EPSILON) {
+                base_nozzles.push(diameter);
+            }
+            if min_nozzle <= EPSILON || diameter < min_nozzle {
+                min_nozzle = diameter;
+            }
+            if diameter > max_nozzle {
+                max_nozzle = diameter;
+            }
+        }
+    }
+    let _ = max_nozzle;
+    if min_nozzle <= EPSILON {
+        return Ok(());
+    }
+    // Bands are counted off the grid the plate was sliced on, not off the nozzles it happens to use, so that
+    // this grid is the one compute_adaptive_merge_groups() decimates on. Both the reference diameter and the
+    // base height must come from the sliced layer stack: the process preset's layer height is only the
+    // authored value, which SlicingParameters may have subdivided to resolve a finer nozzle.
+    let primary: f64 = crate::print_config::config_def::layer_grid_nozzle_diameter(print.full_print_config());
+    let reference_nozzle: f64 = if primary > EPSILON { primary } else { min_nozzle };
+    let base_layer_height: f64 = print_object.slicing_parameters().layer_height;
+    let uses_merged_ladder =
+        |diameter: f64| -> bool { diameter > EPSILON && adaptive_layer_band_size(diameter, reference_nozzle, base_layer_height) >= 2 };
+    let has_merged_ladder = extruder_nozzles.iter().any(|&d| uses_merged_ladder(d)) || base_nozzles.iter().any(|&d| uses_merged_ladder(d));
+    if !has_merged_ladder {
+        return Ok(());
+    }
+
+    let mut layer_heights: Vec<f64> = vec![0.; layer_count];
+    for layer_idx in 0..layer_count {
+        layer_heights[layer_idx] = print_object.get_layer(layer_idx as i32).height;
+    }
+
+    // Keep every nozzle on its own fixed ladder. Colour ownership is normalized to the band's anchor
+    // contour below; colour starts, stops and layer-to-layer footprint changes must not split the ladder.
+    let band_tops: Vec<u8> = Vec::new();
+
+    // A coarse colour discarded below its band top may have overpainted another colour there. Restore
+    // that colour from the immutable top-layer ownership before normalizing any extruder; otherwise the
+    // vacated area is absent from segmentation altogether and falls through to the model's base filament.
+    // Doing this as a pre-pass also lets a restored coarse owner pass through its own normalization below.
+    let original_segmentation: Vec<Vec<ExPolygons>> = segmentation.clone();
+    // The ladder belongs to the nozzle diameter, not to a colour. Colours sharing one diameter must
+    // use the same phase; ownership changes only at the common band's anchor layer.
+    let build_painted_bands = |band_size: usize, range: &AdaptiveLayerHeightRange| -> Vec<AdaptiveLayerBand> {
+        build_adaptive_layer_bands(&layer_heights, band_size, range, &band_tops)
+    };
+    // Two ladders of incommensurate band sizes (a 0.6 and a 0.8 on the same grid) make a colour's band top
+    // land on a layer the other colour owns over and over. Anchoring on that layer would release the whole
+    // band, so the top is pulled down to the last layer this colour really owns - the same shortening
+    // compute_adaptive_merge_groups() applies, which is what keeps the two passes describing one band.
+    let pull_painted_band = |src: &AdaptiveLayerBand, extruder_id: usize, range: &AdaptiveLayerHeightRange, out: &mut AdaptiveLayerBand| -> bool {
+        *out = *src;
+        if src.bottom_idx == 0 {
+            return true;
+        }
+        let mut has_material: Vec<u8> = vec![0; src.top_idx + 1];
+        let mut layer_idx = src.bottom_idx;
+        while layer_idx <= src.top_idx && layer_idx < original_segmentation.len() {
+            has_material[layer_idx] = (!original_segmentation[layer_idx][extruder_id].is_empty()) as u8;
+            layer_idx += 1;
+        }
+        pull_adaptive_band_top_to_material(out, &layer_heights, range, &has_material)
+    };
+    // Ownership on a band's anchor layer is a real extrusion. Protect it from another nozzle whose
+    // differently aligned band merely passes through that layer on the way to its own anchor.
+    let mut painted_anchor_claims: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); extruder_count]; layer_count];
+    for extruder_id in 0..extruder_count {
+        let nozzle = extruder_nozzles[extruder_id];
+        if nozzle <= EPSILON {
+            continue;
+        }
+        let band_size = adaptive_layer_band_size(nozzle, reference_nozzle, base_layer_height);
+        if band_size < 2 {
+            // An unmerged nozzle anchors a real extrusion on every physical layer.
+            for layer_idx in 0..layer_count {
+                painted_anchor_claims[layer_idx][extruder_id] = original_segmentation[layer_idx][extruder_id].clone();
+            }
+            continue;
+        }
+        let range = adaptive_layer_height_range(nozzle);
+        for band in &build_painted_bands(band_size, &range) {
+            let mut live = AdaptiveLayerBand::default();
+            if !pull_painted_band(band, extruder_id, &range, &mut live) {
+                continue;
+            }
+            let anchor_idx = if band.bottom_idx == 0 { 0 } else { live.top_idx };
+            painted_anchor_claims[anchor_idx][extruder_id] = original_segmentation[anchor_idx][extruder_id].clone();
+        }
+    }
+    let other_anchor_claims = |layer_idx: usize, extruder_id: usize| -> ExPolygons {
+        let mut protected_area = Polygons::new();
+        for other_id in 0..extruder_count {
+            if other_id != extruder_id {
+                protected_area.extend(to_polygons(&painted_anchor_claims[layer_idx][other_id]));
+            }
+        }
+        if protected_area.is_empty() {
+            ExPolygons::new()
+        } else {
+            union_ex(&protected_area)
+        }
+    };
+    let all_anchor_claims = |layer_idx: usize| -> ExPolygons {
+        let mut protected_area = Polygons::new();
+        for extruder_id in 0..extruder_count {
+            protected_area.extend(to_polygons(&painted_anchor_claims[layer_idx][extruder_id]));
+        }
+        if protected_area.is_empty() {
+            ExPolygons::new()
+        } else {
+            union_ex(&protected_area)
+        }
+    };
+    for extruder_id in 0..extruder_count {
+        let nozzle = extruder_nozzles[extruder_id];
+        if nozzle <= EPSILON {
+            continue;
+        }
+        let band_size = adaptive_layer_band_size(nozzle, reference_nozzle, base_layer_height);
+        if band_size < 2 {
+            continue;
+        }
+        let range = adaptive_layer_height_range(nozzle);
+        let bands = build_painted_bands(band_size, &range);
+        for band_idx in 0..bands.len() {
+            throw_on_cancel()?;
+            let band = &bands[band_idx];
+            let mut live = AdaptiveLayerBand::default();
+            if !pull_painted_band(band, extruder_id, &range, &mut live) {
+                continue;
+            }
+            let anchor_idx = if band.bottom_idx == 0 { 0 } else { live.top_idx };
+            for layer_idx in live.bottom_idx..=live.top_idx {
+                if layer_idx == anchor_idx {
+                    continue;
+                }
+                let vacated = diff_ex(&original_segmentation[layer_idx][extruder_id], &original_segmentation[anchor_idx][extruder_id]);
+                if vacated.is_empty() {
+                    continue;
+                }
+                for other_id in 0..extruder_count {
+                    if other_id == extruder_id || original_segmentation[anchor_idx][other_id].is_empty() {
+                        continue;
+                    }
+                    let restored = intersection_ex(&vacated, &original_segmentation[anchor_idx][other_id]);
+                    if restored.is_empty() {
+                        continue;
+                    }
+                    let mut combined = to_polygons(&segmentation[layer_idx][other_id]);
+                    combined.extend(to_polygons(&restored));
+                    segmentation[layer_idx][other_id] = union_ex(&combined);
+                }
+            }
+        }
+    }
+
+    // Ascending extruder id, the order painted_regions are applied in, so a contested area goes to the
+    // same extruder here as it would in apply_mm_segmentation() below.
+    let mut claimed: Vec<ExPolygons> = vec![ExPolygons::new(); layer_count];
+    for extruder_id in 0..extruder_count {
+        let nozzle = extruder_nozzles[extruder_id];
+        if nozzle <= EPSILON {
+            continue;
+        }
+        let band_size = adaptive_layer_band_size(nozzle, reference_nozzle, base_layer_height);
+        if band_size < 2 {
+            continue;
+        }
+        let range = adaptive_layer_height_range(nozzle);
+        let bands = build_painted_bands(band_size, &range);
+        for band_idx in 0..bands.len() {
+            throw_on_cancel()?;
+            let band = &bands[band_idx];
+            let mut live = AdaptiveLayerBand::default();
+            if !pull_painted_band(band, extruder_id, &range, &mut live) {
+                continue;
+            }
+            // The band shows one face over its whole Z range and takes its ownership from that face: the
+            // top layer normally, the object base for the band that starts at layer 0. That band is the
+            // bottom of the print, so paint reaching it only down a vertical wall must not claim it.
+            let anchored_on_base = band.bottom_idx == 0;
+            let anchor_idx = if anchored_on_base { 0 } else { live.top_idx };
+            let retained: ExPolygons = segmentation[anchor_idx][extruder_id].clone();
+            for layer_idx in live.bottom_idx..=live.top_idx {
+                // The band lays the top contour down and nothing else, so a footprint this extruder painted
+                // further down is not extruded at all. It still belongs to this nozzle: releasing it lets the
+                // base filament print it layer by layer inside the Z range the band already owns, which comes
+                // out as a rim of the model colour tracing every band step - a colour change on every layer
+                // instead of the step the decimation implies. Only what another colour holds on the band top
+                // is given up, and the restore pass above has moved exactly that to its owner already.
+                let mut own: ExPolygons = retained.clone();
+                // Never on a base-anchored band: what it would recover there is exactly the side paint the
+                // first band must not carry, and layer 0 has already said who owns the bottom face.
+                if !retained.is_empty() && !anchored_on_base && layer_idx != anchor_idx {
+                    let mut orphaned = diff_ex(&original_segmentation[layer_idx][extruder_id], &original_segmentation[anchor_idx][extruder_id]);
+                    let mut other_id = 0;
+                    while other_id < extruder_count && !orphaned.is_empty() {
+                        if other_id != extruder_id && !original_segmentation[anchor_idx][other_id].is_empty() {
+                            orphaned = diff_ex(&orphaned, &original_segmentation[anchor_idx][other_id]);
+                        }
+                        other_id += 1;
+                    }
+                    if !orphaned.is_empty() {
+                        let mut combined = to_polygons(&own);
+                        combined.extend(to_polygons(&orphaned));
+                        own = union_ex(&combined);
+                    }
+                }
+                let protected_area = other_anchor_claims(layer_idx, extruder_id);
+                if !own.is_empty() && !protected_area.is_empty() {
+                    own = diff_ex(&own, &protected_area);
+                }
+                let area: ExPolygons = if own.is_empty() || claimed[layer_idx].is_empty() { own } else { diff_ex(&own, &claimed[layer_idx]) };
+                if !area.is_empty() {
+                    // One extrusion fills the band's whole Z range, so no other extruder can keep a share
+                    // of these layers.
+                    for other_id in 0..extruder_count {
+                        if other_id != extruder_id && !segmentation[layer_idx][other_id].is_empty() {
+                            // Preserve the colour ownership even when the remainder is narrow. Returning
+                            // such a boundary strip to the base region inserts a third colour between the
+                            // two painted colours; the wall generator is the right place to decide whether
+                            // it becomes a variable-width wall or gap fill.
+                            segmentation[layer_idx][other_id] = diff_ex(&segmentation[layer_idx][other_id], &area);
+                        }
+                    }
+                    let mut combined = to_polygons(&claimed[layer_idx]);
+                    combined.extend(to_polygons(&area));
+                    claimed[layer_idx] = union_ex(&combined);
+                }
+                segmentation[layer_idx][extruder_id] = area;
+            }
+        }
+    }
+
+    // The unpainted footprint prints in bands as well, and the band carrying the object's top surface has
+    // to own its whole Z range. A colour painted on a side wall that keeps extruding on the layers inside
+    // that band leaves the merged slab nowhere to go: compute_adaptive_merge_groups() trims the slab
+    // against what the finer nozzle already laid down, so the top face comes out short of the model
+    // outline by that strip and stops being the shape the user drew.
+    let base_at = |layer_idx: usize, diameter: f64| -> ExPolygons {
+        let mut base = Polygons::new();
+        for layerm in print_object.get_layer(layer_idx as i32).regions() {
+            if !layerm.slices.surfaces.is_empty()
+                && (nozzle_diameter_for_filament(print_config, wall_filament(layerm)) as f64 - diameter).abs() <= EPSILON
+            {
+                base.extend(crate::surface::to_polygons(&layerm.slices.surfaces));
+            }
+        }
+        if base.is_empty() {
+            ExPolygons::new()
+        } else {
+            union_ex(&base)
+        }
+    };
+    let unpainted_at = |segmentation: &Vec<Vec<ExPolygons>>, layer_idx: usize, diameter: f64| -> ExPolygons {
+        let base = base_at(layer_idx, diameter);
+        if base.is_empty() {
+            return ExPolygons::new();
+        }
+        let mut painted = Polygons::new();
+        for extruder_id in 0..extruder_count {
+            painted.extend(to_polygons(&segmentation[layer_idx][extruder_id]));
+        }
+        if painted.is_empty() {
+            return base;
+        }
+        // Only what this nozzle could actually lay down may evict paint. A layer the paint covers entirely
+        // still differs from its own slice by a hairline, and keeping that hairline would slit the wider
+        // layers below this one in two - it falls inside their paint, not outside it - and the wall
+        // generator would then follow the slit instead of the model outline.
+        let raw = diff_ex(&base, &union_ex(&painted));
+        printable_pieces(raw, diameter)
+    };
+    let mut base_claimed: Vec<ExPolygons> = vec![ExPolygons::new(); layer_count];
+    for &diameter in &base_nozzles {
+        let band_size = adaptive_layer_band_size(diameter, reference_nozzle, base_layer_height);
+        if band_size < 2 {
+            continue;
+        }
+        let range = adaptive_layer_height_range(diameter);
+        let bands = build_adaptive_layer_bands(&layer_heights, band_size, &range, &band_tops);
+        for band_idx in 0..bands.len() {
+            throw_on_cancel()?;
+            let band = &bands[band_idx];
+            let mut live = *band;
+            // A band carries one contour over its whole Z range, and that contour is taken from the face
+            // the band shows: the top layer for an ordinary band, the object base for the first one. The
+            // first band is the bottom face of the print, so a colour painted on a vertical wall must not
+            // decide its ownership - it starts above the band, exactly as a side colour ends below the
+            // band carrying the top face.
+            let anchored_on_base = band.bottom_idx == 0;
+            if !anchored_on_base && unpainted_at(segmentation, band.top_idx, diameter).is_empty() {
+                let mut has_material: Vec<u8> = vec![0; band.top_idx + 1];
+                for layer_idx in band.bottom_idx..=band.top_idx {
+                    has_material[layer_idx] = (!unpainted_at(segmentation, layer_idx, diameter).is_empty()) as u8;
+                }
+                if !pull_adaptive_band_top_to_material(&mut live, &layer_heights, &range, &has_material) {
+                    continue;
+                }
+            }
+            let anchor_idx = if anchored_on_base { 0 } else { live.top_idx };
+            let retained: ExPolygons = unpainted_at(segmentation, anchor_idx, diameter);
+            if retained.is_empty() {
+                continue;
+            }
+            for layer_idx in live.bottom_idx..=live.top_idx {
+                let mut area: ExPolygons = retained.clone();
+                let protected_area = all_anchor_claims(layer_idx);
+                if !protected_area.is_empty() {
+                    area = diff_ex(&area, &protected_area);
+                }
+                if area.is_empty() {
+                    continue;
+                }
+                let mut claimed_polygons = to_polygons(&base_claimed[layer_idx]);
+                claimed_polygons.extend(to_polygons(&area));
+                base_claimed[layer_idx] = union_ex(&claimed_polygons);
+                for other_id in 0..extruder_count {
+                    if !segmentation[layer_idx][other_id].is_empty() {
+                        segmentation[layer_idx][other_id] =
+                            printable_pieces(diff_ex(&segmentation[layer_idx][other_id], &area), extruder_nozzles[other_id]);
+                    }
+                }
+            }
+        }
+    }
+
+    // The handovers above cannot be made to agree on their own. An extruder decides what to give up from
+    // the paint of its own band top, while what the receiver actually keeps is decided by the receiver's
+    // band top and by every extruder that takes a share of that layer after it. Where the two disagree the
+    // footprint is left owned by nobody, and nobody means the region's own filament: that is the finest
+    // nozzle of the plate, the one nozzle that prints every layer, so a strip too narrow for any painted
+    // nozzle still reaches the plate - as a line of the model colour drawn between two painted ones.
+    //
+    // Rather than chase every handover, hold the invariant that matters: paint that went into this pass
+    // comes out of it painted. The colour holding most of a lost piece takes it back, which is the colour
+    // that was drawn there. Pieces too small for even the reference nozzle are left alone - they never
+    // reach an extruder, and re-uniting the fringe of every colour boundary would cost far more than it
+    // could ever change.
+    let reclaim_min_area: f64 = 0.25 * reference_nozzle * reference_nozzle;
+    for layer_idx in 0..layer_count {
+        throw_on_cancel()?;
+        let mut before = Polygons::new();
+        let mut after = Polygons::new();
+        for extruder_id in 0..extruder_count {
+            before.extend(to_polygons(&original_segmentation[layer_idx][extruder_id]));
+            after.extend(to_polygons(&segmentation[layer_idx][extruder_id]));
+        }
+        if before.is_empty() {
+            continue;
+        }
+        let mut lost_areas: ExPolygons = if after.is_empty() { union_ex(&before) } else { diff_ex(&union_ex(&before), &union_ex(&after)) };
+        if !base_claimed[layer_idx].is_empty() {
+            lost_areas = diff_ex(&lost_areas, &base_claimed[layer_idx]);
+        }
+        let mut reclaimed: Vec<Polygons> = vec![Polygons::new(); extruder_count];
+        for piece in &lost_areas {
+            let one: ExPolygons = vec![piece.clone()];
+            let lost = area_mm2(&one);
+            if lost < reclaim_min_area {
+                continue;
+            }
+            // get_extents(piece).inflated(SCALED_EPSILON): BoundingBox.cpp `offset(coordf_t delta)` makes
+            // the Point(delta, delta), which rounds.
+            let mut piece_bbox = get_extents_expolygon(piece);
+            piece_bbox.expand((EPSILON / SCALING_FACTOR).round_ties_even() as i64);
+            let mut owner = extruder_count;
+            let mut held: f64 = 0.;
+            for extruder_id in 0..extruder_count {
+                let paint = &original_segmentation[layer_idx][extruder_id];
+                if paint.is_empty() {
+                    continue;
+                }
+                let clip: Polygons = cu::clip_clipper_polygons_with_subject_bbox_expolygons(paint, &piece_bbox, false);
+                if clip.is_empty() {
+                    continue;
+                }
+                let painted = area_mm2(&intersection_ex_polygons(&one, &clip));
+                if painted > held {
+                    held = painted;
+                    owner = extruder_id;
+                }
+            }
+            if owner == extruder_count {
+                continue;
+            }
+            reclaimed[owner].extend(to_polygons(&one));
+        }
+        for owner in 0..extruder_count {
+            if reclaimed[owner].is_empty() {
+                continue;
+            }
+            let mut all = std::mem::take(&mut reclaimed[owner]);
+            all.extend(to_polygons(&segmentation[layer_idx][owner]));
+            segmentation[layer_idx][owner] = union_ex(&all);
+        }
+    }
+
+    // A coarse colour holding a footprint for fewer layers than its nozzle's minimum height cannot extrude
+    // it: the band would have to reach into the colours above and below, and a fine colour there prints every
+    // layer and cannot give way. Typical cases are a 0.1 mm stroke of a 0.8 colour on its band's bottom layer,
+    // or a 0.8 body that 0.2 paint above and below leaves 0.1 mm of. Left alone, the merge planner has no
+    // same-colour slab to fold it into, and the step stays empty across the whole footprint.
+    //
+    // Such a piece takes the colour standing on it one layer up, and that colour plans it like any other
+    // footprint it owns: a fine nozzle prints it as sliced, a coarse one merges it with its own slab above.
+    // This is what single-diameter printing does with paint that misses a layer's sampling height - the colour
+    // drawn there is not the colour printed. What no other colour stands on goes to the colour below, and what
+    // has neither keeps its colour. The first band of each ladder rests on the bed and keeps its own rule.
+    {
+        #[derive(Clone, Copy)]
+        struct Owner {
+            // The unpainted footprint of the regions carrying this nozzle, or a painted extruder.
+            base: bool,
+            extruder_id: usize,
+            nozzle: f64,
+            range: AdaptiveLayerHeightRange,
+            // Last layer of the first band; layers up to it are left alone. -1 when this nozzle prints every
+            // layer and nothing of it can be thin.
+            first_band_top: i64,
+        }
+        let mut owners: Vec<Owner> = Vec::new();
+        {
+            let mut add_owner = |base: bool, extruder_id: usize, nozzle: f64| {
+                let band_size = adaptive_layer_band_size(nozzle, reference_nozzle, base_layer_height);
+                let range = adaptive_layer_height_range(nozzle);
+                let mut first_band_top: i64 = -1;
+                if band_size >= 2 {
+                    let bands = build_adaptive_layer_bands(&layer_heights, band_size, &range, &band_tops);
+                    first_band_top = if bands.is_empty() || bands[0].bottom_idx != 0 { 0 } else { bands[0].top_idx as i64 };
+                }
+                owners.push(Owner { base, extruder_id, nozzle, range, first_band_top: if band_size >= 2 { first_band_top } else { -1 } });
+            };
+            for extruder_id in 0..extruder_count {
+                if extruder_nozzles[extruder_id] > EPSILON {
+                    add_owner(false, extruder_id, extruder_nozzles[extruder_id]);
+                }
+            }
+            for &diameter in &base_nozzles {
+                add_owner(true, 0, diameter);
+            }
+        }
+
+        // The unpainted footprint is recomputed only for a layer whose paint changed.
+        let mut unpainted_cache: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); layer_count]; owners.len()];
+        let mut unpainted_valid: Vec<Vec<u8>> = vec![vec![0; layer_count]; owners.len()];
+        let owned = |segmentation: &Vec<Vec<ExPolygons>>,
+                     unpainted_cache: &mut Vec<Vec<ExPolygons>>,
+                     unpainted_valid: &mut Vec<Vec<u8>>,
+                     owner_idx: usize,
+                     layer_idx: usize|
+         -> ExPolygons {
+            let owner = &owners[owner_idx];
+            if !owner.base {
+                return segmentation[layer_idx][owner.extruder_id].clone();
+            }
+            if unpainted_valid[owner_idx][layer_idx] == 0 {
+                let mut base = base_at(layer_idx, owner.nozzle);
+                if !base.is_empty() {
+                    let mut painted = Polygons::new();
+                    for extruder_id in 0..extruder_count {
+                        painted.extend(to_polygons(&segmentation[layer_idx][extruder_id]));
+                    }
+                    if !painted.is_empty() {
+                        base = diff_ex(&base, &union_ex(&painted));
+                    }
+                }
+                unpainted_cache[owner_idx][layer_idx] = base;
+                unpainted_valid[owner_idx][layer_idx] = 1;
+            }
+            unpainted_cache[owner_idx][layer_idx].clone()
+        };
+        let span_height = |bottom_idx: usize, top_idx: usize| -> f64 {
+            let mut height: f64 = 0.;
+            for layer_idx in bottom_idx..=top_idx {
+                height += layer_heights[layer_idx];
+            }
+            height
+        };
+
+        // Bottom to top, so a piece given to the colour above already lengthens that colour's run when the
+        // layers above are judged.
+        for layer_idx in 0..layer_count {
+            throw_on_cancel()?;
+            for owner_idx in 0..owners.len() {
+                let owner = owners[owner_idx];
+                if owner.first_band_top < 0 || layer_idx as i64 <= owner.first_band_top {
+                    continue;
+                }
+                let here: ExPolygons = owned(segmentation, &mut unpainted_cache, &mut unpainted_valid, owner_idx, layer_idx);
+                if here.is_empty() {
+                    continue;
+                }
+
+                // Whatever this colour holds through some run of layers around this one that reaches its
+                // minimum height is printable. Only the shortest such runs need checking: for each bottom, the
+                // lowest top that reaches the height; from the bottom where this layer alone reaches it on, a
+                // lower bottom only gives a longer run.
+                let mut printable = Polygons::new();
+                // for (size_t bottom_idx = layer_idx + 1; bottom_idx-- > 0;)
+                let mut bottom_idx = layer_idx + 1;
+                while bottom_idx > 0 {
+                    bottom_idx -= 1;
+                    let mut top_idx = layer_idx;
+                    while top_idx + 1 < layer_count && span_height(bottom_idx, top_idx) < owner.range.min_height - EPSILON {
+                        top_idx += 1;
+                    }
+                    if span_height(bottom_idx, top_idx) >= owner.range.min_height - EPSILON {
+                        let mut run: ExPolygons = here.clone();
+                        let mut idx = bottom_idx;
+                        while idx <= top_idx && !run.is_empty() {
+                            if idx != layer_idx {
+                                run = intersection_ex(&run, &owned(segmentation, &mut unpainted_cache, &mut unpainted_valid, owner_idx, idx));
+                            }
+                            idx += 1;
+                        }
+                        printable.extend(to_polygons(&run));
+                    }
+                    if span_height(bottom_idx, layer_idx) >= owner.range.min_height - EPSILON {
+                        break;
+                    }
+                }
+                let mut thin: ExPolygons = if printable.is_empty() { here.clone() } else { diff_ex(&here, &union_ex(&printable)) };
+                // Pieces even the finest nozzle could not print - hairlines between two polygonisations - are
+                // left where they are.
+                thin = printable_pieces(thin, reference_nozzle);
+                if thin.is_empty() {
+                    continue;
+                }
+
+                // for (size_t neighbour_idx : { layer_idx + 1, layer_idx - 1 })
+                for neighbour_idx in [layer_idx + 1, layer_idx.wrapping_sub(1)] {
+                    if thin.is_empty() || neighbour_idx >= layer_count {
+                        continue;
+                    }
+                    for receiver_idx in 0..owners.len() {
+                        if thin.is_empty() {
+                            break;
+                        }
+                        let receiver = owners[receiver_idx];
+                        if receiver_idx == owner_idx || (receiver.base && owner.base) {
+                            continue;
+                        }
+                        let mut taken =
+                            intersection_ex(&thin, &owned(segmentation, &mut unpainted_cache, &mut unpainted_valid, receiver_idx, neighbour_idx));
+                        // Removing the paint hands the footprint to whichever region holds it on this layer, which
+                        // is the receiver only where that region is there too: two parts may meet at this layer.
+                        if receiver.base && !taken.is_empty() {
+                            taken = intersection_ex(&taken, &base_at(layer_idx, receiver.nozzle));
+                        }
+                        if taken.is_empty() {
+                            continue;
+                        }
+                        // Painted area leaves its extruder; the unpainted footprint is whatever no paint covers,
+                        // so it is given up by painting it and taken back by removing the paint.
+                        if !owner.base {
+                            segmentation[layer_idx][owner.extruder_id] = diff_ex(&segmentation[layer_idx][owner.extruder_id], &taken);
+                        }
+                        if !receiver.base {
+                            let mut combined = to_polygons(&segmentation[layer_idx][receiver.extruder_id]);
+                            combined.extend(to_polygons(&taken));
+                            segmentation[layer_idx][receiver.extruder_id] = union_ex(&combined);
+                        }
+                        // paint_changed(layer_idx)
+                        for valid in unpainted_valid.iter_mut() {
+                            valid[layer_idx] = 0;
+                        }
+                        thin = diff_ex(&thin, &taken);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }

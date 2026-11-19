@@ -29,7 +29,14 @@
 // generate_support_toolpaths. A support generator layer is named by its index in the storage. The first
 // scenario also runs the path helpers one by one: tree_supports_generate_paths,
 // fill_expolygons_with_sheath_generate_paths, LoopInterfaceProcessor::generate,
-// SupportGeneratorLayerExtruded::merge and modulate_extrusion_by_overlapping_layers.
+// SupportGeneratorLayerExtruded::merge, modulate_extrusion_by_overlapping_layers,
+// modulate_extrusion_paths_by_overlapping_layers by itself, idx_higher_or_equal and idx_lower_or_equal,
+// fill_expolygon_generate_paths and the two overloads of fill_expolygons_generate_paths.
+//
+// The third part ("m" scenarios) is merge_support_layers_multi_diameter and merged_band_footprint: a Print in
+// the mode of several nozzle diameters, object layers written by hand (their slices, a region with its
+// extrusions and, in some, merged bands), the plan `make_support_merge_plan` gives for the object (an input:
+// the Rust function takes the plan), a storage of support generator layers in the six lists, and the merge.
 //
 // Lines that start with "in" are the inputs the Rust test reads back; the others are results it has to
 // reproduce. Tokens are separated by one space; a double is its 16 hexadecimal digits, a float its 8,
@@ -72,6 +79,8 @@
 #include "libslic3r/Support/SupportCommon.hpp"
 #include "libslic3r/Support/SupportLayer.hpp"
 #include "libslic3r/Support/SupportParameters.hpp"
+#include "libslic3r/SupportMergePlan.hpp"
+#include "libslic3r/AdaptiveLayerMerge.hpp"
 #include "libslic3r/Log.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/TriangleMesh.hpp"
@@ -527,6 +536,60 @@ static void run_path_helpers(const SupportParameters &p0)
         modulate_extrusion_by_overlapping_layers(ents, t, overlapping);
         out("mod " + ENTS(ents));
         clear(ents);
+        {
+            // modulate_extrusion_paths_by_overlapping_layers by itself, on paths only.
+            ExtrusionEntitiesPtr paths;
+            extrusion_entities_append_paths(paths, Polylines(lines), erSupportMaterial, flow.mm3_per_mm(), flow.width(), flow.height());
+            out("in modp_ents " + ENTS(paths));
+            modulate_extrusion_paths_by_overlapping_layers(paths, t, overlapping);
+            out("modp " + ENTS(paths));
+            clear(paths);
+        }
+    }
+
+    // idx_higher_or_equal, idx_lower_or_equal: the binary search and the linear one from several starts.
+    {
+        const std::vector<double> zs = {0.2, 0.4, 0.4, 0.75, 1.0, 1.3, 1.3, 2.0, 2.4};
+        for (size_t n : {size_t(0), size_t(1), size_t(2), size_t(3), size_t(9)}) {
+            const std::vector<double> v(zs.begin(), zs.begin() + n);
+            for (double thr : {-1., 0.2, 0.3, 0.4, 0.75, 1.3, 2.4, 5.}) {
+                auto        ge   = [thr](double z) { return z >= thr; };
+                auto        le   = [thr](double z) { return z <= thr; };
+                std::string line = "idx " + hI((long long) n) + " " + hD(thr) + " " + hI((long long) idx_higher_or_equal(v.begin(), v.end(), size_t(-1), ge));
+                for (size_t start : {size_t(0), size_t(1), size_t(4)})
+                    if (start <= n) line += " " + hI((long long) idx_higher_or_equal(v.begin(), v.end(), start, ge));
+                line += " " + hI((long long) idx_lower_or_equal(v.begin(), v.end(), int(-2), le));
+                for (int start : {-1, 0, 2, 8})
+                    if (start < int(n)) line += " " + hI((long long) idx_lower_or_equal(v.begin(), v.end(), start, le));
+                out(line);
+            }
+        }
+    }
+
+    // fill_expolygon_generate_paths and the two overloads of fill_expolygons_generate_paths.
+    for (size_t i = 0; i < 6; ++i) {
+        const Flow              &flow = flows[i % 3];
+        std::unique_ptr<RecFill> filler(RecFill::new_from_type(i % 3 == 1 ? ipConcentric : i % 3 == 2 ? ipHoneycomb : ipRectilinear));
+        filler->angle           = 0.3f * float(i);
+        filler->spacing         = flow.spacing();
+        filler->link_max_length = coord_t(50 * i);
+        filler->set_bounding_box(BoundingBox(Point(-3, -4), Point(21, 17)));
+        const ExPolygons ex = union_ex(shapes[i]);
+        FillParams       fp;
+        fp.density     = 0.2f + 0.15f * float(i);
+        fp.dont_adjust = (i % 2 == 0);
+        const ExtrusionRole role = i % 2 ? erSupportMaterialInterface : erSupportMaterial;
+        out("in fegp " + hI((long long) i) + " " + hF(fp.density));
+        ExtrusionEntitiesPtr dst;
+        fill_expolygon_generate_paths(dst, ExPolygon(ex.front()), filler.get(), fp, fp.density, role, flow);
+        out("fegp " + hI((long long) i) + " " + ENTS(dst));
+        clear(dst);
+        fill_expolygons_generate_paths(dst, ExPolygons(ex), filler.get(), fp, fp.density, role, flow);
+        out("fesgp " + hI((long long) i) + " " + ENTS(dst));
+        clear(dst);
+        fill_expolygons_generate_paths(dst, ExPolygons(ex), filler.get(), fp.density, role, flow);
+        out("fesgd " + hI((long long) i) + " " + ENTS(dst));
+        clear(dst);
     }
 }
 
@@ -790,6 +853,294 @@ static void run_scenario(int scenario, const Cfg &cfg)
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// merge_support_layers_multi_diameter and merged_band_footprint: a Print in the mode of several nozzle
+// diameters (the filaments are assigned their diameters by `filament_diameter_map`).
+// ---------------------------------------------------------------------------------------------------------
+
+static std::string CAND(const SupportMergePlan::Candidate &c)
+{
+    return hI(c.filament_id) + " " + hD(c.nozzle_diameter) + " " + hD(c.window.min_height) + " " + hD(c.window.max_height) + " " + hI((long long) c.band_size);
+}
+static bool same_candidate(const SupportMergePlan::Candidate &a, const SupportMergePlan::Candidate &b)
+{
+    return a.filament_id == b.filament_id && a.nozzle_diameter == b.nozzle_diameter && a.window.min_height == b.window.min_height &&
+           a.window.max_height == b.window.max_height && a.band_size == b.band_size;
+}
+// The plan, as tests/data/support_merge_plan/gen.cpp writes it, on one line.
+static std::string PLAN(const SupportMergePlan &plan)
+{
+    std::string o = hB(plan.enabled) + " " + hB(plan.interface_fold_enabled) + " PZ " + hI((long long) plan.layer_print_z.size());
+    for (double v : plan.layer_print_z) o += " " + hD(v);
+    o += " LH " + hI((long long) plan.layer_heights.size());
+    for (double v : plan.layer_heights) o += " " + hD(v);
+    std::vector<SupportMergePlan::Candidate> table;
+    auto index = [&table](const SupportMergePlan::Candidate &c) {
+        for (size_t i = 0; i < table.size(); ++i)
+            if (same_candidate(table[i], c)) return i;
+        table.push_back(c);
+        return table.size() - 1;
+    };
+    for (const auto *list : {&plan.candidates_per_layer, &plan.interface_candidates_per_layer})
+        for (const auto &layer : *list)
+            for (const auto &c : layer) index(c);
+    o += " CT " + hI((long long) table.size());
+    for (const auto &c : table) o += " " + CAND(c);
+    for (const auto *list : {&plan.candidates_per_layer, &plan.interface_candidates_per_layer}) {
+        o += std::string(list == &plan.candidates_per_layer ? " CPL " : " ICPL ") + hI((long long) list->size());
+        for (const auto &layer : *list) {
+            o += " " + hI((long long) layer.size());
+            for (const auto &c : layer) o += " " + hI((long long) index(c));
+        }
+    }
+    o += " FB " + hI((long long) plan.fixed_bands_per_filament.size());
+    for (const auto &entry : plan.fixed_bands_per_filament) {
+        o += " " + hI(entry.first) + " " + hI((long long) entry.second.size());
+        for (const AdaptiveLayerBand &b : entry.second) o += " " + hI((long long) b.bottom_idx) + " " + hI((long long) b.top_idx) + " " + hD(b.merged_height);
+    }
+    o += " SL " + hI((long long) plan.slabs.size());
+    for (const SupportMergePlan::Slab &b : plan.slabs)
+        o += " " + hI((long long) b.bottom_idx) + " " + hI((long long) b.top_idx) + " " + hD(b.top_z) + " " + hD(b.height) + " " + hI(b.filament_id) + " " + hD(b.nozzle_diameter) + " " +
+             hB(b.bottom_anchor);
+    o += " SI " + hI((long long) plan.slab_index_per_layer.size());
+    for (int i : plan.slab_index_per_layer) o += " " + hI(i);
+    return o;
+}
+static std::string CMAP(const std::map<coordf_t, SupportMergePlan::Candidate> &m)
+{
+    std::string o = hI((long long) m.size());
+    for (const auto &kv : m) o += " " + hD(kv.first) + " " + CAND(kv.second);
+    return o;
+}
+static std::string DMAP(const std::map<coordf_t, coordf_t> &m)
+{
+    std::string o = hI((long long) m.size());
+    for (const auto &kv : m) o += " " + hD(kv.first) + " " + hD(kv.second);
+    return o;
+}
+static std::string AREAS(const std::vector<ExPolygons> &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const ExPolygons &e : v) o += " " + EXPOLYS(e);
+    return o;
+}
+
+struct MergeScen
+{
+    Cfg    cfg;
+    double h;       // the height of the object layers
+    int    n;       // their number
+    int    variant; // 1: a raft layer, a bridging contact, merged bands of the object, areas by print_z, a top gap
+                    // 2: layers of one kind at one height, a layer listed twice
+};
+
+static std::vector<MergeScen> merge_scenarios()
+{
+    // One extruder with a rack of two nozzles, 0.4 and 0.8; the second filament prints with the 0.8 one. (The
+    // diameters of the three filaments are given: the number of filaments Print::apply clamps the support
+    // filaments to is the size of `filament_diameter`.)
+    const Cfg multi = {{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"multi_nozzle_diameter_mode", "1"}, {"extruder_nozzle_count", "2"}, {"extruder_nozzle_diameter", "0.4,0.8"},
+                       {"filament_diameter", "1.75,1.75,1.75"}, {"filament_diameter_map", "0.4;0.8;0.4"}};
+    auto      with  = [&multi](Cfg more) {
+        Cfg c = multi;
+        c.insert(c.end(), more.begin(), more.end());
+        return c;
+    };
+    std::vector<MergeScen> s;
+    // 0: the base of the coarse nozzle (bands of four layers), the interface of the object's filament.
+    s.push_back({with({{"layer_height", "0.1"}, {"support_filament", "2"}}), 0.1, 24, 0});
+    // 1: base and interface of the coarse nozzle: the interface layers are too thin for it.
+    s.push_back({with({{"layer_height", "0.1"}, {"support_filament", "2"}, {"support_interface_filament", "2"}}), 0.1, 24, 0});
+    // 2: thin layers, the base of the object's filament, the interface of the coarse nozzle: every layer is too thin.
+    s.push_back({with({{"layer_height", "0.05"}, {"support_interface_filament", "2"}}), 0.05, 40, 0});
+    // 3: a raft, a bridging contact, merged bands of the object, the areas by their print_z, a top gap.
+    s.push_back({with({{"layer_height", "0.1"}, {"support_filament", "2"}, {"support_interface_filament", "2"}, {"raft_layers", "2"}}), 0.1, 24, 1});
+    // 4: one nozzle diameter: no plan, every level is left alone.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"layer_height", "0.1"}}, 0.1, 24, 2});
+    // 5: the base of the object's filament, the interface of the coarse nozzle; layers of one kind at one height.
+    s.push_back({with({{"layer_height", "0.1"}, {"support_filament", "1"}, {"support_interface_filament", "2"}}), 0.1, 24, 2});
+    // 6: thin layers, base and interface of the coarse nozzle, the areas by their print_z.
+    s.push_back({with({{"layer_height", "0.05"}, {"support_filament", "2"}, {"support_interface_filament", "2"}}), 0.05, 40, 1});
+    // 7: a soluble interface filament of the fine nozzle, a zero top gap.
+    s.push_back({with({{"layer_height", "0.1"}, {"support_filament", "2"}, {"support_interface_filament", "3"}, {"filament_soluble", "0,0,1"}, {"support_top_z_distance", "0"}}), 0.1, 24, 0});
+    return s;
+}
+
+static void run_merge(int m, const MergeScen &sc)
+{
+    const std::string S = "m" + hI(m);
+    Model        model;
+    ModelObject *o = model.add_object();
+    o->name = "box";
+    indexed_triangle_set its = its_make_cube(20, 20, 10);
+    for (Vec3f &v : its.vertices) v += Vec3f(-10.f, -10.f, 0.f);
+    o->add_volume(TriangleMesh(its));
+    o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+    out("in " + S + " model 20 20 10 100 100");
+
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_num_filaments(3);
+    config.option<ConfigOptionStrings>("filament_colour", true)->values = {"#FF0000", "#00FF00", "#0000FF"};
+    config.option<ConfigOptionInts>("filament_map", true)->values = {1, 1, 1};
+    for (const auto &kv : sc.cfg) {
+        config.set_deserialize_strict(kv.first, kv.second);
+        out("in " + S + " cfg " + kv.first + " " + kv.second);
+    }
+    Print print;
+    print.apply(model, config);
+    PrintObject *obj = print.m_objects.front();
+    obj->update_slicing_parameters();
+    const SlicingParameters &sp = obj->slicing_parameters();
+
+    // The object layers: a body that narrows with the height, a step beside it up to the fifth layer, and
+    // from layer `k` on an overhang over the supports.
+    const double h = sc.h;
+    const int    n = sc.n;
+    const int    k = (n * 3) / 4;
+    for (int i = 0; i < n; ++i) {
+        const double z     = sp.object_print_z_min + h * (i + 1);
+        Layer       *layer = new Layer(i, obj, h, z, z - h / 2.);
+        layer->lslices     = {ExPolygon(rect(-10, -10, 11.5 - 0.06 * i, 10))};
+        if (i < 5) layer->lslices.emplace_back(ExPolygon(rect(20, -4, 27, 4)));
+        if (i >= k) layer->lslices = {ExPolygon(rect(-36, -10, 32, 10))};
+        LayerRegion *lr = layer->add_region(obj->m_shared_regions->all_regions.front().get());
+        for (const ExPolygon &e : layer->lslices) lr->slices.surfaces.emplace_back(stInternal, e);
+        if (i % 2 == 0) {
+            ExtrusionPath *p = new ExtrusionPath(erExternalPerimeter, 0.04, 0.42f, float(h));
+            p->polyline.points = {Point(0, 0), Point(100000, 0)};
+            lr->perimeters.entities.emplace_back(p);
+        }
+        std::string line = "in " + S + " layer " + hD(z) + " " + hD(h) + " " + hD(layer->slice_z) + " " + EXPOLYS(layer->lslices);
+        if (sc.variant == 1 && i >= k - 6 && i < k - 2) {
+            // A merged band of the object over four layers, wider than their slices.
+            AdaptiveMergePatch patch;
+            patch.bottom_idx = size_t(k - 6);
+            patch.top_idx    = size_t(k - 3);
+            patch.group_top  = (i == k - 3);
+            patch.merged_height = 4. * h;
+            patch.set_area({ExPolygon(rect(-10, -10, 13.2, 10)), ExPolygon(rect(-33, -3, -31, 3))});
+            lr->adaptive_merge_patches.emplace_back(patch);
+            if (i == k - 4) {
+                // One that does not span the layer it is stored on.
+                AdaptiveMergePatch other;
+                other.bottom_idx = size_t(k - 3);
+                other.top_idx    = size_t(k - 3);
+                other.set_area({ExPolygon(rect(40, 40, 45, 45))});
+                lr->adaptive_merge_patches.emplace_back(other);
+            }
+        }
+        line += " " + hI((long long) lr->adaptive_merge_patches.size());
+        for (const AdaptiveMergePatch &patch : lr->adaptive_merge_patches)
+            line += " " + hI((long long) patch.bottom_idx) + " " + hI((long long) patch.top_idx) + " " + EXPOLYS(patch.area());
+        obj->m_layers.emplace_back(layer);
+        out(line);
+    }
+
+    const SupportParameters p(*obj);
+    const SupportMergePlan  plan = make_support_merge_plan(*obj);
+    out("in " + S + " plan " + PLAN(plan));
+    out("in " + S + " params " + hD(p.gap_xy) + " " + hD(sp.gap_support_object) + " " + hD(sp.raft_contact_top_z));
+    out(S + " params " + hB(print.uses_multiple_nozzle_diameters()) + " " + hD(p.gap_xy) + " " + hD(sp.gap_support_object) + " " + hD(sp.raft_contact_top_z) + " " +
+        hD(sp.object_print_z_min) + " " + hD(sp.layer_height));
+    for (int i = 0; i < n; ++i)
+        if (i % 3 == 0 || (i >= k - 7 && i < k)) out(S + " band " + hI(i) + " " + POLYS(merged_band_footprint(*obj->m_layers[i], size_t(i))));
+
+    // The support generator layers. Column A stands under the overhang beside the body, column B on the other
+    // side; each has intermediate layers on the grid of the object, base interface and interface layers and a
+    // top contact below the overhang.
+    SupportGeneratorLayerStorage storage;
+    SupportGeneratorLayersPtr    raft_layers, bottom_contacts, top_contacts, intermediate_layers, interface_layers, base_interface_layers;
+    const double z0  = sp.object_print_z_min;
+    const double gap = sp.gap_support_object;
+    if (sp.raft_layers() > 0) {
+        raft_layers.emplace_back(&add_layer(storage, sltRaftBase, sp.raft_base_top_z, sp.base_raft_layer_height, 0., {rect(-40, -14, 40, 14)}));
+        raft_layers.emplace_back(nullptr);
+        raft_layers.emplace_back(&add_layer(storage, sltRaftInterface, sp.raft_interface_top_z, sp.interface_raft_layer_height, sp.raft_base_top_z, {}));
+        // The raft contact layer.
+        top_contacts.emplace_back(&add_layer(storage, sltTopContact, sp.raft_contact_top_z, sp.contact_raft_layer_height, sp.raft_contact_top_z - sp.contact_raft_layer_height,
+                                             {rect(-11, -11, 12.5, 11)}));
+    }
+    // The top of the supports: the bottom of the overhang less the gap, on the grid of the object below it.
+    const int    n_top    = k - int(gap / h + 0.5); // the number of object layers below the top contact
+    const double z_top    = z0 + h * n_top;
+    const int    n_inter  = 2, n_bint = (sc.variant == 2) ? 2 : 1;
+    const int    n_base   = n_top - 1 - n_inter - n_bint;
+    for (int i = 0; i < n_top - 1; ++i) {
+        const double z     = z0 + h * (i + 1);
+        Polygons     polys;
+        // Column A: the base below the interfaces, a rim around them.
+        if (i < n_base)
+            polys.emplace_back(rect(13 + 0.02 * i, -8, 31, 8 - 0.03 * i));
+        else
+            polys.emplace_back(rect(29.5, -8, 31, 8));
+        // Column B: the base all the way; a gap in Z in the third variant.
+        if (!(sc.variant == 2 && (i == 6 || i == 7))) polys.emplace_back(rect(-34, -7, -14 - 0.05 * i, 7));
+        // A short column that ends without an interface.
+        if (i >= 2 && i < 7) polys.emplace_back(ngon(0, 20, 3.5, 16));
+        intermediate_layers.emplace_back(&add_layer(storage, sltIntermediate, z, h, z - h, polys));
+        if (i >= n_base && i < n_base + n_bint)
+            base_interface_layers.emplace_back(&add_layer(storage, sltBase, z, h, z - h, {rect(13.2, -8, 29.5, 7.5)}));
+        if (i >= n_base + n_bint)
+            interface_layers.emplace_back(&add_layer(storage, sltTopInterface, z, h, z - h, {rect(13.4, -8, 29.5, 7.4), rect(-33.5, -6.5, -15.5, 6.5)}));
+    }
+    {
+        SupportGeneratorLayer &a = add_layer(storage, sltTopContact, z_top, h, z_top - h, {rect(13.5, -8, 31, 7.3), rect(-33, -6, -16, 6)});
+        a.overhang_polygons      = std::make_unique<Polygons>(Polygons{rect(12, -9, 32, 9)});
+        a.idx_object_layer_above = size_t(k);
+        top_contacts.emplace_back(&a);
+        // A contact part way up, under nothing of the object: over the short column.
+        const double zc = z0 + h * 8;
+        SupportGeneratorLayer &c = add_layer(storage, sltTopContact, zc, h, zc - h, {ngon(0, 20, 4.1, 16)});
+        c.bridging = (sc.variant == 1);
+        top_contacts.insert(top_contacts.end() - 1, &c);
+        // A bottom contact on the step.
+        const double zb = z0 + h * 6;
+        SupportGeneratorLayer &b = add_layer(storage, sltBottomContact, zb, h, zb - h, {rect(20.5, -3.5, 26.5, 3.5)});
+        b.idx_object_layer_below = 4;
+        bottom_contacts.emplace_back(&b);
+    }
+    if (sc.variant == 2) {
+        // Two interface layers at one height, a layer listed twice, an empty one and a null.
+        const SupportGeneratorLayer *last = interface_layers.back();
+        interface_layers.emplace_back(&add_layer(storage, sltTopInterface, last->print_z, last->height, last->bottom_z, {rect(5, 30, 9, 34)}));
+        interface_layers.emplace_back(interface_layers.front());
+        interface_layers.emplace_back(&add_layer(storage, sltTopInterface, z0 + h * 3, h, z0 + h * 2, {}));
+        interface_layers.emplace_back(nullptr);
+        const SupportGeneratorLayer *mid = intermediate_layers[4];
+        intermediate_layers.emplace_back(&add_layer(storage, sltIntermediate, mid->print_z, mid->height, mid->bottom_z, {rect(-5, 30, 2, 36)}));
+    }
+    reindex(storage);
+    out("in " + S + " storage " + hI((long long) storage.m_storage.size()));
+    for (const SupportGeneratorLayer &l : storage.m_storage) out("in " + S + " L " + LAYER(l));
+    out("in " + S + " lists " + LIST(raft_layers) + " " + LIST(bottom_contacts) + " " + LIST(top_contacts) + " " + LIST(intermediate_layers) + " " + LIST(interface_layers) + " " +
+        LIST(base_interface_layers));
+
+    // The areas by support layer: of the cooldown, of the lightning infill.
+    std::vector<coordf_t>   area_z;
+    std::vector<ExPolygons> cooldown(size_t(n_top + 3)), lightning(size_t(n_top + 1));
+    for (size_t i = 0; i < cooldown.size(); ++i) {
+        area_z.emplace_back(i % 7 == 6 ? z0 + h * (i + 1) + 0.037 : z0 + h * (i + 1));
+        if (i % 3 != 2) cooldown[i] = {ExPolygon(rect(14, -7, 22 + 0.1 * i, 6)), ExPolygon(rect(-30, -5, -20, 5))};
+    }
+    for (size_t i = 0; i < lightning.size(); i += 2) lightning[i] = {with_hole(rect(15, -6, 28, 6), rect(18, -2, 24, 2))};
+    const bool   by_z    = (sc.variant == 1);
+    const double top_gap = (sc.variant == 1) ? 0.25 : -1.;
+    std::string  in      = "in " + S + " areas " + hB(by_z) + " " + hI((long long) area_z.size());
+    for (double z : area_z) in += " " + hD(z);
+    out(in + " " + AREAS(cooldown) + " " + AREAS(lightning) + " " + hD(top_gap));
+
+    std::map<coordf_t, SupportMergePlan::Candidate> planned_filaments, planned_interface_filaments;
+    std::map<coordf_t, coordf_t>                     planned_base_heights, planned_interface_heights;
+    merge_support_layers_multi_diameter(*obj, p, sp, raft_layers, bottom_contacts, top_contacts, intermediate_layers, interface_layers, base_interface_layers, planned_filaments,
+                                        planned_interface_filaments, planned_base_heights, planned_interface_heights, by_z ? &area_z : nullptr, &cooldown,
+                                        m == 4 ? nullptr : &lightning, top_gap);
+    dump_storage(S + " merge", storage);
+    out(S + " merge lists " + LIST(raft_layers) + " " + LIST(bottom_contacts) + " " + LIST(top_contacts) + " " + LIST(intermediate_layers) + " " + LIST(interface_layers) + " " +
+        LIST(base_interface_layers));
+    out(S + " merge planned " + CMAP(planned_filaments) + " | " + CMAP(planned_interface_filaments) + " | " + DMAP(planned_base_heights) + " | " + DMAP(planned_interface_heights));
+    out(S + " merge areas " + AREAS(cooldown) + " | " + AREAS(lightning));
+}
+
 int main(int argc, char **argv)
 {
     g_out = std::fopen(argc > 1 ? argv[1] : "vectors.txt", "w");
@@ -797,6 +1148,8 @@ int main(int argc, char **argv)
     run_helpers();
     const std::vector<Cfg> s = scenarios();
     for (size_t i = 0; i < s.size(); ++i) run_scenario(int(i), s[i]);
+    const std::vector<MergeScen> ms = merge_scenarios();
+    for (size_t i = 0; i < ms.size(); ++i) run_merge(int(i), ms[i]);
     std::fclose(g_out);
     return 0;
 }

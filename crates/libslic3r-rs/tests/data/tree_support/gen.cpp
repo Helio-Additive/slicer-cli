@@ -327,6 +327,23 @@ static void dump_support_layers(const std::string &tag, const PrintObject &obj)
     }
 }
 
+// What detect_overhangs() leaves in the tree support and in the layers of the object.
+static void dump_detected(const std::string &tag, const TreeSupport &ts, const PrintObject &obj)
+{
+    out(tag + " " + hB(ts.has_sharp_tails) + " " + hB(ts.has_cantilever) + " " + hD(ts.max_cantilever_dist) + " " + hI((long long) ts.m_highest_overhang_layer) + " " +
+        hI((long long) ts.m_vertical_enforcer_points.size()) + " " + hI((long long) obj.support_layers().size()) + " " + hI((long long) obj.layers().size()));
+    size_t i = 0;
+    for (const Layer *l : obj.layers()) {
+        std::string body = "ext " + EXPOLYS(l->lslices_extrudable) + " ov " + hI((long long) l->loverhangs_with_type.size());
+        for (const auto &ov : l->loverhangs_with_type) body += " " + hI(ov.second) + " " + EXPOLY(ov.first);
+        body += " lo " + EXPOLYS(l->loverhangs) + " st " + EXPOLYS(l->sharp_tails) + " h " + hI((long long) l->sharp_tails_height.size());
+        for (float h : l->sharp_tails_height) body += " " + hF(h);
+        body += " ca " + EXPOLYS(l->cantilevers);
+        outb(tag + " layer " + hI((long long) i), body, true);
+        ++i;
+    }
+}
+
 static indexed_triangle_set box_its(double sx, double sy, double sz, float ox, float oy, float oz)
 {
     indexed_triangle_set its = its_make_cube(sx, sy, sz);
@@ -347,6 +364,9 @@ static const int FIRST_HASHED     = 4;
 static const int FIRST_RANDOM     = 15;
 static const int NUM_RANDOM       = 30;
 static const int NUM_SCENARIOS    = FIRST_RANDOM + NUM_RANDOM;
+// The scenarios written by hand after the random ones: a number from FIRST_EXTRA on is never a random scenario.
+static const int FIRST_EXTRA      = 100000;
+static const int NUM_EXTRA        = 4;
 
 static void add_layers(std::vector<LayerIn> &layers, int n, double lh, const ExPolygons &lslices)
 {
@@ -461,10 +481,42 @@ static const RandomScenario &random_scenario(int scenario)
 // The layers of the scenarios from 4 on.
 static std::vector<LayerIn> build_layers_more(int scenario)
 {
-    if (scenario >= FIRST_RANDOM) return random_scenario(scenario).layers;
+    if (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA) return random_scenario(scenario).layers;
     std::vector<LayerIn> layers;
     const double         lh = 0.2;
     switch (scenario) {
+    case FIRST_EXTRA: {
+        // No walls around a base that needs infill: a big flat overhang of the hybrid style; the grid pattern in the interfaces.
+        add_layers(layers, 30, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+        add_layers(layers, 6, lh, {ExPolygon(rect(-19, -12, 19, 12))});
+        layers[30].overhangs.emplace_back(ExPolygon(rect(-19, -12, -4.3, 12)), int(TreeSupport::BigFlat));
+        layers[30].overhangs.emplace_back(ExPolygon(rect(4.3, -12, 19, 12)), 0);
+        break;
+    }
+    case FIRST_EXTRA + 1: {
+        // Ironed interfaces over a raft with interface layers.
+        add_layers(layers, 20, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+        add_layers(layers, 6, lh, {ExPolygon(rect(-14, -8, 14, 8))});
+        layers[20].overhangs.emplace_back(ExPolygon(rect(-14, -8, -4.3, 8)), 0);
+        layers[20].overhangs.emplace_back(ExPolygon(rect(4.3, -8, 14, 8)), int(TreeSupport::BigFlat));
+        break;
+    }
+    case FIRST_EXTRA + 2: {
+        // Overhangs right above the bed: the interfaces reach the first layer.
+        add_layers(layers, 30, lh, {ExPolygon(rect(-20, -14, -18, -12))});
+        add_island(layers, 3, 6, ExPolygon(rect(-6, -5, 6, 5)), 0);
+        add_island(layers, 2, 6, ExPolygon(ngon(12, 6, 3, 24)), int(TreeSupport::BigFlat));
+        add_island(layers, 5, 6, with_hole(ngon(-12, -6, 5, 36), ngon(-12, -6, 3, 24)), 0);
+        break;
+    }
+    case FIRST_EXTRA + 3: {
+        // No top gap and overhangs on the second and third layers: interfaces on the bed.
+        add_layers(layers, 30, lh, {ExPolygon(rect(-20, -14, -18, -12))});
+        add_island(layers, 1, 6, ExPolygon(rect(-6, -5, 6, 5)), 0);
+        add_island(layers, 2, 6, ExPolygon(ngon(12, 6, 3, 24)), int(TreeSupport::BigFlat));
+        add_island(layers, 4, 6, with_hole(ngon(-12, -6, 5, 36), ngon(-12, -6, 3, 24)), 0);
+        break;
+    }
     case 4:
     case 5: {
         // A plate under the arms (4: under both, 5: under the left one), a stem, a wide top: the branches land on the object.
@@ -560,7 +612,7 @@ static std::vector<LayerIn> build_layers_more(int scenario)
 // hands them over: the position (x and y scaled, z in mm) and the normal.
 static std::vector<std::pair<Vec3f, Vec3f>> scenario_enforcer_points(int scenario)
 {
-    if (scenario >= FIRST_RANDOM) return random_scenario(scenario).enforcer_points;
+    if (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA) return random_scenario(scenario).enforcer_points;
     if (scenario != 11) return {};
     return {{Vec3f(float(scale_(6.)), 0.f, 3.1f), Vec3f(1.f, 0.f, 0.f)},
             {Vec3f(float(scale_(7.5)), float(scale_(1.2)), 4.53f), Vec3f(0.6f, 0.8f, 0.f)},
@@ -630,8 +682,35 @@ static std::vector<std::pair<std::string, std::string>> scenario_config(int scen
         c.emplace_back("support_top_z_distance", "0.32");
         c.emplace_back("raft_layers", "3");
     }
-    if (scenario >= FIRST_RANDOM)
+    if (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA)
         for (const auto &kv : random_scenario(scenario).config) c.emplace_back(kv);
+    if (scenario == FIRST_EXTRA) {
+        c.emplace_back("support_style", "tree_hybrid");
+        c.emplace_back("tree_support_wall_count", "0");
+        c.emplace_back("support_interface_top_layers", "2");
+        c.emplace_back("support_interface_pattern", "grid");
+        c.emplace_back("support_angle", "60");
+    }
+    if (scenario == FIRST_EXTRA + 3) {
+        c.emplace_back("support_style", "tree_slim");
+        c.emplace_back("support_interface_top_layers", "3");
+        c.emplace_back("support_top_z_distance", "0");
+        c.emplace_back("tree_support_wall_count", "2");
+    }
+    if (scenario == FIRST_EXTRA + 1) {
+        c.emplace_back("support_style", "tree_hybrid");
+        c.emplace_back("raft_layers", "4");
+        c.emplace_back("support_interface_top_layers", "3");
+        c.emplace_back("enable_support_ironing", "1");
+        c.emplace_back("support_ironing_inset", "0.3");
+        c.emplace_back("support_ironing_direction", "30");
+    }
+    if (scenario == FIRST_EXTRA + 2) {
+        c.emplace_back("support_style", "tree_strong");
+        c.emplace_back("support_interface_top_layers", "3");
+        c.emplace_back("tree_support_wall_count", "2");
+        c.emplace_back("enable_support_ironing", "1");
+    }
     if (scenario == 4) {
         c.emplace_back("support_style", "tree_slim");
     }
@@ -906,6 +985,26 @@ static void run_scenario(int scenario)
             ++i;
         }
     }
+
+    // prune_floating_supports(), which the pin does not call: the areas of the support layers after it.
+    ts.prune_floating_supports();
+    dump_support_layers(S + " prune", *obj);
+
+    // detect_overhangs() on the layers of the scenario, by a second tree support of the object: the overhangs
+    // set by hand above are replaced with the detected ones.
+    {
+        TreeSupport ts2(*obj, sp);
+        ts2.detect_overhangs();
+        dump_detected(S + " detect", ts2, *obj);
+        // get_trim_support_regions(), which the pin does not call, for support layers at a few heights.
+        const double zs[4] = {0.6, 3.3, layers[layers.size() / 2].print_z, layers.back().print_z - 0.9};
+        for (int k = 0; k < 4; ++k) {
+            const double h = k == 1 ? 0.3 : 0.2;
+            SupportLayer sl(size_t(k), 0, obj, h, zs[k], zs[k] - h / 2.);
+            outb(S + " trim_regions " + hD(zs[k]) + " " + hD(h),
+                 POLYS(ts2.get_trim_support_regions(*obj, &sl, 0.2, 0.1, 0.35)) + " " + POLYS(ts2.get_trim_support_regions(*obj, &sl, 0., 0.45, 0.8)), true);
+        }
+    }
 }
 
 // The helpers that take no TreeSupport.
@@ -982,8 +1081,10 @@ int main(int argc, char **argv)
     if (only < 0) run_helpers();
     if (only >= 0)
         run_scenario(only);
-    else
+    else {
         for (int scenario = 0; scenario < NUM_SCENARIOS; ++scenario) run_scenario(scenario);
+        for (int scenario = FIRST_EXTRA; scenario < FIRST_EXTRA + NUM_EXTRA; ++scenario) run_scenario(scenario);
+    }
     std::fclose(g_out);
     return 0;
 }

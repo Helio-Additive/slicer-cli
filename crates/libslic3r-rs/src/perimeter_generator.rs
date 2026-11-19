@@ -5644,3 +5644,363 @@ thread_local! {
     /// overhang_detector::detect_overhang_degree_arachne.
     pub(crate) static OVHD_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
+
+// ---------------------------------------------------------------------------------------------
+// R919: functions of PerimeterGenerator.cpp under their own names, line by line. The live path above
+// carries the same steps inline (it has no config back-pointers); nothing live calls these yet. The
+// members of the C++ `PerimeterGenerator` a method reads (`print_config`, `config`, `lower_slices`,
+// `multi_nozzle_diameter_mode`) are its leading arguments.
+// Native parity: tests/perimeter_generator_native_parity.rs.
+// ---------------------------------------------------------------------------------------------
+
+fn pg_cfg_int(config: &crate::print_config::config_def::DynamicPrintConfig, key: &str) -> i32 {
+    use crate::config::ConfigOptionResolver;
+    config.option(key).and_then(|o| o.get_int().ok()).unwrap_or_else(|| panic!("option {key}"))
+}
+
+/// PerimeterGenerator.cpp:147-230 `static void lowpass_filter_by_paths_overhang_degree(ExtrusionPaths& paths)`
+pub fn lowpass_filter_by_paths_overhang_degree(paths: &mut Vec<ExtrusionPath>) {
+    // scale_(6.5), scale_(1.2)
+    let filter_range: f64 = 6.5 / SCALING_FACTOR;
+    let threshold_length: f64 = 1.2 / SCALING_FACTOR;
+
+    //0.save old overhang series first which is input of filter
+    let path_num: i32 = paths.len() as i32;
+    if path_num < 2 {
+        //don't need to do filting if only has one path in vector
+        return;
+    }
+    let mut old_overhang_series: Vec<i32> = Vec::with_capacity(path_num as usize);
+    for i in 0..path_num {
+        old_overhang_series.push(paths[i as usize].get_overhang_degree());
+    }
+
+    //1.lowpass filter
+    for i in 0..path_num {
+        let current_length: f64 = paths[i as usize].length();
+        let current_overhang_degree: i32 = old_overhang_series[i as usize];
+        if current_length < threshold_length
+            && (paths[i as usize].role == ExtrusionRole::Perimeter || paths[i as usize].role == ExtrusionRole::ExternalPerimeter)
+        {
+            let mut left_total_length: f64 = (filter_range - current_length) / 2.;
+            let mut right_total_length: f64 = left_total_length;
+
+            let mut temp_length: f64;
+            let mut j: i32 = i - 1;
+            let mut index: i32;
+            let mut neighbor_path: Vec<(f64, i32)> = Vec::new();
+            while left_total_length > 0. {
+                index = if j < 0 { path_num - 1 } else { j };
+                if paths[index as usize].role == ExtrusionRole::OverhangPerimeter {
+                    break;
+                }
+                temp_length = paths[index as usize].length();
+                if temp_length > left_total_length {
+                    neighbor_path.push((left_total_length, old_overhang_series[index as usize]));
+                } else {
+                    neighbor_path.push((temp_length, old_overhang_series[index as usize]));
+                }
+                left_total_length -= temp_length;
+                j = index;
+                j -= 1;
+            }
+
+            j = i + 1;
+            while right_total_length > 0. {
+                index = j % path_num;
+                if paths[index as usize].role == ExtrusionRole::OverhangPerimeter {
+                    break;
+                }
+                temp_length = paths[index as usize].length();
+                if temp_length > right_total_length {
+                    neighbor_path.push((right_total_length, old_overhang_series[index as usize]));
+                } else {
+                    neighbor_path.push((temp_length, old_overhang_series[index as usize]));
+                }
+                right_total_length -= temp_length;
+                j += 1;
+            }
+
+            let mut sum: f64 = 0.;
+            let mut length_sum: f64 = 0.;
+            for it in &neighbor_path {
+                // sum += (it->first * it->second): one expression, fused
+                sum = it.0.mul_add(it.1 as f64, sum);
+                length_sum += it.0;
+            }
+
+            // (double)(current_length * current_overhang_degree + sum) / (length_sum + current_length)
+            let average_overhang: f64 = current_length.mul_add(current_overhang_degree as f64, sum) / (length_sum + current_length);
+            paths[i as usize].set_overhang_degree(average_overhang as i32);
+        }
+    }
+
+    //2.merge path if have same overhang degree. from back to front to avoid data copy
+    let mut last_overhang: i32 = paths[0].get_overhang_degree();
+    let mut it: usize = 1;
+    while it != paths.len() {
+        if last_overhang == paths[it].get_overhang_degree() {
+            //BBS: don't need to append duplicated points, remove the last point
+            if paths[it - 1].polyline.last_point() == paths[it].polyline.first_point() {
+                paths[it - 1].polyline.points.pop();
+            }
+            let src = paths.remove(it);
+            paths[it - 1].polyline.append(&src.polyline);
+        } else {
+            last_overhang = paths[it].get_overhang_degree();
+            it += 1;
+        }
+    }
+}
+
+/// PerimeterGenerator.cpp:272-280 `static bool is_enable_overhang_speed(const PerimeterGenerator&
+/// perimeter_generator)`. `print` is the Print of `perimeter_generator.print_config`, `config` is
+/// `perimeter_generator.config`.
+pub fn is_enable_overhang_speed(print: &crate::print::faithful::Print, config: &crate::print_config::config_def::DynamicPrintConfig) -> bool {
+    use crate::config::{ConfigOptionBools, ConfigOptionBoolsNullable, ConfigOptionResolver};
+    // ConfigOptionVector::get_at: the first value past the end.
+    fn bools_get_at(config: &crate::print_config::config_def::DynamicPrintConfig, key: &str, i: i32) -> bool {
+        let opt = config.option(key).unwrap_or_else(|| panic!("option {key}"));
+        let values: Vec<bool> = if let Some(o) = opt.as_any().downcast_ref::<ConfigOptionBools>() {
+            o.values.iter().map(|v| *v != 0).collect()
+        } else if let Some(o) = opt.as_any().downcast_ref::<ConfigOptionBoolsNullable>() {
+            o.values.iter().map(|v| *v != 0).collect()
+        } else {
+            panic!("option {key} is not a vector of booleans")
+        };
+        if i >= 0 && (i as usize) < values.len() {
+            values[i as usize]
+        } else {
+            values[0]
+        }
+    }
+    let filament_idx: i32 = pg_cfg_int(config, "wall_filament") - 1;
+    let config_idx: i32 = print.get_process_config_idx(filament_idx as u32) as i32;
+    let use_filament_overhang_speed: bool = bools_get_at(print.config(), "override_process_overhang_speed", filament_idx);
+
+    if use_filament_overhang_speed {
+        bools_get_at(print.config(), "filament_enable_overhang_speed", filament_idx)
+    } else {
+        bools_get_at(config, "enable_overhang_speed", config_idx)
+    }
+}
+
+/// PerimeterGenerator.cpp:282-286 `static bool fuzzy_skin_allows_overhang_slowdown(const PerimeterGenerator
+/// &pg)`. `config` is `pg.config`, `perimeter_regions_empty` is `pg.perimeter_regions->empty()`.
+pub fn fuzzy_skin_allows_overhang_slowdown(config: &crate::print_config::config_def::DynamicPrintConfig, perimeter_regions_empty: bool) -> bool {
+    // PrintConfig.hpp `enum class FuzzySkinType { None, External, All, AllWalls, Disabled_fuzzy }`
+    const FUZZY_SKIN_TYPE_NONE: i32 = 0;
+    const FUZZY_SKIN_TYPE_DISABLED_FUZZY: i32 = 4;
+    let fs: i32 = pg_cfg_int(config, "fuzzy_skin");
+    fs == FUZZY_SKIN_TYPE_DISABLED_FUZZY || (fs == FUZZY_SKIN_TYPE_NONE && perimeter_regions_empty)
+}
+
+/// PerimeterGenerator.cpp:835-847 `static Polygons to_polygons_with_flag(const ExPolygon& src, const bool
+/// contour_flag, const std::vector<int>& holes_flag, std::vector<int>& flags_out)`
+pub fn to_polygons_with_flag(src: &ExPolygon, contour_flag: bool, holes_flag: &[i32], flags_out: &mut Vec<i32>) -> crate::geometry::Polygons {
+    let mut polygons: crate::geometry::Polygons = Vec::with_capacity(src.num_contours());
+    polygons.push(src.contour.clone());
+    polygons.extend(src.holes.iter().cloned());
+    flags_out.reserve(holes_flag.len() + 1);
+    if contour_flag == true {
+        flags_out.push(0);
+    }
+    for idx in 0..holes_flag.len() {
+        flags_out.push(holes_flag[idx] + 1);
+    }
+    polygons
+}
+
+impl PerimeterLoop {
+    /// PerimeterGenerator.cpp:58 `bool PerimeterGeneratorLoop::is_external() const { return this->depth == 0; }`:
+    /// External perimeter. It may be CCW or CW oriented (outer contour or hole contour).
+    pub fn is_external(&self) -> bool {
+        self.perimeter_index == 0
+    }
+}
+
+/// PerimeterGenerator.cpp:40-62 `class PerimeterGeneratorLoop`: the live path names it [`PerimeterLoop`].
+pub type PerimeterGeneratorLoop = PerimeterLoop;
+
+impl PerimeterGenerator {
+    /// PerimeterGenerator.cpp:232-242 `std::pair<double, double> PerimeterGenerator::dist_boundary(double width)`
+    pub fn dist_boundary(
+        print_config: &crate::print_config::config_def::DynamicPrintConfig,
+        config: &crate::print_config::config_def::DynamicPrintConfig,
+        width: f64,
+    ) -> (f64, f64) {
+        let nozzle_diameter: f32 = crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32);
+        let start_offset: f32 = (-0.5 * width) as f32;
+        let end_offset: f32 = (0.5 * nozzle_diameter as f64) as f32;
+        // scale_(start_offset + 0.5 * (end_offset - start_offset) / (overhang_sampling_number - 1))
+        let degree_0: f64 = (start_offset as f64
+            + 0.5 * (end_offset - start_offset) as f64 / (crate::overhang_detector::OVERHANG_SAMPLING_NUMBER - 1) as f64)
+            / SCALING_FACTOR;
+        (0., end_offset as f64 / SCALING_FACTOR - degree_0)
+    }
+
+    /// PerimeterGenerator.cpp:849-857 `int PerimeterGenerator::effective_wall_loops() const`
+    pub fn effective_wall_loops(
+        print_config: &crate::print_config::config_def::DynamicPrintConfig,
+        config: &crate::print_config::config_def::DynamicPrintConfig,
+        multi_nozzle_diameter_mode: bool,
+    ) -> i32 {
+        let preset_value: i32 = pg_cfg_int(config, "wall_loops");
+        if !multi_nozzle_diameter_mode {
+            return preset_value;
+        }
+        let nozzle_diameter: f64 =
+            crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32) as f64;
+        crate::print_config::config_def::multi_nozzle_wall_loops(nozzle_diameter, preset_value)
+    }
+
+    /// PerimeterGenerator.cpp:1886-1909 `std::vector<Polygons> PerimeterGenerator::generate_lower_polygons_series(float width)`
+    pub fn generate_lower_polygons_series(
+        print_config: &crate::print_config::config_def::DynamicPrintConfig,
+        config: &crate::print_config::config_def::DynamicPrintConfig,
+        lower_slices: Option<&ExPolygons>,
+        width: f32,
+    ) -> Vec<crate::geometry::Polygons> {
+        use crate::clipper as cl;
+        use crate::clipper_utils as cu;
+        let nozzle_diameter: f32 = crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32);
+        let start_offset: f32 = (-0.5 * width as f64) as f32;
+        let end_offset: f32 = (0.5 * nozzle_diameter as f64) as f32;
+
+        debug_assert!(crate::overhang_detector::OVERHANG_SAMPLING_NUMBER >= 3);
+        // generate offsets
+        let mut offset_series: Vec<f32> = Vec::with_capacity(2);
+
+        offset_series.push(
+            (start_offset as f64 + 0.5 * (end_offset - start_offset) as f64 / (crate::overhang_detector::OVERHANG_SAMPLING_NUMBER - 1) as f64) as f32,
+        );
+        offset_series.push(end_offset);
+        let mut lower_polygons_series: Vec<crate::geometry::Polygons> = Vec::new();
+        let Some(lower_slices) = lower_slices else {
+            return lower_polygons_series;
+        };
+
+        // offset expolygon to generate series of polygons
+        for i in 0..offset_series.len() {
+            // offset(*this->lower_slices, float(scale_(offset_series[i]))): ClipperUtils.cpp
+            // `offset(const ExPolygons &, const float delta)` = to_polygons(expolygons_offset(...))
+            let delta: f32 = (offset_series[i] as f64 / SCALING_FACTOR) as f32;
+            let rings: Vec<(cl::Path, cl::Paths)> = lower_slices
+                .iter()
+                .map(|e| {
+                    let path = |pts: &[Point]| -> cl::Path { pts.iter().map(|p| cl::IntPoint::new(p.x as i32, p.y as i32)).collect() };
+                    (path(&e.contour.points), e.holes.iter().map(|h| path(&h.points)).collect())
+                })
+                .collect();
+            lower_polygons_series.push(cu::clib_polygons_from_paths(&cu::expolygons_offset(&rings, delta as f64, cl::JoinType::jtMiter, 3.)));
+        }
+        lower_polygons_series
+    }
+}
+
+/// PerimeterGenerator.hpp:15-28 `struct PerimeterRegion`
+#[derive(Clone)]
+pub struct PerimeterRegion {
+    /// `const PrintRegion *region`
+    pub region: crate::print::faithful::PrintRegionPtr,
+    pub expolygons: ExPolygons,
+    pub bbox: crate::geometry::BoundingBox,
+}
+
+/// PerimeterGenerator.hpp:30 `using PerimeterRegions = std::vector<PerimeterRegion>`
+pub type PerimeterRegions = Vec<PerimeterRegion>;
+
+impl PerimeterRegion {
+    /// PerimeterGenerator.cpp:1911-1915 `PerimeterRegion::PerimeterRegion(const LayerRegion &layer_region)`.
+    /// `region` is `&layer_region.region()`.
+    pub fn new(region: crate::print::faithful::PrintRegionPtr, layer_region: &crate::layer::LayerRegion) -> Self {
+        let expolygons: ExPolygons = layer_region.slices.surfaces.iter().map(|s| s.expolygon.clone()).collect();
+        // ExPolygon.cpp:495-504 `get_extents(const ExPolygons &expolygons)`
+        let mut bbox = crate::geometry::BoundingBox::new();
+        for e in &expolygons {
+            if !e.contour.points.is_empty() {
+                for p in &e.contour.points {
+                    bbox.merge_point(*p);
+                }
+            }
+        }
+        PerimeterRegion { region, expolygons, bbox }
+    }
+
+    /// PerimeterGenerator.cpp:1917-1927 `bool PerimeterRegion::has_compatible_perimeter_regions(const
+    /// PrintRegionConfig &config, const PrintRegionConfig &other_config)`.
+    ///
+    /// If there is any incompatibility, we don't need to create separate LayerRegions.
+    /// Because it is enough to split perimeters by PerimeterRegions.
+    pub fn has_compatible_perimeter_regions(
+        config: &crate::print_config::config_def::DynamicPrintConfig,
+        other_config: &crate::print_config::config_def::DynamicPrintConfig,
+    ) -> bool {
+        use crate::config::ConfigOptionResolver;
+        let eq = |key: &str| -> bool {
+            let l = config.option(key).unwrap_or_else(|| panic!("option {key}"));
+            let r = other_config.option(key).unwrap_or_else(|| panic!("option {key}"));
+            l.operator_eq(r).unwrap_or(false)
+        };
+        eq("fuzzy_skin")
+            && eq("fuzzy_skin_thickness")
+            && eq("fuzzy_skin_point_distance")
+            && eq("fuzzy_skin_first_layer")
+            && eq("fuzzy_skin_noise_type")
+            && eq("fuzzy_skin_scale")
+            && eq("fuzzy_skin_octaves")
+            && eq("fuzzy_skin_persistence")
+            && eq("fuzzy_skin_mode")
+    }
+
+    /// PerimeterGenerator.cpp:1929-1951 `void PerimeterRegion::merge_compatible_perimeter_regions(PerimeterRegions
+    /// &perimeter_regions)`
+    pub fn merge_compatible_perimeter_regions(perimeter_regions: &mut PerimeterRegions) {
+        use crate::clipper as cl;
+        use crate::clipper_utils as cu;
+        if perimeter_regions.len() <= 1 {
+            return;
+        }
+
+        let mut perimeter_regions_merged: PerimeterRegions = Vec::new();
+        let mut it_curr_region: usize = 0;
+        while it_curr_region != perimeter_regions.len() {
+            let mut current_merge: PerimeterRegion = perimeter_regions[it_curr_region].clone();
+            let mut it_next_region: usize = it_curr_region + 1;
+            while it_next_region != perimeter_regions.len()
+                && Self::has_compatible_perimeter_regions(
+                    perimeter_regions[it_next_region].region.borrow().config(),
+                    perimeter_regions[it_curr_region].region.borrow().config(),
+                )
+            {
+                let moved = std::mem::take(&mut perimeter_regions[it_next_region].expolygons);
+                current_merge.expolygons.extend(moved);
+                current_merge.bbox.merge(&perimeter_regions[it_next_region].bbox);
+                it_next_region += 1;
+            }
+
+            if it_next_region - it_curr_region > 1 {
+                // union_ex(const ExPolygons &subject)
+                let mut subject = cl::Paths::new();
+                for e in &current_merge.expolygons {
+                    let path = |pts: &[Point]| -> cl::Path { pts.iter().map(|p| cl::IntPoint::new(p.x as i32, p.y as i32)).collect() };
+                    subject.push(path(&e.contour.points));
+                    for h in &e.holes {
+                        subject.push(path(&h.points));
+                    }
+                }
+                current_merge.expolygons = cu::poly_tree_to_ex_polygons(&cu::clipper_do_polytree(
+                    cl::ClipType::ctUnion,
+                    &subject,
+                    &cl::Paths::new(),
+                    cl::PolyFillType::pftNonZero,
+                ));
+            }
+
+            perimeter_regions_merged.push(current_merge);
+            it_curr_region = it_next_region;
+        }
+
+        *perimeter_regions = perimeter_regions_merged;
+    }
+}

@@ -232,8 +232,44 @@ fn intersection(subject: &[Polygon], clip: &[Polygon]) -> Vec<Polygon> {
 }
 
 // Polygon.cpp:658-677  `Polygons polygons_simplify(const Polygons &source, double tolerance)`
-fn polygons_simplify(source: &[Polygon], tolerance: Coord) -> Vec<Polygon> {
-    crate::geometry::polygons_simplify(source, tolerance as CoordF)
+//
+// Gate TREE_MODEL_VOLUMES_CLIPPER (on unless =0): the decimated contour goes through
+// `ClipperLib::SimplifyPolygons(SinglePathProvider(simplified), pftNonZero)` (clipper.hpp:558-566: a union
+// of the one path, strictly simple, the paths as Clipper puts them out), so a contour that the
+// decimation leaves with fewer than three points yields nothing. =0 keeps the earlier arm
+// (`crate::geometry::polygons_simplify`, which hands such a contour back as it is).
+fn polygons_simplify(source_polygons: &[Polygon], tolerance: Coord) -> Vec<Polygon> {
+    if !tmv_clipper() {
+        return crate::geometry::polygons_simplify(source_polygons, tolerance as CoordF);
+    }
+    let mut out: Vec<Polygon> = Vec::with_capacity(source_polygons.len());
+    for source_polygon in source_polygons {
+        // Run Douglas / Peucker simplification algorithm on an open polyline (by repeating the first point at the end of the polyline),
+        // `to_polyline(source_polygon)` (Polygon.hpp): the points and the first of them once more.
+        let mut polyline: Vec<Point> = Vec::with_capacity(source_polygon.points.len() + 1);
+        polyline.extend_from_slice(&source_polygon.points);
+        if let Some(front) = source_polygon.points.first() {
+            polyline.push(*front);
+        }
+        let mut simplified = crate::multi_point::douglas_peucker(&polyline, tolerance as f64);
+        // then remove the last (repeated) point.
+        simplified.pop();
+        // Simplify the decimated contour by ClipperLib.
+        let path: crate::clipper::Path =
+            simplified.iter().map(|q| crate::clipper::IntPoint::new(q.x as i32, q.y as i32)).collect();
+        let ccw = crate::clipper::area(&path) > 0.;
+        for mut path in clipper_utils::clib_polygons_from_paths(&crate::clipper::simplify_polygons(
+            &vec![path],
+            crate::clipper::PolyFillType::pftNonZero,
+        )) {
+            if !ccw {
+                // ClipperLib likely reoriented negative area contours to become positive. Reverse holes back to CW.
+                path.points.reverse();
+            }
+            out.push(path);
+        }
+    }
+    out
 }
 
 // `append(dst, src)` — Slic3r helper, move-append polygons.
