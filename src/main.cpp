@@ -1,77 +1,18 @@
 // libslic3r_standalone - CLI tool for slicing with libslic3r
 // Supports loading BambuStudio JSON config files (machine, filament, process)
 
-#include <iostream>
-#include <limits>
-#include <stdexcept>
-#include <fstream>
-#include <string>
-#include <memory>
-#include <map>
-#include <vector>
-#include <optional>
-#include <iterator>
-#include <set>
-#include <cstdint>
-#include <cstdlib>
-#include <algorithm>
-#include <chrono>
-#include <cctype>
-#include <cstring>
-#include <ctime>
-#include <iomanip>
-#include <sstream>
-#ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#include <fcntl.h>
-#else
-#include <cerrno>
-#include <unistd.h>
-#include <fcntl.h>
-#endif
-#include <functional>
-
-// Core libslic3r headers
 // Bambu 2.9.1 Log.hpp occupies boost/log/trivial.hpp's include guard, so boost's
 // severity types must be declared before any engine header (as the engine's own Log.cpp does).
 #include <boost/log/trivial.hpp>
-#include "libslic3r/libslic3r.h"
-#include "libslic3r/Utils.hpp"   // get_process_name/get_current_pid: the engine's own folder-ownership test
-#include "libslic3r/Model.hpp"
-#include "libslic3r/Print.hpp"
-#include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Thread.hpp"
-#include "libslic3r/GCode.hpp"
-#include "libslic3r/GCode/GCodeProcessor.hpp"
-#include "libslic3r/Format/STL.hpp"
-#include "libslic3r/Format/bbs_3mf.hpp"
-#include "libslic3r/Preset.hpp"
-#include "libslic3r/PresetBundle.hpp"
-#include "libslic3r/AppConfig.hpp"
-#include "libslic3r/miniz_extension.hpp"
-#include "libslic3r/ModelArrange.hpp"
-#include "libslic3r/Arrange.hpp"
-#include "libslic3r/GCode/WipeTower.hpp"
-#ifdef ENGINE_BAMBU
-#include "libslic3r/FilamentMixer.hpp"
-#endif
-#include "libslic3r/BoundingBox.hpp"
-#include "libslic3r/BuildVolume.hpp"
-#include "libslic3r/Semver.hpp"
-#include "libslic3r_version.h"
-#include "cli_snapmaker.hpp"
-#include "cli_gcode_timing.hpp"
+#include "libslic3r/Utils.hpp"
+#include "libslic3r/calib.hpp"
 
-// For JSON parsing (using libslic3r's built-in nlohmann/json)
-#include <nlohmann/json.hpp>
-
-#include <boost/algorithm/string.hpp>
-#include <boost/filesystem/fstream.hpp>
+#include <algorithm>
+#include <iostream>
+#include <stdexcept>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/args.hpp>
-#include <boost/nowide/convert.hpp>
-#include <boost/nowide/fstream.hpp>
 // boost::nowide::nowide_filesystem: <boost/nowide/filesystem.hpp> since Boost
 // 1.73 (OrcaSlicer.cpp 44); the older bundled Nowide calls the header
 // integration/filesystem.hpp (BambuStudio.cpp 43).
@@ -81,249 +22,47 @@
 #include <boost/nowide/integration/filesystem.hpp>
 #endif
 
-#include <csignal>
-#include "diagnostic_output.hpp"
-
+#include "cli_gcode_timing.hpp"
 #include "calib_args.hpp"
 #include "layout_plan.hpp"
+#include "cli_layout_command.hpp"
 #include "cli_options.hpp"
 #include "cli_command_line.hpp"
-#include "cli_flag_support.hpp"
-#include "desktop_presets.hpp"
 #include "cli_model_load.hpp"
-#include "cli_failure_reason.hpp"
 #include "cli_run_steps.hpp"
 #include "cli_simplify.hpp"
 #include "cli_list_flags.hpp"
-#include "cli_engine_info.hpp"
-#include "cli_load_settings.hpp"
-#include "cli_repetitions.hpp"
 #include "cli_assemble.hpp"
-#include "cli_layer_ranges.hpp"
-#include "cli_nozzle_diameter.hpp"
-#include "cli_filament_map.hpp"
-#include "cli_nozzle_options.hpp"
-#include "cli_project_load.hpp"
 #include "cli_pipe.hpp"
 #include "cli_slice_run.hpp"
-#include "cli_slice_plate.hpp"
-#include "cli_slice_export.hpp"
-#include "cli_slice_state.hpp"
 #include "cli_file_info.hpp"
 #include "cli_plate_plan.hpp"
-#include "cli_project_values.hpp"
 #include "cli_named_presets.hpp"
-#include "cli_plate_arrange.hpp"
-#include "cli_plate_report.hpp"
 #include "cli_run_cleanup.hpp"
 #include "cli_result_json.hpp"
 #include "cli_run_context.hpp"
-#include "cli_project_settings.hpp"
-#include "cli_percent_widths.hpp"
 #include "cli_preset_staging.hpp"
-#include "cli_arrange_geometry.hpp"
-#include "cli_setting_overrides.hpp"
 #include "cli_list_settings.hpp"
-#include "cli_printer_catalog.hpp"
 #include "cli_project_archive.hpp"
-#include "cli_filament_config.hpp"
-#include "cli_json_config.hpp"
-#include "cli_legacy_gcode.hpp"
 #include "cli_engine_events.hpp"
 
-#ifdef __APPLE__
-#include <mach-o/dyld.h>   // _NSGetExecutablePath
-#include <climits>         // PATH_MAX
-#endif
 using slicer_cli::CliRunContext;
-using slicer_cli::PlateOutcome;
-using slicer_cli::set_outcome_failure;
 using slicer_cli::assemble_list_file;
 using slicer_cli::cli_error_sentence;
-using slicer_cli::named_input_files;
 using slicer_cli::write_result_json;
-using slicer_cli::emit_progress;
-using slicer_cli::emit_run_progress;
-using slicer_cli::RunBackupDetach;
 using slicer_cli::sweep_stale_staging_folders;
-using slicer_cli::run_backup_path;
-using slicer_cli::set_run_backup_path;
-using slicer_cli::create_archive_dirs;
-using slicer_cli::record_plate_statistics;
-using slicer_cli::record_plate_for_export;
-using slicer_cli::post_slice_checks;
-using slicer_cli::mm_text;
-using slicer_cli::check_objects_inside_bed;
-using slicer_cli::downward_plate_size;
-using slicer_cli::move_to_new_bed;
-using slicer_cli::assemble_tower_inside_plate;
-using slicer_cli::tower_reach_box;
-using slicer_cli::arrange_on_bed;
-using slicer_cli::tower_default_corner;
-using slicer_cli::assemble_tower_default_corner;
-using slicer_cli::TowerWipeParams;
-using slicer_cli::tower_wipe_params;
-using slicer_cli::estimate_tower_polygon_global;
-using slicer_cli::arrange_assemble_plate;
-using slicer_cli::this_engine_profiles_dir;
-using slicer_cli::apply_file_inherits;
-using slicer_cli::config_id_text;
-#ifdef ENGINE_ORCA
-using slicer_cli::config_value_text;
-#endif
-using slicer_cli::project_presets_shipped;
-using slicer_cli::load_system_presets;
 using slicer_cli::stage_named_presets_for_project;
-using slicer_cli::desktop_plate_type_for_printer;
 using slicer_cli::resolve_named_presets;
 using slicer_cli::run_list_presets;
-#ifdef ENGINE_ORCA
-using slicer_cli::BambuValueAction;
-#endif
-#ifdef ENGINE_ORCA
-using slicer_cli::filament_keys_split_reads_empty;
-#endif
-#ifdef ENGINE_ORCA
-using slicer_cli::bambu_value_actions;
-#endif
-using slicer_cli::json_scalar_text;
-#ifdef ENGINE_ORCA
-using slicer_cli::apply_bambu_actions;
-#endif
-using slicer_cli::ProjectPlan;
-using slicer_cli::plate_grid_origin;
-using slicer_cli::plate_scene_box;
 using slicer_cli::trailing_models_port;
-using slicer_cli::plan_project_plates;
-using slicer_cli::emit_project_plan_event;
 using slicer_cli::run_info;
-using slicer_cli::RunOutput;
-using slicer_cli::export_sliced_3mf;
-using slicer_cli::check_run_outputs;
-using slicer_cli::RunState;
-using slicer_cli::RunPlate;
-using slicer_cli::announce_noted_warning;
-using slicer_cli::slice_one_plate;
 using slicer_cli::run_cli_slice;
-using json = nlohmann::json;
-using slicer_cli::project_settings_json;
-#ifdef ENGINE_ORCA
-using slicer_cli::RawValues;
-using slicer_cli::FileObjectSettings;
-using slicer_cli::project_object_settings;
-using slicer_cli::maker_changed_key;
-using slicer_cli::file_states_number;
-using slicer_cli::file_states_text;
-#endif
-
-#ifdef ENGINE_BAMBU
-using slicer_cli::PercentRewrite;
-using slicer_cli::rewrite_percent_line_widths;
-#endif
-
-using slicer_cli::staging_owner_marker;
-using slicer_cli::write_owner_marker;
-using slicer_cli::remove_staging_folder;
-using slicer_cli::make_owned_temp_dir;
-using slicer_cli::remove_owned_temp_dir;
-using slicer_cli::stage_file_copy;
-using slicer_cli::stage_vendor_dir;
 using slicer_cli::configure_engine_resources;
-
-using slicer_cli::arrange_opt;
-using slicer_cli::arrange_exclude_boxes;
-using slicer_cli::arrange_add_exclude_areas;
-using slicer_cli::arrange_plate_extruders;
-using slicer_cli::arrange_estimate_wipe_tower_size;
-
-using slicer_cli::apply_command_line_overrides;
-
 using slicer_cli::run_list_settings;
-
-using slicer_cli::EngineFit;
-using slicer_cli::ShippedPrinterPreset;
-using slicer_cli::engine_executable_dir;
-using slicer_cli::engine_profiles_dir;
-using slicer_cli::orca_profiles_dir;
-using slicer_cli::preset_printer_model;
-using slicer_cli::engine_fit_for;
-using slicer_cli::engine_mismatch_sentence;
-using slicer_cli::shipped_printer_presets;
-using slicer_cli::shipped_printer_preset_of_variant;
-using slicer_cli::preset_name_list;
-
-using slicer_cli::FileVersionVerdict;
-using slicer_cli::input_is_stl;
 using slicer_cli::input_is_3mf;
-using slicer_cli::read_zip_member;
-using slicer_cli::zip_member_readable;
-using slicer_cli::count_3mf_plates;
-using slicer_cli::model_metadata;
-using slicer_cli::engine_file_version;
 using slicer_cli::engine_version_text;
-using slicer_cli::file_version_verdict;
-
-using slicer_cli::project_filament_count;
-#ifdef ENGINE_BAMBU
-using slicer_cli::apply_explicit_nozzle_mapping;
-using slicer_cli::set_default_config;
-using slicer_cli::ensure_vector_config_sizes;
-using slicer_cli::is_filament_setting_key;
-using slicer_cli::align_per_filament_maps;
-using slicer_cli::align_per_filament_config_vectors;
-#endif
-using slicer_cli::normalize_filament_config_vectors;
-
-using slicer_cli::json_file_has_key;
-using slicer_cli::load_json_config;
-#ifdef ENGINE_BAMBU
-using slicer_cli::bbs_3mf_config_contains_nozzle_map;
-#endif
-
-using slicer_cli::normalize_legacy_gcode_tokens;
-#ifdef ENGINE_ORCA
-using slicer_cli::bambu_only_gcode_placeholder;
-#endif
-
-using slicer_cli::slicing_notification_tag;
-using slicer_cli::warning_level_tag;
 using slicer_cli::emit_event;
-using slicer_cli::emit_config_substitutions;
-using slicer_cli::emit_gcode_result_diagnostics;
 using slicer_cli::install_engine_log_bridge;
-using slicer_cli::emit_status_warning;
-using slicer_cli::emit_validation_event;
-
-// Read all of an fd into a string, polling the cancellation flag between reads
-// so SIGINT/Ctrl+C during a slow stream (stdin, FIFO, or pipe) is honoured
-// with a bounded exit. Returns false if cancelled.
-// 0 = ok, 1 = cancelled, 2 = hard read error (not a cancel)
-static int read_all_cancellable(int fd, std::string& out) {
-    char buf[4096];
-    while (true) {
-        if (layout_plan::is_cancelled()) return 1;
-#ifdef _WIN32
-        // Windows: a redirected pipe can block in _read even after the CRT
-        // handler runs. PeekNamedPipe before each read; when the pipe is empty,
-        // wait a bounded interval and re-check the flag.
-        HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
-        if (h != INVALID_HANDLE_VALUE && GetFileType(h) == FILE_TYPE_PIPE) {
-            DWORD avail = 0;
-            if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) && avail == 0) {
-                Sleep(50);
-                continue;
-            }
-        }
-        int n = ::_read(fd, buf, static_cast<unsigned>(sizeof buf));
-#else
-        ssize_t n = ::read(fd, buf, sizeof buf);
-        if (n < 0 && errno == EINTR) continue;  // sigaction has no SA_RESTART
-#endif
-        if (n < 0) return 2;       // hard error (not a cancel)
-        if (n == 0) return 0;      // EOF, ok
-        out.append(buf, static_cast<size_t>(n));
-    }
-}
 
 void print_usage(const char* prog_name) {
     slicer_cli::print_help(std::cout, prog_name);
@@ -335,37 +74,6 @@ void print_usage(const char* prog_name) {
 // ── Per-plate outcome ───────────────────────────────────────────────────
 // The command line itself is CliOptions (cli_options.hpp), filled by
 // cli_command_line.cpp.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#ifdef ENGINE_ORCA
-#endif
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 int main(int argc, char** argv) {
     static CliRunContext context;
@@ -759,208 +467,12 @@ int main(int argc, char** argv) {
                                               "without --slice.");
 
     // --layout-plan: versioned headless arrange contract
-    if (layout_plan_mode) {
-        layout_plan::install_cancellation_handler();  // before input read: honor SIGINT during parse
-        json raw;
-        std::string input_data;
-        int fd = -1;
-        if (!input_file.empty()) {
-            // opening a FIFO blocks until a writer connects; loop on EINTR and
-            // treat it as a cancellation check point
-            bool cancelled = false;
-            for (;;) {
-                if (layout_plan::is_cancelled()) { cancelled = true; break; }
-#ifdef _WIN32
-                // The path is UTF-8 (boost::nowide::args): open it by its wide form.
-                fd = ::_wopen(boost::nowide::widen(input_file).c_str(), _O_RDONLY | _O_BINARY);  // binary: no Ctrl+Z EOF, no newline translation
-#else
-                fd = ::open(input_file.c_str(), O_RDONLY);
-                if (fd < 0 && errno == EINTR) {
-                    if (layout_plan::is_cancelled()) { cancelled = true; break; }
-                    continue;
-                }
-#endif
-                break;
-            }
-            if (cancelled) {
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input open"}}}}.dump() << std::endl;
-                return 5;
-            }
-            if (fd < 0) {
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","cannot open --input file"}}}}.dump() << std::endl;
-                return 3;
-            }
-        } else {
-            fd = 0;  // stdin
-        }
-        // route --input through the same cancellable fd read loop as stdin so
-        // FIFOs/slow streams observe SIGINT/Ctrl+C with a bounded exit
-        int rrc = read_all_cancellable(fd, input_data);
-        if (fd > 0) {
-#ifdef _WIN32
-            ::_close(fd);
-#else
-            ::close(fd);
-#endif
-        }
-        if (rrc == 1) {
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-            return 5;
-        }
-        if (rrc == 2) {
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message","failed to read input stream"}}}}.dump() << std::endl;
-            return 3;
-        }
-        try { raw = json::parse(input_data); } catch (const std::exception& e) {
-            if (layout_plan::is_cancelled()) {  // SIGINT during the parse → cancel, not parse-error
-                std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-                return 5;
-            }
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","INVALID_INPUT"},{"message",std::string("JSON parse error: ")+e.what()}}}}.dump() << std::endl;
-            return 3;
-        }
-        if (layout_plan::is_cancelled()) {  // SIGINT during a large parse → CANCELLED, no continued work
-            std::cerr << json{{"schemaVersion",1},{"error",{{"code","CANCELLED"},{"message","cancelled during input read"}}}}.dump() << std::endl;
-            return 5;
-        }
-        layout_plan::LayoutProblemV1 problem;
-        layout_plan::LayoutErrorV1   parse_err;
-        if (!layout_plan::parse_input(raw, problem, parse_err)) {
-            json err_json = {
-                {"schemaVersion", parse_err.SCHEMA_VERSION},
-                {"error", {
-                    {"code",    parse_err.error.code},
-                    {"message", parse_err.error.message}
-                }}
-            };
-            if (!parse_err.error.object_ids.empty())
-                err_json["error"]["object_ids"] = parse_err.error.object_ids;
-            std::cerr << err_json.dump() << std::endl;
-            return parse_err.error.code == "CANCELLED" ? 5 : 3;
-        }
-        boost::log::core::get()->set_logging_enabled(false);
-        return layout_plan::run_layout_plan(problem);
-    }
+    if (layout_plan_mode)
+        return slicer_cli::run_layout_plan_command(input_file);
 
     // --layout: headless arrange from the older JSON form
-    if (!layout_json_file.empty()) {
-        boost::nowide::ifstream lf(layout_json_file);
-        if (!lf.is_open()) { std::cerr << "Cannot open layout JSON: " << layout_json_file << "\n"; return 1; }
-        json lj;
-        try { lj = json::parse(lf); } catch (const std::exception& e) {
-            std::cerr << "Failed to parse layout JSON: " << e.what() << "\n"; return 1;
-        }
-        std::string profiles_dir = lj.value("profilesDir", "");
-        while (!profiles_dir.empty() && profiles_dir.back() == '/') profiles_dir.pop_back();
-
-        Slic3r::DynamicPrintConfig cfg;
-        if (lj.contains("profiles")) {
-            if (profiles_dir.empty()) {
-                std::cerr << "profilesDir is required when profiles is specified\n";
-                return 1;
-            }
-            for (auto& [kind, path] : lj["profiles"].items()) {
-                if (!load_json_config(profiles_dir + "/" + path.get<std::string>(), cfg)) {
-                    std::cerr << "Failed to load profile: " << path.get<std::string>() << "\n";
-                    return 1;
-                }
-                // The profile keeps its own "inherits" chain: the arrange reads
-                // the printer's clearances, which a shipped machine preset
-                // leaves to its parents.
-                apply_file_inherits(argv[0] ? argv[0] : "slicer_cli", profiles_dir + "/" + path.get<std::string>(),
-                                    kind.c_str(), cfg, false);
-            }
-        }
-        using namespace Slic3r;
-        using namespace Slic3r::arrangement;
-
-        ArrangeParams params;
-#ifdef ENGINE_ORCA
-        params.clearance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.clearance_radius < 1.0f) params.clearance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#else
-        params.cleareance_radius = cfg.has("extruder_clearance_max_radius") ? cfg.opt_float("extruder_clearance_max_radius") : 1.0f;
-        if (params.cleareance_radius < 1.0f) params.cleareance_radius = lj.value("clearanceRadiusMm", 68.0f);
-#endif
-
-        // Load all STLs into a single Model (one ModelObject per STL)
-        Model model;
-        if (!lj.contains("objects") || !lj["objects"].is_array()) {
-            std::cerr << "objects must be a JSON array\n";
-            return 1;
-        }
-        for (auto& obj : lj["objects"]) {
-            if (!obj.is_object()) {
-                std::cerr << "each object entry must be a JSON object\n";
-                return 1;
-            }
-            std::string stl_path = obj.value("stl", "");
-            if (stl_path.empty()) continue;
-            try {
-                Model m = Model::read_from_file(stl_path);
-                for (ModelObject* mo : m.objects) {
-                    ModelObject* new_obj = model.add_object(*mo);
-                    if (new_obj->instances.empty())
-                        new_obj->add_instance();
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "Failed to load " << stl_path << ": " << e.what() << "\n";
-                return 1;
-            }
-        }
-        params.min_obj_distance = scaled<coord_t>(lj.value("spacingMm", 10.0));
-        params.allow_rotations = lj.value("allowRotations", true);
-        params.do_final_align = lj.value("doFinalAlign", true);
-
-        // Use get_arrange_polys -> arrange pipeline (same as GUI ArrangeJob)
-        ModelInstancePtrs instances;
-        auto input = get_arrange_polys(model, instances);
-        // get_arrange_polygon leaves bed_idx at its UNARRANGED (-1) default,
-        // which the nester skips as BIN_ID_UNFIT. Seed bed 0 as the desktop
-        // does (ModelArrange.cpp:98, `ap.bed_idx = 0;` in get_arrange_poly;
-        // same in Orca v2.4.2 src/libslic3r/ModelArrange.cpp:25).
-        for (auto& ap : input) ap.bed_idx = 0;
-
-#ifdef ENGINE_ORCA
-        update_arrange_params(params, &cfg, input);
-        update_selected_items_inflation(input, &cfg, params);
-        Points bed_pts = get_shrink_bedpts(&cfg, params);
-#else
-        update_arrange_params(params, cfg, input);
-        update_selected_items_inflation(input, cfg, params);
-        Points bed_pts = get_shrink_bedpts(cfg, params);
-#endif
-        arrangement::arrange(input, {}, bed_pts, params);
-
-        // Apply results back to model instances
-        apply_arrange_polys(input, instances, [](ArrangePolygon&) {});
-
-        json out;
-        out["engine"] =
-        #ifdef ENGINE_SNAPMAKER
-            "snapmaker";
-        #elif defined(ENGINE_ORCA)
-            "orca";
-        #else
-            "bambu";
-        #endif
-        out["placements"] = json::array();
-        for (auto& ap : input) {
-            json p;
-            p["name"] = ap.name;
-            p["bed_idx"] = ap.bed_idx;
-            p["x_mm"] = unscaled<double>(ap.translation.x());
-            p["y_mm"] = unscaled<double>(ap.translation.y());
-            p["rotation_deg"] = ap.rotation * 180.0 / M_PI;
-            BoundingBox bb = ap.transformed_poly().contour.bounding_box();
-            p["cx_mm"] = unscaled<double>(bb.min.x() + bb.max.x()) / 2.0;
-            p["cy_mm"] = unscaled<double>(bb.min.y() + bb.max.y()) / 2.0;
-            out["placements"].push_back(p);
-        }
-        std::cout << out.dump() << std::endl;
-        return 0;
-
-    }
+    if (!layout_json_file.empty())
+        return slicer_cli::run_layout_command(layout_json_file, argv[0]);
     // ── Structured-diagnostics install point ───────────────────────────────
     // Install only on the slicing path. Capabilities and --layout-plan require
     // one JSON document. Legacy --layout can include engine text before its
