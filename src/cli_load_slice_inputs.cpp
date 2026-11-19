@@ -61,24 +61,24 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     const std::string& bundle_config   = o.bundle_config;
     const bool verbose                 = o.verbose;
     const auto& overrides = o.overrides;
-    Slic3r::Model& model = rs.model;
-    bool& is_bbl_3mf = rs.is_bbl_3mf;
-    Slic3r::PlateDataPtrs& plate_data = rs.plate_data;
-    std::vector<Slic3r::Vec2d>& plate_origins = rs.plate_origins;
-    std::optional<Slic3r::DynamicPrintConfig>& plan_file_config = rs.plan_file_config;
-    Slic3r::Semver& plan_file_version = rs.plan_file_version;
-    int& plan_file_filaments = rs.plan_file_filaments;
-    slicer_cli::ProjectFacts& project_facts = rs.project_facts;
-    std::vector<Slic3r::Preset>& project_presets_kept = rs.project_presets_kept;
-    Slic3r::DynamicPrintConfig& extra = rs.extra;
+    Slic3r::Model& model = rs.project.model;
+    bool& is_bbl_3mf = rs.project.is_bbl_3mf;
+    Slic3r::PlateDataPtrs& plate_data = rs.project.plate_data;
+    std::vector<Slic3r::Vec2d>& plate_origins = rs.project.plate_origins;
+    std::optional<Slic3r::DynamicPrintConfig>& plan_file_config = rs.layout.plan_file_config;
+    Slic3r::Semver& plan_file_version = rs.layout.plan_file_version;
+    int& plan_file_filaments = rs.layout.plan_file_filaments;
+    slicer_cli::ProjectFacts& project_facts = rs.project.project_facts;
+    std::vector<Slic3r::Preset>& project_presets_kept = rs.project.project_presets_kept;
+    Slic3r::DynamicPrintConfig& extra = rs.settings.extra;
 #ifdef ENGINE_BAMBU
-    bool& explicit_config_supplied_nozzle_map = rs.explicit_config_supplied_nozzle_map;
+    bool& explicit_config_supplied_nozzle_map = rs.settings.explicit_config_supplied_nozzle_map;
 #endif
-    int& shrink_to_new_bed = rs.shrink_to_new_bed;
-    slicer_cli::SettingsMerge& settings_merge = rs.settings_merge;
-    std::string& merged_print_sequence = rs.merged_print_sequence;
+    int& shrink_to_new_bed = rs.settings.shrink_to_new_bed;
+    slicer_cli::SettingsMerge& settings_merge = rs.settings.settings_merge;
+    std::string& merged_print_sequence = rs.settings.merged_print_sequence;
 #ifdef ENGINE_BAMBU
-    size_t& project_filaments = rs.project_filaments;
+    size_t& project_filaments = rs.settings.project_filaments;
 #endif
     // The plate filter of the one load (Model::read_from_file(...,
     // plate_to_slice), BambuStudio.cpp 1889; OrcaSlicer.cpp 1571): the
@@ -123,9 +123,9 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
             set_outcome_failure(outcome, CLI_INVALID_PARAMS, "The assemble list has no plate " + std::to_string(plate_id) + ".");
             return 1;
         }
-        rs.plates.assign(context.g_assemble->plates.size(), RunPlate());
+        rs.layout.plates.assign(context.g_assemble->plates.size(), RunPlate());
         for (size_t k = 0; k < context.g_assemble->plates.size(); ++k) {
-            rs.plates[k].all = false;
+            rs.layout.plates[k].all = false;
             if (plate_id > 0 && int(k) != plate_id - 1)
                 continue;
             const size_t before = model.objects.size();
@@ -133,7 +133,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                 model.add_object(*object);
             for (size_t oi = before; oi < model.objects.size(); ++oi)
                 for (Slic3r::ModelInstance* inst : model.objects[oi]->instances)
-                    rs.plates[k].members.push_back(inst);
+                    rs.layout.plates[k].members.push_back(inst);
             emit_event({{"event","model_loaded"}, {"tag","AssemblePlateBuilt"}, {"plate_id", int(k) + 1},
                         {"objects", model.objects.size() - before},
                         {"message","Plate " + std::to_string(k + 1) + " of the assemble list holds " +
@@ -564,7 +564,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                             values.push_back(file_settings[key].get<std::string>());
                     }
                 config = std::move(rebased);
-                rs.project_loaded_like_desktop = true;
+                rs.project.project_loaded_like_desktop = true;
                 emit_event({{"event","config_normalized"},
                             {"tag","ProjectRebasedOnSystemPresets"},
                             {"printer_settings_id", config_id_text(config, "printer_settings_id")},
@@ -946,7 +946,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
         // for a Bambu-made project do not run.
         if (inputs.trailing_port)
             project_facts.is_bbl_3mf = false;
-        rs.file_version = file_version;
+        rs.project.file_version = file_version;
         for (const Slic3r::Preset* p : presets)
             if (p) project_presets_kept.push_back(*p);
         // Validate --plate against actual plate count
@@ -994,17 +994,17 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
         // PartPlateList::reload_all_objects -> PartPlate::intersect_instance,
         // PartPlate.cpp 5668-5710, 2651-2677).
         if (is_bbl_3mf && plate_id > 0) {
-            rs.plates.assign(plate_data.size(), RunPlate());
+            rs.layout.plates.assign(plate_data.size(), RunPlate());
             for (int index = 0; index < (int)plate_data.size(); ++index) {
-                rs.plates[index].origin = plate_origins[index];
-                rs.plates[index].all = index == plate_id - 1;
+                rs.layout.plates[index].origin = plate_origins[index];
+                rs.layout.plates[index].all = index == plate_id - 1;
             }
         } else if (is_bbl_3mf && plate_data.size() > 1 && !inputs.trailing_port) {
-            rs.plates.assign(plate_data.size(), RunPlate());
+            rs.layout.plates.assign(plate_data.size(), RunPlate());
             std::set<const Slic3r::ModelInstance*> placed;
             for (int index = 0; index < (int)plate_data.size(); ++index) {
-                rs.plates[index].origin = plate_origins[index];
-                rs.plates[index].all = false;
+                rs.layout.plates[index].origin = plate_origins[index];
+                rs.layout.plates[index].all = false;
                 if (plate_data[index] == nullptr) continue;
                 std::set<int> identify_ids;
                 for (const auto& entry : plate_data[index]->obj_inst_map)
@@ -1012,7 +1012,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                 for (Slic3r::ModelObject* object : model.objects)
                     for (Slic3r::ModelInstance* inst : object->instances)
                         if (inst->loaded_id > 0 && identify_ids.count(int(inst->loaded_id)) && placed.insert(inst).second)
-                            rs.plates[index].members.push_back(inst);
+                            rs.layout.plates[index].members.push_back(inst);
             }
             for (Slic3r::ModelObject* object : model.objects)
                 for (size_t ii = 0; ii < object->instances.size(); ++ii) {
@@ -1020,7 +1020,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                     const Slic3r::BoundingBoxf3 box = object->instance_convex_hull_bounding_box(ii);
                     for (int index = 0; index < (int)plate_data.size(); ++index)
                         if (plate_scene_box(config, file_version, index, (int)plate_data.size()).intersects(box)) {
-                            rs.plates[index].members.push_back(object->instances[ii]);
+                            rs.layout.plates[index].members.push_back(object->instances[ii]);
                             break;
                         }
                 }
@@ -1256,8 +1256,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     }
     // A run of one plate (model files, a 3MF sliced as one plate): every
     // instance is on it, at the origin.
-    if (rs.plates.empty())
-        rs.plates.assign(1, RunPlate());
+    if (rs.layout.plates.empty())
+        rs.layout.plates.assign(1, RunPlate());
 #ifdef ENGINE_BAMBU
     // Bambu Studio puts each plate's saved tower back inside the plate
     // when it opens a project (cli_project_load.hpp). Here, before the
@@ -1265,7 +1265,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     // given, and the project's settings, which the exports write, hold
     // the corrected one. Every plate whose objects are loaded (one plate
     // with --slice N or --plate N). --arrange places the tower itself.
-    if (rs.project_loaded_like_desktop && !o.arrange_forced())
+    if (rs.project.project_loaded_like_desktop && !o.arrange_forced())
         if (const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
             area != nullptr && area->values.size() >= 3) {
             const Slic3r::BoundingBoxf reach = tower_reach_box(config, *area);
@@ -1274,12 +1274,12 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                                                   Slic3r::Vec3d(reach.max.x(), reach.max.y(), height));
             const TowerWipeParams wipe = tower_wipe_params(config);
             const auto exclude = arrange_exclude_boxes(config);
-            for (int index = 0; index < (int)rs.plates.size(); ++index) {
+            for (int index = 0; index < (int)rs.layout.plates.size(); ++index) {
                 if (plate_id > 0 && index != plate_id - 1)
                     continue;
-                PlateScope scope(model, rs.plates[index]);
+                PlateScope scope(model, rs.layout.plates[index]);
                 slicer_cli::project_load_tower_inside_plate(
-                    config, index, (int)rs.plates.size(), reach,
+                    config, index, (int)rs.layout.plates.size(), reach,
                     (int)arrange_plate_extruders(model, config, index).size(),
                     [&](int filaments) {
                         return arrange_estimate_wipe_tower_size(model, config, wipe.width, wipe.volume,
@@ -1294,8 +1294,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     // when they open it (cli_project_load.hpp), and their slice reads a
     // plate the list holds no position for as the first plate's
     // (get_at, Config.hpp 627 at 8500fcd; 438 at bac6fd5).
-    if (rs.project_loaded_like_desktop && !o.arrange_forced())
-        slicer_cli::project_load_tower_positions_per_plate(config, (int)rs.plates.size());
+    if (rs.project.project_loaded_like_desktop && !o.arrange_forced())
+        slicer_cli::project_load_tower_positions_per_plate(config, (int)rs.layout.plates.size());
 #endif
     const bool has_unplaced_objects = std::any_of(model.objects.begin(), model.objects.end(),
         [](const Slic3r::ModelObject* obj) { return obj->instances.empty(); });
@@ -1388,7 +1388,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     load_profile(filament_config, "filament");
     // --load-settings, --load-filaments, --uptodate*: the official
     // settings merge (cli_load_settings.cpp), on the settings loaded so far.
-    // (rs.settings_merge; rs.merged_print_sequence: the project's
+    // (rs.settings.settings_merge; rs.settings.merged_print_sequence: the project's
     // print_sequence after the merge, the official m_print_config's.)
 #ifdef ENGINE_BAMBU
     // An assemble list's OBJ colours become filaments in the merge, which
@@ -1688,8 +1688,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
         // (every call of a --slice 0 run checks the plates again) and
         // given to that plate's result below.
         const int noted_plate = checked > 0 ? checked : 1;
-        const bool noted_first_time = rs.noted.count(noted_plate) == 0;
-        json& noted_warnings = rs.noted[noted_plate];
+        const bool noted_first_time = rs.warnings.noted.count(noted_plate) == 0;
+        json& noted_warnings = rs.warnings.noted[noted_plate];
         noted_warnings = json::array();
         // Noted only when the run goes on: a refusal below says why it
         // does not, and the warning's "the run slices" would not hold.
@@ -1715,8 +1715,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                                            {"message", sentence}};
                 // Held while the check pass runs every plate: it is
                 // announced once they all passed (announce_noted_warning).
-                if (rs.hold_noted)
-                    rs.noted_held.push_back(announcement);
+                if (rs.warnings.hold_noted)
+                    rs.warnings.noted_held.push_back(announcement);
                 else
                     announce_noted_warning(announcement);
             }
@@ -1772,7 +1772,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
         }
         }
         // This result's plate gets its own findings, once.
-        take_noted_warnings(outcome, rs.noted, plate_id);
+        take_noted_warnings(outcome, rs.warnings.noted, plate_id);
     }
 
     // A project on a printer with another bed: each plate's objects and
@@ -1783,10 +1783,10 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
     // plate moves in its own frame (PlateScope).
     if (project_facts.is_bbl_3mf && !inputs.assemble_input && !model.objects.empty()) {
         const int first = plate_id > 0 ? plate_id : 1;
-        const int last  = plate_id > 0 ? plate_id : (int)rs.plates.size();
+        const int last  = plate_id > 0 ? plate_id : (int)rs.layout.plates.size();
         for (int moved_plate = first; moved_plate <= last; ++moved_plate) {
             const int index = moved_plate - 1;
-            RunPlate& run_plate = rs.plate(moved_plate);
+            RunPlate& run_plate = rs.layout.plate(moved_plate);
             // The plate's own print sequence, else the project's
             // (get_print_sequence, BambuStudio.cpp 4403-4416).
             bool is_sequence = false;
@@ -1827,8 +1827,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
 #endif
         const auto* new_area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
         if (translated && new_area && new_area->values.size() >= 4 && !plate_data.empty())
-            for (int index = 0; index < (int)rs.plates.size() && index < (int)plate_data.size(); ++index) {
-                RunPlate& run_plate = rs.plates[index];
+            for (int index = 0; index < (int)rs.layout.plates.size() && index < (int)plate_data.size(); ++index) {
+                RunPlate& run_plate = rs.layout.plates[index];
                 const Slic3r::Vec2d new_origin =
                     plate_grid_origin(config, Slic3r::Semver(), index, (int)plate_data.size());
                 const Slic3r::Vec3d delta(new_origin.x() - run_plate.origin.x(), new_origin.y() - run_plate.origin.y(), 0.);
@@ -1883,7 +1883,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
         const auto* stats_new = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats_new");
         const auto* stats     = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
         const Slic3r::ConfigOptionStrings* carried =
-            rs.settings_merge.machine_switch ? nullptr : has_values(stats_new) ? stats_new : has_values(stats) ? stats : nullptr;
+            rs.settings.settings_merge.machine_switch ? nullptr : has_values(stats_new) ? stats_new : has_values(stats) ? stats : nullptr;
         const auto* max_opt = config.option<Slic3r::ConfigOptionIntsNullable>("extruder_max_nozzle_count");
         const auto* nozzles = config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter");
         if (max_opt != nullptr && !max_opt->values.empty() && nozzles != nullptr) {
@@ -1920,7 +1920,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
                 for (int i = 0; i < new_extruder_count; i++)
                     new_nozzle_volume_type.push_back(Slic3r::NozzleVolumeType(opt_nvt->values[i]));
             } else {
-                if (!rs.settings_merge.machine_switch)
+                if (!rs.settings.settings_merge.machine_switch)
                     for (int v : project_facts.current_nozzle_volume_type)
                         new_nozzle_volume_type.push_back(Slic3r::NozzleVolumeType(v));
                 new_nozzle_volume_type.resize(new_extruder_count, Slic3r::NozzleVolumeType::nvtStandard);
@@ -2154,8 +2154,8 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, RunState& rs,
 
     // The run's settings base, m_print_config (see RunState): everything
     // above runs once per run.
-    rs.base = config;
-    rs.loaded = true;
+    rs.settings.base = config;
+    rs.project.loaded = true;
     return 0;
 }
 

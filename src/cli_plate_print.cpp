@@ -41,16 +41,16 @@ namespace slicer_cli {
 using json = nlohmann::json;
 
 void pipe_files_loaded(RunState& rs) {
-    if (!slicer_cli::pipe_started() || rs.pipe_files_loaded_sent)
+    if (!slicer_cli::pipe_started() || rs.progress.pipe_files_loaded_sent)
         return;
-    rs.pipe_files_loaded_sent = true;
+    rs.progress.pipe_files_loaded_sent = true;
     slicer_cli::pipe_update(2, "Loading files finished");
 }
 void pipe_prepare_slicing(RunState& rs) {
     pipe_files_loaded(rs);
-    if (!slicer_cli::pipe_started() || rs.pipe_prepare_sent)
+    if (!slicer_cli::pipe_started() || rs.progress.pipe_prepare_sent)
         return;
-    rs.pipe_prepare_sent = true;
+    rs.progress.pipe_prepare_sent = true;
     slicer_cli::pipe_update(3, "Prepare slicing");
 }
 
@@ -60,7 +60,7 @@ void pipe_prepare_slicing(RunState& rs) {
 // settings (m_print_config, BambuStudio.cpp 6366-6370; OrcaSlicer.cpp
 // 5499-5503).
 bool PreparedPlate::run_model_action_step(slicer_cli::ActionPhase phase) {
-    auto& model = rs.model;
+    auto& model = rs.project.model;
     const auto& overrides = o.overrides;
     slicer_cli::StepResult a;
     // --export-settings writes the project's settings, not this
@@ -98,10 +98,10 @@ bool PreparedPlate::run_model_action_step(slicer_cli::ActionPhase phase) {
 // ones already known; --slice checks them all again once its plan is
 // final (run_slice_mode).
 bool PreparedPlate::outputs_ok(bool after_slice_actions_only) {
-    auto& model = rs.model;
-    if (rs.outputs_checked)
+    auto& model = rs.project.model;
+    if (rs.outputs.outputs_checked)
         return true;
-    rs.outputs_checked = true;
+    rs.outputs.outputs_checked = true;
     // Every plate the run could write: plate N for --slice N, else
     // every plate of the plan, or of the input when there is no plan
     // yet (a superset is fine: the check after the plan stays).
@@ -109,16 +109,16 @@ bool PreparedPlate::outputs_ok(bool after_slice_actions_only) {
     if (o.slice_mode) {
         if (o.slice_plate > 0)
             known_plates.push_back(o.slice_plate);
-        const int count = rs.plan.done ? std::max(rs.plan.plate_count, rs.file_plate_count)
-                                       : rs.file_plate_count;
+        const int count = rs.layout.plan.done ? std::max(rs.layout.plan.plate_count, rs.layout.file_plate_count)
+                                       : rs.layout.file_plate_count;
         if (o.slice_plate <= 0)
             for (int p = 1; p <= std::max(1, count); ++p)
                 known_plates.push_back(p);
     }
     std::string detail;
     if (const int refused = check_run_outputs(context, o, known_plates, &model, &detail, after_slice_actions_only,
-                                              after_slice_actions_only ? &rs.reserved_outputs : nullptr,
-                                              after_slice_actions_only ? nullptr : &rs.reserved_outputs)) {
+                                              after_slice_actions_only ? &rs.outputs.reserved_outputs : nullptr,
+                                              after_slice_actions_only ? nullptr : &rs.outputs.reserved_outputs)) {
         set_outcome_failure(outcome, refused, detail);
         outcome.run_step_failed = true;
         return false;
@@ -131,10 +131,10 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
     const std::string& input_file = o.input_file;
     const bool verbose = o.verbose;
     const bool normalize_legacy_gcode = o.normalize_legacy_gcode;
-    auto& model = rs.model;
-    auto& extra = rs.extra;
+    auto& model = rs.project.model;
+    auto& extra = rs.settings.extra;
 #ifdef ENGINE_BAMBU
-    size_t& project_filaments = rs.project_filaments;
+    size_t& project_filaments = rs.settings.project_filaments;
 #endif
 
     // Initialize print
@@ -167,10 +167,10 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
         bool is_bbl_vendor_preset = false;
         if (!printer_model_string.empty())
             is_bbl_vendor_preset = printer_model_string.compare(0, 9, "Bambu Lab") == 0;
-        else if (!rs.settings_merge.new_printer_name.empty())
-            is_bbl_vendor_preset = rs.settings_merge.new_printer_name.compare(0, 9, "Bambu Lab") == 0;
-        else if (!rs.project_facts.current_printer_system_name.empty())
-            is_bbl_vendor_preset = rs.project_facts.current_printer_system_name.compare(0, 9, "Bambu Lab") == 0;
+        else if (!rs.settings.settings_merge.new_printer_name.empty())
+            is_bbl_vendor_preset = rs.settings.settings_merge.new_printer_name.compare(0, 9, "Bambu Lab") == 0;
+        else if (!rs.project.project_facts.current_printer_system_name.empty())
+            is_bbl_vendor_preset = rs.project.project_facts.current_printer_system_name.compare(0, 9, "Bambu Lab") == 0;
         print.set_BBL_Printer(is_bbl_vendor_preset);
     }
 #endif
@@ -243,7 +243,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
         // (obj_1_pa_pattern_handle.stl): the outputs still to be written
         // are checked again. One given before --slice has written the
         // loaded model's files already.
-        rs.outputs_checked = false;
+        rs.outputs.outputs_checked = false;
         if (!outputs_ok(/*after_slice_actions_only=*/true))
             return 1;
     }
@@ -310,7 +310,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
         // never reaches resolve_named_presets' setters, so the trim happens
         // here, on the settings this plate slices with, with the same rule.
         if (slicer_cli::switch_trims_filaments(o.preset_switch, o.printer_preset))
-            slicer_cli::trim_filaments_for_switch(config, model, o.printer_preset, plate_id, rs.switch_paint_remapped);
+            slicer_cli::trim_filaments_for_switch(config, model, o.printer_preset, plate_id, rs.project.switch_paint_remapped);
 #endif
 #ifdef ENGINE_SNAPMAKER
         // The desktop's flow-type sync and the U1's plate types change the
@@ -321,7 +321,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             // them (FilamentGroupDialog.cpp 352-372).
             std::vector<int> plate_filaments;
             {
-                PlateScope scope(model, rs.plate(plate_id));
+                PlateScope scope(model, rs.layout.plate(plate_id));
                 plate_filaments = arrange_plate_extruders(model, config, std::max(0, plate_id - 1));
             }
             const std::string why = slicer_cli::sync_filament_volume_types(
@@ -340,7 +340,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             // origin above). Print::apply copies the model it is given
             // (PrintApply.cpp 1553 / 1298), so the run's model stays in
             // the scene.
-            PlateScope scope(model, rs.plate(plate_id));
+            PlateScope scope(model, rs.layout.plate(plate_id));
             // Every height range carries a layer height before the engine
             // builds the layer height profile: it reads one out of each range
             // without a check (Slicing.cpp layer_height_profile_from_ranges,
@@ -408,7 +408,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             // sparse_infill_density, --bed-temp the plate type's keys).
             if (!outcome.settings_replaced_by_presets.empty()) {
                 std::set<std::string> command_line;
-                for (const std::string& key : rs.extra.keys())
+                for (const std::string& key : rs.settings.extra.keys())
                     command_line.insert(key);
                 Slic3r::DynamicPrintConfig written;
                 if (const Slic3r::ConfigOption* bed = config.option("curr_bed_type"))
@@ -591,7 +591,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             // collect_used_filament_slots_on_plate counts them.
             int blocked = 0;
             {
-                PlateScope scope(model, rs.plate(plate_id));
+                PlateScope scope(model, rs.layout.plate(plate_id));
                 blocked = slicer_cli::snapmaker_pre_slice_check(model, config, plate_id, switches.allow_mix_temp,
                                                                 blocker_code, blocker_message);
             }
@@ -617,7 +617,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             const int plate_number = std::max(1, plate_id);
             std::vector<int> plate_filaments;
             {
-                PlateScope scope(model, rs.plate(plate_id));
+                PlateScope scope(model, rs.layout.plate(plate_id));
                 plate_filaments = arrange_plate_extruders(model, config, plate_number - 1);
             }
             const std::string single_diameter = slicer_cli::plate_single_nozzle_diameter(config, plate_filaments);
@@ -873,7 +873,7 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
             // toolpath conflicts or printable-area failures.
             emit_gcode_result_diagnostics(gcode_result);
             if (o.slice_mode) {
-                record_plate_statistics(print, model, config, rs.base, gcode_result, outcome);
+                record_plate_statistics(print, model, config, rs.settings.base, gcode_result, outcome);
                 outcome.sliced_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - plate_started).count();
                 // --mstpp: a plate that took longer ends the run, listed with

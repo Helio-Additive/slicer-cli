@@ -41,7 +41,7 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
                              const std::set<std::string>* given_settings, std::string& error) {
     using namespace Slic3r;
     const std::string path = (outdir / o.export_3mf).string();
-    Model& model = rs.model;
+    Model& model = rs.project.model;
     // store_bbs_3mf stages the project's files in the model's backup folder
     // (_add_project_config_file_to_archive writes <backup>/_temp_1.config,
     // bbs_3mf.cpp). The run's folder (once slicer_cli_backup, shared by every
@@ -75,9 +75,9 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
     // The plates (PartPlateList::store_to_3mf_structure, BambuStudio.cpp
     // 7483-7484): the file's, with any the arrange added, or one plate for
     // model files and a 3MF without plates.
-    const int count = std::max<int>({1, (int)rs.plates.size(), (int)rs.plate_data.size()});
+    const int count = std::max<int>({1, (int)rs.layout.plates.size(), (int)rs.project.plate_data.size()});
     for (int k = 0; k < count; ++k) {
-        PlateData* pd = k < (int)rs.plate_data.size() && rs.plate_data[k] != nullptr ? new PlateData(*rs.plate_data[k])
+        PlateData* pd = k < (int)rs.project.plate_data.size() && rs.project.plate_data[k] != nullptr ? new PlateData(*rs.project.plate_data[k])
                                                                                     : new PlateData();
         pd->plate_index = k;
         pd->objects_and_instances.clear();
@@ -89,7 +89,7 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
         for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii) {
             const ModelInstance* inst = model.objects[oi]->instances[ii];
             for (int k = 0; k < count; ++k)
-                if (rs.plate(k + 1).is_member(inst) && (k < (int)rs.plates.size() || count == 1)) {
+                if (rs.layout.plate(k + 1).is_member(inst) && (k < (int)rs.layout.plates.size() || count == 1)) {
                     plates[k]->objects_and_instances.emplace_back(int(oi), int(ii));
                     break;
                 }
@@ -141,9 +141,9 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
 #endif
     }
     // printer_model_id per plate after a printer change (BambuStudio.cpp 7524-7525).
-    if (!rs.settings_merge.printer_model_id.empty())
+    if (!rs.settings.settings_merge.printer_model_id.empty())
         for (PlateData* pd : plates)
-            pd->printer_model_id = rs.settings_merge.printer_model_id;
+            pd->printer_model_id = rs.settings.settings_merge.printer_model_id;
     if (context.g_assemble)
         for (int k = 0; k < count && k < (int)context.g_assemble->plates.size(); ++k)
             plates[k]->plate_name = context.g_assemble->plates[k].plate_name;
@@ -151,11 +151,11 @@ int export_sliced_3mf(CliRunContext& context, const CliOptions& o, const boost::
     // The presets the project carries, and the "(auto)" process a printer
     // change makes (BambuStudio.cpp 3094).
     std::vector<Preset*> project_presets;
-    for (Preset& p : rs.project_presets_kept)
+    for (Preset& p : rs.project.project_presets_kept)
         project_presets.push_back(&p);
     std::unique_ptr<Preset> auto_process;
-    if (rs.settings_merge.new_preset) {
-        auto_process = std::make_unique<Preset>(*rs.settings_merge.new_preset);
+    if (rs.settings.settings_merge.new_preset) {
+        auto_process = std::make_unique<Preset>(*rs.settings.settings_merge.new_preset);
         project_presets.push_back(auto_process.get());
     }
 

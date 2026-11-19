@@ -119,7 +119,7 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     // prepares first, as its plan (ProjectPlan) decides the plates; every
     // other run prepares once the plates are known (below).
     RunState rs;
-    rs.file_plate_count = plate_count;
+    rs.layout.file_plate_count = plate_count;
     int plan_code = 0;
     std::string plan_error;
     const bool trailing = per_plate_load && !context.g_assemble && trailing_models_port(o);
@@ -129,7 +129,7 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
         prepare_outcome.prepare_pass = true;
         prepare_outcome.plate_id = prepare_plate;
         const int rc = slice_one_plate(context, o, calib_params, rs, prepare_plate, std::string(), prepare_outcome);
-        if (rc == 0 && prepare_outcome.cli_code == 0 && rs.prepared)
+        if (rc == 0 && prepare_outcome.cli_code == 0 && rs.preparation.prepared)
             return;
         if (prepare_outcome.cli_code == 0)
             set_outcome_failure(prepare_outcome, CLI_SLICING_ERROR);
@@ -143,10 +143,10 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
         // --slice 0 may check several plates once the plan is known, so the
         // project's noted-value warning found here is held like the check
         // pass's own (released below when the run checks only one plate).
-        rs.hold_noted = o.slice_plate == 0;
+        rs.warnings.hold_noted = o.slice_plate == 0;
         prepare_run(0);
         if (plan_code == 0)
-            plate_count = rs.plan.plate_count;
+            plate_count = rs.layout.plan.plate_count;
     }
 
     if (plan_code == 0 && o.slice_plate > plate_count) {
@@ -183,12 +183,12 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     // which a later plate's refusal makes untrue. The prepare call below
     // checks the first plate, so the hold starts before it.
     const bool hold_noted = o.slice_plate == 0 && plates.size() > 1;
-    if (rs.hold_noted && !hold_noted) {
-        for (const json& announcement : rs.noted_held)
+    if (rs.warnings.hold_noted && !hold_noted) {
+        for (const json& announcement : rs.warnings.noted_held)
             announce_noted_warning(announcement);
-        rs.noted_held.clear();
+        rs.warnings.noted_held.clear();
     }
-    rs.hold_noted = hold_noted;
+    rs.warnings.hold_noted = hold_noted;
 
     // --slice 0 on several plates checks every plate before it slices any
     // (pre_check, BambuStudio.cpp 6441, 7027-7028, 7428-7429; OrcaSlicer.cpp
@@ -205,9 +205,9 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     if (!trailing && plan_code == 0) {
         prepare_run(plates.size() == 1 && per_plate_load ? plates.front() : 0);
         // --slice 0 --arrange 1 on several plates: the plates the arrange left.
-        if (plan_code == 0 && rs.plan.done) {
+        if (plan_code == 0 && rs.layout.plan.done) {
             plates.clear();
-            for (int p = 1; p <= rs.plan.plate_count; ++p) plates.push_back(p);
+            for (int p = 1; p <= rs.layout.plan.plate_count; ++p) plates.push_back(p);
         }
     }
     // A prepare call that failed ends the run here: with plate 0 for a
@@ -236,7 +236,7 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
     // add plates the pre-arrange count does not know (BambuStudio.cpp
     // 5627-5722; OrcaSlicer.cpp 4887-4983), and a plate_<n>.gcode it then
     // writes would be overwritten. `plates` is the set this run slices.
-    if (const int refused = check_run_outputs(context, o, plates, &rs.model, nullptr))
+    if (const int refused = check_run_outputs(context, o, plates, &rs.project.model, nullptr))
         return refused;
 
     const bool pre_check = code == 0 && o.slice_plate == 0 && plates.size() > 1;
@@ -273,14 +273,14 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
         error_string = outcome.error_string;
         break;
     }
-    if (rs.hold_noted) {
-        rs.hold_noted = false;
+    if (rs.warnings.hold_noted) {
+        rs.warnings.hold_noted = false;
         // Every plate passed: its own warnings are announced now, in plate
         // order.
         if (code == 0)
-            for (const json& announcement : rs.noted_held)
+            for (const json& announcement : rs.warnings.noted_held)
                 announce_noted_warning(announcement);
-        rs.noted_held.clear();
+        rs.warnings.noted_held.clear();
     }
 
     for (size_t i = 0; code == 0 && i < plates.size(); ++i) {
@@ -332,7 +332,7 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
         slicer_cli::pipe_update(97, "Exporting 3mf");   // BambuStudio.cpp 8128-8133
         std::string export_error;
         try {
-            Slic3r::DynamicPrintConfig project = rs.base;
+            Slic3r::DynamicPrintConfig project = rs.settings.base;
             apply_command_line_overrides(project, o.overrides, /*report_rejections=*/false);
             // The settings the command line gave: the official setting flags
             // and what this command line's own short flags changed. They are
@@ -341,15 +341,15 @@ static int run_slice_mode(CliRunContext& context, const CliOptions& o, Slic3r::C
             // file or a project sliced as saved brings values of its own, and
             // then every setting that differs from the presets is listed.
             std::set<std::string> given_settings;
-            for (const std::string& key : rs.extra.keys())
+            for (const std::string& key : rs.settings.extra.keys())
                 given_settings.insert(key);
-            for (const std::string& key : rs.base.diff(project))
+            for (const std::string& key : rs.settings.base.diff(project))
                 given_settings.insert(key);
             const bool settings_files = !o.machine_config.empty() || !o.filament_config.empty() ||
                                         !o.process_config.empty() || !o.bundle_config.empty() ||
                                         o.given_flag("load_settings") || o.given_flag("load_filaments");
             const bool presets_only = !settings_files &&
-                                      (rs.project_loaded_like_desktop || !input_is_3mf(o.input_file) ||
+                                      (rs.project.project_loaded_like_desktop || !input_is_3mf(o.input_file) ||
                                        slicer_cli::classify_3mf(o.input_file) == slicer_cli::ThreeMfKind::GeometryOnly);
 #ifdef ENGINE_SNAPMAKER
             // The switch trimmed each plate's filament list and remapped the
