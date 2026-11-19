@@ -124,6 +124,8 @@ The slice driver owns one `RunState`. Loading fills `LoadedProject` (model, proj
 | `cli_layer_ranges.hpp` | Layer range normalization interface |
 | `cli_plate_settings.cpp` | Overlay plate and flag settings, nozzle maps and retained tower positions |
 | `cli_plate_settings.hpp` | Per-plate configuration and manual map checks |
+| `cli_check_downward.cpp` | Check plate sizes and printer compatibility for the downward check |
+| `cli_check_downward.hpp` | Downward-check inputs and plate outcome |
 | `cli_slice_plate.cpp` | Apply plate settings, transform, arrange and check objects before printing |
 | `cli_slice_plate.hpp` | Single-plate preparation and slicing entry point |
 | `cli_plate_plan.cpp` | Build the grid, instance membership and wipe tower positions across plates |
