@@ -488,6 +488,129 @@ bool desktop_plate_type_for_printer(const CliOptions& o, const std::string& prin
     return true;
 }
 
+static bool apply_named_preset_selection(CliRunContext& context, const CliOptions& o,
+        Slic3r::DynamicPrintConfig& out, Slic3r::PresetBundle& bundle, std::vector<std::string>& filaments,
+        const std::vector<std::string>& substituted_defaults, const std::string& process,
+        const std::string& app) {
+    // The desktop adds each filament slot with PresetBundle::set_num_filaments
+    // (Sidebar::add_custom_filament: BambuStudio Plater.cpp 4198, PresetBundle.cpp
+    // 2343-2393; OrcaSlicer Plater.cpp 3243, PresetBundle.cpp 2993-3027),
+    // which sizes the project's per-filament lists (filament_colour,
+    // filament_multi_colour, filament_colour_type, filament_map, and on
+    // BambuStudio the nozzle and volume maps) to the slot count, each new slot
+    // taking the last slot's value. No colour is picked here, as no one picks
+    // one on the command line.
+    bundle.set_num_filaments(unsigned(filaments.size()), std::string());
+    bundle.filament_presets = filaments;
+    // The desktop app runs this whenever the filament list changes: it sizes
+    // the project's flush_volumes_matrix to filaments x filaments per nozzle
+    // and flush_multiplier to the nozzle count (PresetBundle.cpp at both
+    // pins). Without it a two-nozzle printer (X2D, H2D) reads past the
+    // matrix in ToolOrdering::reorder_extruders_for_minimum_flush_volume.
+    bundle.update_multi_material_filament_presets();
+#ifdef ENGINE_ORCA
+    // OrcaSlicer's update_multi_material_filament_presets gives a printer with
+    // more extruders than filaments one filament per extruder (PresetBundle.cpp
+    // 5120-5131), single_extruder_multi_material or not, and leaves the colour
+    // lists as they were. The desktop never keeps them apart: it sizes
+    // filament_colour, filament_multi_colour and filament_colour_type to the
+    // filament count when it loads the printer (PresetBundle::load_selections
+    // 2780-2795, update_selections 2636-2651, new slots "#26A69A" and type
+    // "1"), and the official CLI refuses a project where they differ (-5,
+    // "filament_is_support's count ... not equal to filament_colour's size").
+    // A slice with them apart reads past the shorter lists. BambuStudio's
+    // update_multi_material_filament_presets adds no filament (PresetBundle.cpp
+    // 5527-5538), so its lists already match.
+    // set_num_filaments sizes the lists but gives the new slots no colour of
+    // their own here (the filament count has already grown, so its
+    // new-colour branch is skipped, and the lists fill from the first slot);
+    // the new slots then take load_selections' "#26A69A" and type "1".
+    if (const auto* colours = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+        colours && colours->values.size() != bundle.filament_presets.size()) {
+        const size_t old_count = colours->values.size();
+        const size_t count = bundle.filament_presets.size();
+        bundle.set_num_filaments(unsigned(count), std::string());
+        auto& colour      = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour")->values;
+        auto& multi       = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_multi_colour")->values;
+        auto& colour_type = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour_type")->values;
+        for (size_t i = old_count; i < count; ++i) {
+            if (i < colour.size()) colour[i] = "#26A69A";
+            if (i < multi.size()) multi[i] = "#26A69A";
+            if (i < colour_type.size()) colour_type[i] = "1";
+        }
+    }
+#endif
+    filaments = bundle.filament_presets;
+
+    // What the desktop app sets in the project when the printer is picked:
+    // the plate type (desktop_bed_type) and, on the BambuStudio build, the
+    // nozzle statistics. Both are project settings full_config() applies
+    // (construct_full_config: BambuStudio PresetBundle.cpp 97, OrcaSlicer 82).
+    const slicer_cli::DesktopBedType bed = slicer_cli::desktop_bed_type(bundle);
+    bundle.project_config.set_key_value("curr_bed_type", new Slic3r::ConfigOptionEnum<Slic3r::BedType>(bed.type));
+    context.g_preset_printer_model_id = bundle.printers.get_edited_preset().get_printer_type(&bundle);
+    slicer_cli::apply_printer_pick(bundle);
+#ifdef ENGINE_ORCA
+    // The settings the desktop slices with: full_config(false), every
+    // filament's own values for each extruder variant with
+    // filament_self_index (OrcaSlicer Plater.cpp 7959-7963), which the Print
+    // maps onto the extruders. full_config(true) maps them already and
+    // writes no filament_self_index (PresetBundle.cpp 4005-4060 at 31f6803),
+    // so on a printer with several extruders the Print mapped every
+    // filament to filament 1's values (H2D, 4 filaments: nozzle_temperature
+    // 220,220,220,220 for 220,220,245,270). The official CLI's own merge of
+    // --load-filaments files writes some of these lists differently (one
+    // value, or the first filament's value followed by 0s); named presets
+    // follow the desktop's full_fff_config, one value per filament from
+    // each filament's own preset.
+#ifdef ENGINE_SNAPMAKER
+    // Item 3b: on a switch to a printer that is not a Snapmaker U1 the desktop
+    // trims the filament count to the printer's extruder count, while a U1
+    // keeps the count it had (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2247-2270
+    // at bac6fd5; set_num_filaments is its own call, Tab.cpp:2270).
+    if (!o.printer_preset.empty() && o.printer_preset.find("Snapmaker U1") == std::string::npos &&
+        slicer_cli::trim_named_filaments_for_switch(bundle))
+        context.g_filament_count_changed = true;
+    // The remap the switch built, applied to the volumes once the model is loaded.
+    context.g_filament_id_remap = bundle.consume_last_filament_id_remap();
+#endif
+#ifdef ENGINE_SNAPMAKER
+    // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
+    // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
+    // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
+    out = bundle.full_config();
+    // The filament total the switch's remap maps into.
+    context.g_filament_id_total = slicer_cli::snapmaker_filament_id_total(out);
+#else
+    out = bundle.full_config(false);
+#endif
+#else
+    // BambuStudio's full_config(true) keeps each filament's own values and
+    // its filament_self_index (PresetBundle.cpp 3400-3460 at 5873b5f), and
+    // the Print maps them as for full_config(false); false would also write
+    // the AMS drying lists per variant, unlike a desktop project.
+    out = bundle.full_config();
+#endif
+#ifdef ENGINE_SNAPMAKER
+    // The desktop's rules for the filaments and process picked by name: the
+    // volumetric-speed floor and the process's mixed and dithering keys.
+    slicer_cli::apply_named_preset_rules(out, bundle);
+#endif
+    // full_config() writes each filament's own colour; a slot without one
+    // keeps the engine default.
+    emit_event({{"event","presets_resolved"},
+                {"tag","NamedPresetsResolved"},
+                {"printer", o.printer_preset},
+                {"process", process},
+                {"filaments", filaments},
+                {"curr_bed_type", slicer_cli::bed_type_name(bed.type)},
+                {"curr_bed_type_reason", bed.why},
+                {"defaults_replaced", substituted_defaults},
+                {"message","Settings built from " + app + " system presets with every parent applied" +
+                           (substituted_defaults.empty() ? std::string() : "; used " + boost::algorithm::join(substituted_defaults, ", "))}});
+    return true;
+}
+
 bool resolve_named_presets(CliRunContext& context, const CliOptions& o, Slic3r::DynamicPrintConfig& out,
                                   int& code, std::string& error) {
     namespace fs = boost::filesystem;
@@ -620,123 +743,7 @@ bool resolve_named_presets(CliRunContext& context, const CliOptions& o, Slic3r::
         code = CLI_CONFIG_FILE_ERROR;
         return false;
     }
-    // The desktop adds each filament slot with PresetBundle::set_num_filaments
-    // (Sidebar::add_custom_filament: BambuStudio Plater.cpp 4198, PresetBundle.cpp
-    // 2343-2393; OrcaSlicer Plater.cpp 3243, PresetBundle.cpp 2993-3027),
-    // which sizes the project's per-filament lists (filament_colour,
-    // filament_multi_colour, filament_colour_type, filament_map, and on
-    // BambuStudio the nozzle and volume maps) to the slot count, each new slot
-    // taking the last slot's value. No colour is picked here, as no one picks
-    // one on the command line.
-    bundle.set_num_filaments(unsigned(filaments.size()), std::string());
-    bundle.filament_presets = filaments;
-    // The desktop app runs this whenever the filament list changes: it sizes
-    // the project's flush_volumes_matrix to filaments x filaments per nozzle
-    // and flush_multiplier to the nozzle count (PresetBundle.cpp at both
-    // pins). Without it a two-nozzle printer (X2D, H2D) reads past the
-    // matrix in ToolOrdering::reorder_extruders_for_minimum_flush_volume.
-    bundle.update_multi_material_filament_presets();
-#ifdef ENGINE_ORCA
-    // OrcaSlicer's update_multi_material_filament_presets gives a printer with
-    // more extruders than filaments one filament per extruder (PresetBundle.cpp
-    // 5120-5131), single_extruder_multi_material or not, and leaves the colour
-    // lists as they were. The desktop never keeps them apart: it sizes
-    // filament_colour, filament_multi_colour and filament_colour_type to the
-    // filament count when it loads the printer (PresetBundle::load_selections
-    // 2780-2795, update_selections 2636-2651, new slots "#26A69A" and type
-    // "1"), and the official CLI refuses a project where they differ (-5,
-    // "filament_is_support's count ... not equal to filament_colour's size").
-    // A slice with them apart reads past the shorter lists. BambuStudio's
-    // update_multi_material_filament_presets adds no filament (PresetBundle.cpp
-    // 5527-5538), so its lists already match.
-    // set_num_filaments sizes the lists but gives the new slots no colour of
-    // their own here (the filament count has already grown, so its
-    // new-colour branch is skipped, and the lists fill from the first slot);
-    // the new slots then take load_selections' "#26A69A" and type "1".
-    if (const auto* colours = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
-        colours && colours->values.size() != bundle.filament_presets.size()) {
-        const size_t old_count = colours->values.size();
-        const size_t count = bundle.filament_presets.size();
-        bundle.set_num_filaments(unsigned(count), std::string());
-        auto& colour      = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour")->values;
-        auto& multi       = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_multi_colour")->values;
-        auto& colour_type = bundle.project_config.option<Slic3r::ConfigOptionStrings>("filament_colour_type")->values;
-        for (size_t i = old_count; i < count; ++i) {
-            if (i < colour.size()) colour[i] = "#26A69A";
-            if (i < multi.size()) multi[i] = "#26A69A";
-            if (i < colour_type.size()) colour_type[i] = "1";
-        }
-    }
-#endif
-    filaments = bundle.filament_presets;
-
-    // What the desktop app sets in the project when the printer is picked:
-    // the plate type (desktop_bed_type) and, on the BambuStudio build, the
-    // nozzle statistics. Both are project settings full_config() applies
-    // (construct_full_config: BambuStudio PresetBundle.cpp 97, OrcaSlicer 82).
-    const slicer_cli::DesktopBedType bed = slicer_cli::desktop_bed_type(bundle);
-    bundle.project_config.set_key_value("curr_bed_type", new Slic3r::ConfigOptionEnum<Slic3r::BedType>(bed.type));
-    context.g_preset_printer_model_id = bundle.printers.get_edited_preset().get_printer_type(&bundle);
-    slicer_cli::apply_printer_pick(bundle);
-#ifdef ENGINE_ORCA
-    // The settings the desktop slices with: full_config(false), every
-    // filament's own values for each extruder variant with
-    // filament_self_index (OrcaSlicer Plater.cpp 7959-7963), which the Print
-    // maps onto the extruders. full_config(true) maps them already and
-    // writes no filament_self_index (PresetBundle.cpp 4005-4060 at 31f6803),
-    // so on a printer with several extruders the Print mapped every
-    // filament to filament 1's values (H2D, 4 filaments: nozzle_temperature
-    // 220,220,220,220 for 220,220,245,270). The official CLI's own merge of
-    // --load-filaments files writes some of these lists differently (one
-    // value, or the first filament's value followed by 0s); named presets
-    // follow the desktop's full_fff_config, one value per filament from
-    // each filament's own preset.
-#ifdef ENGINE_SNAPMAKER
-    // Item 3b: on a switch to a printer that is not a Snapmaker U1 the desktop
-    // trims the filament count to the printer's extruder count, while a U1
-    // keeps the count it had (references/SnapmakerOrca/src/slic3r/GUI/Tab.cpp:2247-2270
-    // at bac6fd5; set_num_filaments is its own call, Tab.cpp:2270).
-    if (!o.printer_preset.empty() && o.printer_preset.find("Snapmaker U1") == std::string::npos &&
-        slicer_cli::trim_named_filaments_for_switch(bundle))
-        context.g_filament_count_changed = true;
-    // The remap the switch built, applied to the volumes once the model is loaded.
-    context.g_filament_id_remap = bundle.consume_last_filament_id_remap();
-#endif
-#ifdef ENGINE_SNAPMAKER
-    // Snapmaker Orca's PresetBundle::full_config() takes no argument and is
-    // full_fff_config() for FFF (references/SnapmakerOrca/src/libslic3r/PresetBundle.cpp:2491-2496
-    // at bac6fd5): the same settings OrcaSlicer's full_config(false) returns.
-    out = bundle.full_config();
-    // The filament total the switch's remap maps into.
-    context.g_filament_id_total = slicer_cli::snapmaker_filament_id_total(out);
-#else
-    out = bundle.full_config(false);
-#endif
-#else
-    // BambuStudio's full_config(true) keeps each filament's own values and
-    // its filament_self_index (PresetBundle.cpp 3400-3460 at 5873b5f), and
-    // the Print maps them as for full_config(false); false would also write
-    // the AMS drying lists per variant, unlike a desktop project.
-    out = bundle.full_config();
-#endif
-#ifdef ENGINE_SNAPMAKER
-    // The desktop's rules for the filaments and process picked by name: the
-    // volumetric-speed floor and the process's mixed and dithering keys.
-    slicer_cli::apply_named_preset_rules(out, bundle);
-#endif
-    // full_config() writes each filament's own colour; a slot without one
-    // keeps the engine default.
-    emit_event({{"event","presets_resolved"},
-                {"tag","NamedPresetsResolved"},
-                {"printer", o.printer_preset},
-                {"process", process},
-                {"filaments", filaments},
-                {"curr_bed_type", slicer_cli::bed_type_name(bed.type)},
-                {"curr_bed_type_reason", bed.why},
-                {"defaults_replaced", substituted_defaults},
-                {"message","Settings built from " + app + " system presets with every parent applied" +
-                           (substituted_defaults.empty() ? std::string() : "; used " + boost::algorithm::join(substituted_defaults, ", "))}});
-    return true;
+    return apply_named_preset_selection(context, o, out, bundle, filaments, substituted_defaults, process, app);
 }
 
 /// --list-presets [--printer NAME]: the system presets of this engine, as one

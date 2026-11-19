@@ -72,6 +72,179 @@ bool json_file_has_key(const std::string& filepath, const char* key) {
     }
 }
 
+static void apply_json_setting_values(json& j, Slic3r::DynamicPrintConfig& config, bool verbose,
+        const std::string& diagnostic_source, bool* supplied_nozzle_map,
+        Slic3r::ConfigSubstitutionContext& substitution_context) {
+    // Iterate through all key-value pairs
+    for (auto& [key, value] : j.items()) {
+        // Skip profile metadata, including identity/version fields handled
+        // separately by both engines' ConfigBase::load_from_json.
+        // printer_model is a setting there (Config.cpp 918-960 at
+        // 5873b5f: only the version, name, url, type, setting_id,
+        // filament_id, from, description, instantiation, inherits and
+        // includes are kept aside), and the Bambu printer features are
+        // decided from it (BambuStudio.cpp 7055-7070), so a --machine
+        // file's printer_model is loaded like any other setting.
+        if (key == "type" || key == "name" || key == "inherits" ||
+            key == "from" || key == "setting_id" || key == "instantiation" ||
+            key == "description" || key == "compatible_printers" ||
+            key == "compatible_prints" || key == "include" ||
+            key == "upward_compatible_machine" ||
+            key == "printer_variant" || key == "default_filament_profile" ||
+            key == "default_print_profile" || key == "filament_id" ||
+            key == "version" || key == "url" || key == "is_custom_defined") {
+            continue;
+        }
+
+        try {
+#ifdef ENGINE_BAMBU
+            if (supplied_nozzle_map && key == "filament_nozzle_map" &&
+                !value.is_string() && !value.is_number() && !value.is_array())
+                continue;
+            if (supplied_nozzle_map && key == "filament_nozzle_map" && value.is_array()) {
+                // The generic loader drops unsupported elements. Do not turn
+                // a malformed nozzle-map array into an apparently valid map.
+                bool valid_types = !value.empty();
+                for (const auto& element : value)
+                    valid_types = valid_types && (element.is_string() || element.is_number());
+                if (!valid_types) continue;
+            }
+#endif
+            // Use set_deserialize to respect existing config types
+            // This handles type conversion properly
+            std::string value_str;
+
+            if (value.is_array()) {
+                // An array becomes the option's serialized form, as the
+                // engines' ConfigBase::load_from_json writes it
+                // (parse_str_arr, Config.cpp 863-900 and 1022-1040 at
+                // 5873b5f): a string list ';'-separated with each entry
+                // quoted and escaped (escape_strings_cstyle), a list of
+                // point groups '#'-separated, every other list
+                // ','-separated. Joined with ',' a string list became one
+                // string: a printer's seven extruder variants read as one,
+                // so the second extruder found no variant of its own
+                // (H2D nozzle_volume 130,130 for 130,145).
+                std::vector<std::string> parts;
+                for (auto& v : value) {
+                    if (v.is_string()) {
+                        parts.push_back(v.get<std::string>());
+                    } else if (v.is_number()) {
+                        parts.push_back(std::to_string(v.get<double>()));
+                    }
+                }
+                const Slic3r::ConfigOptionDef* def = Slic3r::print_config_def.get(key);
+                if (def != nullptr && def->type == Slic3r::coStrings) {
+                    value_str = Slic3r::escape_strings_cstyle(parts);
+                } else {
+#ifdef ENGINE_SNAPMAKER
+                    // Snapmaker Orca has no ConfigOptionPointsGroups, so
+                    // no option takes the '#' separator (layout_plan.cpp).
+                    const char* sep = ",";
+#else
+                    const char* sep = def != nullptr && def->type == Slic3r::coPointsGroups ? "#" : ",";
+#endif
+                    value_str = "";
+                    for (size_t i = 0; i < parts.size(); i++) {
+                        if (i > 0) value_str += sep;
+                        value_str += parts[i];
+                    }
+                }
+            } else if (value.is_string()) {
+                value_str = value.get<std::string>();
+            } else if (value.is_number_float()) {
+                value_str = std::to_string(value.get<double>());
+            } else if (value.is_number_integer()) {
+                value_str = std::to_string(value.get<int>());
+            } else if (value.is_boolean()) {
+                value_str = value.get<bool>() ? "1" : "0";
+            }
+
+            if (!value_str.empty() && value_str != "nil") {
+#ifdef ENGINE_BAMBU
+                if (supplied_nozzle_map && key == "filament_nozzle_map") {
+                    // The generic numeric conversion uses double formatting
+                    // (1 becomes "1.000000"). Preserve integer map tokens
+                    // without permitting fractional or malformed values.
+                    auto map_token = [](const json& element) -> std::string {
+                        if (element.is_string()) return element.get<std::string>();
+                        if (element.is_number_float()) {
+                            const double number = element.get<double>();
+                            if (number >= 0 && number <= std::numeric_limits<int>::max() &&
+                                number == static_cast<int>(number))
+                                return std::to_string(static_cast<int>(number));
+                        }
+                        return element.dump();
+                    };
+                    if (value.is_array()) {
+                        value_str.clear();
+                        for (size_t i = 0; i < value.size(); ++i) {
+                            if (i != 0) value_str += ',';
+                            value_str += map_token(value[i]);
+                        }
+                    } else if (value.is_number()) {
+                        value_str = map_token(value);
+                    }
+                    Slic3r::ConfigOptionInts accepted;
+                    if (!deserialize_usable_nozzle_map(value_str, accepted)) continue;
+                    Slic3r::DynamicPrintConfig scratch;
+                    scratch.set_deserialize(key, value_str, substitution_context);
+                    const auto* parsed = scratch.option<Slic3r::ConfigOptionInts>(key, false);
+                    if (!parsed || parsed->values.empty()) continue;
+                    config.set_key_value(key, parsed->clone());
+                    *supplied_nozzle_map = true;
+                    continue;
+                }
+#endif
+                // set_deserialize respects the existing option type
+                config.set_deserialize(key, value_str, substitution_context);
+            }
+        } catch (const std::exception& e) {
+            if (!diagnostic_source.empty()) {
+                emit_event({{"event", "config_value_rejected"},
+                        {"tag", "ProfileConfigValueRejected"},
+                        {"source", diagnostic_source},
+                        {"opt_key", key},
+                        {"message", "Failed to deserialize setting '" + key +
+                                    "'; its value may have changed: " + e.what()}});
+            }
+            if (verbose) {
+                std::cerr << "Warning: Failed to set config key '" << key << "': " << e.what() << "\n";
+            }
+        }
+    }
+}
+
+static void apply_file_level_conversions(Slic3r::DynamicPrintConfig& config, bool verbose,
+        const std::string& filepath) {
+    // The file-level conversions the engines run for a settings file
+    // (ConfigBase::load_from_json, Config.cpp 880-1096 at 31f6803): the
+    // special cases at 931-948 (support_type hybrid(auto) -> support_style
+    // tree_hybrid, wall_infill_order -> is_infill_first) and
+    // handle_legacy_composite at 1094 (thumbnails,
+    // wiping_volumes_use_custom_matrix). The per-key loop below runs
+    // handle_legacy only (set_deserialize -> Config.cpp 579), so a
+    // --machine/--process/--filament file skipped them. Loaded into a
+    // scratch and applied, so the loop's own handling (the Bambu build's
+    // nozzle map, the substitution reporting) still runs over it.
+    {
+        Slic3r::DynamicPrintConfig            loaded;
+        std::map<std::string, std::string>    key_values;
+        std::string                           reason;
+        Slic3r::ConfigSubstitutionContext     file_substitutions(
+            Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
+        try {
+            loaded.load_from_json(filepath, file_substitutions, /*load_inherits_in_config=*/false,
+                                  key_values, reason);
+            if (reason.empty() && !loaded.empty())
+                config.apply(loaded, /*ignore_nonexistent=*/true);
+        } catch (const std::exception& e) {
+            if (verbose)
+                std::cerr << "Warning: config file conversions failed: " << e.what() << "\n";
+        }
+    }
+}
+
 // Load JSON config and record only accepted, usable nozzle-map overlays.
 bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& config,
                       bool verbose, const std::string& diagnostic_source,
@@ -93,171 +266,9 @@ bool load_json_config(const std::string& filepath, Slic3r::DynamicPrintConfig& c
         // Create substitution context for config deserialization
         Slic3r::ConfigSubstitutionContext substitution_context(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
 
-        // The file-level conversions the engines run for a settings file
-        // (ConfigBase::load_from_json, Config.cpp 880-1096 at 31f6803): the
-        // special cases at 931-948 (support_type hybrid(auto) -> support_style
-        // tree_hybrid, wall_infill_order -> is_infill_first) and
-        // handle_legacy_composite at 1094 (thumbnails,
-        // wiping_volumes_use_custom_matrix). The per-key loop below runs
-        // handle_legacy only (set_deserialize -> Config.cpp 579), so a
-        // --machine/--process/--filament file skipped them. Loaded into a
-        // scratch and applied, so the loop's own handling (the Bambu build's
-        // nozzle map, the substitution reporting) still runs over it.
-        {
-            Slic3r::DynamicPrintConfig            loaded;
-            std::map<std::string, std::string>    key_values;
-            std::string                           reason;
-            Slic3r::ConfigSubstitutionContext     file_substitutions(
-                Slic3r::ForwardCompatibilitySubstitutionRule::EnableSilent);
-            try {
-                loaded.load_from_json(filepath, file_substitutions, /*load_inherits_in_config=*/false,
-                                      key_values, reason);
-                if (reason.empty() && !loaded.empty())
-                    config.apply(loaded, /*ignore_nonexistent=*/true);
-            } catch (const std::exception& e) {
-                if (verbose)
-                    std::cerr << "Warning: config file conversions failed: " << e.what() << "\n";
-            }
-        }
+        apply_file_level_conversions(config, verbose, filepath);
 
-        // Iterate through all key-value pairs
-        for (auto& [key, value] : j.items()) {
-            // Skip profile metadata, including identity/version fields handled
-            // separately by both engines' ConfigBase::load_from_json.
-            // printer_model is a setting there (Config.cpp 918-960 at
-            // 5873b5f: only the version, name, url, type, setting_id,
-            // filament_id, from, description, instantiation, inherits and
-            // includes are kept aside), and the Bambu printer features are
-            // decided from it (BambuStudio.cpp 7055-7070), so a --machine
-            // file's printer_model is loaded like any other setting.
-            if (key == "type" || key == "name" || key == "inherits" ||
-                key == "from" || key == "setting_id" || key == "instantiation" ||
-                key == "description" || key == "compatible_printers" ||
-                key == "compatible_prints" || key == "include" ||
-                key == "upward_compatible_machine" ||
-                key == "printer_variant" || key == "default_filament_profile" ||
-                key == "default_print_profile" || key == "filament_id" ||
-                key == "version" || key == "url" || key == "is_custom_defined") {
-                continue;
-            }
-
-            try {
-#ifdef ENGINE_BAMBU
-                if (supplied_nozzle_map && key == "filament_nozzle_map" &&
-                    !value.is_string() && !value.is_number() && !value.is_array())
-                    continue;
-                if (supplied_nozzle_map && key == "filament_nozzle_map" && value.is_array()) {
-                    // The generic loader drops unsupported elements. Do not turn
-                    // a malformed nozzle-map array into an apparently valid map.
-                    bool valid_types = !value.empty();
-                    for (const auto& element : value)
-                        valid_types = valid_types && (element.is_string() || element.is_number());
-                    if (!valid_types) continue;
-                }
-#endif
-                // Use set_deserialize to respect existing config types
-                // This handles type conversion properly
-                std::string value_str;
-
-                if (value.is_array()) {
-                    // An array becomes the option's serialized form, as the
-                    // engines' ConfigBase::load_from_json writes it
-                    // (parse_str_arr, Config.cpp 863-900 and 1022-1040 at
-                    // 5873b5f): a string list ';'-separated with each entry
-                    // quoted and escaped (escape_strings_cstyle), a list of
-                    // point groups '#'-separated, every other list
-                    // ','-separated. Joined with ',' a string list became one
-                    // string: a printer's seven extruder variants read as one,
-                    // so the second extruder found no variant of its own
-                    // (H2D nozzle_volume 130,130 for 130,145).
-                    std::vector<std::string> parts;
-                    for (auto& v : value) {
-                        if (v.is_string()) {
-                            parts.push_back(v.get<std::string>());
-                        } else if (v.is_number()) {
-                            parts.push_back(std::to_string(v.get<double>()));
-                        }
-                    }
-                    const Slic3r::ConfigOptionDef* def = Slic3r::print_config_def.get(key);
-                    if (def != nullptr && def->type == Slic3r::coStrings) {
-                        value_str = Slic3r::escape_strings_cstyle(parts);
-                    } else {
-#ifdef ENGINE_SNAPMAKER
-                        // Snapmaker Orca has no ConfigOptionPointsGroups, so
-                        // no option takes the '#' separator (layout_plan.cpp).
-                        const char* sep = ",";
-#else
-                        const char* sep = def != nullptr && def->type == Slic3r::coPointsGroups ? "#" : ",";
-#endif
-                        value_str = "";
-                        for (size_t i = 0; i < parts.size(); i++) {
-                            if (i > 0) value_str += sep;
-                            value_str += parts[i];
-                        }
-                    }
-                } else if (value.is_string()) {
-                    value_str = value.get<std::string>();
-                } else if (value.is_number_float()) {
-                    value_str = std::to_string(value.get<double>());
-                } else if (value.is_number_integer()) {
-                    value_str = std::to_string(value.get<int>());
-                } else if (value.is_boolean()) {
-                    value_str = value.get<bool>() ? "1" : "0";
-                }
-
-                if (!value_str.empty() && value_str != "nil") {
-#ifdef ENGINE_BAMBU
-                    if (supplied_nozzle_map && key == "filament_nozzle_map") {
-                        // The generic numeric conversion uses double formatting
-                        // (1 becomes "1.000000"). Preserve integer map tokens
-                        // without permitting fractional or malformed values.
-                        auto map_token = [](const json& element) -> std::string {
-                            if (element.is_string()) return element.get<std::string>();
-                            if (element.is_number_float()) {
-                                const double number = element.get<double>();
-                                if (number >= 0 && number <= std::numeric_limits<int>::max() &&
-                                    number == static_cast<int>(number))
-                                    return std::to_string(static_cast<int>(number));
-                            }
-                            return element.dump();
-                        };
-                        if (value.is_array()) {
-                            value_str.clear();
-                            for (size_t i = 0; i < value.size(); ++i) {
-                                if (i != 0) value_str += ',';
-                                value_str += map_token(value[i]);
-                            }
-                        } else if (value.is_number()) {
-                            value_str = map_token(value);
-                        }
-                        Slic3r::ConfigOptionInts accepted;
-                        if (!deserialize_usable_nozzle_map(value_str, accepted)) continue;
-                        Slic3r::DynamicPrintConfig scratch;
-                        scratch.set_deserialize(key, value_str, substitution_context);
-                        const auto* parsed = scratch.option<Slic3r::ConfigOptionInts>(key, false);
-                        if (!parsed || parsed->values.empty()) continue;
-                        config.set_key_value(key, parsed->clone());
-                        *supplied_nozzle_map = true;
-                        continue;
-                    }
-#endif
-                    // set_deserialize respects the existing option type
-                    config.set_deserialize(key, value_str, substitution_context);
-                }
-            } catch (const std::exception& e) {
-                if (!diagnostic_source.empty()) {
-                    emit_event({{"event", "config_value_rejected"},
-                            {"tag", "ProfileConfigValueRejected"},
-                            {"source", diagnostic_source},
-                            {"opt_key", key},
-                            {"message", "Failed to deserialize setting '" + key +
-                                        "'; its value may have changed: " + e.what()}});
-                }
-                if (verbose) {
-                    std::cerr << "Warning: Failed to set config key '" << key << "': " << e.what() << "\n";
-                }
-            }
-        }
+        apply_json_setting_values(j, config, verbose, diagnostic_source, supplied_nozzle_map, substitution_context);
 
         // Keep non-fatal forward-compatibility substitutions and unknown keys
         // visible before success when the caller opts into slicing events.
