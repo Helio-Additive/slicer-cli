@@ -11,7 +11,7 @@
 #include <boost/filesystem/fstream.hpp>
 #include <boost/algorithm/string.hpp>
 #include <iostream>
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include "cli_legacy_gcode.hpp"
 #include "cli_model_load.hpp"
 #include "cli_named_presets.hpp"

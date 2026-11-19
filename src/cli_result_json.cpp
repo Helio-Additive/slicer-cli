@@ -5,7 +5,7 @@
 #include "cli_assemble.hpp"
 #include "cli_command_line.hpp"
 #include "cli_model_load.hpp"
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/algorithm/string.hpp>

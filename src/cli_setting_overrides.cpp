@@ -1,7 +1,7 @@
 #include "cli_setting_overrides.hpp"
 #include "libslic3r/PrintConfig.hpp"
 
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include <iostream>
 
 namespace slicer_cli {

@@ -9,7 +9,7 @@
 #include <boost/algorithm/string.hpp>
 #include <iostream>
 #include "cli_arrange_geometry.hpp"
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include "cli_filament_map.hpp"
 #include "cli_load_settings.hpp"
 #include "cli_snapmaker.hpp"

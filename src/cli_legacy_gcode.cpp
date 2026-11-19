@@ -1,6 +1,6 @@
 #include "cli_legacy_gcode.hpp"
 
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 
 namespace slicer_cli {
 

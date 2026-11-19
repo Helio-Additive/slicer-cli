@@ -12,6 +12,9 @@
 
 namespace slicer_cli {
 
+void emit_event(const nlohmann::json& payload);
+void install_engine_log_bridge();
+
 /// Writes one structured event; a diagnostic never throws.
 inline void emit(const nlohmann::json& payload) {
     try {

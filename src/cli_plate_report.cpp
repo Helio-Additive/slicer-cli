@@ -9,7 +9,6 @@
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include <boost/filesystem.hpp>
 #include <iostream>
-#include "cli_engine_events.hpp"
 #include <set>
 #include "cli_plate_arrange.hpp"
 #include "cli_plate_arrange.hpp"

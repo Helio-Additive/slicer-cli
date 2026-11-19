@@ -8,7 +8,7 @@
 #include <boost/filesystem.hpp>
 #include <iostream>
 #include <chrono>
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include "cli_model_load.hpp"
 #include "cli_pipe.hpp"
 #include "cli_plate_plan.hpp"

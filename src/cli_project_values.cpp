@@ -3,7 +3,7 @@
 #include "cli_run_context.hpp"
 #include "libslic3r/Preset.hpp"
 #include <iostream>
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 
 namespace slicer_cli {
 

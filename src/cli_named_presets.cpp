@@ -10,7 +10,7 @@
 #include <boost/algorithm/string.hpp>
 #include <nlohmann/json.hpp>
 #include <iostream>
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include "cli_preset_staging.hpp"
 #include "cli_printer_catalog.hpp"
 #include "cli_snapmaker.hpp"

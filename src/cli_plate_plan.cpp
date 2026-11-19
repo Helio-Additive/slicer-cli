@@ -7,7 +7,7 @@
 #include "libslic3r/BuildVolume.hpp"
 #include <iostream>
 #include "cli_arrange_geometry.hpp"
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 #include "cli_model_load.hpp"
 #include "cli_plate_arrange.hpp"
 #include "cli_result_json.hpp"

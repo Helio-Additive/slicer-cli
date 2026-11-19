@@ -44,7 +44,7 @@
 #include "cli_preset_staging.hpp"
 #include "cli_list_settings.hpp"
 #include "cli_project_archive.hpp"
-#include "cli_engine_events.hpp"
+#include "cli_events.hpp"
 
 using slicer_cli::CliRunContext;
 using slicer_cli::assemble_list_file;
