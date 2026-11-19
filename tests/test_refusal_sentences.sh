@@ -368,7 +368,35 @@ with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", z
 PYMIRROR
     check object-mirrored-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
         "mirrored-$e.3mf" --slice 1 --printer-preset "$A1M"
+
+    # The same 220 x 20 mm footprint, kept at x = 50 mm: turned in place it
+    # still crosses the bed's edge, so --rotate alone is not offered.
+    python3 - "proj-$e.3mf" "offset-$e.3mf" <<'PYOFFSET'
+import re, sys, zipfile
+
+def stretch(match):
+    values = match[2].split()
+    assert len(values) == 12
+    values[:3] = [str(11 * float(value)) for value in values[:3]]
+    values[9] = "50"
+    return match[1] + " ".join(values) + match[3]
+
+with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as dest:
+    for member in source.infolist():
+        data = source.read(member)
+        if member.filename == "3D/3dmodel.model":
+            model, count = re.subn(r'(<item\b[^>]*\btransform=")([^"]+)(")', stretch, data.decode())
+            assert count == 1
+            data = model.encode()
+        dest.writestr(member, data)
+PYOFFSET
+    check object-offset-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+        "offset-$e.3mf" --slice 1 --printer-preset "$A1M"
 done
+# A run that already turned the part: a second --rotate would replace the
+# first, so only the arrange is offered.
+both object-turn-after-rotate "*degrees about Z. Give --arrange 1 --allow-rotations." \
+     bar.stl --slice 1 --printer-preset "$A1M" --rotate 10
 both assemble-no-fit          "*Give the plate fewer objects or smaller copies, or use a bigger printer.*" \
      --load-assemble-list pair.json --slice 1 --printer-preset "$A1M"
 

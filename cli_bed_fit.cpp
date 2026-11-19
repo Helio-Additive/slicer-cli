@@ -1,11 +1,17 @@
 #include "cli_bed_fit.hpp"
 
 #include <cmath>
+#include <limits>
+#include <locale>
+#include <sstream>
+#include <iomanip>
 
 #include <boost/multiprecision/integer.hpp>
 #include <boost/rational.hpp>
 
+#include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/ExPolygon.hpp"
+#include "libslic3r/PrintConfig.hpp"
 // Bambu's model headers need to precede the libnest2d Point operators on Clang.
 #include "libslic3r/Model.hpp"
 #include <libnest2d/backends/libslic3r/geometries.hpp>
@@ -51,6 +57,75 @@ std::optional<double> fitting_z_rotation(const Slic3r::ModelObject& object, size
     } catch (const std::exception&) {
     }
     return best;
+}
+
+namespace {
+bool rectangular_bed(const Slic3r::DynamicPrintConfig& config, Slic3r::BoundingBoxf& bed) {
+    using namespace Slic3r;
+    const auto* area = config.option<ConfigOptionPoints>("printable_area");
+    if (!area || area->values.size() < 3)
+        return false;
+    for (const Vec2d& point : area->values)
+        bed.merge(point);
+    // The bounding box proves a planar fit only on a rectangular bed.
+#ifndef ENGINE_SNAPMAKER
+    const BuildVolume build_volume(area->values, 0., {}, {});
+#else
+    const BuildVolume build_volume(area->values, 0.);
+#endif
+    return build_volume.type() == decltype(build_volume.type())::Rectangle;
+}
+} // namespace
+
+std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& object, size_t instance_index,
+                                                   const Slic3r::DynamicPrintConfig& config) {
+    using namespace Slic3r;
+    BoundingBoxf bed;
+    if (!rectangular_bed(config, bed))
+        return std::nullopt;
+    const Vec3d  size   = object.instance_bounding_box(instance_index).size();
+    const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
+    if (height > 0. && size.z() > height + EPSILON)
+        return std::nullopt;
+    if (size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON)
+        return std::nullopt;
+    return fitting_z_rotation(object, instance_index, bed);
+}
+
+std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
+                                  const Slic3r::DynamicPrintConfig& config, bool rotation_given) {
+    using namespace Slic3r;
+    std::ostringstream formatted;
+    formatted.imbue(std::locale::classic());
+    formatted << std::setprecision(std::numeric_limits<double>::max_digits10) << degrees;
+    const std::string angle = formatted.str();
+    const std::string fit   = " It fits at full size rotated " + angle + " degrees about Z.";
+
+    // --rotate turns every object, each volume before the instance transform.
+    // A mirror across X or Y reverses the world-frame turn.
+    const Model* model = object.get_model();
+    bool flag_alone = !rotation_given && model != nullptr && model->objects.size() == 1 &&
+                      object.instances.size() == 1 && object.volumes.size() == 1;
+    if (flag_alone) {
+        const Eigen::Matrix3d linear       = object.instances[instance_index]->get_matrix().linear();
+        const Eigen::Matrix3d quarter_turn = (Eigen::Matrix3d() << 0, -1, 0, 1, 0, 0, 0, 0, 1).finished();
+        flag_alone = (linear * quarter_turn).isApprox(quarter_turn * linear);
+    }
+    BoundingBoxf bed;
+    if (flag_alone && rectangular_bed(config, bed)) {
+        // The part turned the way the flag turns it, at the position it keeps.
+        Model   scratch;
+        ModelObject* turned = scratch.add_object(object);
+        turned->rotate(Geometry::deg2rad(degrees), Z);
+        const BoundingBoxf3 box = turned->instance_bounding_box(instance_index);
+        flag_alone = box.min.x() >= bed.min.x() - EPSILON && box.min.y() >= bed.min.y() - EPSILON &&
+                     box.max.x() <= bed.max.x() + EPSILON && box.max.y() <= bed.max.y() + EPSILON;
+    } else {
+        flag_alone = false;
+    }
+    if (flag_alone)
+        return fit + " Use --rotate " + angle + ", or give --arrange 1 --allow-rotations.";
+    return fit + " Give --arrange 1 --allow-rotations.";
 }
 
 } // namespace slicer_cli

@@ -3,7 +3,6 @@
 
 #include <iostream>
 #include <limits>
-#include <locale>
 #include <stdexcept>
 #include <fstream>
 #include <string>
@@ -3553,52 +3552,6 @@ static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
     return mm_text(size.x()) + " x " + mm_text(size.y()) + " x " + mm_text(size.z()) + " mm";
 }
 
-static std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& object, size_t instance_index,
-                                                           const Slic3r::DynamicPrintConfig& config) {
-    const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
-    if (!area || area->values.size() < 3)
-        return std::nullopt;
-    Slic3r::BoundingBoxf bed;
-    for (const Slic3r::Vec2d& point : area->values)
-        bed.merge(point);
-    const Slic3r::Vec3d size = object.instance_bounding_box(instance_index).size();
-    const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
-    if (height > 0. && size.z() > height + EPSILON)
-        return std::nullopt;
-    const bool fits_as_is = size.x() <= bed.size().x() + EPSILON && size.y() <= bed.size().y() + EPSILON;
-    if (fits_as_is)
-        return std::nullopt;
-
-    // The bounding box proves a planar fit only on a rectangular bed.
-#ifndef ENGINE_SNAPMAKER
-    const Slic3r::BuildVolume build_volume(area->values, 0., {}, {});
-#else
-    const Slic3r::BuildVolume build_volume(area->values, 0.);
-#endif
-    if (build_volume.type() != decltype(build_volume.type())::Rectangle)
-        return std::nullopt;
-    return slicer_cli::fitting_z_rotation(object, instance_index, bed);
-}
-
-static std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index) {
-    std::ostringstream formatted;
-    formatted.imbue(std::locale::classic());
-    formatted << std::setprecision(std::numeric_limits<double>::max_digits10) << degrees;
-    const std::string angle = formatted.str();
-    const std::string fit = " It fits at full size rotated " + angle + " degrees about Z.";
-
-    // --rotate turns each volume before the instance transform. Offer that
-    // flag for one volume when a local Z turn commutes with the instance's
-    // linear transform. A mirror across X or Y reverses the world-frame turn.
-    if (object.instances.size() == 1 && object.volumes.size() == 1) {
-        const Eigen::Matrix3d linear = object.instances[instance_index]->get_matrix().linear();
-        const Eigen::Matrix3d quarter_turn = (Eigen::Matrix3d() << 0, -1, 0, 1, 0, 0, 0, 0, 1).finished();
-        if ((linear * quarter_turn).isApprox(quarter_turn * linear))
-            return fit + " Use --rotate " + angle + ", or give --arrange 1 --allow-rotations.";
-    }
-    return fit + " Give --arrange 1 --allow-rotations.";
-}
-
 /// The official per-plate gate before apply (BambuStudio.cpp 6527-6567 at
 /// 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803): Model::update_print_volume_state
 /// against the printer's bed, then refuse an object partly over the edge
@@ -3608,7 +3561,7 @@ static std::string full_size_turn_advice(double degrees, const Slic3r::ModelObje
 /// run's own --arrange 1: it has already re-arranged this plate, so the
 /// refusal cannot offer that as the way out.
 static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                                     PlateOutcome& outcome, bool arranged = false) {
+                                     PlateOutcome& outcome, bool arranged = false, bool rotation_given = false) {
     const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 3)
         return true;   // no bed to check against
@@ -3643,7 +3596,7 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
         for (size_t i = 0; i < object->instances.size(); ++i) {
             if (object->instances[i]->print_volume_state != Slic3r::ModelInstancePVS_Partly_Outside)
                 continue;
-            const auto turn = oversized_fitting_z_rotation(*object, i, config);
+            const auto turn = slicer_cli::oversized_fitting_z_rotation(*object, i, config);
             std::string detail = "Object '" + object->name + "' (" +
                 object_size_text(object->instance_bounding_box(i)) +
                 ") crosses the edge of the " + bed_size_text(config) + " bed.";
@@ -3652,7 +3605,7 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
             else
                 detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
             if (turn)
-                detail += full_size_turn_advice(*turn, *object, i);
+                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, config, rotation_given);
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
                         {"object", object->name}, {"message", detail}});
@@ -4515,7 +4468,7 @@ static Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& co
 /// left off the plate (not printed), as the official copies loop does.
 static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
                            int plate_index, size_t sliced_filament_count, PlateOutcome& outcome,
-                           int* landed_out = nullptr) {
+                           int* landed_out = nullptr, bool rotation_given = false) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
     const auto* area = config.option<ConfigOptionPoints>("printable_area");
@@ -4777,8 +4730,8 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const ModelObject* object = inst->get_object();
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
         const size_t instance_index = size_t(it - object->instances.begin());
-        if (const auto turn = oversized_fitting_z_rotation(*object, instance_index, config)) {
-            turn_advice += " " + object->name + ":" + full_size_turn_advice(*turn, *object, instance_index);
+        if (const auto turn = slicer_cli::oversized_fitting_z_rotation(*object, instance_index, config)) {
+            turn_advice += " " + object->name + ":" + slicer_cli::full_size_turn_advice(*turn, *object, instance_index, config, rotation_given);
             continue;
         }
         const BoundingBoxf3 box = object->instance_bounding_box(instance_index);
@@ -8246,6 +8199,10 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
     const std::string& filament_config = o.filament_config;
     const std::string& process_config  = o.process_config;
     const std::string& bundle_config   = o.bundle_config;
+    // A turn the bed refusals suggest as a flag would replace one the run
+    // already gave (cli_bed_fit.hpp).
+    const bool rotation_given = o.given.count("rotate") != 0 || o.given.count("rotate_x") != 0 ||
+                                o.given.count("rotate_y") != 0;
     const bool verbose                 = o.verbose;
     const bool normalize_legacy_gcode  = o.normalize_legacy_gcode;
     const auto& overrides              = o.overrides;
@@ -11363,14 +11320,14 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     model, config, arrange_plate_index, outcome.duplicate_count, skip_ids,
                     [&](Slic3r::Model& m, Slic3r::DynamicPrintConfig& c, int& landed) {
                         PlateOutcome scratch = outcome;
-                        return arrange_on_bed(m, c, arrange_plate_index, sliced_filament_count, scratch, &landed);
+                        return arrange_on_bed(m, c, arrange_plate_index, sliced_filament_count, scratch, &landed, rotation_given);
                     });
                 // Copies the loop left off the plate stand wholly outside it
                 // and are left out by the inside check below.
                 outcome.duplicate_count = reps.copies_kept;
             } else if ((o.arrange_forced() || auto_arrange_model_files || clearance_arrange) && !rs.plan.done) {
                 PlateScope scope(model, rs.plate(plate_id));
-                if (!arrange_on_bed(model, config, arrange_plate_index, sliced_filament_count, outcome)) {
+                if (!arrange_on_bed(model, config, arrange_plate_index, sliced_filament_count, outcome, nullptr, rotation_given)) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
@@ -11461,7 +11418,7 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 if (!manual_map_extruders_fit(config, model, step_plate, outcome))
                     return 1;
 #endif
-                if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced())) {
+                if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), rotation_given)) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
