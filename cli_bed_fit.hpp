@@ -43,18 +43,21 @@ bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& c
 /// The refusal's sentence for that turn, or nothing when the run's own arrange
 /// already tried turning (`rotations_tried`: --arrange 1 --allow-rotations).
 /// It names --rotate only when `rotate_flag_ok` (rotate_flag_eligible), the
-/// turn commutes with the copy's transform, and either the run arranges (the
-/// arrange places the turned part again) or, in a run that keeps positions,
-/// `turned_fits` accepts the part turned as --rotate turns it
-/// (ModelObject::rotate, cli_run_steps.cpp): the caller runs the same checks a
-/// replay would. Otherwise it names the arrange with rotations. A plate from
+/// turn commutes with the copy's transform, and `turned_fits` accepts the part
+/// turned as --rotate turns it (ModelObject::rotate, cli_run_steps.cpp). It
+/// names --arrange 1 --allow-rotations only when `arrange_fits` accepts it.
+/// Both callbacks run the checks a replay with that flag runs, on copies: the
+/// arrange packs into its own bed (get_shrink_bedpts), which on a
+/// two-nozzle printer is the area both nozzles reach, not the printable area
+/// the turn was found on. With neither, it says nothing. A plate from
 /// --load-assemble-list (`from_list`) names no flag: OrcaSlicer takes no
 /// transforms with a list (OrcaSlicer.cpp 1530-1535), and on BambuStudio a
 /// list part kept at its list position stays over the edge with either flag,
 /// so the part is turned in its source file.
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  bool rotate_flag_ok, bool arranged, bool rotations_tried, bool from_list,
-                                  const std::function<bool(Slic3r::Model&)>& turned_fits);
+                                  bool rotate_flag_ok, bool rotations_tried, bool from_list,
+                                  const std::function<bool(Slic3r::Model&)>& turned_fits,
+                                  const std::function<bool()>& arrange_fits);
 
 } // namespace slicer_cli
 

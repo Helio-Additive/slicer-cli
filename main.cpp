@@ -3563,10 +3563,14 @@ static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
 /// could already turn objects (--allow-rotations); `from_list`, the plate is
 /// from --load-assemble-list, whose own way to arrange is the plate's
 /// need_arrange (OrcaSlicer takes no --arrange with a list, OrcaSlicer.cpp
-/// 1530-1535).
+/// 1530-1535). `plate_index` and `sliced_filament_count` are the arrange's
+/// (arrange_on_bed), which replays the turn advice before it is offered.
+static bool plate_arranges(Slic3r::Model& plate, const Slic3r::DynamicPrintConfig& config, int plate_index,
+                           size_t sliced_filament_count, bool allow_rotations);
 static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                      PlateOutcome& outcome, bool arranged = false, bool rotate_flag_ok = false,
-                                     bool rotations_tried = false, bool from_list = false) {
+                                     bool rotations_tried = false, bool from_list = false, int plate_index = 0,
+                                     size_t sliced_filament_count = 0) {
     const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 3)
         return true;   // no bed to check against
@@ -3612,11 +3616,18 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
             else
                 detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
             if (turn) {
+                // A replay keeps the run's own --arrange 1 when it has one.
                 const auto turned_fits = [&](Slic3r::Model& turned) {
-                    return slicer_cli::passes_bed_checks(turned, config, build_volume, extruder_areas.size());
+                    return (!arranged || plate_arranges(turned, config, plate_index, sliced_filament_count, false)) &&
+                           slicer_cli::passes_bed_checks(turned, config, build_volume, extruder_areas.size());
                 };
-                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, rotate_flag_ok, arranged,
-                                                            rotations_tried, from_list, turned_fits);
+                const auto arrange_fits = [&] {
+                    Slic3r::Model plate(model);
+                    return plate_arranges(plate, config, plate_index, sliced_filament_count, true) &&
+                           slicer_cli::passes_bed_checks(plate, config, build_volume, extruder_areas.size());
+                };
+                detail += slicer_cli::full_size_turn_advice(*turn, *object, i, rotate_flag_ok, rotations_tried,
+                                                            from_list, turned_fits, arrange_fits);
             }
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
@@ -4743,9 +4754,16 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const auto it = std::find(object->instances.begin(), object->instances.end(), inst);
         const size_t instance_index = size_t(it - object->instances.begin());
         if (const auto turn = slicer_cli::oversized_fitting_z_rotation(*object, instance_index, config)) {
-            if (const std::string advice = slicer_cli::full_size_turn_advice(*turn, *object, instance_index, rotate_flag_ok, true,
-                                                                             g_arrange_switches.allow_rotations,
-                                                                             /*from_list=*/false, {});
+            const auto turned_fits = [&](Model& turned) {
+                return plate_arranges(turned, config, plate_index, sliced_filament_count, false);
+            };
+            const auto arrange_fits = [&] {
+                Model plate(model);
+                return plate_arranges(plate, config, plate_index, sliced_filament_count, true);
+            };
+            if (const std::string advice = slicer_cli::full_size_turn_advice(
+                    *turn, *object, instance_index, rotate_flag_ok, g_arrange_switches.allow_rotations,
+                    /*from_list=*/false, turned_fits, arrange_fits);
                 !advice.empty())
                 turn_advice += " " + object->name + ":" + advice;
             continue;
@@ -4791,6 +4809,34 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
                 {"message","Placed " + std::to_string(model.objects.size()) + " object(s) on the " +
                            bed_size_text(config) + " bed"}});
     return true;
+}
+
+/// The arrange a replay with --arrange 1 runs (--allow-rotations as
+/// `allow_rotations`), on `plate`, a copy the caller owns, and on a copy of
+/// the settings: a refusal offers a flag only when this places every object.
+/// Its events are held and dropped. A replay inside a replay answers no.
+static bool plate_arranges(Slic3r::Model& plate, const Slic3r::DynamicPrintConfig& config, int plate_index,
+                           size_t sliced_filament_count, bool allow_rotations) {
+    static bool replaying = false;
+    if (replaying)
+        return false;
+    Slic3r::DynamicPrintConfig settings(config);
+    PlateOutcome outcome;
+    std::vector<std::string> dropped;
+    std::vector<std::string>* const held = slicer_cli::diagnostics::held_events;
+    const ArrangeSwitches switches = g_arrange_switches;
+    replaying = true;
+    slicer_cli::diagnostics::held_events = &dropped;
+    g_arrange_switches.allow_rotations = allow_rotations;
+    bool placed = false;
+    try {
+        placed = arrange_on_bed(plate, settings, plate_index, sliced_filament_count, outcome);
+    } catch (...) {
+    }
+    g_arrange_switches = switches;
+    slicer_cli::diagnostics::held_events = held;
+    replaying = false;
+    return placed;
 }
 
 /// The desktop's default prime-tower corner: the top left of the bed, the I3
@@ -11430,6 +11476,11 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                 // reads the plate's shape (PartPlate::get_shape, the bed at the
                 // plate's origin, BambuStudio.cpp 6527).
                 const bool rotate_flag_ok = slicer_cli::rotate_flag_eligible(model, rotation_given);
+                // The arrange's inputs, read as the plate's arrange above reads
+                // them, for the turn advice's replay.
+                size_t plate_sliced_filaments = 0;
+                if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr)
+                    plate_sliced_filaments = plate_data[plate_id - 1]->slice_filaments_info.size();
                 PlateScope scope(model, run_plate);
                 if (!plate_object_steps(o, model, step_plate, outcome))
                     return 1;
@@ -11439,7 +11490,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
 #endif
                 if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), rotate_flag_ok,
                                               o.arrange_forced() && g_arrange_switches.allow_rotations,
-                                              !assemble_list_file(o).empty())) {
+                                              !assemble_list_file(o).empty(), plate_id > 0 ? plate_id - 1 : 0,
+                                              plate_sliced_filaments)) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }

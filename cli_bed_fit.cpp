@@ -119,8 +119,9 @@ bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& c
 }
 
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  bool rotate_flag_ok, bool arranged, bool rotations_tried, bool from_list,
-                                  const std::function<bool(Slic3r::Model&)>& turned_fits) {
+                                  bool rotate_flag_ok, bool rotations_tried, bool from_list,
+                                  const std::function<bool(Slic3r::Model&)>& turned_fits,
+                                  const std::function<bool()>& arrange_fits) {
     using namespace Slic3r;
     if (rotations_tried)
         return {};
@@ -140,16 +141,21 @@ std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& obj
         const Eigen::Matrix3d quarter_turn = (Eigen::Matrix3d() << 0, -1, 0, 1, 0, 0, 0, 0, 1).finished();
         flag_alone = (linear * quarter_turn).isApprox(quarter_turn * linear);
     }
-    if (flag_alone && !arranged) {
-        // The part turned the way the flag turns it, at the position it keeps,
-        // through the same checks a replay runs.
+    if (flag_alone) {
+        // The part turned the way the flag turns it, through the checks a
+        // replay with --rotate runs.
         Model scratch;
         scratch.add_object(object)->rotate(Geometry::deg2rad(degrees), Z);
         flag_alone = turned_fits && turned_fits(scratch);
     }
-    if (flag_alone)
+    const bool arrange = arrange_fits && arrange_fits();
+    if (flag_alone && arrange)
         return fit + " Use --rotate " + angle + ", or give --arrange 1 --allow-rotations.";
-    return fit + " Give --arrange 1 --allow-rotations.";
+    if (flag_alone)
+        return fit + " Use --rotate " + angle + ".";
+    if (arrange)
+        return fit + " Give --arrange 1 --allow-rotations.";
+    return {};
 }
 
 } // namespace slicer_cli

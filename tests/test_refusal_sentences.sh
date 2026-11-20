@@ -68,6 +68,7 @@ box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
 box("bar.stl", 220, 10, 20)      # fits the 180 mm square bed at 41 degrees
 box("tall-bar.stl", 220, 200, 20) # the same footprint also needs 200 mm height
 box("wide-bar.stl", 400, 10, 20)  # fits the H2D's 350 x 320 mm bed only turned
+box("wider-bar.stl", 430, 10, 20) # turned it fits the H2D bed, not the area both nozzles reach
 box("skew-bar.stl", 179.99, 1, 100, degrees=0.04) # a whole-degree turn is too coarse
 # Same bounds as the A1 mini, but a 220 mm part cannot fit a 180 mm circle.
 with open("round-bed.json", "w") as out:
@@ -310,7 +311,12 @@ both object-tall-no-turn      "*Give --arrange 1 to re-arrange the plate on this
      tall-bar.stl --slice 1 --printer-preset "$A1M"
 TURN_ADVICE="*fits at full size rotated 41 degrees about Z. Use --rotate 41, or give --arrange 1 --allow-rotations.*"
 both object-turn-plain        "$TURN_ADVICE" bar.stl --slice 1 --printer-preset "$A1M"
-both object-turn-arrange      "$TURN_ADVICE" bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+# OrcaSlicer's arrange squares a part to its own axes first
+# (update_selected_items_axis_align), so --rotate 41 with --arrange 1 does not
+# fit there: only the arrange with rotations is offered.
+check object-turn-arrange bambu "$TURN_ADVICE" bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+check object-turn-arrange orca "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+     bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
 both object-round-bed         "*$OVERSIZED Try another way up to keep its size." \
      bar.stl --slice 1 --arrange 1 --printer-preset "$A1M" --machine round-bed.json
 for e in bambu orca; do
@@ -334,7 +340,7 @@ for e in bambu orca; do
 import json, re, sys
 with open(sys.argv[1]) as f:
     detail = json.load(f)["error_string"]
-match = re.search(r"Use --rotate ([0-9]+(?:[.][0-9]+)?)(?=,)", detail)
+match = re.search(r"Use --rotate ([0-9]+(?:[.][0-9]+)?)(?=[,.])", detail)
 if match:
     print(match[1])
 PYANGLE
@@ -415,8 +421,11 @@ PYOFFSET
         "raised-$e.3mf" --slice 1 --printer-preset "$A1M"
 done
 # A run that already turned the part: a second --rotate would replace the
-# first, so only the arrange is offered.
-both object-turn-after-rotate "*degrees about Z. Give --arrange 1 --allow-rotations." \
+# first, so only the arrange is offered. OrcaSlicer's arrange does not fit the
+# turned bar even with rotations, so it offers nothing.
+check object-turn-after-rotate bambu "*degrees about Z. Give --arrange 1 --allow-rotations." \
+     bar.stl --slice 1 --printer-preset "$A1M" --rotate 10
+check object-turn-after-rotate orca "*crosses the edge of the 180 x 180 x 180 mm bed. Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed." \
      bar.stl --slice 1 --printer-preset "$A1M" --rotate 10
 # On the H2D the bar fits the bed turned 32 degrees in place, but then neither
 # nozzle reaches all of it, so only the arrange is offered, with any filament
@@ -429,6 +438,11 @@ for e in bambu orca; do
         wide-bar.stl --slice 1 --printer-preset "$H2D" --filament-map "$right"
     check object-h2d-rotate-reach "$e" "*no single extruder reaches all of them*" \
         wide-bar.stl --slice 1 --printer-preset "$H2D" --rotate 32
+    # 430 mm turned 39 degrees fits the 350 x 320 mm bed, but the arrange packs
+    # into the 300 x 320 mm area both nozzles reach, where no turn fits: no
+    # flag is offered.
+    check object-h2d-no-turn "$e" "*crosses the edge of the 350 x 320 x 325 mm bed. Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed." \
+        wider-bar.stl --slice 1 --printer-preset "$H2D"
 done
 # Arrange already tried turning the parts: no turn advice after the list.
 both object-turn-tried "*together: 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl'. Move some objects to another plate in the file, or use a printer with a bigger bed." \
