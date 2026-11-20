@@ -119,7 +119,7 @@ bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& c
 }
 
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  bool rotate_flag_ok, bool arranged, bool rotations_tried,
+                                  bool rotate_flag_ok, bool arranged, bool rotations_tried, bool from_list,
                                   const std::function<bool(Slic3r::Model&)>& turned_fits) {
     using namespace Slic3r;
     if (rotations_tried)
@@ -129,6 +129,8 @@ std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& obj
     formatted << std::setprecision(std::numeric_limits<double>::max_digits10) << degrees;
     const std::string angle = formatted.str();
     const std::string fit   = " It fits at full size rotated " + angle + " degrees about Z.";
+    if (from_list)
+        return fit + " Turn it that much in its source file: an assemble list cannot turn it.";
 
     // --rotate turns every object, each volume before the instance transform.
     // A mirror across X or Y reverses the world-frame turn.

@@ -89,6 +89,8 @@ lst("emptylist.json", {"path": "cube.stl", "count": 1, "filaments": [1]})
 lst("nofil.json", {"path": "cube.stl", "count": 1, "filaments": []})
 lst("readfail.json", {"path": "empty.stl", "count": 1, "filaments": [1]})
 lst("junkobj.json", {"path": "junk.obj", "count": 1, "filaments": [1]})
+# The 220 mm bar kept at the list's own position: it crosses the bed edge.
+lst("barlist.json", {"path": "bar.stl", "count": 1, "filaments": [1], "pos_x": [90], "pos_y": [90]})
 # Two 200 mm cubes on one plate of the 180 mm A1 mini bed: each fits alone,
 # the two do not fit together.
 json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
@@ -431,6 +433,11 @@ done
 # Arrange already tried turning the parts: no turn advice after the list.
 both object-turn-tried "*together: 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl'. Move some objects to another plate in the file, or use a printer with a bigger bed." \
      bar.stl bar.stl bar.stl bar.stl bar.stl bar.stl --slice 1 --arrange 1 --allow-rotations --printer-preset "$A1M"
+# An assemble list takes no --rotate or --arrange on OrcaSlicer, and on
+# BambuStudio neither moves a part kept at its list position: the advice names
+# the list's need_arrange and the part's source file.
+both object-list-turn "*crosses the edge of the 180 x 180 x 180 mm bed. Set need_arrange for this plate in the assemble list, or use a printer with a bigger bed. It fits at full size rotated 41 degrees about Z. Turn it that much in its source file: an assemble list cannot turn it." \
+     --load-assemble-list barlist.json --slice 0 --printer-preset "$A1M"
 both assemble-no-fit          "*Give the plate fewer objects or smaller copies, or use a bigger printer.*" \
      --load-assemble-list pair.json --slice 1 --printer-preset "$A1M"
 

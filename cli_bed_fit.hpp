@@ -47,9 +47,13 @@ bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& c
 /// arrange places the turned part again) or, in a run that keeps positions,
 /// `turned_fits` accepts the part turned as --rotate turns it
 /// (ModelObject::rotate, cli_run_steps.cpp): the caller runs the same checks a
-/// replay would. Otherwise it names the arrange with rotations.
+/// replay would. Otherwise it names the arrange with rotations. A plate from
+/// --load-assemble-list (`from_list`) names no flag: OrcaSlicer takes no
+/// transforms with a list (OrcaSlicer.cpp 1530-1535), and on BambuStudio a
+/// list part kept at its list position stays over the edge with either flag,
+/// so the part is turned in its source file.
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  bool rotate_flag_ok, bool arranged, bool rotations_tried,
+                                  bool rotate_flag_ok, bool arranged, bool rotations_tried, bool from_list,
                                   const std::function<bool(Slic3r::Model&)>& turned_fits);
 
 } // namespace slicer_cli

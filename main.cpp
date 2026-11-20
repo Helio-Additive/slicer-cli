@@ -3560,10 +3560,13 @@ static std::string object_size_text(const Slic3r::BoundingBoxf3& box) {
 /// against the bed, which the official result leaves out. `arranged` is the
 /// run's own --arrange 1: it has already re-arranged this plate, so the
 /// refusal cannot offer that as the way out; `rotations_tried`, that arrange
-/// could already turn objects (--allow-rotations).
+/// could already turn objects (--allow-rotations); `from_list`, the plate is
+/// from --load-assemble-list, whose own way to arrange is the plate's
+/// need_arrange (OrcaSlicer takes no --arrange with a list, OrcaSlicer.cpp
+/// 1530-1535).
 static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                      PlateOutcome& outcome, bool arranged = false, bool rotate_flag_ok = false,
-                                     bool rotations_tried = false) {
+                                     bool rotations_tried = false, bool from_list = false) {
     const auto* area = config.option<Slic3r::ConfigOptionPoints>("printable_area");
     if (!area || area->values.size() < 3)
         return true;   // no bed to check against
@@ -3604,6 +3607,8 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
                 ") crosses the edge of the " + bed_size_text(config) + " bed.";
             if (arranged)
                 detail += " Use a printer with a bigger bed.";
+            else if (from_list)
+                detail += " Set need_arrange for this plate in the assemble list, or use a printer with a bigger bed.";
             else
                 detail += " Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed.";
             if (turn) {
@@ -3611,7 +3616,7 @@ static bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::Dynamic
                     return slicer_cli::passes_bed_checks(turned, config, build_volume, extruder_areas.size());
                 };
                 detail += slicer_cli::full_size_turn_advice(*turn, *object, i, rotate_flag_ok, arranged,
-                                                            rotations_tried, turned_fits);
+                                                            rotations_tried, from_list, turned_fits);
             }
             set_outcome_failure(outcome, CLI_OBJECTS_PARTLY_INSIDE, detail);
             emit_event({{"event","plate_error"}, {"tag","ObjectPartlyOutsideBed"},
@@ -4739,7 +4744,8 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         const size_t instance_index = size_t(it - object->instances.begin());
         if (const auto turn = slicer_cli::oversized_fitting_z_rotation(*object, instance_index, config)) {
             if (const std::string advice = slicer_cli::full_size_turn_advice(*turn, *object, instance_index, rotate_flag_ok, true,
-                                                                             g_arrange_switches.allow_rotations, {});
+                                                                             g_arrange_switches.allow_rotations,
+                                                                             /*from_list=*/false, {});
                 !advice.empty())
                 turn_advice += " " + object->name + ":" + advice;
             continue;
@@ -11432,7 +11438,8 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     return 1;
 #endif
                 if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), rotate_flag_ok,
-                                              o.arrange_forced() && g_arrange_switches.allow_rotations)) {
+                                              o.arrange_forced() && g_arrange_switches.allow_rotations,
+                                              !assemble_list_file(o).empty())) {
                     std::cerr << "Error: " << outcome.error_string << "\n";
                     return 1;
                 }
