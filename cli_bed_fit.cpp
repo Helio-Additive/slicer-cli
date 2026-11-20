@@ -1,4 +1,5 @@
 #include "cli_bed_fit.hpp"
+#include "cli_filament_map.hpp"
 
 #include <cmath>
 #include <limits>
@@ -92,9 +93,37 @@ std::optional<double> oversized_fitting_z_rotation(const Slic3r::ModelObject& ob
     return fitting_z_rotation(object, instance_index, bed);
 }
 
+bool rotate_flag_eligible(const Slic3r::Model& whole, bool rotation_given) {
+    return !rotation_given && whole.objects.size() == 1 && whole.objects.front()->instances.size() == 1 &&
+           whole.objects.front()->volumes.size() == 1;
+}
+
+bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                       const Slic3r::BuildVolume& build_volume, size_t extruder_area_count) {
+    model.update_print_volume_state(build_volume);
+    for (const Slic3r::ModelObject* object : model.objects)
+        for (const Slic3r::ModelInstance* instance : object->instances)
+            if (instance->print_volume_state != Slic3r::ModelInstancePVS_Inside)
+                return false;
+#ifndef ENGINE_SNAPMAKER
+    if (extruder_area_count > 1) {
+        int blocked = 0;
+        if (!extruder_reach_refusal(model, config, build_volume, extruder_area_count, blocked).empty())
+            return false;
+    }
+#else
+    (void)config;
+    (void)extruder_area_count;
+#endif
+    return true;
+}
+
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
-                                  const Slic3r::DynamicPrintConfig& config, bool rotate_flag_ok, bool arranged) {
+                                  bool rotate_flag_ok, bool arranged, bool rotations_tried,
+                                  const std::function<bool(Slic3r::Model&)>& turned_fits) {
     using namespace Slic3r;
+    if (rotations_tried)
+        return {};
     std::ostringstream formatted;
     formatted.imbue(std::locale::classic());
     formatted << std::setprecision(std::numeric_limits<double>::max_digits10) << degrees;
@@ -109,22 +138,12 @@ std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& obj
         const Eigen::Matrix3d quarter_turn = (Eigen::Matrix3d() << 0, -1, 0, 1, 0, 0, 0, 0, 1).finished();
         flag_alone = (linear * quarter_turn).isApprox(quarter_turn * linear);
     }
-    BoundingBoxf bed;
-    if (flag_alone && arranged) {
-        // The arrange places the turned part; the turn fits the bed's box.
-    } else if (flag_alone && rectangular_bed(config, bed)) {
-        // The part turned the way the flag turns it, at the position it keeps:
-        // inside the bed's box and under its printable height.
-        Model   scratch;
-        ModelObject* turned = scratch.add_object(object);
-        turned->rotate(Geometry::deg2rad(degrees), Z);
-        const BoundingBoxf3 box = turned->instance_bounding_box(instance_index);
-        const double height = config.has("printable_height") ? config.opt_float("printable_height") : 0.;
-        flag_alone = box.min.x() >= bed.min.x() - EPSILON && box.min.y() >= bed.min.y() - EPSILON &&
-                     box.max.x() <= bed.max.x() + EPSILON && box.max.y() <= bed.max.y() + EPSILON &&
-                     (height <= 0. || box.max.z() <= height + EPSILON);
-    } else {
-        flag_alone = false;
+    if (flag_alone && !arranged) {
+        // The part turned the way the flag turns it, at the position it keeps,
+        // through the same checks a replay runs.
+        Model scratch;
+        scratch.add_object(object)->rotate(Geometry::deg2rad(degrees), Z);
+        flag_alone = turned_fits && turned_fits(scratch);
     }
     if (flag_alone)
         return fit + " Use --rotate " + angle + ", or give --arrange 1 --allow-rotations.";

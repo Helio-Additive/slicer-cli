@@ -29,6 +29,7 @@ cd "$WORKDIR"
 
 A1M="Bambu Lab A1 mini 0.4 nozzle"
 X1C="Bambu Lab X1 Carbon 0.4 nozzle"
+H2D="Bambu Lab H2D 0.4 nozzle"
 RESULTS=()
 # report NAME ENGINE STATUS TEXT
 report() { local line="$3: $1 [$2] $4"; echo "$line"; RESULTS+=("$line"); }
@@ -66,6 +67,7 @@ box("big.stl", 300, 10)          # larger than the A1 mini bed in both direction
 box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
 box("bar.stl", 220, 10, 20)      # fits the 180 mm square bed at 41 degrees
 box("tall-bar.stl", 220, 200, 20) # the same footprint also needs 200 mm height
+box("wide-bar.stl", 400, 10, 20)  # fits the H2D's 350 x 320 mm bed only turned
 box("skew-bar.stl", 179.99, 1, 100, degrees=0.04) # a whole-degree turn is too coarse
 # Same bounds as the A1 mini, but a 220 mm part cannot fit a 180 mm circle.
 with open("round-bed.json", "w") as out:
@@ -414,6 +416,21 @@ done
 # first, so only the arrange is offered.
 both object-turn-after-rotate "*degrees about Z. Give --arrange 1 --allow-rotations." \
      bar.stl --slice 1 --printer-preset "$A1M" --rotate 10
+# On the H2D the bar fits the bed turned 32 degrees in place, but then neither
+# nozzle reaches all of it, so only the arrange is offered, with any filament
+# map. The reach refusal shows why --rotate 32 is held back.
+for e in bambu orca; do
+    [ "$e" = bambu ] && right=2 || right=2,2
+    check object-h2d-turn "$e" "*rotated 32 degrees about Z. Give --arrange 1 --allow-rotations." \
+        wide-bar.stl --slice 1 --printer-preset "$H2D"
+    check object-h2d-turn-right "$e" "*rotated 32 degrees about Z. Give --arrange 1 --allow-rotations." \
+        wide-bar.stl --slice 1 --printer-preset "$H2D" --filament-map "$right"
+    check object-h2d-rotate-reach "$e" "*no single extruder reaches all of them*" \
+        wide-bar.stl --slice 1 --printer-preset "$H2D" --rotate 32
+done
+# Arrange already tried turning the parts: no turn advice after the list.
+both object-turn-tried "*together: 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl'. Move some objects to another plate in the file, or use a printer with a bigger bed." \
+     bar.stl bar.stl bar.stl bar.stl bar.stl bar.stl --slice 1 --arrange 1 --allow-rotations --printer-preset "$A1M"
 both assemble-no-fit          "*Give the plate fewer objects or smaller copies, or use a bigger printer.*" \
      --load-assemble-list pair.json --slice 1 --printer-preset "$A1M"
 
