@@ -672,7 +672,8 @@ static int validate_plate_print(PlateOutcome& outcome, Slic3r::DynamicPrintConfi
     // errors still come back as the return value and remain fatal.
     // Soft warnings get emitted as JSON events and slicing proceeds —
     // matching what BBS GUI does in this case.
-    Slic3r::StringObjectException validation_warning;
+    // BambuStudio PrintBase.hpp:35 defaults the warning type to zero. OrcaSlicer PrintBase.hpp:35 at 8500fcd leaves it unset.
+    Slic3r::StringObjectException validation_warning{};
     // The GUI calls validate() with all three out-params
     // (Plater.cpp:10835) and paints the returned hulls on the plate;
     // a human sees the collision as geometry, with no text anywhere.
