@@ -54,6 +54,13 @@ bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& c
 /// transforms with a list (OrcaSlicer.cpp 1530-1535), and on BambuStudio a
 /// list part kept at its list position stays over the edge with either flag,
 /// so the part is turned in its source file.
+/// Runs `arrange`, the run's arrange on a copy of the plate, as a replay with
+/// --arrange 1 would: with --allow-rotations (`switch_value`, the run's own
+/// switch) set to `allow_rotations`, and its events held and dropped
+/// (diagnostics::held_events). The switch and the events are restored after,
+/// also when it throws (then: no). A replay inside a replay answers no.
+bool replay_arrange(bool& switch_value, bool allow_rotations, const std::function<bool()>& arrange);
+
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
                                   bool rotate_flag_ok, bool rotations_tried, bool from_list,
                                   const std::function<bool(Slic3r::Model&)>& turned_fits,

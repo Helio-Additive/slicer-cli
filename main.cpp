@@ -4745,6 +4745,7 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
         return landed == int(selected.size());
     }
     std::string turn_advice;
+    std::optional<bool> plate_arranges_turned;
     for (size_t k = 0; k < selected.size(); ++k) {
         if (selected[k].bed_idx == 0)
             continue;
@@ -4758,8 +4759,11 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
                 return plate_arranges(turned, config, plate_index, sliced_filament_count, false);
             };
             const auto arrange_fits = [&] {
-                Model plate(model);
-                return plate_arranges(plate, config, plate_index, sliced_filament_count, true);
+                if (!plate_arranges_turned) {   // one replay for the whole plate
+                    Model plate(model);
+                    plate_arranges_turned = plate_arranges(plate, config, plate_index, sliced_filament_count, true);
+                }
+                return *plate_arranges_turned;
             };
             if (const std::string advice = slicer_cli::full_size_turn_advice(
                     *turn, *object, instance_index, rotate_flag_ok, g_arrange_switches.allow_rotations,
@@ -4811,32 +4815,15 @@ static bool arrange_on_bed(Slic3r::Model& model, Slic3r::DynamicPrintConfig& con
     return true;
 }
 
-/// The arrange a replay with --arrange 1 runs (--allow-rotations as
-/// `allow_rotations`), on `plate`, a copy the caller owns, and on a copy of
-/// the settings: a refusal offers a flag only when this places every object.
-/// Its events are held and dropped. A replay inside a replay answers no.
+/// arrange_on_bed on `plate` (a copy the caller owns) and a copy of the
+/// settings, as a replay with --arrange 1 runs it (slicer_cli::replay_arrange).
 static bool plate_arranges(Slic3r::Model& plate, const Slic3r::DynamicPrintConfig& config, int plate_index,
                            size_t sliced_filament_count, bool allow_rotations) {
-    static bool replaying = false;
-    if (replaying)
-        return false;
-    Slic3r::DynamicPrintConfig settings(config);
-    PlateOutcome outcome;
-    std::vector<std::string> dropped;
-    std::vector<std::string>* const held = slicer_cli::diagnostics::held_events;
-    const ArrangeSwitches switches = g_arrange_switches;
-    replaying = true;
-    slicer_cli::diagnostics::held_events = &dropped;
-    g_arrange_switches.allow_rotations = allow_rotations;
-    bool placed = false;
-    try {
-        placed = arrange_on_bed(plate, settings, plate_index, sliced_filament_count, outcome);
-    } catch (...) {
-    }
-    g_arrange_switches = switches;
-    slicer_cli::diagnostics::held_events = held;
-    replaying = false;
-    return placed;
+    return slicer_cli::replay_arrange(g_arrange_switches.allow_rotations, allow_rotations, [&] {
+        Slic3r::DynamicPrintConfig settings(config);
+        PlateOutcome outcome;
+        return arrange_on_bed(plate, settings, plate_index, sliced_filament_count, outcome);
+    });
 }
 
 /// The desktop's default prime-tower corner: the top left of the bed, the I3

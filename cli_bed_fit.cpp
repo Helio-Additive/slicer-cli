@@ -1,5 +1,6 @@
 #include "cli_bed_fit.hpp"
 #include "cli_filament_map.hpp"
+#include "diagnostic_output.hpp"
 
 #include <cmath>
 #include <limits>
@@ -116,6 +117,27 @@ bool passes_bed_checks(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& c
     (void)extruder_area_count;
 #endif
     return true;
+}
+
+bool replay_arrange(bool& switch_value, bool allow_rotations, const std::function<bool()>& arrange) {
+    static bool replaying = false;
+    if (replaying)
+        return false;
+    std::vector<std::string> dropped;
+    std::vector<std::string>* const held = diagnostics::held_events;
+    const bool saved = switch_value;
+    replaying = true;
+    diagnostics::held_events = &dropped;
+    switch_value = allow_rotations;
+    bool placed = false;
+    try {
+        placed = arrange && arrange();
+    } catch (...) {
+    }
+    switch_value = saved;
+    diagnostics::held_events = held;
+    replaying = false;
+    return placed;
 }
 
 std::string full_size_turn_advice(double degrees, const Slic3r::ModelObject& object, size_t instance_index,
