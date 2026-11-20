@@ -913,8 +913,8 @@ static void initialize_extruder_nozzle_stats(RunSettings& run_settings, Slic3r::
                 // printer changes whenever the run names another one;
                 // machine_switch is set only when the project's process
                 // does not suit it.
-                const bool printer_changed = !rs.settings_merge.new_printer_name.empty() &&
-                                             rs.settings_merge.new_printer_name != project_facts.current_printer_name;
+                const bool printer_changed = !run_settings.settings_merge.new_printer_name.empty() &&
+                                             run_settings.settings_merge.new_printer_name != project_facts.current_printer_name;
                 if (!from_flags && printer_changed &&
                     slicer_cli::fit_project_nozzles_to_printer(config))
                     emit_event({{"event","config_normalized"}, {"tag","ProjectNozzlesFitToPrinter"},
