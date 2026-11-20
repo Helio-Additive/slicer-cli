@@ -38,7 +38,10 @@ fail() { echo "FAIL: $*"; FAILED=$((FAILED + 1)); }
 run() {  # run NAME BINARY ARGS...
     local name=$1; shift
     mkdir -p "$name"
-    timeout 1800 "$@" > "$name/stdout" 2> "$name/stderr"
+    # macOS has no timeout: there the run is not bounded.
+    local gate=""
+    command -v timeout >/dev/null 2>&1 && gate="timeout 1800"
+    $gate "$@" > "$name/stdout" 2> "$name/stderr"
     echo $? > "$name/rc"
 }
 rc() { cat "$1/rc"; }
