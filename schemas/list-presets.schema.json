@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/list-presets.schema.json",
   "title": "slicer-cli --list-presets",
-  "description": "The JSON document --list-presets [--printer NAME] prints on stdout (run_list_presets in main.cpp): every listed printer, or one printer's processes, filaments and defaults, or, with a non-zero exit code, an error. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
+  "description": "The JSON document --list-presets [--printer NAME] prints on stdout (run_list_presets in src/cli_named_presets.cpp): every listed printer, or one printer's processes, filaments and defaults, or, with a non-zero exit code, an error. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
   "oneOf": [
     {
       "$ref": "#/$defs/printers"

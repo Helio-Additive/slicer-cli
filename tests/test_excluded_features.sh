@@ -720,7 +720,7 @@ fi
 
 # ── An exported project slices again with the same settings ─────────────────
 # The export lists the settings the run changed, as the app lists them when it
-# saves (desktop_presets.hpp record_changed_settings), so opening the export
+# saves (src/desktop_presets.hpp record_changed_settings), so opening the export
 # keeps them. Each case slices with --export-3mf, slices the export again with
 # no flags, and compares the two G-codes: the changed settings in both
 # headers, the same layer count and the same filament use to 1 %. The printed

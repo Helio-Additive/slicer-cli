@@ -19,7 +19,7 @@ test -z "$(find "$PACKAGE_ROOT" -type l -print -quit)"
 test -d "$PACKAGE_ROOT/resources/profiles/BBL/machine"
 test -f "$PACKAGE_ROOT/resources/profiles/BBL.json"
 test -d "$PACKAGE_ROOT/resources/profiles-orca/Snapmaker/machine"
-# Snapmaker's own tree, once, under its resources root (main.cpp snapmaker_profiles_dir).
+# Snapmaker's own tree, once, under its resources root (src/cli_snapmaker.cpp snapmaker_profiles_dir).
 test -d "$PACKAGE_ROOT/resources/snapmaker/profiles/Snapmaker/machine"
 test -n "$(find "$PACKAGE_ROOT/THIRD_PARTY_LICENSES" -type f -print -quit)"
 test -f "$FIXTURES/calib_base.3mf"
@@ -154,7 +154,7 @@ echo 'PASS: all three packaged engines sliced in the clean offline container'
 # Preset staging across filesystems: /package sits on the container's
 # overlayfs and /dev/shm is a tmpfs, so copy_file copies between two devices
 # (EXDEV from copy_file_range on Linux) and staging must still load the
-# presets (main.cpp stage_file_copy). The devices are checked first, so the
+# presets (src/cli_preset_staging.cpp stage_file_copy). The devices are checked first, so the
 # case can never pass without crossing filesystems.
 XDEV_DIR="$(mktemp -d /dev/shm/slicer_cli_xdev.XXXXXX)"
 if [ "$(stat -c %d /package)" = "$(stat -c %d "$XDEV_DIR")" ]; then

@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix="diagnostic-transport-") as tmp:
     binary = Path(tmp) / "probe"
     source.write_text(SOURCE)
     subprocess.run(shlex.split(os.environ.get("CXX", "c++")) +
-                   ["-std=c++17", "-pthread", "-I", str(ROOT), str(source), "-o", str(binary)],
+                   ["-std=c++17", "-pthread", "-I", str(ROOT / "src"), str(source), "-o", str(binary)],
                    check=True)
     output = subprocess.run([str(binary)], capture_output=True, check=True, timeout=30).stdout.decode()
     prefix = "[[SLICER_EVENT]] "
