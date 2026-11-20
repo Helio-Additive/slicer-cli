@@ -1013,6 +1013,11 @@ pub mod grid {
             pts
         }
 
+        /// `m_style`: the style the constructor settled on (see `SMS_*`).
+        pub fn style(&self) -> i32 {
+            self.m_style
+        }
+
         /// The members the grid is made of, for the tests: the size of the raster, the size of a pixel, the
         /// corners of its box and the raster.
         pub fn grid_state(&self) -> (Vec2i, f64, Point, Point, &[u8]) {

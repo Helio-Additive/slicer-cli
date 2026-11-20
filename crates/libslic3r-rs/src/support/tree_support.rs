@@ -8986,6 +8986,1677 @@ fn std_max3(a: f64, b: f64, c: f64) -> f64 {
     largest
 }
 
+// ============================================================================
+// TreeSupport::fold_nodes_multi_diameter (TreeSupport.cpp:1806-2888) and
+// TreeSupport::smooth_line_width_multi_diameter (TreeSupport.cpp:2894-2976)
+// ============================================================================
+
+/// TreeSupport.cpp:1856-1878 `struct Carrier` of fold_nodes_multi_diameter(): one column's slab. Its extrusion
+/// spans from bottom_z up to the carrier, the column's top.
+///
+/// `Carrier *` is the key of the carrier: the index of its slab and its support layer (`carriers[slab][layer]`).
+#[derive(Debug, Clone)]
+struct FoldCarrierColumn {
+    slab_idx: usize,
+    top_layer: usize,
+    base_source_layer: usize,
+    bottom_obj_layer: usize,
+    obj_layer: usize,
+    bottom_z: CoordF,
+    top_z: CoordF,
+    slab_height: CoordF,
+    original_base_source_layer: usize,
+    original_bottom_obj_layer: usize,
+    original_bottom_z: CoordF,
+    original_slab_height: CoordF,
+    footprint: ExPolygons,
+    base_footprint: ExPolygons,
+    interface_footprint: ExPolygons,
+    footprint_bbox: BBoxCpp,
+    base_footprint_bbox: BBoxCpp,
+    partial_heads: Vec<usize>,
+    lower_carrier: Option<FoldCarrierKey>,
+    folds: bool,
+}
+
+type FoldCarrierKey = (usize, usize);
+
+impl Default for FoldCarrierColumn {
+    fn default() -> Self {
+        FoldCarrierColumn {
+            slab_idx: 0,
+            top_layer: 0,
+            base_source_layer: 0,
+            bottom_obj_layer: 0,
+            obj_layer: 0,
+            bottom_z: 0.,
+            top_z: 0.,
+            slab_height: 0.,
+            original_base_source_layer: 0,
+            original_bottom_obj_layer: 0,
+            original_bottom_z: 0.,
+            original_slab_height: 0.,
+            footprint: Vec::new(),
+            base_footprint: Vec::new(),
+            interface_footprint: Vec::new(),
+            footprint_bbox: BBoxCpp::new(),
+            base_footprint_bbox: BBoxCpp::new(),
+            partial_heads: Vec::new(),
+            lower_carrier: None,
+            folds: false,
+        }
+    }
+}
+
+// TreeSupport.cpp:1841-1844 the lambda `foldable` of fold_nodes_multi_diameter(): only nodes that are going to
+// move belong to a column: with the interface left on the fine grid, an interface node is not what a slab emits,
+// so it must neither pick a carrier nor be swallowed.
+fn fold_foldable(node: &SupportNode, fold_interface: bool) -> bool {
+    node.distance_to_top >= 0 && (fold_interface || node.support_roof_layers_below < 0)
+}
+
+// TreeSupport.cpp:1846-1853 the lambda `for_each_parent`: parents holds parent plus every neighbour merged into
+// the node; older nodes may only carry parent.
+fn fold_parents(node: &SupportNode) -> &[NodeId] {
+    if !node.parents.is_empty() {
+        &node.parents
+    } else {
+        node.parent.as_slice()
+    }
+}
+
+// TreeSupport.cpp:2085-2095 the lambda `move_target`
+fn fold_move_target(
+    column_top: &[HashMap<NodeId, usize>],
+    carriers: &[BTreeMap<usize, FoldCarrierColumn>],
+    nodes: &[SupportNode],
+    slab_idx: usize,
+    node: NodeId,
+) -> Option<FoldCarrierKey> {
+    let top = column_top[slab_idx].get(&node)?;
+    let mut key: FoldCarrierKey = (slab_idx, *top);
+    let print_z = nodes[node].print_z;
+    loop {
+        let carrier = &carriers[key.0][&key.1];
+        match carrier.lower_carrier {
+            Some(lower) if print_z <= carrier.bottom_z + EPSILON => key = lower,
+            _ => break,
+        }
+    }
+    let carrier = &carriers[key.0][&key.1];
+    if carrier.folds && print_z > carrier.bottom_z + EPSILON {
+        Some(key)
+    } else {
+        None
+    }
+}
+
+// TreeSupport.cpp:2100-2124 the lambda `refuse_shared_carriers`: a carrier extrudes its whole layer at the slab
+// height, so it may not share the layer with a node that stays there: that node was already printed on the layers
+// below and would be extruded a second time. Refusing a carrier leaves its own column behind on lower layers,
+// which may be carriers in turn.
+fn fold_refuse_shared_carriers(
+    column_top: &[HashMap<NodeId, usize>],
+    carriers: &mut [BTreeMap<usize, FoldCarrierColumn>],
+    contact_nodes: &[Vec<NodeId>],
+    nodes: &[SupportNode],
+    fold_interface: bool,
+) {
+    let mut refused = true;
+    while refused {
+        refused = false;
+        for slab_idx in 0..carriers.len() {
+            let tops = &column_top[slab_idx];
+            let carrier_layers: Vec<usize> = carriers[slab_idx].keys().copied().collect();
+            for carrier_layer in carrier_layers {
+                if !carriers[slab_idx][&carrier_layer].folds {
+                    continue;
+                }
+                let shared = contact_nodes[carrier_layer].iter().any(|&node| {
+                    if !fold_foldable(&nodes[node], fold_interface) {
+                        return false;
+                    }
+                    match tops.get(&node) {
+                        Some(top) => *top != carrier_layer && fold_move_target(column_top, carriers, nodes, slab_idx, node).is_none(),
+                        None => false,
+                    }
+                });
+                if shared {
+                    carriers[slab_idx].get_mut(&carrier_layer).unwrap().folds = false;
+                    refused = true;
+                }
+            }
+        }
+    }
+}
+
+// TreeSupport.cpp:2255-2272 the lambda `refuse_carriers`
+fn fold_refuse_carriers(
+    refused: &std::collections::BTreeSet<FoldCarrierKey>,
+    misaligned_carriers: &mut usize,
+    column_top: &[HashMap<NodeId, usize>],
+    carriers: &mut [BTreeMap<usize, FoldCarrierColumn>],
+    contact_nodes: &[Vec<NodeId>],
+    nodes: &[SupportNode],
+    fold_interface: bool,
+) {
+    *misaligned_carriers += refused.len();
+    for key in refused {
+        carriers[key.0].get_mut(&key.1).unwrap().folds = false;
+    }
+    // Survivors changed, so every split is rebuilt from its original span in the next pass.
+    for slab_carriers in carriers.iter_mut() {
+        for carrier in slab_carriers.values_mut() {
+            if carrier.lower_carrier.is_none() {
+                continue;
+            }
+            carrier.base_source_layer = carrier.original_base_source_layer;
+            carrier.bottom_obj_layer = carrier.original_bottom_obj_layer;
+            carrier.bottom_z = carrier.original_bottom_z;
+            carrier.slab_height = carrier.original_slab_height;
+            carrier.lower_carrier = None;
+        }
+    }
+    fold_refuse_shared_carriers(column_top, carriers, contact_nodes, nodes, fold_interface);
+}
+
+// TreeSupport.cpp:2130-2177 the lambda `evaluate_folded_radius`. The columns of a slab are joined along the
+// parent of a node when both move to the same carrier (a union-find that keeps the greatest radius at its root);
+// the radius of a node is the greatest of its group, whatever the order the std::unordered_map hands the nodes in.
+fn fold_evaluate_folded_radius(column_top: &[HashMap<NodeId, usize>], nodes: &[SupportNode], moves: &HashMap<NodeId, usize>) -> HashMap<NodeId, CoordF> {
+    struct FoldedColumn {
+        parent: usize,
+        max_radius: CoordF,
+        carrier_layer: usize,
+    }
+    fn find_column(columns: &mut [FoldedColumn], mut column: usize) -> usize {
+        let mut root = column;
+        while columns[root].parent != root {
+            root = columns[root].parent;
+        }
+        while columns[column].parent != column {
+            let next = columns[column].parent;
+            columns[column].parent = root;
+            column = next;
+        }
+        root
+    }
+    let mut folded_radius: HashMap<NodeId, CoordF> = HashMap::new();
+    for tops in column_top {
+        let mut members: Vec<NodeId> = tops.keys().copied().filter(|node| moves.contains_key(node)).collect();
+        members.sort_unstable();
+        let mut index: HashMap<NodeId, usize> = HashMap::with_capacity(members.len());
+        let mut columns: Vec<FoldedColumn> = Vec::with_capacity(members.len());
+        for &node in &members {
+            index.insert(node, columns.len());
+            columns.push(FoldedColumn { parent: columns.len(), max_radius: nodes[node].radius, carrier_layer: moves[&node] });
+        }
+        for (i, &node) in members.iter().enumerate() {
+            let Some(parent) = nodes[node].parent else {
+                continue;
+            };
+            let Some(&parent_column) = index.get(&parent) else {
+                continue;
+            };
+            if columns[parent_column].carrier_layer != columns[i].carrier_layer {
+                continue;
+            }
+            let node_root = find_column(&mut columns, i);
+            let parent_root = find_column(&mut columns, parent_column);
+            if node_root != parent_root {
+                columns[parent_root].max_radius = columns[parent_root].max_radius.max(columns[node_root].max_radius);
+                columns[node_root].parent = parent_root;
+            }
+        }
+        for (i, &node) in members.iter().enumerate() {
+            let root = find_column(&mut columns, i);
+            // `folded_radius.emplace(node, ...)`: the first entry of a node stays
+            folded_radius.entry(node).or_insert(columns[root].max_radius);
+        }
+    }
+    folded_radius
+}
+
+// TreeSupport.cpp:2183-2236 the lambda `evaluate_roof_layers`: { distance_to_top, support_roof_layers_below } in
+// printed layers of every node, were the nodes of `moves` printed on the layers it names.
+fn fold_evaluate_roof_layers(
+    contact_nodes: &[Vec<NodeId>],
+    nodes: &[SupportNode],
+    num_layers: usize,
+    fold_interface: bool,
+    moves: &HashMap<NodeId, usize>,
+) -> HashMap<NodeId, (i32, i32)> {
+    let mut counters: HashMap<NodeId, (i32, i32)> = HashMap::new();
+    if !fold_interface {
+        return counters;
+    }
+    // The roof counter is carried down the chain like steps. Deriving it from the node's own fine counters
+    // (roof + distance_to_top - steps) breaks below a merge: the merged node keeps the larger distance_to_top
+    // of one branch and the larger roof of another, so their sum no longer matches the chain above and a deep
+    // base node could come out as roof / roof_1st_layer again.
+    struct ChainState {
+        steps: i32,
+        roof: i32,
+        printed: usize,
+    }
+    let mut chain: HashMap<NodeId, ChainState> = HashMap::new();
+    let mut merged: Vec<NodeId> = Vec::new();
+    // A parent that another parent of the merge holds whole (a circle in a polygon, a small circle in a large
+    // one) does not count; the outer parent decides.
+    let contained_in = |inner: NodeId, outer: NodeId| -> bool {
+        let (inner_n, outer_n) = (&nodes[inner], &nodes[outer]);
+        if inner == outer || inner_n.type_ == TreeNodeType::EPolygon {
+            return false;
+        }
+        if outer_n.type_ == TreeNodeType::EPolygon {
+            return !outer_n.overhang.contour.points.is_empty() && cx::contains(&outer_n.overhang, &inner_n.position, true);
+        }
+        let (r_in, r_out) = (scale_(inner_n.radius), scale_(outer_n.radius));
+        r_out > r_in + scale_(EPSILON) && point_dist(outer_n.position, inner_n.position) + r_in <= r_out
+    };
+    for layer_nr in (0..num_layers).rev() {
+        for &node in &contact_nodes[layer_nr] {
+            if nodes[node].distance_to_top < 0 {
+                continue;
+            }
+            let printed: usize = moves.get(&node).copied().unwrap_or(layer_nr);
+            let mut steps: i32 = -1;
+            let mut roof: i32 = 0;
+            let mut has_parent = false;
+            merged.clear();
+            for &parent in fold_parents(&nodes[node]) {
+                if chain.contains_key(&parent) {
+                    merged.push(parent);
+                }
+            }
+            for &parent in &merged {
+                if merged.len() > 1 && merged.iter().any(|&other| contained_in(parent, other)) {
+                    continue;
+                }
+                let state = &chain[&parent];
+                let step: i32 = if state.printed != printed { 1 } else { 0 };
+                // Where branches merge: the greater number of layers, the smaller number of interface layers; the
+                // merged node counts as the body of the deeper branch.
+                steps = steps.max(state.steps + step);
+                roof = if has_parent { roof.min(state.roof - step) } else { state.roof - step };
+                has_parent = true;
+            }
+            if !has_parent {
+                steps = nodes[node].distance_to_top;
+                roof = nodes[node].support_roof_layers_below;
+            }
+            chain.insert(node, ChainState { steps, roof, printed });
+            counters.insert(node, (steps, roof));
+        }
+    }
+    counters
+}
+
+// TreeSupport.cpp:2246-2250 the lambda `footprints_overlap`
+fn fold_footprints_overlap(lhs: &ExPolygons, lhs_bbox: &BBoxCpp, rhs: &ExPolygons, rhs_bbox: &BBoxCpp) -> bool {
+    !lhs.is_empty() && !rhs.is_empty() && lhs_bbox.overlap(rhs_bbox) && !cx::intersection_ex(lhs, rhs).is_empty()
+}
+
+// TreeSupport.cpp:2251-2253 the lambda `contains_span`
+fn fold_contains_span(outer: &FoldCarrierColumn, inner: &FoldCarrierColumn) -> bool {
+    outer.bottom_z <= inner.bottom_z + EPSILON && outer.top_z >= inner.top_z - EPSILON
+}
+
+/// TreeSupport.cpp:1898-1928 the lambdas `probe_of` and `cached_probe_of` of fold_nodes_multi_diameter(): the raw
+/// geometry draw_circles() will render of a node. Collision clipping is deliberately left out: it may only shrink
+/// this probe, so refusing an ambiguous fold remains the safe outcome.
+struct FoldProbe {
+    branch_circle: Polygon,
+    branch_radius: CoordF,
+    branch_radius_scaled: CoordF,
+    square_support: bool,
+    on_buildplate_only: bool,
+    xy_distance_scaled: Coord,
+    base_probe_cache: HashMap<NodeId, ExPolygons>,
+    interface_probe_cache: HashMap<NodeId, ExPolygons>,
+}
+
+impl FoldProbe {
+    fn probe_of(&self, node: &SupportNode, use_interface_shape: bool, probe: &mut ExPolygons, radius: CoordF) {
+        if node.distance_to_top < 0 {
+            return;
+        }
+        if node.type_ == TreeNodeType::EPolygon {
+            if node.overhang.contour.points.is_empty() {
+                return;
+            }
+            // `offset_ex({ node->overhang }, float(xy_distance_scaled))`: the overload of one ExPolygon
+            *probe = cx::offset_ex_expolygon(&node.overhang, self.xy_distance_scaled as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT);
+            return;
+        }
+        if use_interface_shape && !self.on_buildplate_only {
+            if node.overhang.contour.points.is_empty() {
+                return;
+            }
+            *probe = if node.overhang.contour.points.len() > 100 || node.overhang.holes.len() > 1 {
+                vec![node.overhang.clone()]
+            } else {
+                cx::offset_ex_expolygon(&node.overhang, self.xy_distance_scaled as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT)
+            };
+            return;
+        }
+
+        probe.push(tree_support_node_disk(node, &self.branch_circle, self.branch_radius, self.branch_radius_scaled, self.square_support, radius));
+    }
+
+    fn cached_probe_of(&mut self, nodes: &[SupportNode], node: NodeId, use_interface_shape: bool) -> &ExPolygons {
+        let cached = if use_interface_shape { self.interface_probe_cache.contains_key(&node) } else { self.base_probe_cache.contains_key(&node) };
+        if !cached {
+            let mut probe: ExPolygons = Vec::new();
+            self.probe_of(&nodes[node], use_interface_shape, &mut probe, nodes[node].radius);
+            if use_interface_shape {
+                self.interface_probe_cache.insert(node, probe);
+            } else {
+                self.base_probe_cache.insert(node, probe);
+            }
+        }
+        if use_interface_shape {
+            &self.interface_probe_cache[&node]
+        } else {
+            &self.base_probe_cache[&node]
+        }
+    }
+}
+
+impl<'a> TreeSupport<'a> {
+    /// TreeSupport.cpp:1806-2888 `void TreeSupport::fold_nodes_multi_diameter()`
+    ///
+    /// The maps and sets the C++ keys by the address of a node or of a carrier are keyed by the node (its index)
+    /// and by the slab and layer of the carrier here. None of the loops over them depends on their order: every
+    /// one of them either writes what it reads of its own key or folds with a maximum.
+    pub fn fold_nodes_multi_diameter(&mut self) {
+        use std::collections::BTreeSet;
+        self.m_fold_carriers.clear();
+        self.m_fold_slab_of_layer.clear();
+        self.m_base_only_fold_layers.clear();
+
+        if !self.m_support_merge_plan.enabled || self.m_support_merge_plan.slabs.is_empty() {
+            return;
+        }
+        let plan: SupportMergePlan = self.m_support_merge_plan.clone();
+        let num_slabs = plan.slabs.len();
+
+        let layer_heights: Vec<LayerHeightData> = self.m_ts_data.layer_heights.clone();
+        let num_layers: usize = self.contact_nodes.len().min(layer_heights.len());
+        if num_layers == 0 {
+            return;
+        }
+
+        // Support layers grouped by the slab they fall into, ascending. A layer with no height occupies no Z, so
+        // it can neither carry an extrusion nor be swallowed into one.
+        let mut layers_per_slab: Vec<Vec<usize>> = vec![Vec::new(); num_slabs];
+        for layer_nr in 0..num_layers {
+            if layer_heights[layer_nr].height < EPSILON {
+                continue;
+            }
+            // `plan.slab_for_layer(layer_heights[layer_nr].obj_layer_nr)` (SupportMergePlan.cpp:179-185), its index
+            let obj_layer_nr = layer_heights[layer_nr].obj_layer_nr;
+            if obj_layer_nr >= plan.slab_index_per_layer.len() {
+                continue;
+            }
+            let slab_idx = plan.slab_index_per_layer[obj_layer_nr];
+            if slab_idx < 0 {
+                continue;
+            }
+            layers_per_slab[slab_idx as usize].push(layer_nr);
+        }
+
+        let explicit_interface_filament: i32 = cfg_int(self.object_config(), "support_interface_filament");
+        let xy_distance_scaled: Coord = scale_(self.m_ts_data.m_xy_distance) as Coord;
+        // One decision for the whole object: an interface that folds on some slabs and not on others would leave
+        // the roof counters in two different units along one chain.
+        let fold_interface: bool = plan.interface_fold_enabled;
+        let num_top_interface_layers: usize = self.m_support_params.num_top_interface_layers;
+        let m_raft_layers = self.m_raft_layers;
+
+        // Per slab: the column top of every foldable node, and the candidate carriers keyed by support layer.
+        let mut column_top: Vec<HashMap<NodeId, usize>> = vec![HashMap::new(); num_slabs];
+        let mut carriers: Vec<BTreeMap<usize, FoldCarrierColumn>> = vec![BTreeMap::new(); num_slabs];
+
+        let square_support = self.avg_node_per_layer > 200;
+        let circle_resolution: i32 = if square_support { 4 } else { 25 };
+        let branch_radius: CoordF = cfg_float(self.object_config(), "tree_support_branch_diameter") / 2.;
+        let branch_radius_scaled: CoordF = scale_(branch_radius);
+        let mut branch_circle = Polygon::new();
+        for i in 0..circle_resolution {
+            // `double(i) / circle_resolution * TAU + (square_support ? PI / 4. + nodes_angle : 0.)`: the product is
+            // contracted with the sum
+            let angle: f64 = (i as f64 / circle_resolution as f64).mul_add(TAU, if square_support { M_PI / 4. + self.nodes_angle as f64 } else { 0. });
+            // cos(angle) and sin(angle) of one argument: one `__sincos_stret` call
+            let (sin_a, cos_a) = crate::clipper::sin_cos(angle);
+            branch_circle.points.push(point_from_f64(cos_a * branch_radius_scaled, sin_a * branch_radius_scaled));
+        }
+        let mut prober = FoldProbe {
+            branch_circle,
+            branch_radius,
+            branch_radius_scaled,
+            square_support,
+            on_buildplate_only: cfg_bool(self.object_config(), "support_on_build_plate_only"),
+            xy_distance_scaled,
+            base_probe_cache: HashMap::new(),
+            interface_probe_cache: HashMap::new(),
+        };
+
+        // Pass 1: columns and carriers, per slab.
+        for slab_idx in 0..num_slabs {
+            let layers = &layers_per_slab[slab_idx];
+            if layers.len() < 2 {
+                continue;
+            }
+            let nodes = &self.m_ts_data.contact_nodes;
+
+            // Walk the slab top down so a node's parents inside the slab already know their column top. A parent
+            // outside the slab - or one that does not move - is absent from the map and ends the column there.
+            // When differently aligned columns merge, start a new carrier at the merge layer. This leaves their
+            // partial heads on the fine grid without carrying that refusal into the common trunk below.
+            for &layer in layers.iter().rev() {
+                for &node in &self.contact_nodes[layer] {
+                    if !fold_foldable(&nodes[node], fold_interface) {
+                        continue;
+                    }
+                    let tops = &mut column_top[slab_idx];
+                    let mut top: usize = layer;
+                    let mut parent_top: usize = 0;
+                    let mut has_parent_top = false;
+                    let mut different_parent_tops = false;
+                    for parent in fold_parents(&nodes[node]) {
+                        let Some(&parent_it) = tops.get(parent) else {
+                            continue;
+                        };
+                        if !has_parent_top {
+                            parent_top = parent_it;
+                            has_parent_top = true;
+                        } else if parent_it != parent_top {
+                            different_parent_tops = true;
+                        }
+                    }
+                    if has_parent_top && !different_parent_tops {
+                        top = top.max(parent_top);
+                    } else if different_parent_tops {
+                        let carrier = carriers[slab_idx].entry(top).or_default();
+                        for parent in fold_parents(&nodes[node]) {
+                            if let Some(&parent_it) = tops.get(parent) {
+                                if parent_it != top {
+                                    carrier.partial_heads.push(parent_it);
+                                }
+                            }
+                        }
+                    }
+                    tops.insert(node, top);
+                    carriers[slab_idx].entry(top).or_default();
+                }
+            }
+            let tops = &column_top[slab_idx];
+            if tops.is_empty() {
+                continue;
+            }
+
+            let front: usize = layers[0];
+            let slab_bottom_z: CoordF = layer_heights[front].print_z - layer_heights[front].height;
+            let slab_bottom_obj_layer: usize = layer_heights[front].obj_layer_nr;
+            // Without a raft the first band starts on the bed, so its bed face is the representative cross
+            // section - the same choice the model band planner makes, and the one that keeps the adhesion
+            // geometry. With a raft the band rests on the raft and behaves like any other.
+            let bed_anchor: bool = plan.slabs[slab_idx].bottom_anchor && m_raft_layers == 0;
+
+            // Carriers ascend, and so does the span each one has to clear: grow it incrementally.
+            let mut span_collision: ExPolygons = Vec::new();
+            let mut span_top_obj_layer: usize = slab_bottom_obj_layer;
+            let carrier_layers: Vec<usize> = carriers[slab_idx].keys().copied().collect();
+            for carrier_layer in carrier_layers {
+                let carrier = carriers[slab_idx].get_mut(&carrier_layer).unwrap();
+                carrier.slab_idx = slab_idx;
+                carrier.top_layer = carrier_layer;
+                carrier.obj_layer = layer_heights[carrier_layer].obj_layer_nr;
+                carrier.bottom_obj_layer = slab_bottom_obj_layer;
+                carrier.bottom_z = slab_bottom_z;
+                carrier.top_z = layer_heights[carrier_layer].print_z;
+                carrier.slab_height = carrier.top_z - slab_bottom_z;
+                // A column whose top is the slab's bottom layer has nothing to fold.
+                if carrier.slab_height <= layer_heights[carrier_layer].height + EPSILON {
+                    continue;
+                }
+                // A carrier below the band top shortens the slab, so the nozzle has to be able to extrude the
+                // shortened height as well. Too thin and the column simply stays on the fine grid, which is what
+                // R4 already does for a chain head hanging off the top of the ladder.
+                if !crate::adaptive_layer_merge::adaptive_layer_height_range(plan.slabs[slab_idx].nozzle_diameter).contains(carrier.slab_height) {
+                    continue;
+                }
+
+                carrier.base_source_layer = carrier_layer;
+                if bed_anchor {
+                    for node in &self.contact_nodes[front] {
+                        if tops.get(node) == Some(&carrier_layer) {
+                            carrier.base_source_layer = front;
+                            break;
+                        }
+                    }
+                }
+                carrier.original_base_source_layer = carrier.base_source_layer;
+                carrier.original_bottom_obj_layer = carrier.bottom_obj_layer;
+                carrier.original_bottom_z = carrier.bottom_z;
+                carrier.original_slab_height = carrier.slab_height;
+
+                // A slab is one extrusion over its whole Z span, so it has to clear the object everywhere in that
+                // span and not only at the face its cross-section was taken from. Refuse the fold outright when
+                // nothing would survive: printing those layers thin is wasteful for this nozzle, but dropping them
+                // removes the support altogether, and keeping the thin ones is the lesser evil.
+                let mut appended = false;
+                while span_top_obj_layer < carrier.obj_layer {
+                    if span_top_obj_layer < self.m_ts_data.m_layer_outlines.len() {
+                        append(
+                            &mut span_collision,
+                            cx::offset_ex(&self.m_ts_data.m_layer_outlines[span_top_obj_layer], xy_distance_scaled as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT),
+                        );
+                        appended = true;
+                    }
+                    span_top_obj_layer += 1;
+                }
+                if appended {
+                    span_collision = cx::union_ex(&span_collision);
+                }
+                if !span_collision.is_empty() {
+                    let mut any_foldable = false;
+                    let mut survives = false;
+                    // Only this column's nodes on the faces it would draw matter. The roof counters are still in
+                    // fine units here, so the interface is not told apart: a slab whose contact disks all vanish
+                    // is no better than one whose base does.
+                    for probe_layer in [carrier.base_source_layer, carrier_layer] {
+                        for &node in &self.contact_nodes[probe_layer] {
+                            if tops.get(&node) != Some(&carrier_layer) {
+                                continue;
+                            }
+                            let n = &nodes[node];
+                            let use_interface_shape =
+                                num_top_interface_layers > 0 && (n.support_roof_layers_below > 1 || (n.support_roof_layers_below >= 0 && !n.is_sharp_tail));
+                            let probe = prober.cached_probe_of(nodes, node, use_interface_shape);
+                            if probe.is_empty() {
+                                continue;
+                            }
+                            any_foldable = true;
+                            if !cx::diff_ex(probe, &span_collision).is_empty() {
+                                survives = true;
+                                break;
+                            }
+                        }
+                        if survives || probe_layer == carrier_layer {
+                            break;
+                        }
+                    }
+                    if any_foldable && !survives {
+                        continue;
+                    }
+                }
+
+                carrier.folds = true;
+            }
+        }
+
+        // A common carrier replaces only the material below its synchronization boundary. Its differently
+        // aligned heads stay on their original layers; refusing them must not disable the common trunk.
+        for slab_idx in 0..num_slabs {
+            let mut partial_heads: Vec<usize> = Vec::new();
+            for entry in carriers[slab_idx].values() {
+                if entry.folds {
+                    partial_heads.extend_from_slice(&entry.partial_heads);
+                }
+            }
+            let mut refused_heads: HashSet<usize> = HashSet::new();
+            while let Some(partial_head) = partial_heads.pop() {
+                if !refused_heads.insert(partial_head) {
+                    continue;
+                }
+                // `carriers[slab_idx].at(partial_head)`
+                let carrier = carriers[slab_idx].get_mut(&partial_head).expect("fold_nodes_multi_diameter: the carrier of a partial head");
+                carrier.folds = false;
+                partial_heads.extend_from_slice(&carrier.partial_heads);
+            }
+        }
+
+        fold_refuse_shared_carriers(&column_top, &mut carriers, &self.contact_nodes, &self.m_ts_data.contact_nodes, fold_interface);
+
+        // counters is { distance_to_top, support_roof_layers_below } in printed layers.
+        // 2238-2245 the lambda `is_interface_role`. `distance_to_top >= m_support_params.num_top_interface_layers`
+        // compares the int as a size_t: a negative distance is above every count.
+        let is_interface_role = |counters: (i32, i32), printed_layer: usize| -> bool {
+            let (distance_to_top, roof_layers) = counters;
+            num_top_interface_layers > 0
+                && layer_heights[printed_layer].obj_layer_nr > 0
+                && (roof_layers > 0 || (roof_layers == 0 && (distance_to_top as i64 as u64) >= num_top_interface_layers as u64))
+        };
+        // 2291-2294 the lambda `use_interface_shape`
+        let use_interface_shape =
+            |node: &SupportNode, roof_layers: i32| -> bool { num_top_interface_layers > 0 && (roof_layers > 1 || (roof_layers >= 0 && !node.is_sharp_tail)) };
+
+        let mut folded_radius: HashMap<NodeId, CoordF>;
+        let mut misaligned_carriers: usize = 0;
+        let moves_to: HashMap<NodeId, usize>;
+        let final_counters: HashMap<NodeId, (i32, i32)>;
+        // Every folded span is built on the support-layer grid. Interface material may contain a finer span:
+        // the final-area pass removes what it covers. A genuine partial overlap cannot be repaired in XY, so
+        // reject the less useful carrier first; the fixed-point check also rejects the survivor if the fine
+        // layers left behind still overlap it unsafely.
+        // Recompute the tentative printed counters and footprints after every refusal. The roof/base split is
+        // defined in printed-layer units, so using the original counters here could omit a node that Pass 2
+        // later turns into interface material.
+        loop {
+            let nodes = &self.m_ts_data.contact_nodes;
+            let mut tentative_moves: HashMap<NodeId, usize> = HashMap::new();
+            for slab_idx in 0..num_slabs {
+                for &node in column_top[slab_idx].keys() {
+                    if let Some(carrier) = fold_move_target(&column_top, &carriers, nodes, slab_idx, node) {
+                        // `tentative_moves.emplace(node, carrier->top_layer)`
+                        tentative_moves.entry(node).or_insert(carriers[carrier.0][&carrier.1].top_layer);
+                    }
+                }
+            }
+
+            let future_counters: HashMap<NodeId, (i32, i32)> = fold_evaluate_roof_layers(&self.contact_nodes, nodes, num_layers, fold_interface, &tentative_moves);
+            // 2286-2290 the lambda `future_of`
+            let future_of = |node: NodeId| -> (i32, i32) {
+                match future_counters.get(&node) {
+                    Some(counters) => *counters,
+                    None => (nodes[node].distance_to_top, nodes[node].support_roof_layers_below),
+                }
+            };
+
+            // Every loop follows a split or refusal, so the radius groups always match the current destinations.
+            folded_radius = fold_evaluate_folded_radius(&column_top, nodes, &tentative_moves);
+            for slab_carriers in carriers.iter_mut() {
+                for carrier in slab_carriers.values_mut() {
+                    carrier.footprint.clear();
+                    carrier.base_footprint.clear();
+                    carrier.interface_footprint.clear();
+                    carrier.footprint_bbox = BBoxCpp::new();
+                    carrier.base_footprint_bbox = BBoxCpp::new();
+                }
+            }
+            for slab_idx in 0..num_slabs {
+                for &layer_nr in &layers_per_slab[slab_idx] {
+                    for &node in &self.contact_nodes[layer_nr] {
+                        let Some(&move_it) = tentative_moves.get(&node) else {
+                            continue;
+                        };
+                        // `carriers[slab_idx].at(move_it->second)`
+                        let carrier = carriers[slab_idx].get_mut(&move_it).expect("fold_nodes_multi_diameter: the carrier of a move");
+                        let counters = future_of(node);
+                        let roof_layers = counters.1;
+                        let interface_node = is_interface_role(counters, carrier.top_layer);
+                        if !carrier.folds || (!interface_node && layer_nr != carrier.base_source_layer) {
+                            continue;
+                        }
+                        let mut final_base_probe: ExPolygons = Vec::new();
+                        let probe: &ExPolygons = if interface_node {
+                            prober.cached_probe_of(nodes, node, use_interface_shape(&nodes[node], roof_layers))
+                        } else {
+                            let radius = folded_radius.get(&node).copied().unwrap_or(nodes[node].radius);
+                            prober.probe_of(&nodes[node], false, &mut final_base_probe, radius);
+                            &final_base_probe
+                        };
+                        if probe.is_empty() {
+                            continue;
+                        }
+                        if interface_node {
+                            carrier.interface_footprint.extend(probe.iter().cloned());
+                        } else {
+                            carrier.base_footprint.extend(probe.iter().cloned());
+                        }
+                    }
+                }
+            }
+            for slab_carriers in carriers.iter_mut() {
+                for carrier in slab_carriers.values_mut() {
+                    if !carrier.folds {
+                        continue;
+                    }
+                    if !carrier.base_footprint.is_empty() {
+                        carrier.base_footprint = cx::union_ex(&carrier.base_footprint);
+                        carrier.base_footprint_bbox = BBoxCpp::of_expolygons(&carrier.base_footprint);
+                        carrier.footprint.extend(carrier.base_footprint.iter().cloned());
+                    }
+                    if !carrier.interface_footprint.is_empty() {
+                        carrier.interface_footprint = cx::union_ex(&carrier.interface_footprint);
+                        carrier.footprint.extend(carrier.interface_footprint.iter().cloned());
+                    }
+                    if !carrier.footprint.is_empty() {
+                        carrier.footprint_bbox = BBoxCpp::of_expolygons(&carrier.footprint);
+                    }
+                }
+            }
+
+            let mut folded_spans: Vec<FoldCarrierKey> = Vec::new();
+            for (slab_idx, slab_carriers) in carriers.iter().enumerate() {
+                for (layer, entry) in slab_carriers {
+                    if entry.folds {
+                        folded_spans.push((slab_idx, *layer));
+                    }
+                }
+            }
+            // std::sort by the bottom, the slab and the top layer: no two spans compare equal.
+            folded_spans.sort_by(|lhs, rhs| {
+                let (l, r) = (&carriers[lhs.0][&lhs.1], &carriers[rhs.0][&rhs.1]);
+                if l.bottom_z != r.bottom_z {
+                    return l.bottom_z.partial_cmp(&r.bottom_z).unwrap_or(std::cmp::Ordering::Equal);
+                }
+                if l.slab_idx != r.slab_idx {
+                    return l.slab_idx.cmp(&r.slab_idx);
+                }
+                l.top_layer.cmp(&r.top_layer)
+            });
+
+            // Select every split from this immutable footprint/span snapshot. Applying a split while scanning
+            // would make later pairs depend on sort order and could leave an old partial-overlap refusal behind.
+            #[derive(Default)]
+            struct SplitDecision {
+                highest_inner: Option<FoldCarrierKey>,
+                required: bool,
+            }
+            let mut split_candidates: BTreeMap<FoldCarrierKey, SplitDecision> = BTreeMap::new();
+            for lhs in 0..folded_spans.len() {
+                let lhs_key = folded_spans[lhs];
+                let lhs_carrier = &carriers[lhs_key.0][&lhs_key.1];
+                for rhs in lhs + 1..folded_spans.len() {
+                    let rhs_key = folded_spans[rhs];
+                    let rhs_carrier = &carriers[rhs_key.0][&rhs_key.1];
+                    if rhs_carrier.bottom_z >= lhs_carrier.top_z - EPSILON {
+                        break;
+                    }
+                    let lhs_contains_rhs = fold_contains_span(lhs_carrier, rhs_carrier);
+                    let rhs_contains_lhs = fold_contains_span(rhs_carrier, lhs_carrier);
+                    if lhs_contains_rhs == rhs_contains_lhs {
+                        continue;
+                    }
+
+                    let (outer_key, inner_key) = if lhs_contains_rhs { (lhs_key, rhs_key) } else { (rhs_key, lhs_key) };
+                    let (outer, inner) = if lhs_contains_rhs { (lhs_carrier, rhs_carrier) } else { (rhs_carrier, lhs_carrier) };
+                    if outer.slab_idx != inner.slab_idx || inner.top_z <= outer.bottom_z + EPSILON {
+                        continue;
+                    }
+
+                    // Interface-over-base creates the need to split. Once a split is needed, use the highest
+                    // overlapping inner boundary so the shortened outer cannot partially overlap another inner.
+                    // A base-only overlap does not trigger a split by itself; final geometry trimming handles it.
+                    let decision = split_candidates.entry(outer_key).or_default();
+                    let higher = match decision.highest_inner {
+                        None => true,
+                        Some(best_key) => {
+                            let best = &carriers[best_key.0][&best_key.1];
+                            inner.top_z > best.top_z || (inner.top_z == best.top_z && inner.top_layer > best.top_layer)
+                        }
+                    };
+                    // Interface-over-base implies a full-footprint overlap. Once a split is required, a lower inner
+                    // cannot change the decision, so skip both polygon tests.
+                    if (!higher && decision.required) || !fold_footprints_overlap(&inner.footprint, &inner.footprint_bbox, &outer.footprint, &outer.footprint_bbox) {
+                        continue;
+                    }
+                    decision.required = decision.required
+                        || fold_footprints_overlap(&inner.interface_footprint, &inner.footprint_bbox, &outer.base_footprint, &outer.base_footprint_bbox);
+                    if higher {
+                        decision.highest_inner = Some(inner_key);
+                    }
+                }
+            }
+
+            let mut split_misaligned: BTreeSet<FoldCarrierKey> = BTreeSet::new();
+            let mut carriers_shortened = false;
+            for (outer_key, decision) in &split_candidates {
+                if !decision.required {
+                    continue;
+                }
+                let inner_key = decision.highest_inner.expect("fold_nodes_multi_diameter: a required split has an inner carrier");
+                let inner_top_z: CoordF = carriers[inner_key.0][&inner_key.1].top_z;
+                let outer = carriers[outer_key.0].get_mut(&outer_key.1).unwrap();
+
+                outer.bottom_z = inner_top_z;
+                outer.base_source_layer = outer.top_layer;
+                outer.lower_carrier = Some(inner_key);
+                outer.slab_height = outer.top_z - outer.bottom_z;
+                // std::upper_bound(..., outer.bottom_z + EPSILON, [](coordf_t z, const LayerHeightData &layer) { return z < layer.print_z; })
+                let z = outer.bottom_z + EPSILON;
+                let first_layer_above = layer_heights[..num_layers].partition_point(|layer| !(z < layer.print_z));
+                outer.bottom_obj_layer = if first_layer_above == num_layers { outer.obj_layer } else { layer_heights[first_layer_above].obj_layer_nr };
+                carriers_shortened = true;
+                if outer.slab_height <= layer_heights[outer.top_layer].height + EPSILON
+                    || !crate::adaptive_layer_merge::adaptive_layer_height_range(plan.slabs[outer.slab_idx].nozzle_diameter).contains(outer.slab_height)
+                {
+                    split_misaligned.insert(*outer_key);
+                }
+            }
+
+            if carriers_shortened {
+                if !split_misaligned.is_empty() {
+                    fold_refuse_carriers(&split_misaligned, &mut misaligned_carriers, &column_top, &mut carriers, &self.contact_nodes, nodes, fold_interface);
+                }
+                continue;
+            }
+
+            let mut stationary_footprints: Vec<ExPolygons> = vec![Vec::new(); num_layers];
+            let mut stationary_interface_footprints: Vec<ExPolygons> = vec![Vec::new(); num_layers];
+            let mut stationary_bboxes: Vec<BBoxCpp> = vec![BBoxCpp::new(); num_layers];
+            let mut stationary_ready: Vec<bool> = vec![false; num_layers];
+
+            // No carrier changed after the snapshot above, so overlap refusals now describe the current spans.
+            // Same-slab containment was either split at the highest valid boundary or rejected as unprintable.
+            let mut newly_misaligned: BTreeSet<FoldCarrierKey> = BTreeSet::new();
+            for lhs in 0..folded_spans.len() {
+                let lhs_key = folded_spans[lhs];
+                let lhs_carrier = &carriers[lhs_key.0][&lhs_key.1];
+                if !lhs_carrier.folds || newly_misaligned.contains(&lhs_key) {
+                    continue;
+                }
+                for rhs in lhs + 1..folded_spans.len() {
+                    let rhs_key = folded_spans[rhs];
+                    let rhs_carrier = &carriers[rhs_key.0][&rhs_key.1];
+                    if rhs_carrier.bottom_z >= lhs_carrier.top_z - EPSILON {
+                        break;
+                    }
+                    if !rhs_carrier.folds || newly_misaligned.contains(&rhs_key) {
+                        continue;
+                    }
+                    let lhs_contains_rhs = fold_contains_span(lhs_carrier, rhs_carrier);
+                    let rhs_contains_lhs = fold_contains_span(rhs_carrier, lhs_carrier);
+                    if !lhs_contains_rhs && !rhs_contains_lhs {
+                        if !fold_footprints_overlap(&lhs_carrier.footprint, &lhs_carrier.footprint_bbox, &rhs_carrier.footprint, &rhs_carrier.footprint_bbox) {
+                            continue;
+                        }
+                        let lhs_height: CoordF = lhs_carrier.slab_height;
+                        let rhs_height: CoordF = rhs_carrier.slab_height;
+                        let rejected = if lhs_height + EPSILON < rhs_height {
+                            lhs_key
+                        } else if rhs_height + EPSILON < lhs_height {
+                            rhs_key
+                        } else if lhs_carrier.top_z < rhs_carrier.top_z {
+                            lhs_key
+                        } else {
+                            rhs_key
+                        };
+                        newly_misaligned.insert(rejected);
+                        if rejected == lhs_key {
+                            break;
+                        }
+                        continue;
+                    }
+                    if lhs_contains_rhs && rhs_contains_lhs {
+                        continue;
+                    }
+
+                    let (outer_key, outer, inner) = if lhs_contains_rhs { (lhs_key, lhs_carrier, rhs_carrier) } else { (rhs_key, rhs_carrier, lhs_carrier) };
+                    if outer.slab_idx != inner.slab_idx
+                        && inner.top_z > outer.bottom_z + EPSILON
+                        && fold_footprints_overlap(&inner.interface_footprint, &inner.footprint_bbox, &outer.base_footprint, &outer.base_footprint_bbox)
+                    {
+                        newly_misaligned.insert(outer_key);
+                        if outer_key == lhs_key {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Only material left on its original fine layer can conflict with a folded span here. Nodes assigned
+            // to another surviving carrier are covered by the carrier-to-carrier check above.
+            for &span in &folded_spans {
+                let carrier = &carriers[span.0][&span.1];
+                if !carrier.folds || carrier.footprint.is_empty() {
+                    continue;
+                }
+                // std::lower_bound(..., carrier.bottom_z + EPSILON, [](const LayerHeightData &layer, coordf_t z) { return layer.print_z < z; })
+                let z = carrier.bottom_z + EPSILON;
+                let first_layer = layer_heights[..num_layers].partition_point(|layer| layer.print_z < z);
+                for layer_nr in first_layer..num_layers {
+                    if layer_heights[layer_nr].height < EPSILON {
+                        continue;
+                    }
+                    let layer_top: CoordF = layer_heights[layer_nr].print_z;
+                    let layer_bottom: CoordF = layer_top - layer_heights[layer_nr].height;
+                    if layer_top <= carrier.bottom_z + EPSILON {
+                        continue;
+                    }
+                    if layer_bottom >= carrier.top_z - EPSILON {
+                        break;
+                    }
+                    let carrier_contains_layer = carrier.bottom_z <= layer_bottom + EPSILON && carrier.top_z >= layer_top - EPSILON;
+                    let layer_contains_carrier = layer_bottom <= carrier.bottom_z + EPSILON && layer_top >= carrier.top_z - EPSILON;
+                    let partial_z = !carrier_contains_layer && !layer_contains_carrier;
+
+                    // 2447-2463 the lambda `ensure_stationary`
+                    if !stationary_ready[layer_nr] {
+                        for &node in &self.contact_nodes[layer_nr] {
+                            if !tentative_moves.contains_key(&node) {
+                                let counters = future_of(node);
+                                let probe = prober.cached_probe_of(nodes, node, use_interface_shape(&nodes[node], counters.1));
+                                stationary_footprints[layer_nr].extend(probe.iter().cloned());
+                                if is_interface_role(counters, layer_nr) {
+                                    stationary_interface_footprints[layer_nr].extend(probe.iter().cloned());
+                                }
+                            }
+                        }
+                        if !stationary_footprints[layer_nr].is_empty() {
+                            stationary_bboxes[layer_nr] = BBoxCpp::of_expolygons(&stationary_footprints[layer_nr]);
+                        }
+                        stationary_ready[layer_nr] = true;
+                    }
+                    let stationary = &stationary_footprints[layer_nr];
+                    if stationary.is_empty() {
+                        continue;
+                    }
+                    if partial_z {
+                        if !fold_footprints_overlap(stationary, &stationary_bboxes[layer_nr], &carrier.footprint, &carrier.footprint_bbox) {
+                            continue;
+                        }
+                        newly_misaligned.insert(span);
+                        break;
+                    }
+
+                    let mut uncovered_interface_overlap: ExPolygons = Vec::new();
+                    if !stationary_interface_footprints[layer_nr].is_empty()
+                        && !carrier.base_footprint.is_empty()
+                        && stationary_bboxes[layer_nr].overlap(&carrier.base_footprint_bbox)
+                    {
+                        let overlap: ExPolygons = cx::intersection_ex(&stationary_interface_footprints[layer_nr], &carrier.base_footprint);
+                        if !overlap.is_empty() {
+                            uncovered_interface_overlap = cx::diff_ex(&overlap, &carrier.interface_footprint);
+                        }
+                    }
+                    if !carrier_contains_layer || !uncovered_interface_overlap.is_empty() {
+                        if fold_footprints_overlap(stationary, &stationary_bboxes[layer_nr], &carrier.base_footprint, &carrier.base_footprint_bbox) {
+                            newly_misaligned.insert(span);
+                            break;
+                        }
+                        continue;
+                    }
+                }
+            }
+            if newly_misaligned.is_empty() {
+                moves_to = tentative_moves;
+                final_counters = future_counters;
+                break;
+            }
+            fold_refuse_carriers(&newly_misaligned, &mut misaligned_carriers, &column_top, &mut carriers, &self.contact_nodes, nodes, fold_interface);
+        }
+        // if (misaligned_carriers > 0) BOOST_LOG_TRIVIAL(warning) << "refused " << misaligned_carriers << " folded support carriers with unsafe Z overlap";
+        let _ = misaligned_carriers;
+
+        // The second round: of the slabs the first round refused, only the body of the support that runs through
+        // the whole slab is folded onto the top of the slab; the interface and the transition layer stay on the
+        // fine layers. The roles are those of final_counters of the first round; a fold of a whole slab only ever
+        // covers the fine layers of the slab completely, the overlap is trimmed.
+        struct BaseFold {
+            slab_idx: usize,
+            tops: Vec<(NodeId, CoordF)>,
+        }
+        let mut base_folds: Vec<BaseFold> = Vec::new();
+        // The nodes folded into a slab of the second round (the tops of the slabs among them).
+        let mut base_folded: HashSet<NodeId> = HashSet::new();
+        {
+            let nodes = &self.m_ts_data.contact_nodes;
+            let counters_of = |node: NodeId| -> (i32, i32) {
+                match final_counters.get(&node) {
+                    Some(counters) => *counters,
+                    None => (nodes[node].distance_to_top, nodes[node].support_roof_layers_below),
+                }
+            };
+            let unmoved = |node: NodeId| -> bool { nodes[node].distance_to_top >= 0 && !moves_to.contains_key(&node) };
+            let is_left_base = |node: NodeId, layer_nr: usize| -> bool {
+                fold_foldable(&nodes[node], fold_interface) && !moves_to.contains_key(&node) && !is_interface_role(counters_of(node), layer_nr)
+            };
+            // The fine interface the top of a slab may keep; the transition layer is extruded with the material of
+            // the body and may stay on the fine layers only when the interface is of the material of this slab too.
+            let stays_roof = |node: NodeId, keep_transition: bool| -> bool {
+                let (dist, roof) = counters_of(node);
+                let if_layers: i32 = num_top_interface_layers as i32;
+                let transition = (roof == 0 || roof == 1) && dist >= if_layers;
+                if_layers > 0 && (if transition { keep_transition } else { roof > 0 })
+            };
+            let mut members: HashSet<NodeId> = HashSet::new();
+            let mut fine: HashSet<NodeId> = HashSet::new();
+            let mut reaches: HashSet<NodeId> = HashSet::new();
+            for slab_idx in 0..num_slabs {
+                let layers = &layers_per_slab[slab_idx];
+                let slab = &plan.slabs[slab_idx];
+                if layers.len() < 2 || (slab.bottom_anchor && m_raft_layers == 0) {
+                    continue;
+                }
+                let (top, bottom) = (layers[layers.len() - 1], layers[0]);
+                if let Some(it) = carriers[slab_idx].get(&top) {
+                    if it.folds {
+                        continue;
+                    }
+                }
+                let slab_height: CoordF = layer_heights[top].print_z - layer_heights[bottom].print_z + layer_heights[bottom].height;
+                let keep_transition = explicit_interface_filament == slab.filament_id;
+                if !crate::adaptive_layer_merge::adaptive_layer_height_range(slab.nozzle_diameter).contains(slab_height)
+                    || self.contact_nodes[top].iter().any(|&node| unmoved(node) && !is_left_base(node, top) && !stays_roof(node, keep_transition))
+                {
+                    continue;
+                }
+                // Top down: what is left of the body are the members; one whose parents are not all members that
+                // are not fine (under an interface, a new branch inside the slab) is fine and stays on the fine
+                // layers to carry the interface.
+                members.clear();
+                fine.clear();
+                for &layer in layers.iter().rev() {
+                    for &node in &self.contact_nodes[layer] {
+                        if is_left_base(node, layer) {
+                            let mut keep = layer != top && nodes[node].parent.is_none() && nodes[node].parents.is_empty();
+                            if layer != top {
+                                for p in fold_parents(&nodes[node]) {
+                                    keep = keep || !members.contains(p) || fine.contains(p);
+                                }
+                            }
+                            if keep {
+                                fine.insert(node);
+                            }
+                            members.insert(node);
+                        }
+                    }
+                }
+                if members.is_empty() {
+                    continue;
+                }
+                // Bottom up: only the columns that reach the bottom of the slab through nodes of the body can be
+                // folded, or the folded layer would hang in the air or be trimmed away by the interface (R1).
+                reaches.clear();
+                for &layer_nr in layers {
+                    for &node in &self.contact_nodes[layer_nr] {
+                        if members.contains(&node) && (layer_nr == bottom || nodes[node].child.map(|c| reaches.contains(&c)).unwrap_or(false)) {
+                            reaches.insert(node);
+                        }
+                    }
+                }
+                // The nodes of the top that are not of the body were checked above; the body of the top has to
+                // reach the bottom of the slab through the body, or the whole slab is given up (R3).
+                let mut fold = BaseFold { slab_idx, tops: Vec::new() };
+                let mut ok = true;
+                for &node in &self.contact_nodes[top] {
+                    if !members.contains(&node) {
+                        continue;
+                    }
+                    ok = reaches.contains(&node);
+                    if !ok {
+                        break;
+                    }
+                    let mut radius: CoordF = nodes[node].radius;
+                    let mut n = nodes[node].child;
+                    while let Some(c) = n {
+                        if !members.contains(&c) {
+                            break;
+                        }
+                        radius = radius.max(nodes[c].radius);
+                        n = nodes[c].child;
+                    }
+                    fold.tops.push((node, radius));
+                }
+                if !ok || fold.tops.is_empty() {
+                    continue;
+                }
+                // As in the first round: no fold when the object is in the way of the whole slab and no
+                // cross-section would be left.
+                let mut span_collision: ExPolygons = Vec::new();
+                let mut l = layer_heights[bottom].obj_layer_nr;
+                while l < layer_heights[top].obj_layer_nr && l < self.m_ts_data.m_layer_outlines.len() {
+                    append(&mut span_collision, cx::offset_ex(&self.m_ts_data.m_layer_outlines[l], xy_distance_scaled as f32, cx::DEFAULT_JOIN_TYPE, cx::DEFAULT_MITER_LIMIT));
+                    l += 1;
+                }
+                if !span_collision.is_empty() {
+                    span_collision = cx::union_ex(&span_collision);
+                    // `std::none_of(...)`
+                    let any = fold.tops.iter().any(|top_node| {
+                        let mut probe: ExPolygons = Vec::new();
+                        prober.probe_of(&nodes[top_node.0], false, &mut probe, top_node.1);
+                        probe.is_empty() || !cx::diff_ex(&probe, &span_collision).is_empty()
+                    });
+                    if !any {
+                        continue;
+                    }
+                }
+                for &node in &reaches {
+                    if members.contains(&node) && !fine.contains(&node) {
+                        base_folded.insert(node);
+                    }
+                }
+                base_folds.push(fold);
+            }
+        }
+
+        // A rejected carrier keeps its original fine-grid geometry. Pin that material to the finest candidate
+        // that can print the fine layer, otherwise ToolOrdering may select the coarse support nozzle even though
+        // no coarse slab was emitted there.
+        let mut fine_base_layers: Vec<bool> = vec![false; num_layers];
+        let mut fine_interface_layers: Vec<bool> = vec![false; num_layers];
+        for slab_idx in 0..num_slabs {
+            for &layer_nr in &layers_per_slab[slab_idx] {
+                for &node in &self.contact_nodes[layer_nr] {
+                    if !column_top[slab_idx].contains_key(&node) || moves_to.contains_key(&node) || base_folded.contains(&node) {
+                        continue;
+                    }
+                    let n = &self.m_ts_data.contact_nodes[node];
+                    let counters: (i32, i32) = match final_counters.get(&node) {
+                        Some(counters) => *counters,
+                        None => (n.distance_to_top, n.support_roof_layers_below),
+                    };
+                    let interface_node = is_interface_role(counters, layer_nr);
+                    if interface_node {
+                        fine_interface_layers[layer_nr] = true;
+                    } else {
+                        fine_base_layers[layer_nr] = true;
+                    }
+                }
+            }
+        }
+        // 2696-2704 the lambda `finest_candidate_for`
+        let finest_candidate_for = |candidates: &[crate::support_merge_plan::Candidate], height: CoordF| -> crate::support_merge_plan::Candidate {
+            let mut best = crate::support_merge_plan::Candidate::default();
+            for candidate in candidates {
+                if candidate.window.contains(height) && (!best.valid() || candidate.nozzle_diameter < best.nozzle_diameter) {
+                    best = *candidate;
+                }
+            }
+            best
+        };
+        for layer_nr in 0..num_layers {
+            if !fine_base_layers[layer_nr] && !fine_interface_layers[layer_nr] {
+                continue;
+            }
+            let Some(ts_layer) = self.m_object.m_support_layers.get_mut(layer_nr + m_raft_layers) else {
+                continue;
+            };
+            let layer = &layer_heights[layer_nr];
+            if fine_base_layers[layer_nr] {
+                let candidate = finest_candidate_for(&plan.candidates_for_slab(layer.print_z, layer.height), layer.height);
+                if candidate.valid() {
+                    ts_layer.planned_filament_id = candidate.filament_id;
+                    ts_layer.planned_nozzle_diameter = candidate.nozzle_diameter;
+                }
+            }
+            if fine_interface_layers[layer_nr] {
+                let candidate = plan.finest_interface_for_slab(layer.print_z, layer.height);
+                if candidate.valid() {
+                    ts_layer.planned_interface_filament_id = candidate.filament_id;
+                    ts_layer.planned_interface_nozzle_diameter = candidate.nozzle_diameter;
+                }
+            }
+        }
+        if moves_to.is_empty() && base_folds.is_empty() {
+            // BOOST_LOG_TRIVIAL(info) << "nothing folded of " << plan.slabs.size() << " slabs";
+            return;
+        }
+
+        // No floor guard here. The area level merge refused an interface slab whose nozzle could not also
+        // extrude a single layer, but only on a layer that actually carried floor areas. Those do not exist yet
+        // at this point, and approximating the test from Z alone turns it into "a coarse nozzle may never fold
+        // an interface over a fine grid" - which is precisely the configuration this whole path exists for, so
+        // it silently disabled the feature. A carrier that ends up with floor areas extrudes them at the layer
+        // height through floor_flow, which is the same compromise the unfolded path already makes.
+
+        // Pass 2: apply the counters evaluated before folding while every node is still on its planned layer.
+        for (node, counters) in &final_counters {
+            let n = &mut self.m_ts_data.contact_nodes[*node];
+            n.distance_to_top = counters.0;
+            n.support_roof_layers_below = counters.1;
+        }
+
+        // Pass 3: fold.
+        let mut folded_carriers: usize = 0;
+        self.m_fold_slab_of_layer = vec![-1; num_layers];
+        for slab_idx in 0..num_slabs {
+            let slab = &plan.slabs[slab_idx];
+            let layers = &layers_per_slab[slab_idx];
+
+            // Per carrier: the base cross-section it takes, and every interface node of its columns.
+            let mut adopted: BTreeMap<usize, (Vec<NodeId>, Vec<NodeId>)> = BTreeMap::new();
+            for &layer_nr in layers {
+                let mut stay: Vec<NodeId> = Vec::with_capacity(self.contact_nodes[layer_nr].len());
+                for &node in &self.contact_nodes[layer_nr] {
+                    // Virtual gap nodes, an interface left on the fine grid and the columns whose
+                    // carrier refused keep their own layer. Polygon nodes do fold: they render a different shape
+                    // but occupy the slab the same way a disk does.
+                    let Some(&carrier_layer) = moves_to.get(&node) else {
+                        stay.push(node);
+                        continue;
+                    };
+                    // `carriers[slab_idx].at(carrier_layer)`
+                    let carrier = carriers[slab_idx].get(&carrier_layer).expect("fold_nodes_multi_diameter: the carrier of a move");
+                    let n = &self.m_ts_data.contact_nodes[node];
+                    if is_interface_role((n.distance_to_top, n.support_roof_layers_below), carrier_layer) {
+                        // Every roof in the column contributes: one extrusion covers all of them.
+                        adopted.entry(carrier_layer).or_default().1.push(node);
+                    } else if layer_nr == carrier.base_source_layer {
+                        // A thick extrusion has one XY cross-section over its whole height. Unioning every layer
+                        // would turn lateral branch movement into a swept wedge and distort both the tree shape
+                        // and its clearance, so only the representative face is kept.
+                        adopted.entry(carrier_layer).or_default().0.push(node);
+                    }
+                    // Anything else is swallowed by its column's slab. The node stays alive in TreeSupportData,
+                    // it simply no longer renders a disk of its own.
+                }
+                self.contact_nodes[layer_nr] = stay;
+            }
+            if adopted.is_empty() {
+                continue;
+            }
+
+            self.m_fold_carriers.push(Vec::new());
+            let slab_carriers_idx = self.m_fold_carriers.len() - 1;
+            for (carrier_layer, nodes) in &adopted {
+                let carrier_layer = *carrier_layer;
+                let carrier = carriers[slab_idx].get(&carrier_layer).expect("fold_nodes_multi_diameter: the carrier of a move");
+                for (group_idx, group) in [&nodes.0, &nodes.1].into_iter().enumerate() {
+                    for &node in group {
+                        let n = &mut self.m_ts_data.contact_nodes[node];
+                        if group_idx == 0 {
+                            // `folded_radius.at(node)`
+                            n.radius = folded_radius[&node];
+                        }
+                        n.slab_height = carrier.slab_height;
+                        n.slab_bottom_obj_layer = carrier.bottom_obj_layer;
+                        n.obj_layer_nr = carrier.obj_layer as i32;
+                        n.print_z = carrier.top_z;
+                        n.height = carrier.slab_height;
+                        self.contact_nodes[carrier_layer].push(node);
+                    }
+                }
+                self.m_fold_carriers[slab_carriers_idx].push(FoldCarrier { layer: carrier_layer, bottom_z: carrier.bottom_z });
+                folded_carriers += 1;
+
+                let Some(ts_layer) = self.m_object.m_support_layers.get_mut(carrier_layer + m_raft_layers) else {
+                    continue;
+                };
+                if !nodes.0.is_empty() {
+                    ts_layer.base_slab_height = carrier.slab_height;
+                    // Pin the slab to its filament only once it got thicker than the object layers: a slab of base
+                    // height can be extruded by any nozzle, and leaving it alone lets the exporter minimize tool
+                    // changes.
+                    if carrier.slab_height > plan.base_height_at(carrier.top_z) + EPSILON {
+                        ts_layer.planned_filament_id = slab.filament_id;
+                        ts_layer.planned_nozzle_diameter = slab.nozzle_diameter;
+                    }
+                }
+                if !nodes.1.is_empty() {
+                    ts_layer.interface_slab_height = carrier.slab_height;
+                    // An explicitly pinned interface filament keeps the tool: the plan only allowed the fold
+                    // because that filament can extrude this slab in the first place.
+                    ts_layer.planned_interface_filament_id = if explicit_interface_filament > 0 { explicit_interface_filament } else { slab.filament_id };
+                    ts_layer.planned_interface_nozzle_diameter = slab.nozzle_diameter;
+                }
+            }
+            for &layer_nr in layers {
+                self.m_fold_slab_of_layer[layer_nr] = (self.m_fold_carriers.len() - 1) as i32;
+            }
+        }
+        // Later stages gate their folded-only behaviour on these being non-empty.
+        if folded_carriers == 0 {
+            self.m_fold_carriers.clear();
+            self.m_fold_slab_of_layer.clear();
+        }
+
+        // The second round applied: the folded nodes leave the fine layers, the nodes of the top of the slab take
+        // the height of the whole slab.
+        if !base_folds.is_empty() && self.m_fold_slab_of_layer.is_empty() {
+            self.m_fold_slab_of_layer = vec![-1; num_layers];
+        }
+        for fold in &base_folds {
+            let slab = &plan.slabs[fold.slab_idx];
+            let layers = &layers_per_slab[fold.slab_idx];
+            let top: usize = layers[layers.len() - 1];
+            let bottom_z: CoordF = layer_heights[layers[0]].print_z - layer_heights[layers[0]].height;
+            let height: CoordF = layer_heights[top].print_z - bottom_z;
+            for &layer_nr in layers {
+                if layer_nr != top {
+                    self.contact_nodes[layer_nr].retain(|node| !base_folded.contains(node));
+                }
+            }
+            for (node, radius) in &fold.tops {
+                let n = &mut self.m_ts_data.contact_nodes[*node];
+                n.radius = *radius;
+                n.slab_height = height;
+                n.height = height;
+                n.slab_bottom_obj_layer = layer_heights[layers[0]].obj_layer_nr;
+            }
+            if let Some(ts_layer) = self.m_object.m_support_layers.get_mut(top + m_raft_layers) {
+                ts_layer.base_slab_height = height;
+                ts_layer.planned_filament_id = slab.filament_id;
+                ts_layer.planned_nozzle_diameter = slab.nozzle_diameter;
+            }
+            if self.m_fold_slab_of_layer[top] < 0 {
+                self.m_fold_carriers.push(Vec::new());
+                for &layer_nr in layers {
+                    self.m_fold_slab_of_layer[layer_nr] = (self.m_fold_carriers.len() - 1) as i32;
+                }
+            }
+            let slab_ref = self.m_fold_slab_of_layer[top] as usize;
+            self.m_fold_carriers[slab_ref].push(FoldCarrier { layer: top, bottom_z });
+            self.m_base_only_fold_layers.push(top); // the slabs ascend in Z, so the result is in order
+        }
+        folded_carriers += base_folds.len();
+
+        // Pass 4: printed layer index for the interface pattern. Consecutive printed layers have to alternate,
+        // and a folded stack prints several object layers apart, so count the layers that still print.
+        if fold_interface && folded_carriers > 0 {
+            let mut printed: i32 = 0;
+            for layer_nr in 0..num_layers {
+                if layer_heights[layer_nr].height < EPSILON || self.contact_nodes[layer_nr].is_empty() {
+                    continue;
+                }
+                for &node in &self.contact_nodes[layer_nr] {
+                    let n = &mut self.m_ts_data.contact_nodes[node];
+                    if n.distance_to_top >= 0 {
+                        n.slab_index = printed;
+                    }
+                }
+                printed += 1;
+            }
+        }
+
+        // BOOST_LOG_TRIVIAL(info) << "folded " << folded_carriers << " column carriers over " << m_fold_carriers.size() << " of "
+        //     << plan.slabs.size() << " slabs, interface fold " << (fold_interface ? "on" : "off") << ", base only " << base_folds.size();
+    }
+
+    /// TreeSupport.cpp:2894-2976 `void TreeSupport::smooth_line_width_multi_diameter()`
+    ///
+    /// BBS multi-diameter: a fine branch section sitting next to a coarse slab only overlaps the coarse wall over
+    /// its own narrow bead, so the joint is weak. Widen the wall of the fine side close to every nozzle change,
+    /// ramping back to the default width within a short distance. Only base disks that draw_circles() actually
+    /// renders take part, a node away from any change keeps line_width == 0, and nothing runs in single-diameter
+    /// mode. An exception of the C++ (a flow that cannot be made) is the `Err`.
+    pub fn smooth_line_width_multi_diameter(&mut self) -> FlowResult<()> {
+        // Lightning roots are trimmed against the default wall, so a wider wall there would overlap them.
+        if !self.m_support_merge_plan.enabled || self.m_support_params.base_fill_pattern == InfillPattern::Lightning {
+            return Ok(());
+        }
+
+        let num_layers: usize = self.contact_nodes.len().min(self.m_ts_data.layer_heights.len());
+        let has_roof: bool = self.m_support_params.num_top_interface_layers > 0;
+        // Same classification as draw_circles(): what ends up as a plain base disk.
+        let is_base_disk = |node: &SupportNode| -> bool {
+            !node.fading && node.type_ != TreeNodeType::EPolygon && node.distance_to_top >= 0 && (!has_roof || node.support_roof_layers_below < 0)
+        };
+
+        // width: default base width of the node's layer; target: the widened width, raised pairwise below.
+        struct Disk {
+            node: NodeId,
+            width: CoordF,
+            top: CoordF,
+            bottom: CoordF,
+            target: CoordF,
+        }
+        // `std::unordered_map<SupportNode *, Disk> disks`: the disks in the order of the layers, and where the
+        // disk of a node is. The loops below do not depend on the order.
+        let mut disks: Vec<Disk> = Vec::new();
+        let mut disk_of: HashMap<NodeId, usize> = HashMap::new();
+        let mut min_width: CoordF = f64::MAX;
+        let mut max_width: CoordF = 0.;
+        let mut max_span: CoordF = 0.;
+        for layer_nr in 0..num_layers {
+            let layer_height: CoordF = self.m_ts_data.layer_heights[layer_nr].height;
+            if layer_height < EPSILON || self.contact_nodes[layer_nr].is_empty() {
+                continue;
+            }
+            // Default base width of this layer, resolved the way generate_toolpaths() does.
+            let width: CoordF = match self.m_object.get_support_layer((layer_nr + self.m_raft_layers) as i32) {
+                Some(ts_layer) if ts_layer.planned_nozzle_diameter > EPSILON => {
+                    self.m_support_params.support_material_flow_for_nozzle(ts_layer.planned_nozzle_diameter, layer_height as f32)?.width()
+                }
+                _ => self.m_support_params.support_extrusion_width,
+            };
+            for &node in &self.contact_nodes[layer_nr] {
+                let n = &self.m_ts_data.contact_nodes[node];
+                if !is_base_disk(n) || n.height < EPSILON {
+                    continue;
+                }
+                // `disks.emplace(node, ...)`: the first disk of a node stays
+                if !disk_of.contains_key(&node) {
+                    disk_of.insert(node, disks.len());
+                    disks.push(Disk { node, width, top: n.print_z, bottom: n.print_z - n.height, target: width });
+                }
+                min_width = min_width.min(width);
+                max_width = max_width.max(width);
+                max_span = max_span.max(n.height);
+            }
+        }
+        // No nozzle change anywhere: every node keeps its default width.
+        if disks.is_empty() || max_width - min_width < EPSILON {
+            return Ok(());
+        }
+
+        // The finer disk of a pair ramps from its capped width (the coarse width, at most twice its own) at contact
+        // back to its own over max(coarse slab, two own layers) plus one own layer, so no partner farther than this
+        // matters.
+        let reach: CoordF = 3. * max_span;
+        // Every node has a single child towards the bed, so walking down from each disk meets every pair of
+        // rendered disks on one chain exactly once. Nodes swallowed by a fold are walked through: they only
+        // bridge the Z gap between the disks that remain.
+        for upper_idx in 0..disks.len() {
+            let mut c = self.m_ts_data.contact_nodes[disks[upper_idx].node].child;
+            while let Some(child) = c {
+                if !(disks[upper_idx].bottom - self.m_ts_data.contact_nodes[child].print_z <= reach) {
+                    break;
+                }
+                c = self.m_ts_data.contact_nodes[child].child;
+                let Some(&lower_idx) = disk_of.get(&child) else {
+                    continue;
+                };
+                let (upper, lower) = (&disks[upper_idx], &disks[lower_idx]);
+                if (upper.width - lower.width).abs() < EPSILON {
+                    continue;
+                }
+                let (fine_idx, coarse_idx) = if upper.width < lower.width { (upper_idx, lower_idx) } else { (lower_idx, upper_idx) };
+                let (fine, coarse) = (&disks[fine_idx], &disks[coarse_idx]);
+                // Ramp towards the capped peak rather than the coarse width, so the cap does not flatten the layers
+                // next to the change. One own layer is added so the last widened layer does not snap back.
+                let fine_h: CoordF = fine.top - fine.bottom;
+                let peak: CoordF = coarse.width.min(2. * fine.width);
+                let ramp: CoordF = (coarse.top - coarse.bottom).max(2. * fine_h) + fine_h;
+                let gap: CoordF = 0f64.max(upper.bottom - lower.top);
+                if gap < ramp {
+                    // `fine.width + (peak - fine.width) * (1. - gap / ramp)`: the product is contracted with the sum
+                    let target = (peak - fine.width).mul_add(1. - gap / ramp, fine.width);
+                    disks[fine_idx].target = disks[fine_idx].target.max(target);
+                }
+            }
+        }
+
+        let mut _widened: usize = 0;
+        for disk in &disks {
+            // The target is already capped at twice the own width by the peak. It is also kept within the disk radius,
+            // or the wall inset in tree_supports_generate_paths() would eat a thin branch away.
+            let n = &mut self.m_ts_data.contact_nodes[disk.node];
+            let width: CoordF = disk.target.min(disk.width.max(n.radius));
+            if width > disk.width + EPSILON {
+                n.line_width = width;
+                _widened += 1;
+            }
+        }
+        // BOOST_LOG_TRIVIAL(info) << "support line width smoothing widened " << widened << " of " << disks.size() << " base nodes, default widths " << min_width << " to " << max_width;
+        Ok(())
+    }
+}
+
+// ============================================================================
+// TreeSupport::generate (TreeSupport.cpp:3534-3700)
+// ============================================================================
+
+/// `generate_tree_support_3D(PrintObject &print_object, TreeSupport *tree_support, std::function<void()>
+/// throw_on_cancel)` (Support/TreeSupport3D.cpp), which TreeSupport::generate() hands the organic style to.
+pub trait TreeSupport3DGenerator {
+    fn generate_tree_support_3d(&self, tree_support: &mut TreeSupport<'_>) -> crate::Result<()>;
+}
+
+impl<'a> TreeSupport<'a> {
+    /// `make_support_merge_plan(*m_object)` (SupportMergePlan.cpp:254-403): what the function reads of the object
+    /// and of its print, handed to the crate's `make_support_merge_plan` (see `SupportMergePlanObject`).
+    fn make_support_merge_plan_of_object(&self) -> SupportMergePlan {
+        use crate::support_merge_plan::{make_support_merge_plan, SupportMergePlanLayer, SupportMergePlanObject, SupportMergePlanRegion};
+        let print = self.m_print;
+        let print_config = print.config();
+        // SupportMergePlan.cpp:341-363 `layers[layer_idx]->regions()`, `layers[layer_idx]->empty()`
+        let layers: Vec<SupportMergePlanLayer> = self
+            .m_object
+            .layers()
+            .iter()
+            .map(|layer| SupportMergePlanLayer {
+                print_z: layer.print_z,
+                height: layer.height,
+                empty: layer.empty(),
+                regions: layer
+                    .regions()
+                    .iter()
+                    .map(|layerm| {
+                        let slices_empty = layerm.slices.is_empty();
+                        if slices_empty {
+                            // `if (layerm->slices.empty()) continue;`: nothing else of the region is read
+                            return SupportMergePlanRegion { slices_empty, ..Default::default() };
+                        }
+                        let region_config = layerm.region().config();
+                        SupportMergePlanRegion {
+                            slices_empty,
+                            perimeters_empty: layerm.perimeters.is_empty(),
+                            wall_filament: region_config.wall_filament as i32,
+                            sparse_infill_filament: region_config.sparse_infill_filament as i32,
+                            solid_infill_filament: region_config.solid_infill_filament as i32,
+                            fill_filament_slots: layerm
+                                .fills
+                                .entities
+                                .iter()
+                                .filter_map(|ee| match ee {
+                                    ExtrusionEntityType::Collection(fill) if !fill.is_empty() => {
+                                        Some(crate::gcode::tool_ordering::LayerTools::filament_slot_by_role(fill, region_config) as i32)
+                                    }
+                                    _ => None,
+                                })
+                                .collect(),
+                        }
+                    })
+                    .collect(),
+            })
+            .collect();
+        // PrintConfig.cpp:454-469 `nozzle_diameter_for_filament(print_config, filament_id)`
+        let nozzle_diameter_for_filament = |filament_id: u32| -> f32 { crate::print::faithful::nozzle_diameter_for_filament(print_config, filament_id) };
+        // `print_config.filament_soluble.get_at(idx)`
+        let soluble: Vec<bool> = match print_config.option("filament_soluble") {
+            Some(opt) => match opt.as_any().downcast_ref::<crate::config::ConfigOptionBools>() {
+                Some(o) => o.values.iter().map(|v| *v != 0).collect(),
+                None => Vec::new(),
+            },
+            None => Vec::new(),
+        };
+        let filament_soluble = |idx: usize| -> bool {
+            if idx < soluble.len() {
+                soluble[idx]
+            } else {
+                soluble.first().copied().unwrap_or(false)
+            }
+        };
+        // SupportMergePlan.cpp:320-327: the filaments of the model parts of the object
+        let filament_count = print_config.option("filament_diameter").and_then(|o| o.as_vector_base()).map(|v| v.size()).unwrap_or(0);
+        let global_features = crate::model::GlobalFeatureFilaments::from_config(print.default_region_config(), filament_count);
+        let model_object = self.m_object.model_object(print);
+        let model_part_extruders: Vec<Vec<i32>> =
+            model_object.volumes.iter().filter(|volume| volume.is_model_part()).map(|volume| volume.get_extruders(model_object, &global_features)).collect();
+        let object = SupportMergePlanObject {
+            uses_multiple_nozzle_diameters: print.uses_multiple_nozzle_diameters(),
+            layers,
+            grid_nozzle: crate::print_config::config_def::layer_grid_nozzle_diameter(print.full_print_config()),
+            base_height: self.m_object.slicing_parameters().layer_height,
+            nozzle_diameter_for_filament: &nozzle_diameter_for_filament,
+            filament_soluble: &filament_soluble,
+            model_part_extruders,
+            support_filament: cfg_int(self.object_config(), "support_filament"),
+            support_interface_filament: cfg_int(self.object_config(), "support_interface_filament"),
+        };
+        make_support_merge_plan(&object)
+    }
+
+    /// TreeSupport.cpp:3534-3700 `void TreeSupport::generate()`
+    ///
+    /// `fill_factory` makes the fillers of generate_toolpaths(); `tree_support_3d` is
+    /// `generate_tree_support_3D()` for the organic style (see `TreeSupport3DGenerator`). The exceptions of the
+    /// C++ (detect_overhangs(), a flow that cannot be made) are the `Err`. `USE_SUPPORT_3D` is 0 at the pin: the
+    /// block of TreeSupport.cpp:3561-3610 is not compiled.
+    pub fn generate(&mut self, fill_factory: &dyn SupportFillFactory, tree_support_3d: &dyn TreeSupport3DGenerator) -> crate::Result<()> {
+        use crate::print_config::config_def::is_tree;
+        if !is_tree(support_type_from_i32(cfg_int(self.object_config(), "support_type"))) {
+            return Ok(());
+        }
+
+        if self.m_support_params.support_style == SupportMaterialStyle::SmsTreeOrganic as i32 {
+            return tree_support_3d.generate_tree_support_3d(self);
+        }
+
+        profiler().stage_start(TreeSupportStage::StageTotal);
+
+        // Generate overhang areas
+        profiler().stage_start(TreeSupportStage::StageDetectOverhangs);
+        // `Slic3r::Utils::get_current_milliseconds_time_monotonic()`: a steady clock
+        let support_detect_begin_time = std::time::Instant::now();
+        self.m_print.base.base.set_status(55, "Generating support", 0, -1);
+        self.detect_overhangs(false)?;
+        self.m_object.m_support_stage_times.detect += support_detect_begin_time.elapsed().as_millis() as i64;
+        profiler().stage_finish(TreeSupportStage::StageDetectOverhangs);
+
+        self.create_tree_support_layers();
+        //m_ts_data = m_object->alloc_tree_support_preview_cache();
+        self.m_ts_data.is_slim = self.is_slim;
+
+        self.generate_contact_points();
+        profiler().stage_finish(TreeSupportStage::StageGenerateContactNodes);
+
+        self.m_ts_data.layer_heights = self.plan_layer_heights();
+
+        // The tree geometry is generated on the fine support-node grid, while a coarse support nozzle prints
+        // several of those nodes as one fixed-grid slab. Cache the plan before dropping nodes so per-node growth
+        // can be normalized to the slab that will eventually be emitted.
+        self.m_support_merge_plan = self.make_support_merge_plan_of_object();
+
+        //Drop nodes to lower layers.
+        profiler().stage_start(TreeSupportStage::StageDropDownNodes);
+        self.m_print.base.base.set_status(60, "Generating support", 0, -1);
+        self.drop_nodes();
+        profiler().stage_finish(TreeSupportStage::StageDropDownNodes);
+        // log_zigzag_stats("zigzag"): a line of the debug log, nothing else (TreeSupport.cpp:3628-3662)
+
+        self.smooth_nodes();
+
+        // log_zigzag_stats("zigzag_post")
+
+        // BBS multi-diameter: fold the node chains onto the slab grid a coarse nozzle can extrude. This has to
+        // follow smoothing, which needs the fine grid samples, and precede everything that turns nodes into
+        // geometry, so the floating support prune and the disks all see the folded tree.
+        self.fold_nodes_multi_diameter();
+        self.smooth_line_width_multi_diameter().map_err(|e| crate::Error::Slicing(e.to_string()))?;
+
+        //Generate support areas.
+        profiler().stage_start(TreeSupportStage::StageDrawCircles);
+        self.m_print.base.base.set_status(65, "Generating support", 0, -1);
+        let has_support_interface: bool =
+            self.m_support_params.has_interfaces() || self.m_support_params.has_base_interfaces() || self.m_slicing_params.interface_raft_layers > 0;
+        let support_area_begin_time = std::time::Instant::now();
+        self.draw_circles();
+        if has_support_interface {
+            // The classic tree path creates base and interface areas in one pass, so this is the
+            // narrowest wall-clock stage that contains its interface-layer generation.
+            self.m_object.m_support_stage_times.interface_generate += support_area_begin_time.elapsed().as_millis() as i64;
+        }
+        profiler().stage_finish(TreeSupportStage::StageDrawCircles);
+
+        profiler().stage_start(TreeSupportStage::StageGenerateToolpaths);
+        let support_toolpath_begin_time = std::time::Instant::now();
+        self.m_print.base.base.set_status(70, "Generating support", 0, -1);
+        self.generate_toolpaths(fill_factory).map_err(|e| crate::Error::Slicing(e.to_string()))?;
+        self.m_object.m_support_stage_times.toolpath_generate += support_toolpath_begin_time.elapsed().as_millis() as i64;
+        profiler().stage_finish(TreeSupportStage::StageGenerateToolpaths);
+
+        profiler().stage_finish(TreeSupportStage::StageTotal);
+        // BOOST_LOG_TRIVIAL(info) << "tree support time " << profiler.report();
+        Ok(())
+    }
+}
+
 // @@TAIL@@
 // Keep the unused-helper warnings quiet for the not-yet-wired constants/helpers.
 #[allow(dead_code)]
