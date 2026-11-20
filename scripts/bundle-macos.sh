@@ -101,15 +101,19 @@ print(f["tap"], f["tap_git_head"], f["ruby_source_path"], f["ruby_source_checksu
         return 1
     fi
     URL="https://raw.githubusercontent.com/Homebrew/homebrew-core/$HEAD/$SOURCE"
-    curl -fsSL --retry 3 "$URL" -o "$TARGET" || {
+    # Fetch beside the target and move it in only once checked: a failed
+    # transfer can leave a partial file, and a rerun keeps any nonempty one.
+    curl -fsSL --retry 3 "$URL" -o "$TARGET.part" || {
         echo "ERROR: cannot fetch $URL" >&2
+        rm -f "$TARGET.part"
         return 1
     }
-    if [ "$(shasum -a 256 "$TARGET" | cut -d' ' -f1)" != "$SHA" ]; then
+    if [ "$(shasum -a 256 "$TARGET.part" | cut -d' ' -f1)" != "$SHA" ]; then
         echo "ERROR: $URL does not match the formula's checksum" >&2
-        rm -f "$TARGET"
+        rm -f "$TARGET.part"
         return 1
     fi
+    mv -f "$TARGET.part" "$TARGET"
 }
 
 already_seen() {
