@@ -38,7 +38,10 @@ fail() { echo "FAIL: $*"; FAILED=$((FAILED + 1)); }
 run() {  # run NAME BINARY ARGS...
     local name=$1; shift
     mkdir -p "$name"
-    timeout 1800 "$@" > "$name/stdout" 2> "$name/stderr"
+    # macOS has no timeout: there the run is not bounded.
+    local gate=""
+    command -v timeout >/dev/null 2>&1 && gate="timeout 1800"
+    $gate "$@" > "$name/stdout" 2> "$name/stderr"
     echo $? > "$name/rc"
 }
 rc() { cat "$1/rc"; }
@@ -208,6 +211,15 @@ run r11 "$B" h2d.3mf --slice 1 --load-settings "$BBL/machine/Bambu Lab H2D 0.6 n
 parents r11 "$BBL" machine "Bambu Lab H2D 0.6 nozzle"
 expect r11 nozzle_flush_dataset "$(header nh06 nozzle_flush_dataset)" "row 11"
 expect r11 machine_start_gcode "$(header nh06 machine_start_gcode)" "row 11"
+# The same move with a process that suits the new printer: the printer still
+# changes, though the project's process need not be replaced.
+run r11p "$B" h2d.3mf --slice 1 --load-settings "$BBL/machine/Bambu Lab H2D 0.6 nozzle.json;$BBL/process/0.30mm Standard @BBL H2D 0.6 nozzle.json" --outputdir r11p/out
+[ "$(rc r11p)" = 0 ] || { echo "   $(why r11p)"; fail "row 11 with its process: exit $(rc r11p)"; }
+# The header's nozzle_diameter comes from the printer file; the event is what
+# shows the project's per-slot nozzles were fitted.
+for moved in r11 r11p; do
+    grep -q '"tag":"ProjectNozzlesFitToPrinter"' "$moved/stdout" || fail "row 11 ($moved): the project's nozzles were not fitted to the printer"
+done
 case_done "$before" "rows 9-11: a nozzle change slices as the printer named by preset does"
 
 # ── rows 12-17: the process and filament files ─────────────────────────────
