@@ -248,6 +248,12 @@ else
     skip "legacy-layout-keeps-placement-result-without-events" "profile missing: $PROFILES_DIR/$MACHINE_PROFILE"
 fi
 
+if python3 "$SCRIPT_DIR/test_cli_diagnostics.py" "$BINARY" "$ENGINE" "$BASE_3MF"; then
+    record "argument-and-project-diagnostics" 1
+else
+    record "argument-and-project-diagnostics" 0
+fi
+
 echo
 echo "── diagnostic-event tests ($ENGINE) ──"
 echo "Passed: $PASS"

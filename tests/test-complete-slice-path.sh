@@ -2020,10 +2020,10 @@ echo "PASS: --repetitions copies the plate (both engines)"
 # --repetitions on one plate of a multi-plate project. The search for a count
 # that fits retries, and a retry used to put the saved model back with a Model
 # assignment: that frees every object and instance the model holds, while the
-# plate's own scope (main.cpp PlateScope) and the run's plates still name them —
+# plate's own scope (src/cli_plate_scope.cpp PlateScope) and the run's plates still name them —
 # the scope wrote through the freed objects on its way out, and the other
 # plates were left with no members. The search now runs on a copy of the model
-# (cli_repetitions.cpp), so nothing the run still names is freed.
+# (src/cli_repetitions.cpp), so nothing the run still names is freed.
 #
 # A real multi-plate project, external like the other corpus case: the run goes
 # where it is, and skips where it is not.
@@ -4363,7 +4363,7 @@ assert p, "no filament preset " + fil
 skip = {"name", "inherits", "from", "type", "instantiation", "setting_id", "filament_id", "compatible_printers",
         "compatible_printers_condition", "compatible_prints", "compatible_prints_condition", "version", "description"}
 # filament_extruder_variant is the variant-slot table, sized by the extruders
-# of the printer on purpose (see the padding in main.cpp), not one value per filament.
+# of the printer on purpose (see the NORM_VEC pass in src/cli_load_slice_inputs.cpp), not one value per filament.
 skip.add("filament_extruder_variant")
 bad = []
 for k, v in p.items():

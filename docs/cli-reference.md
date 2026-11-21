@@ -681,7 +681,7 @@ of either.
 
 ### `--layout-plan` request, schemaVersion 3
 
-The request and answer types are in `layout_plan.hpp`. `layout capabilities --json`
+The request and answer types are in `src/layout_plan.hpp`. `layout capabilities --json`
 reports the schema versions a binary takes. Version 3 adds, all binaries:
 
 - `"beds": "all"`: every bed the arrange fills is a placement. A model's `bed_idx`

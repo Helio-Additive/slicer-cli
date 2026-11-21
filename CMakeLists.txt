@@ -85,7 +85,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # file(GLOB_RECURSE) — which are always normalized — match the strings we
 # construct for list(REMOVE_ITEM) and EXISTS checks.
 # ─── Engine selection (bambu | orca) ────────────────────────────────────────
-# The CLI driver (main.cpp) compiles against ONE engine's libslic3r at a time:
+# The CLI driver (src/main.cpp) compiles against ONE engine's libslic3r at a time:
 #   -DENGINE=bambu  (default)  → references/BambuStudio  + libslic3r/bambustudio
 #   -DENGINE=orca              → references/OrcaSlicer    + libslic3r/orcaslicer
 # Both are PrusaSlicer forks sharing the same public API (Model, Print, etc.).
@@ -95,7 +95,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 #                     BambuStudio: src/        (admesh, clipper, …)
 #                     OrcaSlicer:  deps_src/   (admesh, clipper, …)
 #   * ENGINE_BAMBU / ENGINE_ORCA compile define → gates the divergent front-end
-#     blocks in main.cpp (preset/staging resolution, toolchanger normalizations).
+#     blocks in the front end (preset/staging resolution, toolchanger normalizations).
 set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio), orca (OrcaSlicer) or snapmaker (Snapmaker Orca)")
 set_property(CACHE ENGINE PROPERTY STRINGS bambu orca snapmaker)
 set(ENGINE_EXTRA_LIBS "")   # engine-specific extra link libraries (populated below)
@@ -118,7 +118,7 @@ elseif(ENGINE STREQUAL "snapmaker")
   set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # OrcaSlicer branch: sub-libs under deps_src/
   # Snapmaker Orca is a Snapmaker fork of OrcaSlicer, so the OrcaSlicer driver
   # paths are the right ones; ENGINE_SNAPMAKER marks the OrcaSlicer-2.4 APIs the
-  # fork does not have (see the ENGINE_SNAPMAKER guards in main.cpp).
+  # fork does not have (see the ENGINE_SNAPMAKER guards in the front end).
   add_compile_definitions(ENGINE_ORCA ENGINE_SNAPMAKER)
   message(STATUS "ENGINE = snapmaker (Snapmaker Orca)")
 else()
@@ -599,7 +599,7 @@ list(APPEND LIBSLIC3R_SOURCES "${_nsvg}")
 if(NOT ENGINE STREQUAL "snapmaker")
   list(APPEND LIBSLIC3R_SOURCES "${NANOSVG_IMPL}")
 endif()
-list(APPEND LIBSLIC3R_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/standalone_stubs.cpp")
+list(APPEND LIBSLIC3R_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone_stubs.cpp")
 
 # ─── libslic3r_core (main library) ─────────────────────────────────────────
 # Keep engine constructors in the executable's initialization domain so the
@@ -888,12 +888,62 @@ set_target_properties(libslic3r_core PROPERTIES
 add_library(libslic3r ALIAS libslic3r_core)
 
 # ─── CLI executable ────────────────────────────────────────────────────────
-add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp
-    cli_command_line.cpp cli_flag_support.cpp desktop_presets.cpp cli_model_load.cpp cli_run_steps.cpp cli_load_settings.cpp cli_repetitions.cpp cli_simplify.cpp cli_list_flags.cpp cli_engine_info.cpp
-    cli_assemble.cpp cli_layer_ranges.cpp cli_pipe.cpp cli_failure_reason.cpp cli_snapmaker.cpp
-    cli_nozzle_diameter.cpp cli_gcode_timing.cpp cli_filament_map.cpp cli_nozzle_options.cpp
-    cli_project_load.cpp)
+add_executable(slicer_cli src/cli_result_json.cpp
+    src/cli_run_cleanup.cpp
+    src/cli_plate_report.cpp
+    src/cli_plate_arrange.cpp
+    src/cli_named_presets.cpp
+    src/cli_project_values.cpp
+    src/cli_plate_plan.cpp
+    src/cli_file_info.cpp
+    src/cli_slice_export.cpp
+    src/cli_plate_scope.cpp
+    src/cli_load_slice_inputs.cpp
+    src/cli_load_project_archive.cpp
+    src/cli_plate_print.cpp
+    src/cli_slice_plate.cpp
+    src/cli_check_downward.cpp
+    src/cli_plate_settings.cpp
+    src/cli_slice_run.cpp
+    src/cli_startup.cpp
+    src/cli_layout_command.cpp
+    src/main.cpp src/cli_staging_folders.cpp src/startup_logging.cpp src/calib_args.cpp src/layout_plan.cpp
+    src/cli_command_line.cpp src/cli_flag_support.cpp src/desktop_presets.cpp src/cli_model_load.cpp src/cli_run_steps.cpp src/cli_load_settings.cpp src/cli_repetitions.cpp src/cli_simplify.cpp src/cli_list_flags.cpp src/cli_engine_info.cpp
+    src/cli_assemble.cpp src/cli_layer_ranges.cpp src/cli_pipe.cpp src/cli_failure_reason.cpp src/cli_snapmaker.cpp
+    src/cli_nozzle_diameter.cpp src/cli_gcode_timing.cpp src/cli_filament_map.cpp src/cli_nozzle_options.cpp
+    src/cli_engine_events.cpp
+    src/cli_legacy_gcode.cpp
+    src/cli_json_config.cpp
+    src/cli_filament_config.cpp
+    src/cli_project_archive.cpp
+    src/cli_printer_catalog.cpp
+    src/cli_list_settings.cpp
+    src/cli_setting_overrides.cpp
+    src/cli_arrange_geometry.cpp
+    src/cli_preset_staging.cpp
+    src/cli_percent_widths.cpp
+    src/cli_project_settings.cpp src/cli_project_load.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
+
+# Cache the engine headers shared by the front end. Boost.Log declarations must
+# be visible before Bambu Studio's Log.hpp installs its logging macro.
+if(MSVC)
+  target_precompile_headers(slicer_cli PRIVATE "${_nowide_fwd}")
+endif()
+target_precompile_headers(slicer_cli PRIVATE
+    <boost/log/trivial.hpp>
+    <libslic3r/PrintConfig.hpp>
+    <libslic3r/Model.hpp>
+    <libslic3r/PresetBundle.hpp>
+    <nlohmann/json.hpp>)
+
+# These files compile independently of the engine headers.
+set_source_files_properties(
+    src/cli_failure_reason.cpp src/startup_logging.cpp src/cli_pipe.cpp
+    src/cli_printer_catalog.cpp src/cli_project_archive.cpp
+    src/cli_preset_staging.cpp src/cli_staging_folders.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
 # Both engines build a program called slicer_cli; the package renames the
 # OrcaSlicer one to slicer_cli-orcaslicer. Give the Snapmaker build its own name
 # at build time so it is not mistaken for either.
@@ -912,7 +962,7 @@ target_include_directories(slicer_cli PRIVATE
 # Provenance: run git with -C <engine dir> and verify the resolved toplevel IS
 # the engine checkout — a vendored engine dir without its own .git must NOT
 # pick up the PARENT repo's SHA (git walks up to find a repo); report the
-# literal "unknown" from layout_plan.cpp instead.
+# literal "unknown" from src/layout_plan.cpp instead.
 find_package(Git QUIET)
 if(GIT_FOUND)
   get_filename_component(ENGINE_ROOT_ABS "${ENGINE_ROOT}" ABSOLUTE)
@@ -949,7 +999,7 @@ if(ENGINE_COMMIT)
 endif()
 
 # ─── Layout spike (proof harness) ─────────────────────────────────────────
-add_executable(layout_spike layout_spike.cpp arrange_harness.cpp)
+add_executable(layout_spike src/layout_spike.cpp src/arrange_harness.cpp)
 target_link_libraries(layout_spike PRIVATE libslic3r_core)
 target_include_directories(layout_spike PRIVATE
     "${VENDOR}"

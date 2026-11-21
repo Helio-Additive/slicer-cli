@@ -528,7 +528,7 @@ echo
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"
 echo "Skipped: 10 (no input reaches the sentence):"
-echo "  --<flag> is not implemented (cli_run_steps.cpp); 'The STL ... holds no mesh';"
+echo "  --<flag> is not implemented (src/cli_run_steps.cpp); 'The STL ... holds no mesh';"
 echo "  'The STL ... could not be added'; 'The OBJ ... could not be added';"
 echo "  'The colours of the OBJ ... could not be turned into filaments';"
 echo "  'The assemble list's parts could not be built'; 'The model files hold no object to print';"

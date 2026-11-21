@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/result.schema.json",
   "title": "slicer-cli result.json",
-  "description": "The result.json a --slice run writes into --outputdir (write_result_json in main.cpp): the official CLI's record_exit_reson keys (BambuStudio.cpp 476-593 at 5873b5f), plus engine, error_reason, unknown_settings and, per plate, warnings, gcode_file, objects and filaments. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
+  "description": "The result.json a --slice run writes into --outputdir (write_result_json in src/cli_result_json.cpp): the official CLI's record_exit_reson keys (BambuStudio.cpp 476-593 at 5873b5f), plus engine, error_reason, unknown_settings and, per plate, warnings, gcode_file, objects and filaments. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
   "type": "object",
   "required": [
     "plate_index",
