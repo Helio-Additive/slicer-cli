@@ -10202,6 +10202,21 @@ static int slice_one_plate(const CliOptions& o, Slic3r::Calib_Params& calib_para
                     // (7103-7172, cli_nozzle_options.cpp).
                     const bool from_flags = slicer_cli::command_line_nozzle_rack(extra, config, new_extruder_count, nozzle_stats_obj);
                     slicer_cli::sync_ams_count_with_command_line(extra, config);
+                    // A project moved to another printer keeps its nozzles
+                    // only where they hold the printer's diameter, as the
+                    // app keeps them (cli_nozzle_options.hpp). The official
+                    // command line keeps a complete per-slot layout from the
+                    // file as it is (BambuStudio.cpp 7173-7174). The
+                    // printer changes whenever the run names another one;
+                    // machine_switch is set only when the project's process
+                    // does not suit it.
+                    const bool printer_changed = !rs.settings_merge.new_printer_name.empty() &&
+                                                 rs.settings_merge.new_printer_name != project_facts.current_printer_name;
+                    if (!from_flags && printer_changed &&
+                        slicer_cli::fit_project_nozzles_to_printer(config))
+                        emit_event({{"event","config_normalized"}, {"tag","ProjectNozzlesFitToPrinter"},
+                                    {"message","The project's nozzles do not hold the new printer's diameter; "
+                                               "those extruders take the printer's default nozzles, as the app does"}});
                     const bool derived = !from_flags && !Slic3r::per_slot_nozzle_options_consistent(config);
                     if (derived) {
                         for (size_t eid = 0; eid < new_nozzle_volume_type.size(); ++eid) {

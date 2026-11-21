@@ -77,8 +77,43 @@ record_homebrew_provenance() {
         brew info --json=v2 "$FORMULA" > "$DESTINATION/$FORMULA.json"
     fi
     if [ ! -s "$DESTINATION/$FORMULA.rb" ]; then
-        brew cat "$FORMULA" > "$DESTINATION/$FORMULA.rb"
+        if ! brew cat "$FORMULA" > "$DESTINATION/$FORMULA.rb" 2>/dev/null || [ ! -s "$DESTINATION/$FORMULA.rb" ]; then
+            # A Homebrew that installs from its API can lack the formula's
+            # source on disk ("icu4c@79's source doesn't exist on disk").
+            # The formula JSON names the file, the tap commit it came from and
+            # its checksum, so fetch that exact file and check it.
+            formula_source_from_tap "$DESTINATION/$FORMULA.json" "$DESTINATION/$FORMULA.rb"
+        fi
     fi
+}
+
+formula_source_from_tap() {
+    local INFO="$1" TARGET="$2" FIELDS TAP HEAD SOURCE SHA URL
+    FIELDS=$(python3 -c 'import json, sys
+f = json.load(open(sys.argv[1]))["formulae"][0]
+print(f["tap"], f["tap_git_head"], f["ruby_source_path"], f["ruby_source_checksum"]["sha256"])' "$INFO") || {
+        echo "ERROR: $INFO does not name the formula source" >&2
+        return 1
+    }
+    read -r TAP HEAD SOURCE SHA <<< "$FIELDS"
+    if [ "$TAP" != "homebrew/core" ]; then
+        echo "ERROR: no source for formula from tap $TAP" >&2
+        return 1
+    fi
+    URL="https://raw.githubusercontent.com/Homebrew/homebrew-core/$HEAD/$SOURCE"
+    # Fetch beside the target and move it in only once checked: a failed
+    # transfer can leave a partial file, and a rerun keeps any nonempty one.
+    curl -fsSL --retry 3 "$URL" -o "$TARGET.part" || {
+        echo "ERROR: cannot fetch $URL" >&2
+        rm -f "$TARGET.part"
+        return 1
+    }
+    if [ "$(shasum -a 256 "$TARGET.part" | cut -d' ' -f1)" != "$SHA" ]; then
+        echo "ERROR: $URL does not match the formula's checksum" >&2
+        rm -f "$TARGET.part"
+        return 1
+    fi
+    mv -f "$TARGET.part" "$TARGET"
 }
 
 already_seen() {

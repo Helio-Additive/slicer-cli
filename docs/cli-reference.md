@@ -288,6 +288,13 @@ whose printer has other extruder clearances, is arranged again (`arranged` /
 `ClearanceArrange`); `--slice 0` is never re-arranged. Works in the BambuStudio
 build only after a printer change; in the OrcaSlicer build with or without one.
 
+In the BambuStudio build, a project moved to a printer with another nozzle
+diameter (an H2D project given the H2D 0.6 mm printer file) keeps the file's
+nozzles only on an extruder where they hold the new diameter, as the Bambu
+Studio app does; another extruder takes the new printer's default nozzles
+(event `config_normalized` / `ProjectNozzlesFitToPrinter`). On a printer with a
+nozzle rack, an extruder keeps its nozzles while any is installed.
+
 Which process settings such a change slices with differs between the two
 binaries. The BambuStudio build keeps the project's own process and only points
 its extruder variants at the new printer, as its official command line does
