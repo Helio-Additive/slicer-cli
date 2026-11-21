@@ -477,7 +477,18 @@ pub fn add_sampling_points(path: &ZPath, min_sampling_interval: f64) -> ZPath {
                     let t = j as f64 * min_sampling_interval / dist;
                     // OverhangDetector.cpp:129 — ZPoint new_point;
                     // OverhangDetector.cpp:130 — new_point.x() = curr_p.x() + t*(next_p.x()-curr_p.x());
-                    let lerp = |c: i64, n: i64| -> i64 { (c as f64 + t * (n - c) as f64) as i64 };
+                    // OVERHANG_ARACHNE_FMA (on unless =0): `curr + t * (next - curr)` is one expression,
+                    // which the pin's compiler contracts to a fused multiply-add before the value is
+                    // truncated to the coordinate (tests/perimeter_generator_native_parity.rs, the
+                    // "traverse" lines). =0 rounds the product first.
+                    let fma = crate::faithful_gate("OVERHANG_ARACHNE_FMA");
+                    let lerp = |c: i64, n: i64| -> i64 {
+                        if fma {
+                            t.mul_add((n - c) as f64, c as f64) as i64
+                        } else {
+                            (c as f64 + t * (n - c) as f64) as i64
+                        }
+                    };
                     let nx = lerp(curr_p.x(), next_p.x());
                     // OverhangDetector.cpp:131 — new_point.y() = curr_p.y() + t*(next_p.y()-curr_p.y());
                     let ny = lerp(curr_p.y(), next_p.y());
@@ -694,7 +705,13 @@ pub fn detect_overhang_degree_arachne(
                     let lo = hi - 1;
                     let t = (degree - NON_UNIFORM_DEGREE_MAP[lo])
                         / (NON_UNIFORM_DEGREE_MAP[hi] - NON_UNIFORM_DEGREE_MAP[lo]);
-                    lo as f64 * (1.0 - t) + t * hi as f64
+                    // OVERHANG_ARACHNE_FMA: `low_idx * (1 - t) + t * high_idx` (OverhangDetector.cpp:267),
+                    // the left product fused into the sum.
+                    if crate::faithful_gate("OVERHANG_ARACHNE_FMA") {
+                        (lo as f64).mul_add(1.0 - t, t * hi as f64)
+                    } else {
+                        lo as f64 * (1.0 - t) + t * hi as f64
+                    }
                 }
             };
             if ovd_in_box(px, py) {

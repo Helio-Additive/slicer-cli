@@ -3310,5 +3310,160 @@
    "TreeSupport::get_trim_support_regions",
    "TreeSupport::prune_floating_supports"
   ]
+ },
+ {
+  "unit": "Support/TreeSupport",
+  "round": 920,
+  "evidence": "tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).",
+  "functions": [
+   "TreeSupport::fold_nodes_multi_diameter",
+   "TreeSupport::smooth_line_width_multi_diameter",
+   "TreeSupport::generate",
+   "TreeSupport::resolve_material_covered_by_folded_interfaces",
+   "TreeSupport::init_top_z_by_nozzle"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupport3D",
+  "round": 920,
+  "evidence": "tests/tree_support_3d_native_parity.rs: 18 scenarios built with the pin's Print::apply plus direct calls of the helpers, against the pin's TreeSupport3D.cpp compiled into the generator on one thread (arenas of 1 and 8 slots for the bucket count of merge_influence_areas): the helpers, generate_initial_areas (fills, contacts, interfaces, the raft contact), the elements after create_layer_pathing (417 layers, 14,301 elements), after create_nodes_from_area (14,278), the branch areas after generate_branch_areas and after smooth_branch_areas: every required line equal. Reported and not required: draw_areas (47 of 501 lines differ) because smooth_outward of mutable_polygon.rs is not equal to the pin on the same input.",
+  "functions": [
+   "group_meshes",
+   "getEffectiveDTT",
+   "support_element_radius",
+   "support_element_collision_radius",
+   "support_element_model_collision_radius",
+   "precalculate",
+   "get_avoidance_status",
+   "convert_lines_to_internal",
+   "evaluate_point_for_next_layer_function",
+   "split_lines",
+   "polyline_sample_next_point_at_distance",
+   "ensure_maximum_distance_polyline",
+   "generate_support_infill_lines",
+   "generate_raft_contact",
+   "finalize_raft_contact",
+   "sample_overhang_area",
+   "generate_initial_areas",
+   "move_inside",
+   "move_inside_if_outside",
+   "RichInterfacePlacer::add_points_along_lines",
+   "RichInterfacePlacer::add_point_as_influence_area",
+   "increase_single_area",
+   "increase_areas_one_layer",
+   "merge_support_element_states",
+   "merge_influence_areas_two_elements",
+   "merge_influence_areas_leaves",
+   "merge_influence_areas_two_sets",
+   "merge_influence_areas",
+   "create_layer_pathing",
+   "set_points_on_areas",
+   "set_to_model_contact_simple",
+   "set_to_model_contact_to_model_gracious",
+   "remove_deleted_elements",
+   "create_nodes_from_area",
+   "generate_branch_areas",
+   "smooth_branch_areas"
+  ]
+ },
+ {
+  "unit": "Support/SupportMaterial",
+  "round": 920,
+  "evidence": "tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.",
+  "functions": [
+   "rasterize_polygons",
+   "contours_simplified",
+   "has_bridging_perimeters",
+   "has_bridging_fills",
+   "has_bridging_extrusions",
+   "collect_bridging_perimeter_areas",
+   "remove_bridges_from_contacts",
+   "detect_overhangs",
+   "detect_contacts",
+   "sync_gap_with_object_layer",
+   "new_contact_layer",
+   "fill_contact_layer",
+   "merge_contact_layers",
+   "add_overhang",
+   "detect_bottom_contacts",
+   "project_support_to_grid",
+   "PrintObjectSupportMaterial::has_raft",
+   "PrintObjectSupportMaterial::has_support",
+   "PrintObjectSupportMaterial::build_plate_only",
+   "PrintObjectSupportMaterial::synchronize_layers",
+   "PrintObjectSupportMaterial::has_contact_loops",
+   "PrintObjectSupportMaterial::generate",
+   "PrintObjectSupportMaterial::buildplate_covered",
+   "PrintObjectSupportMaterial::top_contact_layers",
+   "PrintObjectSupportMaterial::bottom_contact_layers_and_layer_support_areas",
+   "PrintObjectSupportMaterial::trim_top_contacts_by_bottom_contacts",
+   "PrintObjectSupportMaterial::raft_and_intermediate_support_layers",
+   "PrintObjectSupportMaterial::generate_base_layers",
+   "PrintObjectSupportMaterial::trim_support_layers_by_object",
+   "SupportGridPattern::extract_support",
+   "SupportGridPattern::dilate_trimming_region",
+   "SupportGridPattern::seed_fill_block",
+   "SupportGridPattern::island_samples"
+  ]
+ },
+ {
+  "unit": "PerimeterGenerator",
+  "round": 920,
+  "evidence": "tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.",
+  "functions": [
+   "lowpass_filter_by_paths_overhang_degree",
+   "is_enable_overhang_speed",
+   "fuzzy_skin_allows_overhang_slowdown",
+   "smooth_overhang_level",
+   "detect_brigde_wall_arachne",
+   "traverse_extrusions",
+   "to_polygons_with_flag",
+   "PerimeterGenerator::dist_boundary",
+   "PerimeterGenerator::effective_wall_loops",
+   "PerimeterGenerator::generate_lower_polygons_series",
+   "PerimeterGeneratorLoop::is_external",
+   "PerimeterGeneratorLoop::is_internal_contour",
+   "PerimeterRegion::has_compatible_perimeter_regions",
+   "PerimeterRegion::merge_compatible_perimeter_regions"
+  ]
+ },
+ {
+  "unit": "Layer",
+  "round": 920,
+  "evidence": "tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.",
+  "functions": [
+   "ContinuitiousDistancer::distance_from_perimeter",
+   "Layer::calculate_perimeter_continuity"
+  ]
+ },
+ {
+  "unit": "MultiMaterialSegmentation",
+  "round": 920,
+  "evidence": "tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)",
+  "functions": [
+   "non_deleted_edge_count",
+   "can_vertex_be_deleted",
+   "delete_vertex_deep",
+   "edge_length",
+   "calc_total_edge_length",
+   "remove_multiple_edges_in_vertex"
+  ]
+ },
+ {
+  "unit": "VariableWidth",
+  "round": 920,
+  "evidence": "tests/perimeter_generator_native_parity.rs, bridge_wall: detect_brigde_wall_arachne hands its pieces to thick_polyline_to_multi_path; widths and mm3_per_mm of 300 cases equal to the pin bit for bit with the fused spacing_to_width (VariableWidth.cpp:66, gate VARIABLE_WIDTH_FMA).",
+  "functions": [
+   "thick_polyline_to_multi_path"
+  ]
+ },
+ {
+  "unit": "OverhangDetector",
+  "round": 920,
+  "evidence": "tests/perimeter_generator_native_parity.rs, traverse: traverse_extrusions splits its paths by overhang degree; the points and degrees of 280 cases equal to the pin with the fused sampling points and degree map (OverhangDetector.cpp:130-132, 267, gate OVERHANG_ARACHNE_FMA).",
+  "functions": [
+   "add_sampling_points",
+   "detect_overhang_degree"
+  ]
  }
 ]

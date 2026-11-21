@@ -495,11 +495,89 @@ impl PerimeterResult {
 /// Perimeter generator
 pub struct PerimeterGenerator {
     config: PerimeterConfig,
+    /// PerimeterGenerator.hpp:129-133 `double m_ext_mm3_per_mm; double m_mm3_per_mm; double
+    /// m_mm3_per_mm_overhang; double m_ext_mm3_per_mm_smaller_width;`: -1 from the constructor
+    /// (PerimeterGenerator.hpp:103), set by process_classic and process_arachne.
+    m_ext_mm3_per_mm: std::cell::Cell<f64>,
+    m_mm3_per_mm: std::cell::Cell<f64>,
+    m_mm3_per_mm_overhang: std::cell::Cell<f64>,
+    //BBS
+    m_ext_mm3_per_mm_smaller_width: std::cell::Cell<f64>,
 }
 
 impl PerimeterGenerator {
     pub fn new(config: PerimeterConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            m_ext_mm3_per_mm: std::cell::Cell::new(-1.),
+            m_mm3_per_mm: std::cell::Cell::new(-1.),
+            m_mm3_per_mm_overhang: std::cell::Cell::new(-1.),
+            m_ext_mm3_per_mm_smaller_width: std::cell::Cell::new(-1.),
+        }
+    }
+
+    /// PerimeterGenerator.hpp:113 `double ext_mm3_per_mm() const { return m_ext_mm3_per_mm; }`
+    pub fn ext_mm3_per_mm(&self) -> f64 {
+        self.m_ext_mm3_per_mm.get()
+    }
+    /// PerimeterGenerator.hpp:114 `double mm3_per_mm() const { return m_mm3_per_mm; }`
+    pub fn mm3_per_mm(&self) -> f64 {
+        self.m_mm3_per_mm.get()
+    }
+    /// PerimeterGenerator.hpp:115 `double mm3_per_mm_overhang() const { return m_mm3_per_mm_overhang; }`
+    pub fn mm3_per_mm_overhang(&self) -> f64 {
+        self.m_mm3_per_mm_overhang.get()
+    }
+    //BBS
+    /// PerimeterGenerator.hpp:117 `double smaller_width_ext_mm3_per_mm() const { return m_ext_mm3_per_mm_smaller_width; }`
+    pub fn smaller_width_ext_mm3_per_mm(&self) -> f64 {
+        self.m_ext_mm3_per_mm_smaller_width.get()
+    }
+
+    /// PerimeterGenerator.hpp:118 `Polygons lower_slices_polygons() const { return m_lower_slices_polygons; }`:
+    /// the member process_arachne sets (PerimeterGenerator.cpp:1509-1515) where there are lower slices
+    /// and detect_overhang_wall is on, `offset(*this->lower_slices, float(scale_(+nozzle_diameter / 2)))`,
+    /// empty otherwise. It is computed here where it is read.
+    pub fn lower_slices_polygons(&self) -> Vec<Polygon> {
+        use crate::clipper_utils::OffsetJoinType;
+        let Some(lower) = self.config.lower_slices.as_ref() else {
+            return Vec::new();
+        };
+        if !self.config.detect_overhang_wall {
+            return Vec::new();
+        }
+        let nozzle = self.config.perimeter_flow.nozzle_diameter();
+        // R803c — native (PerimeterGenerator.cpp:1514):
+        //   m_lower_slices_polygons = offset(*lower_slices, float(scale_(+nozzle/2)))
+        // is ClipperLib raw_offset + union over ALL rings (contours and
+        // holes, orientation-signed), jtMiter/ML3. The geo `grow` route
+        // re-gridded the boundary and joined corners differently, so the
+        // signed distances behind every arachne overhang degree — and
+        // therefore the split positions of the speed pieces — drifted by
+        // up to ~0.9mm on straight stretches (layer-8 benchy-arachne).
+        if crate::faithful_gate("ARACHNE_LOWER_GROW_CLIB") {
+            let rings = expolygons_to_polygons(lower);
+            let delta = (crate::scaled_f(0.5 * nozzle) as f32) as f64;
+            crate::clipper_utils::offset_polygons_clib(&rings, delta, OffsetJoinType::Miter)
+        } else {
+            expolygons_to_polygons(&crate::clipper_utils::grow(lower, 0.5 * nozzle, OffsetJoinType::Miter))
+        }
+    }
+
+    /// The members process_classic (PerimeterGenerator.cpp:862, 867, 878, 903) and process_arachne
+    /// (:1492, 1497, 1503; it leaves the smaller width at -1) assign from the flows. `Flow::mm3_per_mm()`
+    /// throws for a flow without a positive section at the pin; such a member stays -1 here.
+    fn set_mm3_per_mm_members(&self, classic: bool) {
+        // other perimeters
+        self.m_mm3_per_mm.set(self.config.perimeter_flow.mm3_per_mm().unwrap_or(-1.));
+        // external perimeters
+        self.m_ext_mm3_per_mm.set(self.config.ext_perimeter_flow.mm3_per_mm().unwrap_or(-1.));
+        // overhang perimeters
+        self.m_mm3_per_mm_overhang.set(self.config.overhang_flow.as_ref().and_then(|f| f.mm3_per_mm().ok()).unwrap_or(-1.));
+        if classic {
+            // BBS: this flow is for smaller external perimeter for small area
+            self.m_ext_mm3_per_mm_smaller_width.set(self.config.smaller_ext_perimeter_flow.mm3_per_mm().unwrap_or(-1.));
+        }
     }
 
     /// Generate perimeters for given slices
@@ -516,9 +594,17 @@ impl PerimeterGenerator {
 
         // Use Arachne if enabled
         if self.config.wall_generator_mode == WallGeneratorMode::Arachne {
-            return self.generate_arachne(slices);
+            return self.process_arachne(slices);
         }
+        self.process_classic(slices, result)
+    }
 
+    /// PerimeterGenerator.cpp:859-1453 `void PerimeterGenerator::process_classic()`: the surfaces in the
+    /// order of chain_expolygons, each through `generate_classic_one` (the body of the loop over the
+    /// surfaces, :930-1452). `slices` is `this->slices`, the result carries what the C++ writes to
+    /// `loops`, `gap_fill`, `fill_surfaces`, `fill_no_overlap` and `loop_nodes`.
+    pub fn process_classic(&self, slices: &[ExPolygon], mut result: PerimeterResult) -> PerimeterResult {
+        self.set_mm3_per_mm_members(true);
         // C++ process_classic() loops: for (const Surface &surface : this->slices->surfaces)
         // Each surface is processed independently with its own last/contours/holes state.
         // R209: native REORDERS the surfaces first ("reorder the surface to
@@ -3361,7 +3447,9 @@ impl PerimeterGenerator {
         !top.is_empty()
     }
 
-    fn generate_arachne(&self, slices: &[ExPolygon]) -> PerimeterResult {
+    /// PerimeterGenerator.cpp:1489-1849 `void PerimeterGenerator::process_arachne()`
+    pub fn process_arachne(&self, slices: &[ExPolygon]) -> PerimeterResult {
+        self.set_mm3_per_mm_members(false);
         let mut result = PerimeterResult::new();
         // R803e — see the LoopNode block in the per-line loop below.
         let arachne_nodes_on = self.config.z_direction_outwall_speed_continuous
@@ -4705,13 +4793,8 @@ impl PerimeterGenerator {
                     // signed distances behind every arachne overhang degree — and
                     // therefore the split positions of the speed pieces — drifted by
                     // up to ~0.9mm on straight stretches (layer-8 benchy-arachne).
-                    let grown_rings: Vec<Polygon> = if crate::faithful_gate("ARACHNE_LOWER_GROW_CLIB") {
-                        let rings = expolygons_to_polygons(lower);
-                        let delta = (crate::scaled_f(0.5 * nozzle) as f32) as f64;
-                        crate::clipper_utils::offset_polygons_clib(&rings, delta, OffsetJoinType::Miter)
-                    } else {
-                        expolygons_to_polygons(&crate::clipper_utils::grow(lower, 0.5 * nozzle, OffsetJoinType::Miter))
-                    };
+                    // PerimeterGenerator.cpp:673 `Polygons lower_layer_polys = perimeter_generator.lower_slices_polygons();`
+                    let grown_rings: Vec<Polygon> = self.lower_slices_polygons();
                     // ARACHNE_CLIP_BBOX (on): PerimeterGenerator.cpp:675-692 clips each
                     // grown lower polygon to the bounding box of the extrusion's
                     // junctions (`clip_clipper_polygon_with_subject_bbox(.., true)`,
@@ -5538,7 +5621,7 @@ fn lastprobe(stage: &str, contours: usize, holes: usize, points: usize) {
 /// (the run plus its neighbours on both sides, wrapping around the loop, stopping
 /// at an OverhangPerimeter piece). Degrees are read and written as C++ `int`
 /// (truncation), exactly like `get_overhang_degree()` / `set_overhang_degree(int)`.
-fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
+pub fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
     let threshold_length: f64 = crate::scaled_f(0.8);
     let filter_range: f64 = crate::scaled_f(6.5);
 
@@ -5548,7 +5631,9 @@ fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
         // don't need to do filtering if only has one path in vector
         return;
     }
-    let old: Vec<i32> = paths.iter().map(|p| p.overhang_degree as i32).collect();
+    // PerimeterGenerator.cpp:526 `paths[i].get_overhang_degree()`: 0 for a role that is neither a
+    // perimeter nor a support (the paths of the live path are perimeters).
+    let old: Vec<i32> = paths.iter().map(|p| p.get_overhang_degree()).collect();
     let is_wall = |r: ExtrusionRole| {
         r == ExtrusionRole::Perimeter || r == ExtrusionRole::ExternalPerimeter
     };
@@ -5565,7 +5650,7 @@ fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
         let mut pt = i + 1;
         while pt < path_num {
             let p = &paths[pt as usize];
-            if (p.overhang_degree as i32) != current_overhang_degree || !is_wall(p.role) {
+            if p.get_overhang_degree() != current_overhang_degree || !is_wall(p.role) {
                 break;
             }
             total_lens += p.length();
@@ -5620,18 +5705,28 @@ fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
                 }
             }
 
+            // PG_SMOOTH_FMA (on unless =0): PerimeterGenerator.cpp:583 `sum += (it->first * it->second)`
+            // and :587 `(total_lens * current_overhang_degree + sum)` are each one expression, which
+            // the pin's compiler contracts to a fused multiply-add. =0 rounds the products first.
+            let fma = crate::faithful_gate("PG_SMOOTH_FMA");
             let mut sum = 0.0_f64;
             let mut length_sum = 0.0_f64;
             for (l, d) in &neighbor_path {
-                sum += l * (*d as f64);
+                if fma {
+                    sum = l.mul_add(*d as f64, sum);
+                } else {
+                    sum += l * (*d as f64);
+                }
                 length_sum += l;
             }
-            let average_overhang =
-                (total_lens * current_overhang_degree as f64 + sum) / (length_sum + total_lens);
+            let average_overhang = if fma {
+                total_lens.mul_add(current_overhang_degree as f64, sum) / (length_sum + total_lens)
+            } else {
+                (total_lens * current_overhang_degree as f64 + sum) / (length_sum + total_lens)
+            };
             for idx in i..pt {
                 // set_overhang_degree(int): clamp to [0, 10] on perimeter roles.
-                let v = (average_overhang as i32).clamp(0, 10);
-                paths[idx as usize].overhang_degree = v as f64;
+                paths[idx as usize].set_overhang_degree(average_overhang as i32);
             }
         }
 
@@ -5653,6 +5748,10 @@ thread_local! {
 // Native parity: tests/perimeter_generator_native_parity.rs.
 // ---------------------------------------------------------------------------------------------
 
+/// libslic3r.h:58 `static constexpr double SCALING_FACTOR = 0.00001;`: `scale_(v)` divides by it. (The
+/// `SCALING_FACTOR` of the crate root, which the live path above uses, is its inverse.)
+const SCALING_FACTOR_PIN: f64 = crate::libslic3r::SCALING_FACTOR;
+
 fn pg_cfg_int(config: &crate::print_config::config_def::DynamicPrintConfig, key: &str) -> i32 {
     use crate::config::ConfigOptionResolver;
     config.option(key).and_then(|o| o.get_int().ok()).unwrap_or_else(|| panic!("option {key}"))
@@ -5661,8 +5760,8 @@ fn pg_cfg_int(config: &crate::print_config::config_def::DynamicPrintConfig, key:
 /// PerimeterGenerator.cpp:147-230 `static void lowpass_filter_by_paths_overhang_degree(ExtrusionPaths& paths)`
 pub fn lowpass_filter_by_paths_overhang_degree(paths: &mut Vec<ExtrusionPath>) {
     // scale_(6.5), scale_(1.2)
-    let filter_range: f64 = 6.5 / SCALING_FACTOR;
-    let threshold_length: f64 = 1.2 / SCALING_FACTOR;
+    let filter_range: f64 = 6.5 / SCALING_FACTOR_PIN;
+    let threshold_length: f64 = 1.2 / SCALING_FACTOR_PIN;
 
     //0.save old overhang series first which is input of filter
     let path_num: i32 = paths.len() as i32;
@@ -5835,8 +5934,8 @@ impl PerimeterGenerator {
         // scale_(start_offset + 0.5 * (end_offset - start_offset) / (overhang_sampling_number - 1))
         let degree_0: f64 = (start_offset as f64
             + 0.5 * (end_offset - start_offset) as f64 / (crate::overhang_detector::OVERHANG_SAMPLING_NUMBER - 1) as f64)
-            / SCALING_FACTOR;
-        (0., end_offset as f64 / SCALING_FACTOR - degree_0)
+            / SCALING_FACTOR_PIN;
+        (0., end_offset as f64 / SCALING_FACTOR_PIN - degree_0)
     }
 
     /// PerimeterGenerator.cpp:849-857 `int PerimeterGenerator::effective_wall_loops() const`
@@ -5884,7 +5983,7 @@ impl PerimeterGenerator {
         for i in 0..offset_series.len() {
             // offset(*this->lower_slices, float(scale_(offset_series[i]))): ClipperUtils.cpp
             // `offset(const ExPolygons &, const float delta)` = to_polygons(expolygons_offset(...))
-            let delta: f32 = (offset_series[i] as f64 / SCALING_FACTOR) as f32;
+            let delta: f32 = (offset_series[i] as f64 / SCALING_FACTOR_PIN) as f32;
             let rings: Vec<(cl::Path, cl::Paths)> = lower_slices
                 .iter()
                 .map(|e| {
@@ -5915,13 +6014,15 @@ impl PerimeterRegion {
     /// `region` is `&layer_region.region()`.
     pub fn new(region: crate::print::faithful::PrintRegionPtr, layer_region: &crate::layer::LayerRegion) -> Self {
         let expolygons: ExPolygons = layer_region.slices.surfaces.iter().map(|s| s.expolygon.clone()).collect();
-        // ExPolygon.cpp:495-504 `get_extents(const ExPolygons &expolygons)`
+        // ExPolygon.cpp:495-504 `get_extents(const ExPolygons &expolygons)`: the boxes of the contours
+        // merged. The box of a contour (BoundingBox.hpp:88-102, `construct` without the boundary) is
+        // defined only when it has an area, and `merge` leaves out one that is not defined.
         let mut bbox = crate::geometry::BoundingBox::new();
         for e in &expolygons {
             if !e.contour.points.is_empty() {
-                for p in &e.contour.points {
-                    bbox.merge_point(*p);
-                }
+                let mut contour_bbox = crate::geometry::BoundingBox::new();
+                crate::geometry::BoundingBox::construct(&mut contour_bbox, &e.contour.points, false);
+                bbox.merge(&contour_bbox);
             }
         }
         PerimeterRegion { region, expolygons, bbox }
@@ -6003,4 +6104,308 @@ impl PerimeterRegion {
 
         *perimeter_regions = perimeter_regions_merged;
     }
+}
+
+/// PerimeterGenerator.cpp:597-619 `static void detect_brigde_wall_arachne(const PerimeterGenerator
+/// &perimeter_generator, ExtrusionPaths &paths, const ClipperLib_Z::Paths &path_overhang, const ExtrusionRole
+/// role, const Flow &flow)`. The C++ does not read `perimeter_generator`; it is left out. A path of
+/// `path_overhang` has at least two points (the C++ reads the second one unchecked).
+pub fn detect_brigde_wall_arachne(paths: &mut Vec<ExtrusionPath>, path_overhang: &crate::clipper_z_utils::ZPaths, role: ExtrusionRole, flow: &Flow) {
+    use crate::arachne::utils::extrusion_line::{extrusion_path_append, to_thick_polyline_z};
+    for path in path_overhang {
+        // check if the line is straight line, which mean if the wall is bridge
+        let thick_polyline = to_thick_polyline_z(path);
+
+        let line = crate::geometry::Line::new(thick_polyline.points[0], thick_polyline.points[thick_polyline.points.len() - 1]);
+        if line.length() < thick_polyline.length() {
+            extrusion_path_append(paths, &thick_polyline, role, flow, (crate::overhang_detector::OVERHANG_SAMPLING_NUMBER - 1) as f64);
+            continue;
+        }
+
+        extrusion_path_append(paths, &thick_polyline, role, flow, crate::overhang_detector::OVERHANG_SAMPLING_NUMBER as f64);
+    }
+}
+
+fn pg_cfg_bool(config: &crate::print_config::config_def::DynamicPrintConfig, key: &str) -> bool {
+    use crate::config::ConfigOptionResolver;
+    config.option(key).and_then(|o| o.get_bool().ok()).unwrap_or_else(|| panic!("option {key}"))
+}
+
+/// PerimeterGenerator.cpp:504-511 `struct PerimeterGeneratorArachneExtrusion`
+pub struct PerimeterGeneratorArachneExtrusion<'a> {
+    /// `Arachne::ExtrusionLine* extrusion = nullptr;`
+    pub extrusion: &'a mut ArachneExtrusionLine,
+    /// Indicates if closed ExtrusionLine is a contour or a hole. Used it only when ExtrusionLine is a closed loop.
+    pub is_contour: bool,
+    /// Should this extrusion be fuzzyfied on path generation?
+    pub fuzzify: bool,
+}
+
+/// The members of the C++ `PerimeterGenerator` (PerimeterGenerator.hpp:32-134) that `traverse_extrusions`
+/// reads through its `perimeter_generator`. `loop_nodes`, which it writes, is an argument of its own.
+pub struct PerimeterGeneratorArachneMembers<'a> {
+    /// The Print of `print_config` (`print.config()` is the PrintConfig).
+    pub print: &'a crate::print::faithful::Print,
+    /// `const PrintRegionConfig *config`
+    pub config: &'a crate::print_config::config_def::DynamicPrintConfig,
+    /// `const PrintObjectConfig *object_config`
+    pub object_config: &'a crate::print_config::config_def::DynamicPrintConfig,
+    pub layer_id: i32,
+    pub starts_at_object_base: bool,
+    pub slice_z: f64,
+    pub perimeter_flow: Flow,
+    pub ext_perimeter_flow: Flow,
+    pub overhang_flow: Flow,
+    pub preset_nozzle_diameter: f32,
+    pub multi_nozzle_diameter_mode: bool,
+    /// `perimeter_regions->empty()`
+    pub perimeter_regions_empty: bool,
+    /// `lower_slices_polygons()`, the member process_arachne sets.
+    pub lower_slices_polygons: Vec<Polygon>,
+}
+
+/// PerimeterGenerator.cpp:621-832 `static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator&
+/// perimeter_generator, std::vector<PerimeterGeneratorArachneExtrusion>& pg_extrusions)`.
+///
+/// `apply_fuzzy_skin(extrusion, layer_id, inset_idx, is_contour, slice_z)` is FuzzySkin.cpp's
+/// `apply_fuzzy_skin(extrusion, *config, *perimeter_regions, layer_id, inset_idx, is_contour, slice_z)`
+/// with the config and the perimeter regions bound: its port (fuzzy_skin.rs) reads the typed region
+/// config of the live path, not the PrintRegionConfig this function reads.
+///
+/// extrusion_entity.rs' ExtrusionMultiPath has no customize flag of its own (the C++ sets
+/// cfCircleCompensation on the multi path and on its paths); the paths carry it.
+pub fn traverse_extrusions(
+    perimeter_generator: &PerimeterGeneratorArachneMembers,
+    loop_nodes: &mut Vec<crate::layer::LoopNode>,
+    pg_extrusions: &mut [PerimeterGeneratorArachneExtrusion],
+    apply_fuzzy_skin: &dyn Fn(&ArachneExtrusionLine, usize, usize, bool, f64) -> ArachneExtrusionLine,
+) -> crate::extrusion_entity::ExtrusionEntityCollection {
+    use crate::arachne::utils::extrusion_line::{extrusion_paths_append_line, extrusion_paths_append_zpaths};
+    use crate::clipper_z::{clip_extrusion, ClipType};
+    use crate::clipper_z_utils::{ZPath, ZPaths};
+    use crate::config::{ConfigOptionFloat, ConfigOptionResolverTyped};
+    use crate::extrusion_entity::{CustomizeFlag, ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole, ExtrusionMultiPath};
+
+    let print_config = perimeter_generator.print.config();
+    let config = perimeter_generator.config;
+    let z_direction_outwall_speed_continuous = pg_cfg_bool(print_config, "z_direction_outwall_speed_continuous");
+
+    let mut extrusion_coll = ExtrusionEntityCollection::new();
+    if z_direction_outwall_speed_continuous {
+        extrusion_coll.loop_node_range.0 = loop_nodes.len();
+    }
+
+    for pg_extrusion in pg_extrusions.iter_mut() {
+        let pg_extrusion_is_contour = pg_extrusion.is_contour;
+        let extrusion: &mut ArachneExtrusionLine = &mut *pg_extrusion.extrusion;
+        if extrusion.junctions.is_empty() {
+            continue;
+        }
+        //get extrusion date
+        let is_external: bool = extrusion.inset_idx == 0;
+        let role: ExtrusionRole = if is_external { ExtrusionRole::ExternalPerimeter } else { ExtrusionRole::Perimeter };
+
+        if is_external && z_direction_outwall_speed_continuous {
+            let mut node_contour = crate::layer::NodeContour::default();
+            node_contour.is_loop = extrusion.is_closed;
+            for i in 0..extrusion.junctions.len() {
+                node_contour.pts.push(extrusion.junctions[i].p);
+                node_contour.widths.push(extrusion.junctions[i].w);
+            }
+            // get_extents(node.node_contour.pts): BoundingBox(points), defined where it has an area
+            let mut bbox = crate::geometry::BoundingBox::new();
+            crate::geometry::BoundingBox::construct(&mut bbox, &node_contour.pts, false);
+            let nozzle_diameter: f32 = crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32);
+            // node.bbox.offset(width / 2): BoundingBox.hpp `PointClass v(delta, delta); min -= v; max += v;`
+            // The width is in millimetres and Point(double, double) rounds it with lrint.
+            let outer_wall_line_width =
+                config.option_typed::<ConfigOptionFloat>("outer_wall_line_width").unwrap_or_else(|| panic!("option outer_wall_line_width"));
+            let delta: f64 = Flow::extrusion_width_for_nozzle(
+                outer_wall_line_width,
+                perimeter_generator.preset_nozzle_diameter,
+                nozzle_diameter,
+                perimeter_generator.multi_nozzle_diameter_mode,
+            ) / 2.;
+            let v: Coord = delta.round_ties_even() as Coord;
+            bbox.min.x -= v;
+            bbox.min.y -= v;
+            bbox.max.x += v;
+            bbox.max.y += v;
+            let mut node = crate::layer::LoopNode::new(loop_nodes.len(), extrusion_coll.entities.len(), bbox);
+            node.node_contour = node_contour;
+            loop_nodes.push(node);
+        }
+
+        // Apply fuzzy skin if it is enabled for at least some part of the ExtrusionLine.
+        *extrusion = apply_fuzzy_skin(
+            extrusion,
+            perimeter_generator.layer_id as usize,
+            extrusion.inset_idx,
+            !extrusion.is_closed || pg_extrusion_is_contour,
+            perimeter_generator.slice_z,
+        );
+
+        let mut paths: Vec<ExtrusionPath> = Vec::new();
+        // detect overhanging/bridging perimeters
+
+        if pg_cfg_bool(config, "detect_overhang_wall")
+            && perimeter_generator.layer_id > pg_cfg_int(perimeter_generator.object_config, "raft_layers")
+            && !perimeter_generator.starts_at_object_base
+        {
+            // `ClipperLib_Z::Path extrusion_path` is filled and not read.
+            let nozzle_diameter: f64 =
+                crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32) as f64;
+            let mut lower_layer_polys: Vec<Polygon> = perimeter_generator.lower_slices_polygons.clone();
+
+            let mut extrusion_path_bbox = crate::geometry::BoundingBox::new();
+            for ej in &extrusion.junctions {
+                extrusion_path_bbox.merge_point(Point::new(ej.p.x(), ej.p.y()));
+            }
+            // extrusion_path_bbox.inflated(max_extrusion_width+scale_(nozzle_diameter)) returns a copy
+            // that is dropped: the box stays as it is.
+
+            let mut new_lower_polys: Vec<Polygon> = Vec::new();
+            for idx in 0..lower_layer_polys.len() {
+                let new_poly = crate::clipper_utils::clip_clipper_polygon_with_subject_bbox(&lower_layer_polys[idx], &extrusion_path_bbox, true);
+                if !new_poly.points.is_empty() {
+                    new_lower_polys.push(new_poly);
+                }
+            }
+
+            lower_layer_polys = new_lower_polys;
+
+            let mut subject_path: ZPath = Vec::new();
+            for ej in &extrusion.junctions {
+                subject_path.push((ej.p.x(), ej.p.y(), ej.w));
+            }
+
+            let mut clip_paths: ZPaths = Vec::new();
+            for poly in &lower_layer_polys {
+                clip_paths.push(Vec::new());
+                for p in &poly.points {
+                    clip_paths.last_mut().unwrap().push((p.x(), p.y(), 0));
+                }
+            }
+
+            let overhang_speed = is_enable_overhang_speed(perimeter_generator.print, config)
+                && fuzzy_skin_allows_overhang_slowdown(config, perimeter_generator.perimeter_regions_empty);
+            let flow: &Flow = if is_external { &perimeter_generator.ext_perimeter_flow } else { &perimeter_generator.perimeter_flow };
+            if overhang_speed {
+                // OverhangDetector.cpp:168-300 `detect_overhang_degree(flow, role, lower_polys, clip_paths,
+                // extrusion_path, nozzle_diameter)`: its port hands back the pieces with their degrees,
+                // which the C++ appends with `extrusion_paths_append(ret_path_list, { prev_line }, role,
+                // flow, target_degree)`.
+                for (zp, degree) in crate::overhang_detector::detect_overhang_degree_arachne(&lower_layer_polys, &clip_paths, &subject_path, nozzle_diameter) {
+                    extrusion_paths_append_zpaths(&mut paths, &vec![zp], role, flow, degree);
+                }
+            } else {
+                let mut temp_paths: Vec<ExtrusionPath> = Vec::new();
+                let path_non_overhang: ZPaths = clip_extrusion(&subject_path, &clip_paths, ClipType::Intersection);
+                // get non-overhang paths by intersecting this loop with the grown lower slices
+                extrusion_paths_append_zpaths(&mut temp_paths, &path_non_overhang, role, flow, 0.);
+                paths = temp_paths;
+            }
+            // get overhang paths by checking what parts of this loop fall
+            // outside the grown lower slices (thus where the distance between
+            // the loop centerline and original lower slices is >= half nozzle diameter
+            // detect if the overhang perimeter is bridge
+            let path_overhang: ZPaths = clip_extrusion(&subject_path, &clip_paths, ClipType::Difference);
+            // Zero-gap support must not force normal wall role/flow: unsupported walls still need
+            // erOverhangPerimeter + overhang_flow. See GitHub #11462.
+            detect_brigde_wall_arachne(&mut paths, &path_overhang, ExtrusionRole::OverhangPerimeter, &perimeter_generator.overhang_flow);
+            // Reapply the nearest point search for starting point.
+            // We allow polyline reversal because Clipper may have randomly reversed polylines during clipping.
+            // Arachne sometimes creates extrusion with zero-length (just two same endpoints);
+            if !paths.is_empty() {
+                let mut start_point: Point = paths[0].polyline.first_point();
+                if !extrusion.is_closed {
+                    // Especially for open extrusion, we need to select a starting point that is at the start
+                    // or the end of the extrusions to make one continuous line. Also, we prefer a non-overhang
+                    // starting point.
+                    // `std::unordered_map<Point, PointInfo, PointHash> point_occurrence`, walked in the
+                    // order of libc++.
+                    let mut point_occurrence = LibcxxUnorderedPointMap::new();
+                    for path in &paths {
+                        point_occurrence.entry(path.polyline.first_point()).0 += 1;
+                        point_occurrence.entry(path.polyline.last_point()).0 += 1;
+                        if path.role == ExtrusionRole::OverhangPerimeter {
+                            point_occurrence.entry(path.polyline.first_point()).1 = true;
+                            point_occurrence.entry(path.polyline.last_point()).1 = true;
+                        }
+                    }
+
+                    // Prefer non-overhang point as a starting point.
+                    for (pt, (occurrence, is_overhang)) in point_occurrence.in_order() {
+                        if occurrence == 1 {
+                            start_point = pt;
+                            if !is_overhang {
+                                start_point = pt;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                crate::shortest_path::chain_and_reorder_extrusion_paths(&mut paths, Some(&start_point));
+
+                if overhang_speed {
+                    // BBS: filter the speed
+                    smooth_overhang_level(&mut paths);
+                }
+            }
+        } else {
+            let flow: &Flow = if is_external { &perimeter_generator.ext_perimeter_flow } else { &perimeter_generator.perimeter_flow };
+            extrusion_paths_append_line(&mut paths, extrusion, role, flow, 0.);
+        }
+
+        // `shouldApplyHoleCompensation(const double threshold = 0.8)`
+        let apply_hole_compensation: bool = extrusion.should_apply_hole_compensation(0.8);
+
+        // Append paths to collection.
+        if !paths.is_empty() {
+            if extrusion.is_closed {
+                let mut extrusion_loop =
+                    ExtrusionLoop::new(paths, if extrusion.is_contour() { ExtrusionLoopRole::DEFAULT } else { ExtrusionLoopRole::PERIMETER_HOLE });
+                // Restore the orientation of the extrusion loop.
+                if pg_extrusion_is_contour {
+                    extrusion_loop.make_counter_clockwise();
+                } else {
+                    extrusion_loop.make_clockwise();
+                }
+
+                if apply_hole_compensation {
+                    for path in &mut extrusion_loop.paths {
+                        path.set_customize_flag(CustomizeFlag::CircleCompensation);
+                    }
+                    extrusion_loop.set_customize_flag(CustomizeFlag::CircleCompensation);
+                }
+                extrusion_coll.append(ExtrusionEntityType::Loop(extrusion_loop));
+            } else {
+                // Because we are processing one ExtrusionLine all ExtrusionPaths should form one connected path.
+                // But there is possibility that due to numerical issue there is poss
+                let mut multi_path = ExtrusionMultiPath::new();
+                let mut it_path = paths.into_iter();
+                multi_path.paths.push(it_path.next().unwrap());
+
+                for path in it_path {
+                    if multi_path.paths.last().unwrap().polyline.last_point() != path.polyline.first_point() {
+                        extrusion_coll.append(ExtrusionEntityType::MultiPath(std::mem::replace(&mut multi_path, ExtrusionMultiPath::new())));
+                    }
+                    multi_path.paths.push(path);
+                }
+
+                if apply_hole_compensation {
+                    for path in &mut multi_path.paths {
+                        path.set_customize_flag(CustomizeFlag::CircleCompensation);
+                    }
+                }
+                extrusion_coll.append(ExtrusionEntityType::MultiPath(multi_path));
+            }
+        }
+    }
+    if z_direction_outwall_speed_continuous {
+        extrusion_coll.loop_node_range.1 = loop_nodes.len();
+    }
+
+    extrusion_coll
 }

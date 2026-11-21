@@ -1662,7 +1662,7 @@ fn points_inside(contour_first: &Line, contour_second: &Line, new_point: &Point)
 // MultiMaterialSegmentation.cpp:978-981
 // enum VD_ANNOTATION : Voronoi::VD::cell_type::color_type { VERTEX_ON_CONTOUR = 1, DELETED = 2 };
 #[allow(non_snake_case, dead_code)]
-pub(crate) mod VD_ANNOTATION {
+pub mod VD_ANNOTATION {
     pub const VERTEX_ON_CONTOUR: usize = 1;
     pub const DELETED: usize = 2;
 }
@@ -1671,7 +1671,7 @@ pub(crate) mod VD_ANNOTATION {
 /// vertex and an edge are indices into `vertices()` and `edges()`; `color` is `mutable` in boost, so
 /// the functions that colour take the diagram as `&mut`.
 #[allow(dead_code)]
-type VD = crate::boost_polygon_voronoi::VoronoiDiagram;
+pub type VD = crate::boost_polygon_voronoi::VoronoiDiagram;
 
 // MultiMaterialSegmentation.cpp:984-1012 (MM_SEGMENTATION_DEBUG_GRAPH)
 // static void export_graph_to_svg(const std::string &path, const Voronoi::VD& vd, const std::vector<ColoredLines>& colored_polygons)
@@ -1738,7 +1738,7 @@ fn vd_prev_twin(vd: &VD, edge: usize) -> usize {
 // MultiMaterialSegmentation.cpp:1016-1025
 // static size_t non_deleted_edge_count(const VD::vertex_type &vertex)
 #[allow(dead_code)]
-fn non_deleted_edge_count(vd: &VD, vertex: usize) -> usize {
+pub fn non_deleted_edge_count(vd: &VD, vertex: usize) -> usize {
     let mut non_deleted_edge_cnt: usize = 0;
     let incident_edge = vd.vertices()[vertex].incident_edge().expect("voronoi_vertex::incident_edge");
     let mut edge = incident_edge;
@@ -1758,7 +1758,7 @@ fn non_deleted_edge_count(vd: &VD, vertex: usize) -> usize {
 // MultiMaterialSegmentation.cpp:1027-1032
 // static bool can_vertex_be_deleted(const VD::vertex_type &vertex)
 #[allow(dead_code)]
-fn can_vertex_be_deleted(vd: &VD, vertex: usize) -> bool {
+pub fn can_vertex_be_deleted(vd: &VD, vertex: usize) -> bool {
     if vd.vertex_color(vertex) == VD_ANNOTATION::VERTEX_ON_CONTOUR || vd.vertex_color(vertex) == VD_ANNOTATION::DELETED {
         return false;
     }
@@ -1769,7 +1769,7 @@ fn can_vertex_be_deleted(vd: &VD, vertex: usize) -> bool {
 // MultiMaterialSegmentation.cpp:1034-1052
 // static void delete_vertex_deep(const VD::vertex_type &vertex)
 #[allow(dead_code)]
-fn delete_vertex_deep(vd: &mut VD, vertex: usize) {
+pub fn delete_vertex_deep(vd: &mut VD, vertex: usize) {
     let mut vertices_to_delete: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
     vertices_to_delete.push_back(vertex);
 
@@ -1852,13 +1852,20 @@ mod vd_vectors {
     }
 }
 
+// MultiMaterialSegmentation.cpp:1069-1072
+// static double edge_length(const VD::edge_type &edge)
+/// The function of `vd_vectors`, for tests/multi_material_segmentation_native_parity.rs.
+pub fn edge_length(vd: &VD, edge: usize) -> f64 {
+    vd_vectors::edge_length(vd, edge)
+}
+
 // Used in remove_multiple_edges_in_vertices()
 // Returns length of edge with is connected to contour. To this length is include other edges with follows it if they are almost straight (with the
 // tolerance of 15) And also if node between two subsequent edges is connected only to these two edges.
 // MultiMaterialSegmentation.cpp:1077-1113
 // static inline double calc_total_edge_length(const VD::edge_type &starting_edge)
 #[allow(dead_code)]
-fn calc_total_edge_length(vd: &VD, starting_edge: usize) -> f64 {
+pub fn calc_total_edge_length(vd: &VD, starting_edge: usize) -> f64 {
     use vd_vectors::{edge_length, mk_flipped_vector_vec2d, mk_vector_vec2d, normalized};
     let mut total_edge_length: f64 = edge_length(vd, starting_edge);
     let mut prev: usize = starting_edge;
@@ -1920,7 +1927,7 @@ fn calc_total_edge_length(vd: &VD, starting_edge: usize) -> f64 {
 // MultiMaterialSegmentation.cpp:1118-1145
 // static void remove_multiple_edges_in_vertex(const VD::vertex_type &vertex)
 #[allow(dead_code)]
-fn remove_multiple_edges_in_vertex(vd: &mut VD, vertex: usize) {
+pub fn remove_multiple_edges_in_vertex(vd: &mut VD, vertex: usize) {
     if non_deleted_edge_count(vd, vertex) <= 1 {
         return;
     }

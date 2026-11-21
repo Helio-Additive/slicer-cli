@@ -294,11 +294,431 @@ static void run_grid()
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// The stages of PrintObjectSupportMaterial on the object of a Print (the "s" scenarios).
+// ---------------------------------------------------------------------------------------------------------
+
+static std::string hF(float v)
+{
+    uint32_t u;
+    std::memcpy(&u, &v, 4);
+    char b[16];
+    std::snprintf(b, sizeof(b), "%08x", (unsigned) u);
+    return b;
+}
+static std::string FLOATS(const std::vector<float> &v)
+{
+    std::string o = hI((long long) v.size());
+    for (float f : v) o += " " + hF(f);
+    return o;
+}
+static std::string PLS(const Polylines &ps)
+{
+    std::string o = hI((long long) ps.size());
+    for (const Polyline &p : ps) o += " " + PTS(p.points);
+    return o;
+}
+static std::string PATH(const ExtrusionPath &p)
+{
+    return "P " + hI(int(p.role())) + " " + hD(p.mm3_per_mm) + " " + hF(p.width) + " " + hF(p.height) + " " + PTS(p.polyline.points);
+}
+static std::string PATHS(const ExtrusionPaths &paths)
+{
+    std::string o = hI((long long) paths.size());
+    for (const ExtrusionPath &p : paths) o += " " + PATH(p);
+    return o;
+}
+static std::string ENT(const ExtrusionEntity *e)
+{
+    if (const auto *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+        std::string o = "C " + hI((long long) c->entities.size());
+        for (const ExtrusionEntity *ee : c->entities) o += " " + ENT(ee);
+        return o;
+    }
+    if (const auto *l = dynamic_cast<const ExtrusionLoop *>(e)) return "L " + PATHS(l->paths);
+    if (const auto *m = dynamic_cast<const ExtrusionMultiPath *>(e)) return "M " + PATHS(m->paths);
+    if (const auto *p = dynamic_cast<const ExtrusionPath *>(e)) return PATH(*p);
+    return "X";
+}
+static std::string ENTS(const ExtrusionEntitiesPtr &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const ExtrusionEntity *e : v) o += " " + ENT(e);
+    return o;
+}
+// A surface: its type, whether its bridge angle is set (it is -1 when not), the angle, the expolygon.
+static std::string SURFS(const Surfaces &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const Surface &s : v) o += " " + hI(int(s.surface_type)) + " " + hB(s.bridge_angle != -1) + " " + hD(s.bridge_angle) + " " + EXPOLY(s.expolygon);
+    return o;
+}
+
+static std::map<const SupportGeneratorLayer *, int> g_index;
+static void reindex(SupportGeneratorLayerStorage &storage)
+{
+    g_index.clear();
+    int i = 0;
+    for (const SupportGeneratorLayer &l : storage.m_storage) g_index[&l] = i++;
+}
+static std::string OPT(const std::unique_ptr<Polygons> &p) { return p ? "1 " + POLYS(*p) : std::string("0"); }
+static std::string LAYER(const SupportGeneratorLayer &l)
+{
+    return hI((int) l.layer_type) + " " + hD(l.print_z) + " " + hD(l.bottom_z) + " " + hD(l.height) + " " + hI((long long) l.idx_object_layer_above) + " " +
+           hI((long long) l.idx_object_layer_below) + " " + hB(l.bridging) + " " + hB(l.up) + " " + POLYS(l.polygons) + " " + OPT(l.contact_polygons) + " " +
+           OPT(l.overhang_polygons) + " " + OPT(l.enforcer_polygons);
+}
+static std::string LIST(const SupportGeneratorLayersPtr &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const SupportGeneratorLayer *l : v) o += " " + hI(l == nullptr ? -1 : g_index.at(l));
+    return o;
+}
+static void dump_storage(const std::string &tag, SupportGeneratorLayerStorage &storage)
+{
+    reindex(storage);
+    out(tag + " storage " + hI((long long) storage.m_storage.size()));
+    for (const SupportGeneratorLayer &l : storage.m_storage) out(tag + " L " + LAYER(l));
+}
+static std::string POLYSV(const std::vector<Polygons> &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const Polygons &p : v) o += " " + POLYS(p);
+    return o;
+}
+
+static coord_t  sc(double mm) { return coord_t(std::lrint(mm / SCALING_FACTOR)); }
+static Polygon  rectmm(double x0, double y0, double x1, double y1) { return rect(sc(x0), sc(y0), sc(x1), sc(y1)); }
+static Polyline plmm(std::initializer_list<std::pair<double, double>> pts)
+{
+    Polyline pl;
+    for (const auto &p : pts) pl.points.emplace_back(Point(sc(p.first), sc(p.second)));
+    return pl;
+}
+static ExtrusionPath pathmm(ExtrusionRole role, float width, float height, std::initializer_list<std::pair<double, double>> pts)
+{
+    ExtrusionPath p(role, 0.04, width, height);
+    p.polyline = plmm(pts);
+    return p;
+}
+
+typedef std::vector<std::pair<std::string, std::string>> Cfg;
+
+struct Scen
+{
+    Cfg cfg;
+    // 0: a T, a bridge between two pillars, a block under the right arm of the T and an island that starts
+    //    in the air; 1: the same without the block and the island, the first slab layer without bridging
+    //    extrusions.
+    int shape;
+    // Volumes besides the box: 1 a support enforcer over the left arm of the T, 2 a support blocker over a part
+    // of its right arm.
+    int volumes = 0;
+};
+
+static std::vector<Scen> scenarios()
+{
+    std::vector<Scen> s;
+    // 0: automatic normal supports on a grid.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}}, 0});
+    // 1: snug, the layers of the supports tied to the object's.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_style", "snug"}, {"independent_support_layer_height", "0"}}, 0});
+    // 2: a raft.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"raft_layers", "3"}}, 0});
+    // 3: on the build plate only.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_on_build_plate_only", "1"}}, 0});
+    // 4: no gap above the supports (a soluble interface), thick bridges.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_top_z_distance", "0"}, {"support_bottom_z_distance", "0"}, {"thick_bridges", "1"},
+                  {"independent_support_layer_height", "0"}},
+                 0});
+    // 5: thick bridges, no supports under bridges, the areas expanded.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"thick_bridges", "1"}, {"bridge_no_support", "1"},
+                  {"support_expansion", "0.8"}},
+                 0});
+    // 6: the areas shrunk, small overhangs removed, a threshold angle, the grid turned, tied layers and thick bridges.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_expansion", "-0.3"}, {"support_remove_small_overhang", "1"}, {"support_threshold_angle", "40"},
+                  {"support_angle", "30"}, {"thick_bridges", "1"}, {"bridge_no_support", "1"}, {"independent_support_layer_height", "0"}},
+                 0});
+    // 7: manual supports with the first layers enforced, a raft of one layer.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(manual)"}, {"enforce_support_layers", "14"}, {"raft_layers", "1"}, {"raft_expansion", "1.5"}}, 1});
+    // 8: a raft only.
+    s.push_back({{{"enable_support", "0"}, {"raft_layers", "2"}}, 1});
+    // 9: tree supports: no normal supports.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "tree(auto)"}}, 1});
+    // 10: no threshold angle, small overhangs removed, a wider gap to the object.
+    // 11: a raft with tied layers, on the build plate only, a gap below the supports of two layers.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_threshold_angle", "0"}, {"support_remove_small_overhang", "1"}, {"support_object_xy_distance", "0.6"},
+                  {"support_base_pattern_spacing", "1.2"}},
+                 0});
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"raft_layers", "2"}, {"independent_support_layer_height", "0"}, {"support_on_build_plate_only", "1"},
+                  {"support_bottom_z_distance", "0.4"}, {"support_top_z_distance", "0.3"}},
+                 0});
+    // 12: manual supports under a support enforcer.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(manual)"}}, 0, 1});
+    // 13: an enforcer and a blocker, on the build plate only.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_on_build_plate_only", "1"}}, 0, 3});
+    // 14: a blocker, snug, tied layers.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"support_style", "snug"}, {"independent_support_layer_height", "0"}}, 0, 2});
+    // 15: two nozzle diameters, the supports of the coarse one.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"multi_nozzle_diameter_mode", "1"}, {"extruder_nozzle_count", "2"}, {"extruder_nozzle_diameter", "0.4,0.8"},
+                  {"filament_diameter", "1.75,1.75,1.75"}, {"filament_diameter_map", "0.4;0.8;0.4"}, {"support_filament", "2"}, {"support_interface_filament", "2"},
+                  {"layer_height", "0.1"}},
+                 0});
+    // 16: two nozzle diameters, the base of the object's filament, the interface of the coarse nozzle, tied layers.
+    s.push_back({{{"enable_support", "1"}, {"support_type", "normal(auto)"}, {"multi_nozzle_diameter_mode", "1"}, {"extruder_nozzle_count", "2"}, {"extruder_nozzle_diameter", "0.4,0.8"},
+                  {"filament_diameter", "1.75,1.75,1.75"}, {"filament_diameter_map", "0.4;0.8;0.4"}, {"support_filament", "1"}, {"support_interface_filament", "2"},
+                  {"layer_height", "0.1"}, {"independent_support_layer_height", "0"}},
+                 1});
+    return s;
+}
+
+// `max_stage`: 1 the helpers and top_contact_layers, 2 the stages one by one, 3 generate() as well.
+static void run_object(int scenario, const Scen &scen, int max_stage)
+{
+    const std::string S = "s" + hI(scenario);
+    Model        model;
+    ModelObject *o = model.add_object();
+    o->name = "box";
+    indexed_triangle_set its = its_make_cube(20, 20, 10);
+    for (Vec3f &v : its.vertices) v += Vec3f(-10.f, -10.f, 0.f);
+    o->add_volume(TriangleMesh(its));
+    if (scen.volumes & 1) {
+        // x -10..-6, y -7..7, z 2.35..3.3: the slab layers over the left arm of the T.
+        indexed_triangle_set e = its_make_cube(4, 14, 0.95);
+        for (Vec3f &v : e.vertices) v += Vec3f(-10.f, -7.f, 2.35f);
+        o->add_volume(TriangleMesh(e))->set_type(ModelVolumeType::SUPPORT_ENFORCER);
+    }
+    if (scen.volumes & 2) {
+        // x 6..10, y -7..0, z 2.35..3.3
+        indexed_triangle_set e = its_make_cube(4, 7, 0.95);
+        for (Vec3f &v : e.vertices) v += Vec3f(6.f, -7.f, 2.35f);
+        o->add_volume(TriangleMesh(e))->set_type(ModelVolumeType::SUPPORT_BLOCKER);
+    }
+    o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+    out("in " + S + " model 20 20 10 100 100 " + hI(scen.volumes));
+
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_num_filaments(3);
+    config.option<ConfigOptionStrings>("filament_colour", true)->values = {"#FF0000", "#00FF00", "#0000FF"};
+    config.option<ConfigOptionInts>("filament_map", true)->values = {1, 1, 1};
+    for (const auto &kv : scen.cfg) {
+        config.set_deserialize_strict(kv.first, kv.second);
+        out("in " + S + " cfg " + kv.first + " " + kv.second);
+    }
+    Print print;
+    print.apply(model, config);
+    PrintObject *obj = print.m_objects.front();
+    obj->update_slicing_parameters();
+    const SlicingParameters &sp = obj->slicing_parameters();
+    out(S + " slicing " + hD(sp.layer_height) + " " + hD(sp.first_print_layer_height) + " " + hD(sp.first_object_layer_height) + " " + hI((long long) sp.raft_layers()) + " " +
+        hD(sp.raft_interface_top_z) + " " + hD(sp.raft_contact_top_z) + " " + hD(sp.contact_raft_layer_height) + " " + hD(sp.object_print_z_min) + " " + hB(sp.soluble_interface) + " " +
+        hD(sp.gap_support_object) + " " + hD(sp.gap_object_support) + " " + hD(sp.max_suport_layer_height));
+
+    // The object layers, written by hand; one region.
+    const int    n_pillar = 12, n_layers = 16;
+    const size_t raft     = sp.raft_layers();
+    double       z        = sp.object_print_z_min;
+    for (int i = 0; i < n_layers; ++i) {
+        const double h = i == 0 ? sp.first_object_layer_height : sp.layer_height;
+        z += h;
+        Layer       *layer = new Layer(raft + i, obj, h, z, z - h / 2.);
+        LayerRegion *lr    = layer->add_region(&obj->printing_region(0));
+        Surfaces    &surfs = lr->slices.surfaces;
+        const float  fh    = float(h);
+        if (i < n_pillar) {
+            surfs.emplace_back(stInternal, ExPolygon(rectmm(-5, -5, 5, 5)));    // the pillar of the T
+            surfs.emplace_back(stInternal, ExPolygon(rectmm(-15, 25, -9, 35))); // the pillars of the bridge
+            surfs.emplace_back(stInternal, ExPolygon(rectmm(9, 25, 15, 35)));
+            if (scen.shape == 0) {
+                // a block under the right arm, wider from its third layer on: an overhang next to the first layer
+                if (i < 5) surfs.emplace_back(i == 4 ? stTop : stInternal, ExPolygon(i < 2 ? rectmm(8, -6, 14, 6) : rectmm(8, -6, 17, 6)));
+                if (i >= 5 && i < 10) surfs.emplace_back(i == 9 ? stTop : (i == 5 ? stBottom : stInternal), ExPolygon(rectmm(-22, -1, -20.5, 0.5))); // an island in the air
+            }
+            for (const Surface &s : surfs) layer->lslices.emplace_back(s.expolygon);
+        } else if (i == n_pillar) {
+            // The first layer of the slabs: the bottoms of the arms of the T, the bridge between the pillars.
+            surfs.emplace_back(stInternal, ExPolygon(rectmm(-5, -8, 5, 8)));
+            surfs.emplace_back(stBottom, ExPolygon(rectmm(-15, -8, -5, 8)));
+            surfs.emplace_back(stBottom, ExPolygon(rectmm(5, -8, 15, 8)));
+            surfs.emplace_back(stInternal, ExPolygon(rectmm(-15, 25, -9, 35)));
+            surfs.emplace_back(stBottomBridge, ExPolygon(rectmm(-9, 25, 9, 35)));
+            surfs.back().bridge_angle = 0.;
+            surfs.emplace_back(stInternal, ExPolygon(rectmm(9, 25, 15, 35)));
+            layer->lslices = {ExPolygon(rectmm(-15, -8, 15, 8)), ExPolygon(rectmm(-15, 25, 15, 35))};
+            if (scen.shape == 0) {
+                // Perimeters: a collection with a loop of an outer wall and a loop with an overhang wall; a loop of an
+                // open overhang wall; walls across the bridge (straight and supported at both ends, bent, short of
+                // the far pillar).
+                ExtrusionEntityCollection *c = new ExtrusionEntityCollection();
+                c->entities.emplace_back(new ExtrusionLoop(pathmm(erExternalPerimeter, 0.42f, fh, {{-14.8, -7.8}, {14.8, -7.8}, {14.8, 7.8}, {-14.8, 7.8}, {-14.8, -7.8}})));
+                {
+                    ExtrusionPaths paths;
+                    paths.emplace_back(pathmm(erPerimeter, 0.45f, fh, {{-14.3, -7.3}, {-5, -7.3}}));
+                    paths.emplace_back(pathmm(erOverhangPerimeter, 0.45f, fh, {{-5, -7.3}, {-5, 7.3}, {-14.3, 7.3}, {-14.3, -7.3}}));
+                    c->entities.emplace_back(new ExtrusionLoop(std::move(paths)));
+                }
+                c->entities.emplace_back(new ExtrusionLoop(pathmm(erOverhangPerimeter, 0.45f, fh, {{6, -7}, {14, -7}, {14, 7}, {6, 7}, {6, -7}})));
+                lr->perimeters.entities.emplace_back(c);
+                lr->perimeters.entities.emplace_back(new ExtrusionLoop(pathmm(erOverhangPerimeter, 0.5f, fh, {{-8.7, 34.6}, {8.7, 34.6}})));
+                lr->perimeters.entities.emplace_back(new ExtrusionPath(pathmm(erPerimeter, 0.45f, fh, {{-9.6, 30}, {9.6, 30}})));
+                lr->perimeters.entities.emplace_back(new ExtrusionPath(pathmm(erPerimeter, 0.45f, fh, {{-9.6, 27}, {0, 27}, {0, 28}, {9.6, 28}})));
+                lr->perimeters.entities.emplace_back(new ExtrusionPath(pathmm(erPerimeter, 0.45f, fh, {{-9.6, 32}, {7, 32}})));
+                // Fills: a collection of bridge infill, a collection of solid infill.
+                ExtrusionEntityCollection *f0 = new ExtrusionEntityCollection();
+                f0->entities.emplace_back(new ExtrusionPath(pathmm(erBridgeInfill, 0.4f, 0.4f, {{-9, 26}, {9, 26}})));
+                f0->entities.emplace_back(new ExtrusionPath(pathmm(erBridgeInfill, 0.4f, 0.4f, {{9, 26.5}, {-9, 26.5}})));
+                ExtrusionEntityCollection *f1 = new ExtrusionEntityCollection();
+                f1->entities.emplace_back(new ExtrusionPath(pathmm(erSolidInfill, 0.42f, fh, {{-4, -7}, {4, -7}})));
+                lr->fills.entities.emplace_back(f1);
+                lr->fills.entities.emplace_back(f0);
+                lr->unsupported_bridge_edges = {plmm({{-3, 25}, {3, 25}}), plmm({{-2, 35}, {2, 35}, {2.5, 35}})};
+            }
+        } else {
+            const SurfaceType t = i + 1 == n_layers ? stTop : stInternal;
+            if (scen.shape == 0) {
+                // The slab of the T a millimetre wider than its first layer (an overhang right above the one of the
+                // first slab layer), from its third layer on with a small tab at its side (a small overhang).
+                Polygon slab = rectmm(-16, -8, 16, 8);
+                if (i >= n_pillar + 2)
+                    slab.points = {Point(sc(-16), sc(-8)), Point(sc(16), sc(-8)), Point(sc(16), sc(-0.4)), Point(sc(16.6), sc(-0.4)),
+                                   Point(sc(16.6), sc(0.4)), Point(sc(16), sc(0.4)),  Point(sc(16), sc(8)),    Point(sc(-16), sc(8))};
+                surfs.emplace_back(t, ExPolygon(slab));
+            } else
+                surfs.emplace_back(t, ExPolygon(rectmm(-15, -8, 15, 8)));
+            surfs.emplace_back(t, ExPolygon(rectmm(-15, 25, 15, 35)));
+            for (const Surface &s : surfs) layer->lslices.emplace_back(s.expolygon);
+            if (i == n_pillar + 1 && scen.shape == 0) {
+                lr->perimeters.entities.emplace_back(new ExtrusionLoop(pathmm(erExternalPerimeter, 0.42f, fh, {{-15.8, -7.8}, {15.8, -7.8}, {15.8, 7.8}, {-15.8, 7.8}, {-15.8, -7.8}})));
+                lr->perimeters.entities.emplace_back(new ExtrusionLoop(pathmm(erOverhangPerimeter, 0.45f, fh, {{15.3, -7.3}, {15.3, 7.3}, {15.7, 7.3}, {15.7, -7.3}, {15.3, -7.3}})));
+            }
+        }
+        lr->raw_slices      = layer->lslices;
+        lr->fill_surfaces.surfaces = surfs;
+        for (const ExPolygon &e : layer->lslices) layer->lslices_bboxes.emplace_back(get_extents(e));
+        if (! obj->m_layers.empty()) {
+            layer->lower_layer = obj->m_layers.back();
+            obj->m_layers.back()->upper_layer = layer;
+        }
+        obj->m_layers.emplace_back(layer);
+        out("in " + S + " layer " + hI((long long) layer->id()) + " " + hD(layer->print_z) + " " + hD(layer->height) + " " + hD(layer->slice_z) + " " + EXPOLYS(layer->lslices));
+        out("in " + S + " region " + SURFS(lr->slices.surfaces) + " " + EXPOLYS(lr->raw_slices) + " " + SURFS(lr->fill_surfaces.surfaces) + " " + ENTS(lr->perimeters.entities) + " " +
+            ENTS(lr->fills.entities) + " " + PLS(lr->unsupported_bridge_edges));
+    }
+    auto layer_index = [obj](const Layer *l) -> long long {
+        if (l == nullptr) return -1;
+        for (size_t i = 0; i < obj->m_layers.size(); ++i)
+            if (obj->m_layers[i] == l) return (long long) i;
+        return -2;
+    };
+
+    PrintObjectSupportMaterial psm(obj, sp);
+    out(S + " psm " + hB(psm.has_raft()) + " " + hB(psm.has_support()) + " " + hB(psm.build_plate_only()) + " " + hB(psm.synchronize_layers()) + " " + hB(psm.has_contact_loops()) + " " +
+        hD(psm.m_support_params.gap_xy) + " " + hD(psm.m_support_params.support_layer_height_min));
+
+    // SupportMaterialInternal
+    for (int i = 0; i < n_layers; ++i) {
+        const Layer       &layer = *obj->m_layers[i];
+        const LayerRegion &lr    = *layer.regions().front();
+        Polygons           areas;
+        SupportMaterialInternal::collect_bridging_perimeter_areas(lr.perimeters, float(scale_(psm.m_support_params.gap_xy)), areas);
+        out(S + " internal " + hI(i) + " " + hB(SupportMaterialInternal::has_bridging_extrusions(layer)) + " " + hB(SupportMaterialInternal::has_bridging_perimeters(lr.perimeters)) + " " +
+            hB(SupportMaterialInternal::has_bridging_fills(lr.fills)) + " " + POLYS(areas));
+        if (i >= n_pillar && i <= n_pillar + 1) {
+            const Layer &lower = *layer.lower_layer;
+            Polygons     lower_polygons = to_polygons(lower.lslices);
+            Polygons     contact        = diff(to_polygons(lr.slices.surfaces), lower_polygons);
+            const float  fw             = float(lr.flow(frExternalPerimeter).scaled_width());
+            SupportMaterialInternal::remove_bridges_from_contacts(print.config(), lower, lower_polygons, lr, fw, contact);
+            out(S + " rbfc " + hI(i) + " " + hF(fw) + " " + POLYS(contact));
+        }
+    }
+    // sync_gap_with_object_layer
+    {
+        static const double gaps[] = {0., 0.05, 0.1, 0.2, 0.25, 0.3, 0.45, 0.61};
+        for (int i : {1, 2, 5, n_layers - 2})
+            for (double gap : gaps)
+                out(S + " sync " + hI(i) + " " + hD(gap) + " " + hI(layer_index(sync_gap_with_object_layer(*obj->m_layers[i], gap, true))) + " " +
+                    hI(layer_index(sync_gap_with_object_layer(*obj->m_layers[i], gap, false))));
+    }
+
+    std::vector<Polygons> buildplate_covered = psm.buildplate_covered(*obj);
+    out(S + " bp " + POLYSV(buildplate_covered));
+
+    // detect_overhangs layer by layer; the members of the layer it writes are put back.
+    {
+        SupportAnnotations annotations(*obj, buildplate_covered);
+        out(S + " annotations " + POLYSV(annotations.enforcers_layers) + " " + POLYSV(annotations.blockers_layers));
+        const size_t num_layers     = psm.has_support() ? obj->layer_count() : 1;
+        const size_t layer_id_start = psm.has_raft() ? 0 : 1;
+        for (size_t layer_id = layer_id_start; layer_id < num_layers; ++layer_id) {
+            const Layer &layer = *obj->m_layers[layer_id];
+            Polygons     lower_layer_polygons = layer_id == 0 ? Polygons() : to_polygons(obj->m_layers[layer_id - 1]->lslices);
+            const ExPolygons         sharp_tails        = layer.sharp_tails;
+            const std::vector<float> sharp_tails_height = layer.sharp_tails_height;
+            const ExPolygons         cantilevers        = layer.cantilevers;
+            const ExPolygons overhangs = detect_overhangs(layer, layer_id, lower_layer_polygons, print.config(), obj->config(), annotations, psm.m_support_params.gap_xy);
+            out(S + " ov " + hI((long long) layer_id) + " " + EXPOLYS(overhangs) + " " + EXPOLYS(layer.sharp_tails) + " " + FLOATS(layer.sharp_tails_height) + " " + EXPOLYS(layer.cantilevers));
+            layer.sharp_tails        = sharp_tails;
+            layer.sharp_tails_height = sharp_tails_height;
+            layer.cantilevers        = cantilevers;
+        }
+    }
+
+    SupportGeneratorLayerStorage storage;
+    SupportGeneratorLayersPtr    top_contacts = psm.top_contact_layers(*obj, buildplate_covered, storage);
+    dump_storage(S + " top", storage);
+    out(S + " top list " + LIST(top_contacts));
+    for (int i = 0; i < n_layers; ++i) {
+        const Layer &layer = *obj->m_layers[i];
+        out(S + " tails " + hI(i) + " " + EXPOLYS(layer.sharp_tails) + " " + FLOATS(layer.sharp_tails_height) + " " + EXPOLYS(layer.cantilevers));
+    }
+    if (max_stage < 2) return;
+
+    std::vector<Polygons>     layer_support_areas;
+    SupportGeneratorLayersPtr bottom_contacts = psm.bottom_contact_layers_and_layer_support_areas(*obj, top_contacts, buildplate_covered, storage, layer_support_areas);
+    dump_storage(S + " bottom", storage);
+    out(S + " bottom list " + LIST(bottom_contacts));
+    out(S + " bottom areas " + POLYSV(layer_support_areas));
+    out(S + " bottom bp " + POLYSV(buildplate_covered));
+
+    SupportGeneratorLayersPtr intermediate_layers = psm.raft_and_intermediate_support_layers(*obj, bottom_contacts, top_contacts, storage);
+    dump_storage(S + " inter", storage);
+    out(S + " inter list " + LIST(intermediate_layers));
+
+    psm.trim_support_layers_by_object(*obj, top_contacts, sp.gap_support_object, sp.gap_object_support, psm.m_support_params.gap_xy);
+    dump_storage(S + " trim", storage);
+
+    psm.generate_base_layers(*obj, bottom_contacts, top_contacts, intermediate_layers, layer_support_areas);
+    dump_storage(S + " base", storage);
+
+    psm.trim_top_contacts_by_bottom_contacts(*obj, bottom_contacts, top_contacts);
+    dump_storage(S + " ttb", storage);
+    if (max_stage < 3) return;
+
+    // generate(): the support layers it leaves on the object, without their extrusions (they are the fillers').
+    // The sharp tails and cantilevers of the layers are those of the stages above and of this run.
+    psm.generate(*obj);
+    out(S + " gen " + hI((long long) obj->support_layers().size()));
+    for (const SupportLayer *sl : obj->support_layers())
+        out(S + " gen L " + hI((long long) sl->id()) + " " + hI((long long) sl->interface_id()) + " " + hD(sl->print_z) + " " + hD(sl->height) + " " + hD(sl->slice_z) + " " +
+            hI(sl->planned_filament_id) + " " + hD(sl->planned_nozzle_diameter) + " " + hI(sl->planned_interface_filament_id) + " " + hD(sl->planned_interface_nozzle_diameter) + " " +
+            hD(sl->base_slab_height) + " " + hD(sl->interface_slab_height) + " " + EXPOLYS(sl->support_islands));
+    for (int i = 0; i < n_layers; ++i) {
+        const Layer &layer = *obj->m_layers[i];
+        out(S + " gen tails " + hI(i) + " " + EXPOLYS(layer.sharp_tails) + " " + FLOATS(layer.sharp_tails_height) + " " + EXPOLYS(layer.cantilevers));
+    }
+}
+
 int main(int argc, char **argv)
 {
     g_out = std::fopen(argc > 1 ? argv[1] : "vectors.txt", "w");
+    // The stages of the object scenarios to write: 1 up to top_contact_layers, 2 the stages one by one, 3 (default)
+    // generate() as well.
+    const int max_stage = argc > 2 ? std::atoi(argv[2]) : 3;
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism, 1);
     run_grid();
+    const std::vector<Scen> s = scenarios();
+    for (size_t i = 0; i < s.size(); ++i) run_object(int(i), s[i], max_stage);
     std::fclose(g_out);
     return 0;
 }

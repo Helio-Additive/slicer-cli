@@ -610,7 +610,14 @@ pub fn unscale_float(v: f64) -> f32 {
 pub fn spacing_to_width_scaled(w_scaled: f64, height: f64) -> f64 {
     const C: f64 = 1.0 - 0.25 * std::f64::consts::PI;
     if crate::flow::flow_f32() && crate::faithful_gate("UNSCALE_FLOAT") {
-        (unscale_float(w_scaled) + (height as f32) * (C as f32)) as f64
+        if crate::faithful_gate("VARIABLE_WIDTH_FMA") {
+            // VARIABLE_WIDTH_FMA (on unless =0): the sum and the product are one float expression,
+            // which the pin's compiler contracts to one fmaf (tests/perimeter_generator_native_parity.rs,
+            // the widths of the "bridge_wall" lines). =0 rounds the product first.
+            (height as f32).mul_add(C as f32, unscale_float(w_scaled)) as f64
+        } else {
+            (unscale_float(w_scaled) + (height as f32) * (C as f32)) as f64
+        }
     } else {
         spacing_to_width(unscale_f(w_scaled), height)
     }

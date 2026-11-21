@@ -19,7 +19,9 @@
 // Every scenario is a Print of one box-shaped object made by `Print::apply`, whose object layers are
 // then filled in by hand (a stem with a wide top, the overhangs of the top with their types), so the
 // tree support runs without the slicing steps: the constructor, generate_contact_points(),
-// plan_layer_heights(), drop_nodes() and smooth_nodes(), with tbb limited to one thread.
+// plan_layer_heights(), drop_nodes(), smooth_nodes(), fold_nodes_multi_diameter(),
+// smooth_line_width_multi_diameter(), draw_circles() and generate_toolpaths(), then detect_overhangs() by a
+// second tree support and TreeSupport::generate(), the whole chain, by a third, with tbb limited to one thread.
 //
 // Lines that start with "in" are the inputs the Rust test reads back (the configuration keys, the
 // layers, the arguments of the helpers); the others are results it has to reproduce. Tokens are
@@ -274,12 +276,18 @@ static std::string NODE(const SupportNode &n)
     return o;
 }
 
-static void dump_nodes(const std::string &tag, const std::vector<std::vector<SupportNode *>> &contact_nodes, bool hashed = false)
+// A node with what fold_nodes_multi_diameter() and smooth_line_width_multi_diameter() set.
+static std::string NODE2(const SupportNode &n)
+{
+    return NODE(n) + " s " + hD(n.slab_height) + " " + hI((long long) n.slab_bottom_obj_layer) + " " + hI(n.slab_index) + " " + hD(n.line_width);
+}
+
+static void dump_nodes(const std::string &tag, const std::vector<std::vector<SupportNode *>> &contact_nodes, bool hashed = false, bool folded = false)
 {
     for (size_t layer_nr = 0; layer_nr < contact_nodes.size(); ++layer_nr) {
         if (contact_nodes[layer_nr].empty()) continue;
         std::vector<std::string> lines;
-        for (const SupportNode *n : contact_nodes[layer_nr]) lines.emplace_back(NODE(*n));
+        for (const SupportNode *n : contact_nodes[layer_nr]) lines.emplace_back(folded ? NODE2(*n) : NODE(*n));
         std::sort(lines.begin(), lines.end());
         if (hashed && ! g_full) {
             std::string all;
@@ -344,6 +352,55 @@ static void dump_detected(const std::string &tag, const TreeSupport &ts, const P
     }
 }
 
+// The plan of the slabs a coarse nozzle prints (SupportMergePlan.cpp), on one line.
+static std::string PLAN(const SupportMergePlan &plan)
+{
+    std::string o = hI((long long) plan.slabs.size());
+    for (const SupportMergePlan::Slab &s : plan.slabs)
+        o += " " + hI((long long) s.bottom_idx) + " " + hI((long long) s.top_idx) + " " + hD(s.top_z) + " " + hD(s.height) + " " + hI(s.filament_id) + " " +
+             hD(s.nozzle_diameter) + " " + hB(s.bottom_anchor);
+    o += " SI " + hI((long long) plan.slab_index_per_layer.size());
+    for (int i : plan.slab_index_per_layer) o += " " + hI(i);
+    for (const auto *list : {&plan.candidates_per_layer, &plan.interface_candidates_per_layer}) {
+        o += " CL " + hI((long long) list->size());
+        for (const auto &layer : *list) {
+            o += " " + hI((long long) layer.size());
+            for (const SupportMergePlan::Candidate &c : layer)
+                o += " " + hI(c.filament_id) + " " + hD(c.nozzle_diameter) + " " + hD(c.window.min_height) + " " + hD(c.window.max_height) + " " + hI((long long) c.band_size);
+        }
+    }
+    o += " FB " + hI((long long) plan.fixed_bands_per_filament.size());
+    for (const auto &kv : plan.fixed_bands_per_filament) {
+        o += " " + hI(kv.first) + " " + hI((long long) kv.second.size());
+        for (const AdaptiveLayerBand &b : kv.second) o += " " + hI((long long) b.bottom_idx) + " " + hI((long long) b.top_idx) + " " + hD(b.merged_height);
+    }
+    o += " PZ " + hI((long long) plan.layer_print_z.size());
+    for (double v : plan.layer_print_z) o += " " + hD(v);
+    o += " LH " + hI((long long) plan.layer_heights.size());
+    for (double v : plan.layer_heights) o += " " + hD(v);
+    return o;
+}
+
+// What fold_nodes_multi_diameter() leaves in the tree support and in the support layers of the object.
+static void dump_fold(const std::string &tag, const TreeSupport &ts, const PrintObject &obj)
+{
+    std::string o = hI((long long) ts.m_fold_carriers.size());
+    for (const auto &carriers : ts.m_fold_carriers) {
+        o += " " + hI((long long) carriers.size());
+        for (const auto &c : carriers) o += " " + hI((long long) c.layer) + " " + hD(c.bottom_z);
+    }
+    o += " SL " + hI((long long) ts.m_fold_slab_of_layer.size());
+    for (int i : ts.m_fold_slab_of_layer) o += " " + hI(i);
+    o += " BO " + hI((long long) ts.m_base_only_fold_layers.size());
+    for (size_t i : ts.m_base_only_fold_layers) o += " " + hI((long long) i);
+    out(tag + " state " + o);
+    o = hI((long long) obj.support_layers().size());
+    for (const SupportLayer *sl : obj.support_layers())
+        o += " " + hD(sl->base_slab_height) + " " + hD(sl->interface_slab_height) + " " + hI(sl->planned_filament_id) + " " + hD(sl->planned_nozzle_diameter) + " " +
+             hI(sl->planned_interface_filament_id) + " " + hD(sl->planned_interface_nozzle_diameter);
+    out(tag + " layers " + o);
+}
+
 static indexed_triangle_set box_its(double sx, double sy, double sz, float ox, float oy, float oz)
 {
     indexed_triangle_set its = its_make_cube(sx, sy, sz);
@@ -366,7 +423,21 @@ static const int NUM_RANDOM       = 30;
 static const int NUM_SCENARIOS    = FIRST_RANDOM + NUM_RANDOM;
 // The scenarios written by hand after the random ones: a number from FIRST_EXTRA on is never a random scenario.
 static const int FIRST_EXTRA      = 100000;
-static const int NUM_EXTRA        = 4;
+static const int NUM_EXTRA        = 11;
+// Those of a Print with two nozzle diameters (one extruder with a rack of a 0.4 and a 0.8 nozzle; the second
+// filament prints with the 0.8 one), where make_support_merge_plan() plans slabs and the nodes are folded.
+static const int FIRST_MULTI      = FIRST_EXTRA + 4;
+static const int NUM_MULTI        = 7;
+static bool   is_multi(int scenario) { return scenario >= FIRST_MULTI && scenario < FIRST_MULTI + NUM_MULTI; }
+// The height of the layers of a scenario with two nozzle diameters.
+static double multi_layer_height(int scenario) { return scenario == FIRST_MULTI + 3 ? 0.05 : scenario == FIRST_MULTI + 5 ? 0.2 : 0.1; }
+// The scenarios of a Print with two nozzle diameters drawn from a random number generator (any number from
+// FIRST_MULTI_RANDOM on): the layers and the support configuration of random_scenario(), the filaments of the
+// supports and of the object, regions in the layers, now and then layers of half the height.
+static const int FIRST_MULTI_RANDOM = 200000;
+static const int NUM_MULTI_RANDOM   = 27;
+static bool   is_multi_random(int scenario) { return scenario >= FIRST_MULTI_RANDOM; }
+static bool   is_random(int scenario);
 
 static void add_layers(std::vector<LayerIn> &layers, int n, double lh, const ExPolygons &lslices)
 {
@@ -407,6 +478,50 @@ struct RandomScenario
     std::vector<LayerIn>                              layers;
     std::vector<std::pair<Vec3f, Vec3f>>              enforcer_points;
 };
+
+static bool is_random(int scenario) { return (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA) || is_multi_random(scenario); }
+
+struct MultiRandom
+{
+    std::vector<std::pair<std::string, std::string>> config;
+    // The regions of the layers: 0 none; a region with the slices of the layer and a perimeter on every other
+    // layer (1), on every layer (2), on three layers of six (3), on every layer with a fill of sparse infill or
+    // of solid infill on two layers of three (4).
+    int  regions{0};
+    // The layers of random_scenario() cut in two of half the height.
+    bool thin{false};
+};
+static const MultiRandom &multi_random(int scenario)
+{
+    static std::map<int, MultiRandom> cache;
+    auto                               it = cache.find(scenario);
+    if (it != cache.end()) return it->second;
+    MultiRandom &m = cache[scenario];
+    Lcg          g{uint64_t(scenario) * 0xD1B54A32D192ED03ULL + 777};
+    for (int i = 0; i < 4; ++i) g.next();
+    for (const auto &kv : std::vector<std::pair<std::string, std::string>>{{"multi_nozzle_diameter_mode", "1"}, {"extruder_nozzle_count", "2"},
+                                                                           {"extruder_nozzle_diameter", "0.4,0.8"}, {"filament_diameter", "1.75,1.75,1.75"},
+                                                                           {"filament_diameter_map", "0.4;0.8;0.4"}})
+        m.config.emplace_back(kv);
+    m.thin = g.chance(35);
+    if (m.thin) {
+        m.config.emplace_back("layer_height", "0.1");
+        m.config.emplace_back("initial_layer_print_height", "0.1");
+    }
+    const int support_filament   = g.of({0, 1, 2, 2, 2});
+    const int interface_filament = g.of({0, 0, 1, 2, 3});
+    if (support_filament > 0) m.config.emplace_back("support_filament", std::to_string(support_filament));
+    if (interface_filament > 0) m.config.emplace_back("support_interface_filament", std::to_string(interface_filament));
+    if (g.chance(30)) m.config.emplace_back("filament_soluble", "0,0,1");
+    if (g.chance(50)) m.config.emplace_back("wall_filament", "2");
+    if (g.chance(30)) m.config.emplace_back("sparse_infill_filament", "2");
+    if (g.chance(30)) m.config.emplace_back("solid_infill_filament", "2");
+    m.regions = support_filament == 0 ? 1 + g.pick(4) : g.pick(5);
+    return m;
+}
+// The regions of the layers of a scenario, see MultiRandom::regions. (The third of the scenarios written by
+// hand for two nozzle diameters: the filaments of the object are the candidates of the plan.)
+static int regions_mode(int scenario) { return scenario == FIRST_MULTI + 2 ? 1 : is_multi_random(scenario) ? multi_random(scenario).regions : 0; }
 
 // A scenario drawn from the generator seeded with its number: a post in a corner, now and then a block on the
 // bed, one to five islands that start in the air (rectangles, polygons, rings; of every overhang type), a
@@ -481,8 +596,88 @@ static const RandomScenario &random_scenario(int scenario)
 // The layers of the scenarios from 4 on.
 static std::vector<LayerIn> build_layers_more(int scenario)
 {
-    if (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA) return random_scenario(scenario).layers;
+    if (is_multi_random(scenario) && multi_random(scenario).thin) {
+        // Every layer cut in two; the overhangs of a layer are those of its lower half.
+        std::vector<LayerIn> layers;
+        for (const LayerIn &l : random_scenario(scenario).layers)
+            for (int half = 0; half < 2; ++half) {
+                LayerIn t;
+                t.height  = 0.1;
+                t.print_z = (layers.empty() ? 0. : layers.back().print_z) + 0.1;
+                t.lslices = l.lslices;
+                if (half == 0) t.overhangs = l.overhangs;
+                layers.emplace_back(std::move(t));
+            }
+        return layers;
+    }
+    if (is_random(scenario)) return random_scenario(scenario).layers;
     std::vector<LayerIn> layers;
+    if (is_multi(scenario)) {
+        const double lh = multi_layer_height(scenario);
+        switch (scenario - FIRST_MULTI) {
+        case 0: {
+            // The base of the coarse nozzle: a stem, a wide top, a normal and a big flat overhang.
+            add_layers(layers, 60, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+            add_layers(layers, 12, lh, {ExPolygon(rect(-18, -6, 18, 6))});
+            layers[60].overhangs.emplace_back(ExPolygon(rect(-18, -6, -4.3, 6)), 0);
+            layers[60].overhangs.emplace_back(ExPolygon(rect(4.3, -6, 18, 6)), int(TreeSupport::BigFlat));
+            break;
+        }
+        case 1: {
+            // Base and interface of the coarse nozzle: islands in the air over a post in a corner.
+            add_layers(layers, 70, lh, {ExPolygon(rect(-20, -14, -18, -12))});
+            add_island(layers, 40, 12, ExPolygon(rect(-6, -5, 6, 5)), 0);
+            add_island(layers, 25, 12, ExPolygon(ngon(12, 6, 3, 24)), int(TreeSupport::BigFlat));
+            add_island(layers, 50, 12, with_hole(ngon(-12, -6, 5, 36), ngon(-12, -6, 3, 24)), 0);
+            break;
+        }
+        case 2: {
+            // The filaments of the object: a plate under the left arm, the branches of it land on the object.
+            add_layers(layers, 16, lh, {ExPolygon(rect(-19, -12, 2, 12))});
+            add_layers(layers, 44, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+            add_layers(layers, 12, lh, {ExPolygon(rect(-18, -6, 18, 6))});
+            layers[60].overhangs.emplace_back(ExPolygon(rect(-18, -6, -4.3, 6)), 0);
+            layers[60].overhangs.emplace_back(ExPolygon(rect(4.3, -6, 18, 6)), 0);
+            break;
+        }
+        case 3: {
+            // Thin layers, a soluble interface filament of the fine nozzle, no top gap.
+            add_layers(layers, 80, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+            add_layers(layers, 16, lh, {ExPolygon(rect(-14, -6, 14, 6))});
+            layers[80].overhangs.emplace_back(ExPolygon(rect(-14, -6, -4.3, 6)), 0);
+            layers[80].overhangs.emplace_back(ExPolygon(rect(4.3, -6, 14, 6)), 0);
+            break;
+        }
+        case 4: {
+            // The base of the fine nozzle, the interface of the coarse one, over a raft.
+            add_layers(layers, 50, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+            add_layers(layers, 10, lh, {ExPolygon(rect(-14, -8, 14, 8))});
+            layers[50].overhangs.emplace_back(ExPolygon(rect(-14, -8, -4.3, 8)), 0);
+            layers[50].overhangs.emplace_back(ExPolygon(rect(4.3, -8, 14, 8)), int(TreeSupport::BigFlat));
+            break;
+        }
+        case 5: {
+            // Layers of 0.2 mm: a plate under both arms.
+            add_layers(layers, 8, lh, {ExPolygon(rect(-19, -12, 19, 12))});
+            add_layers(layers, 22, lh, {ExPolygon(rect(-4, -4, 4, 4))});
+            add_layers(layers, 8, lh, {ExPolygon(rect(-18, -6, 18, 6))});
+            layers[30].overhangs.emplace_back(ExPolygon(rect(-18, -6, -4.3, 6)), 0);
+            layers[30].overhangs.emplace_back(ExPolygon(rect(4.3, -6, 18, 6)), 0);
+            break;
+        }
+        default: {
+            // Small islands that start in the air (sharp tails, a small one, a cantilever), the support layers on the grid of the object.
+            add_layers(layers, 80, lh, {ExPolygon(rect(-3, -3, 3, 3))});
+            add_island(layers, 24, 18, ExPolygon(rect(6, -0.6, 7.2, 0.6)), int(TreeSupport::SharpTail));
+            add_island(layers, 36, 14, with_hole(ngon(-9, 0, 3, 24), ngon(-9, 0, 1.6, 12)), int(TreeSupport::SharpTail));
+            add_island(layers, 52, 10, ExPolygon(rect(5, 5, 7.5, 6.2)), 0);
+            add_island(layers, 64, 8, ExPolygon(rect(-8, -9, -7.2, -8.4)), int(TreeSupport::Cantilever));
+            add_island(layers, 70, 8, ExPolygon(ngon(9, -8, 2.2, 5, 0.4)), int(TreeSupport::Small));
+            break;
+        }
+        }
+        return layers;
+    }
     const double         lh = 0.2;
     switch (scenario) {
     case FIRST_EXTRA: {
@@ -612,7 +807,7 @@ static std::vector<LayerIn> build_layers_more(int scenario)
 // hands them over: the position (x and y scaled, z in mm) and the normal.
 static std::vector<std::pair<Vec3f, Vec3f>> scenario_enforcer_points(int scenario)
 {
-    if (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA) return random_scenario(scenario).enforcer_points;
+    if (is_random(scenario)) return random_scenario(scenario).enforcer_points;
     if (scenario != 11) return {};
     return {{Vec3f(float(scale_(6.)), 0.f, 3.1f), Vec3f(1.f, 0.f, 0.f)},
             {Vec3f(float(scale_(7.5)), float(scale_(1.2)), 4.53f), Vec3f(0.6f, 0.8f, 0.f)},
@@ -682,8 +877,64 @@ static std::vector<std::pair<std::string, std::string>> scenario_config(int scen
         c.emplace_back("support_top_z_distance", "0.32");
         c.emplace_back("raft_layers", "3");
     }
-    if (scenario >= FIRST_RANDOM && scenario < FIRST_EXTRA)
+    if (is_random(scenario))
         for (const auto &kv : random_scenario(scenario).config) c.emplace_back(kv);
+    if (is_multi_random(scenario))
+        for (const auto &kv : multi_random(scenario).config) c.emplace_back(kv);
+    if (is_multi(scenario)) {
+        // (The diameters of the three filaments are given: the number of filaments Print::apply clamps the
+        // support filaments to is the size of `filament_diameter`.)
+        for (const auto &kv : std::vector<std::pair<std::string, std::string>>{{"multi_nozzle_diameter_mode", "1"}, {"extruder_nozzle_count", "2"},
+                                                                               {"extruder_nozzle_diameter", "0.4,0.8"}, {"filament_diameter", "1.75,1.75,1.75"},
+                                                                               {"filament_diameter_map", "0.4;0.8;0.4"}})
+            c.emplace_back(kv);
+        const char *lh = scenario == FIRST_MULTI + 3 ? "0.05" : scenario == FIRST_MULTI + 5 ? "0.2" : "0.1";
+        c.emplace_back("layer_height", lh);
+        c.emplace_back("initial_layer_print_height", lh);
+        switch (scenario - FIRST_MULTI) {
+        case 0:
+            c.emplace_back("support_filament", "2");
+            c.emplace_back("support_style", "tree_hybrid");
+            c.emplace_back("support_interface_top_layers", "2");
+            break;
+        case 1:
+            c.emplace_back("support_filament", "2");
+            c.emplace_back("support_interface_filament", "2");
+            c.emplace_back("support_style", "tree_slim");
+            c.emplace_back("support_interface_top_layers", "3");
+            break;
+        case 2:
+            c.emplace_back("wall_filament", "2");
+            c.emplace_back("support_style", "tree_strong");
+            c.emplace_back("tree_support_wall_count", "2");
+            c.emplace_back("support_interface_top_layers", "2");
+            break;
+        case 3:
+            c.emplace_back("support_filament", "2");
+            c.emplace_back("support_interface_filament", "3");
+            c.emplace_back("filament_soluble", "0,0,1");
+            c.emplace_back("support_top_z_distance", "0");
+            c.emplace_back("support_style", "tree_hybrid");
+            break;
+        case 4:
+            c.emplace_back("support_filament", "1");
+            c.emplace_back("support_interface_filament", "2");
+            c.emplace_back("raft_layers", "2");
+            c.emplace_back("support_style", "tree_slim");
+            break;
+        case 5:
+            c.emplace_back("support_filament", "2");
+            c.emplace_back("tree_support_branch_distance", "4");
+            break;
+        default:
+            c.emplace_back("support_filament", "2");
+            c.emplace_back("support_style", "tree_slim");
+            c.emplace_back("independent_support_layer_height", "0");
+            c.emplace_back("support_interface_top_layers", "2");
+            c.emplace_back("tree_support_branch_distance", "2");
+            break;
+        }
+    }
     if (scenario == FIRST_EXTRA) {
         c.emplace_back("support_style", "tree_hybrid");
         c.emplace_back("tree_support_wall_count", "0");
@@ -797,11 +1048,32 @@ static void run_scenario(int scenario)
     obj->update_slicing_parameters();
 
     std::vector<LayerIn> layers = build_layers(scenario);
+    // The layers carry a region of the object with their slices, perimeters and fills (MultiRandom::regions).
+    const int regions = regions_mode(scenario);
+    if (regions > 0) out("in " + S + " regions " + hI(regions));
     for (size_t i = 0; i < layers.size(); ++i) {
         const LayerIn &l     = layers[i];
         Layer         *layer = new Layer(i, obj, l.height, l.print_z, l.print_z - l.height / 2.);
         layer->lslices            = l.lslices;
         layer->lslices_extrudable = l.lslices;
+        if (regions > 0) {
+            // The bounding boxes of the slices, as Layer::make_slices() leaves them: remove_bridges_from_contacts() reads them.
+            for (const ExPolygon &e : layer->lslices) layer->lslices_bboxes.emplace_back(get_extents(e));
+            LayerRegion *lr = layer->add_region(obj->m_shared_regions->all_regions.front().get());
+            for (const ExPolygon &e : layer->lslices) lr->slices.surfaces.emplace_back(stInternal, e);
+            if (regions == 2 || regions == 4 || (regions == 1 && i % 2 == 0) || (regions == 3 && (i / 3) % 2 == 0)) {
+                ExtrusionPath *p = new ExtrusionPath(erExternalPerimeter, 0.04, 0.42f, float(l.height));
+                p->polyline.points = {Point(0, 0), Point(100000, 0)};
+                lr->perimeters.entities.emplace_back(p);
+            }
+            if (regions == 4 && i % 3 != 2) {
+                ExtrusionPath *p = new ExtrusionPath(i % 3 == 0 ? erInternalInfill : erSolidInfill, 0.04, 0.42f, float(l.height));
+                p->polyline.points = {Point(0, 0), Point(100000, 0)};
+                ExtrusionEntityCollection *fill = new ExtrusionEntityCollection();
+                fill->entities.emplace_back(p);
+                lr->fills.entities.emplace_back(fill);
+            }
+        }
         for (const auto &ov : l.overhangs) add_overhang(layer, ov.first, ov.second);
         if (i > 0) {
             layer->lower_layer             = obj->m_layers.back();
@@ -902,6 +1174,12 @@ static void run_scenario(int scenario)
     }
     dump_nodes(S + " planned", ts.contact_nodes, H);
 
+    // The plan of the slabs, as TreeSupport::generate() makes it ahead of drop_nodes().
+    ts.m_support_merge_plan = make_support_merge_plan(*obj);
+    outb(S + " plan " + hB(print.uses_multiple_nozzle_diameters()) + " " + hB(ts.m_support_merge_plan.enabled) + " " + hB(ts.m_support_merge_plan.interface_fold_enabled),
+         PLAN(ts.m_support_merge_plan), H);
+    const bool folds = ts.m_support_merge_plan.enabled;
+
     ts.drop_nodes();
     out(S + " dropped " + hI((long long) d.contact_nodes.size()) + " " + hD(SupportNode::diameter_angle_scale_factor));
     dump_nodes(S + " drop", ts.contact_nodes, H);
@@ -947,7 +1225,12 @@ static void run_scenario(int scenario)
 
     // The support areas: the steps of TreeSupport::generate() after smooth_nodes().
     ts.fold_nodes_multi_diameter();
+    if (folds) {
+        dump_fold(S + " fold", ts, *obj);
+        dump_nodes(S + " folded", ts.contact_nodes, H, true);
+    }
     ts.smooth_line_width_multi_diameter();
+    if (folds) dump_nodes(S + " widened", ts.contact_nodes, H, true);
     ts.draw_circles();
     dump_support_layers(S + " draw_circles", *obj);
     {
@@ -1003,6 +1286,36 @@ static void run_scenario(int scenario)
             SupportLayer sl(size_t(k), 0, obj, h, zs[k], zs[k] - h / 2.);
             outb(S + " trim_regions " + hD(zs[k]) + " " + hD(h),
                  POLYS(ts2.get_trim_support_regions(*obj, &sl, 0.2, 0.1, 0.35)) + " " + POLYS(ts2.get_trim_support_regions(*obj, &sl, 0., 0.45, 0.8)), true);
+        }
+    }
+
+    // TreeSupport::generate(), the whole chain, by a third tree support of the object: the nodes, the support
+    // layers and their toolpaths (the fillers are the generator's, see above).
+    {
+        TreeSupport ts3(*obj, sp);
+        if (ts3.m_support_params.support_style == smsTreeOrganic) {
+            out(S + " generate organic");
+            return;
+        }
+        g_fills.clear();
+        ts3.generate();
+        out(S + " generate state " + hB(ts3.has_sharp_tails) + " " + hB(ts3.has_cantilever) + " " + hD(ts3.max_cantilever_dist) + " " +
+            hI((long long) ts3.m_highest_overhang_layer) + " " + hI((long long) ts3.m_raft_layers) + " " + hI((long long) ts3.contact_nodes.size()) + " " +
+            hI((long long) ts3.m_ts_data->contact_nodes.size()) + " " + hI((long long) ts3.m_ts_data->layer_heights.size()) + " " + hB(ts3.m_support_merge_plan.enabled));
+        dump_fold(S + " generate fold", ts3, *obj);
+        dump_nodes(S + " generate nodes", ts3.contact_nodes, true, true);
+        dump_support_layers(S + " generate areas", *obj);
+        const std::string T = S + (ts3.m_support_params.base_fill_pattern == ipLightning ? " generate_toolpaths_lightning" : " generate_toolpaths");
+        std::sort(g_fills.begin(), g_fills.end());
+        std::string body;
+        for (const std::string &l : g_fills) body += l + "\n";
+        if (g_full)
+            for (const std::string &l : g_fills) out(T + " fill " + l);
+        out(T + " fills " + hI((long long) g_fills.size()) + " #" + fnv(body));
+        size_t i = 0;
+        for (const SupportLayer *sl : obj->support_layers()) {
+            outb(T + " layer " + hI((long long) i) + " " + hB(sl->support_fills.no_sort) + " " + hI((long long) sl->support_fills.entities.size()), ENTS(sl->support_fills.entities), true);
+            ++i;
         }
     }
 }
@@ -1074,7 +1387,8 @@ int main(int argc, char **argv)
 {
     g_out  = std::fopen(argc > 1 ? argv[1] : "vectors.txt", "w");
     g_full = argc > 2 && std::string(argv[2]) == "full";
-    // Optionally one scenario only (a diagnostic); any number from FIRST_RANDOM on is a random scenario.
+    // Optionally one scenario only (a diagnostic); any number from FIRST_RANDOM on is a random scenario, any
+    // from FIRST_MULTI_RANDOM on a random one with two nozzle diameters.
     const int only = argc > 3 ? std::atoi(argv[3]) : -1;
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism, 1);
     out(std::string("in mode ") + (g_full ? "full" : "hash"));
@@ -1084,6 +1398,7 @@ int main(int argc, char **argv)
     else {
         for (int scenario = 0; scenario < NUM_SCENARIOS; ++scenario) run_scenario(scenario);
         for (int scenario = FIRST_EXTRA; scenario < FIRST_EXTRA + NUM_EXTRA; ++scenario) run_scenario(scenario);
+        for (int scenario = FIRST_MULTI_RANDOM; scenario < FIRST_MULTI_RANDOM + NUM_MULTI_RANDOM; ++scenario) run_scenario(scenario);
     }
     std::fclose(g_out);
     return 0;

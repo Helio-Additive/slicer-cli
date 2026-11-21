@@ -8697,9 +8697,14 @@ pub mod faithful {
             use crate::config::ConfigEnum;
             let config = &self.m_config;
             let volume_type = <NozzleVolumeType as ConfigEnum>::from_int(get_at(&cfg_ints(config, "filament_volume_map"), filament_id as usize));
-            // get_extruder_index: filament_map[filament_id] - 1, 0 past its end
+            // PrintConfig.cpp:111-118 `get_extruder_index`: filament_map[filament_id] - 1, 0 past its
+            // end and 0 for a filament mapped to no extruder (`mapped > 0 ? size_t(mapped - 1) : 0`).
             let filament_map = cfg_ints(config, "filament_map");
-            let extruder_id = if (filament_id as usize) < filament_map.len() { filament_map[filament_id as usize] - 1 } else { 0 };
+            let extruder_id = if (filament_id as usize) < filament_map.len() && filament_map[filament_id as usize] > 0 {
+                filament_map[filament_id as usize] - 1
+            } else {
+                0
+            };
             let extruder_type = <ExtruderType as ConfigEnum>::from_int(get_at(&cfg_ints(config, "extruder_type"), extruder_id as usize));
             let print_extruder_id = cfg_ints(config, "printer_extruder_id");
             let variant_list = cfg_strings(config, "printer_extruder_variant");

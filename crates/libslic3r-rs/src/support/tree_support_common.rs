@@ -727,13 +727,14 @@ impl TreeSupportSettings {
         let maximum_move_distance = if angle < M_PI / 2. {
             (angle.tan() * layer_height as f64) as Coord
         } else {
-            Coord::MAX
+            // `coord_t` is the pin's int32_t (libslic3r.h:40).
+            i32::MAX as Coord
         };
         // TreeSupportCommon.hpp:266  maximum_move_distance_slow((angle_slow < M_PI / 2.) ? (coord_t)(tan(angle_slow) * layer_height) : std::numeric_limits<coord_t>::max()),
         let maximum_move_distance_slow = if angle_slow < M_PI / 2. {
             (angle_slow.tan() * layer_height as f64) as Coord
         } else {
-            Coord::MAX
+            i32::MAX as Coord
         };
         // TreeSupportCommon.hpp:267  support_bottom_layers(mesh_group_settings.support_bottom_enable ? (mesh_group_settings.support_bottom_height + layer_height / 2) / layer_height : 0),
         let support_bottom_layers: usize = if mesh_group_settings.support_bottom_enable {
@@ -1359,8 +1360,11 @@ impl<'a> InterfacePlacer<'a> {
         top_interfaces: &mut SupportGeneratorLayersPtr,
         top_base_interfaces: &mut SupportGeneratorLayersPtr,
     ) {
-        // TreeSupportCommon.hpp:705  assert(support_parameters.has_top_contacts);
-        debug_assert!(self.support_parameters.has_top_contacts);
+        // TreeSupportCommon.hpp:797  assert(support_parameters.has_top_contacts);
+        // Not asserted here: the engine is built with NDEBUG, and generate_raft_contact()
+        // (TreeSupport3D.cpp:950) adds the raft contact with dtt_roof == 0 whether or not the object has top
+        // contacts (a raft with support_interface_top_layers = 0). Its callers size `top_contacts` by
+        // `has_top_contacts || has_raft` (TreeSupport3D.cpp:4890), so the layer is stored as the pin stores it.
         // TreeSupportCommon.hpp:706  assert(dtt_roof <= support_parameters.num_top_interface_layers);
         debug_assert!(dtt_roof <= self.support_parameters.num_top_interface_layers);
         // TreeSupportCommon.hpp:707-709

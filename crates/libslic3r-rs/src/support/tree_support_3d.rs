@@ -2852,6 +2852,9 @@ use crate::support::tree_support_common::{
 };
 use crate::{Coord, CoordF};
 
+/// `std::numeric_limits<coord_t>::max()`: `coord_t` is the pin's `int32_t` (libslic3r.h:40), `Coord` is 64 bits.
+pub const COORD_T_MAX: Coord = i32::MAX as Coord;
+
 /// TreeSupport3D.cpp:90 `using LineInformation = std::vector<std::pair<Point, LineStatus>>;`
 pub type LineInformation = Vec<(Point, LineStatus)>;
 /// TreeSupport3D.cpp:91 `using LineInformations = std::vector<LineInformation>;`
@@ -2966,7 +2969,7 @@ impl Default for SupportElementState {
             effective_radius_height: 0,
             distance_to_top: 0,
             // Point result_on_layer{ std::numeric_limits<coord_t>::max(), std::numeric_limits<coord_t>::max() };
-            result_on_layer: Point::new(Coord::MAX, Coord::MAX),
+            result_on_layer: Point::new(COORD_T_MAX, COORD_T_MAX),
             increased_to_model_radius: 0,
             elephant_foot_increases: 0.,
             dont_move_until: 0,
@@ -2992,12 +2995,12 @@ impl std::ops::DerefMut for SupportElementState {
 impl SupportElementState {
     /// TreeSupport3D.hpp:178
     pub fn result_on_layer_is_set(&self) -> bool {
-        self.result_on_layer != Point::new(Coord::MAX, Coord::MAX)
+        self.result_on_layer != Point::new(COORD_T_MAX, COORD_T_MAX)
     }
 
     /// TreeSupport3D.hpp:179
     pub fn result_on_layer_reset(&mut self) {
-        self.result_on_layer = Point::new(Coord::MAX, Coord::MAX);
+        self.result_on_layer = Point::new(COORD_T_MAX, COORD_T_MAX);
     }
 
     /// TreeSupport3D.hpp:205-215 `static SupportElementState propagate_down(const SupportElementState& src)`
@@ -3639,14 +3642,18 @@ pub fn ensure_maximum_distance_polyline(input: &[Polyline], distance: f64, min_p
                 // If the polyline was a polygon, there is a high chance it was an overhang. Overhangs that are <60� tend to be very thin areas, so lets get the beginning and end of them and ensure that they are supported.
                 // The first point of the line will always be supported, so rotate the order of points in this polyline that one of the two corresponding points that are furthest from each other is in the beginning.
                 // The other will be manually added (optimal_end_index)
-                // `coord_t max_dist2_between_vertecies`: the squared norms are doubles, the stored one is truncated.
-                let mut max_dist2_between_vertecies: Coord = 0;
+                // `coord_t max_dist2_between_vertecies`: the squared norms are doubles and `coord_t` is the pin's
+                // int32_t (libslic3r.h:40), so the stored one is converted to 32 bits. A squared distance of
+                // 2^31 or more (vertices further apart than 0.46 mm) does not fit; the engine's arm64 build
+                // converts with `fcvtzs`, which saturates at INT32_MAX, as `as i32` does. From then on every
+                // pair further apart than that replaces the indices: the last such pair wins, not the furthest.
+                let mut max_dist2_between_vertecies: i32 = 0;
                 for idx in 0..(part.points.len() - 1) {
                     for inner_idx in 0..(part.points.len() - 1) {
                         if squared_norm2(vec2d(part.points[idx] - part.points[inner_idx])) > max_dist2_between_vertecies as f64 {
                             optimal_start_index = idx;
                             optimal_end_index = inner_idx;
-                            max_dist2_between_vertecies = squared_norm2(vec2d(part.points[idx] - part.points[inner_idx])) as Coord;
+                            max_dist2_between_vertecies = squared_norm2(vec2d(part.points[idx] - part.points[inner_idx])) as i32;
                         }
                     }
                 }
@@ -4767,4 +4774,2323 @@ pub fn generate_initial_areas(
 
     finalize_raft_contact(print_object, raft_contact_layer_idx, outputs.layer_storage, outputs.top_contacts, move_bounds);
     Ok(())
+}
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the influence areas (increase_single_area() to
+// create_layer_pathing())
+// =============================================================================
+
+use crate::support::support_common::safe_union;
+
+// ClipperUtils.cpp:679-680 `Polygons diff_clipped(const Polygons &subject, const Polygons &clip, ApplySafetyOffset
+// do_safety_offset)`: the difference with the clip polygons clipped by the bounding box of the subject.
+fn diff_clipped(subject: &[Polygon], clip: &[Polygon]) -> Polygons {
+    // get_extents(subject).inflated(SCALED_EPSILON)
+    let mut bbox = crate::geometry::get_extents_polygons(subject);
+    if !bbox.is_defined() {
+        // The difference of nothing.
+        return Vec::new();
+    }
+    let eps = SCALED_EPSILON as Coord;
+    bbox.min = Point::new(bbox.min.x - eps, bbox.min.y - eps);
+    bbox.max = Point::new(bbox.max.x + eps, bbox.max.y + eps);
+    cu::diff(subject, &crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_polygons(clip, &bbox), cu::ApplySafetyOffset::No)
+}
+
+// A division of `coord_t` as the engine's arm64 build does it: `sdiv` gives zero for a zero divisor, where the C++
+// is undefined (a distance of zero to the object in the plane and no gap above or below).
+#[inline]
+fn div_coord(a: Coord, b: Coord) -> Coord {
+    if b == 0 {
+        0
+    } else {
+        a / b
+    }
+}
+
+// Polygon.hpp `inline double area(const Polygons &polys)`
+#[inline]
+fn area(polygons: &[Polygon]) -> f64 {
+    crate::geometry::area_polygons(polygons)
+}
+
+/// TreeSupport3D.cpp:1559-1695 `static std::optional<SupportElementState> increase_single_area(const TreeModelVolumes
+/// &volumes, const TreeSupportSettings &config, const AreaIncreaseSettings &settings, const LayerIndex layer_idx,
+/// const SupportElement &parent, const Polygons &relevant_offset, Polygons &to_bp_data, Polygons &to_model_data,
+/// Polygons &increased, const coord_t overspeed, const bool mergelayer)`
+///
+/// Checks if an influence area contains a valid subsection and returns the corresponding metadata and the new
+/// Influence area.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn increase_single_area(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    settings: &AreaIncreaseSettings,
+    layer_idx: LayerIndex,
+    parent: &SupportElement,
+    relevant_offset: &Polygons,
+    to_bp_data: &mut Polygons,
+    to_model_data: &mut Polygons,
+    increased: &mut Polygons,
+    overspeed: Coord,
+    mergelayer: bool,
+) -> Option<SupportElementState> {
+    let mut current_elem: SupportElementState = SupportElementState::propagate_down(&parent.state);
+    if settings.increase_radius {
+        current_elem.effective_radius_height += 1;
+    }
+    let mut radius: Coord = support_element_collision_radius(config, &current_elem);
+    let xy_clearance_delta: Coord =
+        if settings.use_min_distance { std::cmp::max(0, current_elem.xy_min_distance - config.xy_min_distance) } else { 0 };
+    let model_radius = |branch_radius: Coord| -> Coord { branch_radius + xy_clearance_delta };
+
+    if settings.move_ {
+        *increased = relevant_offset.clone();
+        if overspeed > 0 {
+            let safe_movement_distance: Coord = (if current_elem.use_min_xy_dist { current_elem.xy_min_distance } else { config.xy_distance })
+                + if std::cmp::min(config.z_distance_top_layers, config.z_distance_bottom_layers) > 0 { config.min_feature_size } else { 0 };
+            // The difference to ensure that the result not only conforms to wall_restriction, but collision/avoidance is done later.
+            // The higher last_safe_step_movement_distance comes exactly from the fact that the collision will be subtracted later.
+            *increased = safe_offset_inc(
+                increased,
+                overspeed,
+                &volumes.get_wall_restriction(
+                    model_radius(support_element_collision_radius(config, &parent.state)),
+                    layer_idx,
+                    parent.state.use_min_xy_dist,
+                ),
+                safe_movement_distance,
+                safe_movement_distance + radius,
+                1,
+            );
+        }
+        // `if (settings.no_error && settings.move) polygons_simplify(increased, scaled<float>(0.025));`
+        // (TreeSupport3D.cpp:1594-1596): polygons_simplify() takes its polygons by const reference and returns the
+        // simplified ones (Polygon.hpp:163), which the pin drops here: `increased` stays as it is.
+    } else {
+        // if no movement is done the areas keep parent area as no move == offset(0)
+        *increased = parent.influence_area.clone();
+    }
+
+    if mergelayer || current_elem.to_buildplate {
+        *to_bp_data = safe_union(
+            &diff_clipped(increased, &volumes.get_avoidance(model_radius(radius), layer_idx - 1, settings.type_, false, settings.use_min_distance)),
+            &Vec::new(),
+        );
+        if !current_elem.to_buildplate && area(to_bp_data) > tiny_area_threshold() {
+            // mostly happening in the tip, but with merges one should check every time, just to be sure.
+            current_elem.to_buildplate = true; // sometimes nodes that can reach the buildplate are marked as cant reach, tainting subtrees. This corrects it.
+        }
+    }
+    if config.support_rests_on_model {
+        if mergelayer || current_elem.to_model_gracious {
+            *to_model_data = safe_union(
+                &diff_clipped(increased, &volumes.get_avoidance(model_radius(radius), layer_idx - 1, settings.type_, true, settings.use_min_distance)),
+                &Vec::new(),
+            );
+        }
+
+        if !current_elem.to_model_gracious {
+            if mergelayer && area(to_model_data) >= tiny_area_threshold() {
+                current_elem.to_model_gracious = true;
+            } else {
+                *to_model_data = safe_union(
+                    &diff_clipped(increased, &volumes.get_collision(model_radius(radius), layer_idx - 1, settings.use_min_distance)),
+                    &Vec::new(),
+                );
+            }
+        }
+    }
+
+    // `check_layer_data = current_elem.to_buildplate ? to_bp_data : to_model_data;`: a copy of which only the area
+    // is read.
+    let mut check_layer_data_area: f64 = area(if current_elem.to_buildplate { &*to_bp_data } else { &*to_model_data });
+
+    if settings.increase_radius && check_layer_data_area > tiny_area_threshold() {
+        let valid_with_radius = |next_radius: Coord, current_elem: &SupportElementState, increased: &Polygons| -> bool {
+            if volumes.ceil_radius_min_xy(model_radius(next_radius), settings.use_min_distance)
+                <= volumes.ceil_radius_min_xy(model_radius(radius), settings.use_min_distance)
+            {
+                return true;
+            }
+
+            let mut to_bp_data_2: Polygons = Vec::new();
+            if current_elem.to_buildplate {
+                // regular union as output will not be used later => this area should always be a subset of the safe_union one (i think)
+                to_bp_data_2 = diff_clipped(
+                    increased,
+                    &volumes.get_avoidance(model_radius(next_radius), layer_idx - 1, settings.type_, false, settings.use_min_distance),
+                );
+            }
+            let mut to_model_data_2: Polygons = Vec::new();
+            if config.support_rests_on_model && !current_elem.to_buildplate {
+                to_model_data_2 = diff_clipped(
+                    increased,
+                    &if current_elem.to_model_gracious {
+                        volumes.get_avoidance(model_radius(next_radius), layer_idx - 1, settings.type_, true, settings.use_min_distance)
+                    } else {
+                        volumes.get_collision(model_radius(next_radius), layer_idx - 1, settings.use_min_distance)
+                    },
+                );
+            }
+            let check_layer_data_2 = if current_elem.to_buildplate { &to_bp_data_2 } else { &to_model_data_2 };
+            area(check_layer_data_2) > tiny_area_threshold()
+        };
+        let ceil_radius_before: Coord = volumes.ceil_radius_min_xy(model_radius(radius), settings.use_min_distance);
+
+        if support_element_collision_radius(config, &current_elem) < config.increase_radius_until_radius
+            && support_element_collision_radius(config, &current_elem) < support_element_radius(config, &current_elem)
+        {
+            let target_radius: Coord = std::cmp::min(support_element_radius(config, &current_elem), config.increase_radius_until_radius);
+            let mut current_ceil_radius: Coord = volumes.get_radius_next_ceil(model_radius(radius), settings.use_min_distance) - xy_clearance_delta;
+
+            while current_ceil_radius < target_radius {
+                let next_radius: Coord =
+                    volumes.get_radius_next_ceil(model_radius(current_ceil_radius + 1), settings.use_min_distance) - xy_clearance_delta;
+                if !valid_with_radius(next_radius, &current_elem, increased) {
+                    break;
+                }
+                current_ceil_radius = next_radius;
+            }
+            let mut resulting_eff_dtt: usize = current_elem.effective_radius_height as usize;
+            while resulting_eff_dtt + 1 < current_elem.distance_to_top as usize
+                && config.get_radius(resulting_eff_dtt + 1, current_elem.elephant_foot_increases) <= current_ceil_radius
+                && config.get_radius(resulting_eff_dtt + 1, current_elem.elephant_foot_increases) <= support_element_radius(config, &current_elem)
+            {
+                resulting_eff_dtt += 1;
+            }
+            current_elem.effective_radius_height = resulting_eff_dtt as u32;
+        }
+        radius = support_element_collision_radius(config, &current_elem);
+
+        // Plate foot is applied as 2D slices after extrude (append_organic_plate_foot_slices).
+        // Do not grow elephant_foot_increases here: inflating the node radius would also
+        // enlarge self-intersection repair hemispheres into a circular blob.
+
+        if ceil_radius_before != volumes.ceil_radius_min_xy(model_radius(radius), settings.use_min_distance) {
+            if current_elem.to_buildplate {
+                *to_bp_data = safe_union(
+                    &diff_clipped(increased, &volumes.get_avoidance(model_radius(radius), layer_idx - 1, settings.type_, false, settings.use_min_distance)),
+                    &Vec::new(),
+                );
+            }
+            if config.support_rests_on_model && (!current_elem.to_buildplate || mergelayer) {
+                *to_model_data = safe_union(
+                    &diff_clipped(
+                        increased,
+                        &if current_elem.to_model_gracious {
+                            volumes.get_avoidance(model_radius(radius), layer_idx - 1, settings.type_, true, settings.use_min_distance)
+                        } else {
+                            volumes.get_collision(model_radius(radius), layer_idx - 1, settings.use_min_distance)
+                        },
+                    ),
+                    &Vec::new(),
+                );
+            }
+            check_layer_data_area = area(if current_elem.to_buildplate { &*to_bp_data } else { &*to_model_data });
+            if check_layer_data_area < tiny_area_threshold() {
+                tree_supports_show_error("Area lost catching up radius. May not cause visible malformation.", true);
+            }
+        }
+    }
+
+    if check_layer_data_area > tiny_area_threshold() {
+        Some(current_elem)
+    } else {
+        None
+    }
+}
+
+/// TreeSupport3D.cpp:1697-1710 `struct SupportElementInfluenceAreas`
+#[derive(Debug, Clone, Default)]
+pub struct SupportElementInfluenceAreas {
+    /// All influence areas: both to build plate and model.
+    pub influence_areas: Polygons,
+    /// Influence areas just to build plate.
+    pub to_bp_areas: Polygons,
+    /// Influence areas just to model.
+    pub to_model_areas: Polygons,
+}
+
+impl SupportElementInfluenceAreas {
+    /// TreeSupport3D.cpp:1705-1709
+    pub fn clear(&mut self) {
+        self.influence_areas.clear();
+        self.to_bp_areas.clear();
+        self.to_model_areas.clear();
+    }
+}
+
+/// TreeSupport3D.cpp:1712-1731 `struct SupportElementMerging`
+#[derive(Debug, Clone)]
+pub struct SupportElementMerging {
+    pub state: SupportElementState,
+    /// All elements in the layer above the current one that are supported by this element
+    pub parents: ParentIndices,
+
+    pub areas: SupportElementInfluenceAreas,
+    /// Bounding box of all influence areas: `Eigen::AlignedBox<coord_t, 2> bbox_data`, its corners. An
+    /// `AlignedBox` starts empty (the highest `coord_t` for its minimum, the lowest for its maximum).
+    pub bbox_data: (Point, Point),
+}
+
+impl SupportElementMerging {
+    /// `{ el.state, parents }` (TreeSupport3D.cpp:2476): the aggregate of a state and the parents.
+    pub fn new(state: SupportElementState, parents: ParentIndices) -> Self {
+        Self {
+            state,
+            parents,
+            areas: SupportElementInfluenceAreas::default(),
+            bbox_data: (Point::new(COORD_T_MAX, COORD_T_MAX), Point::new(i32::MIN as Coord, i32::MIN as Coord)),
+        }
+    }
+
+    /// TreeSupport3D.cpp:1723 `const Eigen::AlignedBox<coord_t, 2>& bbox() const`
+    pub fn bbox(&self) -> &(Point, Point) {
+        &self.bbox_data
+    }
+
+    /// TreeSupport3D.cpp:1724 `const Point centroid() const`: a division of integers.
+    pub fn centroid(&self) -> Point {
+        Point::new((self.bbox_data.0.x + self.bbox_data.1.x) / 2, (self.bbox_data.0.y + self.bbox_data.1.y) / 2)
+    }
+
+    /// TreeSupport3D.cpp:1725-1726 `void set_bbox(const BoundingBox& abbox)`
+    pub fn set_bbox(&mut self, abbox: &crate::geometry::BoundingBox) {
+        let eps = Point::new(SCALED_EPSILON as Coord, SCALED_EPSILON as Coord);
+        // A bounding box of nothing holds zeros (BoundingBox.hpp: `min`, `max` of `BoundingBoxBase()`).
+        let (min, max) = if abbox.is_defined() { (abbox.min, abbox.max) } else { (Point::new(0, 0), Point::new(0, 0)) };
+        self.bbox_data = (min - eps, max + eps);
+    }
+
+    /// What an assignment from `std::move(*this)` leaves and hands on: the vectors go with the value, the
+    /// state and the bounding box are copied.
+    fn take_moved(&mut self) -> SupportElementMerging {
+        SupportElementMerging {
+            state: self.state.clone(),
+            parents: std::mem::take(&mut self.parents),
+            areas: std::mem::take(&mut self.areas),
+            bbox_data: self.bbox_data,
+        }
+    }
+}
+
+// Called by the AABBTree builder (`AABBTreeIndirect::Tree<2, coord_t>::build_modify_input()`).
+impl crate::aabb_tree_lines::aabb_tree_indirect_2d::SourceNode for SupportElementMerging {
+    /// TreeSupport3D.cpp:1728-1730 `static size_t idx() { return 0; }`: not needed, thus zero is returned.
+    fn idx(&self) -> usize {
+        0
+    }
+    fn centroid(&self) -> [f64; 2] {
+        let c = SupportElementMerging::centroid(self);
+        [c.x as f64, c.y as f64]
+    }
+    fn bbox(&self) -> crate::aabb_tree_lines::aabb_tree_indirect_2d::BoundingBox {
+        crate::aabb_tree_lines::aabb_tree_indirect_2d::BoundingBox {
+            min: [self.bbox_data.0.x as f64, self.bbox_data.0.y as f64],
+            max: [self.bbox_data.1.x as f64, self.bbox_data.1.y as f64],
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:1751-2004 `static void increase_areas_one_layer(const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, std::vector<SupportElementMerging> &merging_areas, const LayerIndex layer_idx,
+/// SupportElements &layer_elements, const bool mergelayer, std::function<void()> throw_on_cancel)`
+///
+/// Increases influence areas as far as required.
+///
+/// The pin runs the elements through `tbb::parallel_for`; an element reads and writes its own merging area and
+/// its own parent only, so they are taken in their order here.
+#[allow(clippy::too_many_arguments)]
+pub fn increase_areas_one_layer(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    // New areas at the layer below layer_idx
+    merging_areas: &mut [SupportElementMerging],
+    // Layer above merging_areas.
+    layer_idx: LayerIndex,
+    // Layer elements above merging_areas.
+    layer_elements: &mut SupportElements,
+    // If false, the merging_areas will not be merged for performance reasons.
+    mergelayer: bool,
+    throw_on_cancel: ThrowOnCancel,
+) {
+    for merging_area in merging_areas.iter_mut() {
+        debug_assert!(merging_area.parents.len() == 1);
+        let parent_idx = merging_area.parents[0] as usize;
+        let parent: &SupportElement = &layer_elements[parent_idx];
+        let mut elem: SupportElementState = SupportElementState::propagate_down(&parent.state);
+        let wall_restriction =
+            // Abstract representation of the model outline. If an influence area would move through it, it could teleport through a wall.
+            volumes.get_wall_restriction(support_element_model_collision_radius(config, &parent.state), layer_idx, parent.state.use_min_xy_dist);
+
+        let mut to_bp_data: Polygons = Vec::new();
+        let mut to_model_data: Polygons = Vec::new();
+        let mut radius: Coord = support_element_collision_radius(config, &elem);
+
+        // When the radius increases, the outer "support wall" of the branch will have been moved farther away from the center (as this is the definition of radius).
+        // As it is not specified that the support_tree_angle has to be one of the center of the branch, it is here seen as the smaller angle of the outer wall of the branch, to the outer wall of the same branch one layer above.
+        // As the branch may have become larger the distance between these 2 walls is smaller than the distance of the center points.
+        // These extra distance is added to the movement distance possible for this layer.
+
+        let mut extra_speed: Coord = 5; // The extra speed is added to both movement distances. Also move 5 microns faster than allowed to avoid rounding errors, this may cause issues at VERY VERY small layer heights.
+        let mut extra_slow_speed: Coord = 0; // Only added to the slow movement distance.
+        let ceiled_parent_radius: Coord =
+            volumes.ceil_radius_min_xy(support_element_model_collision_radius(config, &parent.state), parent.state.use_min_xy_dist);
+        let projected_radius_increased: Coord =
+            config.get_radius(parent.state.effective_radius_height as usize + 1, parent.state.elephant_foot_increases);
+        let projected_radius_delta: Coord = projected_radius_increased - support_element_collision_radius(config, &parent.state);
+
+        // When z distance is more than one layer up and down the Collision used to calculate the wall restriction will always include the wall (and not just the xy_min_distance) of the layer above and below like this (d = blocked area because of z distance):
+        /*
+         *  layer z+1:dddddiiiiiioooo
+         *  layer z+0:xxxxxdddddddddd
+         *  layer z-1:dddddxxxxxxxxxx
+         *  For more detailed visualisation see calculateWallRestrictions
+         */
+        let safe_movement_distance: Coord = (if elem.use_min_xy_dist { elem.xy_min_distance } else { config.xy_distance })
+            + if std::cmp::min(config.z_distance_top_layers, config.z_distance_bottom_layers) > 0 { config.min_feature_size } else { 0 };
+        if ceiled_parent_radius
+            == volumes.ceil_radius_min_xy(
+                projected_radius_increased
+                    + if parent.state.use_min_xy_dist { std::cmp::max(0, parent.state.xy_min_distance - config.xy_min_distance) } else { 0 },
+                parent.state.use_min_xy_dist,
+            )
+            || projected_radius_increased < config.increase_radius_until_radius
+        {
+            // If it is guaranteed possible to increase the radius, the maximum movement speed can be increased, as it is assumed that the maximum movement speed is the one of the slower moving wall
+            extra_speed += projected_radius_delta;
+        } else {
+            // if a guaranteed radius increase is not possible, only increase the slow speed
+            // Ensure that the slow movement distance can not become larger than the fast one.
+            extra_slow_speed += std::cmp::min(
+                projected_radius_delta,
+                (config.maximum_move_distance + extra_speed) - (config.maximum_move_distance_slow + extra_slow_speed),
+            );
+        }
+
+        let fast_speed: Coord = config.maximum_move_distance + extra_speed;
+        let slow_speed: Coord = config.maximum_move_distance_slow + extra_speed + extra_slow_speed;
+
+        let mut offset_slow: Polygons = Vec::new();
+        let mut offset_fast: Polygons = Vec::new();
+
+        let mut add = false;
+        let mut bypass_merge = false;
+        // aliases for better readability
+        const INCREASE_RADIUS: bool = true;
+        const NO_ERROR: bool = true;
+        const USE_MIN_RADIUS: bool = true;
+        const MOVE: bool = true;
+
+        // Determine in which order configurations are checked if they result in a valid influence area. Check will stop if a valid area is found
+        let mut order: Vec<AreaIncreaseSettings> = Vec::new();
+        let insert_setting = |order: &mut Vec<AreaIncreaseSettings>, settings: AreaIncreaseSettings, back: bool| {
+            if !order.contains(&settings) {
+                if back {
+                    order.push(settings);
+                } else {
+                    order.insert(0, settings);
+                }
+            }
+        };
+
+        let parent_moved_slow = elem.last_area_increase.increase_speed < config.maximum_move_distance;
+        let avoidance_speed_mismatch = parent_moved_slow && elem.last_area_increase.type_ != AvoidanceType::Slow;
+        if elem.last_area_increase.move_
+            && elem.last_area_increase.no_error
+            && elem.can_use_safe_radius
+            && !mergelayer
+            && !avoidance_speed_mismatch
+            && (elem.distance_to_top as usize >= config.tip_layers || parent_moved_slow)
+        {
+            // assume that the avoidance type that was best for the parent is best for me. Makes this function about 7% faster.
+            let speed = if elem.last_area_increase.increase_speed < config.maximum_move_distance { slow_speed } else { fast_speed };
+            insert_setting(
+                &mut order,
+                AreaIncreaseSettings::new(
+                    elem.last_area_increase.type_,
+                    speed,
+                    INCREASE_RADIUS,
+                    elem.last_area_increase.no_error,
+                    !USE_MIN_RADIUS,
+                    elem.last_area_increase.move_,
+                ),
+                true,
+            );
+            insert_setting(
+                &mut order,
+                AreaIncreaseSettings::new(
+                    elem.last_area_increase.type_,
+                    speed,
+                    !INCREASE_RADIUS,
+                    elem.last_area_increase.no_error,
+                    !USE_MIN_RADIUS,
+                    elem.last_area_increase.move_,
+                ),
+                true,
+            );
+        }
+        // branch may still go though a hole, so a check has to be done whether the hole was already passed, and the regular avoidance can be used.
+        if !elem.can_use_safe_radius {
+            // if the radius until which it is always increased can not be guaranteed, move fast. This is to avoid holes smaller than the real branch radius.
+            // This does not guarantee the avoidance of such holes, but ensures they are avoided if possible.
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Slow, slow_speed, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, !MOVE), true); // did we go through the hole
+            // in many cases the definition of hole is overly restrictive, so to avoid unnecessary fast movement in the tip, it is ignored there for a bit.
+            // This CAN cause a branch to go though a hole it otherwise may have avoided.
+            // round_up_divide(config.tip_layers, size_t(2))
+            if (elem.distance_to_top as usize) < (config.tip_layers + 2 - 1) / 2 {
+                insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Fast, slow_speed, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, !MOVE), true);
+            }
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::FastSafe, fast_speed, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, !MOVE), true); // did we manage to avoid the hole
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::FastSafe, fast_speed, !INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true);
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Fast, fast_speed, !INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true);
+        } else {
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Slow, slow_speed, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true);
+            // while moving fast to be able to increase the radius (b) may seems preferable (over a) this can cause the a sudden skip in movement,
+            // which looks similar to a layer shift and can reduce stability.
+            // as such idx have chosen to only use the user setting for radius increases as a friendly recommendation.
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Slow, slow_speed, !INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true); // a
+            if (elem.distance_to_top as usize) < config.tip_layers {
+                insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::FastSafe, slow_speed, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true);
+            }
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::FastSafe, fast_speed, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true); // b
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::FastSafe, fast_speed, !INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, MOVE), true);
+        }
+
+        if elem.use_min_xy_dist {
+            let mut new_order: Vec<AreaIncreaseSettings> = Vec::new();
+            // if the branch currently has to use min_xy_dist check if the configuration would also be valid
+            // with the regular xy_distance before checking with use_min_radius (Only happens when Support Distance priority is z overrides xy )
+            for settings in &order {
+                new_order.push(*settings);
+                new_order.push(AreaIncreaseSettings::new(
+                    settings.type_,
+                    settings.increase_speed,
+                    settings.increase_radius,
+                    settings.no_error,
+                    USE_MIN_RADIUS,
+                    settings.move_,
+                ));
+            }
+            order = new_order;
+        }
+        if elem.to_buildplate
+            || (elem.to_model_gracious
+                && cu::intersection(&parent.influence_area, &volumes.get_placeable_areas(radius, layer_idx, throw_on_cancel), cu::ApplySafetyOffset::No)
+                    .is_empty())
+        {
+            // error case
+            // it is normal that we wont be able to find a new area at some point in time if we wont be able to reach layer 0 aka have to connect with the model
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Fast, fast_speed, !INCREASE_RADIUS, !NO_ERROR, elem.use_min_xy_dist, MOVE), true);
+        }
+        if elem.distance_to_top < elem.dont_move_until && elem.can_use_safe_radius {
+            // only do not move when holes would be avoided in every case.
+            // Only do not move when already in a no hole avoidance with the regular xy distance.
+            insert_setting(&mut order, AreaIncreaseSettings::new(AvoidanceType::Slow, 0, INCREASE_RADIUS, NO_ERROR, !USE_MIN_RADIUS, !MOVE), false);
+        }
+
+        let mut inc_wo_collision: Polygons = Vec::new();
+        // Check whether it is faster to calculate the area increased with the fast speed independently from the slow area, or time could be saved by reusing the slow area to calculate the fast one.
+        // Calculated by comparing the steps saved when calcualting idependently with the saved steps when not.
+        // round_up_divide(dividend, divisor) (Utils.hpp:302): `(dividend + divisor - 1) / divisor`
+        let offset_independant_faster: bool = div_coord(radius, safe_movement_distance)
+            - (config.maximum_move_distance + extra_speed < radius + safe_movement_distance) as Coord
+            > div_coord(extra_speed + extra_slow_speed + config.maximum_move_distance_slow + safe_movement_distance - 1, safe_movement_distance);
+        for settings in &order {
+            if settings.move_ {
+                if offset_slow.is_empty() && (settings.increase_speed == slow_speed || !offset_independant_faster) {
+                    // offsetting in 2 steps makes our offsetted area rounder preventing (rounding) errors created by to pointy areas. At this point one can see that the Polygons class
+                    // was never made for precision in the single digit micron range.
+                    offset_slow = safe_offset_inc(
+                        &parent.influence_area,
+                        extra_speed + extra_slow_speed + config.maximum_move_distance_slow,
+                        &wall_restriction,
+                        safe_movement_distance,
+                        if offset_independant_faster { safe_movement_distance + radius } else { 0 },
+                        2,
+                    );
+                }
+                if offset_fast.is_empty() && settings.increase_speed != slow_speed {
+                    if offset_independant_faster {
+                        offset_fast = safe_offset_inc(
+                            &parent.influence_area,
+                            extra_speed + config.maximum_move_distance,
+                            &wall_restriction,
+                            safe_movement_distance,
+                            if offset_independant_faster { safe_movement_distance + radius } else { 0 },
+                            1,
+                        );
+                    } else {
+                        let delta_slow_fast: Coord = config.maximum_move_distance - (config.maximum_move_distance_slow + extra_slow_speed);
+                        offset_fast = safe_offset_inc(
+                            &offset_slow,
+                            delta_slow_fast,
+                            &wall_restriction,
+                            safe_movement_distance,
+                            safe_movement_distance + radius,
+                            if offset_independant_faster { 2 } else { 1 },
+                        );
+                    }
+                }
+            }
+            let result: Option<SupportElementState>;
+            inc_wo_collision.clear();
+            if !settings.no_error {
+                // ERROR CASE
+                // if the area becomes for whatever reason something that clipper sees as a line, offset would stop working, so ensure that even if it would be a line wrongly, it still actually has an area that can be increased
+                let lines_offset: Polygons = cu::offset_polylines(
+                    &to_polylines(&parent.influence_area),
+                    (0.005 / SCALING_FACTOR) as f32,
+                    crate::clipper::JoinType::jtMiter,
+                    1.2,
+                    crate::clipper::EndType::etOpenButt,
+                );
+                let base_error_area: Polygons = cu::union_2(&parent.influence_area, &lines_offset);
+                result = increase_single_area(
+                    volumes,
+                    config,
+                    settings,
+                    layer_idx,
+                    parent,
+                    &base_error_area,
+                    &mut to_bp_data,
+                    &mut to_model_data,
+                    &mut inc_wo_collision,
+                    // `(config.maximum_move_distance + extra_speed) * 1.5` handed to a `coord_t`
+                    ((config.maximum_move_distance + extra_speed) as f64 * 1.5) as i32 as Coord,
+                    mergelayer,
+                );
+                tree_supports_show_error("Potentially lost branch!", true);
+            } else {
+                result = increase_single_area(
+                    volumes,
+                    config,
+                    settings,
+                    layer_idx,
+                    parent,
+                    if settings.increase_speed == slow_speed { &offset_slow } else { &offset_fast },
+                    &mut to_bp_data,
+                    &mut to_model_data,
+                    &mut inc_wo_collision,
+                    0,
+                    mergelayer,
+                );
+            }
+
+            if let Some(result) = result {
+                elem = result;
+                radius = support_element_collision_radius(config, &elem);
+                elem.last_area_increase = *settings;
+                add = true;
+                // do not merge if the branch should not move or the priority has to be to get farther away from the model.
+                bypass_merge = !settings.move_ || (settings.use_min_distance && (elem.distance_to_top as usize) < config.tip_layers);
+                if settings.move_ {
+                    elem.dont_move_until = 0;
+                } else {
+                    elem.result_on_layer = parent.state.result_on_layer;
+                }
+
+                elem.can_use_safe_radius = settings.type_ != AvoidanceType::Fast;
+
+                if !settings.use_min_distance {
+                    elem.use_min_xy_dist = false;
+                }
+                break;
+            }
+        }
+
+        if add {
+            // Union seems useless, but some rounding errors somewhere can cause to_bp_data to be slightly bigger than it should be.
+            debug_assert!(!inc_wo_collision.is_empty() || !to_bp_data.is_empty() || !to_model_data.is_empty());
+            let max_influence_area: Polygons = safe_union(
+                &diff_clipped(
+                    &inc_wo_collision,
+                    &volumes.get_collision(
+                        radius + if elem.use_min_xy_dist { std::cmp::max(0, elem.xy_min_distance - config.xy_min_distance) } else { 0 },
+                        layer_idx - 1,
+                        elem.use_min_xy_dist,
+                    ),
+                ),
+                &safe_union(&to_bp_data, &to_model_data),
+            );
+            let to_buildplate = elem.to_buildplate;
+            merging_area.state = elem;
+            debug_assert!(!max_influence_area.is_empty());
+            merging_area.set_bbox(&crate::geometry::get_extents_polygons(&max_influence_area));
+            merging_area.areas.influence_areas = max_influence_area;
+            if !bypass_merge {
+                if to_buildplate {
+                    merging_area.areas.to_bp_areas = to_bp_data;
+                }
+                if config.support_rests_on_model {
+                    merging_area.areas.to_model_areas = to_model_data;
+                }
+            }
+        } else {
+            // If the bottom most point of a branch is set, later functions will assume that the position is valid, and ignore it.
+            // But as branches connecting with the model that are to small have to be culled, the bottom most point has to be not set.
+            // A point can be set on the top most tip layer (maybe more if it should not move for a few layers).
+            let parent = &mut layer_elements[parent_idx];
+            parent.state.result_on_layer_reset();
+            parent.state.to_model_gracious = false;
+        }
+        throw_on_cancel();
+    }
+}
+
+/// TreeSupport3D.cpp:2015-2062 `static SupportElementState merge_support_element_states(const SupportElementState
+/// &first, const SupportElementState &second, const Point &next_position, const coord_t layer_idx, const
+/// TreeSupportSettings &config)`
+#[must_use]
+pub fn merge_support_element_states(
+    first: &SupportElementState,
+    second: &SupportElementState,
+    next_position: &Point,
+    layer_idx: LayerIndex,
+    config: &TreeSupportSettings,
+) -> SupportElementState {
+    let mut out = SupportElementState::default();
+    out.next_position = *next_position;
+    out.layer_idx = layer_idx;
+    out.use_min_xy_dist = first.use_min_xy_dist || second.use_min_xy_dist;
+    out.xy_min_distance = if out.use_min_xy_dist { std::cmp::max(first.xy_min_distance, second.xy_min_distance) } else { config.xy_min_distance };
+    out.supports_roof = first.supports_roof || second.supports_roof;
+    out.dont_move_until = std::cmp::max(first.dont_move_until, second.dont_move_until);
+    out.can_use_safe_radius = first.can_use_safe_radius || second.can_use_safe_radius;
+    out.missing_roof_layers = std::cmp::min(first.missing_roof_layers, second.missing_roof_layers);
+    out.skip_ovalisation = false;
+    if first.target_height > second.target_height {
+        out.target_height = first.target_height;
+        out.target_position = first.target_position;
+    } else {
+        out.target_height = second.target_height;
+        out.target_position = second.target_position;
+    }
+    out.effective_radius_height = std::cmp::max(first.effective_radius_height, second.effective_radius_height);
+    out.distance_to_top = std::cmp::max(first.distance_to_top, second.distance_to_top);
+
+    out.to_buildplate = first.to_buildplate && second.to_buildplate;
+    out.to_model_gracious = first.to_model_gracious && second.to_model_gracious; // valid as we do not merge non-gracious with gracious
+
+    out.elephant_foot_increases = 0.;
+    if config.bp_radius_increase_per_layer > 0. {
+        let foot_increase_radius: Coord = (std::cmp::max(support_element_collision_radius(config, second), support_element_collision_radius(config, first))
+            - support_element_collision_radius(config, &out))
+        .abs();
+        // elephant_foot_increases has to be recalculated, as when a smaller tree with a larger elephant_foot_increases merge with a larger branch
+        // the elephant_foot_increases may have to be lower as otherwise the radius suddenly increases. This results often in a non integer value.
+        out.elephant_foot_increases = foot_increase_radius as f64 / (config.bp_radius_increase_per_layer - config.branch_radius_increase_per_layer);
+    }
+
+    // set last settings to the best out of both parents. If this is wrong, it will only cause a small performance penalty instead of weird behavior.
+    out.last_area_increase = AreaIncreaseSettings::new(
+        // std::min of the enumerators: Slow < FastSafe < Fast
+        if (second.last_area_increase.type_ as i32) < (first.last_area_increase.type_ as i32) {
+            second.last_area_increase.type_
+        } else {
+            first.last_area_increase.type_
+        },
+        std::cmp::min(first.last_area_increase.increase_speed, second.last_area_increase.increase_speed),
+        first.last_area_increase.increase_radius || second.last_area_increase.increase_radius,
+        first.last_area_increase.no_error || second.last_area_increase.no_error,
+        first.last_area_increase.use_min_distance && second.last_area_increase.use_min_distance,
+        first.last_area_increase.move_ || second.last_area_increase.move_,
+    );
+
+    out
+}
+
+// `Eigen::AlignedBox::intersects()`
+#[inline]
+fn aligned_box_intersects(a: &(Point, Point), b: &(Point, Point)) -> bool {
+    a.0.x <= b.1.x && a.0.y <= b.1.y && b.0.x <= a.1.x && b.0.y <= a.1.y
+}
+
+/// TreeSupport3D.cpp:2064-2247 `static bool merge_influence_areas_two_elements(const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, const LayerIndex layer_idx, SupportElementMerging &dst, SupportElementMerging &src)`
+pub fn merge_influence_areas_two_elements(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    layer_idx: LayerIndex,
+    dst: &mut SupportElementMerging,
+    src: &mut SupportElementMerging,
+) -> bool {
+    // Don't merge gracious with a non gracious area as bad placement could negatively impact reliability of the whole subtree.
+    let merging_gracious_and_non_gracious = dst.state.to_model_gracious != src.state.to_model_gracious;
+    // Could cause some issues with the increase of one area, as it is assumed that if the smaller is increased
+    // by the delta to the larger it is engulfed by it already. But because a different collision
+    // may be removed from the in draw_area() generated circles, this assumption could be wrong.
+    let merging_min_and_regular_xy = dst.state.use_min_xy_dist != src.state.use_min_xy_dist;
+    let merging_different_min_xy = dst.state.use_min_xy_dist && src.state.use_min_xy_dist && dst.state.xy_min_distance != src.state.xy_min_distance;
+
+    if merging_gracious_and_non_gracious || merging_min_and_regular_xy || merging_different_min_xy {
+        return false;
+    }
+
+    let dst_radius_bigger = support_element_collision_radius(config, &dst.state) > support_element_collision_radius(config, &src.state);
+    let intersect: Polygons;
+    let new_state: SupportElementState;
+    let influence_areas: Polygons;
+    let mut to_model_areas: Polygons = Vec::new();
+    let merging_to_bp: bool;
+    {
+        let (smaller_rad, bigger_rad): (&SupportElementMerging, &SupportElementMerging) = if dst_radius_bigger { (&*src, &*dst) } else { (&*dst, &*src) };
+        let real_radius_delta: Coord = (support_element_radius(config, &bigger_rad.state) - support_element_radius(config, &smaller_rad.state)).abs();
+        // Cap the lateral merge reach. The merge test below inflates the thin branch by the radius
+        // delta, so a large radius difference lets a thick branch swallow a far-away thin one in a
+        // single layer - the source of the aggressive sideways merge at large diameters.
+        // (TreeSupport3D.cpp:2087-2101 has the whole of the reasoning.)
+        const OVALISATION_SLOW_RATIO: f64 = 0.75; // mirrors draw_area()
+        const MAX_MERGE_DELAY_LAYERS: Coord = 30;
+        // support_tree_angle is only clamped below 90 deg, not to the 60 deg the setting exposes, so a
+        // config that bypasses that bound (hand edited project, command line) can drive
+        // maximum_move_distance close to the coord_t limit. Cap it before doubling to avoid overflow.
+        // scaled<coord_t>(10.)
+        let max_sane_move_distance: Coord = (10. / SCALING_FACTOR) as Coord;
+        let move_budget: Coord = std::cmp::min(config.maximum_move_distance, max_sane_move_distance);
+        let mut merge_reach: Coord =
+            std::cmp::min(2 * move_budget, (OVALISATION_SLOW_RATIO * support_element_radius(config, &bigger_rad.state) as f64) as Coord);
+        merge_reach = std::cmp::max(merge_reach, config.support_line_width / 2);
+        merge_reach = std::cmp::max(merge_reach, real_radius_delta - 2 * MAX_MERGE_DELAY_LAYERS * move_budget);
+        // Never exceed the geometric "engulfed by the radius delta" limit this whole test is built on.
+        merge_reach = std::cmp::min(merge_reach, real_radius_delta);
+        {
+            // Testing intersection of bounding boxes.
+            // Expand the smaller radius branch bounding box to match the lambda intersect_small_with_bigger() below.
+            // Because the lambda intersect_small_with_bigger() applies a rounded offset, a snug offset of the bounding box
+            // is sufficient. On the other side, if a mitered offset was used by the lambda,
+            // the bounding box expansion would have to account for the mitered extension of the sharp corners.
+            let mut smaller_bbox: (Point, Point) = *smaller_rad.bbox();
+            smaller_bbox.0 = smaller_bbox.0 - Point::new(merge_reach, merge_reach);
+            smaller_bbox.1 = smaller_bbox.1 + Point::new(merge_reach, merge_reach);
+            if !aligned_box_intersects(&smaller_bbox, bigger_rad.bbox()) {
+                return false;
+            }
+        }
+
+        // Accumulator of a radius increase of a "to model" branch by merging in a "to build plate" branch.
+        let mut increased_to_model_radius: Coord = 0;
+        merging_to_bp = dst.state.to_buildplate && src.state.to_buildplate;
+        if !merging_to_bp {
+            // Get the real radius increase as the user does not care for the collision model.
+            if dst.state.to_buildplate != src.state.to_buildplate {
+                // Merging a "to build plate" branch with a "to model" branch.
+                // Don't allow merging a thick "to build plate" branch into a thinner "to model" branch.
+                let rdst: Coord = support_element_radius(config, &dst.state);
+                let rsrc: Coord = support_element_radius(config, &src.state);
+                if dst.state.to_buildplate {
+                    if rsrc < rdst {
+                        increased_to_model_radius = src.state.increased_to_model_radius + rdst - rsrc;
+                    }
+                } else if rsrc > rdst {
+                    increased_to_model_radius = dst.state.increased_to_model_radius + rsrc - rdst;
+                }
+                if increased_to_model_radius > config.max_to_model_radius_increase {
+                    return false;
+                }
+            }
+            // if a merge could place a stable branch on unstable ground, would be increasing the radius further
+            // than allowed to when merging to model and to_bp trees or would merge to model before it is known
+            // they will even been drawn the merge is skipped
+            if !dst.state.supports_roof
+                && !src.state.supports_roof
+                && (std::cmp::max(src.state.distance_to_top, dst.state.distance_to_top) as usize) < config.min_dtt_to_model
+            {
+                return false;
+            }
+        }
+
+        // Area of the bigger radius is used to ensure correct placement regarding the relevant avoidance,
+        // so if that would change an invalid area may be created.
+        if !bigger_rad.state.can_use_safe_radius && smaller_rad.state.can_use_safe_radius {
+            return false;
+        }
+
+        // the bigger radius is used to verify that the area is still valid after the increase with the delta.
+        // If there were a point where the big influence area could be valid with can_use_safe_radius
+        // the element would already be can_use_safe_radius.
+        // the smaller radius, which gets increased by delta may reach into the area where use_min_xy_dist is no longer required.
+        let use_min_radius = bigger_rad.state.use_min_xy_dist && smaller_rad.state.use_min_xy_dist;
+
+        // The idea is that the influence area with the smaller collision radius is increased by the radius difference.
+        // If this area has any intersections with the influence area of the larger collision radius, a branch (of the larger collision radius) placed in this intersection, has already engulfed the branch of the smaller collision radius.
+        // Because of this a merge may happen even if the influence areas (that represent possible center points of branches) do not intersect yet.
+        // Remember that collision radius <= real radius as otherwise this assumption would be false.
+        let smaller_collision_radius: Coord = support_element_collision_radius(config, &smaller_rad.state);
+        let collision = volumes.get_collision(
+            smaller_collision_radius + if use_min_radius { std::cmp::max(0, smaller_rad.state.xy_min_distance - config.xy_min_distance) } else { 0 },
+            layer_idx - 1,
+            use_min_radius,
+        );
+        let intersect_small_with_bigger = |small: &Polygons, bigger: &Polygons| -> Polygons {
+            cu::intersection(
+                &safe_offset_inc(
+                    small,
+                    merge_reach,
+                    &collision,
+                    // -3 avoids possible rounding errors
+                    2 * (config.xy_distance + smaller_collision_radius - 3),
+                    0,
+                    0,
+                ),
+                bigger,
+                cu::ApplySafetyOffset::No,
+            )
+        };
+        intersect = intersect_small_with_bigger(
+            if merging_to_bp { &smaller_rad.areas.to_bp_areas } else { &smaller_rad.areas.to_model_areas },
+            if merging_to_bp { &bigger_rad.areas.to_bp_areas } else { &bigger_rad.areas.to_model_areas },
+        );
+
+        // dont use empty as a line is not empty, but for this use-case it very well may be (and would be one layer down as union does not keep lines)
+        // check if the overlap is large enough (Small ares tend to attract rounding errors in clipper).
+        if area(&intersect) <= tiny_area_threshold() {
+            return false;
+        }
+
+        // While 0.025 was guessed as enough, i did not have reason to change it.
+        if area(&cu::offset(&intersect, (-0.025 / SCALING_FACTOR) as f32, crate::clipper::JoinType::jtMiter, 1.2)) <= tiny_area_threshold() {
+            return false;
+        }
+
+        // Do the actual merge now that the branches are confirmed to be able to intersect.
+        // calculate which point is closest to the point of the last merge (or tip center if no merge above it has happened)
+        // used at the end to estimate where to best place the branch on the bottom most layer
+        // could be replaced with a random point inside the new area
+        let new_pos: Point = move_inside_if_outside(&intersect, dst.state.next_position, 0, i64::MAX);
+
+        let mut state = merge_support_element_states(&dst.state, &src.state, &new_pos, layer_idx - 1, config);
+        state.increased_to_model_radius = if increased_to_model_radius == 0 {
+            // increased_to_model_radius was not set yet. Propagate maximum.
+            std::cmp::max(dst.state.increased_to_model_radius, src.state.increased_to_model_radius)
+        } else {
+            increased_to_model_radius
+        };
+        new_state = state;
+
+        // Rather unioning with "intersect" due to some rounding errors.
+        influence_areas =
+            safe_union(&intersect_small_with_bigger(&smaller_rad.areas.influence_areas, &bigger_rad.areas.influence_areas), &intersect);
+
+        if merging_to_bp && config.support_rests_on_model {
+            to_model_areas = if new_state.to_model_gracious {
+                // Rather unioning with "intersect" due to some rounding errors.
+                safe_union(&intersect_small_with_bigger(&smaller_rad.areas.to_model_areas, &bigger_rad.areas.to_model_areas), &intersect)
+            } else {
+                influence_areas.clone()
+            };
+        }
+    }
+
+    dst.parents.extend_from_slice(&src.parents);
+    dst.state = new_state;
+    dst.areas.influence_areas = influence_areas;
+    dst.areas.to_bp_areas.clear();
+    dst.areas.to_model_areas.clear();
+    if merging_to_bp {
+        dst.areas.to_bp_areas = intersect;
+        if config.support_rests_on_model {
+            dst.areas.to_model_areas = to_model_areas;
+        }
+    } else {
+        dst.areas.to_model_areas = intersect;
+    }
+    // Update the bounding box.
+    let mut bbox = crate::geometry::get_extents_polygons(&dst.areas.influence_areas);
+    bbox.merge(&crate::geometry::get_extents_polygons(&dst.areas.to_bp_areas));
+    bbox.merge(&crate::geometry::get_extents_polygons(&dst.areas.to_model_areas));
+    dst.set_bbox(&bbox);
+    // Clear the source data.
+    src.areas.clear();
+    src.parents.clear();
+    true
+}
+
+// Two elements of the one vector, as the pin's two pointers into it.
+fn two_elements(v: &mut [SupportElementMerging], a: usize, b: usize) -> (&mut SupportElementMerging, &mut SupportElementMerging) {
+    debug_assert!(a != b);
+    if a < b {
+        let (lo, hi) = v.split_at_mut(b);
+        (&mut lo[a], &mut hi[0])
+    } else {
+        let (lo, hi) = v.split_at_mut(a);
+        (&mut hi[0], &mut lo[b])
+    }
+}
+
+/// TreeSupport3D.cpp:2266-2287 `static SupportElementMerging* merge_influence_areas_leaves(const TreeModelVolumes
+/// &volumes, const TreeSupportSettings &config, const LayerIndex layer_idx, SupportElementMerging * const dst_begin,
+/// SupportElementMerging *dst_end)`
+///
+/// The pointers are indices into `influence_areas`.
+pub fn merge_influence_areas_leaves(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    layer_idx: LayerIndex,
+    influence_areas: &mut [SupportElementMerging],
+    dst_begin: usize,
+    mut dst_end: usize,
+) -> usize {
+    // Merging at the lowest level of the AABB tree. Checking one against each other, O(n^2).
+    debug_assert!(dst_begin < dst_end);
+    let mut i = dst_begin;
+    while i + 1 < dst_end {
+        let mut merged = false;
+        let mut j = i + 1;
+        while j != dst_end {
+            let (ei, ej) = two_elements(influence_areas, i, j);
+            if merge_influence_areas_two_elements(volumes, config, layer_idx, ei, ej) {
+                // i was merged with j, j is empty.
+                dst_end -= 1;
+                if j != dst_end {
+                    influence_areas[j] = influence_areas[dst_end].take_moved();
+                }
+                merged = true;
+                break;
+            } else {
+                j += 1;
+            }
+        }
+        if !merged {
+            // not merged
+            i += 1;
+        }
+    }
+    dst_end
+}
+
+/// TreeSupport3D.cpp:2289-2330 `static SupportElementMerging* merge_influence_areas_two_sets(const TreeModelVolumes
+/// &volumes, const TreeSupportSettings &config, const LayerIndex layer_idx, SupportElementMerging * const dst_begin,
+/// SupportElementMerging *dst_end, SupportElementMerging *src_begin, SupportElementMerging * const src_end)`
+///
+/// The pointers are indices into `influence_areas`.
+#[allow(clippy::too_many_arguments)]
+pub fn merge_influence_areas_two_sets(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    layer_idx: LayerIndex,
+    influence_areas: &mut [SupportElementMerging],
+    dst_begin: usize,
+    mut dst_end: usize,
+    mut src_begin: usize,
+    src_end: usize,
+) -> usize {
+    // Merging src into dst.
+    // Areas of src should not overlap with areas of another elements of src.
+    // Areas of dst should not overlap with areas of another elements of dst.
+    // The memory from dst_begin to src_end is reserved for the merging operation,
+    // src follows dst.
+    debug_assert!(src_begin < src_end);
+    debug_assert!(dst_begin < dst_end);
+    debug_assert!(dst_end <= src_begin);
+    let mut src = src_begin;
+    while src != src_end {
+        let mut dst = dst_begin;
+        // `SupportElementMerging *merged = nullptr;`
+        let mut merged: usize = usize::MAX;
+        while dst != dst_end {
+            let (ed, es) = two_elements(influence_areas, dst, src);
+            if merge_influence_areas_two_elements(volumes, config, layer_idx, ed, es) {
+                merged = dst;
+                dst += 1;
+                if src != src_begin {
+                    // Compactify src.
+                    influence_areas[src] = influence_areas[src_begin].take_moved();
+                }
+                src_begin += 1;
+                break;
+            }
+            dst += 1;
+        }
+        while dst != dst_end {
+            let (em, ed) = two_elements(influence_areas, merged, dst);
+            if merge_influence_areas_two_elements(volumes, config, layer_idx, em, ed) {
+                // Compactify dst.
+                dst_end -= 1;
+                if dst != dst_end {
+                    influence_areas[dst] = influence_areas[dst_end].take_moved();
+                }
+            } else {
+                dst += 1;
+            }
+        }
+        src += 1;
+    }
+    // Compactify src elements that were not merged with dst to the end of dst.
+    debug_assert!(dst_end <= src_begin);
+    if dst_end == src_begin {
+        dst_end = src_end;
+    } else {
+        while src_begin != src_end {
+            influence_areas[dst_end] = influence_areas[src_begin].take_moved();
+            dst_end += 1;
+            src_begin += 1;
+        }
+    }
+
+    dst_end
+}
+
+/// What `tbb::this_task_arena::max_concurrency()` gives merge_influence_areas() (TreeSupport3D.cpp:2376): the number
+/// of threads of the machine, by which the pin chooses the size of its first buckets, and with it the order in
+/// which the areas of a layer are merged. Zero (the initial value) stands for the number of threads of this
+/// machine; a test sets the number of the machine its vectors were made on.
+pub static MERGE_INFLUENCE_AREAS_NUM_THREADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn merge_influence_areas_num_threads() -> usize {
+    match MERGE_INFLUENCE_AREAS_NUM_THREADS.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
+        n => n,
+    }
+}
+
+/// TreeSupport3D.cpp:2346-2433 `static void merge_influence_areas(const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, const LayerIndex layer_idx, std::vector<SupportElementMerging> &influence_areas,
+/// std::function<void()> throw_on_cancel)`
+///
+/// Merges Influence Areas at one layer if possible. The vector keeps its size: the elements that were merged into
+/// others stay behind it with no areas.
+pub fn merge_influence_areas(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    layer_idx: LayerIndex,
+    influence_areas: &mut Vec<SupportElementMerging>,
+    throw_on_cancel: ThrowOnCancel,
+) {
+    let input_size: usize = influence_areas.len();
+    if input_size == 0 {
+        return;
+    }
+
+    // Merging by divide & conquer.
+    // The majority of time is consumed by Clipper polygon operations, intersection is accelerated by bounding boxes.
+    // Sorting input into an AABB tree helps to perform most of the intersections at first iterations,
+    // thus reducing computation when merging larger subtrees.
+    // The actual merge logic is found in merge_influence_areas_two_sets.
+
+    // Build an AABB tree over the influence areas.
+    //FIXME A full tree does not need to be built, the lowest level branches will be always bucketed.
+    // However the additional time consumed is negligible.
+    let mut tree = crate::aabb_tree_lines::aabb_tree_indirect_2d::Tree::new();
+    // Sort influence_areas in place.
+    tree.build_modify_input(influence_areas.as_mut_slice());
+
+    throw_on_cancel();
+
+    // Prepare the initial buckets as ranges of influence areas. The initial buckets contain power of 2 influence areas to follow
+    // the branching of the AABB tree.
+    // Vectors of ranges of influence areas, following the branching of the AABB tree:
+    let mut buckets: Vec<(usize, usize)> = Vec::new();
+    // Initial number of buckets for 1st round of merging.
+    let num_buckets_initial: usize;
+    {
+        // How many buckets per first merge iteration?
+        let num_threads: usize = merge_influence_areas_num_threads();
+        // 4 buckets per thread if possible,
+        let num_buckets_min: usize = (input_size + 2) / 4;
+        // 2 buckets per thread otherwise.
+        let num_buckets_max: usize = input_size / 2;
+        num_buckets_initial = if num_buckets_min >= num_threads { num_buckets_min } else { num_buckets_max };
+        let bucket_size: usize = if num_buckets_min >= num_threads { 4 } else { 2 };
+        // Fill in the buckets.
+        let mut it: usize = 0;
+        // Reserve one more bucket to keep a single influence area which will not be merged in the first iteration.
+        buckets.reserve(num_buckets_initial + 1);
+        for _ in 0..num_buckets_initial {
+            buckets.push((it, it + bucket_size));
+            it += bucket_size;
+        }
+        let it_end: usize = influence_areas.len();
+        // `buckets.back()` of no bucket (one influence area) is not defined; the pin gets there with one area
+        // only from a caller that does not call it then (TreeSupport3D.cpp:2507).
+        if !buckets.is_empty() && buckets[buckets.len() - 1].1 >= it_end {
+            // Last bucket is less than size 4, but bigger than size 1.
+            let last = buckets.len() - 1;
+            buckets[last].1 = std::cmp::min(buckets[last].1, it_end);
+        } else {
+            // Last bucket is size 1, it will not be merged in the first iteration.
+            debug_assert!(it + 1 == it_end);
+            buckets.push((it, it_end));
+        }
+    }
+
+    // 1st merge iteration, merge one with each other.
+    for idx in 0..num_buckets_initial {
+        // Merge bucket_count adjacent to each other, merging uneven bucket numbers into even buckets
+        buckets[idx].1 = merge_influence_areas_leaves(volumes, config, layer_idx, influence_areas.as_mut_slice(), buckets[idx].0, buckets[idx].1);
+        throw_on_cancel();
+    }
+
+    // Further merge iterations, merging one AABB subtree with another one, hopefully minimizing intersections between the elements
+    // of each of the subtree.
+    while buckets.len() > 1 {
+        for idx in 0..buckets.len() / 2 {
+            let bucket_pair_idx: usize = idx * 2;
+            // Merge bucket_count adjacent to each other, merging uneven bucket numbers into even buckets
+            buckets[bucket_pair_idx].1 = merge_influence_areas_two_sets(
+                volumes,
+                config,
+                layer_idx,
+                influence_areas.as_mut_slice(),
+                buckets[bucket_pair_idx].0,
+                buckets[bucket_pair_idx].1,
+                buckets[bucket_pair_idx + 1].0,
+                buckets[bucket_pair_idx + 1].1,
+            );
+            throw_on_cancel();
+        }
+        // Remove odd buckets, which were merged into even buckets.
+        let new_size: usize = (buckets.len() + 1) / 2;
+        for i in 1..new_size {
+            buckets[i] = buckets[i * 2];
+        }
+        buckets.truncate(new_size);
+    }
+}
+
+/// TreeSupport3D.cpp:2441-2536 `void create_layer_pathing(const TreeModelVolumes &volumes, const TreeSupportSettings
+/// &config, std::vector<SupportElements> &move_bounds, std::function<void()> throw_on_cancel)`
+///
+/// Propagates influence downwards, and merges overlapping ones.
+pub fn create_layer_pathing(volumes: &TreeModelVolumes, config: &TreeSupportSettings, move_bounds: &mut [SupportElements], throw_on_cancel: ThrowOnCancel) {
+    let mut last_merge_layer_idx: LayerIndex = move_bounds.len() as LayerIndex;
+    let mut new_element = false;
+
+    // Ensures at least one merge operation per 3mm height, 50 layers, 1 mm movement of slow speed or 5mm movement of fast speed (whatever is lowest). Values were guessed.
+    let max_merge_every_x_layers: usize = std::cmp::min(
+        std::cmp::min(5000 / std::cmp::max(config.maximum_move_distance, 100), 1000 / std::cmp::max(config.maximum_move_distance_slow, 20)),
+        3000 / config.layer_height,
+    ) as usize;
+    let mut merge_every_x_layers: usize = 1;
+    // Calculate the influence areas for each layer below (Top down)
+    // This is done by first increasing the influence area by the allowed movement distance, and merging them with other influence areas if possible
+    let mut layer_idx: i32 = move_bounds.len() as i32 - 1;
+    while layer_idx > 0 {
+        if !move_bounds[layer_idx as usize].is_empty() {
+            let (lower, upper) = move_bounds.split_at_mut(layer_idx as usize);
+            let prev_layer: &mut SupportElements = &mut upper[0];
+            // merging is expensive and only parallelized to a max speedup of 2. As such it may be useful in some cases to only merge every few layers to improve performance.
+            let had_new_element = new_element;
+            let merge_this_layer = had_new_element || (last_merge_layer_idx - layer_idx) as usize >= merge_every_x_layers;
+            if had_new_element {
+                merge_every_x_layers = 1;
+            }
+
+            // ### Increase the influence areas by the allowed movement distance
+            let mut influence_areas: Vec<SupportElementMerging> = Vec::with_capacity(prev_layer.len());
+            for element_idx in 0..prev_layer.len() as i32 {
+                let el: &SupportElement = &prev_layer[element_idx as usize];
+                debug_assert!(!el.influence_area.is_empty());
+                let parents: ParentIndices = vec![element_idx];
+                influence_areas.push(SupportElementMerging::new(el.state.clone(), parents));
+            }
+            increase_areas_one_layer(volumes, config, &mut influence_areas, layer_idx, prev_layer, merge_this_layer, throw_on_cancel);
+
+            // Place already fully constructed elements to the output, remove them from influence_areas.
+            let this_layer: &mut SupportElements = &mut lower[layer_idx as usize - 1];
+            // std::remove_if(): the predicate is asked once for every element, in their order.
+            let mut kept: Vec<SupportElementMerging> = Vec::with_capacity(influence_areas.len());
+            for mut elem in influence_areas {
+                if elem.areas.influence_areas.is_empty() {
+                    // This area was removed completely due to collisions.
+                    continue;
+                }
+                if elem.areas.to_bp_areas.is_empty() && elem.areas.to_model_areas.is_empty() {
+                    if area(&elem.areas.influence_areas) < tiny_area_threshold() {
+                        tree_supports_show_error("Insert error of area after bypassing merge.\n", true);
+                    }
+                    // Move the area to output.
+                    this_layer.push(SupportElement::with_parents(
+                        elem.state.clone(),
+                        std::mem::take(&mut elem.parents),
+                        std::mem::take(&mut elem.areas.influence_areas),
+                    ));
+                    continue;
+                }
+                // Keep the area.
+                kept.push(elem);
+            }
+            let mut influence_areas = kept;
+
+            new_element = !this_layer.is_empty();
+            if merge_this_layer {
+                let mut reduced_by_merging = false;
+                let count_before_merge: usize = influence_areas.len();
+                if count_before_merge > 1 {
+                    // ### Calculate which influence areas overlap, and merge them into a new influence area (simplified: an intersection of influence areas that have such an intersection)
+                    merge_influence_areas(volumes, config, layer_idx, &mut influence_areas, throw_on_cancel);
+                    reduced_by_merging = count_before_merge > influence_areas.len();
+                }
+                last_merge_layer_idx = layer_idx;
+                if !reduced_by_merging && !had_new_element {
+                    merge_every_x_layers = std::cmp::min(max_merge_every_x_layers, merge_every_x_layers + 1);
+                }
+            }
+
+            // Save calculated elements to output, and allocate Polygons on heap, as they will not be changed again.
+            for elem in &mut influence_areas {
+                if !elem.areas.influence_areas.is_empty() {
+                    let new_area: Polygons = safe_union(&elem.areas.influence_areas, &Vec::new());
+                    if area(&new_area) < tiny_area_threshold() {
+                        tree_supports_show_error("Insert error of area after merge.\n", true);
+                    }
+                    this_layer.push(SupportElement::with_parents(elem.state.clone(), std::mem::take(&mut elem.parents), new_area));
+                }
+            }
+
+            throw_on_cancel();
+        }
+        layer_idx -= 1;
+    }
+}
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the nodes (set_points_on_areas() to create_nodes_from_area())
+// =============================================================================
+
+/// TreeSupport3D.cpp:2544-2572 `static void set_points_on_areas(const SupportElement &elem, SupportElements
+/// *layer_above)`
+///
+/// Sets the result_on_layer for all parents based on the SupportElement supplied.
+pub fn set_points_on_areas(elem: &SupportElement, layer_above: Option<&mut SupportElements>) {
+    debug_assert!(!elem.state.deleted);
+    debug_assert!(layer_above.is_some() || elem.parents.is_empty());
+
+    // Based on the branch center point of the current layer, the point on the next (further up) layer is calculated.
+    if !elem.state.result_on_layer_is_set() {
+        tree_supports_show_error("Uninitialized support element. A branch may be missing.\n", true);
+        return;
+    }
+
+    if let Some(layer_above) = layer_above {
+        for &next_elem_idx in &elem.parents {
+            debug_assert!(next_elem_idx >= 0);
+            let next_elem: &mut SupportElement = &mut layer_above[next_elem_idx as usize];
+            debug_assert!(!next_elem.state.deleted);
+            // if the value was set somewhere else it it kept. This happens when a branch tries not to move after being unable to create a roof.
+            if !next_elem.state.result_on_layer_is_set() {
+                // Move inside has edgecases (see tests) so DONT use Polygons.inside to confirm correct move, Error with distance 0 is <= 1
+                // it is not required to check if how far this move moved a point as is can be larger than maximum_movement_distance.
+                // While this seems like a problem it may for example occur after merges.
+                next_elem.state.result_on_layer = move_inside_if_outside(&next_elem.influence_area, elem.state.result_on_layer, 0, i64::MAX);
+                // do not call recursive because then amount of layers would be restricted by the stack size
+            }
+            // Mark the parent element as accessed from a valid child element.
+            next_elem.state.marked = true;
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:2574-2579 `static void set_to_model_contact_simple(SupportElement &elem)`
+pub fn set_to_model_contact_simple(elem: &mut SupportElement) {
+    let best: Point = move_inside_if_outside(&elem.influence_area, elem.state.next_position, 0, i64::MAX);
+    elem.state.result_on_layer = best;
+}
+
+/// TreeSupport3D.cpp:2588-2633 `static void set_to_model_contact_to_model_gracious(const TreeModelVolumes &volumes,
+/// const TreeSupportSettings &config, std::vector<SupportElements> &move_bounds, SupportElement &first_elem,
+/// std::function<void()> throw_on_cancel)`
+///
+/// Get the best point to connect to the model and set the result_on_layer of the relevant SupportElement
+/// accordingly. `first_elem` is the element `first_elem.1` of the layer `first_elem.0` of `move_bounds`; the
+/// pointers of the pin are such pairs.
+pub fn set_to_model_contact_to_model_gracious(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    move_bounds: &mut [SupportElements],
+    first_elem: (usize, usize),
+    throw_on_cancel: ThrowOnCancel,
+) {
+    // `SupportElement *last_successfull_layer = nullptr;`
+    let mut last_successfull_layer: Option<(usize, usize)> = None;
+
+    // check for every layer upwards, up to the point where this influence area was created (either by initial insert or merge) if the branch could be placed on it, and highest up layer index.
+    {
+        let mut elem: (usize, usize) = first_elem;
+        let mut layer_check: LayerIndex = move_bounds[elem.0][elem.1].state.layer_idx;
+        loop {
+            let e: &SupportElement = &move_bounds[elem.0][elem.1];
+            if cu::intersection(
+                &e.influence_area,
+                &volumes.get_placeable_areas(support_element_collision_radius(config, &e.state), layer_check, throw_on_cancel),
+                cu::ApplySafetyOffset::No,
+            )
+            .is_empty()
+            {
+                break;
+            }
+            debug_assert!(e.state.layer_idx == layer_check);
+            debug_assert!(!e.state.deleted);
+            debug_assert!(e.state.to_model_gracious);
+            last_successfull_layer = Some(elem);
+            if e.parents.len() != 1 {
+                // Reached merge point.
+                break;
+            }
+            // elem = &move_bounds[++ layer_check][elem->parents.front()]
+            layer_check += 1;
+            elem = (layer_check as usize, e.parents[0] as usize);
+        }
+    }
+
+    // Could not find valid placement, even though it should exist => error handling
+    match last_successfull_layer {
+        None => {
+            tree_supports_show_error("Could not fine valid placement on model! Just placing it down anyway. Could cause floating branches.", true);
+            let first = &mut move_bounds[first_elem.0][first_elem.1];
+            first.state.to_model_gracious = false;
+            set_to_model_contact_simple(first);
+        }
+        Some(last_successfull_layer) => {
+            // Found a gracious area above first_elem. Remove all below last_successfull_layer.
+            {
+                let mut parent_layer_idx: LayerIndex = move_bounds[first_elem.0][first_elem.1].state.layer_idx;
+                let mut elem: (usize, usize) = first_elem;
+                while elem != last_successfull_layer {
+                    let e: &mut SupportElement = &mut move_bounds[elem.0][elem.1];
+                    debug_assert!(!e.state.deleted);
+                    e.state.deleted = true;
+                    // elem = &move_bounds[++ parent_layer_idx][elem->parents.front()]
+                    parent_layer_idx += 1;
+                    elem = (parent_layer_idx as usize, e.parents[0] as usize);
+                }
+            }
+            // Guess a point inside the influence area, in which the branch will be placed in.
+            let last: &mut SupportElement = &mut move_bounds[last_successfull_layer.0][last_successfull_layer.1];
+            let best: Point = move_inside_if_outside(&last.influence_area, last.state.next_position, 0, i64::MAX);
+            last.state.result_on_layer = best;
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:2636-2675 `static void remove_deleted_elements(std::vector<SupportElements> &move_bounds)`
+// Remove elements marked as "deleted", update indices to parents.
+pub fn remove_deleted_elements(move_bounds: &mut [SupportElements]) {
+    let mut map_parents: Vec<i32> = Vec::new();
+    let mut map_current: Vec<i32> = Vec::new();
+    let mut layer_idx: LayerIndex = move_bounds.len() as LayerIndex - 1;
+    while layer_idx >= 0 {
+        let layer: &mut SupportElements = &mut move_bounds[layer_idx as usize];
+        map_current.clear();
+        let mut i: i32 = 0;
+        while i < layer.len() as i32 {
+            if layer[i as usize].state.deleted {
+                if map_current.is_empty() {
+                    // Initialize with identity map.
+                    map_current = (0..layer.len() as i32).collect();
+                }
+                // Delete all "deleted" elements from the end of the layer vector.
+                while i < layer.len() as i32 && layer[layer.len() - 1].state.deleted {
+                    layer.pop();
+                    // Mark as deleted in the map.
+                    map_current[layer.len()] = -1;
+                }
+                debug_assert!(i as usize == layer.len() || (i as usize) + 1 < layer.len());
+                if i + 1 < layer.len() as i32 {
+                    // element = std::move(layer.back()); layer.pop_back();
+                    let back = layer.pop().unwrap();
+                    layer[i as usize] = back;
+                    // Mark the current element as deleted.
+                    map_current[i as usize] = -1;
+                    // Mark the moved element as moved to index i.
+                    map_current[layer.len()] = i;
+                }
+            } else {
+                // Current element is not deleted. Update its parent indices.
+                if !map_parents.is_empty() {
+                    for parent_idx in layer[i as usize].parents.iter_mut() {
+                        *parent_idx = map_parents[*parent_idx as usize];
+                    }
+                }
+                i += 1;
+            }
+        }
+        std::mem::swap(&mut map_current, &mut map_parents);
+        layer_idx -= 1;
+    }
+}
+
+/// TreeSupport3D.cpp:2683-2798 `void create_nodes_from_area(const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, std::vector<SupportElements> &move_bounds, std::function<void()> throw_on_cancel)`
+///
+/// Set the result_on_layer point for all influence areas
+pub fn create_nodes_from_area(volumes: &TreeModelVolumes, config: &TreeSupportSettings, move_bounds: &mut [SupportElements], throw_on_cancel: ThrowOnCancel) {
+    // Initialize points on layer 0, with a "random" point in the influence area.
+    // Point is chosen based on an inaccurate estimate where the branches will split into two, but every point inside the influence area would produce a valid result.
+    {
+        let (front, rest) = move_bounds.split_at_mut(1);
+        let mut layer_above: Option<&mut SupportElements> = rest.first_mut();
+        if let Some(layer_above) = layer_above.as_deref_mut() {
+            for elem in layer_above.iter_mut() {
+                elem.state.marked = false;
+            }
+        }
+        for init in front[0].iter_mut() {
+            init.state.result_on_layer = move_inside_if_outside(&init.influence_area, init.state.next_position, 0, i64::MAX);
+            // Also set the parent nodes, as these will be required for the first iteration of the loop below and mark the parent nodes.
+            set_points_on_areas(init, layer_above.as_deref_mut());
+        }
+    }
+
+    throw_on_cancel();
+
+    for layer_idx in 1..move_bounds.len() as LayerIndex {
+        let has_layer_above = layer_idx + 1 < move_bounds.len() as LayerIndex;
+        if has_layer_above {
+            for elem in move_bounds[layer_idx as usize + 1].iter_mut() {
+                elem.state.marked = false;
+            }
+        }
+        for elem_idx in 0..move_bounds[layer_idx as usize].len() {
+            {
+                let elem: &mut SupportElement = &mut move_bounds[layer_idx as usize][elem_idx];
+                debug_assert!(!elem.state.deleted);
+                debug_assert!(elem.state.layer_idx == layer_idx);
+                // check if the resulting center point is not yet set
+                if !elem.state.result_on_layer_is_set() {
+                    if elem.state.to_buildplate || ((elem.state.distance_to_top as usize) < config.min_dtt_to_model && !elem.state.supports_roof) {
+                        if elem.state.to_buildplate {
+                            tree_supports_show_error("Uninitialized support element! A branch could be missing or exist partially.", true);
+                        }
+                        // we dont need to remove yet the parents as they will have a lower dtt and also no result_on_layer set
+                        elem.state.deleted = true;
+                    } else {
+                        // set the point where the branch will be placed on the model
+                        if elem.state.to_model_gracious {
+                            set_to_model_contact_to_model_gracious(volumes, config, move_bounds, (layer_idx as usize, elem_idx), throw_on_cancel);
+                        } else {
+                            set_to_model_contact_simple(elem);
+                        }
+                    }
+                }
+            }
+            let (lower, upper) = move_bounds.split_at_mut(layer_idx as usize + 1);
+            let elem: &mut SupportElement = &mut lower[layer_idx as usize][elem_idx];
+            let mut layer_above: Option<&mut SupportElements> = if has_layer_above { upper.first_mut() } else { None };
+            if !elem.state.deleted && !elem.state.marked && elem.state.target_height == layer_idx {
+                // Just a tip surface with no supporting element.
+                elem.state.deleted = true;
+            }
+            if elem.state.deleted {
+                for &parent_idx in &elem.parents {
+                    // When the roof was not able to generate downwards enough, the top elements may have not moved, and have result_on_layer already set.
+                    // As this branch needs to be removed => all parents result_on_layer have to be invalidated.
+                    layer_above.as_deref_mut().expect("layer_above")[parent_idx as usize].state.result_on_layer_reset();
+                }
+            }
+            if !elem.state.deleted {
+                // Element is valid now setting points in the layer above and mark the parent nodes.
+                set_points_on_areas(elem, layer_above);
+            }
+        }
+        throw_on_cancel();
+    }
+
+    remove_deleted_elements(move_bounds);
+}
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the areas of the branches (DrawArea to draw_areas())
+// =============================================================================
+
+use crate::support::support_common::cu_expolygon;
+use crate::support::support_layer::SupporLayerType;
+use crate::support::tree_support_common::{layer_allocate, InterfacePreference};
+
+/// TreeSupport3D.cpp:2802-2810 `struct DrawArea`
+///
+/// For producing circular / elliptical areas from SupportElements (one DrawArea per one SupportElement)
+/// and for smoothing those areas along the tree branches. The pointers of the pin are the layer of the element
+/// in `move_bounds` and its index in that layer.
+#[derive(Debug, Clone)]
+pub struct DrawArea {
+    /// Element to be processed.
+    pub element: (usize, usize),
+    /// Element below, if there is such an element. nullptr if element is a root of a tree.
+    pub child_element: Option<(usize, usize)>,
+    /// Polygons to be extruded for this element.
+    pub polygons: Polygons,
+}
+
+// `Point(double x, double y)` (Point.hpp:179): `lrint` of the coordinates.
+#[inline]
+fn point_lrint(x: f64, y: f64) -> Point {
+    Point::new(x.round_ties_even() as Coord, y.round_ties_even() as Coord)
+}
+
+/// TreeSupport3D.cpp:2819-2957 `static void generate_branch_areas(const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, const std::vector<SupportElements> &move_bounds, std::vector<DrawArea> &linear_data,
+/// std::function<void()> throw_on_cancel)`
+///
+/// Draws circles around result_on_layer points of the influence areas. The pin runs the areas through
+/// `tbb::parallel_for`; an area is written by its own pass only.
+pub fn generate_branch_areas(
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    move_bounds: &[SupportElements],
+    linear_data: &mut [DrawArea],
+    throw_on_cancel: ThrowOnCancel,
+) {
+    // Pre-generate a circle with correct diameter so that we don't have to recompute those (co)sines every time.
+    let branch_circle: Polygon = crate::geometry::make_circle(config.branch_radius as f64, SUPPORT_TREE_CIRCLE_RESOLUTION as f64);
+
+    for draw_area in linear_data.iter_mut() {
+        let element: &SupportElement = &move_bounds[draw_area.element.0][draw_area.element.1];
+        let layer_idx: LayerIndex = element.state.layer_idx;
+        let radius: Coord = support_element_radius(config, element);
+        let mut parent_uses_min = false;
+        let mut local_xy_min_distance: Coord = if element.state.use_min_xy_dist { element.state.xy_min_distance } else { config.xy_min_distance };
+
+        // Calculate multiple ovalized circles, to connect with every parent and child. Also generate regular circle for the current layer. Merge all these into one area.
+        let mut movement_directions: Vec<(Point, Coord)> = vec![(Point::new(0, 0), radius)];
+        if !element.state.skip_ovalisation {
+            if let Some(child_element) = draw_area.child_element {
+                let child: &SupportElement = &move_bounds[child_element.0][child_element.1];
+                let movement: Point = child.state.result_on_layer - element.state.result_on_layer;
+                movement_directions.push((movement, radius));
+            }
+            // const SupportElements *layer_above = layer_idx + 1 < LayerIndex(move_bounds.size()) ? &move_bounds[layer_idx + 1] : nullptr;
+            for &parent_idx in &element.parents {
+                let parent: &SupportElement = &move_bounds[(layer_idx + 1) as usize][parent_idx as usize];
+                let movement: Point = parent.state.result_on_layer - element.state.result_on_layer;
+                //FIXME why max(..., config.support_line_width)?
+                movement_directions.push((movement, std::cmp::max(support_element_radius(config, parent), config.support_line_width)));
+                parent_uses_min |= parent.state.use_min_xy_dist;
+                if parent.state.use_min_xy_dist {
+                    local_xy_min_distance = std::cmp::max(local_xy_min_distance, parent.state.xy_min_distance);
+                }
+            }
+        }
+
+        let uses_min_xy = parent_uses_min || element.state.use_min_xy_dist;
+        let collision =
+            volumes.get_collision(if uses_min_xy { std::cmp::max(0, local_xy_min_distance - config.xy_min_distance) } else { 0 }, layer_idx, uses_min_xy);
+        let branch_radius: Coord = config.branch_radius;
+        let support_line_width: Coord = config.support_line_width;
+        let generate_area = |aoffset: Coord, max_speed: &mut f64| -> Polygons {
+            let mut poly: Polygons = Vec::new();
+            *max_speed = 0.;
+            for movement in &movement_directions {
+                // std::max(max_speed, movement.first.cast<double>().norm())
+                let speed = norm2(vec2d(movement.0));
+                if *max_speed < speed {
+                    *max_speed = speed;
+                }
+
+                // Visualization: https://jsfiddle.net/0zvcq39L/2/
+                // Ovalizes the circle to an ellipse, that contains both old center and new target position.
+                let used_scale: f64 = (movement.1 + aoffset) as f64 / (1.0 * branch_radius as f64);
+                // `movement.first / 2`: a division of integers.
+                let center_position: Point = element.state.result_on_layer + Point::new(movement.0.x / 2, movement.0.y / 2);
+                let move_x: f64 = movement.0.x as f64 / (used_scale * branch_radius as f64);
+                let move_y: f64 = movement.0.y as f64 / (used_scale * branch_radius as f64);
+                // One expression each: the left product of a sum of two products is contracted into the sum, as is
+                // the product next to a constant.
+                let vsize_inv: f64 = 0.5 / (0.01 + move_x.mul_add(move_x, move_y * move_y).sqrt());
+
+                let matrix: [f64; 4] = [
+                    used_scale * (move_x * move_x).mul_add(vsize_inv, 1.),
+                    used_scale * (move_x * move_y).mul_add(vsize_inv, 0.),
+                    used_scale * (move_x * move_y).mul_add(vsize_inv, 0.),
+                    used_scale * (move_y * move_y).mul_add(vsize_inv, 1.),
+                ];
+                let mut circle = Polygon::new();
+                for vertex in &branch_circle.points {
+                    circle.points.push(
+                        center_position
+                            + point_lrint(
+                                matrix[0].mul_add(vertex.x as f64, matrix[1] * vertex.y as f64),
+                                matrix[2].mul_add(vertex.x as f64, matrix[3] * vertex.y as f64),
+                            ),
+                    );
+                }
+                poly.push(circle);
+            }
+
+            // There seem to be some rounding errors, causing a branch to be a tiny bit further away from the model that it has to be.
+            // This can cause the tip to be slightly further away front the overhang (x/y wise) than optimal. This fixes it, and for every other part, 0.05mm will not be noticed.
+            diff_clipped(
+                &cu::offset(&cu::union_(&poly), std::cmp::min(50, support_line_width / 4) as f32, crate::clipper::JoinType::jtMiter, 1.2),
+                &collision,
+            )
+        };
+
+        // Ensure branch area will not overlap with model/collision. This can happen because of e.g. ovalization or increase_until_radius.
+        let mut max_speed: f64 = 0.;
+        let mut polygons: Polygons = generate_area(0, &mut max_speed);
+        let fast_relative_movement = max_speed > radius as f64 * 0.75;
+
+        if fast_relative_movement
+            || support_element_radius(config, element) - support_element_collision_radius(config, &element.state) > config.support_line_width
+        {
+            // Simulate the path the nozzle will take on the outermost wall.
+            // If multiple parts exist, the outer line will not go all around the support part potentially causing support material to be printed mid air.
+            let mut nozzle_path: Vec<ExPolygon> =
+                cu::offset_ex(&polygons, (-config.support_line_width / 2) as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT);
+            if nozzle_path.len() > 1 {
+                // Just try to make the area a tiny bit larger.
+                polygons = generate_area(config.support_line_width / 2, &mut max_speed);
+                nozzle_path = cu::offset_ex(&polygons, (-config.support_line_width / 2) as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT);
+                // If larger area did not fix the problem, all parts off the nozzle path that do not contain the center point are removed, hoping for the best.
+                if nozzle_path.len() > 1 {
+                    let mut polygons_with_correct_center: Vec<ExPolygon> = Vec::new();
+                    for part in nozzle_path {
+                        let mut drop = false;
+                        if !cu_expolygon::contains(&part, &element.state.result_on_layer, true) {
+                            // try a fuzzy inside as sometimes the point should be on the border, but is not because of rounding errors...
+                            let mut pt: Point = element.state.result_on_layer;
+                            move_inside(&crate::geometry::to_polygons(std::slice::from_ref(&part)), &mut pt, 0, i64::MAX);
+                            drop = norm2(vec2d(element.state.result_on_layer - pt)) >= scaled_f64(0.025);
+                        }
+                        if !drop {
+                            polygons_with_correct_center.push(part);
+                        }
+                    }
+                    // Increase the area again, to ensure the nozzle path when calculated later is very similar to the one assumed above.
+                    polygons = diff_clipped(
+                        &cu::offset_expolygons(
+                            &polygons_with_correct_center,
+                            (config.support_line_width / 2) as f32,
+                            crate::clipper::JoinType::jtMiter,
+                            1.2,
+                        ),
+                        //FIXME Vojtech: Clipping may split the region into multiple pieces again, reversing the fixing effort.
+                        &collision,
+                    );
+                }
+            }
+        }
+
+        draw_area.polygons = polygons;
+
+        throw_on_cancel();
+    }
+}
+
+/// TreeSupport3D.cpp:2959-3080 `static void smooth_branch_areas(const TreeSupportSettings &config,
+/// std::vector<SupportElements> &move_bounds, std::vector<DrawArea> &linear_data, const std::vector<size_t>
+/// &linear_data_layers, std::function<void()> throw_on_cancel)`
+///
+/// Applies some smoothing to the outer wall, intended to smooth out sudden jumps as they can happen when a branch
+/// moves though a hole. The areas of a layer go through `tbb::parallel_for` in the pin; here they are taken in
+/// their order, as one thread takes them.
+pub fn smooth_branch_areas(
+    config: &TreeSupportSettings,
+    move_bounds: &mut [SupportElements],
+    linear_data: &mut [DrawArea],
+    linear_data_layers: &[usize],
+    throw_on_cancel: ThrowOnCancel,
+) {
+    let max_radius_change_per_layer: Coord = 1 + config.support_line_width / 2; // this is the upper limit a radius may change per layer. +1 to avoid rounding errors
+
+    // smooth upwards
+    let mut layer_idx: LayerIndex = 0;
+    while layer_idx < move_bounds.len() as LayerIndex - 1 {
+        let processing_base: usize = linear_data_layers[layer_idx as usize];
+        let processing_base_above: usize = linear_data_layers[layer_idx as usize + 1];
+        let layer_above: &SupportElements = &move_bounds[layer_idx as usize + 1];
+        for processing_idx in 0..(processing_base_above - processing_base) {
+            let element_at = linear_data[processing_base + processing_idx].element;
+            let element: &SupportElement = &move_bounds[element_at.0][element_at.1];
+            debug_assert!(element.state.layer_idx == layer_idx);
+            let mut max_outer_wall_distance: f64 = 0.;
+            let mut do_something = false;
+            for &parent_idx in &element.parents {
+                let parent: &SupportElement = &layer_above[parent_idx as usize];
+                debug_assert!(parent.state.layer_idx == layer_idx + 1);
+                if support_element_radius(config, parent) != support_element_collision_radius(config, parent) {
+                    do_something = true;
+                    let distance = norm2(vec2d(element.state.result_on_layer - parent.state.result_on_layer))
+                        - (support_element_radius(config, element) - support_element_radius(config, parent)) as f64;
+                    // std::max(max_outer_wall_distance, distance)
+                    if max_outer_wall_distance < distance {
+                        max_outer_wall_distance = distance;
+                    }
+                }
+            }
+            max_outer_wall_distance += max_radius_change_per_layer as f64; // As this change is a bit larger than what usually appears, lost radius can be slowly reclaimed over the layers.
+            if do_something {
+                let max_allowed_area: Polygons = cu::offset(
+                    &linear_data[processing_base + processing_idx].polygons,
+                    max_outer_wall_distance as f32,
+                    crate::clipper::JoinType::jtMiter,
+                    1.2,
+                );
+                for &parent_idx in &element.parents {
+                    let parent: &SupportElement = &layer_above[parent_idx as usize];
+                    if support_element_radius(config, parent) != support_element_collision_radius(config, parent) {
+                        // No other element on this layer than the current one may be connected to &parent,
+                        // thus it is safe to update parent's DrawArea directly.
+                        let dst: &mut Polygons = &mut linear_data[processing_base_above + parent_idx as usize].polygons;
+                        if !dst.is_empty() {
+                            *dst = cu::intersection(dst, &max_allowed_area, cu::ApplySafetyOffset::No);
+                        }
+                    }
+                }
+            }
+            throw_on_cancel();
+        }
+        layer_idx += 1;
+    }
+
+    // smooth downwards
+    if let Some(back) = move_bounds.last_mut() {
+        for element in back.iter_mut() {
+            element.state.marked = false;
+        }
+    }
+    let mut layer_idx: i32 = move_bounds.len() as i32 - 2;
+    while layer_idx >= 0 {
+        let processing_base: usize = linear_data_layers[layer_idx as usize];
+        let processing_base_above: usize = linear_data_layers[layer_idx as usize + 1];
+        for processing_idx in 0..(processing_base_above - processing_base) {
+            let element_at = linear_data[processing_base + processing_idx].element;
+            let mut do_something = false;
+            let mut max_allowed_area: Polygons = Vec::new();
+            {
+                let element: &SupportElement = &move_bounds[element_at.0][element_at.1];
+                let layer_above: &SupportElements = &move_bounds[layer_idx as usize + 1];
+                for &parent_idx in &element.parents {
+                    let parent: &SupportElement = &layer_above[parent_idx as usize];
+                    let max_outer_line_increase: Coord = max_radius_change_per_layer;
+                    let mut result: Polygons = cu::offset(
+                        &linear_data[processing_base_above + parent_idx as usize].polygons,
+                        max_outer_line_increase as f32,
+                        crate::clipper::JoinType::jtMiter,
+                        1.2,
+                    );
+                    let direction: Point = element.state.result_on_layer - parent.state.result_on_layer;
+                    // move the polygons object
+                    for outer in result.iter_mut() {
+                        for p in outer.points.iter_mut() {
+                            *p = *p + direction;
+                        }
+                    }
+                    max_allowed_area.extend(result);
+                    do_something = do_something
+                        || parent.state.marked
+                        || support_element_collision_radius(config, parent) != support_element_radius(config, parent);
+                }
+            }
+            if do_something {
+                // Trim the current drawing areas with max_allowed_area.
+                let draw_area: &mut DrawArea = &mut linear_data[processing_base + processing_idx];
+                let result: Polygons = cu::intersection(&max_allowed_area, &draw_area.polygons, cu::ApplySafetyOffset::No);
+                if area(&result) < area(&draw_area.polygons) {
+                    // Mark parent as modified to propagate down.
+                    move_bounds[element_at.0][element_at.1].state.marked = true;
+                    draw_area.polygons = result;
+                }
+            }
+            throw_on_cancel();
+        }
+        layer_idx -= 1;
+    }
+}
+
+/// TreeSupport3D.cpp:3090-3116 `static void drop_non_gracious_areas(const TreeModelVolumes &volumes, const
+/// std::vector<DrawArea> &linear_data, std::vector<Polygons> &support_layer_storage, std::function<void()>
+/// throw_on_cancel)`
+///
+/// Drop down areas that do rest non-gracefully on the model to ensure the branch actually rests on something.
+/// `move_bounds` holds the elements the areas name.
+pub fn drop_non_gracious_areas(
+    volumes: &TreeModelVolumes,
+    move_bounds: &[SupportElements],
+    linear_data: &[DrawArea],
+    support_layer_storage: &mut [Polygons],
+    throw_on_cancel: ThrowOnCancel,
+) {
+    let mut dropped_down_areas: Vec<Vec<(LayerIndex, Polygons)>> = vec![Vec::new(); linear_data.len()];
+    for idx in 0..linear_data.len() {
+        // If a element has no child, it connects to whatever is below as no support further down for it will exist.
+        let draw_element: &DrawArea = &linear_data[idx];
+        let element: &SupportElement = &move_bounds[draw_element.element.0][draw_element.element.1];
+        if !element.state.to_model_gracious && draw_element.child_element.is_none() {
+            let mut rest_support: Polygons = Vec::new();
+            let layer_idx_first: LayerIndex = element.state.layer_idx - 1;
+            let mut layer_idx: LayerIndex = layer_idx_first;
+            // As the pin has it: the condition asks for the area of `rest_support` ahead of the first pass, when it
+            // is the area of nothing, so no pass is made and nothing is dropped down.
+            while area(&rest_support) > tiny_area_threshold() && layer_idx >= 0 {
+                rest_support = diff_clipped(
+                    if layer_idx == layer_idx_first { &draw_element.polygons } else { &rest_support },
+                    &volumes.get_collision(0, layer_idx, false),
+                );
+                dropped_down_areas[idx].push((layer_idx, rest_support.clone()));
+                layer_idx -= 1;
+            }
+        }
+        throw_on_cancel();
+    }
+
+    for areas in dropped_down_areas.iter_mut() {
+        for pair in areas.drain(..) {
+            support_layer_storage[pair.0 as usize].extend(pair.1);
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:3125-3273 `static void finalize_interface_and_support_areas(const PrintObject &print_object, const
+/// TreeModelVolumes &volumes, const TreeSupportSettings &config, const std::vector<Polygons> &overhangs,
+/// std::vector<Polygons> &support_layer_storage, std::vector<Polygons> &support_roof_storage,
+/// SupportGeneratorLayersPtr &bottom_contacts, SupportGeneratorLayersPtr &top_contacts, SupportGeneratorLayersPtr
+/// &intermediate_layers, SupportGeneratorLayerStorage &layer_storage, std::function<void()> throw_on_cancel)`
+///
+/// Generates Support Floor, ensures Support Roof can not cut of branches, and saves the branches as support to
+/// storage. The layers go through `tbb::parallel_for` in the pin; one thread takes them in their order, which
+/// is the order the layers are allocated in.
+#[allow(clippy::too_many_arguments)]
+pub fn finalize_interface_and_support_areas(
+    print_object: &pf::PrintObject,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    overhangs: &[Polygons],
+    support_layer_storage: &mut [Polygons],
+    support_roof_storage: &mut [Polygons],
+    bottom_contacts: &mut SupportGeneratorLayersPtr,
+    top_contacts: &mut SupportGeneratorLayersPtr,
+    intermediate_layers: &mut SupportGeneratorLayersPtr,
+    layer_storage: &mut SupportGeneratorLayerStorage,
+    throw_on_cancel: ThrowOnCancel,
+) {
+    let interface_pref: InterfacePreference = config.interface_preference; // InterfacePreference::SupportLinesOverwriteInterface;
+
+    // Iterate over the generated circles in parallel and clean them up. Also add support floor.
+    for layer_idx in 0..support_layer_storage.len() {
+        // Subtract support lines of the branches from the roof
+        let mut support_roof: usize = if layer_idx < top_contacts.len() { top_contacts[layer_idx] } else { SUPPORT_GENERATOR_LAYER_PTR_NULL };
+        let mut support_roof_polygons: Polygons = Vec::new();
+        if !support_roof_storage[layer_idx].is_empty() {
+            if support_roof != SUPPORT_GENERATOR_LAYER_PTR_NULL && !layer_storage[support_roof].polygons.is_empty() {
+                support_roof_polygons = cu::union_2(&support_roof_storage[layer_idx], &layer_storage[support_roof].polygons);
+                layer_storage[support_roof].polygons.clear();
+            } else {
+                support_roof_polygons = std::mem::take(&mut support_roof_storage[layer_idx]);
+            }
+        } else if support_roof != SUPPORT_GENERATOR_LAYER_PTR_NULL {
+            support_roof_polygons = std::mem::take(&mut layer_storage[support_roof].polygons);
+            layer_storage[support_roof].polygons.clear();
+        }
+        let mut base_layer_polygons: Polygons = std::mem::take(&mut support_layer_storage[layer_idx]);
+
+        if !base_layer_polygons.is_empty() {
+            // Most of the time in this function is this union call. Can take 300+ ms when a lot of areas are to be unioned.
+            base_layer_polygons = crate::mutable_polygon::smooth_outward_polygons(cu::union_(&base_layer_polygons), config.support_line_width); //FIXME was .smooth(50);
+            // simplify a bit, to ensure the output does not contain outrageous amounts of vertices. Should not be necessary, just a precaution.
+            // std::min(scaled<double>(0.03), double(config.resolution))
+            let resolution = config.resolution as f64;
+            let tolerance = if resolution < scaled_f64(0.03) { resolution } else { scaled_f64(0.03) };
+            base_layer_polygons = crate::support::tree_model_volumes::polygons_simplify_pin(&base_layer_polygons, tolerance);
+        }
+
+        if !support_roof_polygons.is_empty() && !base_layer_polygons.is_empty() {
+            match interface_pref {
+                InterfacePreference::InterfaceAreaOverwritesSupport => {
+                    base_layer_polygons = cu::diff(&base_layer_polygons, &support_roof_polygons, cu::ApplySafetyOffset::No);
+                }
+                InterfacePreference::SupportAreaOverwritesInterface => {
+                    support_roof_polygons = cu::diff(&support_roof_polygons, &base_layer_polygons, cu::ApplySafetyOffset::No);
+                }
+                // `assert(false); [[fallthrough]];` to the case that does nothing.
+                InterfacePreference::InterfaceLinesOverwriteSupport | InterfacePreference::SupportLinesOverwriteInterface => {
+                    debug_assert!(false);
+                }
+                InterfacePreference::Nothing => {}
+            }
+        }
+
+        // Subtract support floors from the support area and add them to the support floor instead.
+        if config.support_bottom_layers > 0 && !base_layer_polygons.is_empty() {
+            let layer_outset: Polygons = diff_clipped(
+                &if config.support_bottom_offset > 0 {
+                    cu::offset(&base_layer_polygons, config.support_bottom_offset as f32, crate::clipper::JoinType::jtMiter, 1.2)
+                } else {
+                    base_layer_polygons.clone()
+                },
+                &volumes.get_collision(0, layer_idx as LayerIndex, false),
+            );
+            let mut floor_layer: Polygons = Vec::new();
+            let mut layers_below: usize = 0;
+            while layers_below <= config.support_bottom_layers {
+                // one sample at 0 layers below, another at config.support_bottom_layers. In-between samples at config.performance_interface_skip_layers distance from each other.
+                let sample_layer: usize =
+                    std::cmp::max(0, (layer_idx as i32 - layers_below as i32) - config.z_distance_bottom_layers as i32) as usize;
+                //FIXME subtract the wipe tower
+                floor_layer.extend(cu::intersection(&layer_outset, &overhangs[sample_layer], cu::ApplySafetyOffset::No));
+                if layers_below < config.support_bottom_layers {
+                    layers_below = std::cmp::min(layers_below + 1, config.support_bottom_layers);
+                } else {
+                    break;
+                }
+            }
+            if !floor_layer.is_empty() {
+                if bottom_contacts[layer_idx] == SUPPORT_GENERATOR_LAYER_PTR_NULL {
+                    bottom_contacts[layer_idx] =
+                        layer_allocate(layer_storage, SupporLayerType::SltBottomContact, print_object.slicing_parameters(), config, layer_idx);
+                }
+                let support_bottom: usize = bottom_contacts[layer_idx];
+                layer_storage[support_bottom].polygons = cu::union_2(&floor_layer, &layer_storage[support_bottom].polygons);
+                // Subtract the support floor from the normal support.
+                base_layer_polygons = diff_clipped(
+                    &base_layer_polygons,
+                    &cu::offset(&layer_storage[support_bottom].polygons, (0.01 / SCALING_FACTOR) as f32, crate::clipper::JoinType::jtMiter, 1.2),
+                );
+            }
+        }
+
+        if !support_roof_polygons.is_empty() {
+            if support_roof == SUPPORT_GENERATOR_LAYER_PTR_NULL {
+                support_roof = layer_allocate(layer_storage, SupporLayerType::SltTopContact, print_object.slicing_parameters(), config, layer_idx);
+                top_contacts[layer_idx] = support_roof;
+            }
+            layer_storage[support_roof].polygons = cu::union_(&support_roof_polygons);
+        }
+        if !base_layer_polygons.is_empty() {
+            let base_layer: usize = layer_allocate(layer_storage, SupporLayerType::SltBase, print_object.slicing_parameters(), config, layer_idx);
+            intermediate_layers[layer_idx] = base_layer;
+            layer_storage[base_layer].polygons = cu::union_(&base_layer_polygons);
+        }
+
+        throw_on_cancel();
+    }
+}
+
+/// The areas of draw_areas() and their first indices by layer (TreeSupport3D.cpp:3296-3326, the block of
+/// draw_areas() that puts all SupportElements into a layer independent storage): `linear_data` and
+/// `linear_data_layers`. An element's child is the element of the layer below that names it as a parent whose
+/// point is set; the pin looks it up by the address of the element, only one link points to a node above from
+/// below.
+pub fn draw_areas_linear_data(move_bounds: &[SupportElements]) -> (Vec<DrawArea>, Vec<usize>) {
+    let mut linear_data: Vec<DrawArea> = Vec::new();
+    let mut linear_data_layers: Vec<usize> = Vec::new();
+    {
+        // By the index of the element of this layer: the element below.
+        let mut map_downwards_old: Vec<Option<usize>> = Vec::new();
+        for layer_idx in 0..move_bounds.len() {
+            let layer_above: Option<&SupportElements> = if layer_idx + 1 < move_bounds.len() { Some(&move_bounds[layer_idx + 1]) } else { None };
+            let mut map_downwards_new: Vec<Option<usize>> = vec![None; layer_above.map_or(0, |l| l.len())];
+            linear_data_layers.push(linear_data.len());
+            for (elem_idx, elem) in move_bounds[layer_idx].iter().enumerate() {
+                let mut child: Option<(usize, usize)> = None;
+                if layer_idx > 0 {
+                    if let Some(Some(child_idx)) = map_downwards_old.get(elem_idx) {
+                        child = Some((layer_idx - 1, *child_idx));
+                    }
+                }
+                for &parent_idx in &elem.parents {
+                    let parent: &SupportElement = &layer_above.expect("layer_above")[parent_idx as usize];
+                    if parent.state.result_on_layer_is_set() && map_downwards_new[parent_idx as usize].is_none() {
+                        map_downwards_new[parent_idx as usize] = Some(elem_idx);
+                    }
+                }
+                linear_data.push(DrawArea { element: (layer_idx, elem_idx), child_element: child, polygons: Vec::new() });
+            }
+            map_downwards_old = map_downwards_new;
+        }
+        linear_data_layers.push(linear_data.len());
+    }
+    (linear_data, linear_data_layers)
+}
+
+/// TreeSupport3D.cpp:3282-3436 `static void draw_areas(PrintObject &print_object, const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, const std::vector<Polygons> &overhangs, std::vector<SupportElements> &move_bounds,
+/// SupportGeneratorLayersPtr &bottom_contacts, SupportGeneratorLayersPtr &top_contacts, SupportGeneratorLayersPtr
+/// &intermediate_layers, SupportGeneratorLayerStorage &layer_storage, std::function<void()> throw_on_cancel)`
+///
+/// Draws circles around result_on_layer points of the influence areas and applies some post processing.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_areas(
+    print_object: &pf::PrintObject,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    overhangs: &[Polygons],
+    move_bounds: &mut [SupportElements],
+    bottom_contacts: &mut SupportGeneratorLayersPtr,
+    top_contacts: &mut SupportGeneratorLayersPtr,
+    intermediate_layers: &mut SupportGeneratorLayersPtr,
+    layer_storage: &mut SupportGeneratorLayerStorage,
+    throw_on_cancel: ThrowOnCancel,
+) {
+    let mut support_layer_storage: Vec<Polygons> = vec![Vec::new(); move_bounds.len()];
+    let mut support_roof_storage: Vec<Polygons> = vec![Vec::new(); move_bounds.len()];
+    // All SupportElements are put into a layer independent storage to improve parallelization.
+    let (mut linear_data, linear_data_layers) = draw_areas_linear_data(move_bounds);
+
+    throw_on_cancel();
+
+    // Generate the circles that will be the branches.
+    generate_branch_areas(volumes, config, move_bounds, &mut linear_data, throw_on_cancel);
+
+    // In some edgecases a branch may go though a hole, where the regular radius does not fit. This can result in an apparent jump in branch radius. As such this cases need to be caught and smoothed out.
+    smooth_branch_areas(config, move_bounds, &mut linear_data, &linear_data_layers, throw_on_cancel);
+
+    // drop down all trees that connect non gracefully with the model
+    drop_non_gracious_areas(volumes, move_bounds, &linear_data, &mut support_layer_storage, throw_on_cancel);
+
+    // Single threaded combining all support areas to the right layers.
+    {
+        let mut begin: usize = 0;
+        for layer_idx in 0..move_bounds.len() as LayerIndex {
+            let mut end: usize = begin;
+            while end != linear_data.len() && move_bounds[linear_data[end].element.0][linear_data[end].element.1].state.layer_idx == layer_idx {
+                end += 1;
+            }
+            for it in begin..end {
+                let state = &move_bounds[linear_data[it].element.0][linear_data[it].element.1].state;
+                let polygons = std::mem::take(&mut linear_data[it].polygons);
+                if state.missing_roof_layers > state.distance_to_top {
+                    support_roof_storage[layer_idx as usize].extend(polygons);
+                } else {
+                    support_layer_storage[layer_idx as usize].extend(polygons);
+                }
+            }
+            begin = end;
+        }
+    }
+
+    finalize_interface_and_support_areas(
+        print_object,
+        volumes,
+        config,
+        overhangs,
+        &mut support_layer_storage,
+        &mut support_roof_storage,
+        bottom_contacts,
+        top_contacts,
+        intermediate_layers,
+        layer_storage,
+        throw_on_cancel,
+    );
+}
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the meshes of the branches (circles_intersect() to discretize_polygon())
+// =============================================================================
+
+use crate::geometry::geometry::{eigen, Vec3d};
+use crate::normal_utils::{indexed_triangle_set, StlTriangleVertexIndices, Vec3f};
+
+/// TreeSupport3D.cpp:3434-3451 `static bool circles_intersect(const Vec3d &p1, const Vec3d &n1, const double r1, const
+/// Vec3d &p2, const Vec3d &n2, const double r2)`
+///
+/// Test whether two circles, each on its own plane in 3D intersect.
+/// Circles are considered intersecting, if the lowest point on one circle is below the other circle's plane.
+/// Assumption: The two planes are oriented the same way.
+pub fn circles_intersect(p1: &Vec3d, n1: &Vec3d, r1: f64, p2: &Vec3d, n2: &Vec3d, r2: f64) -> bool {
+    debug_assert!(eigen::dot3(n1, n2) >= 0.);
+
+    let z: Vec3d = eigen::cross3(n1, n2);
+    let dir1: Vec3d = eigen::cross3(&z, n1);
+    // p1 + dir1 * (r1 / dir1.norm())
+    let s1 = r1 / eigen::norm3(&dir1);
+    let lowest_point1 = Vec3d::new(p1.x + dir1.x * s1, p1.y + dir1.y * s1, p1.z + dir1.z * s1);
+    if eigen::dot3(n2, &lowest_point1) <= 0. {
+        return true;
+    }
+    let dir2: Vec3d = eigen::cross3(&z, n2);
+    let s2 = r2 / eigen::norm3(&dir2);
+    let lowest_point2 = Vec3d::new(p2.x + dir2.x * s2, p2.y + dir2.y * s2, p2.z + dir2.z * s2);
+    eigen::dot3(n1, &lowest_point2) <= 0.
+}
+
+/// TreeSupport3D.cpp:3453-3468 `template<bool flip_normals> void triangulate_fan(indexed_triangle_set &its, int ifan,
+/// int ibegin, int iend)`
+pub fn triangulate_fan(its: &mut indexed_triangle_set, flip_normals: bool, ifan: i32, ibegin: i32, iend: i32) {
+    // at least 3 vertices, increasing order.
+    debug_assert!(ibegin + 3 <= iend);
+    debug_assert!(ibegin >= 0 && iend as usize <= its.vertices.len());
+    debug_assert!(ifan >= 0 && (ifan as usize) < its.vertices.len());
+    let num_faces = iend - ibegin;
+    its.indices.reserve((num_faces * 3).max(0) as usize);
+    let mut v = ibegin;
+    let mut u = iend - 1;
+    while v < iend {
+        if flip_normals {
+            its.indices.push(StlTriangleVertexIndices::new(ifan, u, v));
+        } else {
+            its.indices.push(StlTriangleVertexIndices::new(ifan, v, u));
+        }
+        u = v;
+        v += 1;
+    }
+}
+
+// `(a - b).squaredNorm()` of two `Vec3f`: the difference, then the redux of its squares (a packet of the first
+// two, then the third added), as `eigen::squared_norm3` has it for doubles.
+#[inline]
+fn squared_norm_diff3f(a: &Vec3f, b: &Vec3f) -> f32 {
+    let (dx, dy, dz) = (a.x - b.x, a.y - b.y, a.z - b.z);
+    (dx * dx + dy * dy) + dz * dz
+}
+
+/// TreeSupport3D.cpp:3470-3533 `static void triangulate_strip(indexed_triangle_set &its, int ibegin1, int iend1, int
+/// ibegin2, int iend2)`
+pub fn triangulate_strip(its: &mut indexed_triangle_set, ibegin1: i32, iend1: i32, ibegin2: i32, iend2: i32) {
+    // at least 3 vertices, increasing order.
+    debug_assert!(ibegin1 + 3 <= iend1);
+    debug_assert!(ibegin1 >= 0 && iend1 as usize <= its.vertices.len());
+    debug_assert!(ibegin2 + 3 <= iend2);
+    debug_assert!(ibegin2 >= 0 && iend2 as usize <= its.vertices.len());
+    let mut n1 = iend1 - ibegin1;
+    let mut n2 = iend2 - ibegin2;
+    its.indices.reserve(((n1 + n2) * 3).max(0) as usize);
+
+    // For the first vertex of 1st strip, find the closest vertex on the 2nd strip.
+    let mut istart2 = ibegin2;
+    {
+        let p1: Vec3f = its.vertices[ibegin1 as usize];
+        let mut d2min = f32::MAX;
+        for i in ibegin2..iend2 {
+            let p2: &Vec3f = &its.vertices[i as usize];
+            let d2: f32 = squared_norm_diff3f(p2, &p1);
+            if d2 < d2min {
+                d2min = d2;
+                istart2 = i;
+            }
+        }
+    }
+
+    // Now triangulate the strip zig-zag fashion taking always the shortest connection if possible.
+    let mut u = ibegin1;
+    let mut v = istart2;
+    while n1 > 0 || n2 > 0 {
+        let take_first: bool;
+        let mut u2: i32 = 0;
+        let mut v2: i32 = 0;
+        let update_u2 = |u2: &mut i32| {
+            *u2 = u;
+            *u2 += 1;
+            if *u2 == iend1 {
+                *u2 = ibegin1;
+            }
+        };
+        let update_v2 = |v2: &mut i32| {
+            *v2 = v;
+            *v2 += 1;
+            if *v2 == iend2 {
+                *v2 = ibegin2;
+            }
+        };
+        if n1 == 0 {
+            take_first = false;
+            update_v2(&mut v2);
+        } else if n2 == 0 {
+            take_first = true;
+            update_u2(&mut u2);
+        } else {
+            update_u2(&mut u2);
+            update_v2(&mut v2);
+            let l1: f32 = squared_norm_diff3f(&its.vertices[u2 as usize], &its.vertices[v as usize]);
+            let l2: f32 = squared_norm_diff3f(&its.vertices[v2 as usize], &its.vertices[u as usize]);
+            take_first = l1 < l2;
+        }
+        if take_first {
+            its.indices.push(StlTriangleVertexIndices::new(u, u2, v));
+            n1 -= 1;
+            u = u2;
+        } else {
+            its.indices.push(StlTriangleVertexIndices::new(u, v2, v));
+            n2 -= 1;
+            v = v2;
+        }
+    }
+}
+
+/// `sin(x)` and `cos(x)` of one `float`, in the order (sin, cos), where the C++ takes both of one argument
+/// (discretize_circle(), TreeSupport3D.cpp:3555): clang for macOS turns the two calls into one call of
+/// `__sincosf_stret` (see `crate::clipper::sin_cos` for the doubles), which this calls itself on Apple targets.
+///
+/// FIDELITY-NOTE: on the other targets this is `x.sin()` and `x.cos()`; whether the Linux and Windows builds of
+/// the C++ get the same bits there has not been tested.
+#[inline]
+pub fn sin_cos_f32(x: f32) -> (f32, f32) {
+    #[cfg(target_vendor = "apple")]
+    {
+        #[repr(C)]
+        struct Float2 {
+            sinval: f32,
+            cosval: f32,
+        }
+        extern "C" {
+            fn __sincosf_stret(x: f32) -> Float2;
+        }
+        // SAFETY: `__sincosf_stret` of libSystem takes a float and returns the two floats by value.
+        let r = unsafe { __sincosf_stret(x) };
+        (r.sinval, r.cosval)
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    {
+        (x.sin(), x.cos())
+    }
+}
+
+// `a.cross(b)` of two `Vec3f` (OrthoMethods.h `cross_impl<..., 3>`: each difference one expression, its left
+// product contracted), as `eigen::cross3` has it for doubles.
+#[inline]
+fn cross3f(a: &Vec3f, b: &Vec3f) -> Vec3f {
+    Vec3f::new(a.y.mul_add(b.z, -(a.z * b.y)), a.z.mul_add(b.x, -(a.x * b.z)), a.x.mul_add(b.y, -(a.y * b.x)))
+}
+
+// `v.normalized()` of a `Vec3f` (Dot.h: `n / sqrt(z)` when the squared norm `z > 0`, else a copy), as
+// `eigen::normalized3` has it for doubles.
+#[inline]
+fn normalized3f(v: &Vec3f) -> Vec3f {
+    let z: f32 = (v.x * v.x + v.y * v.y) + v.z * v.z;
+    if z > 0. {
+        let s = z.sqrt();
+        Vec3f::new(v.x / s, v.y / s, v.z / s)
+    } else {
+        *v
+    }
+}
+
+/// TreeSupport3D.cpp:3536-3559 `static std::pair<int, int> discretize_circle(const Vec3f &center, const Vec3f &normal,
+/// const float radius, const float eps, std::vector<Vec3f> &pts)`
+///
+/// Discretize 3D circle, append to output vector, return ranges of indices of the points added.
+pub fn discretize_circle(center: &Vec3f, normal: &Vec3f, radius: f32, eps: f32, pts: &mut Vec<Vec3f>) -> (i32, i32) {
+    // Calculate discretization step and number of steps.
+    // `float angle_step = 2. * acos(1. - eps / radius);`: the quotient of the floats, the rest in doubles.
+    let mut angle_step: f32 = (2. * (1. - (eps / radius) as f64).acos()) as f32;
+    let nsteps: i32 = (2. * std::f64::consts::PI / angle_step as f64).ceil() as i32;
+    angle_step = (2. * std::f64::consts::PI / nsteps as f64) as f32;
+
+    // Prepare coordinate system for the circle plane.
+    let mut x: Vec3f = normalized3f(&cross3f(normal, &Vec3f::new(0., -1., 0.)));
+    let mut y: Vec3f = normalized3f(&cross3f(normal, &x));
+
+    // Discretize the circle.
+    let begin = pts.len() as i32;
+    pts.reserve(nsteps.max(0) as usize);
+    let mut angle: f32 = 0.;
+    x = Vec3f::new(x.x * radius, x.y * radius, x.z * radius);
+    y = Vec3f::new(y.x * radius, y.y * radius, y.z * radius);
+    for _ in 0..nsteps {
+        let (s, c) = sin_cos_f32(angle);
+        // center + x * cos(angle) + y * sin(angle)
+        pts.push(Vec3f::new((center.x + x.x * c) + y.x * s, (center.y + x.y * c) + y.y * s, (center.z + x.z * c) + y.z * s));
+        angle += angle_step;
+    }
+    (begin, pts.len() as i32)
+}
+
+/// TreeSupport3D.cpp:3562-3575 `static std::pair<int, int> discretize_polygon(const Vec3f& center, const Polygons& polys,
+/// std::vector<Vec3f>& pts)`
+///
+/// Discretize polygon, append to output vector, return ranges of indices of the points added.
+pub fn discretize_polygon(center: &Vec3f, polys: &[Polygon], pts: &mut Vec<Vec3f>) -> (i32, i32) {
+    let poly: &Polygon = &polys[0];
+    let nsteps: usize = poly.points.len();
+    // Discretize the circle.
+    let begin = pts.len() as i32;
+    pts.reserve(nsteps);
+    for i in 0..nsteps {
+        // `Vec3f pt(poly.points[i].x(), poly.points[i].y(), center.z());`
+        pts.push(Vec3f::new(poly.points[i].x as f32, poly.points[i].y as f32, center.z));
+    }
+    (begin, pts.len() as i32)
 }

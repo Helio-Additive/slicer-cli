@@ -242,6 +242,13 @@ fn polygons_simplify(source_polygons: &[Polygon], tolerance: Coord) -> Vec<Polyg
     if !tmv_clipper() {
         return crate::geometry::polygons_simplify(source_polygons, tolerance as CoordF);
     }
+    polygons_simplify_pin(source_polygons, tolerance as f64)
+}
+
+/// Polygon.cpp:658-677 `Polygons polygons_simplify(const Polygons &source_polygons, double tolerance)`, as the pin
+/// has it (the arm of the gate above that is on), with the tolerance a double as in the C++. Used by
+/// `tree_support_3d.rs` as well.
+pub(crate) fn polygons_simplify_pin(source_polygons: &[Polygon], tolerance: f64) -> Vec<Polygon> {
     let mut out: Vec<Polygon> = Vec::with_capacity(source_polygons.len());
     for source_polygon in source_polygons {
         // Run Douglas / Peucker simplification algorithm on an open polyline (by repeating the first point at the end of the polyline),
@@ -251,7 +258,7 @@ fn polygons_simplify(source_polygons: &[Polygon], tolerance: Coord) -> Vec<Polyg
         if let Some(front) = source_polygon.points.first() {
             polyline.push(*front);
         }
-        let mut simplified = crate::multi_point::douglas_peucker(&polyline, tolerance as f64);
+        let mut simplified = crate::multi_point::douglas_peucker(&polyline, tolerance);
         // then remove the last (repeated) point.
         simplified.pop();
         // Simplify the decimated contour by ClipperLib.
@@ -959,7 +966,8 @@ impl TreeModelVolumes {
 
         // TreeModelVolumes.cpp:139-144
         this.m_support_rests_on_model = false;
-        this.m_min_resolution = Coord::MAX;
+        // std::numeric_limits<coord_t>::max(): `coord_t` is the pin's int32_t (libslic3r.h:40).
+        this.m_min_resolution = i32::MAX as Coord;
         for data_pair in &this.m_layer_outlines {
             this.m_support_rests_on_model |= !data_pair.0.support_material_buildplate_only;
             this.m_min_resolution = std::cmp::min(this.m_min_resolution, data_pair.0.resolution);

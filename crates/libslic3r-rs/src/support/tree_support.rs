@@ -70,13 +70,15 @@ fn union_ex_polygons(subject: &[Polygon]) -> ExPolygons {
 }
 
 // ClipperUtils.hpp `ExPolygons diff_ex(const ExPolygons &subject, const ExPolygons &clip)`
+// (`crate::clipper_utils::difference_clib` hands the subject back untouched where the clip is empty; the pin's
+// `diff_ex` runs Clipper there too, which unites the subject and starts every contour at Clipper's vertex.)
 fn diff_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
-    crate::clipper_utils::difference_clib(subject, clip)
+    cx::diff_ex(subject, clip)
 }
 
 // ClipperUtils.hpp `ExPolygons diff_ex(const ExPolygons &subject, const Polygons &clip)`
 fn diff_ex_polygons(subject: &[ExPolygon], clip: &[Polygon]) -> ExPolygons {
-    crate::clipper_utils::difference_clib(subject, &crate::clipper_utils::polygons_as_paths(clip))
+    cx::diff_ex_polygons(subject, clip)
 }
 
 // ClipperUtils.hpp `ExPolygons intersection_ex(const ExPolygons &subject, const ExPolygons &clip)`
@@ -1934,8 +1936,6 @@ impl TreeSupportData {
     ///
     /// FIDELITY-NOTE: `get_bed_shape_with_excluded_area(object.print()->config())` (PrintConfig.cpp:11529)
     /// has no port in the crate; the caller hands over its result as `bed_shape_with_excluded_area`.
-    /// `LayerRegion::adaptive_merge_patches` is not a member of the crate's LayerRegion, so the merged band
-    /// footprints of lines 6741-6749 (multi-diameter adaptive layers) are not added to the outlines.
     pub fn new(
         object: &PrintObject,
         print: &Print,
@@ -1968,7 +1968,7 @@ impl TreeSupportData {
             hole.reverse();
             let machine_outline =
                 ExPolygon::with_holes(offset_polygon(&m_machine_border.contour, scale_(1000.0) as f32)[0].clone(), vec![hole]);
-            machine_border = machine_outline.split_expoly_with_holes(scale_(1.0) as Coord, &vec![m_machine_border.clone()]);
+            machine_border = expolygon_split_expoly_with_holes(&machine_outline, scale_(1.0) as Coord, &vec![m_machine_border.clone()]);
         }
 
         // 6731-6762
@@ -1979,6 +1979,22 @@ impl TreeSupportData {
             let mut outline: ExPolygons = Vec::with_capacity(layer.lslices.len());
             for poly in &layer.lslices {
                 append(&mut outline, crate::clipper2_utils::union_ex_2(&expolygon_simplify_p(poly, scale_(this.m_radius_sample_resolution))));
+            }
+            // BBS multi-diameter: a merged band extrudes its retained footprint over the whole band, down to the
+            // band bottom, where lslices may not contain it at all (a bridge underside sitting high in the band).
+            // Overhang detection already places such an overhang at the band bottom, so the collision has to
+            // know that material occupies the swallowed layers as well. suppressed_area() claims no Z.
+            let mut has_patch_area = false;
+            for layerm in layer.regions() {
+                for patch in &layerm.adaptive_merge_patches {
+                    for poly in patch.area() {
+                        append(&mut outline, crate::clipper2_utils::union_ex_2(&expolygon_simplify_p(poly, scale_(this.m_radius_sample_resolution))));
+                        has_patch_area = true;
+                    }
+                }
+            }
+            if has_patch_area {
+                outline = union_ex(&outline);
             }
             append(&mut outline, machine_border.clone());
 
@@ -2469,7 +2485,7 @@ impl<'a> TreeSupport<'a> {
     /// TreeSupport.cpp:650-712 `void TreeSupport::init_top_z_by_nozzle()`
     ///
     /// FIDELITY-NOTE: the tbb::parallel_for over the layers runs in order (every iteration writes its own
-    /// element). `layerm->adaptive_merge_patches` (675-676) is not a member of the crate's LayerRegion.
+    /// element).
     pub fn init_top_z_by_nozzle(&mut self) {
         self.m_top_z_outlines.clear();
         self.m_top_z_max = self.top_z_distance;
@@ -2498,14 +2514,19 @@ impl<'a> TreeSupport<'a> {
         self.m_top_z_outlines.resize(layer_count, Vec::new());
         for layer_nr in 0..layer_count {
             let mut buckets: Vec<(f32, ExPolygons)> = Vec::new();
-            // Same footprint as TreeSupportData::m_layer_outlines: the region slices. Union before simplifying, so
+            // Same footprint as TreeSupportData::m_layer_outlines: the region slices plus the merged band
+            // material that sits on this layer without being part of its slices. Union before simplifying, so
             // neighbouring surfaces of one region cannot open cracks between them.
             for layerm in self.m_object.get_layer(layer_nr as i32).regions() {
-                let region_area: ExPolygons = crate::surface::to_expolygons(&layerm.get_slices().surfaces);
+                let mut region_area: ExPolygons = crate::surface::to_expolygons(&layerm.get_slices().surfaces);
+                for patch in &layerm.adaptive_merge_patches {
+                    append(&mut region_area, patch.area().clone());
+                }
                 if region_area.is_empty() {
                     continue;
                 }
-                let gap = region_gap(layerm.region().config().wall_filament as u32, layerm.region().config().solid_infill_filament as u32);
+                let region_config = layer_region_config(self.m_object, layerm);
+                let gap = region_gap(region_config.wall_filament as u32, region_config.solid_infill_filament as u32);
                 // bucket_of(gap)
                 let pos = match buckets.iter().position(|bucket| ((bucket.0 - gap).abs() as f64) < EPSILON) {
                     Some(pos) => pos,
@@ -2676,6 +2697,61 @@ pub fn polygon_centroid(poly: &Polygon) -> Point {
         }
     }
     point_from_f64(c.0 / (3.0 * area_sum), c.1 / (3.0 * area_sum))
+}
+
+/// ExPolygon.cpp:382-413 `ExPolygons ExPolygon::split_expoly_with_holes(coord_t gap_width, const ExPolygons&
+/// collision) const`
+///
+/// The crate's `ExPolygon::split_expoly_with_holes` (ex_polygon.rs) takes the centre of the hole from
+/// `Polygon::centroid` of `geometry`, which truncates where `Point(Vec2d)` of the pin rounds (Point.hpp:181) and
+/// does not fuse `cross2`: the cuts of a hole whose centroid is not on the grid come out one unit off. This one
+/// takes `polygon_centroid`; the rest is the same.
+fn expolygon_split_expoly_with_holes(expoly: &ExPolygon, gap_width: Coord, collision: &ExPolygons) -> ExPolygons {
+    use crate::clipper_utils::intersection;
+    use crate::ex_polygon::overlaps_expolys;
+    let mut sub_overhangs: ExPolygons = Vec::new();
+    let mut max_hole = Polygon::new();
+    let mut max_area: CoordF = 0.;
+    let mut is_collided = false;
+    for hole in &expoly.holes {
+        if !is_collided && overlaps_expolys(&[ExPolygon::new(hole.clone())], collision) {
+            max_area = hole.signed_area().abs();
+            max_hole = hole.clone();
+            is_collided = true;
+        } else if is_collided && overlaps_expolys(&[ExPolygon::new(hole.clone())], collision) && hole.signed_area().abs() > max_area {
+            max_area = hole.signed_area().abs();
+            max_hole = hole.clone();
+        } else if !is_collided && !overlaps_expolys(&[ExPolygon::new(hole.clone())], collision) && hole.signed_area().abs() > max_area {
+            max_area = hole.signed_area().abs();
+            max_hole = hole.clone();
+        }
+    }
+    if !max_hole.points.is_empty() {
+        // `get_extents(*this)`: the bounding box of the contour
+        let overhang_bbx = expoly.contour.bounding_box();
+        let cent = polygon_centroid(&max_hole);
+        // `ExPolygon(BoundingBox(min, max).polygon())`
+        let bbox_expoly = |min: Point, max: Point| -> ExPolygon {
+            ExPolygon::new(Polygon::from_points(vec![Point::new(min.x, min.y), Point::new(max.x, min.y), Point::new(max.x, max.y), Point::new(min.x, max.y)]))
+        };
+        sub_overhangs.extend(intersection(
+            &[bbox_expoly(overhang_bbx.min, Point::new(cent.x - gap_width, cent.y - gap_width))],
+            std::slice::from_ref(expoly),
+        ));
+        sub_overhangs.extend(intersection(
+            &[bbox_expoly(Point::new(cent.x + gap_width, cent.y + gap_width), overhang_bbx.max)],
+            std::slice::from_ref(expoly),
+        ));
+        sub_overhangs.extend(intersection(
+            &[bbox_expoly(Point::new(overhang_bbx.min.x, cent.y + gap_width), Point::new(cent.x - gap_width, overhang_bbx.max.y))],
+            std::slice::from_ref(expoly),
+        ));
+        sub_overhangs.extend(intersection(
+            &[bbox_expoly(Point::new(cent.x + gap_width, overhang_bbx.min.y), Point::new(overhang_bbx.max.x, cent.y - gap_width))],
+            std::slice::from_ref(expoly),
+        ));
+    }
+    sub_overhangs
 }
 
 // Point.hpp:226-231 `void Point::rotate(double cos_a, double sin_a)`
@@ -3832,7 +3908,7 @@ impl<'a> TreeSupport<'a> {
                     let mut overhangs_normal_split: ExPolygons = Vec::new();
                     let collision_layer = self.get_collision(0.0, layer_nr);
                     for overhang in &overhangs_normal {
-                        let sub_overhangs = overhang.split_expoly_with_holes(gap_width, &collision_layer);
+                        let sub_overhangs = expolygon_split_expoly_with_holes(overhang, gap_width, &collision_layer);
                         if !sub_overhangs.is_empty() {
                             for sub in sub_overhangs {
                                 overhangs_normal_split.push(sub);
@@ -7727,11 +7803,11 @@ fn extrusion_entities_collect_polylines(entities: &[ExtrusionEntityType], dst: &
 /// `PolysType = ExPolygons`, as detect_overhangs() calls it. The crate has no port of it over the faithful
 /// PrintObject, so it is here; `thick_bridges` is `current_layer->object()->config().thick_bridges`.
 ///
-/// FIDELITY-NOTE: the loop over the regions of the layer is ported over the crate's `LayerRegion` and is not
-/// compared with the pin (the vectors' layers have no regions). `layerm->bridging_flow()` of the crate needs the
-/// configuration the slicing pipeline stamps on a region; a region without it is an `Err`.
+/// `print` and `object` are `current_layer->object()` and its print, which `layerm->bridging_flow()` reads.
 #[allow(clippy::too_many_arguments)]
 pub fn print_object_remove_bridges_from_contacts(
+    print: &Print,
+    object: &PrintObject,
     lower_layer: &Layer,
     current_layer: &Layer,
     extrusion_width: f32,
@@ -7770,7 +7846,7 @@ pub fn print_object_remove_bridges_from_contacts(
         // since we're dealing with bridges, we can't assume width is larger than spacing,
         // so we take the largest value and also apply safety offset to be ensure no gaps
         // are left in between
-        let bridge_flow = layerm.bridging_flow(crate::flow::FlowRole::Perimeter, thick_bridges, current_layer.height)?;
+        let bridge_flow = layer_region_bridging_flow(print, object, current_layer, layerm, crate::flow::FlowRole::Perimeter, thick_bridges)?;
         let w: f32 = bridge_flow.scaled_width().max(bridge_flow.scaled_spacing()) as f32;
         for polyline in overhang_perimeters.iter_mut() {
             if polyline.is_straight() {
@@ -8613,6 +8689,8 @@ impl<'a> TreeSupport<'a> {
                     let mut loverhangs = std::mem::take(&mut self.m_object.m_layers[layer_nr].loverhangs);
                     let mut loverhangs_with_type = std::mem::take(&mut self.m_object.m_layers[layer_nr].loverhangs_with_type);
                     let res = print_object_remove_bridges_from_contacts(
+                        self.m_print,
+                        self.m_object,
                         &self.m_object.m_layers[lower_layer_nr],
                         &self.m_object.m_layers[layer_nr],
                         extrusion_width_scaled as f32,
@@ -8728,7 +8806,7 @@ impl<'a> TreeSupport<'a> {
                 let object_layer = &layers[i];
                 let mut some_region_overlaps = false;
                 for region in object_layer.regions() {
-                    let bridging_height: CoordF = region.region().bridging_height_avg(&nozzle_diameters);
+                    let bridging_height: CoordF = layer_region_config(object, region).bridging_height_avg(&nozzle_diameters);
                     if object_layer.print_z - bridging_height > support_layer.layer.print_z + gap_extra_above - EPSILON {
                         break;
                     }
@@ -10481,6 +10559,131 @@ impl<'a> TreeSupport<'a> {
 // TreeSupport::generate (TreeSupport.cpp:3534-3700)
 // ============================================================================
 
+/// PrintRegion.cpp:21-48 `Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_height, bool
+/// first_layer) const`, of a region of the object of `crate::print::faithful`.
+fn print_region_flow(
+    print: &Print,
+    object: &PrintObject,
+    region: &crate::print::faithful::PrintRegion,
+    role: crate::flow::FlowRole,
+    layer_height: f64,
+    first_layer: bool,
+) -> crate::Result<Flow> {
+    use crate::flow::FlowRole;
+    use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+    let print_config = print.config();
+    let m_config = region.config();
+    // Get extrusion width from configuration.
+    // (an absolute value authored for the process preset, or zero for auto)
+    // The infill of the initial layer has its own line width, which takes over the responsibility of
+    // "initial_layer_line_width" for the infill roles only. Zero means to keep following "initial_layer_line_width".
+    let infill_role = role == FlowRole::Infill || role == FlowRole::SolidInfill || role == FlowRole::TopSolidInfill;
+    let mut config_width: f64 = if first_layer && infill_role && cfg_float(print_config, "initial_layer_infill_line_width") > 0. {
+        cfg_float(print_config, "initial_layer_infill_line_width")
+    } else if first_layer && cfg_float(print_config, "initial_layer_line_width") > 0. {
+        cfg_float(print_config, "initial_layer_line_width")
+    } else if role == FlowRole::ExternalPerimeter {
+        cfg_float(m_config, "outer_wall_line_width")
+    } else if role == FlowRole::Perimeter {
+        cfg_float(m_config, "inner_wall_line_width")
+    } else if role == FlowRole::Infill {
+        cfg_float(m_config, "sparse_infill_line_width")
+    } else if role == FlowRole::SolidInfill {
+        cfg_float(m_config, "internal_solid_infill_line_width")
+    } else if role == FlowRole::TopSolidInfill {
+        cfg_float(m_config, "top_surface_line_width")
+    } else {
+        // throw Slic3r::InvalidArgument("Unknown role");
+        return Err(crate::Error::Config("Unknown role".to_string()));
+    };
+
+    if config_width == 0. {
+        config_width = cfg_float(object.config(), "line_width");
+    }
+
+    // Get the configured nozzle_diameter for the extruder that this role's filament is grouped to.
+    let nozzle_diameter = crate::print::faithful::nozzle_diameter_for_filament(print_config, region.extruder(role));
+    crate::support::support_parameters::flow_new_from_config_width(
+        role,
+        &ConfigOptionFloat::with_value(config_width),
+        primary_nozzle_diameter(print.full_print_config()) as f32,
+        nozzle_diameter,
+        layer_height as f32,
+        multi_nozzle_diameter_mode_enabled(print.full_print_config()),
+    )
+    .map_err(|e| crate::Error::Config(e.to_string()))
+}
+
+/// LayerRegion.cpp:32-47 `Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge) const` (with
+/// LayerRegion.cpp:22-30 `Flow LayerRegion::flow(FlowRole role) const`), of the region `layerm` of `layer`.
+fn layer_region_bridging_flow(
+    print: &Print,
+    object: &PrintObject,
+    layer: &Layer,
+    layerm: &crate::layer::LayerRegion,
+    role: crate::flow::FlowRole,
+    thick_bridge: bool,
+) -> crate::Result<Flow> {
+    let region = object.printing_region(layerm.region_id());
+    let region = region.borrow();
+    let region_config = region.config();
+    if thick_bridge {
+        // The old Slic3r way (different from all other slicers): Use rounded extrusions.
+        // Get the configured nozzle_diameter for the extruder that this role's filament is grouped to.
+        let nozzle_diameter: f32 = crate::print::faithful::nozzle_diameter_for_filament(print.config(), region.extruder(role));
+        // Applies default bridge spacing.
+        // `Flow::bridging_flow(float(sqrt(region_config.bridge_flow)) * nozzle_diameter, nozzle_diameter)`
+        Ok(Flow::bridging_flow(((cfg_float(region_config, "bridge_flow").sqrt() as f32) * nozzle_diameter) as f64, nozzle_diameter as f64))
+    } else {
+        // The same way as other slicers: Use normal extrusions. Apply bridge_flow while maintaining the original spacing.
+        print_region_flow(print, object, &region, role, layer.height, layer.id() == 0)?
+            .with_flow_ratio(cfg_float(region_config, "bridge_flow"))
+            .map_err(|e| crate::Error::Config(e.to_string()))
+    }
+}
+
+/// What the tree support reads of `layerm->region().config()`, the PrintRegionConfig of a LayerRegion.
+struct LayerRegionConfig {
+    wall_filament: i32,
+    sparse_infill_filament: i32,
+    solid_infill_filament: i32,
+    bridge_flow: f64,
+}
+
+/// `layerm->region()` (Layer.hpp:125 `const PrintRegion &region() const`): the PrintRegion of a LayerRegion of the
+/// object, which the object of `crate::print::faithful` keeps in `m_shared_regions->all_regions` under the index
+/// the LayerRegion carries (PrintObjectSlice.cpp:2126 `layer->add_region(&print_region)` over `all_regions`).
+fn layer_region_config(object: &PrintObject, layerm: &crate::layer::LayerRegion) -> LayerRegionConfig {
+    let shared = object.m_shared_regions.as_ref().expect("PrintObject::m_shared_regions").borrow();
+    let region = shared.all_regions[layerm.region_id()].borrow();
+    let config = region.config();
+    LayerRegionConfig {
+        wall_filament: cfg_int(config, "wall_filament"),
+        sparse_infill_filament: cfg_int(config, "sparse_infill_filament"),
+        solid_infill_filament: cfg_int(config, "solid_infill_filament"),
+        bridge_flow: cfg_float(config, "bridge_flow"),
+    }
+}
+
+impl LayerRegionConfig {
+    /// PrintRegion.cpp:62-72 `coordf_t PrintRegion::nozzle_dmr_avg(const PrintConfig &print_config) const` and
+    /// `coordf_t PrintRegion::bridging_height_avg(const PrintConfig &print_config) const`
+    fn bridging_height_avg(&self, nozzle_diameters: &[f64]) -> CoordF {
+        // `ConfigOptionVector::get_at(i)`: the first value where the index is past the end
+        let get_at = |i: i32| -> f64 {
+            if nozzle_diameters.is_empty() {
+                0.
+            } else if i >= 0 && (i as usize) < nozzle_diameters.len() {
+                nozzle_diameters[i as usize]
+            } else {
+                nozzle_diameters[0]
+            }
+        };
+        let nozzle_dmr_avg = (get_at(self.wall_filament - 1) + get_at(self.sparse_infill_filament - 1) + get_at(self.solid_infill_filament - 1)) / 3.;
+        nozzle_dmr_avg * self.bridge_flow.sqrt()
+    }
+}
+
 /// `generate_tree_support_3D(PrintObject &print_object, TreeSupport *tree_support, std::function<void()>
 /// throw_on_cancel)` (Support/TreeSupport3D.cpp), which TreeSupport::generate() hands the organic style to.
 pub trait TreeSupport3DGenerator {
@@ -10490,7 +10693,7 @@ pub trait TreeSupport3DGenerator {
 impl<'a> TreeSupport<'a> {
     /// `make_support_merge_plan(*m_object)` (SupportMergePlan.cpp:254-403): what the function reads of the object
     /// and of its print, handed to the crate's `make_support_merge_plan` (see `SupportMergePlanObject`).
-    fn make_support_merge_plan_of_object(&self) -> SupportMergePlan {
+    pub fn make_support_merge_plan_of_object(&self) -> SupportMergePlan {
         use crate::support_merge_plan::{make_support_merge_plan, SupportMergePlanLayer, SupportMergePlanObject, SupportMergePlanRegion};
         let print = self.m_print;
         let print_config = print.config();
@@ -10512,20 +10715,26 @@ impl<'a> TreeSupport<'a> {
                             // `if (layerm->slices.empty()) continue;`: nothing else of the region is read
                             return SupportMergePlanRegion { slices_empty, ..Default::default() };
                         }
-                        let region_config = layerm.region().config();
+                        let region_config = layer_region_config(self.m_object, layerm);
+                        // `LayerTools::filament_slot_by_role(*fill, region_config)` (ToolOrdering.cpp:176-217) reads the
+                        // three filaments of the region
+                        let mut slot_config = crate::region_config::PrintRegionConfig::default();
+                        slot_config.wall_filament = region_config.wall_filament as usize;
+                        slot_config.sparse_infill_filament = region_config.sparse_infill_filament as usize;
+                        slot_config.solid_infill_filament = region_config.solid_infill_filament as usize;
                         SupportMergePlanRegion {
                             slices_empty,
                             perimeters_empty: layerm.perimeters.is_empty(),
-                            wall_filament: region_config.wall_filament as i32,
-                            sparse_infill_filament: region_config.sparse_infill_filament as i32,
-                            solid_infill_filament: region_config.solid_infill_filament as i32,
+                            wall_filament: region_config.wall_filament,
+                            sparse_infill_filament: region_config.sparse_infill_filament,
+                            solid_infill_filament: region_config.solid_infill_filament,
                             fill_filament_slots: layerm
                                 .fills
                                 .entities
                                 .iter()
                                 .filter_map(|ee| match ee {
                                     ExtrusionEntityType::Collection(fill) if !fill.is_empty() => {
-                                        Some(crate::gcode::tool_ordering::LayerTools::filament_slot_by_role(fill, region_config) as i32)
+                                        Some(crate::gcode::tool_ordering::LayerTools::filament_slot_by_role(fill, &slot_config) as i32)
                                     }
                                     _ => None,
                                 })
