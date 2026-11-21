@@ -592,7 +592,10 @@ PY
     FLOW_PROCESS="$SCRIPT_DIR/../references/SnapmakerOrca/resources/profiles/Snapmaker/process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json"
     if [ -f "$FLOW_PROCESS" ]; then
         set +e
-        "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$FLOW_DIR/machine.json;$FLOW_PROCESS" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
+        # Git Bash on Windows rewrites a lone POSIX path argument but leaves
+        # the paths inside a ';' list alone, so the list gets Windows paths.
+        native() { if command -v cygpath > /dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+        "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$(native "$FLOW_DIR/machine.json");$(native "$FLOW_PROCESS")" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
         set -e
         LOAD_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/d/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
         if [ "$LOAD_EXIT" -eq 0 ] && [ "$LOAD_HEADER" = "high_flow,standard,standard,standard" ]; then
