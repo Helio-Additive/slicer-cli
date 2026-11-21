@@ -29,6 +29,7 @@ cd "$WORKDIR"
 
 A1M="Bambu Lab A1 mini 0.4 nozzle"
 X1C="Bambu Lab X1 Carbon 0.4 nozzle"
+H2D="Bambu Lab H2D 0.4 nozzle"
 RESULTS=()
 # report NAME ENGINE STATUS TEXT
 report() { local line="$3: $1 [$2] $4"; echo "$line"; RESULTS+=("$line"); }
@@ -44,22 +45,38 @@ bin_of() { [ "$1" = orca ] && echo "$O" || echo "$B"; }
 
 # ---------------------------------------------------------------- fixtures
 python3 - <<'PY'
-import json, struct
+import json, math, struct
 
-def box(path, s, h):
-    v = [(x, y, z) for z in (0, h) for y in (0, s) for x in (0, s)]
+def box(path, width, h, depth=None, degrees=0):
+    if depth is None:
+        depth = width
+    angle = math.radians(degrees)
+    c, s = math.cos(angle), math.sin(angle)
+    v = [(x*c - y*s, x*s + y*c, z) for z in (0, h) for y in (0, depth) for x in (0, width)]
     f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
     with open(path, "w") as o:
         o.write("solid t\n")
         for a, b, c in f:
             o.write("facet normal 0 0 0\nouter loop\n")
-            for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+            for i in (a, b, c): o.write("vertex %.9g %.9g %.9g\n" % v[i])
             o.write("endloop\nendfacet\n")
         o.write("endsolid t\n")
 
 box("cube.stl", 20, 20)
 box("big.stl", 300, 10)          # larger than the A1 mini bed in both directions
 box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
+box("bar.stl", 220, 10, 20)      # fits the 180 mm square bed at 41 degrees
+box("tall-bar.stl", 220, 200, 20) # the same footprint also needs 200 mm height
+box("wide-bar.stl", 400, 10, 20)  # fits the H2D's 350 x 320 mm bed only turned
+box("wider-bar.stl", 430, 10, 20) # turned it fits the H2D bed, not the area both nozzles reach
+box("skew-bar.stl", 179.99, 1, 100, degrees=0.04) # a whole-degree turn is too coarse
+# Same bounds as the A1 mini, but a 220 mm part cannot fit a 180 mm circle.
+with open("round-bed.json", "w") as out:
+    json.dump({"printable_area": [
+        f"{90 + 90 * math.cos(i * math.tau / 32):.6f}x{90 + 90 * math.sin(i * math.tau / 32):.6f}"
+        for i in range(32)
+    ]}, out)
+box("tall.stl", 20, 200)         # too tall for the A1 mini as it stands
 open("empty.stl", "w").write("solid t\nendsolid t\n")
 open("zero.stl", "wb").write(b"\0" * 80 + struct.pack("<I", 0))
 open("garbage.json", "w").write("not json at all")
@@ -73,6 +90,8 @@ lst("emptylist.json", {"path": "cube.stl", "count": 1, "filaments": [1]})
 lst("nofil.json", {"path": "cube.stl", "count": 1, "filaments": []})
 lst("readfail.json", {"path": "empty.stl", "count": 1, "filaments": [1]})
 lst("junkobj.json", {"path": "junk.obj", "count": 1, "filaments": [1]})
+# The 220 mm bar kept at the list's own position: it crosses the bed edge.
+lst("barlist.json", {"path": "bar.stl", "count": 1, "filaments": [1], "pos_x": [90], "pos_y": [90]})
 # Two 200 mm cubes on one plate of the 180 mm A1 mini bed: each fits alone,
 # the two do not fit together.
 json.dump({"plates": [{"plate_name": "p", "need_arrange": True,
@@ -283,8 +302,156 @@ both load-filament-ids        "*give --load-filaments with at least 3 file(s)*" 
      cube.stl --slice 1 --load-filament-ids 3
 both clone-objects-max        "*copies or fewer*" \
      cube.stl --slice 1 --clone-objects 9999
-both object-larger-than-bed   "*Scale the object down, split it across plates, or use a bigger printer.*" \
+OVERSIZED="Scale the object down, split it across plates, or use a bigger printer."
+both object-larger-than-bed   "*$OVERSIZED Try another way up to keep its size." \
      big.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+both object-too-tall          "*$OVERSIZED It is too tall for this bed. Try another way up to keep its size." \
+     tall.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+both object-tall-no-turn      "*Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed." \
+     tall-bar.stl --slice 1 --printer-preset "$A1M"
+TURN_ADVICE="*fits at full size rotated 41 degrees about Z. Use --rotate 41, or give --arrange 1 --allow-rotations.*"
+both object-turn-plain        "$TURN_ADVICE" bar.stl --slice 1 --printer-preset "$A1M"
+# OrcaSlicer's arrange squares a part to its own axes first
+# (update_selected_items_axis_align), so --rotate 41 with --arrange 1 does not
+# fit there: only the arrange with rotations is offered.
+check object-turn-arrange bambu "$TURN_ADVICE" bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+check object-turn-arrange orca "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+     bar.stl --slice 1 --arrange 1 --printer-preset "$A1M"
+both object-round-bed         "*$OVERSIZED Try another way up to keep its size." \
+     bar.stl --slice 1 --arrange 1 --printer-preset "$A1M" --machine round-bed.json
+for e in bambu orca; do
+    bin=$(bin_of "$e")
+    run "c-object-turn-slices-$e" "$bin" bar.stl --slice 1 --arrange 1 --allow-rotations \
+        --printer-preset "$A1M" --outputdir "c-object-turn-slices-$e/out"
+    code=$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1]))["return_code"])
+except Exception: print("none")' "c-object-turn-slices-$e/out/result.json" 2>/dev/null)
+    if [ "$code" = 0 ] && [ -s "c-object-turn-slices-$e/out/plate_1.gcode" ]; then
+        report object-turn-slices "$e" PASS "the full-size bar arranged and sliced"
+    else
+        report object-turn-slices "$e" FAIL "full-size turn did not slice; $(why "c-object-turn-slices-$e")"
+    fi
+done
+for e in bambu orca; do
+    bin=$(bin_of "$e")
+    refusal="c-object-fractional-turn-$e"
+    run "$refusal" "$bin" skew-bar.stl --slice 1 --printer-preset "$A1M" --outputdir "$refusal/out"
+    angle=$(python3 - "$refusal/out/result.json" <<'PYANGLE'
+import json, re, sys
+with open(sys.argv[1]) as f:
+    detail = json.load(f)["error_string"]
+match = re.search(r"Use --rotate ([0-9]+(?:[.][0-9]+)?)(?=[,.])", detail)
+if match:
+    print(match[1])
+PYANGLE
+    )
+    replay="c-object-fractional-replay-$e"
+    if [ -n "$angle" ]; then
+        run "$replay" "$bin" skew-bar.stl --slice 1 --printer-preset "$A1M" \
+            --rotate "$angle" --outputdir "$replay/out"
+    fi
+    if [ -n "$angle" ] && [ "$(cat "$replay/rc" 2>/dev/null)" = 0 ] && [ -s "$replay/out/plate_1.gcode" ]; then
+        report object-fractional-turn "$e" PASS "the printed angle $angle fits"
+    else
+        report object-fractional-turn "$e" FAIL "the printed angle '$angle' did not produce G-code"
+    fi
+
+    # The input is that engine's own cube project. Mirror and stretch its
+    # single build instance to make the same 220 x 20 mm footprint as the bar.
+    python3 - "proj-$e.3mf" "mirrored-$e.3mf" <<'PYMIRROR'
+import re, sys, zipfile
+
+def mirror(match):
+    values = match[2].split()
+    assert len(values) == 12
+    values[:3] = [str(-11 * float(value)) for value in values[:3]]
+    return match[1] + " ".join(values) + match[3]
+
+with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as dest:
+    for member in source.infolist():
+        data = source.read(member)
+        if member.filename == "3D/3dmodel.model":
+            model, count = re.subn(r'(<item\b[^>]*\btransform=")([^"]+)(")', mirror, data.decode())
+            assert count == 1
+            data = model.encode()
+        dest.writestr(member, data)
+PYMIRROR
+    check object-mirrored-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+        "mirrored-$e.3mf" --slice 1 --printer-preset "$A1M"
+
+    # The same 220 x 20 mm footprint, kept at x = 50 mm: turned in place it
+    # still crosses the bed's edge, so --rotate alone is not offered. The bar
+    # is in the mesh itself and the copy's transform only moves it, so the
+    # position is what withholds the flag. The second copy stays centred and
+    # is raised 175 mm, so its top is past the 180 mm bed height.
+    for placed in "offset 9 50" "raised 11 175"; do
+    read -r name index value <<< "$placed"
+    python3 - "proj-$e.3mf" "$name-$e.3mf" "$index" "$value" <<'PYOFFSET'
+import re, sys, zipfile
+
+def widen(match):
+    return match[1] + repr(11 * float(match[2])) + match[3]
+
+def move(match):
+    values = match[2].split()
+    assert len(values) == 12
+    values[int(sys.argv[3])] = sys.argv[4]
+    return match[1] + " ".join(values) + match[3]
+
+with zipfile.ZipFile(sys.argv[1]) as source, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as dest:
+    items = 0
+    vertices = 0
+    for member in source.infolist():
+        data = source.read(member)
+        if member.filename.endswith(".model"):
+            text = data.decode()
+            text, n = re.subn(r'(<vertex\b[^>]*?\bx=")([^"]+)(")', widen, text)
+            vertices += n
+            if member.filename == "3D/3dmodel.model":
+                text, count = re.subn(r'(<item\b[^>]*\btransform=")([^"]+)(")', move, text)
+                items += count
+            data = text.encode()
+        dest.writestr(member, data)
+    assert items == 1 and vertices > 0
+PYOFFSET
+    done
+    check object-offset-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+        "offset-$e.3mf" --slice 1 --printer-preset "$A1M"
+    check object-raised-turn "$e" "*fits at full size rotated 41 degrees about Z. Give --arrange 1 --allow-rotations." \
+        "raised-$e.3mf" --slice 1 --printer-preset "$A1M"
+done
+# A run that already turned the part: a second --rotate would replace the
+# first, so only the arrange is offered. OrcaSlicer's arrange does not fit the
+# turned bar even with rotations, so it offers nothing.
+check object-turn-after-rotate bambu "*degrees about Z. Give --arrange 1 --allow-rotations." \
+     bar.stl --slice 1 --printer-preset "$A1M" --rotate 10
+check object-turn-after-rotate orca "*crosses the edge of the 180 x 180 x 180 mm bed. Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed." \
+     bar.stl --slice 1 --printer-preset "$A1M" --rotate 10
+# On the H2D the bar fits the bed turned 32 degrees in place, but then neither
+# nozzle reaches all of it, so only the arrange is offered, with any filament
+# map. The reach refusal shows why --rotate 32 is held back.
+for e in bambu orca; do
+    [ "$e" = bambu ] && right=2 || right=2,2
+    check object-h2d-turn "$e" "*rotated 32 degrees about Z. Give --arrange 1 --allow-rotations." \
+        wide-bar.stl --slice 1 --printer-preset "$H2D"
+    check object-h2d-turn-right "$e" "*rotated 32 degrees about Z. Give --arrange 1 --allow-rotations." \
+        wide-bar.stl --slice 1 --printer-preset "$H2D" --filament-map "$right"
+    check object-h2d-rotate-reach "$e" "*no single extruder reaches all of them*" \
+        wide-bar.stl --slice 1 --printer-preset "$H2D" --rotate 32
+    # 430 mm turned 39 degrees fits the 350 x 320 mm bed, but the arrange packs
+    # into the 300 x 320 mm area both nozzles reach, where no turn fits: no
+    # flag is offered.
+    check object-h2d-no-turn "$e" "*crosses the edge of the 350 x 320 x 325 mm bed. Give --arrange 1 to re-arrange the plate on this bed, or use a printer with a bigger bed." \
+        wider-bar.stl --slice 1 --printer-preset "$H2D"
+done
+# Arrange already tried turning the parts: no turn advice after the list.
+both object-turn-tried "*together: 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl', 'bar.stl'. Move some objects to another plate in the file, or use a printer with a bigger bed." \
+     bar.stl bar.stl bar.stl bar.stl bar.stl bar.stl --slice 1 --arrange 1 --allow-rotations --printer-preset "$A1M"
+# An assemble list takes no --rotate or --arrange on OrcaSlicer, and on
+# BambuStudio neither moves a part kept at its list position: the advice names
+# the list's need_arrange and the part's source file.
+both object-list-turn "*crosses the edge of the 180 x 180 x 180 mm bed. Set need_arrange for this plate in the assemble list, or use a printer with a bigger bed. It fits at full size rotated 41 degrees about Z. Turn it that much in its source file: an assemble list cannot turn it." \
+     --load-assemble-list barlist.json --slice 0 --printer-preset "$A1M"
 both assemble-no-fit          "*Give the plate fewer objects or smaller copies, or use a bigger printer.*" \
      --load-assemble-list pair.json --slice 1 --printer-preset "$A1M"
 
