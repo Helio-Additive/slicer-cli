@@ -195,7 +195,9 @@ fn first_difference(a: &str, b: &str) -> String {
 const KINDS: [&str; 6] = ["flow", "clip", "prep", "trim", "efc", "pes"];
 /// The kinds whose lines have to be equal to the pin: the test fails on a difference in one of them and
 /// reports the others.
-const ASSERTED: [&str; 0] = [];
+/// R923: `flow` and `prep` are equal with the gates LAYER_REGION_FLOW_PIN and LAYER_REGION_PREPARE_PIN on
+/// (their default); `pes` (process_external_surfaces) is reported, not asserted.
+const ASSERTED: [&str; 5] = ["flow", "clip", "prep", "trim", "efc"];
 
 #[test]
 fn layer_region_native_parity() {

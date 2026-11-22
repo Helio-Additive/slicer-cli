@@ -244,6 +244,17 @@ impl Point {
         }
     }
 
+    /// `Point::rotate_90_degree_ccw()` under its C++ name: `Point(-this->y(), this->x())`.
+    ///
+    /// Point.hpp:237
+    #[inline]
+    pub const fn rotate_90_degree_ccw(&self) -> Self {
+        Self {
+            x: -self.y,
+            y: self.x,
+        }
+    }
+
     /// Rotate 90 degrees clockwise.
     ///
     /// Point.hpp:237 (negated)

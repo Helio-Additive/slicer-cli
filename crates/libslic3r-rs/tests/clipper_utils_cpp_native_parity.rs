@@ -176,6 +176,17 @@ fn s_pt(t: &PolyTree) -> Vec<i64> {
 // One call of gen.cpp: the id of the line, the result as the generator prints it. `None`: an id this test
 // does not know.
 #[allow(clippy::too_many_lines)]
+// The per point deltas gen.cpp gives variable_offset_* on `a.ex`: the delta of point j of ring i (0 the contour,
+// 1 + h hole h) is delta * (1 + (i + j) % 3) / 4 (exact in f32), times `sign` (-1 for the inner variants).
+fn vo_deltas(a: &Shapes, delta: f32, sign: f32) -> Vec<Vec<f32>> {
+    let ring = |n: usize, iring: usize| (0..n).map(|j| sign * (delta * (1 + (iring + j) % 3) as f32 * 0.25)).collect::<Vec<f32>>();
+    let mut out = vec![ring(a.ex.contour.points.len(), 0)];
+    for (h, hole) in a.ex.holes.iter().enumerate() {
+        out.push(ring(hole.points.len(), 1 + h));
+    }
+    out
+}
+
 fn call(id: &str, a: &Shapes, b: &Shapes, a_sp: &[&Surface], b_sp: &[&Surface], p: &Params) -> Option<Vec<i64>> {
     let (jt, ml, et, delta, delta_b, od, od2, lw) = (p.jt, p.ml, p.et, p.delta, p.delta_b, p.od, p.od2, p.lw);
     let bbox = p.bbox.clone();
@@ -382,12 +393,15 @@ fn call(id: &str, a: &Shapes, b: &Shapes, a_sp: &[&Surface], b_sp: &[&Surface], 
         "ccps:Exs:0" => s_pgs(&ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(a.exs.as_slice(), &bbox, false)),
         "ccps:Ex:1" => s_pgs(&ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(&a.ex, &bbox, true)),
         "ccps:Exs:1" => s_pgs(&ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(a.exs.as_slice(), &bbox, true)),
+        "variable_offset_inner:Ex" => s_pgs(&cpp::variable_offset_inner(&a.ex, &vo_deltas(a, delta, -1.), 2.)),
+        "variable_offset_outer:Ex" => s_pgs(&cpp::variable_offset_outer(&a.ex, &vo_deltas(a, delta, 1.), 2.)),
+        "variable_offset_inner_ex:Ex" => s_exs(&cpp::variable_offset_inner_ex(&a.ex, &vo_deltas(a, delta, -1.), 2.)),
+        "variable_offset_outer_ex:Ex" => s_exs(&cpp::variable_offset_outer_ex(&a.ex, &vo_deltas(a, delta, 1.), 2.)),
         _ => return None,
     })
 }
 
 #[test]
-#[ignore = "no vectors yet: tests/data/clipper_utils/gen.cpp does not link, it calls two diff_ex overloads that ClipperUtils.hpp declares and ClipperUtils.cpp never defines"]
 fn clipper_utils_cpp_native_parity() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/clipper_utils/vectors.txt.gz");
     let path = std::env::var("CLIPPER_UTILS_CPP_VECTORS").unwrap_or_else(|_| path.to_string());
@@ -459,5 +473,5 @@ fn clipper_utils_cpp_native_parity() {
     }
     eprintln!("{cases} cases, {calls} calls, {bad} mismatches");
     assert_eq!(bad, 0, "results that differ from the pin");
-    assert_eq!((cases, calls), (48, 48 * 201), "cases and calls of the vectors file");
+    assert_eq!((cases, calls), (48, 48 * 205), "cases and calls of the vectors file");
 }

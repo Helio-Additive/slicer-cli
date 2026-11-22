@@ -7,7 +7,8 @@
 //! `fill_surface_by_lines` one at a time: the offset contours, the vertical lines, their links, the
 //! polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its
 //! polylines), "mfl" (`make_fill_lines`), "sgp" (`sample_grid_pattern`) and "wg"
-//! (`FillMonotonicLineWGapFill::fill_surface_by_lines`, also of FillGlobalMonotonicLine). The lines of the vectors that
+//! (`FillMonotonicLineWGapFill::fill_surface_by_lines`, also of FillGlobalMonotonicLine), "sia" (the link accessors of
+//! `SegmentIntersection`) and "dos" (`distance_of_segmens`). The lines of the vectors that
 //! start with "in" are the inputs, which this test reads back; every other line it has to reproduce bit for
 //! bit.
 
@@ -201,6 +202,9 @@ fn run_sl(r: &mut Run) {
         };
         connect_segment_intersections_by_contours(&poly_with_offset, &mut segs, &params, link_max_length);
         r.out(format!("csi {}", segs_s(&segs)));
+        // FillRectilinear.cpp:1285: the pin asserts the same of its own graph where NDEBUG is off (the vectors
+        // are made with NDEBUG, so this is a check of the port against its own asserts, not a comparison).
+        assert!(slicer::fill::fill_rectilinear::validate_segment_intersection_connectivity(&segs));
         {
             // The flag of the traversal is in the vectors: "tg <flag> ...".
             let expected_flag = r.expected.get(r.lines.len()).map(|l| l.starts_with("tg 1")).unwrap_or(false);
@@ -300,6 +304,100 @@ fn run_wg(r: &mut Run) {
     }
 }
 
+// gen.cpp `run_sia`: the link accessors of SegmentIntersection (FillRectilinear.cpp:211-271) and
+// distance_of_segmens (FillRectilinear.cpp:555-563).
+fn run_sia(r: &mut Run) {
+    use slicer::fill::fill_rectilinear::{distance_of_segmens, Direction, LinkQuality, LinkType, SegmentIntersection, SegmentIntersectionType, Side};
+    use slicer::geometry::Polygon;
+    let link = |v: i64| match v {
+        0 => LinkType::Horizontal,
+        1 => LinkType::Up,
+        2 => LinkType::Down,
+        _ => LinkType::Phony,
+    };
+    let quality = |v: i64| match v {
+        0 => LinkQuality::Invalid,
+        1 => LinkQuality::Valid,
+        _ => LinkQuality::TooLong,
+    };
+    let q = |v: LinkQuality| match v {
+        LinkQuality::Invalid => 0,
+        LinkQuality::Valid => 1,
+        LinkQuality::TooLong => 2,
+    };
+    while let Some(line) = r.input("in sia") {
+        let mut t = Tok::new(&line);
+        let mut s = SegmentIntersection::default();
+        s.itype = match t.i() {
+            0 => SegmentIntersectionType::Unknown,
+            1 => SegmentIntersectionType::OuterLow,
+            2 => SegmentIntersectionType::OuterHigh,
+            3 => SegmentIntersectionType::InnerLow,
+            _ => SegmentIntersectionType::InnerHigh,
+        };
+        s.prev_on_contour_type = link(t.i());
+        s.next_on_contour_type = link(t.i());
+        s.prev_on_contour_quality = quality(t.i());
+        s.next_on_contour_quality = quality(t.i());
+        s.prev_on_contour = t.i() as i32;
+        s.next_on_contour = t.i() as i32;
+        let bools = [
+            s.has_left_vertical_dir(Direction::Up),
+            s.has_left_vertical_dir(Direction::Down),
+            s.has_left_vertical(),
+            s.has_left_vertical_outside(),
+            s.has_right_vertical_dir(Direction::Up),
+            s.has_right_vertical_dir(Direction::Down),
+            s.has_right_vertical(),
+            s.has_right_vertical_outside(),
+            s.has_vertical(),
+            s.has_vertical_side(Side::Left),
+            s.has_vertical_side(Side::Right),
+            s.has_vertical_up(),
+            s.has_vertical_down(),
+            s.has_vertical_dir(Direction::Up),
+            s.has_vertical_dir(Direction::Down),
+        ];
+        let ints = [
+            if s.has_horizontal(Side::Left) { q(s.horizontal_quality(Side::Left)) } else { -1 },
+            if s.has_horizontal(Side::Right) { q(s.horizontal_quality(Side::Right)) } else { -1 },
+            s.left_vertical_dir(Direction::Up),
+            s.left_vertical_dir(Direction::Down),
+            s.left_vertical(),
+            s.left_vertical_outside(),
+            s.right_vertical_dir(Direction::Up),
+            s.right_vertical_dir(Direction::Down),
+            s.right_vertical(),
+            s.right_vertical_outside(),
+            s.vertical_up_side(Side::Left),
+            s.vertical_up_side(Side::Right),
+            s.vertical_down_side(Side::Left),
+            s.vertical_down_side(Side::Right),
+            s.vertical_outside_side(Side::Left),
+            s.vertical_outside_side(Side::Right),
+            s.vertical_up(),
+            s.vertical_down(),
+            s.vertical_outside(),
+        ];
+        let mut o = String::from("sia");
+        for b in bools {
+            o += &format!(" {}", hb(b));
+        }
+        for i in ints {
+            o += &format!(" {i}");
+        }
+        r.out(o);
+    }
+    while let Some(line) = r.input("in dos") {
+        let mut t = Tok::new(&line);
+        let np = t.i();
+        let (seg1, seg2) = (t.i() as usize, t.i() as usize);
+        let forward = t.b();
+        let poly = Polygon::from_points((0..np).map(|j| Point::new(j * 1000, (j % 3) * 1000)).collect());
+        r.out(format!("dos {}", distance_of_segmens(&poly, seg1, seg2, forward)));
+    }
+}
+
 #[test]
 fn fill_rectilinear_native_parity() {
     let mut r = Run::load("fill_rectilinear");
@@ -308,6 +406,7 @@ fn fill_rectilinear_native_parity() {
     run_mfl(&mut r);
     run_sgp(&mut r);
     run_wg(&mut r);
+    run_sia(&mut r);
     let n = r.expected.iter().filter(|l| !l.starts_with("in ")).count();
     // "fs" by filler.
     let mut per_type = [(0usize, 0usize); 11];
@@ -324,7 +423,7 @@ fn fill_rectilinear_native_parity() {
         eprintln!("fill_rectilinear: fs {}: {ok} of {total}", TYPE_NAMES[ty]);
     }
     let mut not_equal: Vec<String> = Vec::new();
-    for tag in ["fs ", "pwo ", "bbs ", "sl ", "csi ", "tg ", "pinch ", "mr ", "chain ", "pfp ", "mfl ", "sgp ", "wg "] {
+    for tag in ["fs ", "pwo ", "bbs ", "sl ", "csi ", "tg ", "pinch ", "mr ", "chain ", "pfp ", "mfl ", "sgp ", "wg ", "sia ", "dos "] {
         let (total, ok) = r.tally(tag);
         eprintln!("fill_rectilinear: {tag}: {ok} of {total}");
         if ok != total {

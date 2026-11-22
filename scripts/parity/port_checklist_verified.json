@@ -3697,5 +3697,94 @@
    "organic_smooth_branches_avoid_collisions",
    "draw_branches"
   ]
+ },
+ {
+  "unit": "ClipperUtils",
+  "round": 923,
+  "evidence": "tests/clipper_utils_cpp_native_parity.rs: every overload of the module `cpp` called by its C++ name on 48 generated cases (polygons with holes, touching, degenerate and empty inputs), 205 calls per case, 9,840 calls against the pin's ClipperUtils.cpp: the same paths in the same order with the same start vertex, none differ. Booleans (diff, diff_clipped, diff_ex, diff_pl, diff_ln, intersection and its clipped, ex, pl and ln forms, union_, union_ex, union_pt, the safety offset unions, xor_ex), offsets (offset, offset_ex, offset2, offset2_ex, opening, closing, expand, shrink, contour_to_polygons, the four variable offsets) and the tail (union_pt_chained_outside_in, simplify_polygons, top_level_islands, _clipper_ln, the clips with the subject's box).",
+  "functions": [
+   "diff",
+   "diff_clipped",
+   "diff_ex",
+   "diff_pl",
+   "diff_ln",
+   "intersection",
+   "intersection_clipped",
+   "intersection_ex",
+   "intersection_pl",
+   "intersection_ln",
+   "union_",
+   "union_ex",
+   "union_pt",
+   "union_safety_offset",
+   "union_safety_offset_ex",
+   "xor_ex",
+   "offset",
+   "offset_ex",
+   "offset2",
+   "offset2_ex",
+   "opening",
+   "opening_ex",
+   "closing",
+   "closing_ex",
+   "expand",
+   "expand_ex",
+   "shrink",
+   "shrink_ex",
+   "contour_to_polygons",
+   "union_pt_chained_outside_in",
+   "simplify_polygons",
+   "simplify_polygons_ex",
+   "top_level_islands",
+   "_clipper_ln",
+   "clip_clipper_polygon_with_subject_bbox",
+   "clip_clipper_polygons_with_subject_bbox",
+   "variable_offset_inner",
+   "variable_offset_outer",
+   "variable_offset_inner_ex",
+   "variable_offset_outer_ex"
+  ]
+ },
+ {
+  "unit": "LayerRegion",
+  "round": 923,
+  "evidence": "tests/layer_region_native_parity.rs: the pin's LayerRegion on a real Print over 14 configurations x 10 layers: flow, bridging_flow and the infill area threshold (42 lines), slices_to_fill_surfaces_clipped (140), prepare_fill_surfaces (140), trim_surfaces (140), elephant_foot_compensation_step (140), all asserted and equal (gates LAYER_REGION_FLOW_PIN, LAYER_REGION_PREPARE_PIN). process_external_surfaces is reported, not asserted (249 of 280 lines differ).",
+  "functions": [
+   "LayerRegion::flow",
+   "LayerRegion::bridging_flow",
+   "LayerRegion::slices_to_fill_surfaces_clipped",
+   "LayerRegion::prepare_fill_surfaces",
+   "LayerRegion::trim_surfaces",
+   "LayerRegion::elephant_foot_compensation_step"
+  ]
+ },
+ {
+  "unit": "Fill/FillRectilinear",
+  "round": 923,
+  "evidence": "tests/fill_rectilinear_native_parity.rs, group sia: the accessors of SegmentIntersection on 720 intersections (5 types x 16 link types x 9 qualities, 34 values each) and distance_of_segmens on 64 cases against the pin's FillRectilinear.cpp, none differ (2,136 lines in all).",
+  "functions": [
+   "distance_of_segmens",
+   "SegmentIntersection::has_horizontal",
+   "SegmentIntersection::has_left_vertical",
+   "SegmentIntersection::has_left_vertical_outside",
+   "SegmentIntersection::has_right_vertical",
+   "SegmentIntersection::has_right_vertical_outside",
+   "SegmentIntersection::has_vertical",
+   "SegmentIntersection::has_vertical_up",
+   "SegmentIntersection::has_vertical_down",
+   "SegmentIntersection::horizontal_quality",
+   "SegmentIntersection::left_vertical",
+   "SegmentIntersection::left_vertical_outside",
+   "SegmentIntersection::right_vertical_outside"
+  ]
+ },
+ {
+  "unit": "TriangleMeshSlicer",
+  "round": 923,
+  "evidence": "tests/tree_support_3d_native_parity.rs: slice_mesh_ex of the branch meshes of 18 scenarios with the object's closing radius (438 slices, positive mode) and the layers of slice_branches (433) against the pin's slice_mesh_ex, all equal and asserted since remove_short_backtracks is ported (TriangleMeshSlicer.cpp 1789-1850, gate SLICER_CLOSING_PIN); with the gate off 4 lines differ.",
+  "functions": [
+   "remove_short_backtracks",
+   "make_expolygons"
+  ]
  }
 ]

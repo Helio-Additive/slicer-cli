@@ -39,10 +39,24 @@ namespace Slic3r {
 ExPolygons offset_ex(const SurfacesPtr &surfaces, const float delta, ClipperLib::JoinType joinType, double miterLimit);
 // ClipperUtils.cpp:604
 ExPolygons closing_ex(const Surfaces &surfaces, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit);
-// ClipperUtils.cpp:770
-ExPolygons diff_ex(const Polygon &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset);
-// ClipperUtils.cpp:778
-ExPolygons diff_ex(const Polygon &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset);
+// ClipperUtils.cpp:770-776 and 778-786 are `inline` in the .cpp: the library has no symbol of them, so their
+// bodies are repeated here word for word (they forward to the Polygons / Polygons overload, ClipperUtils.cpp:741).
+inline ExPolygons diff_ex(const Polygon &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)
+{
+    Slic3r::Polygons subject_temp;
+    subject_temp.push_back(subject);
+
+    return diff_ex(subject_temp, clip, do_safety_offset);
+}
+inline ExPolygons diff_ex(const Polygon &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset)
+{
+    Slic3r::Polygons subject_temp;
+    Slic3r::Polygons clip_temp;
+
+    subject_temp.push_back(subject);
+    clip_temp.push_back(clip);
+    return diff_ex(subject_temp, clip_temp, do_safety_offset);
+}
 } // namespace Slic3r
 
 using namespace Slic3r;
@@ -435,6 +449,28 @@ int main(int argc, char **argv)
         R("ccps:Exs:0", ClipperUtils::clip_clipper_polygons_with_subject_bbox(a.exs, bbox, false));
         R("ccps:Ex:1", ClipperUtils::clip_clipper_polygons_with_subject_bbox(a.ex, bbox, true));
         R("ccps:Exs:1", ClipperUtils::clip_clipper_polygons_with_subject_bbox(a.exs, bbox, true));
+        {
+            // variable_offset_* (ClipperUtils.cpp:1260-1423) on a.ex: the delta of point j of ring i (0 the contour,
+            // 1 + h hole h) is delta * (1 + (i + j) % 3) / 4, negative for the inner variants (ClipperUtils.cpp:1262-1266).
+            std::vector<std::vector<float>> dn, dp;
+            auto ring = [&](const Polygon &pg, size_t iring) {
+                std::vector<float> n, p;
+                for (size_t j = 0; j < pg.points.size(); ++j) {
+                    const float d = delta * float(1 + (iring + j) % 3) * 0.25f;
+                    p.push_back(d);
+                    n.push_back(-d);
+                }
+                dn.push_back(n);
+                dp.push_back(p);
+            };
+            ring(a.ex.contour, 0);
+            for (size_t h = 0; h < a.ex.holes.size(); ++h)
+                ring(a.ex.holes[h], 1 + h);
+            R("variable_offset_inner:Ex", variable_offset_inner(a.ex, dn, 2.));
+            R("variable_offset_outer:Ex", variable_offset_outer(a.ex, dp, 2.));
+            R("variable_offset_inner_ex:Ex", variable_offset_inner_ex(a.ex, dn, 2.));
+            R("variable_offset_outer_ex:Ex", variable_offset_outer_ex(a.ex, dp, 2.));
+        }
     }
     if (g_out != stdout)
         std::fclose(g_out);

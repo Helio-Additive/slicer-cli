@@ -86,6 +86,13 @@ pub enum Side {
     Right,
 }
 
+/// `SegmentIntersection::Direction` (FillRectilinear.cpp:206-209).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Up,
+    Down,
+}
+
 /// Type of connection from an intersection to prev/next contour point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkType {
@@ -368,6 +375,131 @@ impl SegmentIntersection {
     }
     pub fn horizontal_quality_right(&self) -> LinkQuality {
         self.next_on_contour_quality
+    }
+
+    // The accessors of the pin under their C++ names (FillRectilinear.cpp:211-271). C++ overloads by
+    // argument type; the overload taking a `Direction` carries `_dir`, the one taking a `Side` `_side`.
+
+    // FillRectilinear.cpp:217
+    pub fn has_left_vertical_dir(&self, dir: Direction) -> bool {
+        if dir == Direction::Up {
+            self.has_left_vertical_up()
+        } else {
+            self.has_left_vertical_down()
+        }
+    }
+    // FillRectilinear.cpp:219
+    pub fn has_left_vertical_outside(&self) -> bool {
+        if self.is_low() {
+            self.has_left_vertical_down()
+        } else {
+            self.has_left_vertical_up()
+        }
+    }
+    // FillRectilinear.cpp:223
+    pub fn has_right_vertical_dir(&self, dir: Direction) -> bool {
+        if dir == Direction::Up {
+            self.has_right_vertical_up()
+        } else {
+            self.has_right_vertical_down()
+        }
+    }
+    // FillRectilinear.cpp:225
+    pub fn has_right_vertical_outside(&self) -> bool {
+        if self.is_low() {
+            self.has_right_vertical_down()
+        } else {
+            self.has_right_vertical_up()
+        }
+    }
+    // FillRectilinear.cpp:228
+    pub fn has_vertical_side(&self, side: Side) -> bool {
+        if side == Side::Left {
+            self.has_left_vertical()
+        } else {
+            self.has_right_vertical()
+        }
+    }
+    // FillRectilinear.cpp:229
+    pub fn has_vertical_up(&self) -> bool {
+        self.has_left_vertical_up() || self.has_right_vertical_up()
+    }
+    // FillRectilinear.cpp:230
+    pub fn has_vertical_down(&self) -> bool {
+        self.has_left_vertical_down() || self.has_right_vertical_down()
+    }
+    // FillRectilinear.cpp:231
+    pub fn has_vertical_dir(&self, dir: Direction) -> bool {
+        if dir == Direction::Up {
+            self.has_vertical_up()
+        } else {
+            self.has_vertical_down()
+        }
+    }
+    // FillRectilinear.cpp:236-239 (the pin asserts has_horizontal(side))
+    pub fn horizontal_quality(&self, side: Side) -> LinkQuality {
+        debug_assert!(self.has_horizontal(side));
+        if side == Side::Left {
+            self.prev_on_contour_quality
+        } else {
+            self.next_on_contour_quality
+        }
+    }
+    // FillRectilinear.cpp:243
+    pub fn left_vertical_dir(&self, dir: Direction) -> i32 {
+        if if dir == Direction::Up { self.has_left_vertical_up() } else { self.has_left_vertical_down() } {
+            self.prev_on_contour
+        } else {
+            -1
+        }
+    }
+    // FillRectilinear.cpp:245
+    pub fn left_vertical_outside(&self) -> i32 {
+        if self.is_low() {
+            self.left_vertical_down()
+        } else {
+            self.left_vertical_up()
+        }
+    }
+    // FillRectilinear.cpp:248
+    pub fn right_vertical_dir(&self, dir: Direction) -> i32 {
+        if if dir == Direction::Up { self.has_right_vertical_up() } else { self.has_right_vertical_down() } {
+            self.next_on_contour
+        } else {
+            -1
+        }
+    }
+    // FillRectilinear.cpp:250
+    pub fn right_vertical_outside(&self) -> i32 {
+        if self.is_low() {
+            self.right_vertical_down()
+        } else {
+            self.right_vertical_up()
+        }
+    }
+    // FillRectilinear.cpp:252
+    pub fn vertical_up_side(&self, side: Side) -> i32 {
+        if side == Side::Left {
+            self.left_vertical_up()
+        } else {
+            self.right_vertical_up()
+        }
+    }
+    // FillRectilinear.cpp:253
+    pub fn vertical_down_side(&self, side: Side) -> i32 {
+        if side == Side::Left {
+            self.left_vertical_down()
+        } else {
+            self.right_vertical_down()
+        }
+    }
+    // FillRectilinear.cpp:254
+    pub fn vertical_outside_side(&self, side: Side) -> i32 {
+        if side == Side::Left {
+            self.left_vertical_outside()
+        } else {
+            self.right_vertical_outside()
+        }
     }
 
     /// Compare rational position: self < other.
@@ -896,6 +1028,67 @@ fn prev_value_modulo(idx: usize, contour_pts: &[Point]) -> Point {
 fn next_value_modulo(idx: usize, contour_pts: &[Point]) -> Point {
     let n = contour_pts.len();
     contour_pts[if idx + 1 >= n { 0 } else { idx + 1 }]
+}
+
+// FillRectilinear.cpp:1066-1116 — `bool validate_segment_intersection_connectivity(segs)`. The pin compiles
+// it without NDEBUG only and calls it inside `assert()` (1285, 1381): every check is an assert and the
+// function returns true.
+pub fn validate_segment_intersection_connectivity(segs: &[SegmentedIntersectionLine]) -> bool {
+    // Validate the connectivity.
+    let mut i_vline = 0usize;
+    while i_vline + 1 < segs.len() {
+        let il_left = &segs[i_vline];
+        let il_right = &segs[i_vline + 1];
+        for (i_it, it) in il_left.intersections.iter().enumerate() {
+            if it.has_right_horizontal() {
+                let it_right = &il_right.intersections[it.right_horizontal() as usize];
+                // For a right link there is a symmetric left link.
+                debug_assert!(it.i_contour == it_right.i_contour);
+                debug_assert!(it.itype == it_right.itype);
+                debug_assert!(it_right.has_left_horizontal());
+                debug_assert!(it_right.left_horizontal() == i_it as i32);
+            }
+        }
+        for (i_it, it) in il_right.intersections.iter().enumerate() {
+            if it.has_left_horizontal() {
+                let it_left = &il_left.intersections[it.left_horizontal() as usize];
+                // For a right link there is a symmetric left link.
+                debug_assert!(it.i_contour == it_left.i_contour);
+                debug_assert!(it.itype == it_left.itype);
+                debug_assert!(it_left.has_right_horizontal());
+                debug_assert!(it_left.right_horizontal() == i_it as i32);
+            }
+        }
+        i_vline += 1;
+    }
+    for il in segs {
+        for (i_it, it) in il.intersections.iter().enumerate() {
+            let i_it = i_it as i32;
+            if it.has_left_vertical_up() {
+                debug_assert!(il.intersections[it.left_vertical_up() as usize].left_vertical_down() == i_it);
+                debug_assert!(il.intersections[it.left_vertical_up() as usize].prev_on_contour_quality == it.prev_on_contour_quality);
+            }
+            if it.has_left_vertical_down() {
+                debug_assert!(il.intersections[it.left_vertical_down() as usize].left_vertical_up() == i_it);
+                debug_assert!(il.intersections[it.left_vertical_down() as usize].prev_on_contour_quality == it.prev_on_contour_quality);
+            }
+            if it.has_right_vertical_up() {
+                debug_assert!(il.intersections[it.right_vertical_up() as usize].right_vertical_down() == i_it);
+                debug_assert!(il.intersections[it.right_vertical_up() as usize].next_on_contour_quality == it.next_on_contour_quality);
+            }
+            if it.has_right_vertical_down() {
+                debug_assert!(il.intersections[it.right_vertical_down() as usize].right_vertical_up() == i_it);
+                debug_assert!(il.intersections[it.right_vertical_down() as usize].next_on_contour_quality == it.next_on_contour_quality);
+            }
+        }
+    }
+    true
+}
+
+/// Distance between two segment indices along a polygon, in one direction, under the name the pin gives
+/// it (FillRectilinear.cpp:555-563).
+pub fn distance_of_segmens(poly: &Polygon, seg1: usize, seg2: usize, forward: bool) -> i32 {
+    distance_of_segments(poly, seg1, seg2, forward)
 }
 
 /// Distance between two segment indices along a polygon, in one direction.

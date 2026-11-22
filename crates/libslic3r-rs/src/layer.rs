@@ -593,6 +593,16 @@ impl LayerRegion {
             // Applies default bridge spacing.
             // LayerRegion.cpp:42
             // C++: return Flow::bridging_flow(float(sqrt(region_config.bridge_flow)) * nozzle_diameter, nozzle_diameter);
+            // LAYER_REGION_FLOW_PIN (faithful gate, R923): the product is one
+            // of FLOATS at the pin: float(sqrt(bridge_flow)) times the float
+            // nozzle_diameter_for_filament returns (PrintConfig.cpp:454), and
+            // Flow::bridging_flow takes floats (Flow.hpp:105). `=0` keeps the
+            // earlier arm, which multiplied doubles.
+            if crate::faithful_gate("LAYER_REGION_FLOW_PIN") {
+                let nozzle_diameter_f = nozzle_diameter as f32;
+                let dmr = (region_config.bridge_flow_ratio.sqrt() as f32) * nozzle_diameter_f;
+                return Ok(Flow::bridging_flow(dmr as f64, nozzle_diameter_f as f64));
+            }
             Ok(Flow::bridging_flow(
                 region_config.bridge_flow_ratio.sqrt() * nozzle_diameter,
                 nozzle_diameter,
@@ -661,9 +671,17 @@ impl LayerRegion {
         /// C++: alter fill_surfaces boundaries on which our idempotency relies since that's
         /// C++: the only meaningful information returned by psPerimeters.
 
-        /// First clip slices to fill boundaries
-        /// LayerRegion.cpp:50-66 (called before this function in the flow)
-        self.slices_to_fill_surfaces_clipped();
+        // LAYER_REGION_PREPARE_PIN (faithful gate, R923): the pin's
+        // prepare_fill_surfaces (LayerRegion.cpp:913-955) does not clip: the
+        // clip is detect_surfaces_type's last step (PrintObject.cpp:1618-1643)
+        // and fill_surfaces come in as the caller left them. `=0` keeps the
+        // earlier arm, which clipped again here and truncated min_area.
+        let prepare_pin = crate::faithful_gate("LAYER_REGION_PREPARE_PIN");
+        if !prepare_pin {
+            /// First clip slices to fill boundaries
+            /// LayerRegion.cpp:50-66 (called before this function in the flow)
+            self.slices_to_fill_surfaces_clipped();
+        }
 
         /// LayerRegion.cpp:657
         /// C++: bool spiral_mode = this->layer()->object()->print()->config().spiral_mode;
@@ -697,11 +715,18 @@ impl LayerRegion {
                 .expect("config hierarchy not wired — call wire_layer_hierarchy")
                 .minimum_sparse_infill_area;
             let scale_factor = crate::SCALING_FACTOR as f64;
-            let min_area = (minimum_sparse_infill_area * scale_factor * scale_factor) as i64;
+            // LayerRegion.cpp:943 — double min_area = scale_(scale_(minimum_sparse_infill_area.value));
+            // scale_(v) is v / SCALING_FACTOR, a division by 0.00001
+            // (libslic3r.h:58-84), and min_area stays a double.
+            let min_area: f64 = if prepare_pin {
+                (minimum_sparse_infill_area / 0.00001) / 0.00001
+            } else {
+                (minimum_sparse_infill_area * scale_factor * scale_factor) as i64 as f64
+            };
 
             for surface in &mut self.fill_surfaces.surfaces {
                 if surface.surface_type == crate::surface::SurfaceType::Internal
-                    && surface.area() <= min_area as f64
+                    && surface.area() <= min_area
                 {
                     surface.surface_type = crate::surface::SurfaceType::InternalSolid;
                 }

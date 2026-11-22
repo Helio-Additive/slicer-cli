@@ -27,6 +27,8 @@
 //   "mfl"  make_fill_lines.
 //   "sgp"  sample_grid_pattern.
 //   "wg"   FillMonotonicLineWGapFill::fill_surface_by_lines and the same of FillGlobalMonotonicLine.
+//   "sia"  the link accessors of SegmentIntersection over every combination of intersection type, link
+//          types and link qualities; "dos" distance_of_segmens.
 //
 // Lines that start with "in" are the inputs the Rust test reads back; the others are results it has to
 // reproduce. Tokens are separated by one space; a double is its 16 hexadecimal digits, a float its 8, an
@@ -465,6 +467,80 @@ static void run_sgp(int n)
     }
 }
 
+// The link accessors of SegmentIntersection (FillRectilinear.cpp:211-271) over every combination of the
+// intersection type, the two link types and the two link qualities, and distance_of_segmens.
+static void run_sia()
+{
+    typedef SegmentIntersection SI;
+    int n = 0;
+    for (int ty = 0; ty < 5; ++ ty)
+        for (int pt = 0; pt < 4; ++ pt)
+            for (int nt = 0; nt < 4; ++ nt)
+                for (int pq = 0; pq < 3; ++ pq)
+                    for (int nq = 0; nq < 3; ++ nq, ++ n) {
+                        SI s;
+                        s.type                    = SI::SegmentIntersectionType(ty);
+                        s.prev_on_contour_type    = SI::LinkType(pt);
+                        s.next_on_contour_type    = SI::LinkType(nt);
+                        s.prev_on_contour_quality = SI::LinkQuality(pq);
+                        s.next_on_contour_quality = SI::LinkQuality(nq);
+                        s.prev_on_contour         = 3 + n % 7;
+                        s.next_on_contour         = 11 + n % 5;
+                        out("in sia " + hI(ty) + " " + hI(pt) + " " + hI(nt) + " " + hI(pq) + " " + hI(nq) + " " + hI(s.prev_on_contour) + " " +
+                            hI(s.next_on_contour));
+                        std::string o = "sia";
+                        auto        b = [&o](bool v) { o += v ? " 1" : " 0"; };
+                        auto        i = [&o](int v) { o += " " + std::to_string(v); };
+                        b(s.has_left_vertical(SI::Direction::Up));
+                        b(s.has_left_vertical(SI::Direction::Down));
+                        b(s.has_left_vertical());
+                        b(s.has_left_vertical_outside());
+                        b(s.has_right_vertical(SI::Direction::Up));
+                        b(s.has_right_vertical(SI::Direction::Down));
+                        b(s.has_right_vertical());
+                        b(s.has_right_vertical_outside());
+                        b(s.has_vertical());
+                        b(s.has_vertical(SI::Side::Left));
+                        b(s.has_vertical(SI::Side::Right));
+                        b(s.has_vertical_up());
+                        b(s.has_vertical_down());
+                        b(s.has_vertical(SI::Direction::Up));
+                        b(s.has_vertical(SI::Direction::Down));
+                        // horizontal_quality asserts has_horizontal(side).
+                        i(s.has_horizontal(SI::Side::Left) ? int(s.horizontal_quality(SI::Side::Left)) : -1);
+                        i(s.has_horizontal(SI::Side::Right) ? int(s.horizontal_quality(SI::Side::Right)) : -1);
+                        i(s.left_vertical(SI::Direction::Up));
+                        i(s.left_vertical(SI::Direction::Down));
+                        i(s.left_vertical());
+                        i(s.left_vertical_outside());
+                        i(s.right_vertical(SI::Direction::Up));
+                        i(s.right_vertical(SI::Direction::Down));
+                        i(s.right_vertical());
+                        i(s.right_vertical_outside());
+                        i(s.vertical_up(SI::Side::Left));
+                        i(s.vertical_up(SI::Side::Right));
+                        i(s.vertical_down(SI::Side::Left));
+                        i(s.vertical_down(SI::Side::Right));
+                        i(s.vertical_outside(SI::Side::Left));
+                        i(s.vertical_outside(SI::Side::Right));
+                        i(s.vertical_up());
+                        i(s.vertical_down());
+                        i(s.vertical_outside());
+                        out(o);
+                    }
+    for (int k = 0; k < 64; ++ k) {
+        const int np   = 3 + k % 9;
+        const int seg1 = (k * 5) % np;
+        const int seg2 = (k * 7 + 2) % np;
+        const bool forward = (k / 3) % 2 == 0;
+        Polygon poly;
+        for (int j = 0; j < np; ++ j)
+            poly.points.emplace_back(Point(coord_t(j) * 1000, coord_t(j % 3) * 1000));
+        out("in dos " + hI(np) + " " + hI(seg1) + " " + hI(seg2) + " " + hB(forward));
+        out("dos " + hI(distance_of_segmens(poly, size_t(seg1), size_t(seg2), forward)));
+    }
+}
+
 int main(int argc, char **argv)
 {
     g_out = std::fopen(argc > 1 ? argv[1] : "vectors.txt", "w");
@@ -481,6 +557,7 @@ int main(int argc, char **argv)
     if (want("mfl")) run_mfl(48);
     if (want("sgp")) run_sgp(24);
     if (want("wg")) run_wg(96);
+    if (want("sia")) run_sia();
     std::fclose(g_out);
     return 0;
 }

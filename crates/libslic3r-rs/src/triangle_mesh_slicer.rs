@@ -1333,7 +1333,7 @@ fn make_expolygons(
     // vendored ClipperLib (clipper-z-sys @ native 1e5) instead of geo-clipper @
     // scale-1000 which re-quantizes the slice coords to a coarse grid (R83 residual
     // blocking slice byte-match). fill_type maps the slicing mode (NonZero default).
-    let unioned = if crate::faithful_gate("F1_UNION") {
+    let mut unioned = if crate::faithful_gate("F1_UNION") {
         let ft = match fill_type {
             ClipperPolyFillType::EvenOdd => 0,
             ClipperPolyFillType::NonZero => 1,
@@ -1343,6 +1343,12 @@ fn make_expolygons(
     } else {
         crate::clipper_utils::union_polygons_ex(loops)
     };
+    // TriangleMeshSlicer.cpp:1934-1935 `if (offset_out > 0 && offset_in < 0) remove_short_backtracks(unioned,
+    // closing_radius);` before the closing. R923, behind SLICER_CLOSING_PIN (SLICER_CLOSING_PIN=0: without it,
+    // as before R923).
+    if offset_out > 0.0 && offset_in < 0.0 && crate::faithful_gate("SLICER_CLOSING_PIN") {
+        remove_short_backtracks(&mut unioned, closing_radius);
+    }
 
     // append to the supplied collection.
     // TriangleMeshSlicer.cpp:1819-1823
@@ -1370,6 +1376,89 @@ fn make_expolygons(
         unioned
     };
     slices.extend(result);
+}
+
+/// TriangleMeshSlicer.cpp:1789-1830 `static bool remove_short_backtracks(Polygon &polygon, coord_t max_path_length,
+/// coord_t endpoint_tolerance)`: a path of 2 to 8 edges no longer than `max_path_length` that comes back to within
+/// `endpoint_tolerance` of its start is cut out, the start point kept. `coord_t` is `int32_t` at the pin.
+/// The two `norm()`s are of integer differences: the ones that can pass the two comparisons are exact in a
+/// double whether the sum of squares is fused or not.
+fn remove_short_backtracks_polygon(polygon: &mut Polygon, max_path_length: i32, endpoint_tolerance: i32) -> bool {
+    const MAX_EDGES: usize = 8;
+    let norm = |a: &Point, b: &Point| -> f64 {
+        let dx = (a.x - b.x) as f64;
+        let dy = (a.y - b.y) as f64;
+        (dx * dx + dy * dy).sqrt()
+    };
+    let mut removed = false;
+    let mut changed = true;
+
+    while changed && polygon.points.len() >= 4 {
+        changed = false;
+        let n = polygon.points.len();
+
+        let mut start_idx = 0usize;
+        while start_idx < n && !changed {
+            let mut path_length = 0.0f64;
+            let mut prev_idx = start_idx;
+
+            let mut edge_count = 1usize;
+            while edge_count <= MAX_EDGES.min(n - 1) {
+                let end_idx = (start_idx + edge_count) % n;
+                path_length += norm(&polygon.points[end_idx], &polygon.points[prev_idx]);
+                if path_length > max_path_length as f64 {
+                    break;
+                }
+
+                if edge_count >= 2
+                    && n - edge_count >= 3
+                    && norm(&polygon.points[end_idx], &polygon.points[start_idx]) <= endpoint_tolerance as f64
+                {
+                    // Keep the start point and remove the short path through the near-duplicate end point.
+                    if start_idx < end_idx {
+                        polygon.points.drain(start_idx + 1..end_idx + 1);
+                    } else {
+                        let kept: Vec<Point> = polygon.points[end_idx + 1..start_idx + 1].to_vec();
+                        polygon.points = kept;
+                    }
+                    removed = true;
+                    changed = true;
+                    break;
+                }
+
+                prev_idx = end_idx;
+                edge_count += 1;
+            }
+            start_idx += 1;
+        }
+    }
+
+    removed
+}
+
+/// TriangleMeshSlicer.cpp:1832-1850 `static bool remove_short_backtracks(ExPolygons &expolygons, float
+/// closing_radius)`. `scale_(v)` is `v / SCALING_FACTOR` in double, stored into the `int32_t` `coord_t` by
+/// truncation.
+fn remove_short_backtracks(expolygons: &mut ExPolygons, closing_radius: f32) -> bool {
+    let sf = crate::libslic3r::SCALING_FACTOR;
+    // std::min<coord_t>(scale_(0.002), coord_t(scale_(closing_radius) * 0.05))
+    let max_path_length: i32 = ((0.002_f64 / sf) as i32).min(((closing_radius as f64 / sf) * 0.05) as i32);
+    if max_path_length <= 0 {
+        return false;
+    }
+
+    // std::min<coord_t>(scale_(0.0001), std::max<coord_t>(1, max_path_length / 20))
+    let endpoint_tolerance: i32 = ((0.0001_f64 / sf) as i32).min(1.max(max_path_length / 20));
+    let mut removed = false;
+
+    for expolygon in expolygons.iter_mut() {
+        removed |= remove_short_backtracks_polygon(&mut expolygon.contour, max_path_length, endpoint_tolerance);
+        for hole in expolygon.holes.iter_mut() {
+            removed |= remove_short_backtracks_polygon(hole, max_path_length, endpoint_tolerance);
+        }
+    }
+
+    removed
 }
 
 // ClipperLib::PolyFillType (recorded for fidelity; behavior NonZero-only here).
@@ -1587,6 +1676,18 @@ fn slice_mesh_its(
             flat_out
                 .chunks_exact(3)
                 .map(|c| StlVertex::new(c[0], c[1], c[2]))
+                .collect()
+        } else if zs.len() > 1 && crate::faithful_gate("SLICER_SCALE_MUL") {
+            // TriangleMeshSlicer.cpp:2010-2015 with :1958-1971: for more than one z the pin copies the vertices
+            // through transform_mesh_vertices_for_slicing(), which for the identity MULTIPLIES x and y by
+            // `float(s)`, `s = 1. / SCALING_FACTOR` (:1962, :1968-1969); only for a single z it divides by
+            // `float(SCALING_FACTOR)` (`scaled<float>`, :2003). The two differ in the last bit of the float.
+            // Same expression as `slice_mesh_its_identity` below, which the 'slice_mesh' lines of
+            // tests/tree_support_3d_native_parity.rs compare with the pin. SLICER_SCALE_MUL=0: the division.
+            let s: f32 = (1. / crate::libslic3r::SCALING_FACTOR) as f32;
+            mesh.vertices
+                .iter()
+                .map(|p| StlVertex::new(p.x * s, p.y * s, p.z))
                 .collect()
         } else {
             mesh.vertices

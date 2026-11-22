@@ -1054,17 +1054,18 @@ fn tree_support_3d_native_parity() {
     for (kind, (n, bad)) in &by_kind {
         eprintln!("{kind}: {n} lines, {bad} mismatches");
     }
-    // Reported, not required: the lines that go through `make_expolygons` of triangle_mesh_slicer.rs
-    // (slice_mesh_ex() and slice_branches(), which the pin's generate_support_areas() does not call).
+    // The lines that go through `make_expolygons` of triangle_mesh_slicer.rs (slice_mesh_ex() and
+    // slice_branches(), which the pin's generate_support_areas() does not call) are counted apart; they are
+    // required too since `remove_short_backtracks` is ported (R923, gate SLICER_CLOSING_PIN).
     const REPORTED: [&str; 2] = ["slice_mesh_ex", "slice_branches intermediate_layers"];
     let mut reported_bad = 0usize;
     for kind in REPORTED {
         if let Some((n, bad)) = by_kind.get(kind) {
-            eprintln!("REPORTED, not required: {kind}: {n} lines, {bad} differ");
+            eprintln!("through make_expolygons: {kind}: {n} lines, {bad} differ");
             reported_bad += bad;
         }
     }
     let bad = c.r.finish();
     eprintln!("{} lines, {} mismatches, {} of them in the reported kinds", c.r.expected.len(), bad, reported_bad);
-    assert_eq!(bad - reported_bad, 0, "required lines of the vectors that differ");
+    assert_eq!(bad, 0, "lines of the vectors that differ");
 }
