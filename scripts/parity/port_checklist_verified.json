@@ -3829,5 +3829,13 @@
   "functions": [
    "LayerRegion::process_external_surfaces"
   ]
+ },
+ {
+  "unit": "Support/TreeSupport3D",
+  "round": 926,
+  "evidence": "tests/tree_support_3d_native_parity.rs: organic_lightning_infill (TreeSupport3D.cpp 4388-4792) on the 18 scenarios: the chained lightning polylines of every layer, 63 lines (seven scenarios produce lines, the others take the early return), none differ; 12,211 lines in all.",
+  "functions": [
+   "organic_lightning_infill"
+  ]
  }
 ]

@@ -3255,11 +3255,21 @@ pub fn tiny_area_threshold() -> f64 {
 ///
 /// An exception of the C++ (a flow that cannot be made) is the `Err`.
 pub fn group_meshes(print: &pf::Print, print_object_ids: &[usize]) -> crate::flow::FlowResult<Vec<(TreeSupportSettings, Vec<usize>)>> {
+    group_meshes_with(print, print_object_ids, &|object_id| print.get_object(object_id))
+}
+
+/// `group_meshes` (TreeSupport3D.cpp:152-209) with `print.get_object(id)` handed in as `get_object`, for a caller
+/// that holds the object apart from the print (`generate_support_areas`).
+pub fn group_meshes_with<'a>(
+    print: &'a pf::Print,
+    print_object_ids: &[usize],
+    get_object: &dyn Fn(usize) -> &'a pf::PrintObject,
+) -> crate::flow::FlowResult<Vec<(TreeSupportSettings, Vec<usize>)>> {
     let mut grouped_meshes: Vec<(TreeSupportSettings, Vec<usize>)> = Vec::new();
 
     //FIXME this is ugly, it does not belong here.
     for &object_id in print_object_ids {
-        let print_object = print.get_object(object_id);
+        let print_object = get_object(object_id);
         let object_config = print_object.config();
         if cfg_float(object_config, "support_top_z_distance") < EPSILON {
             // || min_feature_size < scaled<coord_t>(0.1) that is the minimum line width
@@ -3272,7 +3282,7 @@ pub fn group_meshes(print: &pf::Print, print_object_ids: &[usize]) -> crate::flo
     // Group all meshes that can be processed together. NOTE this is different from mesh-groups! Only one setting object is needed per group,
     // as different settings in the same group may only occur in the tip, which uses the original settings objects from the meshes.
     for &object_id in print_object_ids {
-        let print_object = print.get_object(object_id);
+        let print_object = get_object(object_id);
         // Support must be enabled and set to Tree style.
         let found_existing_group = false;
         let next_settings =
@@ -3283,7 +3293,7 @@ pub fn group_meshes(print: &pf::Print, print_object_ids: &[usize]) -> crate::flo
         }
 
         // no need to do this per mesh group as adaptive layers and raft setting are not setable per mesh.
-        if print.get_object(largest_printed_mesh_idx).layers().last().unwrap().print_z < print_object.layers().last().unwrap().print_z {
+        if get_object(largest_printed_mesh_idx).layers().last().unwrap().print_z < print_object.layers().last().unwrap().print_z {
             largest_printed_mesh_idx = object_id;
         }
     }
@@ -3540,10 +3550,24 @@ pub fn precalculate(
     volumes: &mut TreeModelVolumes,
     throw_on_cancel: ThrowOnCancel,
 ) -> LayerIndex {
+    precalculate_with(overhangs, config, object_ids, volumes, throw_on_cancel, &|object_id| print.get_object(object_id))
+}
+
+/// `precalculate` (TreeSupport3D.cpp:349-370) with `print.get_object(id)` handed in as `get_object`, for a caller
+/// that holds the object apart from the print (`generate_support_areas`).
+#[must_use]
+pub fn precalculate_with<'a>(
+    overhangs: &[Polygons],
+    config: &TreeSupportSettings,
+    object_ids: &[usize],
+    volumes: &mut TreeModelVolumes,
+    throw_on_cancel: ThrowOnCancel,
+    get_object: &dyn Fn(usize) -> &'a pf::PrintObject,
+) -> LayerIndex {
     // calculate top most layer that is relevant for support
     let mut max_layer: LayerIndex = 0;
     for &object_id in object_ids {
-        let print_object = print.get_object(object_id);
+        let print_object = get_object(object_id);
         let num_raft_layers = config.raft_layers.len() as i32;
         let num_layers = print_object.layer_count() as i32 + num_raft_layers;
         let mut max_support_layer_id: i32 = 0;
@@ -3556,7 +3580,7 @@ pub fn precalculate(
     }
     if max_layer > 0 {
         // The actual precalculation happens in TreeModelVolumes.
-        volumes.precalculate(print.get_object(object_ids[0]), max_layer, throw_on_cancel);
+        volumes.precalculate(get_object(object_ids[0]), max_layer, throw_on_cancel);
     }
     max_layer
 }
@@ -9530,5 +9554,839 @@ pub fn organic_draw_branches(
         }
 
         throw_on_cancel();
+    }
+}
+
+/// TreeSupport3D.cpp:4388-4792 `static void organic_lightning_infill(PrintObject &print_object, const
+/// TreeModelVolumes &volumes, const TreeSupportSettings &config, SupportGeneratorLayersPtr &bottom_contacts,
+/// SupportGeneratorLayersPtr &top_contacts, SupportGeneratorLayersPtr &intermediate_layers,
+/// std::vector<Polylines> &lightning_infill_lines, std::function<void()> throw_on_cancel)`.
+///
+/// Lightning-infill style pass for internal voids in the organic tree support (see the C++ comment
+/// :4357-4387). The `tbb::parallel_for`s over the layers are independent per layer and are plain loops here.
+/// `print` is the print of `print_object` (the lightning generator's support constructor reads the print's
+/// config through `m_object->print()`, Generator.cpp:102-104); the layers are looked up in `layer_storage`.
+/// The `LIGHTNING_INFILL_DEBUG` blocks (:4411-4413, :4494-4498, :4569-4583, :4593-4597, :4620-4639,
+/// :4642-4644, :4670-4674, :4700-4710, :4718-4734, :4736-4791) are not compiled at the pin.
+#[allow(clippy::too_many_arguments)]
+pub fn organic_lightning_infill(
+    print_object: &pf::PrintObject,
+    print: &pf::Print,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    bottom_contacts: &SupportGeneratorLayersPtr,
+    top_contacts: &SupportGeneratorLayersPtr,
+    intermediate_layers: &SupportGeneratorLayersPtr,
+    layer_storage: &SupportGeneratorLayerStorage,
+    lightning_infill_lines: &mut Vec<Vec<crate::geometry::Polyline>>,
+    throw_on_cancel: ThrowOnCancel,
+) {
+    use crate::fill::lightning::generator::Generator;
+    use crate::geometry::Polyline;
+
+    // :4398-4400
+    let num_layers: usize = intermediate_layers.len();
+    if num_layers == 0 {
+        return;
+    }
+
+    // :4402
+    let line_width: Coord = config.support_line_width;
+    // Scaled^2 area per 1 mm^2, used to express the feed-area window in real units.
+    // :4404 `sqr(scaled<double>(1.))`
+    let scaled_1: f64 = crate::scaled_f(1.);
+    let area_scaled_per_mm2: f64 = scaled_1 * scaled_1;
+    // Feed-area acceptance window for floating-sheath pieces and the void polygons that bound them.
+    // Smaller than this is extrusion noise; larger than this is a genuine gap between separate branches
+    // rather than a merge void.
+    // :4408-4409
+    let min_feed_area: f64 = 0.02 * area_scaled_per_mm2;
+    let max_feed_area: f64 = 50.0 * area_scaled_per_mm2;
+
+    // Per-layer grounding contours (the full solid support cross-section, holes included) and the
+    // internal-void overhang to fill.
+    // :4417-4418
+    let mut contours: Vec<Polygons> = vec![Polygons::new(); num_layers];
+    let mut lightning_overhangs: Vec<Polygons> = vec![Polygons::new(); num_layers];
+
+    // :4420-4428
+    let tree_base_at = |layer_idx: usize| -> Polygons {
+        if layer_idx < num_layers && intermediate_layers[layer_idx] != SUPPORT_GENERATOR_LAYER_PTR_NULL {
+            layer_storage[intermediate_layers[layer_idx]].polygons.clone()
+        } else {
+            Polygons::new()
+        }
+    };
+    let roof_at = |layer_idx: usize| -> Polygons {
+        if layer_idx < top_contacts.len() && top_contacts[layer_idx] != SUPPORT_GENERATOR_LAYER_PTR_NULL {
+            layer_storage[top_contacts[layer_idx]].polygons.clone()
+        } else {
+            Polygons::new()
+        }
+    };
+    let bottom_at = |layer_idx: usize| -> Polygons {
+        if layer_idx < bottom_contacts.len() && bottom_contacts[layer_idx] != SUPPORT_GENERATOR_LAYER_PTR_NULL {
+            layer_storage[bottom_contacts[layer_idx]].polygons.clone()
+        } else {
+            Polygons::new()
+        }
+    };
+
+    // Reconstruct the real solid support cross-section at a layer. intermediate_layers has already had
+    // the top/bottom contacts subtracted (see organic_draw_branches), which would otherwise introduce
+    // spurious holes; unioning the base with its contacts restores the actual printed cross-section.
+    // :4433-4438
+    let support_at = |layer_idx: usize| -> Vec<ExPolygon> {
+        let mut s: Polygons = tree_base_at(layer_idx);
+        s.extend(bottom_at(layer_idx));
+        s.extend(roof_at(layer_idx));
+        cu::union_ex(&s)
+    };
+    // Interior holes of a cross-section within the acceptance window, returned as positively-oriented
+    // region polygons. Used to bound lightning seeds to void interiors when thickening floating sheath.
+    // :4441-4453
+    let holes_of = |expolys: &[ExPolygon]| -> Polygons {
+        let mut out = Polygons::new();
+        for ep in expolys {
+            for h in &ep.holes {
+                let a: f64 = h.area().abs();
+                if a < min_feed_area || a > max_feed_area {
+                    continue;
+                }
+                let mut p: Polygon = h.clone();
+                p.make_counter_clockwise();
+                out.push(p);
+            }
+        }
+        out
+    };
+    // Per-layer solid cross-section (ExPolygons) reused by both the contour and the detection below.
+    // contours[L] carries the outer boundary and the hole rims, so a hole-interior overhang sample
+    // grounds onto the surrounding support ring (Layer::getBestGroundingLocation scans every ring).
+    // :4457-4465
+    let mut support_ex: Vec<Vec<ExPolygon>> = vec![Vec::new(); num_layers];
+    for layer_idx in 0..num_layers {
+        support_ex[layer_idx] = support_at(layer_idx);
+        contours[layer_idx] = crate::geometry::to_polygons(&support_ex[layer_idx]);
+        throw_on_cancel();
+    }
+
+    // ---- Internal-void ("floating") detection -------------------------------------------------------
+    // (the C++ comment :4467-4478)
+    // :4479
+    let half_line_width: f32 = (0.5 * line_width as f64) as f32;
+    // Fallback when a support layer has no height recorded (e.g. empty placeholder). Prefer the
+    // support layer's own height below so independent_support_layer_height stays accurate.
+    // :4482 `float(scaled<double>(print_object.config().layer_height.value))`
+    let fallback_support_tolerance: f32 = crate::scaled_f(cfg_float(print_object.config(), "layer_height")) as f32;
+    // :4483-4487
+    let sheath_of = |expolys: &[ExPolygon]| -> Polygons {
+        if expolys.is_empty() {
+            return Polygons::new();
+        }
+        cu::diff(
+            &cu::offset_expolygons(expolys, half_line_width, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT),
+            &cu::offset_expolygons(expolys, -half_line_width, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT),
+            cu::ApplySafetyOffset::No,
+        )
+    };
+    // :4488-4493
+    let layer_support_tolerance = |layer_idx: usize| -> f32 {
+        if layer_idx < intermediate_layers.len()
+            && intermediate_layers[layer_idx] != SUPPORT_GENERATOR_LAYER_PTR_NULL
+            && layer_storage[intermediate_layers[layer_idx]].height > crate::libslic3r::EPSILON
+        {
+            return crate::scaled_f(layer_storage[intermediate_layers[layer_idx]].height) as f32;
+        }
+        fallback_support_tolerance
+    };
+    // :4500-4506
+    let mut sheaths: Vec<Polygons> = vec![Polygons::new(); num_layers];
+    for layer_idx in 0..num_layers {
+        sheaths[layer_idx] = sheath_of(&support_ex[layer_idx]);
+        throw_on_cancel();
+    }
+    // :4507-4577 `detect_floating`, called for the layers 1.. (:4585-4590)
+    for layer_idx in 1..num_layers.max(1) {
+        throw_on_cancel();
+        let sheath_here: &Polygons = &sheaths[layer_idx];
+        if sheath_here.is_empty() {
+            continue;
+        }
+        let sheath_below: &Polygons = &sheaths[layer_idx - 1];
+        let support_tolerance: f32 = layer_support_tolerance(layer_idx);
+        let mut floating: Polygons = if sheath_below.is_empty() {
+            sheath_here.clone()
+        } else {
+            cu::diff(sheath_here, &cu::offset(sheath_below, support_tolerance, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT), cu::ApplySafetyOffset::No)
+        };
+        if floating.is_empty() {
+            continue;
+        }
+
+        // Drop outer-wall growth: keep only floating sheath inside the branch. An empty inset means every
+        // branch on this layer is thinner than two line widths and has no interior to seed into, so the
+        // layer is rejected rather than let through with the outer sheath unfiltered.
+        // :4522-4531
+        let mut branch_interior = Polygons::new();
+        for ep in &support_ex[layer_idx] {
+            let inset: Vec<ExPolygon> = cu::offset_ex_expolygons(
+                &[ExPolygon { contour: ep.contour.clone(), holes: Vec::new() }],
+                -(line_width as f32),
+                cu::DEFAULT_JOIN_TYPE,
+                cu::DEFAULT_MITER_LIMIT,
+            );
+            branch_interior.extend(crate::geometry::to_polygons(&inset));
+        }
+        if branch_interior.is_empty() {
+            continue;
+        }
+        floating = cu::intersection(&floating, &cu::union_(&branch_interior), cu::ApplySafetyOffset::No);
+        if floating.is_empty() {
+            continue;
+        }
+
+        // Apply the feed-area window to floating sheath pieces before thickening. Thickening can merge
+        // several valid rims into one polygon larger than max_feed_area; re-applying max afterwards
+        // would drop that whole feed. After thickening only discard crumbs below min_feed_area.
+        // :4536-4548
+        {
+            let mut filtered_floating = Polygons::with_capacity(floating.len());
+            for p in floating.drain(..) {
+                let a: f64 = p.area().abs();
+                if a < min_feed_area || a > max_feed_area {
+                    continue;
+                }
+                filtered_floating.push(p);
+            }
+            floating = filtered_floating;
+            if floating.is_empty() {
+                continue;
+            }
+        }
+
+        // Thicken the unsupported rim slightly into the adjacent void so DistanceField gets enough
+        // samples; clip to this layer's holes (and holes below) so we never seed outside the void.
+        // :4552-4557
+        let holes_here: Polygons = holes_of(&support_ex[layer_idx]);
+        let holes_below: Polygons = holes_of(&support_ex[layer_idx - 1]);
+        let void_region: Polygons = cu::union_2(&holes_here, &holes_below);
+        let mut feed: Polygons = floating.clone();
+        if !void_region.is_empty() {
+            feed = cu::union_2(
+                &floating,
+                &cu::intersection(&cu::offset(&floating, line_width as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT), &void_region, cu::ApplySafetyOffset::No),
+            );
+        }
+
+        // :4559-4568
+        let mut filtered = Polygons::with_capacity(feed.len());
+        for p in feed {
+            if p.area().abs() < min_feed_area {
+                continue;
+            }
+            filtered.push(p);
+        }
+        if filtered.is_empty() {
+            continue;
+        }
+        lightning_overhangs[layer_idx] = filtered;
+    }
+
+    // Critical safety clamp (the C++ comment :4599-4605): clip every fed overhang to its own layer's contour
+    // bounding box as a defensive guarantee that the field always terminates.
+    // :4606-4618
+    let mut fed_layers: i32 = 0;
+    for layer_idx in 0..num_layers {
+        if lightning_overhangs[layer_idx].is_empty() {
+            continue;
+        }
+        let cb = crate::geometry::get_extents_polygons(&contours[layer_idx]);
+        if contours[layer_idx].is_empty() || !cb.is_defined() {
+            lightning_overhangs[layer_idx].clear();
+            continue;
+        }
+        lightning_overhangs[layer_idx] = cu::intersection(&lightning_overhangs[layer_idx], &[cb.polygon()], cu::ApplySafetyOffset::No);
+        if !lightning_overhangs[layer_idx].is_empty() {
+            fed_layers += 1;
+        }
+    }
+
+    // :4641-4646
+    if fed_layers == 0 {
+        return;
+    }
+
+    // Density mirrors the legacy hybrid lightning reuse (TreeSupport::generate_toolpaths): derived
+    // from the support base pattern spacing. The generator clamps it to at least 0.15.
+    // :4650-4654
+    let obj_cfg = print_object.config();
+    let line_width_mm: f64 = unscaled_f64(line_width);
+    let support_spacing_mm: f64 = cfg_float(obj_cfg, "support_base_pattern_spacing") + line_width_mm;
+    // `std::min(1.0, x)`: x where x < 1.0
+    let mut density: f64 = if support_spacing_mm > crate::libslic3r::EPSILON {
+        let x = line_width_mm / support_spacing_mm * 2.0;
+        if x < 1.0 {
+            x
+        } else {
+            1.0
+        }
+    } else {
+        0.15
+    };
+    // `std::max(0.15, density)`: density where 0.15 < density
+    density = if 0.15 < density { density } else { 0.15 };
+
+    // :4656
+    let generator = Generator::new_for_support(print_object, print, &mut contours, &mut lightning_overhangs, throw_on_cancel, density as f32);
+
+    // Store the generated lightning network per layer as polylines, the same way the hybrid tree does
+    // (TreeSupport::generate_toolpaths). They are NOT merged into intermediate_layers (the C++ comment
+    // :4658-4665).
+    // :4666-4669
+    if lightning_infill_lines.len() < num_layers {
+        lightning_infill_lines.resize(num_layers, Vec::new());
+    }
+    // Anything shorter than this is a stub at a branch tip that costs a travel move and supports nothing.
+    let min_line_length: f64 = crate::scaled_f(1.);
+    // The area the lightning lines may run in: the cross-section with its voids filled, inset by half a line
+    // width, minus the model. Only for the layers that have lightning trees.
+    // :4676-4689
+    let mut footprints: Vec<Polygons> = vec![Polygons::new(); num_layers];
+    for layer_idx in 0..num_layers {
+        if generator.get_trees_for_layer(layer_idx).tree_roots.is_empty() {
+            continue;
+        }
+        let mut footprint = Polygons::new();
+        for ep in &support_ex[layer_idx] {
+            footprint.push(ep.contour.clone());
+        }
+        footprint = cu::offset(&cu::union_(&footprint), -half_line_width, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT);
+        if !footprint.is_empty() {
+            footprint = diff_clipped(&footprint, &volumes.get_collision(0, layer_idx as LayerIndex, true));
+        }
+        footprints[layer_idx] = footprint;
+        throw_on_cancel();
+    }
+    // convertToPolylines() uses rand(): layer by layer in order so the result is the same every time
+    // :4691-4735
+    for layer_idx in 0..num_layers {
+        throw_on_cancel();
+        let footprint: &Polygons = &footprints[layer_idx];
+        if footprint.is_empty() {
+            continue;
+        }
+
+        let lightning_layer = generator.get_trees_for_layer(layer_idx);
+        let mut lines: Vec<Polyline> = lightning_layer.convert_to_lines(footprint, 0);
+        if lines.is_empty() {
+            continue;
+        }
+        // :4711-4713
+        lines.retain(|pl| !(pl.length() < min_line_length));
+        if lines.is_empty() {
+            continue;
+        }
+
+        // :4717
+        lightning_infill_lines[layer_idx] = crate::shortest_path::chain_polylines(lines, None);
+    }
+}
+
+/// TreeSupport3D.cpp:4794-5147 `static void generate_support_areas(Print &print, TreeSupport* tree_support, const
+/// BuildVolume &build_volume, const std::vector<size_t> &print_object_ids, std::function<void()> throw_on_cancel)`.
+///
+/// The object of `print_object_ids` is the one `tree_support` holds (`TreeSupport::m_object`; in this crate the
+/// TreeSupport borrows its object apart from the print, so `print.get_object(id)` of the C++ is that object here:
+/// `group_meshes_with` / `precalculate_with`). The fillers of the support toolpaths come in as `fill_factory`.
+/// The timing statistics (`std::chrono`, the log lines) are not kept except for `support_stage_times()`;
+/// `print.set_status()` (:4950, :5103) is the caller's. An exception of the C++ is the `Err`.
+pub fn generate_support_areas(
+    print: &pf::Print,
+    tree_support: &mut crate::support::tree_support::TreeSupport<'_>,
+    build_volume: &crate::build_volume::BuildVolume,
+    print_object_ids: &[usize],
+    fill_factory: &dyn SupportFillFactory,
+    throw_on_cancel: ThrowOnCancel,
+) -> crate::Result<()> {
+    use crate::libslic3r::EPSILON;
+    use crate::print_config::enums::SupportMaterialPattern as Smp;
+    use crate::support::support_common::cu_polygon::overlaps;
+    use crate::support::support_common::{
+        generate_interface_layers, generate_raft_base, generate_support_layers, generate_support_toolpaths, merge_support_layers_multi_diameter,
+    };
+    use crate::support::support_material::make_support_merge_plan_of_object;
+    use crate::support::support_parameters::SupportParameters;
+    use crate::support::tree_support::OverhangType;
+    use crate::support::tree_support_common::layer_z;
+    use crate::support_merge_plan::Candidate;
+    use ordered_float::OrderedFloat;
+    use std::collections::BTreeMap;
+    let flow_err = |e: crate::flow::FlowError| crate::Error::Slicing(e.to_string());
+
+    // Settings with the indexes of meshes that use these settings.
+    // :4797-4799
+    let mut grouped_meshes: Vec<(TreeSupportSettings, Vec<usize>)> = {
+        let print_object: &pf::PrintObject = &*tree_support.m_object;
+        group_meshes_with(print, print_object_ids, &|_object_id| print_object).map_err(flow_err)?
+    };
+    if grouped_meshes.is_empty() {
+        return Ok(());
+    }
+
+    // Process every mesh group. These groups can not be processed parallel, as the processing in each group is parallelized, and nested parallelization is disables and slow.
+    // :4804
+    for processing in grouped_meshes.iter_mut() {
+        // Generator for model collision, avoidance and internal guide volumes.
+        // :4818-4824
+        let mut volumes = {
+            let config = &processing.0;
+            TreeModelVolumes::from_print_object(
+                &*tree_support.m_object,
+                print,
+                build_volume,
+                config.maximum_move_distance,
+                config.maximum_move_distance_slow,
+                processing.1[0],
+                &[],
+            )
+            .map_err(crate::Error::Slicing)?
+        };
+        // :4830-4833: use smart overhang detection
+        let support_detect_begin_time = std::time::Instant::now();
+        tree_support.detect_overhangs(false)?;
+        let vertical_enforcer_points = tree_support.m_vertical_enforcer_points.clone();
+        let detect_ms: i64;
+        let mut interface_generate_ms: i64 = 0;
+
+        // What the rest of the group needs of the object while it is only read: :4834-5067.
+        let print_object: &pf::PrintObject = &*tree_support.m_object;
+        let sp = print_object.slicing_parameters().clone();
+
+        //FIXME generating overhangs just for the first mesh of the group.
+        // :4827 `assert(processing.second.size() == 1)`
+
+        // :4831-4845
+        let num_raft_layers: usize = processing.0.raft_layers.len();
+        let num_layers: usize = print_object.layer_count() + num_raft_layers;
+        let mut overhangs: Vec<Polygons> = vec![Polygons::new(); num_layers];
+        for i in 0..print_object.layer_count() {
+            for expoly_type in &print_object.get_layer(i as i32).loverhangs_with_type {
+                let mut polys: Polygons = crate::geometry::to_polygons(std::slice::from_ref(&expoly_type.0));
+                if expoly_type.1 & (OverhangType::SHARP_TAIL.0 as i32) != 0 {
+                    // `offset(polys, scale_(0.2))`: the double as the float delta
+                    polys = cu::offset(&polys, crate::scaled_f(0.2) as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT);
+                }
+                overhangs[i + num_raft_layers].extend(polys);
+            }
+        }
+        // add vertical enforcer points
+        // :4847-4861
+        let zs: Vec<f32> = crate::layer::zs_from_layers(print_object.layers());
+        let base_circle: Polygon = make_circle_pin(crate::scaled_f(0.5), SUPPORT_TREE_CIRCLE_RESOLUTION as f64);
+        for pt_and_normal in &vertical_enforcer_points {
+            let pt = pt_and_normal.0;
+            // normal seems useless
+            // `std::lower_bound(zs.begin(), zs.end(), pt.z())`
+            let layer_nr: usize = zs.partition_point(|&z| z < pt[2]);
+            if layer_nr != zs.len() && layer_nr > 0 && layer_nr < print_object.layer_count() {
+                let mut circle: Polygon = base_circle.clone();
+                // `circle.translate(to_2d(pt).cast<coord_t>())`: the floats cut to the pin's 32 bit coord_t
+                let (dx, dy) = (pt[0] as i32 as Coord, pt[1] as i32 as Coord);
+                for p in &mut circle.points {
+                    p.x += dx;
+                    p.y += dy;
+                }
+                overhangs[layer_nr + num_raft_layers].push(circle);
+            }
+        }
+        // :4862-4863
+        detect_ms = support_detect_begin_time.elapsed().as_millis() as i64;
+
+        // ### Precalculate avoidances, collision etc.
+        // :4868
+        let mut num_support_layers: usize =
+            precalculate_with(&overhangs, &processing.0, &processing.1, &mut volumes, throw_on_cancel, &|_object_id| print_object) as usize;
+
+        // :4870-4875
+        let has_support: bool = num_support_layers > 0;
+        let has_raft: bool = !processing.0.raft_layers.is_empty();
+        num_support_layers = num_support_layers.max(processing.0.raft_layers.len());
+
+        if num_support_layers == 0 {
+            continue;
+        }
+
+        // :4877-4882
+        let mut support_params = SupportParameters::new(print_object, print).map_err(flow_err)?;
+        support_params.with_sheath = true;
+        // organic support default pattern is none.
+        if processing.0.support_pattern == Smp::SmpDefault as i32 {
+            processing.0.support_pattern = Smp::SmpNone as i32;
+        }
+        let config: &TreeSupportSettings = &processing.0;
+
+        // :4884-4897
+        let mut layer_storage = SupportGeneratorLayerStorage::new();
+        let mut top_contacts: SupportGeneratorLayersPtr = Vec::new();
+        let mut bottom_contacts: SupportGeneratorLayersPtr = Vec::new();
+        let mut interface_layers: SupportGeneratorLayersPtr = Vec::new();
+        let mut base_interface_layers: SupportGeneratorLayersPtr = Vec::new();
+        let mut intermediate_layers: SupportGeneratorLayersPtr = vec![SUPPORT_GENERATOR_LAYER_PTR_NULL; num_support_layers];
+        if support_params.has_top_contacts || has_raft {
+            top_contacts = vec![SUPPORT_GENERATOR_LAYER_PTR_NULL; num_support_layers];
+        }
+        if support_params.has_bottom_contacts {
+            bottom_contacts = vec![SUPPORT_GENERATOR_LAYER_PTR_NULL; num_support_layers];
+        }
+        if support_params.has_interfaces() || has_raft {
+            interface_layers = vec![SUPPORT_GENERATOR_LAYER_PTR_NULL; num_support_layers];
+        }
+        if support_params.has_base_interfaces() || has_raft {
+            base_interface_layers = vec![SUPPORT_GENERATOR_LAYER_PTR_NULL; num_support_layers];
+        }
+
+        // :4899-4908 `remove_undefined_layers`
+        fn doit(layers: &mut SupportGeneratorLayersPtr) {
+            layers.retain(|&ptr| ptr != SUPPORT_GENERATOR_LAYER_PTR_NULL);
+        }
+
+        // :4910-4913
+        let mut interface_placer = InterfacePlacer::new(&sp, &support_params, config);
+
+        // :4915-4924
+        let mut cooldown_areas: Vec<Vec<ExPolygon>> = vec![Vec::new(); num_support_layers];
+        // Filled at the dense layer_idx (same as intermediate_layers before compaction), then
+        // compacted to the non-null intermediate slots so generate_support_toolpaths can look
+        // them up by idx_layer_intermediate (print_z), not by support_layer_id.
+        let mut lightning_infill_lines: Vec<Vec<crate::geometry::Polyline>> = vec![Vec::new(); num_support_layers];
+        // The auxiliary areas stay indexed by the original organic grid even after undefined generator
+        // layers are removed. Preserve the grid's real Z coordinates for the final support-layer remap.
+        let mut per_layer_area_print_z: Vec<f64> = vec![0.; num_support_layers];
+        for layer_idx in 0..num_support_layers {
+            per_layer_area_print_z[layer_idx] = layer_z(&sp, config, layer_idx);
+        }
+        // :4925
+        if has_support {
+            // value is the area where support may be placed. As this is calculated in CreateLayerPathing it is saved and reused in draw_areas
+            let mut move_bounds: Vec<SupportElements> = vec![Vec::new(); num_support_layers];
+
+            // :4931-4933
+            for _mesh_idx in &processing.1 {
+                generate_initial_areas(
+                    print_object,
+                    print,
+                    &volumes,
+                    config,
+                    &overhangs,
+                    &mut move_bounds,
+                    &mut interface_placer,
+                    InterfacePlacerOutputs {
+                        layer_storage: &mut layer_storage,
+                        top_contacts: &mut top_contacts,
+                        top_interfaces: &mut interface_layers,
+                        top_base_interfaces: &mut base_interface_layers,
+                    },
+                    fill_factory,
+                    throw_on_cancel,
+                )
+                .map_err(flow_err)?;
+            }
+
+            // ### Propagate the influence areas downwards. This is an inherently serial operation.
+            // :4951
+            create_layer_pathing(&volumes, config, &mut move_bounds, throw_on_cancel);
+
+            // ### Set a point in each influence area
+            // :4955
+            create_nodes_from_area(&volumes, config, &mut move_bounds, throw_on_cancel);
+
+            // ### draw these points as circles
+            // this new function give correct result when raft is also enabled
+            // :4967-4970
+            organic_draw_branches(
+                print_object,
+                &mut volumes,
+                config,
+                &mut move_bounds,
+                &mut bottom_contacts,
+                &mut top_contacts,
+                &mut interface_placer,
+                &mut intermediate_layers,
+                &mut layer_storage,
+                &mut cooldown_areas,
+                throw_on_cancel,
+            );
+            // ### Lightning infill for newly opened internal voids in organic hollow trunks (always on).
+            // :4973-4974
+            organic_lightning_infill(
+                print_object,
+                print,
+                &volumes,
+                config,
+                &bottom_contacts,
+                &top_contacts,
+                &intermediate_layers,
+                &layer_storage,
+                &mut lightning_infill_lines,
+                throw_on_cancel,
+            );
+
+            // lightning_infill_lines was filled at the same dense layer_idx as intermediate_layers
+            // (including empty slots). Drop the matching entries so the two arrays stay aligned
+            // after the nullptrs are removed; generate_support_toolpaths looks them up by the
+            // compacted intermediate index (print_z), not by support_layer_id.
+            // :4982-4992
+            {
+                let mut kept_lightning: Vec<Vec<crate::geometry::Polyline>> = Vec::with_capacity(intermediate_layers.len());
+                for i in 0..intermediate_layers.len() {
+                    if intermediate_layers[i] == SUPPORT_GENERATOR_LAYER_PTR_NULL {
+                        continue;
+                    }
+                    kept_lightning.push(if i < lightning_infill_lines.len() { std::mem::take(&mut lightning_infill_lines[i]) } else { Vec::new() });
+                }
+                lightning_infill_lines = kept_lightning;
+            }
+            // :4993 `remove_undefined_layers()`
+            doit(&mut bottom_contacts);
+            doit(&mut top_contacts);
+            doit(&mut interface_layers);
+            doit(&mut base_interface_layers);
+            doit(&mut intermediate_layers);
+
+            // :4995-4999
+            let support_interface_begin_time = std::time::Instant::now();
+            let (new_interface_layers, new_base_interface_layers) = generate_interface_layers(
+                print_object.config(),
+                &support_params,
+                &bottom_contacts,
+                &top_contacts,
+                &mut interface_layers,
+                &mut base_interface_layers,
+                &intermediate_layers,
+                &mut layer_storage,
+            );
+            interface_layers = new_interface_layers;
+            base_interface_layers = new_base_interface_layers;
+            interface_generate_ms = support_interface_begin_time.elapsed().as_millis() as i64;
+
+            // A very low overhang produces roofs that have no tree body underneath. Printing the whole
+            // stack as interface leaves it without an anchor to the bed, so turn the bed-touching interface
+            // layer into a base once the roofs above it are tall enough to spare it. A one- or two-layer
+            // stack stays interface-only, where converting the bed layer would consume the whole support.
+            // :5005-5026
+            let bed_print_z: f64 = sp.object_print_z_min;
+            if intermediate_layers.is_empty() && !interface_layers.is_empty() && layer_storage[interface_layers[0]].bottom_z < bed_print_z + EPSILON {
+                let base_layer: usize = interface_layers[0];
+                // Estimate the stack height from every roof whose footprint overlaps this bed interface
+                // layer. Roofs sharing a layer index are merged into one layer object, and a genuine
+                // single-layer overhang lives in top_contacts (dtt_roof == 0), so it is never demoted here;
+                // only a bed interface layer that already carries taller roofs above it gets converted.
+                let mut stack_zs: Vec<f64> = Vec::new();
+                for layers in [&interface_layers, &base_interface_layers, &top_contacts] {
+                    for &layer in layers.iter() {
+                        if layer != SUPPORT_GENERATOR_LAYER_PTR_NULL
+                            && !layer_storage[layer].polygons.is_empty()
+                            && overlaps(&layer_storage[layer].polygons, &layer_storage[base_layer].polygons)
+                        {
+                            stack_zs.push(layer_storage[layer].print_z);
+                        }
+                    }
+                }
+                // `std::sort` of doubles; `std::unique` with `std::abs(l - r) < EPSILON` (the kept one against the next)
+                stack_zs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                stack_zs.dedup_by(|r, l| (*l - *r).abs() < EPSILON);
+                if stack_zs.len() >= 3 {
+                    layer_storage[base_layer].layer_type = SupporLayerType::SltBase;
+                    intermediate_layers.push(base_layer);
+                    interface_layers.remove(0);
+                }
+            }
+
+            // :5043
+            move_bounds.clear();
+        } else if generate_raft_contact(
+            print_object,
+            config,
+            &mut interface_placer,
+            &mut InterfacePlacerOutputs {
+                layer_storage: &mut layer_storage,
+                top_contacts: &mut top_contacts,
+                top_interfaces: &mut interface_layers,
+                top_base_interfaces: &mut base_interface_layers,
+            },
+        ) >= 0
+        {
+            // :5046 `remove_undefined_layers()`
+            doit(&mut bottom_contacts);
+            doit(&mut top_contacts);
+            doit(&mut interface_layers);
+            doit(&mut base_interface_layers);
+            doit(&mut intermediate_layers);
+        } else {
+            // No raft.
+            continue;
+        }
+
+        // Produce the support G-code.
+        // :5053
+        let raft_layers: SupportGeneratorLayersPtr =
+            generate_raft_base(print_object, &support_params, &sp, &top_contacts, &interface_layers, &base_interface_layers, &intermediate_layers, &mut layer_storage);
+
+        // BBS multi-diameter: merge the support areas into slabs a coarse nozzle can extrude. The organic tree
+        // is grown on a layer grid of a fixed height, so this post-pass is the only place its Z ladder can
+        // still be coarsened. print_z -> filament the merged slab at that height was planned for.
+        // :5058-5067
+        let mut planned_filaments: BTreeMap<OrderedFloat<f64>, Candidate> = BTreeMap::new();
+        let mut planned_interface_filaments: BTreeMap<OrderedFloat<f64>, Candidate> = BTreeMap::new();
+        let mut planned_base_heights: BTreeMap<OrderedFloat<f64>, f64> = BTreeMap::new();
+        let mut planned_interface_heights: BTreeMap<OrderedFloat<f64>, f64> = BTreeMap::new();
+        let plan = make_support_merge_plan_of_object(print_object, print);
+        merge_support_layers_multi_diameter(
+            print_object,
+            &plan,
+            &support_params,
+            &sp,
+            &raft_layers,
+            &mut bottom_contacts,
+            &mut top_contacts,
+            &mut intermediate_layers,
+            &mut interface_layers,
+            &mut base_interface_layers,
+            &mut planned_filaments,
+            &mut planned_interface_filaments,
+            &mut planned_base_heights,
+            &mut planned_interface_heights,
+            Some(&per_layer_area_print_z),
+            Some(&mut cooldown_areas),
+            None,
+            // The tips were placed with the tree's own gap, which follows the nozzles in multi-diameter mode.
+            // `double(config.z_distance_top_layers) * unscaled<double>(config.layer_height)`
+            config.z_distance_top_layers as f64 * unscaled_f64(config.layer_height),
+            &mut layer_storage,
+        );
+        // The object is written from here on: :5069-5109.
+        let _ = print_object;
+        let object: &mut pf::PrintObject = &mut *tree_support.m_object;
+        object.m_support_stage_times.detect += detect_ms;
+        object.m_support_stage_times.interface_generate += interface_generate_ms;
+
+        // :5069
+        let layers_sorted: SupportGeneratorLayersPtr = generate_support_layers(
+            object,
+            &raft_layers,
+            &bottom_contacts,
+            &top_contacts,
+            &intermediate_layers,
+            &interface_layers,
+            &base_interface_layers,
+            &mut layer_storage,
+        );
+
+        // Hand the planned filament over to the support layers the object owns now. Matching by print_z is safe
+        // because generate_support_layers() gives every support layer a unique print_z.
+        // :5073-5095
+        for support_layer in object.m_support_layers.iter_mut() {
+            let print_z = support_layer.layer.print_z;
+            // `map.lower_bound(print_z - EPSILON)`, then `it->first <= print_z + EPSILON`
+            if let Some((z, candidate)) = planned_filaments.range(OrderedFloat(print_z - EPSILON)..).next() {
+                if z.0 <= print_z + EPSILON {
+                    support_layer.planned_filament_id = candidate.filament_id;
+                    support_layer.planned_nozzle_diameter = candidate.nozzle_diameter;
+                }
+            }
+            if let Some((z, candidate)) = planned_interface_filaments.range(OrderedFloat(print_z - EPSILON)..).next() {
+                if z.0 <= print_z + EPSILON {
+                    support_layer.planned_interface_filament_id = candidate.filament_id;
+                    support_layer.planned_interface_nozzle_diameter = candidate.nozzle_diameter;
+                }
+            }
+            if let Some((z, height)) = planned_base_heights.range(OrderedFloat(print_z - EPSILON)..).next() {
+                if z.0 <= print_z + EPSILON {
+                    support_layer.base_slab_height = *height;
+                }
+            }
+            if let Some((z, height)) = planned_interface_heights.range(OrderedFloat(print_z - EPSILON)..).next() {
+                if z.0 <= print_z + EPSILON {
+                    support_layer.interface_slab_height = *height;
+                }
+            }
+        }
+
+        // BBS: This is a hack to avoid the support being generated outside the bed area. See #4769.
+        // :5098-5100
+        for &layer in &layers_sorted {
+            if layer != SUPPORT_GENERATOR_LAYER_PTR_NULL {
+                layer_storage[layer].polygons = cu::intersection(&layer_storage[layer].polygons, std::slice::from_ref(&volumes.m_bed_area), cu::ApplySafetyOffset::No);
+            }
+        }
+
+        // Don't fill in the tree supports, make them hollow with just a single sheath line.
+        // :5104-5109
+        let support_toolpath_begin_time = std::time::Instant::now();
+        let object_config = object.config().clone();
+        generate_support_toolpaths(
+            &mut object.m_support_layers,
+            &object_config,
+            &support_params,
+            &sp,
+            &raft_layers,
+            &bottom_contacts,
+            &top_contacts,
+            &intermediate_layers,
+            &interface_layers,
+            &base_interface_layers,
+            &cooldown_areas,
+            Some(&mut lightning_infill_lines),
+            Some(&|| throw_on_cancel()),
+            &mut layer_storage,
+            fill_factory,
+        )
+        .map_err(flow_err)?;
+        object.m_support_stage_times.toolpath_generate += support_toolpath_begin_time.elapsed().as_millis() as i64;
+    }
+
+    //   storage.support.generated = true;
+    Ok(())
+}
+
+/// TreeSupport3D.cpp:6054-6069 `void generate_tree_support_3D(PrintObject &print_object, TreeSupport* tree_support,
+/// std::function<void()> throw_on_cancel)`.
+///
+/// The object is `tree_support.m_object` (see `generate_support_areas`); `idx` is its place among the objects of
+/// the print, which the caller knows (the TreeSupport of this crate borrows the object apart from the print).
+pub fn generate_tree_support_3d(
+    idx: usize,
+    tree_support: &mut crate::support::tree_support::TreeSupport<'_>,
+    fill_factory: &dyn SupportFillFactory,
+    throw_on_cancel: ThrowOnCancel,
+) -> crate::Result<()> {
+    use crate::config::ConfigOptionResolver;
+    // :6063-6066
+    let bedpts: Vec<Point> = tree_support.m_machine_border.contour.points.clone();
+    // `unscale(p)`: `Vec2d(unscale<double>(p.x()), unscale<double>(p.y()))`
+    let bedptsf: Vec<crate::geometry::PointF> = bedpts.iter().map(|p| crate::geometry::PointF::new(unscaled_f64(p.x), unscaled_f64(p.y))).collect();
+    let printable_height: f64 = tree_support.m_print_config.option("printable_height").and_then(|o| o.get_float().ok()).unwrap_or(0.0);
+    let build_volume = crate::build_volume::BuildVolume::new_from_config(bedptsf, printable_height, Vec::new(), Vec::new());
+
+    // :6068
+    let print: &pf::Print = tree_support.m_print;
+    generate_support_areas(print, tree_support, &build_volume, &[idx], fill_factory, throw_on_cancel)
+}
+
+/// The organic style of `TreeSupport::generate()` (`crate::support::tree_support::TreeSupport3DGenerator`):
+/// `generate_tree_support_3D(*m_object, this, throw_on_cancel)` (TreeSupport.cpp, the `tree_organic` branch of
+/// `TreeSupport::generate`). Holds what the C++ function reaches through the object and its print: the place of
+/// the object among the print's objects, the fillers of the support toolpaths and the cancel callback.
+pub struct OrganicTreeSupport3D<'f> {
+    /// The index of the object in `print.objects()` (TreeSupport3D.cpp:6056-6061).
+    pub idx: usize,
+    pub fill_factory: &'f dyn SupportFillFactory,
+    pub throw_on_cancel: ThrowOnCancel<'f>,
+}
+
+impl crate::support::tree_support::TreeSupport3DGenerator for OrganicTreeSupport3D<'_> {
+    fn generate_tree_support_3d(&self, tree_support: &mut crate::support::tree_support::TreeSupport<'_>) -> crate::Result<()> {
+        generate_tree_support_3d(self.idx, tree_support, self.fill_factory, self.throw_on_cancel)
     }
 }

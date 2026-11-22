@@ -693,6 +693,18 @@ fn run_scenario(c: &mut Ctx, scenario: usize) {
         dump_generator_layers(c, &format!("{s} organic bottom_contacts"), &storage, &bottom);
         dump_generator_layers(c, &format!("{s} organic top_contacts"), &storage, &top);
         dump_generator_layers(c, &format!("{s} organic intermediate_layers"), &storage, &intermediate);
+        // organic_lightning_infill() (TreeSupport3D.cpp:4388-4792) on the layers organic_draw_branches() left.
+        {
+            let mut lightning_infill_lines: Vec<Vec<Polyline>> = Vec::new();
+            organic_lightning_infill(obj, &print, &volumes, cfg, &bottom, &top, &intermediate, &storage, &mut lightning_infill_lines, &|| {});
+            let n = lightning_infill_lines.iter().filter(|l| !l.is_empty()).count();
+            c.r.out(format!("{s} lightning {} {n}", lightning_infill_lines.len()));
+            for (i, lines) in lightning_infill_lines.iter().enumerate() {
+                if !lines.is_empty() {
+                    c.outb(format!("{s} lightning layer {i}"), pls_s(lines));
+                }
+            }
+        }
     }
 
     // generate_overhangs() (TreeSupport3D.cpp:226-345) over the layers of the scenario: the overhangs by the index
@@ -1057,7 +1069,7 @@ fn tree_support_3d_native_parity() {
         let is_scenario = toks[0].len() > 1 && toks[0].starts_with('s') && toks[0][1..].bytes().all(|b| b.is_ascii_digit());
         let kind = if is_scenario {
             let stage = toks.get(1).copied().unwrap_or("");
-            if matches!(stage, "initial" | "pathing" | "nodes" | "branch" | "smooth" | "draw" | "organic_smooth" | "slice_branches" | "organic") {
+            if matches!(stage, "initial" | "pathing" | "nodes" | "branch" | "smooth" | "draw" | "organic_smooth" | "slice_branches" | "organic" | "lightning") {
                 format!("{stage} {}", toks.get(2).copied().unwrap_or(""))
             } else {
                 stage.to_string()

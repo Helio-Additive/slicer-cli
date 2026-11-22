@@ -841,6 +841,18 @@ static void run_scenario(int scenario)
         dump_generator_layers(S + " organic bottom_contacts", bottom);
         dump_generator_layers(S + " organic top_contacts", top);
         dump_generator_layers(S + " organic intermediate_layers", intermediate);
+        // organic_lightning_infill() (TreeSupport3D.cpp:4388-4792) on the layers organic_draw_branches() left:
+        // the size of the result, the number of layers with lines, and the chained lines of each such layer.
+        {
+            std::vector<Polylines> lightning_infill_lines;
+            organic_lightning_infill(*obj, volumes, c, bottom, top, intermediate, lightning_infill_lines, [] {});
+            size_t n = 0;
+            for (const Polylines &pl : lightning_infill_lines)
+                if (! pl.empty()) ++n;
+            out(S + " lightning " + hI((long long) lightning_infill_lines.size()) + " " + hI((long long) n));
+            for (size_t i = 0; i < lightning_infill_lines.size(); ++i)
+                if (! lightning_infill_lines[i].empty()) outb(S + " lightning layer " + hI((long long) i), PLS(lightning_infill_lines[i]));
+        }
     }
 
     // generate_overhangs() (TreeSupport3D.cpp:226-345) over the layers of the scenario: the overhangs by the index

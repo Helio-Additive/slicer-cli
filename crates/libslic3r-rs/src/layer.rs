@@ -2991,9 +2991,24 @@ impl Layer {
         &mut self,
         lower_internal_areas: &[crate::geometry::ExPolygon],
         lower_sparse_polys: &[crate::geometry::Polygon],
+        lower_unsupport_faithful: Option<&[crate::geometry::ExPolygon]>,
+    ) -> Result<()> {
+        // Fill.cpp:228-229 — `layer.object()->layers().empty() ? 0. : ...front()->bottom_z()`:
+        // a caller without the object's layer list gets the empty-list arm.
+        self.make_fills_at_object_base(lower_internal_areas, lower_sparse_polys, lower_unsupport_faithful, 0.)
+    }
+
+    /// `make_fills` (Fill.cpp:586-768) with `object_base_z` of Fill.cpp:228-229
+    /// (`layer.object()->layers().front()->bottom_z()`) handed over by the caller that
+    /// holds the object's layers; `group_fills` reads it behind FILL_GROUP_PIN.
+    pub fn make_fills_at_object_base(
+        &mut self,
+        lower_internal_areas: &[crate::geometry::ExPolygon],
+        lower_sparse_polys: &[crate::geometry::Polygon],
         // Fill.cpp:734-745, built by the caller as C++ builds it
         // (FFC_LOWER_UNSUPPORT); None keeps the earlier construction below.
         lower_unsupport_faithful: Option<&[crate::geometry::ExPolygon]>,
+        object_base_z: f64,
     ) -> Result<()> {
         // Fill.cpp:600
         // C++: const auto resolution = this->object()->print()->config().resolution.value;
@@ -3028,7 +3043,15 @@ impl Layer {
             self.set_outlook_range(&mut lock_param);
         }
         let __gf_t = if crate::probe_enabled("FILLPROF") { Some(std::time::Instant::now()) } else { None };
-        let surface_fills = crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?;
+        // FILL_GROUP_PIN: the list of the port of Fill.cpp:193-639 (fill/fill.rs, equal to the
+        // pin on the vectors of tests/fill_native_parity.rs) in the consumers' form;
+        // FILL_GROUP_PIN=0 is the earlier grouping of fill/mod.rs. R926: the three fixtures
+        // come out with the same bytes in both arms.
+        let surface_fills = if crate::faithful_gate("FILL_GROUP_PIN") {
+            crate::fill::fill::group_fills_for_consumers(self, lower_internal_areas, &mut lock_param, object_base_z)?
+        } else {
+            crate::fill::group_fills(self, lower_internal_areas, &mut lock_param)?
+        };
         // `PP=1`: the surface fills in the order make_fills walks them, `PPG ...`.
         if crate::stage_dump::pp_enabled() {
             for (k, sf) in surface_fills.iter().enumerate() {
@@ -3065,10 +3088,10 @@ impl Layer {
         // generation loop (FILLASN). R711/R712/R713 cleared the fill pattern's
         // parameters, the fill region and the connection structure, so the
         // remaining question is whether the two engines even hand the same
-        // surfaces to the same fillers. Note this crate reaches
+        // surfaces to the same fillers. Until R926 this crate reached
         // `crate::fill::group_fills` = `fill/mod.rs`, a DIVERGENT
-        // reimplementation; the faithful port of `Fill.cpp`'s group_fills sits
-        // unused in `fill/fill.rs`, and `Layer::make_fills` is unported.
+        // reimplementation; since R926 the list is the port's of `fill/fill.rs`
+        // (FILL_GROUP_PIN). `Layer::make_fills` itself is not a line-by-line port.
         if crate::probe_enabled("FILLASN") {
             for (i, sf) in surface_fills.iter().enumerate() {
                 let area: f64 = sf.expolygons.iter().map(|e| e.area()).sum();
@@ -3090,6 +3113,28 @@ impl Layer {
                     sf.params.angle,
                     sf.region_id_group.len(),
                     sf.no_overlap_expolygons.len()
+                );
+                // R926 (diagnostics only): the fields of the params the consumers below read
+                // and the first line does not show; FILL_GROUP_PIN on against off.
+                eprintln!(
+                    "[FILLASN2] z={:.3} i={} st={:?} th={:?} dens={:?} bridge={} ba={:?} al={:?} alm={:?} fw={:?} fh={:?} fs={:?} fb={} sp={:?} sym={} ml={} bas={:?}",
+                    self.print_z,
+                    i,
+                    sf.surface.surface_type,
+                    sf.surface.thickness,
+                    sf.params.density,
+                    sf.params.bridge,
+                    sf.params.bridge_angle,
+                    sf.params.anchor_length,
+                    sf.params.anchor_length_max,
+                    sf.params.flow.width(),
+                    sf.params.flow.height(),
+                    sf.params.flow.spacing(),
+                    sf.params.flow.is_bridge(),
+                    sf.params.sparse_pattern,
+                    sf.params.symmetric_infill_y_axis,
+                    sf.params.multiline,
+                    sf.surface.bridge_angle
                 );
             }
         }
@@ -4390,6 +4435,16 @@ impl Layer {
     /// line / concentric / gyroid sparse-infill patterns this produces the same
     /// anchor polylines as native.
     pub fn generate_sparse_infill_polylines_for_anchoring(&self) -> Result<Vec<Polyline>> {
+        // Fill.cpp:228-229: the empty-list arm for a caller without the object's layers.
+        self.generate_sparse_infill_polylines_for_anchoring_at_object_base(0.)
+    }
+
+    /// `generate_sparse_infill_polylines_for_anchoring` (Fill.cpp:772-875) with `object_base_z`
+    /// of Fill.cpp:228-229 handed over by the caller; `group_fills` reads it behind FILL_GROUP_PIN.
+    pub fn generate_sparse_infill_polylines_for_anchoring_at_object_base(
+        &self,
+        object_base_z: f64,
+    ) -> Result<Vec<Polyline>> {
         // NOTE: `surface_fill.params.pattern` is `crate::fill::InfillPattern`
         // (group_fills' type), which is the `InfillPattern` already imported at
         // the top of this module (layer.rs:23). Do NOT import
@@ -4430,7 +4485,12 @@ impl Layer {
         }
 
         let mut lock_param = crate::fill::LockRegionParam::default();
-        let surface_fills = crate::fill::group_fills(self, &[], &mut lock_param)?;
+        // FILL_GROUP_PIN: as in make_fills.
+        let surface_fills = if crate::faithful_gate("FILL_GROUP_PIN") {
+            crate::fill::fill::group_fills_for_consumers(self, &[], &mut lock_param, object_base_z)?
+        } else {
+            crate::fill::group_fills(self, &[], &mut lock_param)?
+        };
 
         // Fill.cpp:779
         // C++: Polylines sparse_infill_polylines{};

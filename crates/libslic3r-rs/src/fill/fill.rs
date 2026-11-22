@@ -4,11 +4,12 @@
 //! config hierarchy wired (`layer.object().print().config()`,
 //! `layer_region.region().config()`, `LayerRegion::flow/bridging_flow`),
 //! `group_fills` (Fill.cpp:166-549) and `Layer::set_outlook_range`
-//! (Fill.cpp:571-586) are ported here. The remaining `Layer::*` methods
-//! (`make_fills`, `make_ironing`,
-//! `generate_sparse_infill_polylines_for_anchoring`) and the debug
-//! `export_group_fills_to_svg` stay BLOCKED on the virtual `Fill` dispatch
-//! infrastructure — see the notes at the bottom of this file.
+//! (Fill.cpp:571-586) are ported here. Since R926 `group_fills` is what the
+//! live `Layer::make_fills` and `Layer::generate_sparse_infill_polylines_for_anchoring`
+//! of `layer.rs` take their list from (`group_fills_for_consumers`, gate
+//! FILL_GROUP_PIN, on unless `FILL_GROUP_PIN=0`). The remaining `Layer::*` methods
+//! (`make_fills`, `make_ironing`) and the debug `export_group_fills_to_svg` are
+//! not ported in this file — see the notes at the bottom of it.
 //!
 //! C++ source: src/libslic3r/Fill/Fill.cpp
 //! C++ header: src/libslic3r/Fill/Fill.hpp
@@ -471,7 +472,7 @@ pub(crate) fn append_density_param(
 //
 // Porting notes (divergences forced by the crate's structure, all
 // behavior-preserving):
-//  * C++ reads `layer.lower_layer` (Fill.cpp:457) through the Layer's
+//  * C++ reads `layer.lower_layer` (Fill.cpp:546) through the Layer's
 //    sibling pointer; the Rust Layer stores only `lower_layer_id`, so the
 //    caller passes the lower layer explicitly.
 //  * The C++ `std::set<SurfaceFillParams>` is modeled as an insertion-order
@@ -525,7 +526,7 @@ pub fn group_fills_at_object_base(
     group_fills_lower(layer, lower_layer, None, lock_param, object_base_z)
 }
 
-/// Fill.cpp:193-639 `group_fills` for a caller that holds the result of Fill.cpp:457-462 (the
+/// Fill.cpp:193-639 `group_fills` for a caller that holds the result of Fill.cpp:546-551 (the
 /// stInternal and stInternalVoid expolygons of every region of the layer below, in order) instead of
 /// the layer below itself, as `Layer::make_fills` of this crate does.
 pub fn group_fills_with_lower_internal_areas(
@@ -1169,68 +1170,70 @@ fn group_fills_lower(
     }
 
     // BBS: detect narrow internal solid infill area and use ipConcentricInternal pattern instead
-    // Fill.cpp:453-546
+    // Fill.cpp:542-636
     if layer.object().config().detect_narrow_internal_solid_infill {
-        // Fill.cpp:454 — declared but unused in the C++ body too.
+        // Fill.cpp:543 — declared but unused in the C++ body too.
         let _narrow_threshold: f64 = scale(NARROW_INFILL_AREA_THRESHOLD) as f64 * 2.0;
-        // Fill.cpp:455-456
+        // Fill.cpp:544-545
         let mut lower_internal_areas: Vec<ExPolygon> = Vec::new();
         // (lower_internal_bbox is computed but never read afterwards in C++.)
-        // Fill.cpp:457-464
+        // Fill.cpp:546-553
         if let Some(given) = lower_internal_areas_given {
-            // The caller made the collection of Fill.cpp:458-462.
+            // The caller made the collection of Fill.cpp:547-551.
             lower_internal_areas.extend(given.iter().cloned());
         } else if let Some(lower_layer) = lower_layer {
             for layerm in lower_layer.regions() {
-                // Fill.cpp:459
+                // Fill.cpp:548
                 let internal_surfaces = layerm
                     .fill_surfaces
                     .filter_by_types(&[SurfaceType::Internal, SurfaceType::InternalVoid]);
-                // Fill.cpp:460-461
+                // Fill.cpp:549-550
                 for surface in internal_surfaces {
                     lower_internal_areas.push(surface.expolygon.clone());
                 }
             }
-            // Fill.cpp:463
+            // Fill.cpp:552
             let _lower_internal_bbox = get_extents(&lower_internal_areas);
         }
-        // Fill.cpp:465-466
+        // Fill.cpp:554-555
         let surface_fills_size = surface_fills.len();
         for i in 0..surface_fills_size {
-            // Fill.cpp:467-468
-            if surface_fills[i].surface.surface_type != SurfaceType::InternalSolid {
+            // Fill.cpp:556-558
+            if surface_fills[i].surface.surface_type != SurfaceType::InternalSolid
+                && surface_fills[i].surface.surface_type != SurfaceType::SubTop
+            {
                 continue;
             }
 
-            // Fill.cpp:470-473
+            // Fill.cpp:560-563
             let expolygons_size = surface_fills[i].expolygons.len();
             let mut narrow_expoly_idx: Vec<usize> = Vec::new();
             let mut narrow_floating_expoly_idx: Vec<usize> = Vec::new();
             // (C++ also declares `std::vector<bool> use_floating_filler;` — unused.)
             // BBS: get the index list of narrow expolygon
-            // Fill.cpp:475-487
+            // Fill.cpp:565-577
             for j in 0..expolygons_size {
-                // Fill.cpp:476
+                // Fill.cpp:566
                 let bbox = get_extents_expoly(&surface_fills[i].expolygons[j]);
-                // Fill.cpp:477 — bbox.inflated(scale_(2)); the crate's
+                // Fill.cpp:567 — bbox.inflated(scale_(2)); the crate's
                 // BoundingBox names it `expanded`. expand a little
                 let clipped_internals = clip_clipper_polygons_with_subject_bbox_expolygons(
                     &lower_internal_areas,
                     &bbox.expanded(scale(2.0)),
                     false,
                 );
-                // Fill.cpp:478
+                // Fill.cpp:568
                 let clipped_internal_bbox = get_extents_polygons(&clipped_internals);
-                // Fill.cpp:479-486
+                // Fill.cpp:569-576
                 if is_narrow_infill_area(&surface_fills[i].expolygons[j]) {
-                    // Fill.cpp:480 — offset_ex(expoly, SCALED_EPSILON): the
-                    // crate's offset helpers take millimeters.
+                    // Fill.cpp:570 — offset_ex(expoly, SCALED_EPSILON): the delta is a
+                    // float (ClipperUtils.hpp), the offset runs in scaled coordinates.
                     if !clipped_internals.is_empty()
                         && bbox.intersects(&clipped_internal_bbox)
                         && !intersection_ex_expolygons_polygons(
-                            &offset_expolygon(
-                                &surface_fills[i].expolygons[j],
-                                SCALED_EPSILON / crate::SCALING_FACTOR,
+                            &crate::clipper_utils::offset_expolygons_clib_scaled(
+                                std::slice::from_ref(&surface_fills[i].expolygons[j]),
+                                (SCALED_EPSILON as f32) as f64,
                                 OffsetJoinType::Miter,
                             ),
                             &clipped_internals,
@@ -1244,25 +1247,25 @@ fn group_fills_lower(
                 }
             }
 
-            // Fill.cpp:489-492
+            // Fill.cpp:579-582
             if narrow_expoly_idx.is_empty() && narrow_floating_expoly_idx.is_empty() {
                 // BBS: has no narrow expolygon
                 continue;
-            // Fill.cpp:493-497
+            // Fill.cpp:583-587
             } else if narrow_floating_expoly_idx.len() == expolygons_size {
                 surface_fills[i].params.pattern = InfillPattern::FloatingConcentric;
                 surface_fills[i].params.extrusion_role = ExtrusionRole::FloatingVerticalShell;
                 surface_fills[i].surface.surface_type = SurfaceType::FloatingVerticalShell;
-            // Fill.cpp:498-500
+            // Fill.cpp:588-590
             } else if narrow_expoly_idx.len() == expolygons_size {
                 surface_fills[i].params.pattern = InfillPattern::ConcentricInternal;
             } else {
                 // BBS: some expolygons are narrow, spilit surface_fills[i] and rearrange the expolygons
-                // Fill.cpp:505-518
+                // Fill.cpp:595-608
                 if !narrow_expoly_idx.is_empty() {
                     let mut params = surface_fills[i].params.clone();
                     params.pattern = InfillPattern::ConcentricInternal;
-                    // Fill.cpp:508-513
+                    // Fill.cpp:598-603
                     let region_id_i = surface_fills[i].region_id;
                     let thickness_i = surface_fills[i].surface.thickness;
                     let region_id_group_i = surface_fills[i].region_id_group.clone();
@@ -1274,7 +1277,7 @@ fn group_fills_lower(
                     surface_fills[back_idx].surface.thickness = thickness_i;
                     surface_fills[back_idx].region_id_group = region_id_group_i;
                     surface_fills[back_idx].no_overlap_expolygons = no_overlap_i;
-                    // Fill.cpp:514-517
+                    // Fill.cpp:604-607
                     for j in 0..narrow_expoly_idx.len() {
                         // BBS: move the narrow expolygons to new surface_fills.back();
                         let exp = std::mem::take(
@@ -1284,12 +1287,12 @@ fn group_fills_lower(
                     }
                 }
 
-                // Fill.cpp:520-534
+                // Fill.cpp:610-624
                 if !narrow_floating_expoly_idx.is_empty() {
                     let mut params = surface_fills[i].params.clone();
                     params.pattern = InfillPattern::FloatingConcentric;
                     params.extrusion_role = ExtrusionRole::FloatingVerticalShell;
-                    // Fill.cpp:524-529
+                    // Fill.cpp:614-619
                     let region_id_i = surface_fills[i].region_id;
                     let thickness_i = surface_fills[i].surface.thickness;
                     let region_id_group_i = surface_fills[i].region_id_group.clone();
@@ -1302,7 +1305,7 @@ fn group_fills_lower(
                     surface_fills[back_idx].surface.thickness = thickness_i;
                     surface_fills[back_idx].region_id_group = region_id_group_i;
                     surface_fills[back_idx].no_overlap_expolygons = no_overlap_i;
-                    // Fill.cpp:530-533
+                    // Fill.cpp:620-623
                     for j in 0..narrow_floating_expoly_idx.len() {
                         // BBS: move the narrow expolygons to new surface_fills.back();
                         let exp = std::mem::take(
@@ -1312,12 +1315,12 @@ fn group_fills_lower(
                     }
                 }
 
-                // Fill.cpp:536-538
+                // Fill.cpp:626-628
                 let mut to_be_delete = narrow_floating_expoly_idx.clone();
                 to_be_delete.extend(narrow_expoly_idx.iter().cloned());
                 to_be_delete.sort_unstable();
 
-                // Fill.cpp:540-543
+                // Fill.cpp:630-633
                 for j in (0..to_be_delete.len()).rev() {
                     // BBS: delete the narrow expolygons from old surface_fills
                     surface_fills[i].expolygons.remove(to_be_delete[j]);
@@ -1326,7 +1329,7 @@ fn group_fills_lower(
         }
     }
 
-    // Fill.cpp:548
+    // Fill.cpp:638
     Ok(surface_fills)
 }
 
@@ -1402,6 +1405,111 @@ impl Layer {
 //     FillLightning::Generator inputs. The crate currently has standalone
 //     per-pattern fillers without the polymorphic base; a divergent
 //     simplified make_fills lives in layer.rs (Layer::make_fills) driving
-//     the divergent group_fills in fill/mod.rs. Once the Fill factory
-//     exists, the faithful group_fills above is the drop-in input for the
-//     faithful make_fills.
+//     the group_fills above (R926, FILL_GROUP_PIN; `FILL_GROUP_PIN=0` is the
+//     earlier grouping of fill/mod.rs).
+
+/// FILL_GROUP_PIN: the list of `group_fills` (Fill.cpp:193-639, the port above, equal to the pin on
+/// the vectors of `tests/fill_native_parity.rs`) in the form the consumers of `layer.rs` read
+/// (`Layer::make_fills`, `Layer::generate_sparse_infill_polylines_for_anchoring`), which were
+/// written against `crate::fill::SurfaceFillParams` (fill/mod.rs). Every field the pin's
+/// `SurfaceFillParams` (Fill.cpp:23-142) holds is taken from the port; the ones whose unit or
+/// meaning differs in the consumers are converted here and nowhere else:
+///   * `pattern`, `skin_pattern`, `skeleton_pattern`: `print_config::InfillPattern` to the fill
+///     module's enum (`From`, fill/mod.rs: ipConcentricInternal becomes its `Concentric`, which the
+///     consumers hand to FillConcentricInternal).
+///   * `sparse_pattern` (not a field of the pin): the pin's `params.pattern` of a surface that is
+///     not solid (Fill.cpp:239), which the consumers read to tell ipZigZag, ipCrossZag and
+///     ipLockedZag from ipRectilinear.
+///   * `angle`: the pin holds radians (Fill.cpp:294, 526), the consumers read the region's
+///     `infill_direction` in degrees and convert at each use; both pin sites take the angle of the
+///     region `region_id` names, so the degrees are read from that region.
+///   * `overlap`: `group_fills` of the pin never sets it (0); the consumers of layer.rs do not read
+///     `params.overlap`. It keeps the value
+///     the earlier grouping gave (the region's `infill_overlap`).
+///   * `conformal_*`: the port's params do not hold Fill.cpp:240-250 yet; computed here as the
+///     earlier grouping did (fill/mod.rs), from the region `region_id` names.
+/// `monotonic_travel_into_wall` of the pin has no field in the consumers' struct and is dropped.
+pub fn group_fills_for_consumers(
+    layer: &Layer,
+    lower_internal_areas: &[ExPolygon],
+    lock_param: &mut LockRegionParam,
+    object_base_z: f64,
+) -> crate::Result<Vec<crate::fill::SurfaceFill>> {
+    let fills =
+        group_fills_with_lower_internal_areas(layer, lower_internal_areas, lock_param, object_base_z)?;
+    let mut out: Vec<crate::fill::SurfaceFill> = Vec::with_capacity(fills.len());
+    for sf in fills {
+        let p = &sf.params;
+        let region_config = layer.regions().get(sf.region_id).map(|layerm| layerm.region().config());
+        let is_solid = sf.surface.is_solid();
+        // Fill.cpp:240-250
+        let conformal_infill = region_config.map_or(false, |c| c.conformal_infill) && !is_solid;
+        let mut conformal_stagger = match region_config {
+            Some(c) if conformal_infill => c.conformal_stagger,
+            _ => crate::print_config::ConformalStagger::None,
+        };
+        if conformal_stagger == crate::print_config::ConformalStagger::HalfStep {
+            conformal_stagger = crate::print_config::ConformalStagger::Alternate;
+        } else if conformal_stagger == crate::print_config::ConformalStagger::Orthogonal {
+            conformal_stagger = crate::print_config::ConformalStagger::None;
+        }
+        let conformal_config = region_config.filter(|_| conformal_infill);
+        let params = crate::fill::SurfaceFillParams {
+            extruder: p.extruder,
+            pattern: p.pattern.into(),
+            skin_pattern: p.skin_pattern.into(),
+            skeleton_pattern: p.skeleton_pattern.into(),
+            sparse_pattern: if is_solid { None } else { Some(p.pattern) },
+            spacing: p.spacing,
+            overlap: region_config.map_or(p.overlap, |c| c.infill_overlap),
+            angle: match region_config {
+                Some(c) => c.fill_angle as f32,
+                // Fill.cpp:519-533: the fill made for the internal voids has no region_id
+                // (size_t(-1)) and the angle of a region chosen there (Fill.cpp:501-508, 526):
+                // the degrees of the first region whose angle gives the pin's radians.
+                None => layer
+                    .regions()
+                    .iter()
+                    .map(|layerm| layerm.region().config().fill_angle)
+                    .find(|a| deg2rad(*a) as f32 == p.angle)
+                    .map_or((p.angle as f64).to_degrees() as f32, |a| a as f32),
+            },
+            bridge: p.bridge,
+            bridge_angle: p.bridge_angle,
+            density: p.density,
+            multiline: p.multiline,
+            anchor_length: p.anchor_length,
+            anchor_length_max: p.anchor_length_max,
+            flow: p.flow.clone(),
+            extrusion_role: p.extrusion_role,
+            idx: p.idx,
+            sparse_infill_speed: p.sparse_infill_speed,
+            top_surface_speed: p.top_surface_speed,
+            solid_infill_speed: p.solid_infill_speed,
+            infill_shift_step: p.infill_shift_step,
+            infill_rotate_step: p.infill_rotate_step,
+            symmetric_infill_y_axis: p.symmetric_infill_y_axis,
+            lattice_angle_1: p.lattice_angle_1,
+            lattice_angle_2: p.lattice_angle_2,
+            conformal_infill,
+            conformal_stagger,
+            conformal_link_keep_layers: conformal_config
+                .map_or(1, |c| c.conformal_link_keep_layers),
+            conformal_link_flip_layers: conformal_config
+                .map_or(0, |c| c.conformal_link_flip_layers),
+            conformal_pole: conformal_config
+                .map_or(crate::print_config::ConformalPole::Layer, |c| c.conformal_pole),
+            conformal_ray_count: conformal_config.map_or(0, |c| c.conformal_ray_count),
+            conformal_hub_radius: conformal_config
+                .map_or(0.0, |c| c.conformal_hub_radius as f32),
+        };
+        let mut fill = crate::fill::SurfaceFill::new(params);
+        fill.region_id = sf.region_id;
+        fill.surface = sf.surface;
+        fill.expolygons = sf.expolygons;
+        fill.region_id_group = sf.region_id_group;
+        fill.no_overlap_expolygons = sf.no_overlap_expolygons;
+        out.push(fill);
+    }
+    Ok(out)
+}

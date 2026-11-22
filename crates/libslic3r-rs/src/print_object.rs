@@ -2908,7 +2908,10 @@ impl PrintObject {
                     .map(|lower_idx| {
                         Ok((
                             lower_idx,
-                            layers_ref[lower_idx].generate_sparse_infill_polylines_for_anchoring()?,
+                            // Fill.cpp:228-229: layers().front()->bottom_z() (FILL_GROUP_PIN reads it).
+                            layers_ref[lower_idx].generate_sparse_infill_polylines_for_anchoring_at_object_base(
+                                layers_ref.first().map_or(0., |l| l.bottom_z()),
+                            )?,
                         ))
                     })
                     .collect()
@@ -4925,6 +4928,8 @@ lines={} grown_polys={} grown_verts={}",
 
             // Call Layer::make_fills() on each layer
             // PrintObject.cpp:768
+            // Fill.cpp:228-229: layers().front()->bottom_z(), 0. for no layers (FILL_GROUP_PIN reads it).
+            let fill_object_base_z: f64 = self.layers.first().map_or(0., |l| l.bottom_z());
             let canceled = self.canceled.clone();
             self.layers
                 .par_iter_mut()
@@ -4936,10 +4941,11 @@ lines={} grown_polys={} grown_verts={}",
                     let (lower_internal_areas, lower_sparse_polys, lower_unsupport) =
                         &lower_snapshots[layer_idx];
                     let __t_mk = std::time::Instant::now();
-                    let r = layer.make_fills(
+                    let r = layer.make_fills_at_object_base(
                         lower_internal_areas,
                         lower_sparse_polys,
                         lower_unsupport.as_deref(),
+                        fill_object_base_z,
                     );
                     if flprof {
                         fl_make.lock().unwrap()
