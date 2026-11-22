@@ -507,36 +507,74 @@ pub fn group_fills(
     lower_layer: Option<&Layer>,
     lock_param: &mut LockRegionParam,
 ) -> crate::Result<Vec<SurfaceFill>> {
-    // Fill.cpp:168
+    // Fill.cpp:228-229: `layer.object()->layers().empty() ? 0. : ...front()->bottom_z()`. A Layer of
+    // this crate has no pointer back to the object's layer list, so the three-argument form is the
+    // pin's empty-list arm (0.); a caller that holds the object passes the first layer's bottom_z to
+    // `group_fills_at_object_base`.
+    group_fills_at_object_base(layer, lower_layer, lock_param, 0.)
+}
+
+/// Fill.cpp:193-639 `group_fills`, with `object_base_z` (Fill.cpp:228-229,
+/// `layer.object()->layers().front()->bottom_z()`, 0 for an empty list) threaded by the caller.
+pub fn group_fills_at_object_base(
+    layer: &Layer,
+    lower_layer: Option<&Layer>,
+    lock_param: &mut LockRegionParam,
+    object_base_z: f64,
+) -> crate::Result<Vec<SurfaceFill>> {
+    group_fills_lower(layer, lower_layer, None, lock_param, object_base_z)
+}
+
+/// Fill.cpp:193-639 `group_fills` for a caller that holds the result of Fill.cpp:457-462 (the
+/// stInternal and stInternalVoid expolygons of every region of the layer below, in order) instead of
+/// the layer below itself, as `Layer::make_fills` of this crate does.
+pub fn group_fills_with_lower_internal_areas(
+    layer: &Layer,
+    lower_internal_areas: &[ExPolygon],
+    lock_param: &mut LockRegionParam,
+    object_base_z: f64,
+) -> crate::Result<Vec<SurfaceFill>> {
+    group_fills_lower(layer, None, Some(lower_internal_areas), lock_param, object_base_z)
+}
+
+/// Fill.cpp:193-639, the body of both forms above.
+fn group_fills_lower(
+    layer: &Layer,
+    lower_layer: Option<&Layer>,
+    lower_internal_areas_given: Option<&[ExPolygon]>,
+    lock_param: &mut LockRegionParam,
+    object_base_z: f64,
+) -> crate::Result<Vec<SurfaceFill>> {
+    // Fill.cpp:195
     let mut surface_fills: Vec<SurfaceFill> = Vec::new();
-    // Fill.cpp:169-171
+    // Fill.cpp:196-198
     // Fill in a map of a region & surface to SurfaceFillParams.
     let mut set_surface_params: Vec<SurfaceFillParams> = Vec::new();
     let mut region_to_surface_params: Vec<Vec<Option<usize>>> =
         vec![Vec::new(); layer.regions().len()];
-    // Fill.cpp:172
+    // Fill.cpp:199
     let mut has_internal_voids = false;
-    // Fill.cpp:173
+    // Fill.cpp:200
     // const PrintObjectConfig &object_config = layer.object()->config();
     let object = layer.object();
     let object_config = object.config();
 
-    // Fill.cpp:191
+    // Fill.cpp:218
     for region_id in 0..layer.regions().len() {
-        // Fill.cpp:192
+        // Fill.cpp:219
         let layerm: &LayerRegion = &layer.regions()[region_id];
-        // Fill.cpp:193
+        // Fill.cpp:220
         region_to_surface_params[region_id] = vec![None; layerm.fill_surfaces.surfaces.len()];
-        // Fill.cpp:194
+        // Fill.cpp:221
         for (surface_index, surface) in layerm.fill_surfaces.surfaces.iter().enumerate() {
-            // Fill.cpp:195-196
+            // Fill.cpp:222-223
             if surface.surface_type == SurfaceType::InternalVoid {
                 has_internal_voids = true;
             } else {
-                // Fill.cpp:198-199
+                // Fill.cpp:225-226
                 let mut params = SurfaceFillParams::default();
                 let region_config = layerm.region().config();
-                // Fill.cpp:200
+                // Fill.cpp:234
                 let extrusion_role: FlowRole = if surface.is_top() {
                     FlowRole::TopSolidInfill
                 } else if surface.is_solid() {
@@ -544,55 +582,58 @@ pub fn group_fills(
                 } else {
                     FlowRole::Infill
                 };
-                // Fill.cpp:201
+                // Fill.cpp:235
                 let is_bridge = layer.id() > 0 && surface.is_bridge();
-                // Fill.cpp:202
+                // Fill.cpp:236
                 params.extruder = layerm
                     .region()
                     .extruder(extrusion_role)
                     .map_err(crate::Error::Config)?;
-                // Fill.cpp:203
+                // Fill.cpp:239
                 params.pattern = region_config.fill_pattern;
-                // Fill.cpp:204 — C++ Percent .value is the raw percent number;
+                // Fill.cpp:251 — C++ Percent .value is the raw percent number;
                 // the Rust field stores a 0..1 ratio.
                 params.density = (region_config.fill_density * 100.0) as f32;
-                // Fill.cpp:205
+                // Fill.cpp:252
                 params.multiline = region_config.fill_multiline;
-                // Fill.cpp:206-209
+                // Fill.cpp:253-256
                 if params.pattern == InfillPattern::LockedZag {
                     params.skin_pattern = region_config.locked_skin_infill_pattern;
                     params.skeleton_pattern = region_config.locked_skeleton_infill_pattern;
                 }
-                // Fill.cpp:210-219
+                // Fill.cpp:257-266
                 if params.pattern == InfillPattern::CrossZag
                     || params.pattern == InfillPattern::LockedZag
                 {
-                    // Fill.cpp:211 — scale_(infill_shift_step)
+                    // Fill.cpp:258 — scale_(infill_shift_step)
                     params.infill_shift_step = scale(region_config.infill_shift_step) as f32;
                     params.symmetric_infill_y_axis = region_config.symmetric_infill_y_axis;
                 } else if params.pattern == InfillPattern::ZigZag {
-                    // Fill.cpp:214 — infill_rotate_step * M_PI / 360
+                    // Fill.cpp:261 — infill_rotate_step * M_PI / 360
                     params.infill_rotate_step =
                         (region_config.infill_rotate_step * std::f64::consts::PI / 360.0) as f32;
                     params.symmetric_infill_y_axis = region_config.symmetric_infill_y_axis;
                 } else if params.pattern == InfillPattern::Lattice2D {
-                    // Fill.cpp:217-218
+                    // Fill.cpp:264-265
                     params.lattice_angle_1 = region_config.sparse_infill_lattice_angle_1 as f32;
                     params.lattice_angle_2 = region_config.sparse_infill_lattice_angle_2 as f32;
                 }
 
-                // Fill.cpp:221-235
+                // Fill.cpp:268-285
                 if surface.is_solid() {
-                    // Fill.cpp:222
+                    // Fill.cpp:269
                     params.density = 100.0;
                     // FIXME for non-thick bridges, shall we allow a bottom surface pattern?
-                    // Fill.cpp:224-225
+                    // Fill.cpp:271-272
                     if surface.is_floating_vertical_shell() {
                         params.pattern = InfillPattern::FloatingConcentric;
-                    // Fill.cpp:226-227
+                    // Fill.cpp:273-274
+                    } else if surface.surface_type.is_sub_top() {
+                        params.pattern = region_config.sub_top_surface_pattern;
+                    // Fill.cpp:275-276
                     } else if surface.is_solid_infill() {
                         params.pattern = region_config.solid_fill_pattern;
-                    // Fill.cpp:228-230
+                    // Fill.cpp:277-279
                     } else if surface.is_external() && !is_bridge {
                         params.pattern = if surface.is_top() {
                             region_config.top_fill_pattern
@@ -604,7 +645,7 @@ pub fn group_fills(
                         } else {
                             region_config.bottom_surface_density as f32
                         };
-                    // Fill.cpp:231-232
+                    // Fill.cpp:280-281
                     } else {
                         params.pattern =
                             if region_config.top_fill_pattern == InfillPattern::Monotonic {
@@ -613,17 +654,17 @@ pub fn group_fills(
                                 InfillPattern::Rectilinear
                             };
                     }
-                    // Fill.cpp:233
+                    // Fill.cpp:282-283
                     if params.pattern == InfillPattern::MonotonicLine {
                         params.monotonic_travel_into_wall =
                             region_config.monotonic_travel_into_wall as f32;
                     }
-                // Fill.cpp:234-235
+                // Fill.cpp:284-285
                 } else if params.density <= 0.0 {
                     continue;
                 }
 
-                // Fill.cpp:237-242
+                // Fill.cpp:287-292
                 params.extrusion_role = if is_bridge {
                     ExtrusionRole::BridgeInfill
                 } else if surface.is_solid() {
@@ -639,12 +680,12 @@ pub fn group_fills(
                 } else {
                     ExtrusionRole::InternalInfill
                 };
-                // Fill.cpp:243 — C++ Surface.bridge_angle defaults to -1
+                // Fill.cpp:293 — C++ Surface.bridge_angle defaults to -1
                 // ("not a bridge"); the Rust Option maps None onto it.
                 params.bridge_angle = surface.bridge_angle.unwrap_or(-1.0) as f32;
-                // Fill.cpp:244
+                // Fill.cpp:294
                 params.angle = deg2rad(region_config.fill_angle) as f32;
-                // Fill.cpp:245-248
+                // Fill.cpp:295-298
                 let support_multiline_infill = params.pattern == InfillPattern::Cubic
                     || params.pattern == InfillPattern::Grid
                     || params.pattern == InfillPattern::Rectilinear
@@ -656,7 +697,7 @@ pub fn group_fills(
                     || params.pattern == InfillPattern::Honeycomb3D
                     || params.pattern == InfillPattern::AdaptiveCubic
                     || params.pattern == InfillPattern::SupportCubic;
-                // Fill.cpp:249
+                // Fill.cpp:299
                 params.multiline = if params.extrusion_role == ExtrusionRole::InternalInfill
                     && support_multiline_infill
                 {
@@ -666,50 +707,90 @@ pub fn group_fills(
                 };
 
                 // Calculate the actual flow we'll be using for this infill.
-                // Fill.cpp:252
+                // Fill.cpp:302
                 params.bridge = is_bridge || use_bridge_flow(params.pattern);
-                // C++ `(surface.thickness == -1) ? layer.height : surface.thickness`
-                // (Fill.cpp:256/300/304); see the sentinel porting note above.
+                // Fill.cpp:227 `(surface.thickness == -1) ? layer.height : surface.thickness`; see the
+                // sentinel porting note above.
                 let surface_thickness = if surface.thickness > 0.0 {
                     surface.thickness
                 } else {
                     layer.height
                 };
-                // Fill.cpp:253-256
-                params.flow = if params.bridge {
-                    // BBS: always enable thick bridge for internal bridge
-                    layerm.bridging_flow(
+                // Fill.cpp:230-231
+                let starts_at_object_base =
+                    (layer.print_z - surface_thickness - object_base_z).abs() <= EPSILON;
+                // Fill.cpp:305-306 / 325-326: layerm.region().flow(*layer.object(), extrusion_role,
+                // surface_height, layer.id() == 0 || starts_at_object_base) (PrintRegion.cpp:21-50,
+                // the config-level core over the wired hierarchy)
+                let region_flow = || {
+                    crate::print_region::flow_from_configs(
                         extrusion_role,
-                        (surface.is_bridge() && !surface.is_external())
-                            || object_config.thick_bridges,
-                        layer.height,
-                    )?
+                        surface_thickness,
+                        layer.id() == 0 || starts_at_object_base,
+                        object.print().config().initial_layer_line_width,
+                        object_config.line_width,
+                        object.print().config().nozzle_diameter,
+                        region_config,
+                    )
+                    .map_err(crate::Error::Config)
+                };
+                // Fill.cpp:303-329
+                params.flow = if !params.bridge {
+                    // Fill.cpp:304-306
+                    region_flow()?
                 } else {
-                    layerm.flow(extrusion_role, surface_thickness)?
+                    // BBS: always enable thick bridge for internal bridge
+                    // Fill.cpp:309
+                    let thick = (surface.is_bridge() && !surface.is_external())
+                        || object_config.thick_bridges;
+                    // Fill.cpp:310
+                    let merged_span = is_bridge && surface_thickness > layer.height + EPSILON;
+                    // Fill.cpp:315-317
+                    let thick_flow = if thick {
+                        Some(layerm.bridging_flow(extrusion_role, true, layer.height)?)
+                    } else {
+                        None
+                    };
+                    match thick_flow {
+                        // Fill.cpp:318-319: double(thick_flow.height()) + EPSILON >= surface_height
+                        Some(thick_flow)
+                            if !merged_span
+                                || (thick_flow.height() as f32) as f64 + EPSILON
+                                    >= surface_thickness =>
+                        {
+                            thick_flow
+                        }
+                        // Fill.cpp:320-326: the merged span is extruded at the merged height
+                        _ if merged_span => {
+                            region_flow()?.with_flow_ratio(region_config.bridge_flow_ratio)?
+                        }
+                        // Fill.cpp:327-328
+                        _ => layerm.bridging_flow(extrusion_role, false, layer.height)?,
+                    }
                 };
                 // BBS: record speed params
-                // Fill.cpp:258-275
+                // Fill.cpp:330-348
                 if !params.bridge {
-                    // Fill.cpp:259-260
+                    // Fill.cpp:332-333
                     if params.extrusion_role == ExtrusionRole::InternalInfill {
                         params.sparse_infill_speed = region_config.infill_speed as f32;
-                    // Fill.cpp:261-262
+                    // Fill.cpp:334-335
                     } else if params.extrusion_role == ExtrusionRole::TopSolidInfill {
                         params.top_surface_speed = region_config.top_solid_infill_speed as f32;
-                    // Fill.cpp:263-264
+                    // Fill.cpp:336-337
                     } else if params.extrusion_role == ExtrusionRole::SolidInfill {
                         params.solid_infill_speed = region_config.solid_infill_speed as f32;
-                    // Fill.cpp:265-274
+                    // Fill.cpp:338-347
                     } else if params.extrusion_role == ExtrusionRole::FloatingVerticalShell {
-                        // Fill.cpp:266 — int filament_id = sparse_infill_filament - 1;
+                        // Fill.cpp:339 — int filament_id = sparse_infill_filament - 1;
                         // (only feeds the get_at index, which collapses here)
                         let _filament_id = region_config.sparse_infill_filament as i32 - 1;
-                        // Fill.cpp:267-268 — layerm.layer()->object()->print()->config()
+                        // Fill.cpp:340-341 — layerm.layer()->object()->print()->config()
                         // (layerm.layer() == layer)
                         let print_config = object.print().config();
                         let use_filament_bridge_speed =
                             print_config.filament_enable_overhang_speed;
-                        // Fill.cpp:270-273
+                        // Fill.cpp:343-346
                         if use_filament_bridge_speed {
                             params.solid_infill_speed = print_config.filament_bridge_speed as f32;
                         } else {
@@ -1096,7 +1177,10 @@ pub fn group_fills(
         let mut lower_internal_areas: Vec<ExPolygon> = Vec::new();
         // (lower_internal_bbox is computed but never read afterwards in C++.)
         // Fill.cpp:457-464
-        if let Some(lower_layer) = lower_layer {
+        if let Some(given) = lower_internal_areas_given {
+            // The caller made the collection of Fill.cpp:458-462.
+            lower_internal_areas.extend(given.iter().cloned());
+        } else if let Some(lower_layer) = lower_layer {
             for layerm in lower_layer.regions() {
                 // Fill.cpp:459
                 let internal_surfaces = layerm

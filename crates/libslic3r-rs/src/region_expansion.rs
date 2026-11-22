@@ -735,7 +735,39 @@ fn propagate_waves_faithful(
             }
             let polys: Vec<Polygon> = {
                 let seed = crate::clipper_utils::clib_read_closed_paths(&seed_xy, &seed_lens);
-                let clipping = crate::clipper_utils::clib_read_closed_paths(&bnd_xy, &bnd_lens);
+                // REGION_EXPANSION_BBOX_TRIM (R925): RegionExpansion.cpp:459 —
+                // `clip_clipper_polygons_with_subject_bbox(boundary,
+                // get_extents<true>(seed).inflated(max_inflation))`: the pin
+                // clips the wave with the boundary trimmed to the box of the
+                // seed (every path of the group), inflated by Point(delta,
+                // delta), an lrint (BoundingBox.cpp:213-218). Off, the whole
+                // boundary clips, as the shim did.
+                let clipping = if crate::faithful_gate("REGION_EXPANSION_BBOX_TRIM") {
+                    let mut bbox = BoundingBox::new();
+                    for seed_of_group in &seeds[i..j] {
+                        for pt in &seed_of_group.path {
+                            bbox.merge_point(Point::new(pt.x as i64, pt.y as i64));
+                        }
+                    }
+                    let inflate = params.scaled.max_inflation.round_ties_even() as crate::Coord;
+                    let trimmed = crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygon(
+                        bnd,
+                        &bbox.expanded(inflate),
+                        false,
+                    );
+                    let mut xy: Vec<i32> = Vec::new();
+                    let mut lens: Vec<i32> = Vec::new();
+                    for polygon in &trimmed {
+                        lens.push(polygon.points.len() as i32);
+                        for pt in &polygon.points {
+                            xy.push(pt.x as i32);
+                            xy.push(pt.y as i32);
+                        }
+                    }
+                    crate::clipper_utils::clib_read_closed_paths(&xy, &lens)
+                } else {
+                    crate::clipper_utils::clib_read_closed_paths(&bnd_xy, &bnd_lens)
+                };
                 let mut co = crate::clipper::ClipperOffset::default();
                 co.arc_tolerance = params.scaled.arc_tolerance;
                 co.shortest_edge_length = params.scaled.shortest_edge_length;
@@ -1405,8 +1437,15 @@ pub fn process_external_surfaces_wave(
     let expansion_bottom_bridge = config.expansion_bottom_bridge();
     let closing_radius = config.closing_radius();
 
+    // LAYER_REGION_EXTERNAL_DRIVER_PIN (R925): what is left between this driver
+    // and LayerRegion.cpp:777-902: the pin has no exit on expansion_top (:809),
+    // its smallest sparse area is scale_(scale_(v)), two divisions, compared with
+    // the signed area without a guard on the option (:866-877), and it clears the
+    // fill surfaces before it stores the zones (:885).
+    let driver_pin = crate::faithful_gate("LAYER_REGION_EXTERNAL_DRIVER_PIN");
+
     // Skip if expansion is negligible
-    if expansion_top <= 0.0 {
+    if expansion_top <= 0.0 && !driver_pin {
         return;
     }
 
@@ -1576,16 +1615,25 @@ pub fn process_external_surfaces_wave(
         // "apply minimum sparse infill area logic"
         if !config.spiral_mode
             && config.sparse_infill_density > 0.0
-            && config.minimum_sparse_infill_area > 0.0
+            && (config.minimum_sparse_infill_area > 0.0 || driver_pin)
         {
             // C++ LayerRegion.cpp:602 — min_area = scale_(scale_(minimum_sparse_infill_area)).
             // scale_(x) = x * 1e5 (SCALING_FACTOR = 1e-5), so mm² → scaled² is * 1e10, not 1e12.
             let scale_factor = crate::SCALING_FACTOR; // 1e5 integer-per-mm
-            let min_area = config.minimum_sparse_infill_area * scale_factor * scale_factor;
+            // LayerRegion.cpp:869 — scale_(scale_(v)): two divisions by 0.00001
+            // (libslic3r.h:58-84), a double.
+            let min_area = if driver_pin {
+                (config.minimum_sparse_infill_area / crate::libslic3r::SCALING_FACTOR)
+                    / crate::libslic3r::SCALING_FACTOR
+            } else {
+                config.minimum_sparse_infill_area * scale_factor * scale_factor
+            };
             let mut areas_to_solid: ExPolygons = Vec::new();
 
             expansion_zones[1].expolygons.retain(|ep| {
-                if ep.area().abs() <= min_area {
+                // LayerRegion.cpp:872 — `expoly.area() <= min_area`, the signed area.
+                let area = if driver_pin { ep.area() } else { ep.area().abs() };
+                if area <= min_area {
                     areas_to_solid.push(ep.clone());
                     false
                 } else {
@@ -1636,7 +1684,8 @@ bottoms={:.3}s tops={:.3}s",
         new_surfaces.extend(tops);
 
         // Preserve other surface types (InternalBridge, InternalVoid) unchanged
-        for s in layer_surfaces.iter() {
+        // LayerRegion.cpp:885 — `fill_surfaces.clear()`: the pin keeps none.
+        for s in layer_surfaces.iter().filter(|_| !driver_pin) {
             match s.surface_type {
                 crate::surface::SurfaceType::Internal
                 | crate::surface::SurfaceType::InternalSolid
@@ -3668,7 +3717,11 @@ mod tests {
 
     #[test]
     fn test_process_external_surfaces_wave_preserves_other_types() {
-        // InternalBridge should be preserved unchanged
+        // LayerRegion.cpp:885 `fill_surfaces.clear()`: the pin stores the two
+        // zones, the bridges, the bottoms and the tops and keeps nothing else,
+        // so an InternalBridge handed in is gone afterwards (R925, gate
+        // LAYER_REGION_EXTERNAL_DRIVER_PIN, on by default). With the gate off
+        // the driver keeps it, which is what this test asserted before.
         let bridge_ep = make_rect_expolygon(0.0, 20.0, 5.0, 5.0);
         let mut surfaces = vec![vec![
             Surface::new(
@@ -3688,7 +3741,11 @@ mod tests {
         let has_internal_bridge = surfaces[0]
             .iter()
             .any(|s| s.surface_type == crate::surface::SurfaceType::InternalBridge);
-        assert!(has_internal_bridge, "InternalBridge should be preserved");
+        let driver_pin = crate::faithful_gate("LAYER_REGION_EXTERNAL_DRIVER_PIN");
+        assert_eq!(
+            has_internal_bridge, !driver_pin,
+            "InternalBridge is cleared at the pin (LayerRegion.cpp:885) and kept with the gate off"
+        );
     }
 
     // ====================================================================

@@ -3813,5 +3813,21 @@
   "functions": [
    "generate_overhangs"
   ]
+ },
+ {
+  "unit": "Fill/Fill",
+  "round": 925,
+  "evidence": "tests/fill_native_parity.rs: the pin's group_fills (Fill.cpp 193-639) on a real Print through Print::apply, 20 configurations x 12 layers with two to six fill surfaces of every type (narrow and wide, thick, bridges with an angle) and a lower layer with sparse infill: the list of fills in order (region, surface type, thickness, the parameters with the flow, the region group, the expolygons and the no-overlap expolygons) of all 240 lines equal for the line-by-line port in fill/fill.rs (group_fills and group_fills_with_lower_internal_areas). The pattern is compared by name only. The live grouping in fill/mod.rs is reported beside it (201 of 240) and is not this entry.",
+  "functions": [
+   "group_fills"
+  ]
+ },
+ {
+  "unit": "LayerRegion",
+  "round": 925,
+  "evidence": "tests/layer_region_native_parity.rs: 1,050 lines, none differ, every kind asserted: process_external_surfaces on 14 configurations x 10 layers plus layers with other surface types beside (322 lines) and on all-bottom, all-bridge and bridge-in-bottom layers (126 lines), against the pin's LayerRegion.cpp on a real Print (gates LAYER_REGION_EXTERNAL_PIN, LAYER_REGION_EXTERNAL_EMPTY_ZONES, LAYER_REGION_EXTERNAL_DRIVER_PIN, REGION_EXPANSION_BBOX_TRIM; with any of the last three off its lines differ).",
+  "functions": [
+   "LayerRegion::process_external_surfaces"
+  ]
  }
 ]

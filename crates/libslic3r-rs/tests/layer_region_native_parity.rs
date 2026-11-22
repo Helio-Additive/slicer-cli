@@ -10,7 +10,8 @@
 //!
 //! `LAYER_REGION_PARITY_VECTORS` names a file of the generator to read instead of the committed one,
 //! `LAYER_REGION_FILTER` a kind of line to run alone, `LAYER_REGION_SHOW` how many differing lines to
-//! print (with a file of full results).
+//! print (with a file of full results), `LAYER_REGION_DUMP` prints the whole result of this crate for
+//! each of those lines.
 
 use slicer::flow::{Flow, FlowRole};
 use slicer::geometry::{ExPolygon, ExPolygons, Point, Polygon};
@@ -192,17 +193,26 @@ fn first_difference(a: &str, b: &str) -> String {
     format!("token {k} of {} / {}\n      C++:  {}\n      Rust: {}", ta.len(), tb.len(), cut(&ta), cut(&tb))
 }
 
-const KINDS: [&str; 6] = ["flow", "clip", "prep", "trim", "efc", "pes"];
+const KINDS: [&str; 7] = ["flow", "clip", "prep", "trim", "efc", "pes", "pesz"];
 /// The kinds whose lines have to be equal to the pin: the test fails on a difference in one of them and
 /// reports the others.
 /// R923: `flow` and `prep` are equal with the gates LAYER_REGION_FLOW_PIN and LAYER_REGION_PREPARE_PIN on
-/// (their default); `pes` (process_external_surfaces) is reported, and held to the bound below.
-const ASSERTED: [&str; 5] = ["flow", "clip", "prep", "trim", "efc"];
+/// (their default); `pes` and `pesz` (process_external_surfaces) are equal since R925 (see below).
+const ASSERTED: [&str; 7] = ["flow", "clip", "prep", "trim", "efc", "pes", "pesz"];
 /// R924: with the gate LAYER_REGION_EXTERNAL_PIN on (its default: the solid and sparse surfaces carry the
 /// layer thickness, LayerRegion.cpp:891-898, and expansion_min is not floored, LayerRegion.cpp:804-805,824)
 /// `pes` differs from the pin on 3 of 280 lines (no_walls 2, large_min_area 1: a few points of one expanded
 /// contour are 1 to 30 units off, the token counts are equal). Not equal yet: the test holds the count.
-const PES_KNOWN_DIFFERING: usize = 3;
+/// R925: with the gate REGION_EXPANSION_BBOX_TRIM on (its default: the wave is clipped with the boundary
+/// trimmed to the box of its seed, RegionExpansion.cpp:459) those 3 lines are equal too: `pes` 280 of 280
+/// (`REGION_EXPANSION_BBOX_TRIM=0` brings the 3 back). The 42 `pes` lines after the `pesz` ones of each
+/// config carry a surface of another type (stInternalBridge, stInternalVoid), which the pin clears
+/// (LayerRegion.cpp:885): equal with the gate LAYER_REGION_EXTERNAL_DRIVER_PIN on, all 42 differ with it off.
+const PES_KNOWN_DIFFERING: usize = 0;
+/// R925: `pesz` is process_external_surfaces on a layer without a top, a solid or a sparse area (all bottom,
+/// all bridge, bridges in a bottom; LayerRegion.cpp:821-862 has no exit for it): what the gate
+/// LAYER_REGION_EXTERNAL_EMPTY_ZONES (on by default) is about: 126 lines, all equal with the gate on, all
+/// different with `LAYER_REGION_EXTERNAL_EMPTY_ZONES=0`. Asserted (`ASSERTED`).
 
 #[test]
 fn layer_region_native_parity() {
@@ -210,8 +220,8 @@ fn layer_region_native_parity() {
     let filter = std::env::var("LAYER_REGION_FILTER").ok();
     let show: usize = std::env::var("LAYER_REGION_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     // Per kind: lines and those that differ; per tag and kind the differing ones.
-    let mut lines = [0usize; 6];
-    let mut bad = [0usize; 6];
+    let mut lines = [0usize; 7];
+    let mut bad = [0usize; 7];
     let mut by_tag: std::collections::BTreeMap<(String, usize), usize> = std::collections::BTreeMap::new();
     let mut cfg: Option<Cfg> = None;
     let mut shown = 0usize;
@@ -274,7 +284,7 @@ fn layer_region_native_parity() {
                 layerm.elephant_foot_compensation_step((step, &trimming));
                 surfaces_s(&layerm.slices.surfaces)
             }
-            "pes" => {
+            "pes" | "pesz" => {
                 layerm.fill_surfaces.surfaces = t.surfaces();
                 layerm.process_external_surfaces(height).expect("process_external_surfaces");
                 surfaces_s(&layerm.fill_surfaces.surfaces)
@@ -294,18 +304,22 @@ fn layer_region_native_parity() {
             if shown < show && !theirs.starts_with('#') {
                 shown += 1;
                 eprintln!("line {} {} {what} (layer {layer_id}): {}", line_no + 1, c.tag, first_difference(theirs, &mine));
+                // LAYER_REGION_DUMP=1: the whole result of this crate, to compare surface by surface.
+                if std::env::var("LAYER_REGION_DUMP").is_ok() {
+                    eprintln!("DUMP {} {mine}", line_no + 1);
+                }
             }
         }
         let _ = &c.kv;
     }
-    for k in 0..6 {
+    for k in 0..7 {
         if lines[k] > 0 {
             let tags: Vec<String> = by_tag.iter().filter(|((_, kind), _)| *kind == k).map(|((tag, _), n)| format!("{tag} {n}")).collect();
             eprintln!("{}: {} lines, {} differ{}{}", KINDS[k], lines[k], bad[k], if tags.is_empty() { "" } else { ": " }, tags.join(", "));
         }
     }
     eprintln!("layer_region parity: {} lines, {} differ", lines.iter().sum::<usize>(), bad.iter().sum::<usize>());
-    let failing: Vec<String> = (0..6).filter(|k| ASSERTED.contains(&KINDS[*k]) && bad[*k] > 0).map(|k| format!("{} {}", KINDS[k], bad[k])).collect();
+    let failing: Vec<String> = (0..7).filter(|k| ASSERTED.contains(&KINDS[*k]) && bad[*k] > 0).map(|k| format!("{} {}", KINDS[k], bad[k])).collect();
     assert!(failing.is_empty(), "LayerRegion differs from the pin: {}", failing.join(", "));
     assert!(bad[5] <= PES_KNOWN_DIFFERING, "process_external_surfaces: {} lines differ from the pin, {PES_KNOWN_DIFFERING} are known", bad[5]);
 }

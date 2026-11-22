@@ -2,18 +2,16 @@
 //! C++ (tests/data/fill/gen.cpp: a real Print, layers with fill surfaces set by hand, 20 configurations
 //! x 12 layers).
 //!
-//! THIS TEST REPORTS, IT DOES NOT YET REQUIRE EQUALITY: it prints, for the live grouping
-//! (`slicer::fill::group_fills`, fill/mod.rs) and for the line-by-line port
-//! (`slicer::fill::fill::group_fills`, fill/fill.rs), how many of the lines come out as the pin's list
-//! of SurfaceFill, and where the first difference is. It asserts only that the vectors are read, that
-//! both versions ran on every line, and that the numbers of equal lines do not fall under those of R924
-//! (live 200 of 240 with overlap and angle masked, port 218 of 240): NEITHER VERSION IS EQUAL TO THE PIN.
+//! For the line-by-line port (`slicer::fill::fill::group_fills`, fill/fill.rs) the test REQUIRES that
+//! every line comes out as the pin's list of SurfaceFill, in order (240 of 240 since R925, when
+//! Fill.cpp:227-231 `starts_at_object_base` and 303-329, the flows of a thick bridge and of a merged
+//! span, were ported). For the live grouping (`slicer::fill::group_fills`, fill/mod.rs) it REPORTS:
+//! how many lines are equal and where the first difference is, with a floor (201 of 240 with overlap
+//! and angle masked, which the live parameters hold as a ratio and in degrees): THE LIVE VERSION IS
+//! NOT EQUAL TO THE PIN.
 //! The pattern of a fill is left out of the comparison (the two versions hold it in enums of their own
-//! order); it is reported by name.
-//! What the differing lines of the port have in common (R924): a bridge surface with a set thickness
-//! (Fill.cpp:310-328, the flow of a merged span), `thick_bridges` on a bottom bridge, and a surface whose
-//! thickness reaches the base of the object (Fill.cpp:227-231 `starts_at_object_base`, the first layer's
-//! flow at 305-306 and 325-326).
+//! order); it is reported by name. The vectors do not reach stSubTop surfaces, the conformal infill
+//! parameters, `initial_layer_flow_ratio` or an object on a raft (object base above 0).
 //! `FILL_PARITY_VECTORS` names a file of the generator to read instead of the committed one,
 //! `FILL_PARITY_SHOW` the number of differing lines to print per version.
 
@@ -248,7 +246,7 @@ fn fill_group_fills_native_parity_report() {
     let expected = read_vectors();
     let show: usize = std::env::var("FILL_PARITY_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     let mut cfg: Option<(String, std::sync::Arc<slicer::print_config::PrintConfig>, std::sync::Arc<slicer::print_config::PrintObjectConfig>, std::sync::Arc<slicer::print_region::PrintRegion>)> = None;
-    let (mut live, mut live_masked, mut port) = (Stat::default(), Stat::default(), Stat::default());
+    let (mut live, mut live_masked, mut port, mut port_areas) = (Stat::default(), Stat::default(), Stat::default(), Stat::default());
     let mut cases = 0usize;
     for (line_no, line) in expected.iter().enumerate() {
         if let Some(rest) = line.strip_prefix("gcfg\t") {
@@ -261,7 +259,11 @@ fn fill_group_fills_native_parity_report() {
                 // The first value of the options with a value per extruder, as the slicing path hands over.
                 let first = if key == "nozzle_diameter" { value.split(',').next().unwrap_or(value) } else { value };
                 print_config.set_deserialize(key, first);
-                object_config.set_deserialize(key, first);
+                // PrintObjectConfig::set_deserialize knows a part of the keys only (not `thick_bridges`);
+                // the rest goes through apply_key_value, as the slicing path's config loading does.
+                if !object_config.set_deserialize(key, first) {
+                    object_config.apply_key_value(key, first);
+                }
                 region_config.set_deserialize(key, first);
             }
             cfg = Some((fields[0].to_string(), std::sync::Arc::new(print_config), std::sync::Arc::new(object_config), std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config))));
@@ -336,8 +338,16 @@ fn fill_group_fills_native_parity_report() {
         }))
         .unwrap_or(None);
         compare(&mut port, "port fill/fill.rs", line_no, tag, &theirs, mine_port, show);
+        // The same port handed the areas of sparse infill of the layer below, as Layer::make_fills holds them.
+        let mine_port_areas = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut lock_param = slicer::fill::LockRegionParam::default();
+            let areas: &[ExPolygon] = if has_lower { &lower_internal } else { &[] };
+            slicer::fill::fill::group_fills_with_lower_internal_areas(&layer, areas, &mut lock_param, 0.).ok().map(|fills| fills.iter().map(|f| fill_s!(f)).collect::<Vec<String>>())
+        }))
+        .unwrap_or(None);
+        compare(&mut port_areas, "port fill/fill.rs, lower areas handed over", line_no, tag, &theirs, mine_port_areas, show);
     }
-    for (what, s) in [("live fill/mod.rs group_fills", &live), ("live fill/mod.rs group_fills, overlap and angle aside", &live_masked), ("port fill/fill.rs group_fills", &port)] {
+    for (what, s) in [("live fill/mod.rs group_fills", &live), ("live fill/mod.rs group_fills, overlap and angle aside", &live_masked), ("port fill/fill.rs group_fills", &port), ("port fill/fill.rs group_fills_with_lower_internal_areas", &port_areas)] {
         eprintln!(
             "{what}: {} lines; error or panic {}; same number of fills {}; equal to the pin in order {} (pattern aside); equal as a set {}",
             s.lines, s.failed, s.same_count, s.equal_in_order, s.equal_as_set
@@ -353,6 +363,8 @@ fn fill_group_fills_native_parity_report() {
     // (R924). A change that lowers one moved a grouping away from the pin; raise them as they grow, and
     // turn them into `== cases` once a version is equal.
     assert_eq!(live.failed + port.failed, 0, "a group_fills returned an error or panicked");
-    assert!(live_masked.equal_in_order >= 200, "live fill/mod.rs group_fills: {} lines equal to the pin, 200 before", live_masked.equal_in_order);
-    assert!(port.equal_in_order >= 218, "port fill/fill.rs group_fills: {} lines equal to the pin, 218 before", port.equal_in_order);
+    // R925: the line-by-line port is equal to the pin on every line (Fill.cpp:227-231 and 303-329 ported).
+    assert_eq!(port.equal_in_order, cases, "port fill/fill.rs group_fills: {} of {} lines equal to the pin", port.equal_in_order, cases);
+    assert_eq!(port_areas.equal_in_order, cases, "port fill/fill.rs group_fills_with_lower_internal_areas: {} of {} lines equal to the pin", port_areas.equal_in_order, cases);
+    assert!(live_masked.equal_in_order >= 201, "live fill/mod.rs group_fills: {} lines equal to the pin, 201 before", live_masked.equal_in_order);
 }

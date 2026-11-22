@@ -17,8 +17,8 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 528 | 5.5% | 8.8% |
 | partial `[~]` | 2127 | 22.2% | 20.5% |
-| ported `[x]` | 3898 | 40.7% | 26.3% |
-| verified `[v]` | 3021 | 31.6% | 44.3% |
+| ported `[x]` | 3897 | 40.7% | 26.1% |
+| verified `[v]` | 3022 | 31.6% | 44.6% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -155,7 +155,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `FilamentMixer` | 3 | `filament_mixer.rs` | partial | 37 | 11 | 2 | 24 | 0 |
 | `FilamentMixerModel` | 3 | `filament_mixer_model.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `FileParserError` | 1 | `file_parser_error.rs` | partial | 4 | 0 | 1 | 3 | 0 |
-| `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 3 | 0 |
+| `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 2 | 1 |
 | `Fill/Fill3DHoneycomb` | 1 | `fill/fill3_d_honeycomb.rs` | partial | 13 | 0 | 3 | 10 | 0 |
 | `Fill/FillAdaptive` | 1 | `fill/fill_adaptive.rs` | partial | 32 | 8 | 8 | 16 | 0 |
 | `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 5 | 13 | 39 | 11 |
@@ -4254,12 +4254,12 @@ Rust file: `fill/fill.rs`. Status: **partial**. Not listed: 2 constructors, 1 de
 **free functions**
 
 - [x] `is_narrow_infill_area` (line 184) → `fill/fill.rs:347`
-- [x] `group_fills` (line 193) → `fill/fill.rs:505`
+- [v] `group_fills` (line 193) → `fill/fill.rs:505` — R925: tests/fill_native_parity.rs: the pin's group_fills (Fill.cpp 193-639) on a real Print through Print::apply, 20 configurations x 12 layers with two to six fill surfaces of every type (narrow and wide, thick, bridges with an angle) and a lower layer with sparse infill: the list of fills in order (region, surface type, thickness, the parameters with the flow, the region group, the expolygons and the no-overlap expolygons) of all 240 lines equal for the line-by-line port in fill/fill.rs (group_fills and group_fills_with_lower_internal_areas). The pattern is compared by name only. The live grouping in fill/mod.rs is reported beside it (201 of 240) and is not this entry. (the body reads as divergent to the estimate)
 - [ ] `export_group_fills_to_svg` (line 642) → `fill/fill.rs`
 
 **class `Layer`**
 
-- [x] `set_outlook_range` (line 661) → `fill/fill.rs:1255`
+- [x] `set_outlook_range` (line 661) → `fill/fill.rs:1339`
 - [~] `make_fills` (line 678) → `layer.rs` — not in the paired file
 - [~] `generate_sparse_infill_polylines_for_anchoring` (line 869) → `layer.rs` — not in the paired file
 - [~] `make_ironing` (line 983) → `layer.rs` — not in the paired file
@@ -11618,18 +11618,18 @@ Rust file: `region_expansion.rs`. Status: **partial**.
 - [x] `build_aabb_tree_over_expolygons` (line 240) → `region_expansion.rs:85`
 - [x] `sample_in_expolygons` (line 253) → `region_expansion.rs:103`
 - [ ] `wave_seeds` (line 278) → `region_expansion.rs`
-- [x] `wavefront_initial` (line 391) → `region_expansion.rs:773`
-- [x] `wavefront_step` (line 409) → `region_expansion.rs:803`
-- [x] `wavefront_clip` (line 432) → `region_expansion.rs:835`
-- [x] `propagate_wave_from_boundary` (line 442) → `region_expansion.rs:858`
+- [x] `wavefront_initial` (line 391) → `region_expansion.rs:805`
+- [x] `wavefront_step` (line 409) → `region_expansion.rs:835`
+- [x] `wavefront_clip` (line 432) → `region_expansion.rs:867`
+- [x] `propagate_wave_from_boundary` (line 442) → `region_expansion.rs:890`
 - [~] `propagate_waves` (line 468) → `region_expansion.rs` — another overload of the name is ported
-- [x] `propagate_waves` (line 491) → `region_expansion.rs:970`
+- [x] `propagate_waves` (line 491) → `region_expansion.rs:1002`
 - [~] `propagate_waves` (line 496) → `region_expansion.rs` — another overload of the name is ported
-- [~] `propagate_waves_ex` (line 508) → `region_expansion.rs:1744` — partial
+- [~] `propagate_waves_ex` (line 508) → `region_expansion.rs:1793` — partial
 - [~] `propagate_waves_ex` (line 534) → `region_expansion.rs` — another overload of the name is ported
 - [ ] `expand_expolygons` (line 550) → `region_expansion.rs`
-- [~] `merge_expansions_into_expolygons` (line 564) → `region_expansion.rs:1014` — partial
-- [x] `expand_merge_expolygons` (line 617) → `region_expansion.rs:1090`
+- [~] `merge_expansions_into_expolygons` (line 564) → `region_expansion.rs:1046` — partial
+- [x] `expand_merge_expolygons` (line 617) → `region_expansion.rs:1122`
 
 **class `RegionExpansionParameters`**
 

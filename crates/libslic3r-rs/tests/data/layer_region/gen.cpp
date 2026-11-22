@@ -191,7 +191,8 @@ struct Case
 
 // The fill surfaces of a layer for process_external_surfaces: per island the area inside its walls, cut
 // into top, bottom and bridge patches, a solid band and the sparse rest. `kind` 0 all types, 1 no bridges,
-// 2 bridges only, 3 a top that covers the island.
+// 2 bridges only, 3 a top that covers the island, 4 a bottom that covers it, 5 a bridge that covers it,
+// 6 bridges in a bottom (4 to 6: a layer without a top, a solid or a sparse area).
 static Surfaces typed_surfaces(Lcg &g, const ExPolygons &islands, double thickness, int kind)
 {
     Surfaces out_surfaces;
@@ -211,9 +212,18 @@ static Surfaces typed_surfaces(Lcg &g, const ExPolygons &islands, double thickne
                 }
             }
         };
-        if (kind == 3) {
+        if (kind == 3 || kind == 4 || kind == 5) {
             for (const ExPolygon &e : rest) {
-                Surface s(stTop, e);
+                Surface s(kind == 3 ? stTop : kind == 4 ? stBottom : stBottomBridge, e);
+                s.thickness = thickness;
+                out_surfaces.emplace_back(s);
+            }
+            continue;
+        }
+        if (kind == 6) {
+            take(stBottomBridge, (int) g.range(1, 2));
+            for (const ExPolygon &e : rest) {
+                Surface s(stBottom, e);
                 s.thickness = thickness;
                 out_surfaces.emplace_back(s);
             }
@@ -277,6 +287,10 @@ int main(int argc, char **argv)
         {"auto_widths", {{"outer_wall_line_width", "0"}, {"inner_wall_line_width", "0"}, {"sparse_infill_line_width", "0"}, {"internal_solid_infill_line_width", "0"}, {"top_surface_line_width", "0"}, {"line_width", "0"}}},
     };
     Lcg g(0x51ed270b3c6ef372ULL);
+    // The stream of the "pesz" lines, apart, so that the lines above them stay what they were.
+    Lcg g2(0x2b992ddfa23249d6ULL);
+    // The stream of the "pes" lines with a surface of another type beside, apart for the same reason.
+    Lcg g3(0x7c0f1e5ab3d4960bULL);
     for (const Case &c : cases) {
         Model        model;
         ModelObject *o = model.add_object();
@@ -378,6 +392,49 @@ int main(int argc, char **argv)
                 layerm->process_external_surfaces(nullptr, nullptr);
                 out("pes " + at + " " + in + " => " + SURFACES(layerm->fill_surfaces.surfaces));
             }
+        }
+
+        // LayerRegion::process_external_surfaces on a layer without a top, a solid or a sparse area
+        // (LayerRegion.cpp:821-862 has no exit for it): all bottom, all bridge, bridges in a bottom.
+        for (int k = 0; k < 9; ++k) {
+            const size_t layer_id = k < 3 ? 0 : (size_t) g2.range(1, 9);
+            const double height   = layer_id == 0 ? first_layer_height : layer_height;
+            const double print_z  = first_layer_height + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * height;
+            const std::string at  = hI((long long) layer_id) + " " + hD(height);
+            Layer        layer(layer_id, obj, height, print_z, slice_z);
+            LayerRegion *layerm = layer.add_region(&region);
+            ExPolygons   islands;
+            const int    n_islands = k >= 6 ? 2 : 1;
+            for (int i = 0; i < n_islands; ++i) islands.emplace_back(island(g2, (n_islands == 1 ? 0 : (i == 0 ? -2500000 : 2500000)) + g2.range(-200000, 200000), g2.range(-200000, 200000)));
+            layerm->fill_surfaces.surfaces = typed_surfaces(g2, islands, height, 4 + k % 3);
+            const std::string in           = SURFACES(layerm->fill_surfaces.surfaces);
+            layerm->process_external_surfaces(nullptr, nullptr);
+            out("pesz " + at + " " + in + " => " + SURFACES(layerm->fill_surfaces.surfaces));
+        }
+
+        // LayerRegion::process_external_surfaces with a surface of a type it does not expand beside the
+        // others: the function clears the fill surfaces before it stores its own (LayerRegion.cpp:885).
+        for (int k = 0; k < 3; ++k) {
+            const size_t layer_id = (size_t) g3.range(1, 9);
+            const double height   = layer_height;
+            const double print_z  = first_layer_height + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * height;
+            const std::string at  = hI((long long) layer_id) + " " + hD(height);
+            Layer        layer(layer_id, obj, height, print_z, slice_z);
+            LayerRegion *layerm = layer.add_region(&region);
+            ExPolygons   islands;
+            islands.emplace_back(island(g3, g3.range(-200000, 200000), g3.range(-200000, 200000)));
+            layerm->fill_surfaces.surfaces = typed_surfaces(g3, islands, height, k);
+            {
+                const coord_t w = mm(g3, 1., 9.), h = mm(g3, 1., 9.), x = 6000000, y = g3.range(-200000, 200000);
+                Surface       s(k == 1 ? stInternalVoid : stInternalBridge, ExPolygon(rect(x, y, x + w, y + h)));
+                s.thickness = height;
+                layerm->fill_surfaces.surfaces.emplace_back(s);
+            }
+            const std::string in = SURFACES(layerm->fill_surfaces.surfaces);
+            layerm->process_external_surfaces(nullptr, nullptr);
+            out("pes " + at + " " + in + " => " + SURFACES(layerm->fill_surfaces.surfaces));
         }
     }
     std::fclose(g_out);

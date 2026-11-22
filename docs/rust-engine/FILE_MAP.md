@@ -45,9 +45,9 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 6976 (77%) |
-| estimate: faithful | 6156 (88% of matched) |
+| estimate: faithful | 6155 (88% of matched) |
 | estimate: partial | 569 (8% of matched) |
-| estimate: divergent | 230 (3% of matched) |
+| estimate: divergent | 231 (3% of matched) |
 | estimate: stub | 21 (0% of matched) |
 | missing in the paired Rust file | 1943 |
 | of those, a function of that name exists in another Rust file | 1142 |
@@ -55,13 +55,13 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 122 |
 | of the rest, 25 tokens or more | 359 |
 | in a C++ unit with no Rust file | 133 |
-| Rust functions with no C++ function of that name in the pair | 8450 |
+| Rust functions with no C++ function of that name in the pair | 8453 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 5381 | 4747 | 453 | 171 | 10 | 1470 |
+| 1 | 180 | 180 | 6851 | 5381 | 4746 | 453 | 172 | 10 | 1470 |
 | 2 | 15 | 15 | 392 | 353 | 305 | 37 | 10 | 1 | 39 |
 | 3 | 92 | 88 | 1374 | 999 | 887 | 60 | 47 | 5 | 375 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
@@ -126,6 +126,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 33 | 0 | 2 | 0 | 6 | 0 |
 | 1 | `Arachne/WallToolPaths` | `arachne/wall_tool_paths.rs` | 16 | 8 | 3 | 1 | 0 | 4 | 1 |
 | 1 | `Circle` | `circle.rs` | 27 | 24 | 0 | 0 | 0 | 3 | 2 |
+| 1 | `Fill/Fill` | `fill/fill.rs` | 7 | 2 | 0 | 1 | 0 | 4 | 1 |
 | 1 | `Fill/FillPlanePath` | `fill/fill_plane_path.rs` | 25 | 12 | 2 | 0 | 0 | 11 | 2 |
 | 1 | `Fill/Lightning/TreeNode` | `fill/lightning/tree_node.rs` | 27 | 17 | 2 | 1 | 0 | 7 | 1 |
 | 1 | `GCode/PostProcessor` | `gcode/post_processor.rs` | 7 | 0 | 3 | 0 | 0 | 4 | 2 |
@@ -145,7 +146,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `ElephantFootCompensation` | `elephant_foot_compensation.rs` | 10 | 5 | 0 | 0 | 0 | 5 | 1 |
 | 1 | `ExtrusionSimulator` | `extrusion_simulator.rs` | 22 | 19 | 0 | 1 | 0 | 2 | 0 |
 | 1 | `FilamentGroup` | `filament_group.rs` | 49 | 46 | 2 | 1 | 0 | 0 | 0 |
-| 1 | `Fill/Fill` | `fill/fill.rs` | 7 | 3 | 0 | 0 | 0 | 4 | 1 |
 | 1 | `Fill/FillRectilinear` | `fill/fill_rectilinear.rs` | 109 | 78 | 3 | 1 | 0 | 27 | 0 |
 | 1 | `Fill/Lightning/DistanceField` | `fill/lightning/distance_field.rs` | 11 | 9 | 0 | 0 | 0 | 2 | 1 |
 | 1 | `GCode/AvoidCrossingPerimeters` | `gcode/avoid_crossing_perimeters.rs` | 59 | 49 | 7 | 1 | 0 | 2 | 0 |
@@ -3119,7 +3119,11 @@ Rust only:
 
 ### `Fill/Fill` (.cpp+.hpp) and `fill/fill.rs`
 
-Tier 1. C++ functions 7 (plus 2 constructors, 1 destructors, 2 operators), Rust functions 10. Matched 3: faithful 3, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 7 (plus 2 constructors, 1 destructors, 2 operators), Rust functions 13. Matched 3: faithful 2, partial 0, divergent 1, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- divergent: `group_fills` :193 and `group_fills` :505 (1%, 0.0x)
 
 Missing in the Rust file:
 
@@ -3137,6 +3141,9 @@ Rust only:
 - `use_bridge_flow` :415 — C++ has it in `Fill/Fill3DHoneycomb`, `Fill/FillBase`, `Fill/FillGyroid`
 - `append_flow_param` :427
 - `append_density_param` :451
+- `group_fills_at_object_base` :519
+- `group_fills_with_lower_internal_areas` :531
+- `group_fills_lower` :541
 
 ### `Fill/Fill3DHoneycomb` (.cpp+.hpp) and `fill/fill3_d_honeycomb.rs`
 
@@ -8936,8 +8943,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `RegionExpansionParameters::build` :32 and `RegionExpansionParameters::build` :220 (96%, 2.58x)
 - partial: `expolygons_to_zpaths64_expanded_opened` :108 and `expolygons_to_zpaths64_expanded_opened` :460 (41%, 1.05x)
 - partial: `merge_splits` :192 and `merge_splits` :528 (39%, 1.0x)
-- partial: `propagate_waves_ex` :508 and `propagate_waves_ex` :1744 (50%, 1.75x)
-- partial: `merge_expansions_into_expolygons` :564 and `merge_expansions_into_expolygons` :1014 (37%, 0.75x)
+- partial: `propagate_waves_ex` :508 and `propagate_waves_ex` :1793 (50%, 1.75x)
+- partial: `merge_expansions_into_expolygons` :564 and `merge_expansions_into_expolygons` :1046 (37%, 0.75x)
 
 Missing in the Rust file:
 
@@ -8958,37 +8965,37 @@ Rust only:
 - `polylines_merge_z` :499
 - `wave_seeds_faithful` :584
 - `propagate_waves_faithful` :693
-- `wave_seeds_polygon_based` :883
-- `propagate_wave_from_seeds` :933
-- `extract_expolygons_by_type` :1106
-- `expand_merge_surfaces` :1138 — C++ has it in `LayerRegion`
-- `ExternalSurfaceConfig::default` :1261
-- `ExternalSurfaceConfig::from_flows` :1285
-- `ExternalSurfaceConfig::expansion_top` :1330
-- `ExternalSurfaceConfig::expansion_bottom` :1344
-- `ExternalSurfaceConfig::expansion_bottom_bridge` :1350
-- `ExternalSurfaceConfig::closing_radius` :1356
-- `process_external_surfaces_wave` :1394
-- `expand_expolygons_with_anchors` :1838
-- `resolve_group_id` :1935
-- `get_grouped_bridges` :1952 — C++ has it in `LayerRegion`
-- `detect_bridging_direction_from_lines` :2039
-- `LibcxxUnorderedMapF64::new` :2214
-- `LibcxxUnorderedMapF64::hash` :2218 — C++ has it in `Config`, `SLAPrintSteps`
-- `LibcxxUnorderedMapF64::constrain` :2227
-- `LibcxxUnorderedMapF64::next_of` :2238
-- `LibcxxUnorderedMapF64::set_next` :2245
-- `LibcxxUnorderedMapF64::next_prime` :2253
-- `LibcxxUnorderedMapF64::rehash` :2274
-- `LibcxxUnorderedMapF64::emplace` :2312
-- `LibcxxUnorderedMapF64::values_in_order` :2362
-- `principal_component_direction` :2377
-- `polylines_to_lines` :2449
-- `detect_bridge_directions_impl` :2469
-- `separate_bridge_directions` :2734 — C++ has it in `LayerRegion`
-- `partition_bridge_anchors` :2795 — C++ has it in `LayerRegion`
-- `merge_bridges` :3081 — C++ has it in `LayerRegion`
-- `expand_bridges_detect_orientations` :3282 — C++ has it in `LayerRegion`
+- `wave_seeds_polygon_based` :915
+- `propagate_wave_from_seeds` :965
+- `extract_expolygons_by_type` :1138
+- `expand_merge_surfaces` :1170 — C++ has it in `LayerRegion`
+- `ExternalSurfaceConfig::default` :1293
+- `ExternalSurfaceConfig::from_flows` :1317
+- `ExternalSurfaceConfig::expansion_top` :1362
+- `ExternalSurfaceConfig::expansion_bottom` :1376
+- `ExternalSurfaceConfig::expansion_bottom_bridge` :1382
+- `ExternalSurfaceConfig::closing_radius` :1388
+- `process_external_surfaces_wave` :1426
+- `expand_expolygons_with_anchors` :1887
+- `resolve_group_id` :1984
+- `get_grouped_bridges` :2001 — C++ has it in `LayerRegion`
+- `detect_bridging_direction_from_lines` :2088
+- `LibcxxUnorderedMapF64::new` :2263
+- `LibcxxUnorderedMapF64::hash` :2267 — C++ has it in `Config`, `SLAPrintSteps`
+- `LibcxxUnorderedMapF64::constrain` :2276
+- `LibcxxUnorderedMapF64::next_of` :2287
+- `LibcxxUnorderedMapF64::set_next` :2294
+- `LibcxxUnorderedMapF64::next_prime` :2302
+- `LibcxxUnorderedMapF64::rehash` :2323
+- `LibcxxUnorderedMapF64::emplace` :2361
+- `LibcxxUnorderedMapF64::values_in_order` :2411
+- `principal_component_direction` :2426
+- `polylines_to_lines` :2498
+- `detect_bridge_directions_impl` :2518
+- `separate_bridge_directions` :2783 — C++ has it in `LayerRegion`
+- `partition_bridge_anchors` :2844 — C++ has it in `LayerRegion`
+- `merge_bridges` :3130 — C++ has it in `LayerRegion`
+- `expand_bridges_detect_orientations` :3331 — C++ has it in `LayerRegion`
 
 ### `SVG` (.cpp+.hpp) and `svg.rs`
 
