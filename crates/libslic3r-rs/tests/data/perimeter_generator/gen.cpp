@@ -987,6 +987,22 @@ static ExPolygons neighbour(Lcg &g, const ExPolygons &slices, int how)
         return intersection_ex(slices, ExPolygons{ExPolygon(rect(bb.min.x() - 1000, bb.min.y() - 1000, x, bb.max.y() + 1000))});
     }
     case 4: return offset_ex(slices, float(mm(g, 0.1, 1.2)));
+    case 7: { // pockets under the islands (a counterbore): a round one, a slot across the island, or both
+        Polygons pockets;
+        for (const ExPolygon &e : slices) {
+            const BoundingBox bb   = get_extents(e);
+            const Point       c    = bb.center();
+            const int         what = (int) g.range(0, 2);
+            if (what != 1)
+                pockets.emplace_back(circle(c.x() + mm(g, -2., 2.), c.y() + mm(g, -2., 2.), double(mm(g, 1.5, 4.5)), (int) g.range(12, 48), 0.1 * g.range(0, 30)));
+            if (what != 0) {
+                const coord_t w = mm(g, 1., 5.);
+                const coord_t x = c.x() + mm(g, -3., 3.);
+                pockets.emplace_back(rect(x - w / 2, bb.min.y() - 100000, x + w / 2, bb.max.y() + 100000));
+            }
+        }
+        return diff_ex(slices, pockets);
+    }
     default: return ExPolygons();
     }
 }
@@ -1059,6 +1075,14 @@ static void run_process()
         {"arachne_first_layer_1wall", {{"wall_generator", "arachne"}, {"only_one_wall_first_layer", "1"}}},
         {"arachne_beads", {{"wall_generator", "arachne"}, {"min_bead_width", "60%"}, {"min_feature_size", "15%"}, {"wall_distribution_count", "2"}, {"wall_loops", "3"}}},
         {"arachne_no_overhang_speed", {{"wall_generator", "arachne"}, {"enable_overhang_speed", "0"}}},
+        // PerimeterGenerator::process_no_bridge: the counterbore hole bridging, with a lower layer in every
+        // case but the first layer's (`counterbore` in the tag makes the lower slices holed or cut).
+        {"classic_counterbore_bridges", {{"counterbore_hole_bridging", "partiallybridge"}}},
+        {"classic_counterbore_filled", {{"counterbore_hole_bridging", "sacrificiallayer"}}},
+        {"classic_counterbore_filled_angle", {{"counterbore_hole_bridging", "sacrificiallayer"}, {"bridge_angle", "30"}, {"wall_loops", "3"}}},
+        {"arachne_counterbore_bridges", {{"wall_generator", "arachne"}, {"counterbore_hole_bridging", "partiallybridge"}}},
+        {"arachne_counterbore_filled", {{"wall_generator", "arachne"}, {"counterbore_hole_bridging", "sacrificiallayer"}}},
+        {"arachne_counterbore_bridges_angle", {{"wall_generator", "arachne"}, {"counterbore_hole_bridging", "partiallybridge"}, {"bridge_angle", "45"}, {"wall_loops", "3"}}},
     };
     Lcg g(0x3c6ef372fe94f82bULL);
     for (const ProcCase &pc : cases) {
@@ -1093,19 +1117,30 @@ static void run_process()
             const double height   = layer_id == 0 ? first_layer_height : layer_height;
             const double print_z  = first_layer_height + layer_height * double(layer_id);
             const double slice_z  = print_z - 0.5 * height;
+            // The cases of the counterbore hole bridging: pockets in the layer below, and in two layers of
+            // twelve a thick ring with a disc in its hole over a smaller layer below (the unsupported band
+            // around the hole surrounds another island).
+            const bool counterbore = std::strstr(pc.tag, "counterbore") != nullptr;
+            const bool nested      = counterbore && (c == 6 || c == 10);
             // One to three islands, apart from each other.
-            const int             n_islands = c % 4 == 3 ? (int) g.range(2, 3) : 1;
+            const int             n_islands = nested ? 2 : c % 4 == 3 ? (int) g.range(2, 3) : 1;
             ExPolygons            slices;
             static const coord_t  xs[] = {-3000000, 0, 3000000};
-            for (int i = 0; i < n_islands; ++i) {
-                // The kinds in turn, so every case has every kind.
-                const int kind = n_islands == 1 ? (c + int(&pc - &cases[0])) % 10 : (int) g.range(0, 9);
-                append(slices, island(g, kind, (n_islands == 1 ? 0 : xs[i]) + g.range(-200000, 200000), g.range(-200000, 200000)));
-            }
+            if (nested) {
+                const coord_t cx = g.range(-200000, 200000), cy = g.range(-200000, 200000);
+                const double  ro = double(mm(g, 9., 11.)), ri = double(mm(g, 4., 5.5));
+                slices.emplace_back(holed(circle(cx, cy, ro, (int) g.range(32, 64), 0.05 * g.range(0, 60)), circle(cx, cy, ri, (int) g.range(24, 48), 0.05 * g.range(0, 60))));
+                slices.emplace_back(circle(cx + mm(g, -0.5, 0.5), cy + mm(g, -0.5, 0.5), double(mm(g, 1.5, 3.)), (int) g.range(12, 32), 0.05 * g.range(0, 60)));
+            } else
+                for (int i = 0; i < n_islands; ++i) {
+                    // The kinds in turn, so every case has every kind.
+                    const int kind = n_islands == 1 ? (c + int(&pc - &cases[0])) % 10 : (int) g.range(0, 9);
+                    append(slices, island(g, kind, (n_islands == 1 ? 0 : xs[i]) + g.range(-200000, 200000), g.range(-200000, 200000)));
+                }
             std::vector<unsigned short> extra;
             for (size_t i = 0; i < slices.size(); ++i) extra.push_back(g.range(0, 7) == 0 ? 1 : 0);
 
-            const int  lower_how = layer_id == 0 ? 6 : (int) g.range(0, 5);
+            const int  lower_how = layer_id == 0 ? 6 : nested ? 1 : counterbore && c % 3 != 2 ? 7 : (int) g.range(0, 5);
             const int  upper_how = (int) g.range(0, 6);
             const bool has_lower = lower_how != 6, has_upper = upper_how != 6;
             Layer      lower(layer_id == 0 ? 0 : layer_id - 1, obj, layer_height, print_z - height, slice_z - height);

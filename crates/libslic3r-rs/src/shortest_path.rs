@@ -49,6 +49,15 @@ fn norm(a: &[f64; 2], b: &[f64; 2]) -> f64 {
     squared_norm(a, b).sqrt()
 }
 
+// `SHORTEST_PATH_PIN` (on unless `SHORTEST_PATH_PIN=0`): this file does what the pin's release build
+// (NDEBUG) does where the earlier arm of the port did something else. With the gate off the earlier arm
+// runs: the result of the two-exchange pass is written back in `chain_polylines`, and a chain the second
+// greedy variant could not finish is a panic.
+#[inline]
+fn pin_release_build() -> bool {
+    crate::faithful_gate("SHORTEST_PATH_PIN")
+}
+
 // Naive implementation of the Traveling Salesman Problem, it works by always taking the next closest neighbor.
 // This implementation will always produce valid result even if some segments cannot reverse.
 // ShortestPath.cpp:18-56
@@ -554,7 +563,7 @@ where
 }
 
 // ShortestPath.cpp:975-979
-fn chain_segments_greedy_constrained_reversals<SegmentEndPointFunc, CouldReverseFunc>(
+pub fn chain_segments_greedy_constrained_reversals<SegmentEndPointFunc, CouldReverseFunc>(
     end_point_func: SegmentEndPointFunc,
     could_reverse_func: CouldReverseFunc,
     num_segments: usize,
@@ -574,7 +583,7 @@ where
 }
 
 // ShortestPath.cpp:981-986
-fn chain_segments_greedy<SegmentEndPointFunc>(
+pub fn chain_segments_greedy<SegmentEndPointFunc>(
     end_point_func: SegmentEndPointFunc,
     num_segments: usize,
     start_near: Option<&Point>,
@@ -1314,8 +1323,13 @@ where
             num_iter -= 1;
         }
         // ShortestPath.cpp:918  assert(queue.empty()); — an assert, compiled out of the release
-        // build, and true in the debug build only because of the drain above.
-        debug_assert!(queue.is_empty());
+        // build, and true in the debug build only because of the drain above. It does not hold when
+        // the loop above ran out of its 16 rounds per segment (ShortestPath.cpp:750), which happens
+        // with a start point: the release build goes on and returns the part of the chain that is
+        // linked to the first point.
+        if !pin_release_build() {
+            debug_assert!(queue.is_empty());
+        }
 
         // Now interconnect pairs of segments into a chain.
         // ShortestPath.cpp:921-968
@@ -1388,8 +1402,11 @@ where
         }
     }
 
-    // ShortestPath.cpp:971-972
-    assert_eq!(out.len(), num_segments);
+    // ShortestPath.cpp:971-972: `assert(out.size() == num_segments)` is compiled out of the release
+    // build; a chain cut short by the round limit of ShortestPath.cpp:750 is returned as it is.
+    if !pin_release_build() {
+        assert_eq!(out.len(), num_segments);
+    }
     out
 }
 
@@ -1397,7 +1414,7 @@ where
 // (Retained for parity; like the C++ source, only `chain_segments_greedy2` is
 // reached through `chain_polylines`.)
 #[allow(dead_code)]
-fn chain_segments_greedy_constrained_reversals2<SegmentEndPointFunc, CouldReverseFunc>(
+pub fn chain_segments_greedy_constrained_reversals2<SegmentEndPointFunc, CouldReverseFunc>(
     end_point_func: SegmentEndPointFunc,
     could_reverse_func: CouldReverseFunc,
     num_segments: usize,
@@ -1417,7 +1434,7 @@ where
 }
 
 // ShortestPath.cpp:994-999
-fn chain_segments_greedy2<SegmentEndPointFunc>(
+pub fn chain_segments_greedy2<SegmentEndPointFunc>(
     end_point_func: SegmentEndPointFunc,
     num_segments: usize,
     start_near: Option<&Point>,
@@ -1676,15 +1693,15 @@ pub fn chain_points(points: &[Point], start_near: Option<&Point>) -> Vec<usize> 
 
 // ShortestPath.cpp:1272-1278
 #[derive(Clone)]
-struct FlipEdge {
-    p1: [f64; 2],
-    p2: [f64; 2],
-    source_index: usize,
+pub struct FlipEdge {
+    pub p1: [f64; 2],
+    pub p2: [f64; 2],
+    pub source_index: usize,
 }
 
 impl FlipEdge {
     // ShortestPath.cpp:1273
-    fn new(p1: [f64; 2], p2: [f64; 2], source_index: usize) -> Self {
+    pub fn new(p1: [f64; 2], p2: [f64; 2], source_index: usize) -> Self {
         FlipEdge {
             p1,
             p2,
@@ -1692,16 +1709,16 @@ impl FlipEdge {
         }
     }
     // ShortestPath.cpp:1274
-    fn flip(&mut self) {
+    pub fn flip(&mut self) {
         std::mem::swap(&mut self.p1, &mut self.p2);
     }
 }
 
 // ShortestPath.cpp:1280-1287
 #[derive(Clone, Copy)]
-struct ConnectionCost {
-    cost: f64,
-    cost_flipped: f64,
+pub struct ConnectionCost {
+    pub cost: f64,
+    pub cost_flipped: f64,
 }
 
 impl ConnectionCost {
@@ -1722,7 +1739,7 @@ impl ConnectionCost {
 }
 
 // ShortestPath.cpp:1289-1353
-fn minimum_crossover_cost(
+pub fn minimum_crossover_cost(
     edges: &[FlipEdge],
     span1: (usize, usize),
     cost1: &ConnectionCost,
@@ -1879,7 +1896,7 @@ fn minimum_crossover_cost(
 }
 
 // ShortestPath.cpp:1433-1472
-fn do_crossover(
+pub fn do_crossover(
     edges_in: &[FlipEdge],
     edges_out: &mut [FlipEdge],
     span1: (usize, usize),
@@ -1981,7 +1998,7 @@ fn do_crossover(
 
 // Worst time complexity:    O(min(n, 100) * (n * log n + n^2)
 // ShortestPath.cpp:1553-1625
-fn reorder_by_two_exchanges_with_segment_flipping(edges: &mut Vec<FlipEdge>) {
+pub fn reorder_by_two_exchanges_with_segment_flipping(edges: &mut Vec<FlipEdge>) {
     // ShortestPath.cpp:1555-1556
     if edges.len() < 2 {
         return;
@@ -2008,8 +2025,13 @@ fn reorder_by_two_exchanges_with_segment_flipping(edges: &mut Vec<FlipEdge>) {
             connections[i] = c;
             connection_lengths[i - 1] = (l, i);
         }
-        // ShortestPath.cpp:1575
-        connection_lengths.sort_by(|l, r| r.0.partial_cmp(&l.0).unwrap());
+        // ShortestPath.cpp:1575: std::sort, which is not stable: connections of one length come out in
+        // the order libc++'s introsort leaves them in (the earlier arm kept their input order).
+        if pin_release_build() {
+            crate::clipper::libcxx_sort(&mut connection_lengths, |l, r| l.0 > r.0);
+        } else {
+            connection_lengths.sort_by(|l, r| r.0.partial_cmp(&l.0).unwrap());
+        }
         // ShortestPath.cpp:1576
         for c in connection_tried.iter_mut() {
             *c = false;
@@ -2091,7 +2113,7 @@ fn reorder_by_two_exchanges_with_segment_flipping(edges: &mut Vec<FlipEdge>) {
 // Used by the infill generator if the infill is not connected with perimeter lines
 // and to order the brim lines.
 // ShortestPath.cpp:1882-1931
-fn improve_ordering_by_two_exchanges_with_segment_flipping(polylines: &mut Polylines, _fixed_start: bool) {
+pub fn improve_ordering_by_two_exchanges_with_segment_flipping(polylines: &mut Polylines, _fixed_start: bool) {
     // ShortestPath.cpp:1900-1903
     let mut edges: Vec<FlipEdge> = Vec::with_capacity(polylines.len());
     for (i, pl) in polylines.iter().enumerate() {
@@ -2116,8 +2138,13 @@ fn improve_ordering_by_two_exchanges_with_segment_flipping(polylines: &mut Polyl
             debug_assert!(edge.p1 == pt_to_vec2d(&pl.first_point()));
         }
     }
-    // ShortestPath.cpp:1931 (write back)
-    std::mem::swap(polylines, &mut out);
+    // ShortestPath.cpp:1923-1931: the function ends here. `out` is a local that is never assigned back to
+    // `polylines` (only the NDEBUG cost check and the SVG dump read it), so at the pin the two-exchange pass
+    // leaves the order `chain_segments_greedy2` produced untouched. `SHORTEST_PATH_PIN=0` restores the
+    // earlier arm of this port, which swapped `out` into `polylines`.
+    if !pin_release_build() {
+        std::mem::swap(polylines, &mut out);
+    }
 }
 
 // Used to optimize order of infill lines and brim lines.
@@ -2211,12 +2238,78 @@ pub fn reorder_by_shortest_traverse<T: ReorderByShortestTraverse + Default>(
     *polylines_out = result;
 }
 
-// chain_path_items / chain_clipper_polynodes (ShortestPath.cpp:1964-1978) are NOT
-// ported: they chain `ClipperLib::PolyNodes` (a ClipperLib PolyTree), a type that
-// does not exist in this crate (the `geo`/Clipper2 split, see FIDELITY-NOTE(F1)).
-// fill_concentric.rs documents the same gap. chain_print_object_instances
-// (ShortestPath.cpp:1981-2008) is also not ported here: it depends on the
-// higher-level `Print`/`PrintObject`/`PrintInstance` types.
+// ShortestPath.cpp:1964-1973
+// template<class T> static inline T chain_path_items(const Points &points, const T &items)
+//
+// `T` is a vector at the pin; the items are copied into the result in the chained order.
+pub fn chain_path_items<I: Clone>(points: &[Point], items: &[I]) -> Vec<I> {
+    // ShortestPath.cpp:1966
+    let segment_end_point = |idx: usize, _first_point: bool| -> Point { points[idx] };
+    // ShortestPath.cpp:1967
+    let ordered = chain_segments_greedy(segment_end_point, points.len(), None);
+    // ShortestPath.cpp:1968-1972
+    let mut out: Vec<I> = Vec::with_capacity(items.len());
+    for segment_and_reversal in &ordered {
+        out.push(items[segment_and_reversal.0].clone());
+    }
+    out
+}
+
+// ShortestPath.cpp:1975-1978
+// ClipperLib::PolyNodes chain_clipper_polynodes(const Points &points, const ClipperLib::PolyNodes &items)
+//
+// `ClipperLib::PolyNodes` is `std::vector<PolyNode*>` (clipper.hpp:134). A node of the port's
+// `crate::clipper::PolyTree` is addressed by its index in the tree (`PolyNode::childs` holds such indices),
+// so the pointers are those indices here.
+pub fn chain_clipper_polynodes(points: &[Point], items: &[usize]) -> Vec<usize> {
+    chain_path_items(points, items)
+}
+
+// Chain instances of print objects by an approximate shortest path.
+// ShortestPath.cpp:1980-2003
+// std::vector<const PrintInstance*> chain_print_object_instances(const std::vector<const PrintObject*>& print_objects, const Point* start_near)
+pub fn chain_print_object_instances<'a>(
+    print_objects: &[&'a crate::print::faithful::PrintObject],
+    start_near: Option<&Point>,
+) -> Vec<&'a crate::print::faithful::PrintInstance> {
+    // Order objects using a nearest neighbor search.
+    // ShortestPath.cpp:1984-1993
+    let mut object_reference_points: Vec<Point> = Vec::new();
+    let mut instances: Vec<(usize, usize)> = Vec::new();
+    for (i, object) in print_objects.iter().enumerate() {
+        for j in 0..object.instances().len() {
+            // Sliced PrintObjects are centered, object.instances()[j].shift is the center of the PrintObject in G-code coordinates.
+            object_reference_points.push(object.instances()[j].shift);
+            instances.push((i, j));
+        }
+    }
+    // ShortestPath.cpp:1994-1995
+    let segment_end_point = |idx: usize, _first_point: bool| -> Point { object_reference_points[idx] };
+    let ordered = chain_segments_greedy(segment_end_point, instances.len(), start_near);
+    // ShortestPath.cpp:1996-2002
+    let mut out: Vec<&'a crate::print::faithful::PrintInstance> = Vec::with_capacity(instances.len());
+    for segment_and_reversal in &ordered {
+        let inst = instances[segment_and_reversal.0];
+        out.push(&print_objects[inst.0].instances()[inst.1]);
+    }
+    out
+}
+
+/// The overload of `chain_print_object_instances` that takes the Print (ShortestPath.hpp:51): Rust has no
+/// overloads, so it is a method of the same name on the Print.
+pub trait ChainPrintObjectInstances {
+    fn chain_print_object_instances(&self) -> Vec<&crate::print::faithful::PrintInstance>;
+}
+
+impl ChainPrintObjectInstances for crate::print::faithful::Print {
+    // ShortestPath.cpp:2005-2008
+    // std::vector<const PrintInstance*> chain_print_object_instances(const Print &print)
+    fn chain_print_object_instances(&self) -> Vec<&crate::print::faithful::PrintInstance> {
+        // return chain_print_object_instances(print.objects().vector(), nullptr);
+        let print_objects: Vec<&crate::print::faithful::PrintObject> = self.objects().iter().collect();
+        chain_print_object_instances(&print_objects, None)
+    }
+}
 
 // Line end point for the `chain_lines` radius lookup.
 // ShortestPath.cpp:2013-2022 (struct LineEnd).

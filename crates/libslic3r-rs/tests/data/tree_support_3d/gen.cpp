@@ -524,6 +524,36 @@ static void dump_draw_areas(const std::string &tag, const std::vector<SupportEle
     }
 }
 
+// A mesh: its vertices and its triangles.
+static std::string ITS_S(const indexed_triangle_set &its)
+{
+    std::string o = hI((long long) its.vertices.size());
+    for (const Vec3f &v : its.vertices) o += " " + hF(v.x()) + " " + hF(v.y()) + " " + hF(v.z());
+    o += " " + hI((long long) its.indices.size());
+    for (const auto &f : its.indices) o += " " + hI(f(0)) + " " + hI(f(1)) + " " + hI(f(2));
+    return o;
+}
+
+// A copy of generator layers into a storage of their own (the layers of a scenario are shared by its stages).
+static SupportGeneratorLayersPtr copy_generator_layers(const SupportGeneratorLayersPtr &src, SupportGeneratorLayerStorage &storage)
+{
+    SupportGeneratorLayersPtr dst(src.size(), nullptr);
+    for (size_t i = 0; i < src.size(); ++i)
+        if (const SupportGeneratorLayer *l = src[i]; l != nullptr) {
+            SupportGeneratorLayer &n = storage.allocate(l->layer_type);
+            n.print_z                = l->print_z;
+            n.bottom_z               = l->bottom_z;
+            n.height                 = l->height;
+            n.idx_object_layer_above = l->idx_object_layer_above;
+            n.idx_object_layer_below = l->idx_object_layer_below;
+            n.bridging               = l->bridging;
+            n.up                     = l->up;
+            n.polygons               = l->polygons;
+            dst[i]                   = &n;
+        }
+    return dst;
+}
+
 static void flush_fills(const std::string &tag)
 {
     if (g_full)
@@ -739,6 +769,11 @@ static void run_scenario(int scenario)
             outb(S + " smooth_outward " + hI((long long) layer_idx), POLYS(smooth_outward(u, c.support_line_width)));
         }
     }
+    // The organic part starts from the elements and the top contacts as they are here, before draw_areas().
+    const std::vector<SupportElements> move_bounds_nodes = move_bounds;
+    SupportGeneratorLayerStorage       layer_storage_nodes;
+    const SupportGeneratorLayersPtr    top_contacts_nodes = copy_generator_layers(top_contacts, layer_storage_nodes);
+
     SupportGeneratorLayersPtr bottom_contacts;
     SupportGeneratorLayersPtr intermediate_layers(num_support_layers, nullptr);
     if (support_params.has_bottom_contacts) bottom_contacts.assign(num_support_layers, nullptr);
@@ -746,6 +781,67 @@ static void run_scenario(int scenario)
     dump_generator_layers(S + " draw bottom_contacts", bottom_contacts);
     dump_generator_layers(S + " draw top_contacts", top_contacts);
     dump_generator_layers(S + " draw intermediate_layers", intermediate_layers);
+
+    // draw_branches(): organic_smooth_branches_avoid_collisions() moves the points of the elements, then the mesh
+    // of all branches (extrude_branch() of every path between two bifurcations).
+    {
+        std::vector<SupportElements> mb   = move_bounds_nodes;
+        const indexed_triangle_set   mesh = draw_branches(*obj, volumes, c, mb, [] {});
+        dump_move_bounds(S + " organic_smooth", mb);
+        outb(S + " draw_branches " + hI((long long) mesh.vertices.size()) + " " + hI((long long) mesh.indices.size()), ITS_S(mesh));
+
+        // The slicer on that mesh at the middle of every layer, as organic_draw_branches() slices the mesh of a
+        // branch: slice_mesh() in the positive mode, and slice_mesh_ex() with the closing radius of the object as
+        // slice_branches() calls it.
+        {
+            std::vector<float> zs;
+            for (size_t l = 0; l < mb.size(); ++l) zs.emplace_back(float(layer_mid_z(obj->slicing_parameters(), c, LayerIndex(l))));
+            MeshSlicingParams mp;
+            mp.mode = MeshSlicingParams::SlicingMode::Positive;
+            const std::vector<Polygons> sl = slice_mesh(mesh, zs, mp, [] {});
+            for (size_t l = 0; l < sl.size(); ++l)
+                if (! sl[l].empty()) outb(S + " slice_mesh " + hI((long long) l) + " " + hF(zs[l]), POLYS(sl[l]));
+            MeshSlicingParamsEx mpe;
+            mpe.closing_radius = float(obj->config().slice_closing_radius.value);
+            mpe.mode           = MeshSlicingParams::SlicingMode::Positive;
+            const std::vector<ExPolygons> sle = slice_mesh_ex(mesh, zs, mpe, [] {});
+            for (size_t l = 0; l < sle.size(); ++l)
+                if (! sle[l].empty()) outb(S + " slice_mesh_ex " + hI((long long) l) + " " + hF(zs[l]), EXPOLYS(sle[l]));
+        }
+
+        // slice_branches() of that mesh (the pin does not call it; with finalize_interface_and_support_areas()).
+        SupportGeneratorLayerStorage storage;
+        SupportGeneratorLayersPtr    top = copy_generator_layers(top_contacts_nodes, storage);
+        SupportGeneratorLayersPtr    bottom;
+        SupportGeneratorLayersPtr    intermediate(num_support_layers, nullptr);
+        if (support_params.has_bottom_contacts) bottom.assign(num_support_layers, nullptr);
+        slice_branches(*obj, volumes, c, overhangs, mb, mesh, bottom, top, intermediate, storage, [] {});
+        dump_generator_layers(S + " slice_branches bottom_contacts", bottom);
+        dump_generator_layers(S + " slice_branches top_contacts", top);
+        dump_generator_layers(S + " slice_branches intermediate_layers", intermediate);
+    }
+
+    // organic_draw_branches(), what generate_support_areas() draws the branches with: the elements (their points
+    // and marks), the cooldown areas, the bottom contacts, the top contacts and the intermediate layers.
+    {
+        std::vector<SupportElements> mb = move_bounds_nodes;
+        SupportGeneratorLayerStorage storage;
+        SupportGeneratorLayersPtr    top = copy_generator_layers(top_contacts_nodes, storage);
+        SupportGeneratorLayersPtr    top_interfaces(interface_layers.size(), nullptr);
+        SupportGeneratorLayersPtr    top_base_interfaces(base_interface_layers.size(), nullptr);
+        SupportGeneratorLayersPtr    bottom;
+        SupportGeneratorLayersPtr    intermediate(num_support_layers, nullptr);
+        if (support_params.has_bottom_contacts) bottom.assign(num_support_layers, nullptr);
+        InterfacePlacer         placer{obj->slicing_parameters(), support_params, c, storage, top, top_interfaces, top_base_interfaces};
+        std::vector<ExPolygons> cooldown_areas(num_support_layers);
+        organic_draw_branches(*obj, volumes, c, mb, bottom, top, placer, intermediate, storage, cooldown_areas, [] {});
+        dump_move_bounds(S + " organic elements", mb);
+        for (size_t i = 0; i < cooldown_areas.size(); ++i)
+            if (! cooldown_areas[i].empty()) outb(S + " organic cooldown " + hI((long long) i) + " " + hI((long long) cooldown_areas[i].size()), EXPOLYS(cooldown_areas[i]));
+        dump_generator_layers(S + " organic bottom_contacts", bottom);
+        dump_generator_layers(S + " organic top_contacts", top);
+        dump_generator_layers(S + " organic intermediate_layers", intermediate);
+    }
 }
 
 // The helpers that take no volumes.

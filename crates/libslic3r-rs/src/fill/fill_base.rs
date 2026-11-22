@@ -1159,6 +1159,79 @@ impl BoundaryInfillGraph {
     }
 }
 
+impl BoundaryInfillGraph {
+    /// FillBase.cpp:1202-1204 — `const Point& infill_end_point(size_t infill_end_point_idx) const`
+    #[allow(dead_code)]
+    fn infill_end_point(&self, infill_end_point_idx: usize) -> Point {
+        self.point(&self.map_infill_end_point_to_boundary[infill_end_point_idx])
+    }
+
+    /// FillBase.cpp:1207-1221 — `const Point interpolate_contour_point(const ContourIntersectionPoint &cp, double param)`
+    /// (The pin has no caller of it.)
+    #[allow(dead_code)]
+    fn interpolate_contour_point(&self, cp: &ContourIntersectionPoint, param: f64) -> Point {
+        let contour = &self.boundary[cp.contour_idx];
+        let contour_params = &self.boundary_params[cp.contour_idx];
+        // Find the start of a contour segment with param.
+        let mut it = lower_bound_f64(contour_params, param);
+        if contour_params[it] != param {
+            debug_assert!(it != 0);
+            it -= 1;
+        }
+        let mut i = it;
+        if i == contour.len() {
+            i = 0;
+        }
+        let t1 = contour_params[i];
+        let t2 = *next_value_modulo(i, contour_params);
+        lerp(contour[i], *next_value_modulo(i, contour), (param - t1) / (t2 - t1))
+    }
+}
+
+/// FillBase.cpp:771-774 — `static inline bool inside_interval(double low, double high, double p)`
+/// (This and the three after it are compiled only into a debug build of the pin, for its assertions.)
+#[allow(dead_code)]
+fn inside_interval(low: f64, high: f64, p: f64) -> bool {
+    p >= low && p <= high
+}
+
+/// FillBase.cpp:776-781 — `interval_inside_interval(double outer_low, double outer_high, double inner_low, double inner_high, double epsilon)`
+#[allow(dead_code)]
+fn interval_inside_interval(mut outer_low: f64, mut outer_high: f64, inner_low: f64, inner_high: f64, epsilon: f64) -> bool {
+    outer_low -= epsilon;
+    outer_high += epsilon;
+    inside_interval(outer_low, outer_high, inner_low) && inside_interval(outer_low, outer_high, inner_high)
+}
+
+/// FillBase.cpp:783-794 — `cyclic_interval_inside_interval(double outer_low, double outer_high, double inner_low, double inner_high, double length)`
+#[allow(dead_code)]
+fn cyclic_interval_inside_interval(outer_low: f64, mut outer_high: f64, mut inner_low: f64, mut inner_high: f64, length: f64) -> bool {
+    if outer_low > outer_high {
+        outer_high += length;
+    }
+    if inner_low > inner_high {
+        inner_high += length;
+    } else if inner_high < outer_low {
+        inner_low += length;
+        inner_high += length;
+    }
+    interval_inside_interval(outer_low, outer_high, inner_low, inner_high, SCALED_EPSILON)
+}
+
+/// FillBase.cpp:909-918 — `bool validate_boundary_intersections(const std::vector<std::vector<ContourIntersectionPoint*>> &boundary_intersections)`:
+/// the trimmed flags of the two ends of every contour segment agree. The intersection points are the
+/// indices of `cps`, as everywhere in this file.
+#[allow(dead_code)]
+fn validate_boundary_intersections(cps: &[ContourIntersectionPoint], boundary_intersections: &[Vec<usize>]) -> bool {
+    for contour in boundary_intersections {
+        for &ip in contour {
+            debug_assert!(cps[ip].next_trimmed == cps[cps[ip].next_on_contour].prev_trimmed);
+            debug_assert!(cps[ip].prev_trimmed == cps[cps[ip].prev_on_contour].next_trimmed);
+        }
+    }
+    true
+}
+
 // After mark_boundary_segments_touching_infill() marks boundary segments overlapping trimmed infill lines,
 // there are possibly some very short boundary segments unmarked, but overlapping the untrimmed infill lines fully
 // Mark those short boundary segments.
@@ -3150,6 +3223,14 @@ fn take_next(
             infill_ordered[polyline_idx2].points.clear();
             merged_with[polyline_idx2] = merged_with[polyline_idx1];
         }
+    }
+}
+
+/// The helpers of `struct FillParams` (FillBase.hpp:51-56). The record itself is `crate::fill::FillParams`.
+impl FillParams {
+    /// FillBase.hpp:53 — `bool full_infill() const { return density > 0.9999f; }`
+    pub fn full_infill(&self) -> bool {
+        self.density > 0.9999f32 as f64
     }
 }
 

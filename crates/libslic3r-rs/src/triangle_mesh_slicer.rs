@@ -1613,6 +1613,79 @@ fn scaled_f32(v: f32) -> f32 {
     v / (crate::libslic3r::SCALING_FACTOR as f32)
 }
 
+/// TriangleMeshSlicer.cpp:1864-1938 `std::vector<Polygons> slice_mesh(const indexed_triangle_set &mesh, const
+/// std::vector<float> &zs, const MeshSlicingParams &params, std::function<void()> throw_on_cancel)` with
+/// `params.trafo` the identity (the vertices scaled up in XY, nothing else): a mesh that is already in
+/// the frame it is sliced in, as the organic tree supports slice the meshes of their branches
+/// (TreeSupport3D.cpp:5706). Added in R922 beside `slice_mesh_its`, whose FRAME_UNIFY arm derives the frame of a
+/// model volume from the bounding box of the mesh; nothing else calls it.
+pub fn slice_mesh_its_identity(mesh: &indexed_triangle_set, zs: &[f32], params: &MeshSlicingParams, throw_on_cancel: &dyn Fn()) -> Vec<Polygons> {
+    // TriangleMeshSlicer.cpp:1880
+    let face_edge_ids = its_face_edge_ids(mesh);
+    let scaled_vertices: Vec<StlVertex> = if zs.len() <= 1 {
+        // `Vec3f(scaled<float>(p.x()), scaled<float>(p.y()), p.z())`: a division by `float(SCALING_FACTOR)`.
+        mesh.vertices.iter().map(|p| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z)).collect()
+    } else {
+        // transform_mesh_vertices_for_slicing() with the identity: `v.x() *= float(s); v.y() *= float(s);` with
+        // `s = 1. / SCALING_FACTOR`, a multiplication (the two differ in the last bit of the float).
+        let s: f32 = (1. / crate::libslic3r::SCALING_FACTOR) as f32;
+        mesh.vertices.iter().map(|p| StlVertex::new(p.x * s, p.y * s, p.z)).collect()
+    };
+    let mut lines = slice_make_lines(&scaled_vertices, &mesh.indices, &face_edge_ids, zs, throw_on_cancel);
+    // TriangleMeshSlicer.cpp:1900
+    throw_on_cancel();
+    // TriangleMeshSlicer.cpp:1902
+    make_loops_layers(&mut lines, params, throw_on_cancel)
+}
+
+/// TriangleMeshSlicer.cpp:2003-2050 `std::vector<ExPolygons> slice_mesh_ex(const indexed_triangle_set &mesh, const
+/// std::vector<float> &zs, const MeshSlicingParamsEx &params, std::function<void()> throw_on_cancel)` with
+/// `params.trafo` the identity: `slice_mesh_ex_its` over `slice_mesh_its_identity`, the layers in their order
+/// (TreeSupport3D.cpp:4324). Added in R922; nothing else calls it.
+pub fn slice_mesh_ex_its_identity(mesh: &indexed_triangle_set, zs: &[f32], params: &MeshSlicingParamsEx, throw_on_cancel: &dyn Fn()) -> Vec<ExPolygons> {
+    // TriangleMeshSlicer.cpp:2009-2017
+    let layers_p;
+    {
+        let mut slicing_params = params.base.clone();
+        if params.base.mode == SlicingMode::PositiveLargestContour {
+            slicing_params.mode = SlicingMode::Positive;
+        }
+        if params.base.mode_below == SlicingMode::PositiveLargestContour {
+            slicing_params.mode_below = SlicingMode::Positive;
+        }
+        layers_p = slice_mesh_its_identity(mesh, zs, &slicing_params, throw_on_cancel);
+    }
+    // TriangleMeshSlicer.cpp:2020-2046
+    let mut layers: Vec<ExPolygons> = Vec::with_capacity(layers_p.len());
+    for layer_id in 0..layers_p.len() {
+        throw_on_cancel();
+        let this_mode = if layer_id < params.base.slicing_mode_normal_below_layer { params.base.mode_below } else { params.base.mode };
+        // TriangleMeshSlicer.cpp:2030-2034
+        let fill_type = match this_mode {
+            SlicingMode::EvenOdd => ClipperPolyFillType::EvenOdd,
+            SlicingMode::PositiveLargestContour => ClipperPolyFillType::Positive,
+            _ => ClipperPolyFillType::NonZero,
+        };
+        let mut expolygons = ExPolygons::new();
+        make_expolygons(&layers_p[layer_id], params.closing_radius, params.extra_offset, fill_type, &mut expolygons);
+        // TriangleMeshSlicer.cpp:2036-2037
+        if this_mode == SlicingMode::PositiveLargestContour {
+            crate::geometry::keep_largest_contour_only(&mut expolygons);
+        }
+        // TriangleMeshSlicer.cpp:2038-2044
+        let resolution_scaled = scale(params.resolution) as f64;
+        if resolution_scaled != 0.0 {
+            let mut simplified = ExPolygons::with_capacity(expolygons.len());
+            for ex in &expolygons {
+                simplified.extend(expolygon_simplify(ex, resolution_scaled));
+            }
+            expolygons = simplified;
+        }
+        layers.push(expolygons);
+    }
+    layers
+}
+
 // TriangleMeshSlicer.cpp:1941-2001 — single-plane slice_mesh.
 fn slice_mesh_plane_its(
     mesh: &indexed_triangle_set,

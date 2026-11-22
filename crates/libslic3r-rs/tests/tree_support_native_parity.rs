@@ -1254,10 +1254,10 @@ fn run_scenario(r: &mut Run, scenario: usize) {
     }
 
     // The toolpaths, with the generator's fillers. A scenario with the lightning pattern in the bases writes
-    // "toolpaths_lightning" lines, which are counted and not compared: the trees of the lightning generator and
-    // the polylines of Layer::convertToLines() are equal ("lightning_trees"), but generate_toolpaths() chains
-    // the polylines with ShortestPath.cpp's chain_polylines(), and the port of that orders polylines that share
-    // an end point differently (the "lightning_trees chained" lines, not compared either).
+    // "toolpaths_lightning" lines: the trees of the lightning generator, the polylines of
+    // Layer::convertToLines() ("lightning_trees") and those polylines chained by ShortestPath.cpp's
+    // chain_polylines() ("lightning_trees chained"), as generate_toolpaths() chains them. All of them are
+    // compared, as every other line is.
     {
         let tag = if ts.m_support_params.base_fill_pattern == InfillPattern::Lightning { format!("{s} toolpaths_lightning") } else { format!("{s} toolpaths") };
         let log: Log = Rc::new(RefCell::new(Vec::new()));
@@ -1410,7 +1410,6 @@ fn tree_support_native_parity() {
         let _ = std::fs::write(path, r.lines.join("\n"));
     }
     let mut mismatches = r.surplus;
-    let mut not_compared = 0usize;
     let mut by_kind: std::collections::BTreeMap<String, (usize, usize)> = std::collections::BTreeMap::new();
     for k in 0..r.expected.len().max(r.lines.len()) {
         let e = r.expected.get(k).map(|s| s.as_str()).unwrap_or("<missing>");
@@ -1420,11 +1419,6 @@ fn tree_support_native_parity() {
         entry.0 += 1;
         if e != l {
             entry.1 += 1;
-            // Counted, not compared: see the toolpaths of run_scenario().
-            if matches!(e.split(' ').nth(1), Some("toolpaths_lightning") | Some("generate_toolpaths_lightning")) || e.contains(" lightning_trees chained ") {
-                not_compared += 1;
-                continue;
-            }
             mismatches += 1;
             if mismatches <= 12 {
                 let cut = |s: &str| if s.len() > 700 { format!("{}...", &s[..700]) } else { s.to_string() };
@@ -1436,7 +1430,6 @@ fn tree_support_native_parity() {
         eprintln!("{kind}: {n} lines, {bad} mismatches");
     }
     eprintln!("{} lines, {} mismatches", r.expected.len(), mismatches);
-    eprintln!("{not_compared} lines of the lightning toolpaths differ and are not compared");
     // Every line has to be equal; the surplus lines (a stage that wrote more lines than the pin) count.
     assert_eq!(mismatches, 0);
 }

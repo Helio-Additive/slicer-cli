@@ -484,6 +484,32 @@ impl Polygon {
     /// source: https://en.wikipedia.org/wiki/Centroid
     /// Polygon.cpp:171 — `Point Polygon::centroid() const`
     pub fn centroid(&self) -> Point {
+        // `POLYGON_CENTROID_PIN` (on unless `POLYGON_CENTROID_PIN=0`): the centroid as the pin's build
+        // computes it. `cross2` (Point.hpp) is one expression, `v1.x() * v2.y() - v1.y() * v2.x()`, which
+        // clang contracts into `fma(v1.x, v2.y, -(v1.y * v2.x))`; the sums go through Eigen's functors and
+        // are not contracted; `Point(Vec2d)` rounds with `lrint` (Point.hpp:181). The earlier arm below
+        // does not fuse the cross product and truncates, which puts a centroid one unit off.
+        if crate::faithful_gate("POLYGON_CENTROID_PIN") {
+            // Polygon.cpp:173-174
+            let mut area_sum = 0.0_f64;
+            let mut c = (0.0_f64, 0.0_f64);
+            // Polygon.cpp:175-184
+            if self.points.len() >= 3 {
+                let back = self.points[self.points.len() - 1];
+                let mut p1 = (back.x as f64, back.y as f64);
+                for p in &self.points {
+                    let p2 = (p.x as f64, p.y as f64);
+                    let a = p1.0.mul_add(p2.1, -(p2.0 * p1.1));
+                    area_sum += a;
+                    c.0 += (p1.0 + p2.0) * a;
+                    c.1 += (p1.1 + p2.1) * a;
+                    p1 = p2;
+                }
+            }
+            // Polygon.cpp:185 — return Point(Vec2d(c / (3. * area_sum)));
+            let d = 3.0 * area_sum;
+            return Point::new((c.0 / d).round_ties_even() as Coord, (c.1 / d).round_ties_even() as Coord);
+        }
         // Polygon.cpp:173-174
         let mut area_sum = 0.0_f64;
         let mut c = PointF::new(0.0, 0.0);

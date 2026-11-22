@@ -71,6 +71,19 @@ fn sqr_f64(x: f64) -> f64 {
     x * x
 }
 
+/// Point.hpp:536-541 `scaled<coord_t>(v)` of a `float` (WallToolPaths.cpp:34, 35, 37, 495: the members of
+/// WallToolPathsParams are floats): `coord_t(v / float(SCALING_FACTOR))`, a division of floats. 0.24f comes
+/// out as 24000 where the division of the double gives 23999 (R922, found by the whole-layer comparison of
+/// PerimeterGenerator::process_arachne with a 60% min_bead_width). `ARACHNE_SCALED_FLOAT=0` divides the
+/// double, as the port did.
+fn scaled_float(v: f32) -> Coord {
+    if crate::faithful_gate("ARACHNE_SCALED_FLOAT") {
+        (v / (crate::libslic3r::SCALING_FACTOR as f32)) as Coord
+    } else {
+        scaled(v as f64)
+    }
+}
+
 /// WallToolPaths.hpp:23-32  class WallToolPathsParams
 #[derive(Debug, Clone, Copy)]
 pub struct WallToolPathsParams {
@@ -965,13 +978,13 @@ impl WallToolPaths {
             // WallToolPaths.cpp:34
             print_thin_walls: FILL_OUTLINE_GAPS,
             // WallToolPaths.cpp:35  min_feature_size(scaled<coord_t>(params.min_feature_size))
-            min_feature_size: scaled(params.min_feature_size as f64),
+            min_feature_size: scaled_float(params.min_feature_size),
             // WallToolPaths.cpp:36  min_bead_width(scaled<coord_t>(params.min_bead_width))
-            min_bead_width: scaled(params.min_bead_width as f64),
+            min_bead_width: scaled_float(params.min_bead_width),
             // WallToolPaths.cpp:37  small_area_length(static_cast<double>(bead_width_0) / 2.)
             small_area_length: bead_width_0 as f64 / 2.0,
             // WallToolPaths.cpp:38  wall_transition_filter_deviation(scaled<coord_t>(params.wall_transition_filter_deviation))
-            wall_transition_filter_deviation: scaled(params.wall_transition_filter_deviation as f64),
+            wall_transition_filter_deviation: scaled_float(params.wall_transition_filter_deviation),
             // WallToolPaths.cpp:39
             toolpaths_generated: false,
             toolpaths: Vec::new(),
@@ -1334,7 +1347,7 @@ impl WallToolPaths {
         );
 
         // WallToolPaths.cpp:496
-        let wall_transition_length: Coord = scaled(self.m_params.wall_transition_length as f64);
+        let wall_transition_length: Coord = scaled_float(self.m_params.wall_transition_length);
 
         // WallToolPaths.cpp:498
         let wall_split_middle_threshold: f64 = (2.0 * unscaled(self.min_bead_width)

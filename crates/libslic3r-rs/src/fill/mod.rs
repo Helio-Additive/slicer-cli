@@ -1831,6 +1831,11 @@ pub struct FillParams {
     /// 0 = auto n*1.2*line_width/(2π); >0 = mm; <0 = disable hub clip.
     /// FillBase.hpp:108 — `float conformal_hub_radius{0.f}`.
     pub conformal_hub_radius: f32,
+    /// Monotonic infill - strictly left to right for better surface quality of top infills.
+    /// FillBase.hpp:71 — `bool monotonic { false }`.
+    pub monotonic: bool,
+    /// FillBase.hpp:99 — `bool locked_zag{false}`.
+    pub locked_zag: bool,
 }
 
 impl FillParams {
@@ -1865,6 +1870,8 @@ impl FillParams {
             conformal_pole: crate::print_config::ConformalPole::Layer,
             conformal_ray_count: 0,
             conformal_hub_radius: 0.0,
+            monotonic: false,
+            locked_zag: false,
         }
     }
 

@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**69.6% of the named C++ functions are ported or verified (6667 of 9574); 68.5% by size of body.**
+**72.1% of the named C++ functions are ported or verified (6900 of 9574); 70.5% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 583 | 6.1% | 9.5% |
-| partial `[~]` | 2324 | 24.3% | 22.1% |
-| ported `[x]` | 3860 | 40.3% | 26.7% |
-| verified `[v]` | 2807 | 29.3% | 41.7% |
+| not started `[ ]` | 541 | 5.7% | 9.0% |
+| partial `[~]` | 2133 | 22.3% | 20.5% |
+| ported `[x]` | 4051 | 42.3% | 26.7% |
+| verified `[v]` | 2849 | 29.8% | 43.8% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -112,7 +112,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `clipper2/clipper.rectclip` | 1 | `clipper2/clipper_rectclip.rs` | partial | 31 | 0 | 1 | 0 | 30 |
 | `Clipper2Utils` | 1 | `clipper2_utils.rs` | partial | 14 | 2 | 3 | 9 | 0 |
 | `Clipper2ZUtils` | 1 | `clipper2_z_utils.rs` | partial | 12 | 0 | 3 | 9 | 0 |
-| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 24 | 171 | 30 | 2 |
+| `ClipperUtils` | 1 | `clipper_utils.rs` | partial | 227 | 0 | 2 | 223 | 2 |
 | `ClipperZUtils` | 1 | `clipper_z_utils.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `clonable_ptr` | 1 | `clonable_ptr.rs` | partial | 7 | 3 | 1 | 3 | 0 |
 | `Color` | 1 | `color.rs` | partial | 97 | 10 | 15 | 72 | 0 |
@@ -158,7 +158,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 3 | 0 |
 | `Fill/Fill3DHoneycomb` | 1 | `fill/fill3_d_honeycomb.rs` | partial | 13 | 0 | 3 | 10 | 0 |
 | `Fill/FillAdaptive` | 1 | `fill/fill_adaptive.rs` | partial | 32 | 8 | 8 | 16 | 0 |
-| `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 11 | 13 | 33 | 11 |
+| `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 5 | 13 | 39 | 11 |
 | `Fill/FillConcentric` | 1 | `fill/fill_concentric.rs` | partial | 5 | 0 | 3 | 2 | 0 |
 | `Fill/FillConcentricInternal` | 1 | `fill/fill_concentric_internal.rs` | partial | 4 | 0 | 1 | 3 | 0 |
 | `Fill/FillConformal` | 1 | `fill/fill_conformal.rs` | partial | 29 | 0 | 2 | 27 | 0 |
@@ -171,7 +171,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Fill/FillLine` | 1 | `fill/fill_line.rs` | partial | 5 | 0 | 2 | 3 | 0 |
 | `Fill/FillPlanePath` | 1 | `fill/fill_plane_path.rs` | partial | 25 | 2 | 11 | 12 | 0 |
 | `Fill/FillRadialZigZag` | 1 | `fill/fill_radial_zig_zag.rs` | partial | 83 | 0 | 2 | 81 | 0 |
-| `Fill/FillRectilinear` | 1 | `fill/fill_rectilinear.rs` | partial | 109 | 14 | 47 | 48 | 0 |
+| `Fill/FillRectilinear` | 1 | `fill/fill_rectilinear.rs` | partial | 109 | 11 | 27 | 57 | 14 |
 | `Fill/Lightning/DistanceField` | 1 | `fill/lightning/distance_field.rs` | partial | 11 | 1 | 1 | 7 | 2 |
 | `Fill/Lightning/Generator` | 1 | `fill/lightning/generator.rs` | partial | 6 | 4 | 1 | 0 | 1 |
 | `Fill/Lightning/Layer` | 1 | `fill/lightning/layer.rs` | partial | 11 | 0 | 1 | 5 | 5 |
@@ -280,7 +280,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `ParameterUtils` | 1 | `parameter_utils.rs` | partial | 3 | 1 | 1 | 1 | 0 |
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
-| `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 1 | 4 | 4 | 20 |
+| `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 0 | 3 | 2 | 24 |
 | `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 0 | 10 | 1 | 74 |
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 0 | 13 | 11 | 0 |
@@ -304,7 +304,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Semver` | 1 | `semver.rs` | partial | 21 | 0 | 2 | 19 | 0 |
 | `Shape/TextShape` | 3 | `shape/text_shape.rs` | partial | 6 | 0 | 5 | 1 | 0 |
 | `ShortEdgeCollapse` | 3 | `short_edge_collapse.rs` | verified | 1 | 0 | 0 | 0 | 1 |
-| `ShortestPath` | 1 | `shortest_path.rs` | partial | 37 | 8 | 7 | 22 | 0 |
+| `ShortestPath` | 1 | `shortest_path.rs` | partial | 37 | 4 | 5 | 6 | 22 |
 | `SLA/AGGRaster` | 4 | `sla/agg_raster.rs` | partial | 17 | 0 | 2 | 15 | 0 |
 | `SLA/bicubic` | 4 | `sla/bicubic.rs` | partial | 53 | 0 | 53 | 0 | 0 |
 | `SLA/BoostAdapter` | 4 | `sla/boost_adapter.rs` | partial | 10 | 0 | 2 | 8 | 0 |
@@ -337,7 +337,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Support/SupportParameters` | 2 | `support/support_parameters.rs` | verified | 13 | 0 | 0 | 0 | 13 |
 | `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 0 | 10 | 10 | 14 |
 | `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 4 | 4 | 25 | 39 |
-| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 8 | 5 | 15 | 48 |
+| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 4 | 6 | 16 | 50 |
 | `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 0 | 1 | 0 | 14 |
 | `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
 | `SupportRecommendedParams` | 3 | `support_recommended_params.rs` | verified | 9 | 0 | 0 | 0 | 9 |
@@ -582,7 +582,7 @@ Rust file: `any_ptr.rs`. Status: **partial**. Not listed: 7 constructors, 2 oper
 **class `AnyPtr`**
 
 - [~] `get_ptr` (line 32) → `any_ptr.rs:73` — partial
-- [~] `get` (line 107) → `app_config.rs, clonable_ptr.rs, config.rs` — not in the paired file
+- [~] `get` (line 107) → `app_config.rs, clipper_utils.rs, clonable_ptr.rs` — not in the paired file
 - [x] `get` (line 108) → `any_ptr.rs:160`
 - [x] `get_shared_cpy` (line 123) → `any_ptr.rs:206`
 - [x] `convert_unique_to_shared` (line 133) → `any_ptr.rs:226`
@@ -604,10 +604,10 @@ Rust file: `app_config.rs`. Status: **partial**. Not listed: 1 constructors.
 - [x] `dirty` (line 64) → `app_config.rs:1263`
 - [~] `get_hms_host` (line 65) → `app_config.rs:179` — divergent
 - [x] `set_dirty` (line 67) → `app_config.rs:1268`
-- [~] `get` (line 70) → `any_ptr.rs, clonable_ptr.rs, config.rs` — not in the paired file
+- [~] `get` (line 70) → `any_ptr.rs, clipper_utils.rs, clonable_ptr.rs` — not in the paired file
 - [x] `get` (line 82) → `app_config.rs:1279`
 - [x] `reset` (line 84) → `app_config.rs:190`
-- [~] `get` (line 84) → `any_ptr.rs, clonable_ptr.rs, config.rs` — not in the paired file
+- [~] `get` (line 84) → `any_ptr.rs, clipper_utils.rs, clonable_ptr.rs` — not in the paired file
 - [x] `get_bool` (line 86) → `app_config.rs:1289`
 - [~] `set` (line 87) → `color.rs, config.rs, cut_surface.rs` — not in the paired file
 - [~] `set_defaults` (line 91) → `app_config.rs:199` — divergent
@@ -916,8 +916,8 @@ Rust file: `arachne/utils/extrusion_line.rs`. Status: **partial**. Not listed: 4
 - [~] `simplify` (line 43) → `arachne/utils/extrusion_line.rs:257` — partial
 - [x] `size` (line 57) → `arachne/utils/extrusion_line.rs:86`
 - [~] `empty` (line 62) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 95) → `mutable_polygon.rs, preset.rs, print_apply.rs` — not in the paired file
+- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 95) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `rbegin` (line 96) → `arachne/utils/extrusion_line.rs:134`
 - [x] `rend` (line 97) → `arachne/utils/extrusion_line.rs:141`
 - [~] `front` (line 98) → `gcode/tool_ordering.rs` — not in the paired file
@@ -989,7 +989,7 @@ Rust file: `arachne/utils/polygons_segment_index.rs`. Status: **partial**. Not l
 
 **class `segment_traits<Slic3r::Arachne::PolygonsSegmentIndex>`**
 
-- [~] `get` (line 42) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
+- [~] `get` (line 42) → `any_ptr.rs, app_config.rs, clipper_utils.rs` — not in the paired file
 
 ### `Arachne/utils/PolylineStitcher` (.cpp+.hpp)
 
@@ -1011,10 +1011,10 @@ Rust file: `arachne/utils/sparse_grid.rs`. Status: **partial**. Not listed: 1 co
 
 **class `SparseGrid`**
 
-- [~] `begin` (line 46) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 47) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 48) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 49) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 46) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 47) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 48) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 49) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [~] `processFromCell` (line 105) → `arachne/utils/sparse_grid.rs:202` — partial
 - [x] `processNearby` (line 115) → `arachne/utils/sparse_grid.rs:175`
 - [x] `getNearby` (line 120) → `arachne/utils/sparse_grid.rs:146`
@@ -1059,23 +1059,23 @@ Rust file: `arachne/wall_tool_paths.rs`. Status: **partial**. Not listed: 1 cons
 
 - [~] `simplify` (line 49) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `simplify` (line 190) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `createLocToLineGrid` (line 206) → `arachne/wall_tool_paths.rs:404`
-- [x] `fixSelfIntersections` (line 222) → `arachne/wall_tool_paths.rs:433`
-- [x] `removeDegenerateVerts` (line 272) → `arachne/wall_tool_paths.rs:514`
-- [~] `removeSmallAreas` (line 311) → `arachne/wall_tool_paths.rs:581` — partial
+- [x] `createLocToLineGrid` (line 206) → `arachne/wall_tool_paths.rs:417`
+- [x] `fixSelfIntersections` (line 222) → `arachne/wall_tool_paths.rs:446`
+- [x] `removeDegenerateVerts` (line 272) → `arachne/wall_tool_paths.rs:527`
+- [~] `removeSmallAreas` (line 311) → `arachne/wall_tool_paths.rs:594` — partial
 - [~] `removeColinearEdges` (line 365) → `arachne/wall_tool_paths.rs` — another overload of the name is ported
-- [x] `removeColinearEdges` (line 429) → `arachne/wall_tool_paths.rs:746`
+- [x] `removeColinearEdges` (line 429) → `arachne/wall_tool_paths.rs:759`
 - [ ] `shorterThan` (line 649) → `arachne/wall_tool_paths.rs`
 
 **class `WallToolPaths`**
 
-- [x] `EnableHoleCompensation` (line 43) → `arachne/wall_tool_paths.rs:990`
-- [~] `stitchToolPaths` (line 551) → `arachne/wall_tool_paths.rs:1571` — divergent
-- [x] `removeSmallLines` (line 662) → `arachne/wall_tool_paths.rs:1624`
-- [x] `simplifyToolPaths` (line 679) → `arachne/wall_tool_paths.rs:1651`
-- [~] `separateOutInnerContour` (line 700) → `arachne/wall_tool_paths.rs:1683` — partial
-- [~] `removeEmptyToolPaths` (line 798) → `arachne/wall_tool_paths.rs:1798` — partial
-- [x] `getRegionOrder` (line 815) → `arachne/wall_tool_paths.rs:1810`
+- [x] `EnableHoleCompensation` (line 43) → `arachne/wall_tool_paths.rs:1003`
+- [~] `stitchToolPaths` (line 551) → `arachne/wall_tool_paths.rs:1584` — divergent
+- [x] `removeSmallLines` (line 662) → `arachne/wall_tool_paths.rs:1637`
+- [x] `simplifyToolPaths` (line 679) → `arachne/wall_tool_paths.rs:1664`
+- [~] `separateOutInnerContour` (line 700) → `arachne/wall_tool_paths.rs:1696` — partial
+- [~] `removeEmptyToolPaths` (line 798) → `arachne/wall_tool_paths.rs:1811` — partial
+- [x] `getRegionOrder` (line 815) → `arachne/wall_tool_paths.rs:1823`
 
 ### `ArcFitter` (.cpp+.hpp)
 
@@ -1220,16 +1220,16 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 **class `BoundingBox3Base`**
 
 - [x] `polygon` (line 118) → `bounding_box.rs:881`
-- [~] `merge` (line 137) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
+- [~] `merge` (line 137) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [x] `translate` (line 142) → `bounding_box.rs:254`
 - [x] `translate` (line 143) → `bounding_box.rs:1071`
 - [x] `inflated` (line 145) → `bounding_box.rs:1099`
 - [x] `volume` (line 148) → `bounding_box.rs:816`
 - [~] `contains` (line 150) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
-- [~] `merge` (line 152) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
+- [~] `merge` (line 152) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `contains` (line 154) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `intersects` (line 158) → `bounding_box.rs:1390`
-- [~] `merge` (line 159) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
+- [~] `merge` (line 159) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [x] `size` (line 185) → `bounding_box.rs:1288`
 - [x] `radius` (line 203) → `bounding_box.rs:1298`
 - [x] `offset` (line 222) → `bounding_box.rs:1090`
@@ -1247,10 +1247,10 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `contains` (line 54) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [x] `overlap` (line 57) → `bounding_box.rs:1131`
 - [x] `scale` (line 63) → `bounding_box.rs:1041`
-- [~] `merge` (line 73) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
+- [~] `merge` (line 73) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `construct` (line 89) → `boost_polygon_voronoi.rs, fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
-- [~] `merge` (line 89) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
-- [~] `merge` (line 97) → `format/bbs_3mf.rs, geometry/bounding_box.rs, mesh_boolean.rs` — not in the paired file
+- [~] `merge` (line 89) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `merge` (line 97) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [x] `size` (line 176) → `bounding_box.rs:1050`
 - [x] `radius` (line 193) → `bounding_box.rs:1056`
 - [x] `offset` (line 212) → `bounding_box.rs:286`
@@ -2175,257 +2175,257 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 
 **free functions**
 
-- [ ] `export_clipper_input_polygons_bin` (line 28) → `clipper_utils.rs`
-- [ ] `clip_clipper_polygon_with_subject_bbox_templ` (line 66) → `clipper_utils.rs`
-- [~] `clip_clipper_polygon_with_subject_bbox` (line 120) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `clip_clipper_polygon_with_subject_bbox` (line 121) → `clipper_utils.rs` — another overload of the name is ported
-- [ ] `clip_clipper_polygon_with_subject_bbox_templ` (line 123) → `clipper_utils.rs`
-- [~] `clip_clipper_polygon_with_subject_bbox` (line 130) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `clip_clipper_polygon_with_subject_bbox` (line 131) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `clip_clipper_polygon_with_subject_bbox` (line 133) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:3164`
-- [~] `clip_clipper_polygons_with_subject_bbox` (line 144) → `fill/fill_floating_concentric.rs, support/tree_support.rs` — not in the paired file
-- [~] `clip_clipper_polygons_with_subject_bbox` (line 152) → `fill/fill_floating_concentric.rs, support/tree_support.rs` — not in the paired file
-- [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `fill/fill_floating_concentric.rs, support/tree_support.rs` — not in the paired file
-- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:849`
-- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:889`
-- [~] `has_duplicate_points` (line 233) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [~] `has_duplicate_points` (line 250) → `ex_polygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [x] `raw_offset` (line 273) → `clipper_utils.rs:913`
-- [x] `safety_offset` (line 304) → `clipper_utils.rs:958`
-- [x] `clipper_do` (line 310) → `clipper_utils.rs:975`
-- [~] `clipper_do` (line 325) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `clipper_union` (line 340) → `clipper_utils.rs:1019`
-- [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1037`
-- [~] `offset_ex` (line 358) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1048`
-- [x] `expand_paths` (line 367) → `clipper_utils.rs:1062`
-- [~] `union_safety_offset` (line 370) → `support/support_common.rs` — not in the paired file
-- [~] `union_safety_offset` (line 371) → `support/support_common.rs` — not in the paired file
-- [~] `union_safety_offset_ex` (line 372) → `support/support_common.rs` — not in the paired file
-- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:3689`
-- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:817`
-- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:837`
-- [~] `expand` (line 381) → `build_volume.rs, extrusion_simulator.rs, gcode/wipe_tower.rs` — not in the paired file
-- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1079`
-- [~] `expand` (line 383) → `build_volume.rs, extrusion_simulator.rs, gcode/wipe_tower.rs` — not in the paired file
-- [ ] `expand_ex` (line 385) → `clipper_utils.rs`
-- [x] `shrink` (line 388) → `clipper_utils.rs:339`
-- [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs, brim.rs, support/support_common.rs` — not in the paired file
-- [~] `shrink_ex` (line 392) → `adaptive_layer_merge.rs, brim.rs, support/support_common.rs` — not in the paired file
-- [x] `offset_paths` (line 400) → `clipper_utils.rs:1125`
-- [x] `closing` (line 407) → `clipper_utils.rs:610`
-- [~] `closing_ex` (line 410) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `offset` (line 410) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `closing_ex` (line 412) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `offset` (line 413) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `closing_ex` (line 414) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `offset_ex` (line 415) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset` (line 418) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 420) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `opening` (line 422) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
-- [x] `opening` (line 424) → `clipper_utils.rs:429`
-- [~] `opening` (line 426) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs, gcode/timelapse_pos_picker.rs, perimeter_generator.rs` — not in the paired file
-- [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
-- [x] `opening_ex` (line 430) → `clipper_utils.rs:444`
-- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1193`
-- [~] `diff_ex` (line 470) → `clipper_utils.rs:461` — partial
-- [~] `diff_ex` (line 480) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 488) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [ ] `diff_ln` (line 496) → `clipper_utils.rs`
-- [~] `offset_expolygon_inner` (line 508) → `clipper_utils.rs` — another overload of the name is ported
-- [~] `offset_expolygon_inner` (line 510) → `clipper_utils.rs` — another overload of the name is ported
-- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:1285`
-- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:1302`
-- [~] `intersection_ln` (line 536) → `bridge_detector.rs, internal_bridge_detector.rs, support/tree_support.rs` — not in the paired file
-- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1325`
-- [~] `intersection_ln` (line 541) → `bridge_detector.rs, internal_bridge_detector.rs, support/tree_support.rs` — not in the paired file
-- [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:1347` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
-- [~] `offset` (line 559) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 561) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 563) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset` (line 565) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [~] `offset_ex` (line 567) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset_ex` (line 570) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset_ex` (line 572) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset_ex` (line 574) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
-- [~] `offset2` (line 577) → `clipper_utils.rs:633` — divergent
-- [~] `offset2_ex` (line 581) → `perimeter_generator.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
-- [~] `offset2_ex` (line 585) → `perimeter_generator.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
-- [~] `closing` (line 592) → `support/support_common.rs` — not in the paired file
-- [~] `closing_ex` (line 598) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `closing_ex` (line 604) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [ ] `foreach_node` (line 604) → `clipper_utils.rs`
-- [ ] `traverse_pt` (line 612) → `clipper_utils.rs`
-- [~] `opening` (line 613) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `opening` (line 619) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `opening` (line 625) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [ ] `traverse_pt` (line 625) → `clipper_utils.rs`
-- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1426`
-- [ ] `traverse_pt` (line 653) → `clipper_utils.rs`
-- [~] `clipper_do_polytree` (line 656) → `clipper_utils.rs` — another overload of the name is ported
-- [ ] `_clipper` (line 670) → `clipper_utils.rs`
-- [~] `diff` (line 675) → `config.rs, gcode/avoid_crossing_perimeters.rs, support/support_common.rs` — not in the paired file
-- [~] `diff` (line 677) → `config.rs, gcode/avoid_crossing_perimeters.rs, support/support_common.rs` — not in the paired file
-- [~] `diff_clipped` (line 679) → `support/tree_support.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff_clipped` (line 681) → `support/tree_support.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff_clipped` (line 683) → `support/tree_support.rs, support/tree_support_3d.rs` — not in the paired file
-- [~] `diff` (line 687) → `config.rs, gcode/avoid_crossing_perimeters.rs, support/support_common.rs` — not in the paired file
-- [~] `diff` (line 689) → `config.rs, gcode/avoid_crossing_perimeters.rs, support/support_common.rs` — not in the paired file
-- [~] `diff` (line 691) → `config.rs, gcode/avoid_crossing_perimeters.rs, support/support_common.rs` — not in the paired file
-- [~] `diff` (line 693) → `config.rs, gcode/avoid_crossing_perimeters.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection` (line 695) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [ ] `intersection_clipped` (line 697) → `clipper_utils.rs`
-- [~] `intersection` (line 699) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [~] `intersection` (line 701) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [~] `intersection` (line 703) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [~] `intersection` (line 705) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [~] `intersection` (line 707) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [~] `intersection` (line 709) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [~] `intersection` (line 711) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
-- [x] `intersection` (line 714) → `clipper_utils.rs:135`
-- [~] `union_` (line 721) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
-- [~] `union_` (line 723) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
-- [~] `union_` (line 725) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
-- [~] `union_` (line 727) → `clipper_utils.rs:81` — divergent
-- [~] `union_` (line 735) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
-- [v] `_clipper_ex` (line 738) → `clipper_utils.rs:1467` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
-- [~] `diff_ex` (line 741) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 743) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 745) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 747) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 749) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 751) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 753) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 755) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 757) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 759) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 761) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 763) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 765) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 767) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 770) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `diff_ex` (line 778) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 788) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 790) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 792) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 794) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 796) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 798) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 800) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 802) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 804) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 806) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `intersection_ex` (line 808) → `clipper_utils.rs:549` — partial
-- [~] `intersection_ex` (line 810) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
-- [~] `union_ex` (line 813) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `union_ex` (line 815) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `union_ex` (line 817) → `clipper_utils.rs:99` — divergent
-- [~] `union_ex` (line 822) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `union_ex` (line 825) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [ ] `xor_ex` (line 833) → `clipper_utils.rs`
-- [ ] `xor_ex` (line 836) → `clipper_utils.rs`
-- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:1502`
-- [ ] `_clipper_pl_recombine` (line 854) → `clipper_utils.rs`
-- [ ] `_clipper_pl_closed` (line 890) → `clipper_utils.rs`
-- [~] `diff_pl` (line 909) → `support/support_common.rs` — not in the paired file
-- [~] `diff_pl` (line 911) → `support/support_common.rs` — not in the paired file
-- [~] `diff_pl` (line 913) → `support/support_common.rs` — not in the paired file
-- [~] `diff_pl` (line 915) → `support/support_common.rs` — not in the paired file
-- [~] `diff_pl` (line 917) → `support/support_common.rs` — not in the paired file
-- [~] `diff_pl` (line 919) → `support/support_common.rs` — not in the paired file
-- [x] `diff_pl` (line 921) → `clipper_utils.rs:3232`
-- [~] `intersection_pl` (line 923) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection_pl` (line 925) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection_pl` (line 927) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection_pl` (line 929) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection_pl` (line 931) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection_pl` (line 933) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [~] `intersection_pl` (line 935) → `fill/fill_conformal.rs, fill/fill_radial_zig_zag.rs, support/support_common.rs` — not in the paired file
-- [x] `intersection_pl` (line 937) → `clipper_utils.rs:3262`
-- [ ] `_clipper_ln` (line 940) → `clipper_utils.rs`
-- [ ] `union_pt` (line 962) → `clipper_utils.rs`
-- [ ] `union_pt` (line 966) → `clipper_utils.rs`
-- [ ] `order_nodes` (line 972) → `clipper_utils.rs`
-- [ ] `traverse_pt_noholes` (line 989) → `clipper_utils.rs`
-- [~] `traverse_pt_outside_in` (line 999) → `brim.rs` — not in the paired file
-- [~] `union_pt_chained_outside_in` (line 1019) → `brim.rs, fill/fill_concentric.rs` — not in the paired file
-- [~] `simplify_polygons` (line 1026) → `arachne/wall_tool_paths.rs, clipper.rs, geometry/geometry.rs` — not in the paired file
-- [ ] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs`
-- [ ] `top_level_islands` (line 1059) → `clipper_utils.rs`
-- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:1525`
-- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:1545`
-- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:1604` — partial
-- [~] `variable_offset_inner` (line 1260) → `clipper2_utils.rs` — not in the paired file
-- [~] `variable_offset_outer` (line 1302) → `clipper2_utils.rs` — not in the paired file
-- [~] `variable_offset_outer_ex` (line 1344) → `clipper2_utils.rs` — not in the paired file
-- [~] `variable_offset_inner_ex` (line 1390) → `clipper2_utils.rs` — not in the paired file
+- [x] `export_clipper_input_polygons_bin` (line 28) → `clipper_utils.rs:5128`
+- [x] `clip_clipper_polygon_with_subject_bbox_templ` (line 66) → `clipper_utils.rs:4882`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 120) → `clipper_utils.rs:4945`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 121) → `clipper_utils.rs:4953`
+- [x] `clip_clipper_polygon_with_subject_bbox_templ` (line 123) → `clipper_utils.rs:4990`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 130) → `clipper_utils.rs:4983`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 131) → `clipper_utils.rs:4996`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 133) → `clipper_utils.rs:4961`
+- [x] `clip_clipper_polygon_with_subject_bbox` (line 137) → `clipper_utils.rs:5003`
+- [x] `clip_clipper_polygons_with_subject_bbox` (line 144) → `clipper_utils.rs:5017`
+- [x] `clip_clipper_polygons_with_subject_bbox` (line 152) → `clipper_utils.rs:5029`
+- [~] `clip_clipper_polygons_with_subject_bbox` (line 161) → `clipper_utils.rs:5042` — partial
+- [x] `PolyTreeToExPolygons` (line 175) → `clipper_utils.rs:858`
+- [x] `PolyTreeToPolylines` (line 213) → `clipper_utils.rs:898`
+- [x] `has_duplicate_points` (line 233) → `clipper_utils.rs:5075`
+- [x] `has_duplicate_points` (line 250) → `clipper_utils.rs:5103`
+- [x] `raw_offset` (line 273) → `clipper_utils.rs:922`
+- [x] `safety_offset` (line 304) → `clipper_utils.rs:5166`
+- [x] `clipper_do` (line 310) → `clipper_utils.rs:984`
+- [x] `clipper_do` (line 325) → `clipper_utils.rs:5171`
+- [x] `clipper_union` (line 340) → `clipper_utils.rs:1028`
+- [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1046`
+- [x] `offset_ex` (line 358) → `clipper_utils.rs:5966`
+- [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:5197`
+- [x] `expand_paths` (line 367) → `clipper_utils.rs:1071`
+- [x] `union_safety_offset` (line 370) → `clipper_utils.rs:6005`
+- [x] `union_safety_offset` (line 371) → `clipper_utils.rs:6011`
+- [x] `union_safety_offset_ex` (line 372) → `clipper_utils.rs:6022`
+- [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:6028`
+- [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:826`
+- [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:846`
+- [x] `expand` (line 381) → `clipper_utils.rs:6039`
+- [x] `shrink_paths` (line 382) → `clipper_utils.rs:1088`
+- [x] `expand` (line 383) → `clipper_utils.rs:6046`
+- [x] `expand_ex` (line 385) → `clipper_utils.rs:6249`
+- [x] `shrink` (line 388) → `clipper_utils.rs:6257`
+- [x] `shrink_ex` (line 390) → `clipper_utils.rs:6058`
+- [x] `shrink_ex` (line 392) → `clipper_utils.rs:6065`
+- [x] `offset_paths` (line 400) → `clipper_utils.rs:5217`
+- [x] `closing` (line 407) → `clipper_utils.rs:6108`
+- [x] `closing_ex` (line 410) → `clipper_utils.rs:6146`
+- [x] `offset` (line 410) → `clipper_utils.rs:5869`
+- [x] `closing_ex` (line 412) → `clipper_utils.rs:6152`
+- [x] `offset` (line 413) → `clipper_utils.rs:5875`
+- [x] `closing_ex` (line 414) → `clipper_utils.rs:6159`
+- [x] `offset_ex` (line 415) → `clipper_utils.rs:5935`
+- [x] `offset` (line 418) → `clipper_utils.rs:5910`
+- [x] `offset` (line 420) → `clipper_utils.rs:5920`
+- [x] `opening` (line 422) → `clipper_utils.rs:6211`
+- [x] `contour_to_polygons` (line 423) → `clipper_utils.rs:5980`
+- [x] `opening` (line 424) → `clipper_utils.rs:6217`
+- [x] `opening` (line 426) → `clipper_utils.rs:6223`
+- [x] `opening_ex` (line 428) → `clipper_utils.rs:6234`
+- [x] `contour_to_polygons` (line 429) → `clipper_utils.rs:5990`
+- [x] `opening_ex` (line 430) → `clipper_utils.rs:6241`
+- [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1202`
+- [x] `diff_ex` (line 470) → `clipper_utils.rs:5639`
+- [x] `diff_ex` (line 480) → `clipper_utils.rs:5652`
+- [x] `diff_ex` (line 488) → `clipper_utils.rs:5661`
+- [x] `diff_ln` (line 496) → `clipper_utils.rs:6528`
+- [x] `offset_expolygon_inner` (line 508) → `clipper_utils.rs:5244`
+- [x] `offset_expolygon_inner` (line 510) → `clipper_utils.rs:5251`
+- [x] `expolygon_offset` (line 513) → `clipper_utils.rs:5257`
+- [x] `expolygons_offset_raw` (line 524) → `clipper_utils.rs:5267`
+- [x] `intersection_ln` (line 536) → `clipper_utils.rs:6538`
+- [x] `expolygons_offset` (line 539) → `clipper_utils.rs:5282`
+- [x] `intersection_ln` (line 541) → `clipper_utils.rs:6544`
+- [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:5296` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
+- [x] `offset` (line 559) → `clipper_utils.rs:5881`
+- [x] `offset` (line 561) → `clipper_utils.rs:5887`
+- [x] `offset` (line 563) → `clipper_utils.rs:5893`
+- [x] `offset` (line 565) → `clipper_utils.rs:5899`
+- [x] `offset_ex` (line 567) → `clipper_utils.rs:5941`
+- [x] `offset_ex` (line 570) → `clipper_utils.rs:5948`
+- [x] `offset_ex` (line 572) → `clipper_utils.rs:5954`
+- [x] `offset_ex` (line 574) → `clipper_utils.rs:5960`
+- [x] `offset2` (line 577) → `clipper_utils.rs:6266`
+- [x] `offset2_ex` (line 581) → `clipper_utils.rs:6077`
+- [x] `offset2_ex` (line 585) → `clipper_utils.rs:6083`
+- [x] `closing` (line 592) → `clipper_utils.rs:6095`
+- [x] `closing_ex` (line 598) → `clipper_utils.rs:6119`
+- [x] `closing_ex` (line 604) → `clipper_utils.rs:6132`
+- [x] `foreach_node` (line 604) → `clipper_utils.rs:6606`
+- [x] `traverse_pt` (line 612) → `clipper_utils.rs:6634`
+- [x] `opening` (line 613) → `clipper_utils.rs:6171`
+- [x] `opening` (line 619) → `clipper_utils.rs:6184`
+- [x] `opening` (line 625) → `clipper_utils.rs:6197`
+- [x] `traverse_pt` (line 625) → `clipper_utils.rs:6649`
+- [x] `clipper_do_polytree` (line 641) → `clipper_utils.rs:1435`
+- [x] `traverse_pt` (line 653) → `clipper_utils.rs:6677`
+- [x] `clipper_do_polytree` (line 656) → `clipper_utils.rs:5310`
+- [x] `_clipper` (line 670) → `clipper_utils.rs:5326`
+- [x] `diff` (line 675) → `clipper_utils.rs:5433`
+- [x] `diff` (line 677) → `clipper_utils.rs:5439`
+- [x] `diff_clipped` (line 679) → `clipper_utils.rs:6361`
+- [x] `diff_clipped` (line 681) → `clipper_utils.rs:6373`
+- [x] `diff_clipped` (line 683) → `clipper_utils.rs:6385`
+- [x] `diff` (line 687) → `clipper_utils.rs:5445`
+- [x] `diff` (line 689) → `clipper_utils.rs:5451`
+- [x] `diff` (line 691) → `clipper_utils.rs:5457`
+- [x] `diff` (line 693) → `clipper_utils.rs:5463`
+- [x] `intersection` (line 695) → `clipper_utils.rs:5474`
+- [x] `intersection_clipped` (line 697) → `clipper_utils.rs:6398`
+- [x] `intersection` (line 699) → `clipper_utils.rs:5480`
+- [x] `intersection` (line 701) → `clipper_utils.rs:5486`
+- [x] `intersection` (line 703) → `clipper_utils.rs:5492`
+- [x] `intersection` (line 705) → `clipper_utils.rs:5498`
+- [x] `intersection` (line 707) → `clipper_utils.rs:5504`
+- [x] `intersection` (line 709) → `clipper_utils.rs:5510`
+- [x] `intersection` (line 711) → `clipper_utils.rs:5516`
+- [x] `intersection` (line 714) → `clipper_utils.rs:5522`
+- [x] `union_` (line 721) → `clipper_utils.rs:6413`
+- [x] `union_` (line 723) → `clipper_utils.rs:6419`
+- [x] `union_` (line 725) → `clipper_utils.rs:6425`
+- [x] `union_` (line 727) → `clipper_utils.rs:6431`
+- [x] `union_` (line 735) → `clipper_utils.rs:6442`
+- [v] `_clipper_ex` (line 738) → `clipper_utils.rs:5331` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point (the body reads as partial to the estimate)
+- [x] `diff_ex` (line 741) → `clipper_utils.rs:5535`
+- [x] `diff_ex` (line 743) → `clipper_utils.rs:5541`
+- [x] `diff_ex` (line 745) → `clipper_utils.rs:5547`
+- [x] `diff_ex` (line 747) → `clipper_utils.rs:5553`
+- [x] `diff_ex` (line 749) → `clipper_utils.rs:5559`
+- [x] `diff_ex` (line 751) → `clipper_utils.rs:5565`
+- [x] `diff_ex` (line 753) → `clipper_utils.rs:5571`
+- [x] `diff_ex` (line 755) → `clipper_utils.rs:5577`
+- [x] `diff_ex` (line 757) → `clipper_utils.rs:5583`
+- [x] `diff_ex` (line 759) → `clipper_utils.rs:5589`
+- [x] `diff_ex` (line 761) → `clipper_utils.rs:5595`
+- [x] `diff_ex` (line 763) → `clipper_utils.rs:5601`
+- [x] `diff_ex` (line 765) → `clipper_utils.rs:5607`
+- [x] `diff_ex` (line 767) → `clipper_utils.rs:5613`
+- [x] `diff_ex` (line 770) → `clipper_utils.rs:5619`
+- [x] `diff_ex` (line 778) → `clipper_utils.rs:5628`
+- [x] `intersection_ex` (line 788) → `clipper_utils.rs:5675`
+- [x] `intersection_ex` (line 790) → `clipper_utils.rs:5681`
+- [x] `intersection_ex` (line 792) → `clipper_utils.rs:5687`
+- [x] `intersection_ex` (line 794) → `clipper_utils.rs:5693`
+- [x] `intersection_ex` (line 796) → `clipper_utils.rs:5699`
+- [x] `intersection_ex` (line 798) → `clipper_utils.rs:5705`
+- [x] `intersection_ex` (line 800) → `clipper_utils.rs:5711`
+- [x] `intersection_ex` (line 802) → `clipper_utils.rs:5717`
+- [x] `intersection_ex` (line 804) → `clipper_utils.rs:5723`
+- [x] `intersection_ex` (line 806) → `clipper_utils.rs:5729`
+- [x] `intersection_ex` (line 808) → `clipper_utils.rs:5735`
+- [x] `intersection_ex` (line 810) → `clipper_utils.rs:5741`
+- [x] `union_ex` (line 813) → `clipper_utils.rs:6455`
+- [x] `union_ex` (line 815) → `clipper_utils.rs:6461`
+- [x] `union_ex` (line 817) → `clipper_utils.rs:6472`
+- [x] `union_ex` (line 822) → `clipper_utils.rs:6483`
+- [x] `union_ex` (line 825) → `clipper_utils.rs:6495`
+- [x] `xor_ex` (line 833) → `clipper_utils.rs:5752`
+- [x] `xor_ex` (line 836) → `clipper_utils.rs:5758`
+- [x] `_clipper_pl_open` (line 841) → `clipper_utils.rs:5342`
+- [x] `_clipper_pl_recombine` (line 854) → `clipper_utils.rs:5355`
+- [x] `_clipper_pl_closed` (line 890) → `clipper_utils.rs:5403`
+- [x] `diff_pl` (line 909) → `clipper_utils.rs:5769`
+- [x] `diff_pl` (line 911) → `clipper_utils.rs:5775`
+- [x] `diff_pl` (line 913) → `clipper_utils.rs:5781`
+- [x] `diff_pl` (line 915) → `clipper_utils.rs:5787`
+- [x] `diff_pl` (line 917) → `clipper_utils.rs:5793`
+- [x] `diff_pl` (line 919) → `clipper_utils.rs:5799`
+- [x] `diff_pl` (line 921) → `clipper_utils.rs:5805`
+- [x] `intersection_pl` (line 923) → `clipper_utils.rs:5816`
+- [x] `intersection_pl` (line 925) → `clipper_utils.rs:5822`
+- [x] `intersection_pl` (line 927) → `clipper_utils.rs:5828`
+- [x] `intersection_pl` (line 929) → `clipper_utils.rs:5834`
+- [x] `intersection_pl` (line 931) → `clipper_utils.rs:5840`
+- [x] `intersection_pl` (line 933) → `clipper_utils.rs:5846`
+- [x] `intersection_pl` (line 935) → `clipper_utils.rs:5852`
+- [x] `intersection_pl` (line 937) → `clipper_utils.rs:5858`
+- [x] `_clipper_ln` (line 940) → `clipper_utils.rs:6506`
+- [x] `union_pt` (line 962) → `clipper_utils.rs:6559`
+- [x] `union_pt` (line 966) → `clipper_utils.rs:6565`
+- [x] `order_nodes` (line 972) → `clipper_utils.rs:6576`
+- [x] `traverse_pt_noholes` (line 989) → `clipper_utils.rs:6684`
+- [x] `traverse_pt_outside_in` (line 999) → `clipper_utils.rs:6695`
+- [x] `union_pt_chained_outside_in` (line 1019) → `clipper_utils.rs:6718`
+- [x] `simplify_polygons` (line 1026) → `clipper_utils.rs:6727`
+- [x] `simplify_polygons_ex` (line 1043) → `clipper_utils.rs:6746`
+- [x] `top_level_islands` (line 1059) → `clipper_utils.rs:6763`
+- [x] `fix_after_outer_offset` (line 1077) → `clipper_utils.rs:1534`
+- [x] `fix_after_inner_offset` (line 1095) → `clipper_utils.rs:1554`
+- [~] `mittered_offset_path_scaled` (line 1120) → `clipper_utils.rs:1613` — partial
+- [x] `variable_offset_inner` (line 1260) → `clipper_utils.rs:6788`
+- [x] `variable_offset_outer` (line 1302) → `clipper_utils.rs:6817`
+- [x] `variable_offset_outer_ex` (line 1344) → `clipper_utils.rs:6846`
+- [x] `variable_offset_inner_ex` (line 1390) → `clipper_utils.rs:6879`
 
 **class `EmptyPathsProvider`**
 
-- [~] `cend` (line 74) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 75) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `cbegin` (line 76) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 77) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `size` (line 78) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cend` (line 74) → `clipper_utils.rs:4538`
+- [x] `end` (line 75) → `clipper_utils.rs:4833`
+- [x] `cbegin` (line 76) → `clipper_utils.rs:4544`
+- [x] `begin` (line 77) → `clipper_utils.rs:4547`
+- [x] `size` (line 78) → `clipper_utils.rs:4550`
 
 **class `ExPolygonProvider`**
 
-- [~] `cbegin` (line 183) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 184) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 185) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 186) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 187) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 183) → `clipper_utils.rs:4694`
+- [x] `begin` (line 184) → `clipper_utils.rs:4699`
+- [x] `cend` (line 185) → `clipper_utils.rs:4702`
+- [x] `end` (line 186) → `clipper_utils.rs:4659`
+- [x] `size` (line 187) → `clipper_utils.rs:4710`
 
 **class `ExPolygonsProvider`**
 
-- [~] `cbegin` (line 223) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 224) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 225) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 226) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 227) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 223) → `clipper_utils.rs:4734`
+- [x] `begin` (line 224) → `clipper_utils.rs:4741`
+- [x] `cend` (line 225) → `clipper_utils.rs:4744`
+- [x] `end` (line 226) → `clipper_utils.rs:4707`
+- [x] `size` (line 227) → `clipper_utils.rs:4752`
 
 **class `MultiPointsProvider`**
 
-- [~] `cbegin` (line 154) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 155) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 156) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 157) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 158) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 154) → `clipper_utils.rs:4648`
+- [x] `begin` (line 155) → `clipper_utils.rs:4651`
+- [x] `cend` (line 156) → `clipper_utils.rs:4654`
+- [x] `end` (line 157) → `clipper_utils.rs:4611`
+- [x] `size` (line 158) → `clipper_utils.rs:4662`
 
 **class `PathsProvider`**
 
-- [~] `cbegin` (line 127) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 128) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 129) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 130) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 131) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 127) → `clipper_utils.rs:4569`
+- [x] `begin` (line 128) → `clipper_utils.rs:4603`
+- [x] `cend` (line 129) → `clipper_utils.rs:4575`
+- [x] `end` (line 130) → `clipper_utils.rs:4578`
+- [x] `size` (line 131) → `clipper_utils.rs:4614`
 
 **class `SinglePathProvider`**
 
-- [~] `cbegin` (line 99) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 100) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 101) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 102) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 103) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 99) → `clipper_utils.rs:4600`
+- [x] `begin` (line 100) → `clipper_utils.rs:4572`
+- [x] `cend` (line 101) → `clipper_utils.rs:4606`
+- [x] `end` (line 102) → `clipper_utils.rs:4541`
+- [x] `size` (line 103) → `clipper_utils.rs:4581`
 
 **class `SurfacesProvider`**
 
-- [~] `cbegin` (line 264) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 265) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 266) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 267) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 268) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 264) → `clipper_utils.rs:4776`
+- [x] `begin` (line 265) → `clipper_utils.rs:4783`
+- [x] `cend` (line 266) → `clipper_utils.rs:4786`
+- [x] `end` (line 267) → `clipper_utils.rs:4749`
+- [x] `size` (line 268) → `clipper_utils.rs:4794`
 
 **class `SurfacesPtrProvider`**
 
-- [~] `cbegin` (line 305) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 306) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `cend` (line 307) → `mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 308) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `size` (line 309) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `cbegin` (line 305) → `clipper_utils.rs:4818`
+- [x] `begin` (line 306) → `clipper_utils.rs:4825`
+- [x] `cend` (line 307) → `clipper_utils.rs:4828`
+- [x] `end` (line 308) → `clipper_utils.rs:4791`
+- [x] `size` (line 309) → `clipper_utils.rs:4836`
 
 ### `ClipperZUtils` (.hpp)
 
@@ -3020,7 +3020,7 @@ Rust file: `config.rs`. Status: **partial**. Not listed: 103 constructors, 2 des
 - [x] `opt_bool` (line 2833) → `config.rs:8394`
 - [x] `opt_bool_nullable` (line 2835) → `config.rs:8409`
 - [x] `cbegin` (line 2841) → `config.rs:8537`
-- [~] `cend` (line 2842) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `cend` (line 2842) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `size` (line 2843) → `config.rs:8542`
 - [~] `serialize` (line 2849) → `ex_polygon_serialize.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
 
@@ -3345,8 +3345,8 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 
 **class `Contour`**
 
-- [~] `begin` (line 22) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 23) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 22) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 23) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [~] `open` (line 24) → `svg.rs` — not in the paired file
 - [ ] `closed` (line 25) → `edge_grid.rs`
 - [ ] `segment_idx_prev` (line 51) → `edge_grid.rs`
@@ -3684,7 +3684,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `get_extents_rotated` (line 506) → `bridge_detector.rs, geometry/polygon.rs, internal_bridge_detector.rs` — not in the paired file
 - [x] `get_extents_rotated` (line 511) → `ex_polygon.rs:667`
 - [x] `get_extents_vector` (line 522) → `ex_polygon.rs:685`
-- [~] `has_duplicate_points` (line 531) → `geometry/point.rs, geometry/polygon.rs, multi_point.rs` — not in the paired file
+- [~] `has_duplicate_points` (line 531) → `clipper_utils.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [x] `has_duplicate_points` (line 555) → `ex_polygon.rs:721`
 - [~] `remove_same_neighbor` (line 582) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `remove_sticks` (line 597) → `geometry/polygon.rs` — not in the paired file
@@ -3731,8 +3731,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
-- [~] `begin` (line 576) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 580) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 576) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 580) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [ ] `clean` (line 585) → `ex_polygon.rs`
 - [~] `sorted` (line 586) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
@@ -4358,24 +4358,24 @@ Rust file: `fill/fill_base.rs`. Status: **partial**. Not listed: 3 constructors,
 - [x] `clip_start_segment_and_point` (line 613) → `fill/fill_base.rs:644`
 - [x] `clip_end_segment_and_point` (line 638) → `fill/fill_base.rs:667`
 - [~] `line_rounded_thick_segment_collision` (line 667) → `fill/fill_base.rs:699` — partial
-- [ ] `inside_interval` (line 771) → `fill/fill_base.rs`
-- [ ] `interval_inside_interval` (line 776) → `fill/fill_base.rs`
-- [ ] `cyclic_interval_inside_interval` (line 783) → `fill/fill_base.rs`
+- [x] `inside_interval` (line 771) → `fill/fill_base.rs:1194`
+- [x] `interval_inside_interval` (line 776) → `fill/fill_base.rs:1200`
+- [x] `cyclic_interval_inside_interval` (line 783) → `fill/fill_base.rs:1208`
 - [ ] `export_infill_to_svg` (line 798) → `fill/fill_base.rs`
-- [ ] `validate_boundary_intersections` (line 909) → `fill/fill_base.rs`
+- [x] `validate_boundary_intersections` (line 909) → `fill/fill_base.rs:1225`
 - [v] `mark_boundary_segments_touching_infill` (line 922) → `fill/fill_base.rs:833` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
-- [x] `mark_boundary_segments_overlapping_infill` (line 1278) → `fill/fill_base.rs:1166`
-- [x] `create_boundary_infill_graph` (line 1358) → `fill/fill_base.rs:1309`
-- [x] `base_support_extend_infill_lines` (line 1742) → `fill/fill_base.rs:1972`
-- [~] `emit_loops_in_band` (line 1863) → `fill/fill_base.rs:2286` — partial
+- [x] `mark_boundary_segments_overlapping_infill` (line 1278) → `fill/fill_base.rs:1239`
+- [x] `create_boundary_infill_graph` (line 1358) → `fill/fill_base.rs:1382`
+- [x] `base_support_extend_infill_lines` (line 1742) → `fill/fill_base.rs:2045`
+- [~] `emit_loops_in_band` (line 1863) → `fill/fill_base.rs:2359` — partial
 - [ ] `export_partial_infill_to_svg` (line 2050) → `fill/fill_base.rs`
-- [x] `evaluate_support_arch_cost` (line 2092) → `fill/fill_base.rs:2425`
-- [x] `evaluate_support_arches` (line 2111) → `fill/fill_base.rs:2450`
-- [v] `multiline_fill` (line 2620) → `fill/fill_base.rs:3370` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [x] `evaluate_support_arch_cost` (line 2092) → `fill/fill_base.rs:2498`
+- [x] `evaluate_support_arches` (line 2111) → `fill/fill_base.rs:2523`
+- [v] `multiline_fill` (line 2620) → `fill/fill_base.rs:3451` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
 
 **class `BoundaryInfillGraph`**
 
-- [ ] `interpolate_contour_point` (line 1207) → `fill/fill_base.rs`
+- [x] `interpolate_contour_point` (line 1207) → `fill/fill_base.rs:1172`
 - [x] `dir` (line 1232) → `fill/fill_base.rs:1105`
 - [x] `dir_prev` (line 1238) → `fill/fill_base.rs:1120`
 - [x] `dir_next` (line 1245) → `fill/fill_base.rs:1130`
@@ -4399,29 +4399,29 @@ Rust file: `fill/fill_base.rs`. Status: **partial**. Not listed: 3 constructors,
 - [ ] `new_from_type` (line 34) → `fill/fill_base.rs`
 - [ ] `new_from_type` (line 74) → `fill/fill_base.rs`
 - [~] `use_bridge_flow` (line 85) → `fill/fill.rs, fill/fill3_d_honeycomb.rs, fill/fill_gyroid.rs` — not in the paired file
-- [~] `fill_surface` (line 99) → `fill/fill_conformal.rs` — not in the paired file
+- [~] `fill_surface` (line 99) → `fill/fill_conformal.rs, fill/fill_rectilinear.rs` — not in the paired file
 - [ ] `fill_surface_arachne` (line 115) → `fill/fill_base.rs`
 - [~] `fill_surface_extrusion` (line 127) → `fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs, fill/mod.rs` — not in the paired file
-- [v] `set_bounding_box` (line 155) → `fill/fill_base.rs:3225` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
-- [x] `use_bridge_flow` (line 158) → `fill/fill_base.rs:3236`
-- [x] `no_sort` (line 161) → `fill/fill_base.rs:3242`
-- [x] `has_consistent_pattern` (line 166) → `fill/fill_base.rs:3248`
-- [x] `copy_fill_data` (line 176) → `fill/fill_base.rs:3254`
-- [v] `_adjust_solid_spacing` (line 184) → `fill/fill_base.rs:1936` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
-- [v] `_infill_direction` (line 204) → `fill/fill_base.rs:3280` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as divergent to the estimate)
+- [v] `set_bounding_box` (line 155) → `fill/fill_base.rs:3306` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [x] `use_bridge_flow` (line 158) → `fill/fill_base.rs:3317`
+- [x] `no_sort` (line 161) → `fill/fill_base.rs:3323`
+- [x] `has_consistent_pattern` (line 166) → `fill/fill_base.rs:3329`
+- [x] `copy_fill_data` (line 176) → `fill/fill_base.rs:3335`
+- [v] `_adjust_solid_spacing` (line 184) → `fill/fill_base.rs:2009` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `_infill_direction` (line 204) → `fill/fill_base.rs:3361` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as divergent to the estimate)
 - [~] `_fill_surface_single` (line 206) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `_fill_surface_single` (line 214) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [v] `_layer_angle` (line 220) → `fill/fill_base.rs:3267` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `_layer_angle` (line 220) → `fill/fill_base.rs:3348` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
 - [~] `connect_infill` (line 1169) → `fill/mod.rs` — not in the paired file
-- [v] `connect_infill` (line 1180) → `fill/fill_base.rs:3353` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
-- [v] `extended_object_bounding_box` (line 1495) → `fill/fill_base.rs:1919` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
-- [v] `connect_infill` (line 1506) → `fill/fill_base.rs:1568` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
-- [v] `connect_base_support` (line 2155) → `fill/fill_base.rs:2559` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
-- [v] `connect_base_support` (line 2610) → `fill/fill_base.rs:3358` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
+- [v] `connect_infill` (line 1180) → `fill/fill_base.rs:3434` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
+- [v] `extended_object_bounding_box` (line 1495) → `fill/fill_base.rs:1992` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `connect_infill` (line 1506) → `fill/fill_base.rs:1641` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `connect_base_support` (line 2155) → `fill/fill_base.rs:2632` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `connect_base_support` (line 2610) → `fill/fill_base.rs:3439` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
 
 **class `FillParams`**
 
-- [ ] `full_infill` (line 53) → `fill/fill_base.rs`
+- [x] `full_infill` (line 53) → `fill/fill_base.rs:3232`
 - [~] `dont_connect` (line 55) → `fill/mod.rs` — not in the paired file
 
 **class `SegmentPoint`**
@@ -4782,7 +4782,7 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 - [x] `polygon_segment_append` (line 84) → `fill/fill_rectilinear.rs:950`
 - [x] `polygon_segment_append_reversed` (line 103) → `fill/fill_rectilinear.rs:964`
 - [x] `adjust_sort_for_segment_intersections` (line 370) → `fill/fill_rectilinear.rs:1220`
-- [x] `phony_outer_intersection` (line 430) → `fill/fill_rectilinear.rs:3319`
+- [x] `phony_outer_intersection` (line 430) → `fill/fill_rectilinear.rs:3348`
 - [ ] `distance_of_segmens` (line 555) → `fill/fill_rectilinear.rs`
 - [~] `intersection_on_prev_next_vertical_line_valid` (line 566) → `fill/fill_rectilinear.rs:1684` — partial
 - [x] `intersection_on_prev_vertical_line_valid` (line 609) → `fill/fill_rectilinear.rs:1665`
@@ -4791,104 +4791,104 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 - [x] `emit_perimeter_prev_next_segment` (line 655) → `fill/fill_rectilinear.rs:1788`
 - [x] `measure_perimeter_segment_on_vertical_line_length` (line 694) → `fill/fill_rectilinear.rs:1633`
 - [x] `emit_perimeter_segment_on_vertical_line` (line 719) → `fill/fill_rectilinear.rs:1838`
-- [x] `slice_region_by_vertical_lines` (line 822) → `fill/fill_rectilinear.rs:994`
+- [v] `slice_region_by_vertical_lines` (line 822) → `fill/fill_rectilinear.rs:994` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [ ] `validate_segment_intersection_connectivity` (line 1066) → `fill/fill_rectilinear.rs`
-- [x] `connect_segment_intersections_by_contours` (line 1122) → `fill/fill_rectilinear.rs:1337`
-- [x] `pinch_contours_insert_phony_outer_intersections` (line 1288) → `fill/fill_rectilinear.rs:3343`
-- [~] `traverse_graph_generate_polylines` (line 1426) → `fill/fill_rectilinear.rs:1872` — divergent
+- [v] `connect_segment_intersections_by_contours` (line 1122) → `fill/fill_rectilinear.rs:1337` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `pinch_contours_insert_phony_outer_intersections` (line 1288) → `fill/fill_rectilinear.rs:3372` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `traverse_graph_generate_polylines` (line 1426) → `fill/fill_rectilinear.rs:1872` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96. (the body reads as divergent to the estimate)
 
 **class `ExPolygonWithOffset`**
 
 - [x] `is_contour_outer` (line 515) → `fill/fill_rectilinear.rs:668`
 - [x] `is_contour_inner` (line 517) → `fill/fill_rectilinear.rs:672`
 - [x] `is_contour_ccw` (line 525) → `fill/fill_rectilinear.rs:684`
-- [x] `bounding_box_src` (line 527) → `fill/fill_rectilinear.rs:700`
+- [v] `bounding_box_src` (line 527) → `fill/fill_rectilinear.rs:700` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [x] `bounding_box_outer` (line 529) → `fill/fill_rectilinear.rs:692`
-- [ ] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs`
+- [v] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs:5477` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [~] `export_to_svg` (line 535) → `surface.rs, surface_collection.rs` — not in the paired file
 
 **class `Fill2DLattice`**
 
 - [~] `clone` (line 205) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `_layer_angle` (line 211) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [x] `_layer_angle` (line 211) → `fill/fill_rectilinear.rs:6062`
 
 **class `FillAlignedRectilinear`**
 
 - [~] `clone` (line 39) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `_layer_angle` (line 44) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [v] `_layer_angle` (line 44) → `fill/fill_rectilinear.rs:5602` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillCrossZag`**
 
 - [~] `clone` (line 171) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `has_consistent_pattern` (line 174) → `fill/fill_base.rs` — not in the paired file
+- [x] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs:6101`
 
 **class `FillCubic`**
 
 - [~] `clone` (line 107) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `is_self_crossing` (line 110) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 114) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [x] `is_self_crossing` (line 110) → `fill/fill_rectilinear.rs:6035`
+- [v] `_layer_angle` (line 114) → `fill/fill_rectilinear.rs:6011` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillGlobalMonotonicLine`**
 
 - [~] `clone` (line 152) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [ ] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs`
+- [v] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs:6179` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillGrid`**
 
 - [~] `clone` (line 68) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `is_self_crossing` (line 71) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 75) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [x] `is_self_crossing` (line 71) → `fill/fill_rectilinear.rs:5953`
+- [v] `_layer_angle` (line 75) → `fill/fill_rectilinear.rs:5911` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillLockedZag`**
 
 - [~] `clone` (line 180) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `has_consistent_pattern` (line 187) → `fill/fill_base.rs` — not in the paired file
+- [x] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs:6112`
 - [ ] `set_lock_region_param` (line 188) → `fill/fill_rectilinear.rs`
 - [ ] `set_skin_and_skeleton_pattern` (line 196) → `fill/fill_rectilinear.rs`
 
 **class `FillMonotonic`**
 
 - [~] `clone` (line 50) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 53) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
+- [x] `no_sort` (line 53) → `fill/fill_rectilinear.rs:5922`
 
 **class `FillMonotonicLine`**
 
 - [~] `clone` (line 59) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 62) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
+- [x] `no_sort` (line 62) → `fill/fill_rectilinear.rs:5937`
 
 **class `FillMonotonicLineWGapFill`**
 
-- [~] `is_self_crossing` (line 134) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
+- [x] `is_self_crossing` (line 134) → `fill/fill_rectilinear.rs:6168`
 - [~] `clone` (line 139) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 140) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [ ] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs`
+- [x] `no_sort` (line 140) → `fill/fill_rectilinear.rs:6173`
+- [v] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs:6157` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillRectilinear`**
 
 - [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `is_self_crossing` (line 18) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
+- [x] `is_self_crossing` (line 18) → `fill/fill_rectilinear.rs:5595`
 
 **class `FillStars`**
 
 - [~] `clone` (line 94) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `is_self_crossing` (line 97) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 101) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [x] `is_self_crossing` (line 97) → `fill/fill_rectilinear.rs:6007`
+- [v] `_layer_angle` (line 101) → `fill/fill_rectilinear.rs:5985` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillSupportBase`**
 
 - [~] `clone` (line 120) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `_layer_angle` (line 126) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [v] `_layer_angle` (line 126) → `fill/fill_rectilinear.rs:6039` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillTriangles`**
 
 - [~] `clone` (line 81) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `is_self_crossing` (line 84) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 88) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
+- [x] `is_self_crossing` (line 84) → `fill/fill_rectilinear.rs:5981`
+- [v] `_layer_angle` (line 88) → `fill/fill_rectilinear.rs:5957` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillZigZag`**
 
 - [~] `clone` (line 162) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `has_consistent_pattern` (line 165) → `fill/fill_base.rs` — not in the paired file
+- [x] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs:5611`
 
 **class `SegmentIntersection`**
 
@@ -6903,8 +6903,8 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [x] `clear` (line 305) → `gcode/tool_ordering.rs:484` — read against the C++ in R914 (the estimate says divergent)
 - [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:2146`
 - [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:2151`
-- [~] `begin` (line 347) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 348) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 347) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 348) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2181` — read against the C++ in R914 (the estimate says divergent)
 - [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2188`
@@ -7228,7 +7228,7 @@ Rust file: `gcode/wipe_tower.rs`. Status: **partial**. Not listed: 8 constructor
 - [x] `translate` (line 154) → `gcode/wipe_tower.rs:283`
 - [~] `translate` (line 158) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [x] `expand` (line 159) → `gcode/wipe_tower.rs:290`
-- [~] `expand` (line 165) → `build_volume.rs, extrusion_simulator.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `expand` (line 165) → `build_volume.rs, clipper_utils.rs, extrusion_simulator.rs` — not in the paired file
 
 **class `WipeTowerWriter`**
 
@@ -7790,7 +7790,7 @@ Rust file: `geometry/voronoi.rs`. Status: **partial**. Not listed: 1 constructor
 
 **class `segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>`**
 
-- [~] `get` (line 196) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
+- [~] `get` (line 196) → `any_ptr.rs, app_config.rs, clipper_utils.rs` — not in the paired file
 
 ### `Geometry/VoronoiOffset` (.cpp+.hpp)
 
@@ -7834,7 +7834,7 @@ Rust file: `geometry/voronoi_offset.rs`. Status: **partial**.
 - [~] `annotate_inside_outside` (line 650) → `geometry/voronoi_offset.rs:1550` — partial
 - [x] `signed_vertex_distances` (line 969) → `geometry/voronoi_offset.rs:702`
 - [x] `edge_offset_contour_intersections` (line 1012) → `geometry/voronoi_offset.rs:791`
-- [~] `offset` (line 1329) → `arrange.rs, bounding_box.rs, perimeter_generator.rs` — not in the paired file
+- [~] `offset` (line 1329) → `arrange.rs, bounding_box.rs, clipper_utils.rs` — not in the paired file
 - [x] `offset` (line 1513) → `geometry/voronoi_offset.rs:1278`
 - [x] `skeleton_edges_rough` (line 1535) → `geometry/voronoi_offset.rs:1295`
 
@@ -8063,57 +8063,57 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2432`
-- [x] `zs_from_layers` (line 411) → `layer.rs:4922`
-- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:4910`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2498`
+- [x] `zs_from_layers` (line 411) → `layer.rs:4988`
+- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:4976`
 - [~] `get_extents` (line 750) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `get_extents` (line 761) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 
 **class `ContinuitiousDistancer`**
 
-- [v] `distance_from_perimeter` (line 428) → `layer.rs:4869` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `to_lines` (line 446) → `layer.rs:4896`
+- [v] `distance_from_perimeter` (line 428) → `layer.rs:4935` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `to_lines` (line 446) → `layer.rs:4962`
 
 **class `Layer`**
 
-- [x] `empty` (line 25) → `layer.rs:2022`
-- [x] `add_region` (line 34) → `layer.rs:2009`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2586` — divergent
-- [x] `make_slices` (line 47) → `layer.rs:2339`
-- [~] `backup_untyped_slices` (line 84) → `layer.rs:2442` — partial
-- [~] `restore_untyped_slices` (line 104) → `layer.rs:2481` — partial
-- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2510`
-- [x] `merged` (line 150) → `layer.rs:2537`
-- [x] `id` (line 158) → `layer.rs:1908`
-- [x] `set_id` (line 159) → `layer.rs:1914`
+- [x] `empty` (line 25) → `layer.rs:2088`
+- [x] `add_region` (line 34) → `layer.rs:2075`
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2652` — divergent
+- [x] `make_slices` (line 47) → `layer.rs:2405`
+- [~] `backup_untyped_slices` (line 84) → `layer.rs:2508` — partial
+- [~] `restore_untyped_slices` (line 104) → `layer.rs:2547` — partial
+- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2576`
+- [x] `merged` (line 150) → `layer.rs:2603`
+- [x] `id` (line 158) → `layer.rs:1974`
+- [x] `set_id` (line 159) → `layer.rs:1980`
 - [~] `object` (line 160) → `g_code.rs` — not in the paired file
-- [x] `object` (line 161) → `layer.rs:1931`
-- [x] `bottom_z` (line 169) → `layer.rs:1973`
-- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:2052` — partial
-- [x] `region_count` (line 193) → `layer.rs:1979`
+- [x] `object` (line 161) → `layer.rs:1997`
+- [x] `bottom_z` (line 169) → `layer.rs:2039`
+- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:2118` — partial
+- [x] `region_count` (line 193) → `layer.rs:2045`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
-- [x] `get_region` (line 195) → `layer.rs:1985`
-- [~] `make_perimeters` (line 203) → `layer.rs:2135` — divergent
-- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:4933`
-- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:4943`
-- [x] `make_fills` (line 223) → `layer.rs:2860`
-- [x] `has_extrusions` (line 239) → `layer.rs:4954`
-- [x] `effective_print_height` (line 242) → `layer.rs:4965`
-- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:4984`
-- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:4998`
-- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5005`
-- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5019`
-- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2612` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2762`
-- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5158`
-- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5182`
-- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5189`
-- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5220`
-- [~] `simplify_support_path` (line 638) → `layer.rs:5234` — partial
-- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5246` — partial
-- [~] `simplify_support_loop` (line 670) → `layer.rs:5260` — partial
-- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5274`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2799` — partial
+- [x] `get_region` (line 195) → `layer.rs:2051`
+- [~] `make_perimeters` (line 203) → `layer.rs:2201` — divergent
+- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:4999`
+- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5009`
+- [x] `make_fills` (line 223) → `layer.rs:2926`
+- [x] `has_extrusions` (line 239) → `layer.rs:5020`
+- [x] `effective_print_height` (line 242) → `layer.rs:5031`
+- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5050`
+- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5064`
+- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5071`
+- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5085`
+- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2678` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2828`
+- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5224`
+- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5248`
+- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5255`
+- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5286`
+- [~] `simplify_support_path` (line 638) → `layer.rs:5300` — partial
+- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5312` — partial
+- [~] `simplify_support_loop` (line 670) → `layer.rs:5326` — partial
+- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5340`
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2865` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs, print.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs, print.rs` — not in the paired file
 
@@ -8121,7 +8121,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 - [~] `layer` (line 39) → `debug/compare.rs, fill/fill_conformal_chart.rs, g_code.rs` — not in the paired file
 - [~] `layer` (line 40) → `debug/compare.rs, fill/fill_conformal_chart.rs, g_code.rs` — not in the paired file
-- [x] `has_extrusions` (line 132) → `layer.rs:1691`
+- [x] `has_extrusions` (line 132) → `layer.rs:1741`
 - [~] `simplify_infill_extrusion_entity` (line 134) → `layer_region.rs` — not in the paired file
 - [~] `simplify_wall_extrusion_entity` (line 135) → `layer_region.rs` — not in the paired file
 
@@ -8130,7 +8130,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
 - [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
 - [~] `interface_id` (line 372) → `print.rs` — not in the paired file
-- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5287`
+- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5353`
 
 ### `LayerRegion` (.cpp)
 
@@ -8204,8 +8204,8 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 
 **class `Range`**
 
-- [~] `begin` (line 358) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 359) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 358) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 359) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [~] `size` (line 369) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 370) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
@@ -8288,7 +8288,7 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 
 **class `segment_traits<Slic3r::Line>`**
 
-- [~] `get` (line 328) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
+- [~] `get` (line 328) → `any_ptr.rs, app_config.rs, clipper_utils.rs` — not in the paired file
 
 ### `LocalesUtils` (.cpp+.hpp)
 
@@ -8519,7 +8519,7 @@ Rust file: `mesh_boolean.rs`. Status: **partial**. Not listed: 1 constructors, 2
 - [x] `does_self_intersect` (line 299) → `mesh_boolean.rs:611`
 - [~] `segment` (line 301) → `edge_grid.rs` — not in the paired file
 - [x] `segment` (line 365) → `mesh_boolean.rs:504`
-- [~] `merge` (line 381) → `format/bbs_3mf.rs, geometry/bounding_box.rs, model.rs` — not in the paired file
+- [~] `merge` (line 381) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `merge` (line 394) → `mesh_boolean.rs:537` — partial
 - [~] `_mesh_boolean_do` (line 406) → `mesh_boolean.rs` — another overload of the name is ported
 - [x] `_mesh_boolean_do` (line 418) → `mesh_boolean.rs:568`
@@ -9235,7 +9235,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `segment_traits<Slic3r::ColoredLine>`**
 
-- [~] `get` (line 42) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
+- [~] `get` (line 42) → `any_ptr.rs, app_config.rs, clipper_utils.rs` — not in the paired file
 
 ### `MultiNozzleUtils` (.cpp+.hpp)
 
@@ -9361,12 +9361,12 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [x] `bounding_box` (line 89) → `multi_point.rs:236`
 - [x] `has_duplicate_points` (line 94) → `multi_point.rs:246`
 - [~] `remove_duplicate_points` (line 102) → `geometry/simplify.rs` — not in the paired file
-- [~] `begin` (line 103) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `begin` (line 104) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 105) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `end` (line 106) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `cbegin` (line 107) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `cend` (line 108) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 103) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `begin` (line 104) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 105) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 106) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 107) → `clipper_utils.rs, config.rs, mutable_polygon.rs` — not in the paired file
+- [~] `cend` (line 108) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [x] `remove_colinear_points` (line 121) → `multi_point.rs:287`
 - [~] `intersection` (line 136) → `aabb_tree_lines.rs, arrange.rs, clipper_utils.rs` — not in the paired file
 - [~] `first_intersection` (line 145) → `geometry/polygon.rs` — not in the paired file
@@ -9467,10 +9467,10 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [x] `update` (line 27) → `mutable_priority_queue.rs:272`
 - [x] `size` (line 29) → `mutable_priority_queue.rs:284`
 - [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `begin` (line 36) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 37) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `cbegin` (line 38) → `config.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `cend` (line 39) → `mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 36) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 37) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 38) → `clipper_utils.rs, config.rs, mutable_polygon.rs` — not in the paired file
+- [~] `cend` (line 39) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
 - [~] `push` (line 74) → `boost_polygon_voronoi.rs, channel.rs, filament_group.rs` — not in the paired file
 - [x] `push` (line 83) → `mutable_priority_queue.rs:140`
@@ -9960,41 +9960,41 @@ Rust file: `perimeter_generator.rs`. Status: **partial**. Not listed: 3 construc
 - [~] `random_value` (line 31) → `fuzzy_skin.rs` — not in the paired file
 - [~] `fuzzy_polygon` (line 66) → `fuzzy_skin.rs` — not in the paired file
 - [~] `fuzzy_extrusion_line` (line 100) → `fuzzy_skin.rs` — not in the paired file
-- [v] `lowpass_filter_by_paths_overhang_degree` (line 147) → `perimeter_generator.rs:5811` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [x] `detect_bridge_wall` (line 244) → `perimeter_generator.rs:2725`
-- [v] `is_enable_overhang_speed` (line 272) → `perimeter_generator.rs:5908` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as partial to the estimate)
-- [v] `fuzzy_skin_allows_overhang_slowdown` (line 282) → `perimeter_generator.rs:5939` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
-- [v] `traverse_loops` (line 288) → `perimeter_generator.rs:7289` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [v] `smooth_overhang_level` (line 514) → `perimeter_generator.rs:5674` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `detect_brigde_wall_arachne` (line 597) → `perimeter_generator.rs:6163` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `traverse_extrusions` (line 621) → `perimeter_generator.rs:6275` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `to_polygons_with_flag` (line 835) → `perimeter_generator.rs:5949` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `lowpass_filter_by_paths_overhang_degree` (line 147) → `perimeter_generator.rs:5828` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [x] `detect_bridge_wall` (line 244) → `perimeter_generator.rs:2740`
+- [v] `is_enable_overhang_speed` (line 272) → `perimeter_generator.rs:5925` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as partial to the estimate)
+- [v] `fuzzy_skin_allows_overhang_slowdown` (line 282) → `perimeter_generator.rs:5956` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
+- [v] `traverse_loops` (line 288) → `perimeter_generator.rs:7305` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `smooth_overhang_level` (line 514) → `perimeter_generator.rs:5691` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `detect_brigde_wall_arachne` (line 597) → `perimeter_generator.rs:6180` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `traverse_extrusions` (line 621) → `perimeter_generator.rs:6292` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `to_polygons_with_flag` (line 835) → `perimeter_generator.rs:5966` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 
 **class `PerimeterGenerator`**
 
-- [v] `ext_mm3_per_mm` (line 115) → `perimeter_generator.rs:570` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [v] `mm3_per_mm` (line 116) → `perimeter_generator.rs:574` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [v] `mm3_per_mm_overhang` (line 117) → `perimeter_generator.rs:578` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [v] `smaller_width_ext_mm3_per_mm` (line 119) → `perimeter_generator.rs:583` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [x] `lower_slices_polygons` (line 120) → `perimeter_generator.rs:591`
-- [v] `dist_boundary` (line 232) → `perimeter_generator.rs:5976` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `effective_wall_loops` (line 849) → `perimeter_generator.rs:5992` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `process_classic` (line 859) → `perimeter_generator.rs:6600` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [~] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:4575` — partial
-- [x] `process_arachne` (line 1489) → `perimeter_generator.rs:3501`
-- [x] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:3435`
-- [v] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs:6007` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [ ] `process_no_bridge` (line 1953) → `perimeter_generator.rs`
+- [v] `ext_mm3_per_mm` (line 115) → `perimeter_generator.rs:585` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `mm3_per_mm` (line 116) → `perimeter_generator.rs:589` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `mm3_per_mm_overhang` (line 117) → `perimeter_generator.rs:593` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `smaller_width_ext_mm3_per_mm` (line 119) → `perimeter_generator.rs:598` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [x] `lower_slices_polygons` (line 120) → `perimeter_generator.rs:606`
+- [v] `dist_boundary` (line 232) → `perimeter_generator.rs:5993` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `effective_wall_loops` (line 849) → `perimeter_generator.rs:6009` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `process_classic` (line 859) → `perimeter_generator.rs:6616` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:8045` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `process_arachne` (line 1489) → `perimeter_generator.rs:7595` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:8094` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs:6024` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `process_no_bridge` (line 1953) → `perimeter_generator.rs:8121` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
 
 **class `PerimeterGeneratorLoop`**
 
-- [v] `is_external` (line 59) → `perimeter_generator.rs:5966` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `is_internal_contour` (line 1875) → `perimeter_generator.rs:451` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `is_external` (line 59) → `perimeter_generator.rs:5983` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `is_internal_contour` (line 1875) → `perimeter_generator.rs:466` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 
 **class `PerimeterRegion`**
 
-- [v] `has_compatible_perimeter_regions` (line 1917) → `perimeter_generator.rs:6086` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
-- [v] `merge_compatible_perimeter_regions` (line 1929) → `perimeter_generator.rs:6109` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `has_compatible_perimeter_regions` (line 1917) → `perimeter_generator.rs:6103` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
+- [v] `merge_compatible_perimeter_regions` (line 1929) → `perimeter_generator.rs:6126` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 
 ### `PlaceholderParser` (.cpp+.hpp)
 
@@ -10204,7 +10204,7 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `is_approx` (line 292) → `extrusion_entity.rs, geometry/geometry.rs, geometry/transform.rs` — not in the paired file
 - [~] `cross` (line 296) → `geometry/point.rs:1915` — partial
 - [~] `lerp` (line 298) → `geometry/point.rs:1560` — partial
-- [~] `has_duplicate_points` (line 323) → `ex_polygon.rs, geometry/polygon.rs, multi_point.rs` — not in the paired file
+- [~] `has_duplicate_points` (line 323) → `clipper_utils.rs, ex_polygon.rs, geometry/polygon.rs` — not in the paired file
 - [x] `has_duplicate_successive_points` (line 331) → `geometry/point.rs:1524`
 - [x] `has_duplicate_successive_points_closed` (line 341) → `geometry/point.rs:1538`
 - [~] `shorter_then` (line 349) → `geometry/point.rs:1573` — partial
@@ -10229,10 +10229,10 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `save` (line 693) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 696) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [~] `begin` (line 702) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 705) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
-- [~] `begin` (line 708) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 711) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 702) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 705) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 708) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 711) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 
 **class `ClosestPointInRadiusLookup`**
 
@@ -10275,7 +10275,7 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 
 **class `point_traits<Slic3r::Point>`**
 
-- [~] `get` (line 661) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
+- [~] `get` (line 661) → `any_ptr.rs, app_config.rs, clipper_utils.rs` — not in the paired file
 
 ### `Polygon` (.cpp+.hpp)
 
@@ -10284,51 +10284,51 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 **free functions**
 
 - [~] `polygon_is_convex` (line 112) → `geometry/polygon.rs` — another overload of the name is ported
-- [x] `has_duplicate_points` (line 115) → `geometry/polygon.rs:1265`
-- [~] `has_duplicate_points` (line 116) → `ex_polygon.rs, geometry/point.rs, multi_point.rs` — not in the paired file
-- [x] `total_length` (line 123) → `geometry/polygon.rs:1701`
-- [x] `area` (line 130) → `geometry/polygon.rs:1712`
+- [x] `has_duplicate_points` (line 115) → `geometry/polygon.rs:1291`
+- [~] `has_duplicate_points` (line 116) → `clipper_utils.rs, ex_polygon.rs, geometry/point.rs` — not in the paired file
+- [x] `total_length` (line 123) → `geometry/polygon.rs:1727`
+- [x] `area` (line 130) → `geometry/polygon.rs:1738`
 - [~] `area` (line 132) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
-- [~] `polygons_append` (line 151) → `geometry/polygon.rs:1729` — partial
+- [~] `polygons_append` (line 151) → `geometry/polygon.rs:1755` — partial
 - [~] `polygons_append` (line 153) → `geometry/expolygon.rs, support/support_common.rs, surface.rs` — not in the paired file
-- [x] `polygons_rotate` (line 165) → `geometry/polygon.rs:1734`
-- [x] `polygons_reverse` (line 173) → `geometry/polygon.rs:1744`
-- [x] `to_points` (line 179) → `geometry/polygon.rs:1768`
-- [x] `count_points` (line 184) → `geometry/polygon.rs:1758`
+- [x] `polygons_rotate` (line 165) → `geometry/polygon.rs:1760`
+- [x] `polygons_reverse` (line 173) → `geometry/polygon.rs:1770`
+- [x] `to_points` (line 179) → `geometry/polygon.rs:1794`
+- [x] `count_points` (line 184) → `geometry/polygon.rs:1784`
 - [~] `to_points` (line 190) → `ex_polygon_collection.rs, geometry/expolygon.rs, print_config.rs` — not in the paired file
-- [x] `to_lines` (line 199) → `geometry/polygon.rs:1779`
+- [x] `to_lines` (line 199) → `geometry/polygon.rs:1805`
 - [~] `to_lines` (line 211) → `geometry/expolygon.rs, geometry/polyline.rs, jump_point_search.rs` — not in the paired file
-- [x] `to_polyline` (line 224) → `geometry/polygon.rs:1823`
-- [x] `to_polylines` (line 233) → `geometry/polygon.rs:1834`
+- [x] `to_polyline` (line 224) → `geometry/polygon.rs:1849`
+- [x] `to_polylines` (line 233) → `geometry/polygon.rs:1860`
 - [~] `to_polylines` (line 242) → `geometry/expolygon.rs, geometry/polyline.rs, support/support_common.rs` — not in the paired file
-- [x] `to_polygons` (line 257) → `geometry/polygon.rs:1847`
-- [x] `filter_points_by_vectors` (line 263) → `geometry/polygon.rs:1003`
+- [x] `to_polygons` (line 257) → `geometry/polygon.rs:1873`
+- [x] `filter_points_by_vectors` (line 263) → `geometry/polygon.rs:1029`
 - [~] `to_polygons` (line 267) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `to_polygons` (line 276) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `filter_convex_concave_points_by_angle_threshold` (line 284) → `geometry/polygon.rs:1030`
-- [x] `get_extents` (line 411) → `geometry/polygon.rs:1149`
+- [x] `filter_convex_concave_points_by_angle_threshold` (line 284) → `geometry/polygon.rs:1056`
+- [x] `get_extents` (line 411) → `geometry/polygon.rs:1175`
 - [~] `get_extents` (line 416) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `get_extents_rotated` (line 427) → `geometry/polygon.rs:1172`
+- [x] `get_extents_rotated` (line 427) → `geometry/polygon.rs:1198`
 - [~] `get_extents_rotated` (line 432) → `bridge_detector.rs, ex_polygon.rs, internal_bridge_detector.rs` — not in the paired file
-- [x] `get_extents_vector` (line 443) → `geometry/polygon.rs:1218`
-- [x] `polygon_is_convex` (line 453) → `geometry/polygon.rs:1232`
-- [~] `has_duplicate_points` (line 471) → `ex_polygon.rs, geometry/point.rs, multi_point.rs` — not in the paired file
-- [~] `remove_same_neighbor` (line 492) → `geometry/polygon.rs:1284` — partial
+- [x] `get_extents_vector` (line 443) → `geometry/polygon.rs:1244`
+- [x] `polygon_is_convex` (line 453) → `geometry/polygon.rs:1258`
+- [~] `has_duplicate_points` (line 471) → `clipper_utils.rs, ex_polygon.rs, geometry/point.rs` — not in the paired file
+- [~] `remove_same_neighbor` (line 492) → `geometry/polygon.rs:1310` — partial
 - [~] `remove_same_neighbor` (line 508) → `geometry/expolygon.rs, geometry/polyline.rs` — not in the paired file
-- [x] `is_stick` (line 518) → `geometry/polygon.rs:1335`
-- [x] `remove_sticks` (line 540) → `geometry/polygon.rs:1364`
+- [x] `is_stick` (line 518) → `geometry/polygon.rs:1361`
+- [x] `remove_sticks` (line 540) → `geometry/polygon.rs:1390`
 - [~] `remove_sticks` (line 566) → `geometry/polygon.rs` — another overload of the name is ported
-- [x] `remove_degenerate` (line 583) → `geometry/polygon.rs:1445`
-- [x] `remove_small` (line 600) → `geometry/polygon.rs:1470`
-- [x] `remove_collinear` (line 617) → `geometry/polygon.rs:1495`
+- [x] `remove_degenerate` (line 583) → `geometry/polygon.rs:1471`
+- [x] `remove_small` (line 600) → `geometry/polygon.rs:1496`
+- [x] `remove_collinear` (line 617) → `geometry/polygon.rs:1521`
 - [~] `remove_collinear` (line 652) → `geometry/polygon.rs` — another overload of the name is ported
-- [x] `polygons_simplify` (line 658) → `geometry/polygon.rs:1559`
-- [~] `polygons_match` (line 681) → `geometry/polygon.rs:1590` — partial
-- [x] `overlaps` (line 699) → `geometry/polygon.rs:1624`
+- [x] `polygons_simplify` (line 658) → `geometry/polygon.rs:1585`
+- [~] `polygons_match` (line 681) → `geometry/polygon.rs:1616` — partial
+- [x] `overlaps` (line 699) → `geometry/polygon.rs:1650`
 - [~] `contains` (line 708) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [~] `contains` (line 717) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
-- [x] `make_circle` (line 729) → `geometry/polygon.rs:1666`
-- [x] `make_circle_num_segments` (line 736) → `geometry/polygon.rs:1676`
+- [x] `make_circle` (line 729) → `geometry/polygon.rs:1692`
+- [x] `make_circle_num_segments` (line 736) → `geometry/polygon.rs:1702`
 
 **class `Polygon`**
 
@@ -10340,7 +10340,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [~] `area` (line 49) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [x] `split_at_first_point` (line 52) → `geometry/polygon.rs:276`
 - [x] `equally_spaced_points` (line 53) → `geometry/polygon.rs:282`
-- [x] `is_valid` (line 61) → `geometry/polygon.rs:796`
+- [x] `is_valid` (line 61) → `geometry/polygon.rs:822`
 - [x] `area` (line 63) → `geometry/polygon.rs:310`
 - [x] `is_counter_clockwise` (line 68) → `geometry/polygon.rs:323`
 - [x] `contains` (line 69) → `geometry/polygon.rs:426`
@@ -10353,16 +10353,16 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `simplify` (line 137) → `geometry/polygon.rs:447`
 - [x] `triangulate_convex` (line 155) → `geometry/polygon.rs:466`
 - [x] `centroid` (line 171) → `geometry/polygon.rs:486`
-- [x] `intersection` (line 188) → `geometry/polygon.rs:513`
-- [x] `first_intersection` (line 200) → `geometry/polygon.rs:535`
-- [x] `intersections` (line 229) → `geometry/polygon.rs:574`
-- [~] `overlaps` (line 245) → `geometry/polygon.rs:600` — partial
-- [x] `convex_points` (line 299) → `geometry/polygon.rs:623`
-- [x] `concave_points` (line 304) → `geometry/polygon.rs:633`
-- [x] `point_projection` (line 310) → `geometry/polygon.rs:642`
-- [x] `parameter_by_length` (line 347) → `geometry/polygon.rs:700`
-- [x] `densify` (line 357) → `geometry/polygon.rs:722`
-- [~] `transform` (line 385) → `geometry/polygon.rs:769` — partial
+- [x] `intersection` (line 188) → `geometry/polygon.rs:539`
+- [x] `first_intersection` (line 200) → `geometry/polygon.rs:561`
+- [x] `intersections` (line 229) → `geometry/polygon.rs:600`
+- [~] `overlaps` (line 245) → `geometry/polygon.rs:626` — partial
+- [x] `convex_points` (line 299) → `geometry/polygon.rs:649`
+- [x] `concave_points` (line 304) → `geometry/polygon.rs:659`
+- [x] `point_projection` (line 310) → `geometry/polygon.rs:668`
+- [x] `parameter_by_length` (line 347) → `geometry/polygon.rs:726`
+- [x] `densify` (line 357) → `geometry/polygon.rs:748`
+- [~] `transform` (line 385) → `geometry/polygon.rs:795` — partial
 
 **class `polygon_set_mutable_traits<Slic3r::Polygons>`**
 
@@ -10370,8 +10370,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 **class `polygon_set_traits<Slic3r::Polygons>`**
 
-- [~] `begin` (line 370) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 374) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 370) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 374) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [ ] `clean` (line 379) → `geometry/polygon.rs`
 - [~] `sorted` (line 380) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
@@ -10490,12 +10490,12 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 **class `PhysicalPrinterCollection`**
 
-- [~] `begin` (line 985) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 985) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
 - [v] `begin` (line 986) → `preset.rs:5867` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [~] `cbegin` (line 987) → `config.rs, mutable_polygon.rs` — not in the paired file
+- [~] `cbegin` (line 987) → `clipper_utils.rs, config.rs, mutable_polygon.rs` — not in the paired file
 - [v] `end` (line 988) → `preset.rs:5871` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [~] `end` (line 989) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, print_apply.rs` — not in the paired file
-- [~] `cend` (line 990) → `mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 989) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `cend` (line 990) → `clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [v] `empty` (line 992) → `preset.rs:5875` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `get_selected_idx` (line 1029) → `preset.rs:6161` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `get_selected_printer_name` (line 1031) → `preset.rs:6165` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
@@ -10544,10 +10544,10 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 
 - [x] `lbegin` (line 467) → `preset.rs:2748`
 - [x] `begin` (line 471) → `preset.rs:2752`
-- [~] `begin` (line 472) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
+- [~] `begin` (line 472) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
 - [x] `cbegin` (line 473) → `preset.rs:2756`
 - [x] `end` (line 474) → `preset.rs:2760`
-- [~] `end` (line 475) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, print_apply.rs` — not in the paired file
+- [~] `end` (line 475) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [x] `cend` (line 476) → `preset.rs:2764`
 - [x] `erase` (line 479) → `preset.rs:2772`
 - [x] `set_sync_func` (line 481) → `preset.rs:2777`
@@ -10824,8 +10824,8 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `ConstVectorOfPtrsAdaptor`**
 
-- [~] `begin` (line 207) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 207) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [x] `size` (line 212) → `print.rs:6493`
@@ -11095,8 +11095,8 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 - [v] `assign` (line 362) → `print_apply.rs:736` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
 - [v] `config` (line 388) → `print_apply.rs:766` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [~] `begin` (line 401) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 402) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 401) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 402) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [x] `size` (line 403) → `print_apply.rs:790`
 
 **class `ModelObjectStatusDB`**
@@ -11113,8 +11113,8 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [x] `get_range` (line 522) → `print_apply.rs:952`
 - [~] `get_range` (line 526) → `print_apply.rs` — another overload of the name is ported
 - [x] `count` (line 530) → `print_apply.rs:964`
-- [~] `begin` (line 534) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 535) → `arachne/utils/extrusion_line.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 534) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
+- [~] `end` (line 535) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [x] `clear` (line 537) → `print_apply.rs:978`
 
 **class `PrintObjectStatusDB::iterator_range`**
@@ -11690,41 +11690,41 @@ Rust file: `shortest_path.rs`. Status: **partial**. Not listed: 4 constructors, 
 
 **free functions**
 
-- [x] `chain_segments_closest_point` (line 21) → `shortest_path.rs:64`
+- [x] `chain_segments_closest_point` (line 21) → `shortest_path.rs:73`
 - [~] `chain_polylines` (line 27) → `shortest_path.rs` — another overload of the name is ported
-- [x] `reorder_by_shortest_traverse` (line 28) → `shortest_path.rs:2195`
-- [x] `chain_segments_greedy_constrained_reversals_` (line 67) → `shortest_path.rs:199`
-- [x] `update_end_point_in_queue` (line 397) → `shortest_path.rs:795`
-- [x] `chain_segments_greedy_constrained_reversals2_` (line 466) → `shortest_path.rs:895`
-- [x] `chain_segments_greedy_constrained_reversals` (line 976) → `shortest_path.rs:557`
-- [x] `chain_segments_greedy` (line 982) → `shortest_path.rs:577`
-- [x] `chain_segments_greedy_constrained_reversals2` (line 989) → `shortest_path.rs:1400`
-- [x] `chain_segments_greedy2` (line 995) → `shortest_path.rs:1420`
-- [x] `chain_extrusion_entities` (line 1001) → `shortest_path.rs:1493`
-- [x] `reorder_extrusion_entities` (line 1017) → `shortest_path.rs:1541`
-- [x] `chain_and_reorder_extrusion_entities` (line 1031) → `shortest_path.rs:1574`
-- [x] `chain_extrusion_paths` (line 1039) → `shortest_path.rs:1600`
-- [x] `reorder_extrusion_paths` (line 1045) → `shortest_path.rs:1617`
-- [x] `chain_and_reorder_extrusion_paths` (line 1058) → `shortest_path.rs:1641`
-- [x] `chain_expolygons` (line 1063) → `shortest_path.rs:1650`
-- [x] `chain_points` (line 1073) → `shortest_path.rs:1664`
+- [v] `reorder_by_shortest_traverse` (line 28) → `shortest_path.rs:2222` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [x] `chain_segments_greedy_constrained_reversals_` (line 67) → `shortest_path.rs:208`
+- [x] `update_end_point_in_queue` (line 397) → `shortest_path.rs:804`
+- [x] `chain_segments_greedy_constrained_reversals2_` (line 466) → `shortest_path.rs:904`
+- [v] `chain_segments_greedy_constrained_reversals` (line 976) → `shortest_path.rs:566` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_segments_greedy` (line 982) → `shortest_path.rs:586` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_segments_greedy_constrained_reversals2` (line 989) → `shortest_path.rs:1417` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_segments_greedy2` (line 995) → `shortest_path.rs:1437` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_extrusion_entities` (line 1001) → `shortest_path.rs:1510` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `reorder_extrusion_entities` (line 1017) → `shortest_path.rs:1558` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_and_reorder_extrusion_entities` (line 1031) → `shortest_path.rs:1591` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_extrusion_paths` (line 1039) → `shortest_path.rs:1617` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [x] `reorder_extrusion_paths` (line 1045) → `shortest_path.rs:1634`
+- [v] `chain_and_reorder_extrusion_paths` (line 1058) → `shortest_path.rs:1658` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_expolygons` (line 1063) → `shortest_path.rs:1667` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_points` (line 1073) → `shortest_path.rs:1681` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
 - [ ] `svg_draw_polyline_chain` (line 1089) → `shortest_path.rs`
 - [ ] `improve_ordering_by_segment_flipping` (line 1101) → `shortest_path.rs`
-- [x] `minimum_crossover_cost` (line 1289) → `shortest_path.rs:1725`
+- [v] `minimum_crossover_cost` (line 1289) → `shortest_path.rs:1742` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
 - [~] `minimum_crossover_cost` (line 1356) → `shortest_path.rs` — another overload of the name is ported
-- [x] `do_crossover` (line 1433) → `shortest_path.rs:1882`
+- [v] `do_crossover` (line 1433) → `shortest_path.rs:1899` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
 - [~] `do_crossover` (line 1475) → `shortest_path.rs` — another overload of the name is ported
-- [x] `reorder_by_two_exchanges_with_segment_flipping` (line 1553) → `shortest_path.rs:1984`
+- [v] `reorder_by_two_exchanges_with_segment_flipping` (line 1553) → `shortest_path.rs:2001` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
 - [ ] `reorder_by_three_exchanges_with_segment_flipping` (line 1629) → `shortest_path.rs`
 - [~] `minimum_crossover_cost` (line 1724) → `shortest_path.rs` — another overload of the name is ported
 - [ ] `reorder_by_three_exchanges_with_segment_flipping2` (line 1783) → `shortest_path.rs`
-- [~] `improve_ordering_by_two_exchanges_with_segment_flipping` (line 1882) → `shortest_path.rs:2094` — partial
-- [x] `chain_polylines` (line 1934) → `shortest_path.rs:2125`
-- [ ] `chain_path_items` (line 1964) → `shortest_path.rs`
-- [ ] `chain_clipper_polynodes` (line 1975) → `shortest_path.rs`
-- [ ] `chain_print_object_instances` (line 1981) → `shortest_path.rs`
-- [ ] `chain_print_object_instances` (line 2005) → `shortest_path.rs`
-- [~] `chain_lines` (line 2010) → `shortest_path.rs:2263` — partial
+- [v] `improve_ordering_by_two_exchanges_with_segment_flipping` (line 1882) → `shortest_path.rs:2116` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items. (the body reads as partial to the estimate)
+- [v] `chain_polylines` (line 1934) → `shortest_path.rs:2152` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_path_items` (line 1964) → `shortest_path.rs:2245` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_clipper_polynodes` (line 1975) → `shortest_path.rs:2264` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_print_object_instances` (line 1981) → `shortest_path.rs:2271` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_print_object_instances` (line 2005) → `shortest_path.rs:2307` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.
+- [v] `chain_lines` (line 2010) → `shortest_path.rs:2356` — R922: tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items. (the body reads as partial to the estimate)
 
 **class `ConnectionCost`**
 
@@ -11732,7 +11732,7 @@ Rust file: `shortest_path.rs`. Status: **partial**. Not listed: 4 constructors, 
 
 **class `FlipEdge`**
 
-- [x] `flip` (line 1274) → `shortest_path.rs:1695`
+- [x] `flip` (line 1274) → `shortest_path.rs:1712`
 
 ### `SLA/AGGRaster` (.hpp)
 
@@ -11854,7 +11854,7 @@ Rust file: `sla/boost_adapter.rs`. Status: **partial**.
 
 **class `indexed_access<Slic3r::BoundingBox, 0, d>`**
 
-- [~] `get` (line 107) → `any_ptr.rs, app_config.rs, clonable_ptr.rs` — not in the paired file
+- [~] `get` (line 107) → `any_ptr.rs, app_config.rs, clipper_utils.rs` — not in the paired file
 - [~] `set` (line 110) → `app_config.rs, color.rs, config.rs` — not in the paired file
 
 **class `indexed_access<Slic3r::BoundingBox, 1, d>`**
@@ -12902,10 +12902,10 @@ Rust file: `support/tree_support_3d.rs`. Status: **partial**. Not listed: 5 cons
 - [v] `extrude_branch_tube` (line 3601) → `support/tree_support_3d.rs:7172` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
 - [v] `section_circles_intersect` (line 3708) → `support/tree_support_3d.rs:7309` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
 - [v] `extrude_branch` (line 3748) → `support/tree_support_3d.rs:7384` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
-- [ ] `organic_smooth_branches_avoid_collisions` (line 3852) → `support/tree_support_3d.rs`
-- [ ] `organic_smooth_branches_avoid_collisions` (line 4064) → `support/tree_support_3d.rs`
-- [ ] `draw_branches` (line 4168) → `support/tree_support_3d.rs`
-- [ ] `slice_branches` (line 4288) → `support/tree_support_3d.rs`
+- [v] `organic_smooth_branches_avoid_collisions` (line 3852) → `support/tree_support_3d.rs:7778` — R922: tests/tree_support_3d_native_parity.rs: 11,494 lines, every required line equal. New: organic_smooth_branches_avoid_collisions (the elements after the smoothing, 417 layers), draw_branches (the meshes of 18 scenarios) and organic_draw_branches with its helpers (elements 417, cooldown 361, bottom contacts 18, top contacts 48, intermediate layers 443 lines). Reported, not required: slice_branches' intermediate layers (2 of 433 lines, from the closing in make_expolygons of triangle_mesh_slicer.rs).
+- [~] `organic_smooth_branches_avoid_collisions` (line 4064) → `support/tree_support_3d.rs` — another overload of the name is ported
+- [v] `draw_branches` (line 4168) → `support/tree_support_3d.rs:8118` — R922: tests/tree_support_3d_native_parity.rs: 11,494 lines, every required line equal. New: organic_smooth_branches_avoid_collisions (the elements after the smoothing, 417 layers), draw_branches (the meshes of 18 scenarios) and organic_draw_branches with its helpers (elements 417, cooldown 361, bottom contacts 18, top contacts 48, intermediate layers 443 lines). Reported, not required: slice_branches' intermediate layers (2 of 433 lines, from the closing in make_expolygons of triangle_mesh_slicer.rs). (the body reads as partial to the estimate)
+- [x] `slice_branches` (line 4288) → `support/tree_support_3d.rs:8241`
 - [ ] `organic_lightning_infill` (line 4388) → `support/tree_support_3d.rs`
 - [ ] `generate_support_areas` (line 4794) → `support/tree_support_3d.rs`
 - [ ] `generate_tree_support_3D` (line 6054) → `support/tree_support_3d.rs`
@@ -13649,43 +13649,43 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 **free functions**
 
 - [x] `is_equal` (line 45) → `triangle_mesh_slicer.rs:40`
-- [x] `is_equal_for_sort` (line 50) → `triangle_mesh_slicer.rs:2910`
+- [x] `is_equal_for_sort` (line 50) → `triangle_mesh_slicer.rs:2983`
 - [~] `is_equal` (line 54) → `circle.rs, geometry/voronoi_utils_cgal.rs, multi_material_segmentation.rs` — not in the paired file
-- [x] `slice_mesh_ex` (line 78) → `triangle_mesh_slicer.rs:2083`
+- [x] `slice_mesh_ex` (line 78) → `triangle_mesh_slicer.rs:2156`
 - [~] `slice_mesh_ex` (line 86) → `print_object_slice.rs` — not in the paired file
 - [x] `slice_facet` (line 156) → `triangle_mesh_slicer.rs:209`
-- [x] `slice_facet_for_cut_mesh` (line 323) → `triangle_mesh_slicer.rs:2929`
+- [x] `slice_facet_for_cut_mesh` (line 323) → `triangle_mesh_slicer.rs:3002`
 - [x] `slice_facet_at_zs` (line 476) → `triangle_mesh_slicer.rs:391`
 - [~] `slice_make_lines` (line 511) → `triangle_mesh_slicer.rs:455` — partial
 - [~] `slice_make_lines` (line 538) → `triangle_mesh_slicer.rs` — another overload of the name is ported
-- [x] `slice_facet_with_slabs` (line 590) → `triangle_mesh_slicer.rs:2132`
-- [x] `slice_slabs_make_lines` (line 914) → `triangle_mesh_slicer.rs:2483`
+- [x] `slice_facet_with_slabs` (line 590) → `triangle_mesh_slicer.rs:2205`
+- [x] `slice_slabs_make_lines` (line 914) → `triangle_mesh_slicer.rs:2556`
 - [ ] `remove_tangent_edges` (line 985) → `triangle_mesh_slicer.rs`
 - [~] `chain_lines_by_triangle_connectivity` (line 1063) → `triangle_mesh_slicer.rs:559` — partial
 - [x] `open_polylines_sorted` (line 1166) → `triangle_mesh_slicer.rs:692`
 - [x] `chain_open_polylines_exact` (line 1182) → `triangle_mesh_slicer.rs:714`
 - [x] `chain_open_polylines_close_gaps` (line 1281) → `triangle_mesh_slicer.rs:1023`
-- [x] `cut_plane_xy_equal` (line 1393) → `triangle_mesh_slicer.rs:3102`
-- [x] `find_cut_plane_vertex_index` (line 1402) → `triangle_mesh_slicer.rs:3131`
+- [x] `cut_plane_xy_equal` (line 1393) → `triangle_mesh_slicer.rs:3175`
+- [x] `find_cut_plane_vertex_index` (line 1402) → `triangle_mesh_slicer.rs:3204`
 - [~] `make_loops` (line 1433) → `support/tree_support.rs` — not in the paired file
 - [~] `make_loops` (line 1534) → `support/tree_support.rs` — not in the paired file
-- [~] `make_slab_loops` (line 1589) → `triangle_mesh_slicer.rs:2549` — partial
+- [~] `make_slab_loops` (line 1589) → `triangle_mesh_slicer.rs:2622` — partial
 - [~] `make_expolygons_simple` (line 1716) → `triangle_mesh_slicer.rs:1248` — partial
 - [ ] `remove_short_backtracks` (line 1790) → `triangle_mesh_slicer.rs`
 - [ ] `remove_short_backtracks` (line 1834) → `triangle_mesh_slicer.rs`
 - [~] `make_expolygons` (line 1852) → `triangle_mesh_slicer.rs:1302` — partial
-- [v] `make_trafo_for_slicing` (line 1945) → `triangle_mesh_slicer.rs:2810` — R874: tests/vertex_transform_native_parity.rs: 60,000 transforms of 20 vertices equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim calls replaced (the body reads as partial to the estimate)
+- [v] `make_trafo_for_slicing` (line 1945) → `triangle_mesh_slicer.rs:2883` — R874: tests/vertex_transform_native_parity.rs: 60,000 transforms of 20 vertices equal to the C++ compiled with Eigen, bit for bit; byte-identical G-code on the three fixtures with the shim calls replaced (the body reads as partial to the estimate)
 - [~] `is_identity` (line 1953) → `geometry/geometry.rs, geometry/transform.rs` — not in the paired file
 - [ ] `transform_mesh_vertices_for_slicing` (line 1958) → `triangle_mesh_slicer.rs`
-- [~] `slice_mesh` (line 1982) → `triangle_mesh_slicer.rs:2060` — divergent
+- [~] `slice_mesh` (line 1982) → `triangle_mesh_slicer.rs:2133` — divergent
 - [~] `slice_mesh` (line 2059) → `triangle_mesh_slicer.rs` — another overload of the name is ported
 - [~] `slice_mesh_ex` (line 2121) → `print_object_slice.rs` — not in the paired file
-- [~] `slice_mesh_slabs` (line 2177) → `triangle_mesh_slicer.rs:2626` — partial
-- [x] `triangulate_slice` (line 2280) → `triangle_mesh_slicer.rs:3173`
+- [~] `slice_mesh_slabs` (line 2177) → `triangle_mesh_slicer.rs:2699` — partial
+- [x] `triangulate_slice` (line 2280) → `triangle_mesh_slicer.rs:3246`
 - [ ] `project_mesh` (line 2403) → `triangle_mesh_slicer.rs`
 - [ ] `project_mesh` (line 2419) → `triangle_mesh_slicer.rs`
-- [x] `cut_mesh` (line 2430) → `triangle_mesh_slicer.rs:3329`
-- [x] `calc_plane_normal` (line 2717) → `triangle_mesh_slicer.rs:3712`
+- [x] `cut_mesh` (line 2430) → `triangle_mesh_slicer.rs:3402`
+- [x] `calc_plane_normal` (line 2717) → `triangle_mesh_slicer.rs:3785`
 - [~] `cut_mesh` (line 2727) → `triangle_mesh_slicer.rs` — another overload of the name is ported
 
 **class `IntersectionLine`**
@@ -14066,8 +14066,8 @@ Rust file: `variable_width.rs`. Status: **verified**.
 **free functions**
 
 - [v] `thick_polyline_to_multi_path` (line 5) → `variable_width.rs:67` — R920: tests/perimeter_generator_native_parity.rs, bridge_wall: detect_brigde_wall_arachne hands its pieces to thick_polyline_to_multi_path; widths and mm3_per_mm of 300 cases equal to the pin bit for bit with the fused spacing_to_width (VariableWidth.cpp:66, gate VARIABLE_WIDTH_FMA).
-- [v] `thick_polyline_to_extrusion_paths_2` (line 101) → `variable_width.rs:346` — R921: tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).
-- [v] `variable_width` (line 214) → `variable_width.rs:546` — R921: tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).
+- [v] `thick_polyline_to_extrusion_paths_2` (line 101) → `variable_width.rs:349` — R921: tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).
+- [v] `variable_width` (line 214) → `variable_width.rs:549` — R921: tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).
 
 ### `VectorFormatter` (.hpp)
 

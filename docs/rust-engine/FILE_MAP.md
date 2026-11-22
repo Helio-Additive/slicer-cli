@@ -44,25 +44,25 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 59 (plus 23 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 6736 (74%) |
-| estimate: faithful | 5915 (88% of matched) |
+| matched to a Rust function in the paired file | 6961 (77%) |
+| estimate: faithful | 6143 (88% of matched) |
 | estimate: partial | 568 (8% of matched) |
-| estimate: divergent | 232 (3% of matched) |
+| estimate: divergent | 229 (3% of matched) |
 | estimate: stub | 21 (0% of matched) |
-| missing in the paired Rust file | 2183 |
-| of those, a function of that name exists in another Rust file | 1320 |
-| of the rest, another overload of the name is ported | 327 |
-| of the rest, under 25 tokens (accessors, one-liners) | 140 |
-| of the rest, 25 tokens or more | 396 |
+| missing in the paired Rust file | 1958 |
+| of those, a function of that name exists in another Rust file | 1145 |
+| of the rest, another overload of the name is ported | 319 |
+| of the rest, under 25 tokens (accessors, one-liners) | 129 |
+| of the rest, 25 tokens or more | 365 |
 | in a C++ unit with no Rust file | 133 |
-| Rust functions with no C++ function of that name in the pair | 8276 |
+| Rust functions with no C++ function of that name in the pair | 8433 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 5145 | 4509 | 453 | 173 | 10 | 1706 |
-| 2 | 15 | 15 | 392 | 349 | 302 | 36 | 10 | 1 | 43 |
+| 1 | 180 | 180 | 6851 | 5367 | 4735 | 452 | 170 | 10 | 1484 |
+| 2 | 15 | 15 | 392 | 352 | 304 | 37 | 10 | 1 | 40 |
 | 3 | 92 | 88 | 1374 | 999 | 887 | 60 | 47 | 5 | 375 |
 | 4 | 23 | 23 | 435 | 243 | 217 | 19 | 2 | 5 | 192 |
 
@@ -74,14 +74,12 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | Tier | C++ unit | Rust file | C++ fns | faithful | partial | divergent | stub | missing | missing, real |
 |-|-|-|-|-|-|-|-|-|-|
 | 1 | `GCode` | `g_code.rs` | 152 | 105 | 12 | 11 | 1 | 23 | 18 |
-| 1 | `ClipperUtils` | `clipper_utils.rs` | 227 | 32 | 3 | 3 | 0 | 189 | 20 |
 | 1 | `utils` | `utils.rs` | 66 | 30 | 9 | 11 | 4 | 12 | 6 |
 | 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 158 | 24 | 4 | 1 | 26 | 15 |
 | 1 | `PrintObject` | `print_object.rs` | 82 | 41 | 8 | 9 | 0 | 24 | 11 |
 | 1 | `Print` | `print.rs` | 236 | 168 | 9 | 7 | 0 | 52 | 12 |
 | 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 11 | 2 | 2 | 0 | 32 | 10 |
 | 1 | `Line` | `geometry/line.rs` | 56 | 14 | 4 | 7 | 0 | 31 | 5 |
-| 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 40 | 7 | 1 | 0 | 20 | 9 |
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 183 | 20 | 7 | 2 | 6 | 0 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 119 | 10 | 9 | 0 | 3 | 0 |
 | 1 | `Color` | `color.rs` | 97 | 72 | 1 | 0 | 0 | 24 | 8 |
@@ -96,12 +94,12 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `AABBTreeIndirect` | `aabb_tree_indirect.rs` | 41 | 26 | 1 | 5 | 0 | 9 | 1 |
 | 1 | `Config` | `config.rs` | 327 | 212 | 32 | 4 | 0 | 79 | 2 |
 | 1 | `Fill/FillAdaptive` | `fill/fill_adaptive.rs` | 32 | 16 | 1 | 2 | 0 | 13 | 4 |
+| 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 46 | 7 | 1 | 0 | 14 | 5 |
 | 1 | `GCode/SeamPlacer` | `gcode/seam_placer.rs` | 45 | 32 | 7 | 1 | 0 | 5 | 5 |
 | 1 | `Model` | `model.rs` | 374 | 271 | 29 | 6 | 0 | 68 | 0 |
 | 1 | `ModelArrange` | `model_arrange.rs` | 14 | 2 | 1 | 0 | 0 | 11 | 6 |
 | 1 | `Orient` | `orient.rs` | 22 | 7 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `SVG` | `svg.rs` | 64 | 17 | 4 | 0 | 0 | 43 | 6 |
-| 1 | `ShortestPath` | `shortest_path.rs` | 37 | 22 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
 | 1 | `ExtrusionEntity` | `extrusion_entity.rs` | 125 | 89 | 1 | 5 | 0 | 30 | 0 |
@@ -111,11 +109,12 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `MutablePriorityQueue` | `mutable_priority_queue.rs` | 37 | 20 | 4 | 5 | 0 | 8 | 0 |
 | 1 | `Point` | `geometry/point.rs` | 103 | 20 | 7 | 4 | 0 | 72 | 1 |
 | 1 | `RegionExpansion` | `region_expansion.rs` | 23 | 9 | 5 | 0 | 0 | 9 | 5 |
-| 1 | `Fill/FillRectilinear` | `fill/fill_rectilinear.rs` | 109 | 48 | 2 | 1 | 0 | 58 | 3 |
+| 1 | `Fill/FillRectilinear` | `fill/fill_rectilinear.rs` | 109 | 70 | 2 | 1 | 0 | 36 | 3 |
 | 1 | `Flow` | `flow.rs` | 31 | 17 | 7 | 4 | 0 | 3 | 0 |
 | 1 | `Geometry` | `geometry/geometry.rs` | 86 | 53 | 2 | 1 | 0 | 30 | 3 |
 | 1 | `Geometry/ConvexHull` | `geometry/convex_hull.rs` | 21 | 8 | 3 | 3 | 0 | 7 | 1 |
 | 1 | `MultiMaterialSegmentation` | `multi_material_segmentation.rs` | 74 | 61 | 4 | 3 | 0 | 6 | 1 |
+| 1 | `ShortestPath` | `shortest_path.rs` | 37 | 26 | 2 | 0 | 0 | 9 | 4 |
 | 1 | `Thread` | `thread.rs` | 24 | 6 | 1 | 1 | 0 | 16 | 3 |
 | 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 9 | 0 | 1 | 0 | 4 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
@@ -123,7 +122,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 178 | 23 | 3 | 0 | 1 | 0 |
 | 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 77 | 4 | 3 | 0 | 0 | 0 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
-| 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 21 | 2 | 2 | 0 | 4 | 1 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 29 | 3 | 1 | 0 | 19 | 2 |
 | 1 | `Utils` | `utils.rs` | 36 | 21 | 3 | 3 | 0 | 9 | 0 |
 | 1 | `Arachne/SkeletalTrapezoidation` | `arachne/skeletal_trapezoidation.rs` | 41 | 33 | 0 | 2 | 0 | 6 | 0 |
@@ -133,6 +131,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Fill/Lightning/TreeNode` | `fill/lightning/tree_node.rs` | 27 | 17 | 2 | 1 | 0 | 7 | 1 |
 | 1 | `GCode/PostProcessor` | `gcode/post_processor.rs` | 7 | 0 | 3 | 0 | 0 | 4 | 2 |
 | 1 | `Layer` | `layer.rs` | 56 | 34 | 7 | 2 | 0 | 13 | 0 |
+| 1 | `PerimeterGenerator` | `perimeter_generator.rs` | 29 | 23 | 1 | 2 | 0 | 3 | 0 |
 | 1 | `PrintRegion` | `print_region.rs` | 6 | 2 | 1 | 2 | 0 | 1 | 0 |
 | 1 | `SurfaceMesh` | `surface_mesh.rs` | 22 | 18 | 0 | 0 | 0 | 4 | 2 |
 | 1 | `Tesselate` | `tesselate.rs` | 18 | 10 | 1 | 0 | 0 | 7 | 2 |
@@ -153,6 +152,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/GCodeEditor` | `gcode/g_code_editor.rs` | 30 | 18 | 0 | 0 | 0 | 12 | 1 |
 | 1 | `Geometry/VoronoiUtilsCgal` | `geometry/voronoi_utils_cgal.rs` | 11 | 6 | 1 | 0 | 1 | 3 | 0 |
 | 1 | `LocalesUtils` | `locales_utils.rs` | 3 | 0 | 2 | 1 | 0 | 0 | 0 |
+| 1 | `MultiPoint` | `multi_point.rs` | 52 | 13 | 2 | 1 | 0 | 36 | 0 |
 
 ## C++ units with no Rust file
 
@@ -549,8 +549,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `AppConfig::get` :70 (67 tokens, overload) — in `any_ptr.rs`, `clonable_ptr.rs`, `config.rs`
-- `AppConfig::get` :84 (23 tokens, overload) — in `any_ptr.rs`, `clonable_ptr.rs`, `config.rs`
+- `AppConfig::get` :70 (67 tokens, overload) — in `any_ptr.rs`, `clipper_utils.rs`, `clonable_ptr.rs`
+- `AppConfig::get` :84 (23 tokens, overload) — in `any_ptr.rs`, `clipper_utils.rs`, `clonable_ptr.rs`
 - `AppConfig::set` :87 (68 tokens, overload) — in `color.rs`, `config.rs`, `cut_surface.rs`
 - `AppConfig::set` :121 (43 tokens, overload) — in `color.rs`, `config.rs`, `cut_surface.rs`
 - `AppConfig::has` :147 (14 tokens, overload) — in `config.rs`, `enum_bitmask.rs`, `g_code_reader.rs`
@@ -823,14 +823,14 @@ Rust only:
 
 ### `Arachne/WallToolPaths` (.cpp+.hpp) and `arachne/wall_tool_paths.rs`
 
-Tier 1. C++ functions 16 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 43. Matched 12: faithful 8, partial 3, divergent 1, stub 0.
+Tier 1. C++ functions 16 (plus 1 constructors, 0 destructors, 0 operators), Rust functions 44. Matched 12: faithful 8, partial 3, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `removeSmallAreas` :311 and `remove_small_areas` :581 (55%, 0.76x)
-- divergent: `WallToolPaths::stitchToolPaths` :551 and `WallToolPaths::stitch_tool_paths` :1571 (27%, 0.32x)
-- partial: `WallToolPaths::separateOutInnerContour` :700 and `WallToolPaths::separate_out_inner_contour` :1683 (64%, 0.91x)
-- partial: `WallToolPaths::removeEmptyToolPaths` :798 and `WallToolPaths::remove_empty_tool_paths` :1798 (50%, 0.4x)
+- partial: `removeSmallAreas` :311 and `remove_small_areas` :594 (55%, 0.76x)
+- divergent: `WallToolPaths::stitchToolPaths` :551 and `WallToolPaths::stitch_tool_paths` :1584 (27%, 0.32x)
+- partial: `WallToolPaths::separateOutInnerContour` :700 and `WallToolPaths::separate_out_inner_contour` :1696 (64%, 0.91x)
+- partial: `WallToolPaths::removeEmptyToolPaths` :798 and `WallToolPaths::remove_empty_tool_paths` :1811 (50%, 0.4x)
 
 Missing in the Rust file:
 
@@ -844,34 +844,35 @@ Rust only:
 - `scaled_c` :55
 - `sqr_i64` :65
 - `sqr_f64` :70
-- `WallToolPathsParams::default` :92
-- `simplify_polygon` :162
-- `simplify_polygons` :347 — C++ has it in `ClipperUtils`, `Geometry`
-- `PolyPointLocSegmentLocator::locate` :396
-- `remove_colinear_edges_polygon` :651
-- `shorter_than_extrusion_line` :763
-- `clipper_simplify_polygons` :796
-- `expolygons_to_polygons` :822
-- `union_polygons` :834
-- `area_polygons` :851
-- `offset_polygons` :858
-- `LineLocLocator::locate` :936
-- `WallToolPaths::new` :943
-- `WallToolPaths::generate` :998 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `WallToolPaths::get_tool_paths` :1673
-- `WallToolPaths::get_inner_contour` :1770
-- `WallToolPaths::get_first_wall_contour` :1783
-- `awst_poly` :1997
-- `awst_dump` :2008
-- `stageprobe` :2026
-- `areaprobe` :2122
-- `agen_fp` :2204
-- `agenpts_max_ov` :2224
-- `agenpts_poly` :2228
-- `agenpts_tp` :2245
-- `agen_dump_poly` :2264
-- `agen_dump_tp` :2284
-- `polyprobe` :2326
+- `scaled_float` :79
+- `WallToolPathsParams::default` :105
+- `simplify_polygon` :175
+- `simplify_polygons` :360 — C++ has it in `ClipperUtils`, `Geometry`
+- `PolyPointLocSegmentLocator::locate` :409
+- `remove_colinear_edges_polygon` :664
+- `shorter_than_extrusion_line` :776
+- `clipper_simplify_polygons` :809
+- `expolygons_to_polygons` :835
+- `union_polygons` :847
+- `area_polygons` :864
+- `offset_polygons` :871
+- `LineLocLocator::locate` :949
+- `WallToolPaths::new` :956
+- `WallToolPaths::generate` :1011 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
+- `WallToolPaths::get_tool_paths` :1686
+- `WallToolPaths::get_inner_contour` :1783
+- `WallToolPaths::get_first_wall_contour` :1796
+- `awst_poly` :2010
+- `awst_dump` :2021
+- `stageprobe` :2039
+- `areaprobe` :2135
+- `agen_fp` :2217
+- `agenpts_max_ov` :2237
+- `agenpts_poly` :2241
+- `agenpts_tp` :2258
+- `agen_dump_poly` :2277
+- `agen_dump_tp` :2297
+- `polyprobe` :2339
 
 ### `Arachne/utils/ExtrusionJunction` (.cpp+.hpp) and `arachne/utils/extrusion_junction.rs`
 
@@ -899,8 +900,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `ExtrusionLine::empty` :62 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `ExtrusionLine::begin` :94 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExtrusionLine::end` :95 (9 tokens, overload) — in `mutable_polygon.rs`, `preset.rs`, `print_apply.rs`
+- `ExtrusionLine::begin` :94 (9 tokens, overload) — in `boost_polygon_voronoi.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `ExtrusionLine::end` :95 (9 tokens, overload) — in `clipper_utils.rs`, `mutable_polygon.rs`, `preset.rs`
 - `ExtrusionLine::front` :98 (9 tokens, overload) — in `gcode/tool_ordering.rs`
 - `ExtrusionLine::back` :99 (9 tokens, overload) — in `gcode/tool_ordering.rs`
 - `ExtrusionLine::insert` :112 (14 tokens, overload) — in `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`, `boost_polygon_voronoi.rs`
@@ -992,7 +993,7 @@ Tier 1. C++ functions 3 (plus 2 constructors, 0 destructors, 0 operators), Rust 
 
 Missing in the Rust file:
 
-- `segment_traits<Slic3r::Arachne::PolygonsSegmentIndex>::get` :42 (21 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
+- `segment_traits<Slic3r::Arachne::PolygonsSegmentIndex>::get` :42 (21 tokens) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 
 Rust only:
 
@@ -1048,10 +1049,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `SparseGrid::begin` :46 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `SparseGrid::end` :47 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SparseGrid::begin` :48 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `SparseGrid::end` :49 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `SparseGrid::begin` :46 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `SparseGrid::end` :47 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `SparseGrid::begin` :48 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `SparseGrid::end` :49 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 
 Rust only:
 
@@ -1320,15 +1321,15 @@ Missing in the Rust file:
 - `BoundingBox::rotated` :46 (98 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
 - `BoundingBoxBase::contains` :50 (51 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
 - `BoundingBoxBase::contains` :54 (17 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
-- `BoundingBoxBase::merge` :73 (57 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
+- `BoundingBoxBase::merge` :73 (57 tokens) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
 - `BoundingBoxBase::construct` :89 (136 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
-- `BoundingBoxBase::merge` :89 (12 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
-- `BoundingBoxBase::merge` :97 (108 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
-- `BoundingBox3Base::merge` :137 (57 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
+- `BoundingBoxBase::merge` :89 (12 tokens) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
+- `BoundingBoxBase::merge` :97 (108 tokens) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
+- `BoundingBox3Base::merge` :137 (57 tokens) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
 - `BoundingBox3Base::contains` :150 (37 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
-- `BoundingBox3Base::merge` :152 (12 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
+- `BoundingBox3Base::merge` :152 (12 tokens) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
 - `BoundingBox3Base::contains` :154 (17 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `adaptive_layer_merge.rs`
-- `BoundingBox3Base::merge` :159 (122 tokens) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `mesh_boolean.rs`
+- `BoundingBox3Base::merge` :159 (122 tokens) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
 - `BoundingBox::rotate` :206 (16 tokens, overload) — in `arrange.rs`, `ex_polygon_collection.rs`, `fill/fill_adaptive.rs`
 - `empty` :249 (36 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `empty` :255 (50 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
@@ -1646,325 +1647,202 @@ Rust only:
 
 ### `ClipperUtils` (.cpp+.hpp) and `clipper_utils.rs`
 
-Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 152. Matched 38: faithful 32, partial 3, divergent 3, stub 0.
+Tier 1. C++ functions 227 (plus 15 constructors, 0 destructors, 18 operators), Rust functions 413. Matched 227: faithful 224, partial 3, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `diff_ex` :470 and `diff_ex` :461 (40%, 4.85x)
-- divergent: `offset2` :577 and `offset2` :633 (25%, 1.9x)
-- divergent: `union_` :727 and `union` :81 (20%, 2.52x)
-- partial: `intersection_ex` :808 and `intersection_ex` :549 (33%, 3.12x)
-- divergent: `union_ex` :817 and `union_ex` :99 (0%, 2.94x)
-- partial: `mittered_offset_path_scaled` :1120 and `mittered_offset_path_scaled` :1604 (33%, 1.11x)
-
-Missing in the Rust file:
-
-- `export_clipper_input_polygons_bin` :28 (258 tokens)
-- `clip_clipper_polygon_with_subject_bbox_templ` :66 (320 tokens)
-- `EmptyPathsProvider::cend` :74 (7 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `EmptyPathsProvider::end` :75 (7 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `EmptyPathsProvider::cbegin` :76 (7 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `EmptyPathsProvider::begin` :77 (7 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `EmptyPathsProvider::size` :78 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `SinglePathProvider::cbegin` :99 (8 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SinglePathProvider::begin` :100 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `SinglePathProvider::cend` :101 (8 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `SinglePathProvider::end` :102 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SinglePathProvider::size` :103 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `clip_clipper_polygon_with_subject_bbox` :120 (13 tokens, overload)
-- `clip_clipper_polygon_with_subject_bbox` :121 (11 tokens, overload)
-- `clip_clipper_polygon_with_subject_bbox_templ` :123 (22 tokens)
-- `PathsProvider::cbegin` :127 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `PathsProvider::begin` :128 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `PathsProvider::cend` :129 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `clip_clipper_polygon_with_subject_bbox` :130 (10 tokens, overload)
-- `PathsProvider::end` :130 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `clip_clipper_polygon_with_subject_bbox` :131 (10 tokens, overload)
-- `PathsProvider::size` :131 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `clip_clipper_polygon_with_subject_bbox` :133 (15 tokens, overload)
-- `clip_clipper_polygons_with_subject_bbox` :144 (86 tokens) — in `fill/fill_floating_concentric.rs`, `support/tree_support.rs`
-- `clip_clipper_polygons_with_subject_bbox` :152 (106 tokens) — in `fill/fill_floating_concentric.rs`, `support/tree_support.rs`
-- `MultiPointsProvider::cbegin` :154 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPointsProvider::begin` :155 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `MultiPointsProvider::cend` :156 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `MultiPointsProvider::end` :157 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPointsProvider::size` :158 (9 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `clip_clipper_polygons_with_subject_bbox` :161 (110 tokens) — in `fill/fill_floating_concentric.rs`, `support/tree_support.rs`
-- `ExPolygonProvider::cbegin` :183 (10 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonProvider::begin` :184 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `ExPolygonProvider::cend` :185 (18 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonProvider::end` :186 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonProvider::size` :187 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `ExPolygonsProvider::cbegin` :223 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonsProvider::begin` :224 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `ExPolygonsProvider::cend` :225 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonsProvider::end` :226 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `ExPolygonsProvider::size` :227 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `has_duplicate_points` :233 (133 tokens) — in `ex_polygon.rs`, `geometry/point.rs`, `geometry/polygon.rs`
-- `has_duplicate_points` :250 (113 tokens) — in `ex_polygon.rs`, `geometry/point.rs`, `geometry/polygon.rs`
-- `SurfacesProvider::cbegin` :264 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SurfacesProvider::begin` :265 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `SurfacesProvider::cend` :266 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `SurfacesProvider::end` :267 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SurfacesProvider::size` :268 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `SurfacesPtrProvider::cbegin` :305 (12 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SurfacesPtrProvider::begin` :306 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `SurfacesPtrProvider::cend` :307 (12 tokens) — in `mutable_polygon.rs`, `preset.rs`
-- `SurfacesPtrProvider::end` :308 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `SurfacesPtrProvider::size` :309 (5 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
-- `clipper_do` :325 (87 tokens, overload)
-- `offset_ex` :358 (26 tokens) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_conformal.rs`
-- `union_safety_offset` :370 (10 tokens) — in `support/support_common.rs`
-- `union_safety_offset` :371 (10 tokens) — in `support/support_common.rs`
-- `union_safety_offset_ex` :372 (10 tokens, overload) — in `support/support_common.rs`
-- `expand` :381 (21 tokens) — in `build_volume.rs`, `extrusion_simulator.rs`, `gcode/wipe_tower.rs`
-- `expand` :383 (21 tokens) — in `build_volume.rs`, `extrusion_simulator.rs`, `gcode/wipe_tower.rs`
-- `expand_ex` :385 (21 tokens)
-- `shrink_ex` :390 (22 tokens) — in `adaptive_layer_merge.rs`, `brim.rs`, `support/support_common.rs`
-- `shrink_ex` :392 (22 tokens) — in `adaptive_layer_merge.rs`, `brim.rs`, `support/support_common.rs`
-- `closing_ex` :410 (16 tokens) — in `print_object_slice.rs`, `support/support_common.rs`
-- `offset` :410 (24 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `closing_ex` :412 (24 tokens) — in `print_object_slice.rs`, `support/support_common.rs`
-- `offset` :413 (27 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `closing_ex` :414 (24 tokens) — in `print_object_slice.rs`, `support/support_common.rs`
-- `offset_ex` :415 (27 tokens) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_conformal.rs`
-- `offset` :418 (41 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `offset` :420 (39 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `opening` :422 (16 tokens, overload) — in `print_object_slice.rs`, `support/support_common.rs`
-- `contour_to_polygons` :423 (45 tokens)
-- `opening` :426 (16 tokens, overload) — in `print_object_slice.rs`, `support/support_common.rs`
-- `opening_ex` :428 (24 tokens, overload) — in `adaptive_layer_merge.rs`, `gcode/timelapse_pos_picker.rs`, `perimeter_generator.rs`
-- `contour_to_polygons` :429 (43 tokens)
-- `diff_ex` :480 (24 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :488 (24 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ln` :496 (14 tokens)
-- `offset_expolygon_inner` :508 (18 tokens, overload)
-- `offset_expolygon_inner` :510 (18 tokens, overload)
-- `intersection_ln` :536 (14 tokens) — in `bridge_detector.rs`, `internal_bridge_detector.rs`, `support/tree_support.rs`
-- `intersection_ln` :541 (26 tokens) — in `bridge_detector.rs`, `internal_bridge_detector.rs`, `support/tree_support.rs`
-- `offset` :559 (17 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `offset` :561 (17 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `offset` :563 (17 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `offset` :565 (17 tokens) — in `arrange.rs`, `bounding_box.rs`, `geometry/voronoi_offset.rs`
-- `offset_ex` :567 (17 tokens) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_conformal.rs`
-- `offset_ex` :570 (17 tokens) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_conformal.rs`
-- `offset_ex` :572 (17 tokens) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_conformal.rs`
-- `offset_ex` :574 (17 tokens) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_conformal.rs`
-- `offset2_ex` :581 (31 tokens) — in `perimeter_generator.rs`, `support/support_common.rs`, `support/tree_support.rs`
-- `offset2_ex` :585 (31 tokens) — in `perimeter_generator.rs`, `support/support_common.rs`, `support/tree_support.rs`
-- `closing` :592 (55 tokens, overload) — in `support/support_common.rs`
-- `closing_ex` :598 (55 tokens) — in `print_object_slice.rs`, `support/support_common.rs`
-- `closing_ex` :604 (55 tokens) — in `print_object_slice.rs`, `support/support_common.rs`
-- `foreach_node` :604 (24 tokens)
-- `traverse_pt` :612 (30 tokens)
-- `opening` :613 (55 tokens, overload) — in `print_object_slice.rs`, `support/support_common.rs`
-- `opening` :619 (55 tokens, overload) — in `print_object_slice.rs`, `support/support_common.rs`
-- `opening` :625 (55 tokens, overload) — in `print_object_slice.rs`, `support/support_common.rs`
-- `traverse_pt` :625 (104 tokens)
-- `traverse_pt` :653 (35 tokens)
-- `clipper_do_polytree` :656 (81 tokens, overload)
-- `_clipper` :670 (42 tokens)
-- `diff` :675 (30 tokens) — in `config.rs`, `gcode/avoid_crossing_perimeters.rs`, `support/support_common.rs`
-- `diff` :677 (26 tokens) — in `config.rs`, `gcode/avoid_crossing_perimeters.rs`, `support/support_common.rs`
-- `diff_clipped` :679 (27 tokens) — in `support/tree_support.rs`, `support/tree_support_3d.rs`
-- `diff_clipped` :681 (27 tokens) — in `support/tree_support.rs`, `support/tree_support_3d.rs`
-- `diff_clipped` :683 (27 tokens) — in `support/tree_support.rs`, `support/tree_support_3d.rs`
-- `diff` :687 (26 tokens) — in `config.rs`, `gcode/avoid_crossing_perimeters.rs`, `support/support_common.rs`
-- `diff` :689 (26 tokens) — in `config.rs`, `gcode/avoid_crossing_perimeters.rs`, `support/support_common.rs`
-- `diff` :691 (26 tokens) — in `config.rs`, `gcode/avoid_crossing_perimeters.rs`, `support/support_common.rs`
-- `diff` :693 (26 tokens) — in `config.rs`, `gcode/avoid_crossing_perimeters.rs`, `support/support_common.rs`
-- `intersection` :695 (30 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection_clipped` :697 (27 tokens)
-- `intersection` :699 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection` :701 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection` :703 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection` :705 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection` :707 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection` :709 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `intersection` :711 (26 tokens, overload) — in `aabb_tree_lines.rs`, `arrange.rs`, `enum_bitmask.rs`
-- `union_` :721 (27 tokens, overload) — in `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`, `enum_bitmask.rs`
-- `union_` :723 (27 tokens, overload) — in `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`, `enum_bitmask.rs`
-- `union_` :725 (37 tokens, overload) — in `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`, `enum_bitmask.rs`
-- `union_` :735 (28 tokens, overload) — in `clipper2/clipper_h.rs`, `clipper2/clipper_minkowski.rs`, `enum_bitmask.rs`
-- `diff_ex` :741 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :743 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :745 (28 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :747 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :749 (28 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :751 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :753 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :755 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :757 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :759 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :761 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :763 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :765 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :767 (26 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :770 (24 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `diff_ex` :778 (36 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `intersection_ex` :788 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :790 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :792 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :794 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :796 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :798 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :800 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :802 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :804 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :806 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `intersection_ex` :810 (26 tokens, overload) — in `cut_surface.rs`, `fill/fill_radial_zig_zag.rs`, `gcode/avoid_crossing_perimeters.rs`
-- `union_ex` :813 (29 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `union_ex` :815 (30 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `union_ex` :822 (30 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `union_ex` :825 (29 tokens, overload) — in `cut_surface.rs`, `emboss.rs`, `fill/fill_radial_zig_zag.rs`
-- `xor_ex` :833 (26 tokens)
-- `xor_ex` :836 (26 tokens)
-- `_clipper_pl_recombine` :854 (413 tokens)
-- `_clipper_pl_closed` :890 (105 tokens)
-- `diff_pl` :909 (26 tokens, overload) — in `support/support_common.rs`
-- `diff_pl` :911 (24 tokens, overload) — in `support/support_common.rs`
-- `diff_pl` :913 (26 tokens, overload) — in `support/support_common.rs`
-- `diff_pl` :915 (26 tokens, overload) — in `support/support_common.rs`
-- `diff_pl` :917 (24 tokens, overload) — in `support/support_common.rs`
-- `diff_pl` :919 (24 tokens, overload) — in `support/support_common.rs`
-- `intersection_pl` :923 (26 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `intersection_pl` :925 (26 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `intersection_pl` :927 (24 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `intersection_pl` :929 (26 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `intersection_pl` :931 (26 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `intersection_pl` :933 (24 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `intersection_pl` :935 (24 tokens, overload) — in `fill/fill_conformal.rs`, `fill/fill_radial_zig_zag.rs`, `support/support_common.rs`
-- `_clipper_ln` :940 (121 tokens)
-- `union_pt` :962 (32 tokens)
-- `union_pt` :966 (32 tokens)
-- `order_nodes` :972 (74 tokens)
-- `traverse_pt_noholes` :989 (63 tokens)
-- `traverse_pt_outside_in` :999 (119 tokens) — in `brim.rs`
-- `union_pt_chained_outside_in` :1019 (21 tokens) — in `brim.rs`, `fill/fill_concentric.rs`
-- `simplify_polygons` :1026 (101 tokens) — in `arachne/wall_tool_paths.rs`, `clipper.rs`, `geometry/geometry.rs`
-- `simplify_polygons_ex` :1043 (90 tokens)
-- `top_level_islands` :1059 (109 tokens)
-- `variable_offset_inner` :1260 (289 tokens) — in `clipper2_utils.rs`
-- `variable_offset_outer` :1302 (289 tokens) — in `clipper2_utils.rs`
-- `variable_offset_outer_ex` :1344 (316 tokens) — in `clipper2_utils.rs`
-- `variable_offset_inner_ex` :1390 (316 tokens) — in `clipper2_utils.rs`
+- partial: `clip_clipper_polygons_with_subject_bbox` :161 and `[ExPolygon]::clip_clipper_polygons_with_subject_bbox` :5042 (55%, 0.54x)
+- partial: `_clipper_ex` :738 and `_clipper_ex` :5331 (88%, 0.49x)
+- partial: `mittered_offset_path_scaled` :1120 and `mittered_offset_path_scaled` :1613 (33%, 1.11x)
 
 Rust only:
 
+- `union` :81
+- `union_ex` :99
 - `union_polygons_ex` :125
-- `difference` :149
-- `xor` :163
-- `offset_polyline` :188
-- `offset_polyline_miter` :209
-- `offset_polygon` :238
-- `offset_expolygon` :249
-- `offset_expolygons` :263
-- `offset_expolygons_miter_limit` :278
-- `offset_polygons` :290
-- `offset_polygons_round` :305
-- `offset_expolygons_round` :323
-- `grow` :346
-- `scale_faithful` :363
-- `offset_delta_mm_from_scaled_f32` :372
-- `simplify` :381 — C++ has it in `Arachne/WallToolPaths`, `Arachne/utils/ExtrusionLine`, `ExPolygon`
-- `remove_small` :394 — C++ has it in `Polygon`
-- `polygons_overlap` :403
-- `intersection_base` :411
-- `total_area` :416
-- `diff_ex_surfaces_expolygons` :493
-- `diff_ex_polygons_surfaces` :518
-- `intersection_surfaces` :563
-- `intersection_surfaces_expolygons` :577
-- `to_polygons` :591 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
-- `clib_join_code` :675
-- `assert_i32_scaled` :689
-- `clib_read_closed_paths` :724
-- `clib_read_closed_paths_or_null` :742
-- `clib_polygons_from_paths` :753
-- `clib_fill_type` :766
-- `clib_join_type` :779
-- `Paths::execute` :805 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `PolyTree::execute` :825 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
-- `clipper_do_safety_offset` :996
-- `offset_polyline_paths` :1149
-- `offset_polyline_path` :1174
-- `offset_ex_expolygon_paths` :1361
-- `offset_ex_expolygons_paths` :1375
-- `offset2_ex_paths` :1391
-- `clipper_do_polytree_safety_offset` :1446
-- `union_safety_offset_ex_paths` :1487
-- `variable_offset_inner_ex_paths` :1760
-- `clib_offset_expolygon_paths_prescaled` :1807
-- `clib_offset_expolygon_paths` :1840
-- `clib_offset_expolygon_paths_scaled` :1880
-- `offset_expolygons_clib_scaled` :1916
-- `offset_expolygons_clib` :1924
-- `offset_expolygons_clib_raw_scaled` :1936
-- `offset_expolygons_clib_raw_scaled_counted` :1947
-- `offset_expolygons_clib_impl` :1964
-- `shrink_clib` :1994
-- `grow_clib` :2003
-- `offset2_clib` :2015
-- `offset_ex_polygons_clib` :2037
-- `offset_ex_polygons_clib_ml` :2048
-- `clib_path_of_points` :2075
-- `clib_expolygons_paths` :2088
-- `clib_expolygon_rings` :2100
-- `offset_ex_expolygon_clib` :2110
-- `offset_ex_expolygons_clib_ml` :2124
-- `clib_flatten_expolygons` :2138
-- `clib_flatten_polygons` :2163
-- `difference_polygons_clib` :2189
-- `clib_boolean_polygons_raw` :2214
-- `diff_polygons_raw_clib` :2234
-- `intersection_polygons_raw_clib` :2240
-- `difference_clib` :2258
-- `intersection_clib` :2301
-- `intersection_clib_safety` :2338
-- `difference_clib_safety` :2360
-- `union_flat_clib` :2405
-- `variable_offset_inner_ex_clib` :2437
-- `unionprof_report` :2476
-- `union_ex_clib` :2498
-- `polytree_ex_clib` :2510
-- `union_ex_clib_impl` :2516
-- `union_safety_offset_ex_clib` :2580
-- `offset2_ex_clib` :2615
-- `offset2_ex_clib_miter` :2627
-- `simplify_polygons_clib` :2697
-- `offset_polygons_clib` :2735
-- `offset_polygons_clib_ml` :2742
-- `detect_gaps` :2797
-- `extract_centerlines` :2854
-- `intersect_polylines_with_expolygons` :2928
-- `clip_polyline_to_expolygons` :2947
-- `clip_segment_to_expolygons` :2998
-- `point_in_expolygons` :3060
-- `clip_clipper_polygon_with_subject_bbox_points` :3086
-- `clip_clipper_polygons_with_subject_bbox_expolygon` :3181
-- `clip_clipper_polygons_with_subject_bbox_polygons` :3208
-- `intersection_pl_clib` :3289
-- `diff_pl_clib` :3321
-- `intersection_polyline_with_expolygons` :3353
-- `intersection_segment_with_expolygons` :3403
-- `diff_polyline_from_expolygons` :3545
-- `diff_segment_from_expolygons` :3595
-- `polygons_to_polylines` :3656
-- `expolygons_to_polylines` :3664
-- `union_safety_offset_ex_expolygons` :3726
-- `polygons_ops_clib` :3736
-- `mm_to_scaled_f32` :3742
-- `polygons_as_paths` :3748
-- `shrink_polygons_clib` :3754
-- `closing_polygons_clib` :3760
-- `opening_polygons_clib` :3767
-- `diff_polygons` :3777
-- `diff_ex_polygons_polygons` :3796
-- `intersection_ex_polygons_polygons` :3821
-- `intersection_ex_expolygons_polygons` :3843
-- `expand_polygons` :3864
-- `opening_polygons_2` :3882
-- `clip_clipper_polygons_with_subject_bbox_expolygons` :3903
+- `intersection` :135 — C++ has it in `Fill/FillAdaptive`, `Line`, `MultiPoint`
+- `diff_empty_clip_returns_subject` :147
+- `difference` :158
+- `xor` :172
+- `offset_polyline` :197
+- `offset_polyline_miter` :218
+- `offset_polygon` :247
+- `offset_expolygon` :258
+- `offset_expolygons` :272
+- `offset_expolygons_miter_limit` :287
+- `offset_polygons` :299
+- `offset_polygons_round` :314
+- `offset_expolygons_round` :332
+- `shrink` :348
+- `grow` :355
+- `scale_faithful` :372
+- `offset_delta_mm_from_scaled_f32` :381
+- `simplify` :390 — C++ has it in `Arachne/WallToolPaths`, `Arachne/utils/ExtrusionLine`, `ExPolygon`
+- `remove_small` :403 — C++ has it in `Polygon`
+- `polygons_overlap` :412
+- `intersection_base` :420
+- `total_area` :425
+- `opening` :438
+- `opening_ex` :453
+- `diff_ex` :470
+- `diff_ex_surfaces_expolygons` :502
+- `diff_ex_polygons_surfaces` :527
+- `intersection_ex` :558
+- `intersection_surfaces` :572
+- `intersection_surfaces_expolygons` :586
+- `to_polygons` :600 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
+- `closing` :619
+- `offset2` :642
+- `clib_join_code` :684
+- `assert_i32_scaled` :698
+- `clib_read_closed_paths` :733
+- `clib_read_closed_paths_or_null` :751
+- `clib_polygons_from_paths` :762
+- `clib_fill_type` :775
+- `clib_join_type` :788
+- `Paths::execute` :814 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `PolyTree::execute` :834 — C++ has it in `MarchingSquares`, `SLA/SupportPointGenerator`, `SLA/SupportTreeBuildsteps`
+- `safety_offset` :967
+- `clipper_do_safety_offset` :1005
+- `raw_offset_polyline` :1057
+- `offset_paths` :1134
+- `offset_polyline_paths` :1158
+- `offset_polyline_path` :1183
+- `expolygon_offset` :1294
+- `expolygons_offset_raw` :1311
+- `expolygons_offset` :1334
+- `expolygons_offset_pt` :1356
+- `offset_ex_expolygon_paths` :1370
+- `offset_ex_expolygons_paths` :1384
+- `offset2_ex_paths` :1400
+- `clipper_do_polytree_safety_offset` :1455
+- `_clipper_ex` :1476
+- `union_safety_offset_ex_paths` :1496
+- `_clipper_pl_open` :1511
+- `variable_offset_inner_ex_paths` :1769
+- `clib_offset_expolygon_paths_prescaled` :1816
+- `clib_offset_expolygon_paths` :1849
+- `clib_offset_expolygon_paths_scaled` :1889
+- `offset_expolygons_clib_scaled` :1925
+- `offset_expolygons_clib` :1933
+- `offset_expolygons_clib_raw_scaled` :1945
+- `offset_expolygons_clib_raw_scaled_counted` :1956
+- `offset_expolygons_clib_impl` :1973
+- `shrink_clib` :2003
+- `grow_clib` :2012
+- `offset2_clib` :2024
+- `offset_ex_polygons_clib` :2046
+- `offset_ex_polygons_clib_ml` :2057
+- `clib_path_of_points` :2084
+- `clib_expolygons_paths` :2097
+- `clib_expolygon_rings` :2109
+- `offset_ex_expolygon_clib` :2119
+- `offset_ex_expolygons_clib_ml` :2133
+- `clib_flatten_expolygons` :2147
+- `clib_flatten_polygons` :2172
+- `difference_polygons_clib` :2198
+- `clib_boolean_polygons_raw` :2223
+- `diff_polygons_raw_clib` :2243
+- `intersection_polygons_raw_clib` :2249
+- `difference_clib` :2267
+- `intersection_clib` :2310
+- `intersection_clib_safety` :2347
+- `difference_clib_safety` :2369
+- `union_flat_clib` :2414
+- `variable_offset_inner_ex_clib` :2446
+- `unionprof_report` :2485
+- `union_ex_clib` :2507
+- `polytree_ex_clib` :2519
+- `union_ex_clib_impl` :2525
+- `union_safety_offset_ex_clib` :2589
+- `offset2_ex_clib` :2624
+- `offset2_ex_clib_miter` :2636
+- `simplify_polygons_clib` :2706
+- `offset_polygons_clib` :2744
+- `offset_polygons_clib_ml` :2751
+- `detect_gaps` :2806
+- `extract_centerlines` :2863
+- `intersect_polylines_with_expolygons` :2937
+- `clip_polyline_to_expolygons` :2956
+- `clip_segment_to_expolygons` :3007
+- `point_in_expolygons` :3069
+- `clip_clipper_polygon_with_subject_bbox_points` :3095
+- `clip_clipper_polygon_with_subject_bbox` :3173
+- `clip_clipper_polygons_with_subject_bbox_expolygon` :3190
+- `clip_clipper_polygons_with_subject_bbox_polygons` :3217
+- `diff_pl` :3241
+- `intersection_pl` :3271
+- `intersection_pl_clib` :3298
+- `diff_pl_clib` :3330
+- `intersection_polyline_with_expolygons` :3362
+- `intersection_segment_with_expolygons` :3412
+- `diff_polyline_from_expolygons` :3554
+- `diff_segment_from_expolygons` :3604
+- `polygons_to_polylines` :3665
+- `expolygons_to_polylines` :3673
+- `union_safety_offset_ex` :3698
+- `union_safety_offset_ex_expolygons` :3735
+- `polygons_ops_clib` :3745
+- `mm_to_scaled_f32` :3751
+- `polygons_as_paths` :3757
+- `shrink_polygons_clib` :3763
+- `closing_polygons_clib` :3769
+- `opening_polygons_clib` :3776
+- `diff_polygons` :3786
+- `diff_ex_polygons_polygons` :3805
+- `intersection_ex_polygons_polygons` :3830
+- `intersection_ex_expolygons_polygons` :3852
+- `expand_polygons` :3873
+- `opening_polygons_2` :3891
+- `clip_clipper_polygons_with_subject_bbox_expolygons` :3912
+- `path_of_points` :4448
+- `points_of_path` :4451
+- `to_polygons` :4456 — C++ has it in `ExPolygon`, `NSVGUtils`, `Polygon`
+- `poly_tree_to_ex_polygons` :4465 — C++ has it in `Clipper2Utils`
+- `poly_tree_to_polylines` :4470
+- `Paths::to_clipper_paths` :4484
+- `ProviderIterator::get` :4498 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `ProviderIterator::inc` :4502 — C++ has it in `Geometry/ConvexHull`, `TriangulateWall`
+- `ProviderIterator::eq` :4509
+- `ProviderIterator::next` :4516 — C++ has it in `Arachne/utils/PolygonsPointIndex`, `Geometry/ConvexHull`, `MutablePolygon`
+- `provider_paths` :4526
+- `EmptyPathsProvider::new` :4534
+- `EmptyPathsProvider::to_clipper_paths` :4555
+- `SinglePathProvider::new` :4566
+- `SinglePathProvider::to_clipper_paths` :4586
+- `PathsProvider::new` :4597
+- `PathsProvider::to_clipper_paths` :4619
+- `Polygon::points` :4629
+- `Polyline::points` :4634
+- `MultiPointsProvider::new` :4645
+- `MultiPointsProvider::to_clipper_paths` :4667
+- `expolygon_paths` :4678
+- `ExPolygonProvider::new` :4691
+- `ExPolygonProvider::to_clipper_paths` :4715
+- `ExPolygonsProvider::new` :4727
+- `ExPolygonsProvider::to_clipper_paths` :4757
+- `SurfacesProvider::new` :4769
+- `SurfacesProvider::to_clipper_paths` :4799
+- `SurfacesPtrProvider::new` :4811
+- `SurfacesPtrProvider::to_clipper_paths` :4841
+- `Point::x` :4860 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Point::y` :4863 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `ZPoint::x` :4868 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `ZPoint::y` :4871 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `[Point]::clip_clipper_polygon_with_subject_bbox_templ` :4977
+- `has_duplicate_points_path` :5060
+- `raw_offset` :5160
+- `clipper_union` :5188
+- `expand_paths` :5203
+- `shrink_paths` :5210
+- `ExPolygon::offset_expolygon_inner` :5236
+- `BoundingBoxBase::new` :6283
+- `BoundingBoxBase::of_points` :6287
+- `BoundingBoxBase::merge` :6301 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
+- `BoundingBoxBase::inflated` :6315 — C++ has it in `BoundingBox`, `Geometry/Circle`
+- `get_extents_polygons` :6326
+- `get_extents_expolygons` :6338
+- `mittered_offset_path_scaled` :6781
 
 ### `ClipperZUtils` (.hpp) and `clipper_z_utils.rs`
 
@@ -2212,7 +2090,7 @@ Missing in the Rust file:
 - `DynamicConfig::opt` :2770 (19 tokens, overload)
 - `DynamicConfig::opt_int` :2820 (23 tokens, overload) — in `model.rs`
 - `DynamicConfig::opt_enum` :2829 (23 tokens, overload)
-- `DynamicConfig::cend` :2842 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
+- `DynamicConfig::cend` :2842 (9 tokens) — in `clipper_utils.rs`, `mutable_polygon.rs`, `preset.rs`
 - `DynamicConfig::serialize` :2849 (7 tokens, overload) — in `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`, `sla/support_point.rs`
 
 Rust only:
@@ -2608,8 +2486,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `Contour::begin` :22 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `Contour::end` :23 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `Contour::begin` :22 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `Contour::end` :23 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `Contour::open` :24 (5 tokens) — in `svg.rs`
 - `Contour::closed` :25 (6 tokens)
 - `EdgeGrid::Grid::create` :28 (83 tokens) — in `fill/lightning/tree_node.rs`, `measure.rs`, `mesh_split_impl.rs`
@@ -2783,12 +2661,12 @@ Missing in the Rust file:
 - `polygon_traits<Slic3r::ExPolygon>::end_points` :510 (13 tokens)
 - `polygon_traits<Slic3r::ExPolygon>::size` :515 (13 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `polygon_traits<Slic3r::ExPolygon>::winding` :520 (5 tokens)
-- `has_duplicate_points` :531 (172 tokens, overload) — in `geometry/point.rs`, `geometry/polygon.rs`, `multi_point.rs`
+- `has_duplicate_points` :531 (172 tokens, overload) — in `clipper_utils.rs`, `geometry/point.rs`, `geometry/polygon.rs`
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::begin_holes` :545 (11 tokens)
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::end_holes` :548 (11 tokens)
 - `polygon_with_holes_traits<Slic3r::ExPolygon>::size_holes` :551 (14 tokens)
-- `polygon_set_traits<Slic3r::ExPolygons>::begin` :576 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `polygon_set_traits<Slic3r::ExPolygons>::end` :580 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `polygon_set_traits<Slic3r::ExPolygons>::begin` :576 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `polygon_set_traits<Slic3r::ExPolygons>::end` :580 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `remove_same_neighbor` :582 (112 tokens) — in `geometry/expolygon.rs`, `geometry/polygon.rs`, `geometry/polyline.rs`
 - `polygon_set_traits<Slic3r::ExPolygons>::clean` :585 (5 tokens)
 - `polygon_set_traits<Slic3r::ExPolygons>::sorted` :586 (5 tokens) — in `sla/agg/rasterizer_cells_aa.rs`, `support/tree_model_volumes.rs`
@@ -3333,40 +3211,34 @@ Rust only:
 
 ### `Fill/FillBase` (.cpp+.hpp) and `fill/fill_base.rs`
 
-Tier 1. C++ functions 68 (plus 3 constructors, 1 destructors, 0 operators), Rust functions 84. Matched 48: faithful 40, partial 7, divergent 1, stub 0.
+Tier 1. C++ functions 68 (plus 3 constructors, 1 destructors, 0 operators), Rust functions 91. Matched 54: faithful 46, partial 7, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Fill::_infill_direction` :204 and `Fill::_infill_direction` :3280 (10%, 0.09x)
+- divergent: `Fill::_infill_direction` :204 and `Fill::_infill_direction` :3361 (10%, 0.09x)
 - partial: `closed_contour_distance_ccw` :300 and `closed_contour_distance_ccw` :230 (80%, 0.48x)
 - partial: `path_length_along_contour_ccw` :317 and `path_length_along_contour_ccw` :247 (71%, 0.42x)
 - partial: `line_rounded_thick_segment_collision` :667 and `line_rounded_thick_segment_collision` :699 (51%, 0.65x)
 - partial: `mark_boundary_segments_touching_infill` :922 and `mark_boundary_segments_touching_infill` :833 (32%, 0.36x)
-- partial: `Fill::connect_infill` :1180 and `Fill::connect_infill` :3353 (60%, 0.29x)
-- partial: `emit_loops_in_band` :1863 and `emit_loops_in_band` :2286 (61%, 0.43x)
-- partial: `Fill::connect_base_support` :2610 and `Fill::connect_base_support` :3358 (70%, 0.29x)
+- partial: `Fill::connect_infill` :1180 and `Fill::connect_infill` :3434 (60%, 0.29x)
+- partial: `emit_loops_in_band` :1863 and `emit_loops_in_band` :2359 (61%, 0.43x)
+- partial: `Fill::connect_base_support` :2610 and `Fill::connect_base_support` :3439 (70%, 0.29x)
 
 Missing in the Rust file:
 
 - `Fill::new_from_type` :34 (287 tokens)
-- `FillParams::full_infill` :53 (7 tokens)
 - `FillParams::dont_connect` :55 (7 tokens) — in `fill/mod.rs`
 - `Fill::new_from_type` :74 (51 tokens)
 - `Fill::use_bridge_flow` :85 (90 tokens, overload) — in `fill/fill.rs`, `fill/fill3_d_honeycomb.rs`, `fill/fill_gyroid.rs`
-- `Fill::fill_surface` :99 (80 tokens) — in `fill/fill_conformal.rs`
+- `Fill::fill_surface` :99 (80 tokens) — in `fill/fill_conformal.rs`, `fill/fill_rectilinear.rs`
 - `Fill::fill_surface_arachne` :115 (67 tokens)
 - `Fill::fill_surface_extrusion` :127 (289 tokens) — in `fill/fill_concentric_internal.rs`, `fill/fill_floating_concentric.rs`, `fill/mod.rs`
 - `Fill::_fill_surface_single` :206 (2 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_cross_hatch.rs`
 - `Fill::_fill_surface_single` :214 (2 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_cross_hatch.rs`
 - `take` :457 (156 tokens) — in `clonable_ptr.rs`
 - `take` :481 (133 tokens) — in `clonable_ptr.rs`
-- `inside_interval` :771 (11 tokens)
-- `interval_inside_interval` :776 (29 tokens)
-- `cyclic_interval_inside_interval` :783 (56 tokens)
 - `export_infill_to_svg` :798 (823 tokens)
-- `validate_boundary_intersections` :909 (58 tokens)
 - `Fill::connect_infill` :1169 (91 tokens, overload) — in `fill/mod.rs`
-- `BoundaryInfillGraph::interpolate_contour_point` :1207 (151 tokens)
 - `export_partial_infill_to_svg` :2050 (331 tokens)
 
 Rust only:
@@ -3386,27 +3258,28 @@ Rust only:
 - `BoundaryInfillGraph::point` :1096 — C++ has it in `Point`
 - `BoundaryInfillGraph::point_idx` :1099
 - `BoundaryInfillGraph::other` :1145
-- `connect_infill_expolygon` :1514
-- `connect_infill_polygons` :1532
-- `get_and_update_merged_with` :1905
-- `EmitState::new` :2190
-- `EmitState::add_inner_point` :2209
-- `EmitState::add_outer_point` :2214
-- `EmitState::add_interpolated_point` :2221
-- `EmitState::finalize` :2254 — C++ has it in `CutUtils`, `GCode`, `GCode/GCodeProcessor`
-- `lower_bound_f64` :2395
-- `self_point` :2532
-- `connect_base_support_polygons` :2538
-- `take_vertical_prev` :3012
-- `take_next` :3025
-- `Fill::new` :3191
-- `Fill::default` :3216
-- `Fill::extended_object_bounding_box` :3230
-- `Fill::_infill_direction_with` :3285
-- `Fill::_adjust_solid_spacing` :3338
-- `Fill::connect_infill_expolygon` :3343
-- `Fill::connect_infill_polygons` :3348
-- `Fill::connect_base_support_polygons` :3363
+- `BoundaryInfillGraph::infill_end_point` :1165
+- `connect_infill_expolygon` :1587
+- `connect_infill_polygons` :1605
+- `get_and_update_merged_with` :1978
+- `EmitState::new` :2263
+- `EmitState::add_inner_point` :2282
+- `EmitState::add_outer_point` :2287
+- `EmitState::add_interpolated_point` :2294
+- `EmitState::finalize` :2327 — C++ has it in `CutUtils`, `GCode`, `GCode/GCodeProcessor`
+- `lower_bound_f64` :2468
+- `self_point` :2605
+- `connect_base_support_polygons` :2611
+- `take_vertical_prev` :3085
+- `take_next` :3098
+- `Fill::new` :3272
+- `Fill::default` :3297
+- `Fill::extended_object_bounding_box` :3311
+- `Fill::_infill_direction_with` :3366
+- `Fill::_adjust_solid_spacing` :3419
+- `Fill::connect_infill_expolygon` :3424
+- `Fill::connect_infill_polygons` :3429
+- `Fill::connect_base_support_polygons` :3444
 
 ### `Fill/FillConcentric` (.cpp+.hpp) and `fill/fill_concentric.rs`
 
@@ -3703,7 +3576,7 @@ Rust only:
 
 ### `Fill/FillRectilinear` (.cpp+.hpp) and `fill/fill_rectilinear.rs`
 
-Tier 1. C++ functions 109 (plus 2 constructors, 0 destructors, 2 operators), Rust functions 115. Matched 51: faithful 48, partial 2, divergent 1, stub 0.
+Tier 1. C++ functions 109 (plus 2 constructors, 0 destructors, 2 operators), Rust functions 183. Matched 73: faithful 70, partial 2, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -3714,43 +3587,22 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `FillRectilinear::clone` :15 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillRectilinear::is_self_crossing` :18 (5 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
 - `FillAlignedRectilinear::clone` :39 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillAlignedRectilinear::_layer_angle` :44 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
 - `FillMonotonic::clone` :50 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillMonotonic::no_sort` :53 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
 - `FillMonotonicLine::clone` :59 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillMonotonicLine::no_sort` :62 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
 - `FillGrid::clone` :68 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillGrid::is_self_crossing` :71 (5 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
-- `FillGrid::_layer_angle` :75 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
 - `FillTriangles::clone` :81 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillTriangles::is_self_crossing` :84 (5 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
-- `FillTriangles::_layer_angle` :88 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
 - `FillStars::clone` :94 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillStars::is_self_crossing` :97 (5 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
-- `FillStars::_layer_angle` :101 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
 - `FillCubic::clone` :107 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillCubic::is_self_crossing` :110 (5 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
-- `FillCubic::_layer_angle` :114 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
 - `FillSupportBase::clone` :120 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillSupportBase::_layer_angle` :126 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
-- `FillMonotonicLineWGapFill::is_self_crossing` :134 (5 tokens) — in `fill/fill3_d_honeycomb.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
 - `FillMonotonicLineWGapFill::clone` :139 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillMonotonicLineWGapFill::no_sort` :140 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_concentric.rs`, `fill/fill_concentric_internal.rs`
-- `FillMonotonicLineWGapFill::global_monotonic_sweep` :143 (5 tokens)
 - `FillGlobalMonotonicLine::clone` :152 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillGlobalMonotonicLine::global_monotonic_sweep` :156 (5 tokens)
 - `FillZigZag::clone` :162 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillZigZag::has_consistent_pattern` :165 (5 tokens) — in `fill/fill_base.rs`
 - `FillCrossZag::clone` :171 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillCrossZag::has_consistent_pattern` :174 (5 tokens) — in `fill/fill_base.rs`
 - `FillLockedZag::clone` :180 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `FillLockedZag::has_consistent_pattern` :187 (5 tokens) — in `fill/fill_base.rs`
 - `FillLockedZag::set_lock_region_param` :188 (8 tokens)
 - `FillLockedZag::set_skin_and_skeleton_pattern` :196 (14 tokens)
 - `Fill2DLattice::clone` :205 (10 tokens) — in `aabb_mesh.rs`, `clonable_ptr.rs`, `config.rs`
-- `Fill2DLattice::_layer_angle` :211 (5 tokens) — in `fill/fill_base.rs`, `fill/fill_honeycomb.rs`, `fill/fill_plane_path.rs`
 - `SegmentIntersection::has_left_vertical` :217 (21 tokens, overload)
 - `SegmentIntersection::has_left_vertical_outside` :219 (21 tokens)
 - `SegmentIntersection::has_right_vertical` :223 (21 tokens, overload)
@@ -3767,7 +3619,6 @@ Missing in the Rust file:
 - `SegmentIntersection::vertical_up` :252 (21 tokens, overload)
 - `SegmentIntersection::vertical_down` :253 (21 tokens, overload)
 - `SegmentIntersection::vertical_outside` :254 (21 tokens, overload)
-- `ExPolygonWithOffset::bounding_box_inner` :531 (8 tokens)
 - `ExPolygonWithOffset::export_to_svg` :535 (35 tokens) — in `surface.rs`, `surface_collection.rs`
 - `distance_of_segmens` :555 (47 tokens)
 - `validate_segment_intersection_connectivity` :1066 (495 tokens)
@@ -3805,39 +3656,85 @@ Rust only:
 - `rect_horiz_move` :2454
 - `adjust_solid_spacing` :2469 — C++ has it in `Fill/FillBase`
 - `generate_fill_rectilinear` :2502
-- `locked_zag_pattern_fill` :2688
-- `fill_surface_locked_zag` :2737
-- `generate_grid_raw_lines` :2845
-- `make_fill_lines_raw` :2928
-- `make_fill_lines_raw_bbox` :2939
-- `rotate_back` :3053
-- `vertical_run_bottom` :3080
-- `vertical_run_top` :3108
-- `end_of_vertical_run_raw` :3135
-- `end_of_vertical_run` :3155
-- `overlap_bottom` :3182
-- `overlap_top` :3226
-- `left_overlap` :3275
-- `right_overlap` :3295
-- `MonotonicRegion::new` :3490
-- `MonotonicRegion::length` :3502 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `MonotonicRegion::left_intersection_point` :3510
-- `MonotonicRegion::right_intersection_point` :3518
-- `AntPath::new` :3536
-- `AntPathMatrix::new` :3563
-- `AntPathMatrix::update_initial_pheromone` :3653
-- `AntPathMatrix::get` :3659 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `AntPathMatrix::get_mut` :3672
-- `generate_monotonous_regions` :3692
-- `connect_monotonic_regions` :3783
-- `monotonous_region_path_length` :3931
-- `chain_monotonic_regions` :4118
-- `polylines_from_paths` :4498
-- `fill_surface_by_lines_monotonic` :4910
-- `generate_fill_rectilinear_monotonic` :5078
-- `sample_grid_pattern` :5171
-- `sample_grid_pattern_expolygons` :5216
-- `sample_grid_pattern_polygons` :5232
+- `locked_zag_pattern_fill` :2694
+- `fill_surface_locked_zag` :2743
+- `generate_grid_raw_lines` :2851
+- `make_fill_lines_raw` :2957
+- `make_fill_lines_raw_bbox` :2968
+- `rotate_back` :3082
+- `vertical_run_bottom` :3109
+- `vertical_run_top` :3137
+- `end_of_vertical_run_raw` :3164
+- `end_of_vertical_run` :3184
+- `overlap_bottom` :3211
+- `overlap_top` :3255
+- `left_overlap` :3304
+- `right_overlap` :3324
+- `MonotonicRegion::new` :3519
+- `MonotonicRegion::length` :3531 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `MonotonicRegion::left_intersection_point` :3539
+- `MonotonicRegion::right_intersection_point` :3547
+- `AntPath::new` :3565
+- `AntPathMatrix::new` :3592
+- `AntPathMatrix::update_initial_pheromone` :3682
+- `AntPathMatrix::get` :3688 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `AntPathMatrix::get_mut` :3701
+- `generate_monotonous_regions` :3721
+- `connect_monotonic_regions` :3812
+- `monotonous_region_path_length` :3960
+- `chain_monotonic_regions` :4154
+- `polylines_from_paths` :4534
+- `fill_surface_by_lines_monotonic` :4946
+- `generate_fill_rectilinear_monotonic` :5114
+- `sample_grid_pattern` :5219
+- `sample_grid_pattern_expolygons` :5264
+- `sample_grid_pattern_polygons` :5280
+- `fill_rectilinear_pin` :5311
+- `fill_monotonic_pin` :5318
+- `point_rotate_cos_sin` :5324
+- `multi_point_rotate` :5333
+- `sin_cos_f32` :5347
+- `point_rotated` :5369 — C++ has it in `GCode/WipeTower`
+- `align_to_grid_coord` :5377
+- `align_to_grid_base` :5387
+- `ExPolygonWithOffset::new_pin` :5397
+- `ExPolygonWithOffset::new_rotated` :5445
+- `ExPolygonWithOffset::bounding_box_src_pin` :5472
+- `make_fill_lines` :5488
+- `FillRectilinear::default` :5579
+- `FillRectilinear::new` :5585
+- `FillRectilinear::with_class` :5589
+- `FillRectilinear::no_sort` :5617 — C++ has it in `Fill/FillAdaptive`, `Fill/FillBase`, `Fill/FillConcentric`
+- `FillRectilinear::_infill_direction` :5623 — C++ has it in `Fill/FillBase`
+- `FillRectilinear::extended_object_bounding_box` :5628 — C++ has it in `Fill/FillBase`
+- `FillRectilinear::fill_surface_by_lines` :5636
+- `FillRectilinear::fill_surface_by_lines_spacing_written` :5643
+- `FillRectilinear::fill_surface_by_multilines` :5766
+- `FillRectilinear::fill_lines_of_sweeps` :5793
+- `FillRectilinear::fill_surface` :5837 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillAlignedRectilinear::fill_surface` :5915 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillMonotonic::fill_surface` :5926 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillMonotonicLine::fill_surface` :5941 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillGrid::fill_surface` :5961 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillTriangles::fill_surface` :5989 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillStars::fill_surface` :6015 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillCubic::fill_surface` :6043 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillSupportBase::fill_surface` :6066 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillZigZag::fill_surface` :6105 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillCrossZag::fill_surface` :6116 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `FillMonotonicLineWGapFill::default` :6135
+- `FillGlobalMonotonicLine::default` :6145
+- `FillGlobalMonotonicLine::new` :6151
+- `FillMonotonicLineWGapFill::new` :6163
+- `FillMonotonicLineWGapFill::fill_surface_by_lines` :6185
+- `FillMonotonicLineWGapFill::fill_surface_by_lines_flow_spacing` :6191
+- `live_entries_at_the_pin` :6333
+- `live_fill_members` :6345
+- `live_surface` :6366
+- `live_fill_params` :6373
+- `generate_fill_rectilinear_pin` :6391
+- `generate_fill_monotonic_line_w_gap_fill_pin` :6414
+- `monotonic_stages` :6449
 
 ### `Fill/Lightning/DistanceField` (.cpp+.hpp) and `fill/lightning/distance_field.rs`
 
@@ -4997,8 +4894,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `WipingExtrusions::set_layer_tools_ptr` :83 (6 tokens)
-- `ToolOrdering::begin` :347 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `ToolOrdering::end` :348 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `ToolOrdering::begin` :347 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `ToolOrdering::end` :348 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `ToolOrdering::empty` :349 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 
 Rust only:
@@ -5156,7 +5053,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `WipeTower::box_coordinates::translate` :158 (12 tokens, overload) — in `arrange.rs`, `bounding_box.rs`, `emboss.rs`
-- `WipeTower::box_coordinates::expand` :165 (42 tokens, overload) — in `build_volume.rs`, `extrusion_simulator.rs`, `geometry/bounding_box.rs`
+- `WipeTower::box_coordinates::expand` :165 (42 tokens, overload) — in `build_volume.rs`, `clipper_utils.rs`, `extrusion_simulator.rs`
 - `WipeTower::calc_tower_feedrate` :826 (14 tokens, overload)
 - `WipeTowerWriter::set_normal_acceleration` :1502 (6 tokens, overload)
 - `WipeTowerWriter::set_travel_acceleration` :1504 (6 tokens, overload) — in `g_code_writer.rs`, `gcode/g_code_processor.rs`, `gcode/writer.rs`
@@ -5817,7 +5714,7 @@ Missing in the Rust file:
 - `VoronoiDiagram::construct_voronoi` :104 (32 tokens) — in `boost_polygon_voronoi.rs`, `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::detect_known_issues` :155 (48 tokens) — in `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::detect_known_voronoi_cell_issues` :176 (290 tokens) — in `geometry/voronoi_diagram.rs`
-- `segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>::get` :196 (17 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
+- `segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>::get` :196 (17 tokens) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 - `VoronoiDiagram::has_finite_edge_with_non_finite_vertex` :222 (98 tokens) — in `geometry/voronoi_diagram.rs`
 - `VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram` :235 (77 tokens) — in `geometry/voronoi_diagram.rs`
 - `encode_input_segment_endpoint` :256 (23 tokens) — in `geometry/voronoi_diagram.rs`
@@ -5848,7 +5745,7 @@ Missing in the Rust file:
 - `verify_vertices_on_contour` :587 (107 tokens)
 - `verify_signed_distances` :600 (214 tokens)
 - `verify_offset_intersection_points` :621 (143 tokens)
-- `offset` :1329 (1755 tokens, overload) — in `arrange.rs`, `bounding_box.rs`, `perimeter_generator.rs`
+- `offset` :1329 (1755 tokens, overload) — in `arrange.rs`, `bounding_box.rs`, `clipper_utils.rs`
 
 Rust only:
 
@@ -6100,19 +5997,19 @@ Rust only:
 
 ### `Layer` (.cpp+.hpp) and `layer.rs`
 
-Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 99. Matched 43: faithful 34, partial 7, divergent 2, stub 0.
+Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 103. Matched 43: faithful 34, partial 7, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2586 (11%, 0.26x)
-- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2442 (46%, 0.79x)
-- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2481 (31%, 0.44x)
-- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :2052 (50%, 0.56x)
-- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :2135 (28%, 0.6x)
-- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :5234 (50%, 0.53x)
-- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :5246 (53%, 0.59x)
-- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :5260 (53%, 0.59x)
-- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2799 (36%, 1.15x)
+- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2652 (11%, 0.26x)
+- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2508 (46%, 0.79x)
+- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2547 (31%, 0.44x)
+- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :2118 (50%, 0.56x)
+- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :2201 (28%, 0.6x)
+- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :5300 (50%, 0.53x)
+- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :5312 (53%, 0.59x)
+- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :5326 (53%, 0.59x)
+- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2865 (36%, 1.15x)
 
 Missing in the Rust file:
 
@@ -6149,45 +6046,49 @@ Rust only:
 - `LayerRegion::prepare_fill_surfaces` :658 — C++ has it in `LayerRegion`
 - `LayerRegion::make_perimeters` :715 — C++ has it in `LayerRegion`, `PrintObject`
 - `LayerRegion::make_perimeters_with` :730
-- `LayerRegion::process_external_surfaces` :1519 — C++ has it in `LayerRegion`, `PrintObject`
-- `LayerRegion::infill_area_threshold_with_flow` :1595
-- `LayerRegion::infill_area_threshold` :1606 — C++ has it in `LayerRegion`
-- `LayerRegion::trim_surfaces` :1613 — C++ has it in `LayerRegion`
-- `LayerRegion::elephant_foot_compensation_step` :1640 — C++ has it in `LayerRegion`
-- `convert_polygon_to_extrusion_loop` :1701
-- `convert_polyline_to_extrusion_path` :1723
-- `extract_and_union_surfaces` :1739
-- `LoopNode::new` :1775
-- `LoopNode::default` :1789
-- `Layer::new` :1878
-- `Layer::object_id` :1920 — C++ has it in `Exception`, `ObjectID`
-- `Layer::wire_config_hierarchy` :1956
-- `Layer::get_region_mut` :1991
-- `Layer::regions` :1997
-- `Layer::regions_mut` :2003
-- `Layer::clear_regions` :2016
-- `Layer::make_perimeters_with_lower` :2104
-- `Layer::make_perimeters_with_neighbors` :2113
-- `Layer::record_cooling_node_for_each_extrusion` :2755
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :4262 — C++ has it in `Fill/Fill`
-- `Layer::make_ironing` :4633 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4756
-- `Layer::generate_sparse_infill` :4763
-- `Layer::new_f` :4772 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4784
-- `Layer::height_mm` :4790
-- `Layer::set_lower_layer` :4796
-- `Layer::set_upper_layer` :4802
-- `Layer::all_slices` :4808
-- `LayerRegion::set_slices` :4817
-- `LayerRegion::set_config_hierarchy` :4824
-- `ContinuitiousDistancer::new` :4857
-- `Layer::calculate_perimeter_continuity_pin` :5055
-- `Layer::simplify_support_print_params` :5213
-- `chain_points` :5296 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :5339
-- `get_extents_layer_regions` :5362
-- `mpprobe` :5384
+- `LayerRegion::process_external_surfaces` :1536 — C++ has it in `LayerRegion`, `PrintObject`
+- `LayerRegion::infill_area_threshold_with_flow` :1612
+- `LayerRegion::infill_area_threshold` :1623 — C++ has it in `LayerRegion`
+- `LayerRegion::trim_surfaces` :1630 — C++ has it in `LayerRegion`
+- `LayerRegion::elephant_foot_compensation_step` :1657 — C++ has it in `LayerRegion`
+- `LayerRegion::elephant_foot_compensation_step_pin` :1663
+- `LayerRegion::elephant_foot_compensation_step_legacy` :1690
+- `f64::apply` :1752 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `(f32, &Polygons)::apply` :1757 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `convert_polygon_to_extrusion_loop` :1767
+- `convert_polyline_to_extrusion_path` :1789
+- `extract_and_union_surfaces` :1805
+- `LoopNode::new` :1841
+- `LoopNode::default` :1855
+- `Layer::new` :1944
+- `Layer::object_id` :1986 — C++ has it in `Exception`, `ObjectID`
+- `Layer::wire_config_hierarchy` :2022
+- `Layer::get_region_mut` :2057
+- `Layer::regions` :2063
+- `Layer::regions_mut` :2069
+- `Layer::clear_regions` :2082
+- `Layer::make_perimeters_with_lower` :2170
+- `Layer::make_perimeters_with_neighbors` :2179
+- `Layer::record_cooling_node_for_each_extrusion` :2821
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :4328 — C++ has it in `Fill/Fill`
+- `Layer::make_ironing` :4699 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4822
+- `Layer::generate_sparse_infill` :4829
+- `Layer::new_f` :4838 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4850
+- `Layer::height_mm` :4856
+- `Layer::set_lower_layer` :4862
+- `Layer::set_upper_layer` :4868
+- `Layer::all_slices` :4874
+- `LayerRegion::set_slices` :4883
+- `LayerRegion::set_config_hierarchy` :4890
+- `ContinuitiousDistancer::new` :4923
+- `Layer::calculate_perimeter_continuity_pin` :5121
+- `Layer::simplify_support_print_params` :5279
+- `chain_points` :5362 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :5405
+- `get_extents_layer_regions` :5428
+- `mpprobe` :5450
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
@@ -6284,7 +6185,7 @@ Missing in the Rust file:
 - `Linef3::get_distance_of_point_to_line` :267 (34 tokens)
 - `Line3float::unit_vector` :283 (25 tokens)
 - `Polygon_3D::get_lines` :302 (98 tokens) — in `aabb_tree_lines.rs`
-- `segment_traits<Slic3r::Line>::get` :328 (17 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
+- `segment_traits<Slic3r::Line>::get` :328 (17 tokens) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 
 Rust only:
 
@@ -6812,7 +6713,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `segment_traits<Slic3r::ColoredLine>::get` :42 (21 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
+- `segment_traits<Slic3r::ColoredLine>::get` :42 (21 tokens) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 - `vertex_equal_to_point` :49 (80 tokens, overload) — in `geometry/voronoi_annotation.rs`, `geometry/voronoi_offset.rs`
 - `MMU_Graph::Node::remove_edge` :82 (76 tokens, overload) — in `boost_polygon_voronoi.rs`, `clipper.rs`, `cut_surface.rs`
 - `colored_points_to_polygon` :314 (43 tokens, overload)
@@ -6984,12 +6885,12 @@ Missing in the Rust file:
 - `MultiPoint::append` :84 (21 tokens) — in `config.rs`, `cut_surface.rs`, `ex_polygon_collection.rs`
 - `MultiPoint::append` :85 (61 tokens) — in `config.rs`, `cut_surface.rs`, `ex_polygon_collection.rs`
 - `MultiPoint::remove_duplicate_points` :102 (101 tokens, overload) — in `geometry/simplify.rs`
-- `MultiPoint::begin` :103 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `MultiPoint::begin` :104 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `MultiPoint::end` :105 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPoint::end` :106 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPoint::cbegin` :107 (9 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MultiPoint::cend` :108 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
+- `MultiPoint::begin` :103 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `MultiPoint::begin` :104 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `MultiPoint::end` :105 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `MultiPoint::end` :106 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `MultiPoint::cbegin` :107 (9 tokens) — in `clipper_utils.rs`, `config.rs`, `mutable_polygon.rs`
+- `MultiPoint::cend` :108 (9 tokens) — in `clipper_utils.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MultiPoint3::append` :116 (11 tokens) — in `config.rs`, `cut_surface.rs`, `ex_polygon_collection.rs`
 - `MultiPoint3::is_valid` :122 (13 tokens) — in `aabb_mesh.rs`, `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`
 - `MultiPoint::intersection` :136 (54 tokens) — in `aabb_tree_lines.rs`, `arrange.rs`, `clipper_utils.rs`
@@ -7079,10 +6980,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `MutablePriorityQueue::empty` :30 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
-- `MutablePriorityQueue::begin` :36 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `MutablePriorityQueue::end` :37 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MutablePriorityQueue::cbegin` :38 (9 tokens) — in `config.rs`, `mutable_polygon.rs`, `preset.rs`
-- `MutablePriorityQueue::cend` :39 (9 tokens) — in `mutable_polygon.rs`, `preset.rs`
+- `MutablePriorityQueue::begin` :36 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `MutablePriorityQueue::end` :37 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `MutablePriorityQueue::cbegin` :38 (9 tokens) — in `clipper_utils.rs`, `config.rs`, `mutable_polygon.rs`
+- `MutablePriorityQueue::cend` :39 (9 tokens) — in `clipper_utils.rs`, `mutable_polygon.rs`, `preset.rs`
 - `MutablePriorityQueue::push` :74 (36 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `filament_group.rs`
 - `MutableSkipHeapPriorityQueue::empty` :280 (9 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `MutableSkipHeapPriorityQueue::push` :326 (58 tokens, overload) — in `boost_polygon_voronoi.rs`, `channel.rs`, `filament_group.rs`
@@ -7160,21 +7061,19 @@ Rust only:
 
 ### `PerimeterGenerator` (.cpp+.hpp) and `perimeter_generator.rs`
 
-Tier 1. C++ functions 29 (plus 3 constructors, 0 destructors, 0 operators), Rust functions 83. Matched 25: faithful 21, partial 2, divergent 2, stub 0.
+Tier 1. C++ functions 29 (plus 3 constructors, 0 destructors, 0 operators), Rust functions 93. Matched 26: faithful 23, partial 1, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `is_enable_overhang_speed` :272 and `is_enable_overhang_speed` :5908 (50%, 4.42x)
-- divergent: `fuzzy_skin_allows_overhang_slowdown` :282 and `fuzzy_skin_allows_overhang_slowdown` :5939 (28%, 1.11x)
-- partial: `PerimeterGenerator::add_infill_contour_for_arachne` :1455 and `PerimeterGenerator::add_infill_contour_for_arachne` :4575 (44%, 4.73x)
-- divergent: `PerimeterRegion::has_compatible_perimeter_regions` :1917 and `PerimeterRegion::has_compatible_perimeter_regions` :6086 (18%, 1.89x)
+- partial: `is_enable_overhang_speed` :272 and `is_enable_overhang_speed` :5925 (50%, 4.42x)
+- divergent: `fuzzy_skin_allows_overhang_slowdown` :282 and `fuzzy_skin_allows_overhang_slowdown` :5956 (28%, 1.11x)
+- divergent: `PerimeterRegion::has_compatible_perimeter_regions` :1917 and `PerimeterRegion::has_compatible_perimeter_regions` :6103 (18%, 1.89x)
 
 Missing in the Rust file:
 
 - `random_value` :31 (69 tokens) — in `fuzzy_skin.rs`
 - `fuzzy_polygon` :66 (258 tokens) — in `fuzzy_skin.rs`
 - `fuzzy_extrusion_line` :100 (394 tokens) — in `fuzzy_skin.rs`
-- `PerimeterGenerator::process_no_bridge` :1953 (1222 tokens)
 
 Rust only:
 
@@ -7182,60 +7081,69 @@ Rust only:
 - `fbis_dump` :69
 - `top_fills_gate` :139
 - `WallGeneratorMode::default` :161
-- `PerimeterConfig::default` :324
-- `PerimeterLoop::new` :422
-- `PerimeterResult::new` :529
-- `PerimeterGenerator::new` :559
-- `PerimeterGenerator::set_mm3_per_mm_members` :620
-- `PerimeterGenerator::generate` :637 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
-- `PerimeterGenerator::process_classic_legacy` :656
-- `PerimeterGenerator::generate_classic_one` :759
-- `PerimeterGenerator::classic_fill_boundary_tail` :2000
-- `PerimeterGenerator::default` :2377
-- `entity_role` :2387
-- `entity_first_point` :2400
-- `point_is_in_lines` :2431
-- `convert_thin_walls_to_extrusion_paths` :2487
-- `thick_polyline_to_extrusion_paths` :2516
-- `entity_reverse_inplace` :2711
-- `traverse_loops_legacy` :2762
-- `PerimeterGenerator::arachne_line_to_extrusion_paths` :4735
-- `LibcxxUnorderedPointMap::new` :5403
-- `LibcxxUnorderedPointMap::hash` :5407 — C++ has it in `Config`, `SLAPrintSteps`
-- `LibcxxUnorderedPointMap::constrain` :5412
-- `LibcxxUnorderedPointMap::next_of` :5423
-- `LibcxxUnorderedPointMap::set_next` :5430
-- `LibcxxUnorderedPointMap::next_prime` :5438
-- `LibcxxUnorderedPointMap::rehash` :5459
-- `LibcxxUnorderedPointMap::entry` :5497
-- `LibcxxUnorderedPointMap::in_order` :5548
-- `expolygons_to_polygons` :5561
-- `apply_fuzzy_skin_to_entity` :5573
-- `lastprobe` :5634
-- `pg_cfg_int` :5805
-- `PerimeterRegion::new` :6065
-- `pg_cfg_bool` :6179
-- `PerimeterGeneratorArachneMembers::from_configs` :6228
-- `union_ex` :6520 — C++ has it in `ClipperUtils`
-- `union_ex_2` :6524 — C++ has it in `Clipper2Utils`
-- `offset2_ex` :6528 — C++ has it in `ClipperUtils`
-- `opening_ex` :6532 — C++ has it in `ClipperUtils`
-- `offset` :6536 — C++ has it in `BoundingBox`, `ClipperUtils`, `Geometry/VoronoiOffset`
-- `offset_polygons` :6540
-- `offset_ex_expolygon` :6544
-- `offset_ex` :6548 — C++ has it in `ClipperUtils`
-- `diff_ex` :6552 — C++ has it in `ClipperUtils`
-- `diff_ex_ep` :6556
-- `diff_ex_pp` :6560
-- `intersection_ex` :6564 — C++ has it in `ClipperUtils`
-- `simplify_p` :6570 — C++ has it in `ExPolygon`
-- `pg_scale_` :6578
-- `pg_scaled_float` :6584
-- `pg_thick_polyline` :7204
-- `pg_polyline_length` :7218
-- `pg_variable_width` :7230
-- `pg_generate_lower_polygons_series` :7238
-- `pg_dist_boundary` :7258
+- `PerimeterConfig::default` :335
+- `PerimeterLoop::new` :437
+- `PerimeterResult::new` :544
+- `PerimeterGenerator::new` :574
+- `PerimeterGenerator::set_mm3_per_mm_members` :635
+- `PerimeterGenerator::generate` :652 — C++ has it in `Fill/FillPlanePath`, `Fill/FillRadialZigZag`, `GCode/WipeTower`
+- `PerimeterGenerator::process_classic_legacy` :671
+- `PerimeterGenerator::generate_classic_one` :774
+- `PerimeterGenerator::classic_fill_boundary_tail` :2015
+- `PerimeterGenerator::default` :2392
+- `entity_role` :2402
+- `entity_first_point` :2415
+- `point_is_in_lines` :2446
+- `convert_thin_walls_to_extrusion_paths` :2502
+- `thick_polyline_to_extrusion_paths` :2531
+- `entity_reverse_inplace` :2726
+- `traverse_loops_legacy` :2777
+- `PerimeterGenerator::should_enable_top_one_wall_legacy` :3450
+- `PerimeterGenerator::process_arachne_legacy` :3518
+- `PerimeterGenerator::add_infill_contour_for_arachne_legacy` :4592
+- `PerimeterGenerator::arachne_line_to_extrusion_paths` :4752
+- `LibcxxUnorderedPointMap::new` :5420
+- `LibcxxUnorderedPointMap::hash` :5424 — C++ has it in `Config`, `SLAPrintSteps`
+- `LibcxxUnorderedPointMap::constrain` :5429
+- `LibcxxUnorderedPointMap::next_of` :5440
+- `LibcxxUnorderedPointMap::set_next` :5447
+- `LibcxxUnorderedPointMap::next_prime` :5455
+- `LibcxxUnorderedPointMap::rehash` :5476
+- `LibcxxUnorderedPointMap::entry` :5514
+- `LibcxxUnorderedPointMap::in_order` :5565
+- `expolygons_to_polygons` :5578
+- `apply_fuzzy_skin_to_entity` :5590
+- `lastprobe` :5651
+- `pg_cfg_int` :5822
+- `PerimeterRegion::new` :6082
+- `pg_cfg_bool` :6196
+- `PerimeterGeneratorArachneMembers::from_configs` :6245
+- `union_ex` :6537 — C++ has it in `ClipperUtils`
+- `union_ex_2` :6541 — C++ has it in `Clipper2Utils`
+- `offset2_ex` :6545 — C++ has it in `ClipperUtils`
+- `opening_ex` :6549 — C++ has it in `ClipperUtils`
+- `offset` :6553 — C++ has it in `BoundingBox`, `ClipperUtils`, `Geometry/VoronoiOffset`
+- `offset_polygons` :6557
+- `offset_ex_expolygon` :6561
+- `offset_ex` :6565 — C++ has it in `ClipperUtils`
+- `diff_ex` :6569 — C++ has it in `ClipperUtils`
+- `diff_ex_ep` :6573
+- `diff_ex_pp` :6577
+- `intersection_ex` :6581 — C++ has it in `ClipperUtils`
+- `simplify_p` :6587 — C++ has it in `ExPolygon`
+- `pg_scale_` :6595
+- `pg_scaled_float` :6601
+- `pg_thick_polyline` :7220
+- `pg_polyline_length` :7234
+- `pg_variable_width` :7246
+- `pg_generate_lower_polygons_series` :7254
+- `pg_dist_boundary` :7274
+- `offset_ex_polygons` :7556
+- `union_ex_expolygons` :7560
+- `offset_ex_jt` :7564
+- `offset2_ex_jt` :7568
+- `offset_polygon` :7572
+- `PerimeterGenerator::m_scaled_resolution` :7580
 
 ### `PlaceholderParser` (.cpp+.hpp) and `placeholder_parser.rs`
 
@@ -7476,7 +7384,7 @@ Missing in the Rust file:
 - `is_approx` :274 (32 tokens, overload) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/transform.rs`
 - `is_approx` :286 (40 tokens, overload) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/transform.rs`
 - `is_approx` :292 (40 tokens, overload) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/transform.rs`
-- `has_duplicate_points` :323 (23 tokens, overload) — in `ex_polygon.rs`, `geometry/polygon.rs`, `multi_point.rs`
+- `has_duplicate_points` :323 (23 tokens, overload) — in `clipper_utils.rs`, `ex_polygon.rs`, `geometry/polygon.rs`
 - `ClosestPointInRadiusLookup::insert` :413 (49 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`
 - `scaled` :527 (13 tokens) — in `bounding_box.rs`, `fill/fill_adaptive.rs`, `fill/fill_plane_path.rs`
 - `scaled` :537 (13 tokens) — in `bounding_box.rs`, `fill/fill_adaptive.rs`, `fill/fill_plane_path.rs`
@@ -7487,7 +7395,7 @@ Missing in the Rust file:
 - `align_to_grid` :593 (14 tokens, overload) — in `bounding_box.rs`
 - `align_to_grid` :595 (48 tokens, overload) — in `bounding_box.rs`
 - `apply` :603 (26 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `point_traits<Slic3r::Point>::get` :661 (22 tokens) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
+- `point_traits<Slic3r::Point>::get` :661 (22 tokens) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 - `point_mutable_traits<Slic3r::Point>::set` :669 (17 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
 - `point_mutable_traits<Slic3r::Point>::construct` :672 (12 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
 - `serialize` :683 (17 tokens) — in `config.rs`, `ex_polygon_serialize.rs`, `multi_nozzle_utils.rs`
@@ -7500,10 +7408,10 @@ Missing in the Rust file:
 - `save` :693 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `load` :695 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
 - `save` :696 (24 tokens) — in `app_config.rs`, `config.rs`, `format/assembly_steps_json.rs`
-- `begin` :702 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `end` :705 (13 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
-- `begin` :708 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `end` :711 (13 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `begin` :702 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `end` :705 (13 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `begin` :708 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `end` :711 (13 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 
 Rust only:
 
@@ -7621,17 +7529,17 @@ Tier 1. C++ functions 86 (plus 4 constructors, 0 destructors, 2 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `polygons_append` :151 and `polygons_append` :1729 (67%, 0.36x)
-- partial: `Polygon::overlaps` :245 and `Polygon::overlaps` :600 (88%, 1.02x)
-- partial: `Polygon::transform` :385 and `Polygon::transform` :769 (50%, 0.98x)
-- partial: `remove_same_neighbor` :492 and `remove_same_neighbor` :1284 (50%, 1.16x)
-- partial: `polygons_match` :681 and `polygons_match` :1590 (50%, 1.01x)
+- partial: `polygons_append` :151 and `polygons_append` :1755 (67%, 0.36x)
+- partial: `Polygon::overlaps` :245 and `Polygon::overlaps` :626 (88%, 1.02x)
+- partial: `Polygon::transform` :385 and `Polygon::transform` :795 (50%, 0.98x)
+- partial: `remove_same_neighbor` :492 and `remove_same_neighbor` :1310 (50%, 1.16x)
+- partial: `polygons_match` :681 and `polygons_match` :1616 (50%, 1.01x)
 
 Missing in the Rust file:
 
 - `Polygon::area` :49 (76 tokens, overload) — in `adaptive_layer_merge.rs`, `arachne/utils/extrusion_line.rs`, `arrange.rs`
 - `polygon_is_convex` :112 (10 tokens, overload)
-- `has_duplicate_points` :116 (10 tokens, overload) — in `ex_polygon.rs`, `geometry/point.rs`, `multi_point.rs`
+- `has_duplicate_points` :116 (10 tokens, overload) — in `clipper_utils.rs`, `ex_polygon.rs`, `geometry/point.rs`
 - `area` :132 (26 tokens, overload) — in `adaptive_layer_merge.rs`, `arachne/utils/extrusion_line.rs`, `arrange.rs`
 - `polygons_append` :153 (56 tokens, overload) — in `geometry/expolygon.rs`, `support/support_common.rs`, `surface.rs`
 - `to_points` :190 (36 tokens, overload) — in `ex_polygon_collection.rs`, `geometry/expolygon.rs`, `print_config.rs`
@@ -7643,14 +7551,14 @@ Missing in the Rust file:
 - `polygon_traits<Slic3r::Polygon>::end_points` :328 (11 tokens)
 - `polygon_traits<Slic3r::Polygon>::size` :333 (11 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `polygon_traits<Slic3r::Polygon>::winding` :338 (5 tokens)
-- `polygon_set_traits<Slic3r::Polygons>::begin` :370 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `polygon_set_traits<Slic3r::Polygons>::end` :374 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `polygon_set_traits<Slic3r::Polygons>::begin` :370 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `polygon_set_traits<Slic3r::Polygons>::end` :374 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `polygon_set_traits<Slic3r::Polygons>::clean` :379 (5 tokens)
 - `polygon_set_traits<Slic3r::Polygons>::sorted` :380 (5 tokens) — in `sla/agg/rasterizer_cells_aa.rs`, `support/tree_model_volumes.rs`
 - `polygon_set_mutable_traits<Slic3r::Polygons>::set` :386 (11 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
 - `get_extents` :416 (61 tokens, overload) — in `emboss.rs`, `ex_polygon.rs`, `ex_polygon_collection.rs`
 - `get_extents_rotated` :432 (69 tokens, overload) — in `bridge_detector.rs`, `ex_polygon.rs`, `internal_bridge_detector.rs`
-- `has_duplicate_points` :471 (115 tokens, overload) — in `ex_polygon.rs`, `geometry/point.rs`, `multi_point.rs`
+- `has_duplicate_points` :471 (115 tokens, overload) — in `clipper_utils.rs`, `ex_polygon.rs`, `geometry/point.rs`
 - `remove_same_neighbor` :508 (86 tokens, overload) — in `geometry/expolygon.rs`, `geometry/polyline.rs`
 - `remove_sticks` :566 (119 tokens, overload)
 - `remove_collinear` :652 (15 tokens, overload)
@@ -7685,54 +7593,54 @@ Rust only:
 - `Polygon::area_of` :287
 - `Polygon::signed_area` :317
 - `Polygon::contains_point` :432
-- `Polygon::bounding_box` :802 — C++ has it in `BoundingBox`, `CutSurface`, `Model`
-- `Polygon::to_polyline` :807 — C++ has it in `GCode/AvoidCrossingPerimeters`
-- `Polygon::edge` :820 — C++ has it in `GCode/ToolOrderUtils`, `MarchingSquares`
-- `Polygon::edges` :826
-- `Polygon::edge_count` :839
-- `Polygon::point_at` :849
-- `Polygon::perimeter` :854
-- `Polygon::scale` :866 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `Polygon::scaled` :873 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
-- `Polygon::closest_point` :880 — C++ has it in `MultiPoint`
-- `Polygon::distance_to_point` :901
-- `Polygon::is_point_on_boundary` :907
-- `Polygon::to_closed_polyline` :917
-- `Polygon::regular` :926
-- `Polygon::circle` :942 — C++ has it in `Circle`, `Geometry/Circle`, `TriangleSelector`
-- `Polygon::rectangle` :949
-- `Polygon::square` :959
-- `Polygon::simplify_in_place` :968
-- `clipper_orientation` :1057
-- `clipper_area` :1063
-- `point_in_polygon` :1083
-- `get_extents_polygons` :1155
-- `get_extents_rotated_polygons` :1178
-- `get_extents_rotated_points` :1196
-- `polygon_is_convex_poly` :1260
-- `remove_same_neighbor_polygons` :1318
-- `remove_sticks_polygons` :1419
-- `remove_collinear_polygons` :1551
-- `contains_polygon` :1637
-- `contains_polygons` :1649
-- `area_polygons` :1717
-- `to_points_poly` :1753
-- `to_lines_polygons` :1800
-- `to_polygons_paths` :1860
-- `simplify_polygons_clipper` :1883
-- `clipper_simplify_polygons_single_path` :1899
-- `Polygon::fmt` :1928
-- `Polygon::fmt` :1934
-- `Polygon::deref` :1949
-- `Polygon::deref_mut` :1955
-- `Polygon::index` :1963
-- `Polygon::index_mut` :1969
-- `Polygon::from_iter` :1975
-- `Polygon::into_iter` :1986
-- `&'a Polygon::into_iter` :1995
-- `&'a mut Polygon::into_iter` :2004
-- `Polygon::from` :2010 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Vec::from` :2016 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Polygon::bounding_box` :828 — C++ has it in `BoundingBox`, `CutSurface`, `Model`
+- `Polygon::to_polyline` :833 — C++ has it in `GCode/AvoidCrossingPerimeters`
+- `Polygon::edge` :846 — C++ has it in `GCode/ToolOrderUtils`, `MarchingSquares`
+- `Polygon::edges` :852
+- `Polygon::edge_count` :865
+- `Polygon::point_at` :875
+- `Polygon::perimeter` :880
+- `Polygon::scale` :892 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `Polygon::scaled` :899 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
+- `Polygon::closest_point` :906 — C++ has it in `MultiPoint`
+- `Polygon::distance_to_point` :927
+- `Polygon::is_point_on_boundary` :933
+- `Polygon::to_closed_polyline` :943
+- `Polygon::regular` :952
+- `Polygon::circle` :968 — C++ has it in `Circle`, `Geometry/Circle`, `TriangleSelector`
+- `Polygon::rectangle` :975
+- `Polygon::square` :985
+- `Polygon::simplify_in_place` :994
+- `clipper_orientation` :1083
+- `clipper_area` :1089
+- `point_in_polygon` :1109
+- `get_extents_polygons` :1181
+- `get_extents_rotated_polygons` :1204
+- `get_extents_rotated_points` :1222
+- `polygon_is_convex_poly` :1286
+- `remove_same_neighbor_polygons` :1344
+- `remove_sticks_polygons` :1445
+- `remove_collinear_polygons` :1577
+- `contains_polygon` :1663
+- `contains_polygons` :1675
+- `area_polygons` :1743
+- `to_points_poly` :1779
+- `to_lines_polygons` :1826
+- `to_polygons_paths` :1886
+- `simplify_polygons_clipper` :1909
+- `clipper_simplify_polygons_single_path` :1925
+- `Polygon::fmt` :1954
+- `Polygon::fmt` :1960
+- `Polygon::deref` :1975
+- `Polygon::deref_mut` :1981
+- `Polygon::index` :1989
+- `Polygon::index_mut` :1995
+- `Polygon::from_iter` :2001
+- `Polygon::into_iter` :2012
+- `&'a Polygon::into_iter` :2021
+- `&'a mut Polygon::into_iter` :2030
+- `Polygon::from` :2036 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Vec::from` :2042 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
 
 ### `PolygonTrimmer` (.cpp+.hpp) and `polygon_trimmer.rs`
 
@@ -7866,18 +7774,18 @@ Missing in the Rust file:
 - `VendorProfile::from_ini` :300 (1087 tokens, overload)
 - `Preset::set_dirty` :321 (20 tokens, overload) — in `app_config.rs`
 - `Preset::printer_technology` :347 (34 tokens, overload)
-- `PresetCollection::begin` :472 (11 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `PresetCollection::end` :475 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `print_apply.rs`
+- `PresetCollection::begin` :472 (11 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `PresetCollection::end` :475 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `PresetCollection::first_compatible_idx` :661 (109 tokens, overload)
 - `PresetCollection::update_compatible` :706 (39 tokens, overload) — in `preset_bundle.rs`
 - `PresetCollection::find_preset_internal` :812 (17 tokens, overload)
 - `PresetCollection::find_preset_renamed` :820 (17 tokens, overload)
 - `is_compatible_with_printer` :845 (89 tokens, overload)
 - `PhysicalPrinter::printer_technology` :948 (34 tokens, overload)
-- `PhysicalPrinterCollection::begin` :985 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `PhysicalPrinterCollection::cbegin` :987 (9 tokens, overload) — in `config.rs`, `mutable_polygon.rs`
-- `PhysicalPrinterCollection::end` :989 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `print_apply.rs`
-- `PhysicalPrinterCollection::cend` :990 (9 tokens, overload) — in `mutable_polygon.rs`
+- `PhysicalPrinterCollection::begin` :985 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `PhysicalPrinterCollection::cbegin` :987 (9 tokens, overload) — in `clipper_utils.rs`, `config.rs`, `mutable_polygon.rs`
+- `PhysicalPrinterCollection::end` :989 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
+- `PhysicalPrinterCollection::cend` :990 (9 tokens, overload) — in `clipper_utils.rs`, `mutable_polygon.rs`
 
 Rust only:
 
@@ -8284,8 +8192,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 Missing in the Rust file:
 
 - `PrintRegion::set_config` :179 (14 tokens, overload) — in `print_region.rs`
-- `ConstVectorOfPtrsAdaptor::begin` :207 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `ConstVectorOfPtrsAdaptor::end` :208 (15 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `ConstVectorOfPtrsAdaptor::begin` :207 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `ConstVectorOfPtrsAdaptor::end` :208 (15 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `ConstVectorOfPtrsAdaptor::front` :209 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `gcode/tool_ordering.rs`
 - `ConstVectorOfPtrsAdaptor::back` :211 (9 tokens) — in `arachne/utils/extrusion_line.rs`, `gcode/tool_ordering.rs`
 - `ConstVectorOfPtrsAdaptor::empty` :213 (9 tokens, overload) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
@@ -8491,11 +8399,11 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `LayerRanges::begin` :401 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `LayerRanges::end` :402 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `LayerRanges::begin` :401 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `LayerRanges::end` :402 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `PrintObjectStatusDB::get_range` :526 (15 tokens, overload)
-- `PrintObjectStatusDB::begin` :534 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `PrintObjectStatusDB::end` :535 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `PrintObjectStatusDB::begin` :534 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `PrintObjectStatusDB::end` :535 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `Print::apply` :1296 (7946 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
 
 Rust only:
@@ -9286,12 +9194,12 @@ Rust only:
 
 ### `ShortestPath` (.cpp+.hpp) and `shortest_path.rs`
 
-Tier 1. C++ functions 37 (plus 4 constructors, 0 destructors, 2 operators), Rust functions 55. Matched 24: faithful 22, partial 2, divergent 0, stub 0.
+Tier 1. C++ functions 37 (plus 4 constructors, 0 destructors, 2 operators), Rust functions 60. Matched 28: faithful 26, partial 2, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `improve_ordering_by_two_exchanges_with_segment_flipping` :1882 and `improve_ordering_by_two_exchanges_with_segment_flipping` :2094 (48%, 0.55x)
-- partial: `chain_lines` :2010 and `chain_lines` :2263 (85%, 0.97x)
+- partial: `improve_ordering_by_two_exchanges_with_segment_flipping` :1882 and `improve_ordering_by_two_exchanges_with_segment_flipping` :2116 (48%, 0.57x)
+- partial: `chain_lines` :2010 and `chain_lines` :2356 (85%, 0.97x)
 
 Missing in the Rust file:
 
@@ -9304,44 +9212,41 @@ Missing in the Rust file:
 - `reorder_by_three_exchanges_with_segment_flipping` :1629 (770 tokens)
 - `minimum_crossover_cost` :1724 (1557 tokens, overload)
 - `reorder_by_three_exchanges_with_segment_flipping2` :1783 (1006 tokens)
-- `chain_path_items` :1964 (101 tokens)
-- `chain_clipper_polynodes` :1975 (10 tokens)
-- `chain_print_object_instances` :1981 (237 tokens)
-- `chain_print_object_instances` :2005 (18 tokens)
 
 Rust only:
 
 - `pt_to_vec2d` :36
 - `squared_norm` :41
 - `norm` :48 — C++ has it in `Arrange`
-- `EquivalentChains::new` :147
-- `EquivalentChains::next` :158 — C++ has it in `Arachne/utils/PolygonsPointIndex`, `Geometry/ConvexHull`, `MutablePolygon`
-- `EquivalentChains::equivalent` :166
-- `EquivalentChains::merge` :183 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
-- `EndPoint2::heap_idx_invalid` :624
-- `Chain::default_` :644
-- `Chain::flip_penalty` :656
-- `chain_flip` :666
-- `Chains::new` :728
-- `Chains::next_id` :739
-- `Chains::equivalent` :749
-- `Chains::merge` :768 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
-- `Chains::chain_flip_penalty` :786
-- `entity_first_point` :1443
-- `entity_last_point` :1453
-- `entity_is_loop` :1463
-- `entity_can_reverse` :1469
-- `entity_reverse` :1482
-- `FlipEdge::new` :1687
-- `ConnectionCost::default_` :1709
-- `ConnectionCost::sub` :1716 — C++ has it in `CutUtils`
-- `chain_polylines_ref` :2164
-- `Polyline::front_point` :2183
-- `ThickPolyline::front_point` :2190
-- `LineEnd::new` :2236
-- `LineEnd::point` :2240 — C++ has it in `Point`
-- `LineEnd::other_point` :2248
-- `LineEnd::other_end` :2256
+- `pin_release_build` :57
+- `EquivalentChains::new` :156
+- `EquivalentChains::next` :167 — C++ has it in `Arachne/utils/PolygonsPointIndex`, `Geometry/ConvexHull`, `MutablePolygon`
+- `EquivalentChains::equivalent` :175
+- `EquivalentChains::merge` :192 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
+- `EndPoint2::heap_idx_invalid` :633
+- `Chain::default_` :653
+- `Chain::flip_penalty` :665
+- `chain_flip` :675
+- `Chains::new` :737
+- `Chains::next_id` :748
+- `Chains::equivalent` :758
+- `Chains::merge` :777 — C++ has it in `BoundingBox`, `Format/bbs_3mf`, `MeshBoolean`
+- `Chains::chain_flip_penalty` :795
+- `entity_first_point` :1460
+- `entity_last_point` :1470
+- `entity_is_loop` :1480
+- `entity_can_reverse` :1486
+- `entity_reverse` :1499
+- `FlipEdge::new` :1704
+- `ConnectionCost::default_` :1726
+- `ConnectionCost::sub` :1733 — C++ has it in `CutUtils`
+- `chain_polylines_ref` :2191
+- `Polyline::front_point` :2210
+- `ThickPolyline::front_point` :2217
+- `LineEnd::new` :2329
+- `LineEnd::point` :2333 — C++ has it in `Point`
+- `LineEnd::other_point` :2341
+- `LineEnd::other_end` :2349
 
 ### `Slicing` (.cpp+.hpp) and `slicing.rs`
 
@@ -9749,18 +9654,18 @@ Rust only:
 
 ### `TriangleMeshSlicer` (.cpp+.hpp) and `triangle_mesh_slicer.rs`
 
-Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 74. Matched 30: faithful 22, partial 7, divergent 1, stub 0.
+Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 76. Matched 30: faithful 22, partial 7, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `slice_make_lines` :511 and `slice_make_lines` :455 (53%, 0.48x)
 - partial: `chain_lines_by_triangle_connectivity` :1063 and `chain_lines_by_triangle_connectivity` :559 (54%, 0.88x)
-- partial: `make_slab_loops` :1589 and `make_slab_loops` :2549 (38%, 0.44x)
+- partial: `make_slab_loops` :1589 and `make_slab_loops` :2622 (38%, 0.44x)
 - partial: `make_expolygons_simple` :1716 and `make_expolygons_simple` :1248 (46%, 0.44x)
 - partial: `make_expolygons` :1852 and `make_expolygons` :1302 (38%, 1.26x)
-- partial: `make_trafo_for_slicing` :1945 and `make_trafo_for_slicing` :2810 (50%, 1.32x)
-- divergent: `slice_mesh` :1982 and `slice_mesh` :2060 (10%, 0.19x)
-- partial: `slice_mesh_slabs` :2177 and `slice_mesh_slabs` :2626 (34%, 0.4x)
+- partial: `make_trafo_for_slicing` :1945 and `make_trafo_for_slicing` :2883 (50%, 1.32x)
+- divergent: `slice_mesh` :1982 and `slice_mesh` :2133 (10%, 0.19x)
+- partial: `slice_mesh_slabs` :2177 and `slice_mesh_slabs` :2699 (34%, 0.4x)
 
 Missing in the Rust file:
 
@@ -9802,30 +9707,32 @@ Rust only:
 - `MeshSlicingParamsEx::default` :1448
 - `slice_mesh_its` :1461
 - `scaled_f32` :1612
-- `slice_mesh_plane_its` :1617
-- `dp_distance_to_squared` :1723
-- `dp_douglas_peucker` :1750
-- `dp_simplify_ring` :1795
-- `expolygon_simplify` :1813
-- `slice_mesh_ex_its` :1852
-- `its_from_triangle_mesh` :1986
-- `slice_mesh_at_z_params` :2013
-- `slice_mesh_at_z_ex` :2034
-- `slice_mesh_at_z` :2047
-- `to_2d_coord` :2124
-- `slice_mesh_at_z_transformed` :2698
-- `_unscale_marker` :2715
-- `transform3d_cast_float` :2796
-- `transform3f_mul_vec3f` :2826
-- `transform3f_mul_transform3f` :2838
-- `transform_flat` :2853
-- `transform_verts_unified` :2869
-- `transform_verts_for_slicing` :2880
-- `transform_verts_affine_f32_pair` :2895
-- `is_equal_vec3f` :2915
-- `to_2d_f` :2921
-- `lower_bound_by_predicate` :3108 — C++ has it in `libslic3r`
-- `cut_mesh_plane_points` :3726
+- `slice_mesh_its_identity` :1622
+- `slice_mesh_ex_its_identity` :1645
+- `slice_mesh_plane_its` :1690
+- `dp_distance_to_squared` :1796
+- `dp_douglas_peucker` :1823
+- `dp_simplify_ring` :1868
+- `expolygon_simplify` :1886
+- `slice_mesh_ex_its` :1925
+- `its_from_triangle_mesh` :2059
+- `slice_mesh_at_z_params` :2086
+- `slice_mesh_at_z_ex` :2107
+- `slice_mesh_at_z` :2120
+- `to_2d_coord` :2197
+- `slice_mesh_at_z_transformed` :2771
+- `_unscale_marker` :2788
+- `transform3d_cast_float` :2869
+- `transform3f_mul_vec3f` :2899
+- `transform3f_mul_transform3f` :2911
+- `transform_flat` :2926
+- `transform_verts_unified` :2942
+- `transform_verts_for_slicing` :2953
+- `transform_verts_affine_f32_pair` :2968
+- `is_equal_vec3f` :2988
+- `to_2d_f` :2994
+- `lower_bound_by_predicate` :3181 — C++ has it in `libslic3r`
+- `cut_mesh_plane_points` :3799
 
 ### `TriangleSelector` (.cpp+.hpp) and `triangle_selector.rs`
 
@@ -10064,13 +9971,13 @@ Tier 1. C++ functions 3, Rust functions 11. Matched 3: faithful 3, partial 0, di
 Rust only:
 
 - `ExtrusionMultiPath::new` :56
-- `polyline_append` :336
-- `unscale_f` :598
-- `spacing_to_width` :606
-- `unscale_float` :619
-- `spacing_to_width_scaled` :629
-- `scaled_f` :649
-- `normalized` :655
+- `polyline_append` :339
+- `unscale_f` :601
+- `spacing_to_width` :609
+- `unscale_float` :622
+- `spacing_to_width_scaled` :632
+- `scaled_f` :652
+- `normalized` :658
 
 ### `clonable_ptr` (.hpp) and `clonable_ptr.rs`
 
@@ -10222,8 +10129,8 @@ Missing in the Rust file:
 - `is_approx` :288 (23 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `is_approx` :294 (45 tokens) — in `extrusion_entity.rs`, `geometry/geometry.rs`, `geometry/point.rs`
 - `reserve_vector` :338 (35 tokens)
-- `Range::begin` :358 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `mutable_polygon.rs`
-- `Range::end` :359 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `mutable_polygon.rs`, `preset.rs`
+- `Range::begin` :358 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
+- `Range::end` :359 (5 tokens) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `mutable_polygon.rs`
 - `Range::size` :369 (12 tokens) — in `aabb_tree_lines.rs`, `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`
 - `Range::empty` :370 (7 tokens) — in `aabb_tree_indirect.rs`, `aabb_tree_lines.rs`, `boost_polygon_voronoi.rs`
 - `range` :373 (20 tokens)
@@ -11153,7 +11060,7 @@ Rust only:
 
 ### `Support/TreeSupport3D` (.cpp+.hpp) and `support/tree_support_3d.rs`
 
-Tier 2. C++ functions 76 (plus 5 constructors, 0 destructors, 1 operators), Rust functions 183. Matched 65: faithful 58, partial 7, divergent 0, stub 0.
+Tier 2. C++ functions 76 (plus 5 constructors, 0 destructors, 1 operators), Rust functions 207. Matched 68: faithful 60, partial 8, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -11164,6 +11071,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `smooth_branch_areas` :2959 and `smooth_branch_areas` :6480 (48%, 0.77x)
 - partial: `draw_areas` :3280 and `draw_areas` :6806 (32%, 0.23x)
 - partial: `discretize_circle` :3536 and `discretize_circle` :7055 (52%, 1.6x)
+- partial: `draw_branches` :4168 and `draw_branches` :8118 (47%, 0.55x)
 
 Missing in the Rust file:
 
@@ -11171,10 +11079,7 @@ Missing in the Rust file:
 - `generate_overhangs` :226 (951 tokens)
 - `support_element_radius` :294 (12 tokens, overload)
 - `support_element_collision_radius` :299 (12 tokens, overload)
-- `organic_smooth_branches_avoid_collisions` :3852 (1828 tokens)
-- `organic_smooth_branches_avoid_collisions` :4064 (1030 tokens)
-- `draw_branches` :4168 (1000 tokens)
-- `slice_branches` :4288 (446 tokens)
+- `organic_smooth_branches_avoid_collisions` :4064 (1030 tokens, overload)
 - `organic_lightning_infill` :4388 (2779 tokens)
 - `generate_support_areas` :4794 (10308 tokens)
 - `generate_tree_support_3D` :6054 (133 tokens)
@@ -11299,6 +11204,27 @@ Rust only:
 - `sub3d` :7151
 - `add3d` :7156
 - `ExtrudeSplitCap::default` :7367
+- `build_aabb_tree_over_indexed_linesf` :7528
+- `distance_to_squared_linef` :7564
+- `squared_exterior_distance_f64` :7594
+- `IndexedLinesfDistancer::closest_point_to_origin` :7617 — C++ has it in `AABBTreeIndirect`, `AABBTreeLines`
+- `squared_distance_to_indexed_primitives_recursive_linef` :7627
+- `squared_distance_to_indexed_linesf` :7711
+- `organic_elements_with_link_down` :7733
+- `normalized2` :8103
+- `intersection_clipped` :8203 — C++ has it in `ClipperUtils`
+- `make_circle_pin` :8218
+- `append_organic_plate_foot_slices` :8335
+- `hemisphere_circle_nsteps` :8424
+- `hemisphere_disk_xy_basis` :8448
+- `make_oriented_disk_xy` :8467
+- `clip_convex_polygon_halfplane` :8491
+- `hemisphere_slice_polygon` :8552
+- `prepare_split_cap` :8624
+- `merged_band_keep_out` :8662
+- `OrganicTree::default` :8736
+- `organic_visit_recursive` :8744
+- `organic_draw_branches` :8807
 
 ### `Support/TreeSupportCommon` (.hpp) and `support/tree_support_common.rs`
 
@@ -11368,7 +11294,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `AnyPtr::get` :107 (9 tokens, overload) — in `app_config.rs`, `clonable_ptr.rs`, `config.rs`
+- `AnyPtr::get` :107 (9 tokens, overload) — in `app_config.rs`, `clipper_utils.rs`, `clonable_ptr.rs`
 
 Rust only:
 
@@ -12866,7 +12792,7 @@ Missing in the Rust file:
 - `plus` :297 (11 tokens, overload)
 - `intersect` :298 (11 tokens, overload) — in `clipper2/clipper_h.rs`
 - `segment` :301 (345 tokens, overload) — in `edge_grid.rs`
-- `merge` :381 (65 tokens, overload) — in `format/bbs_3mf.rs`, `geometry/bounding_box.rs`, `model.rs`
+- `merge` :381 (65 tokens, overload) — in `clipper_utils.rs`, `format/bbs_3mf.rs`, `geometry/bounding_box.rs`
 - `_mesh_boolean_do` :406 (56 tokens, overload)
 - `minus` :430 (11 tokens, overload)
 - `plus` :435 (11 tokens, overload)
@@ -14120,7 +14046,7 @@ Tier 4. C++ functions 10, Rust functions 8. Matched 8: faithful 8, partial 0, di
 
 Missing in the Rust file:
 
-- `indexed_access<Slic3r::BoundingBox, 0, d>::get` :107 (10 tokens, overload) — in `any_ptr.rs`, `app_config.rs`, `clonable_ptr.rs`
+- `indexed_access<Slic3r::BoundingBox, 0, d>::get` :107 (10 tokens, overload) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 - `indexed_access<Slic3r::BoundingBox, 0, d>::set` :110 (11 tokens, overload) — in `app_config.rs`, `color.rs`, `config.rs`
 
 ### `SLA/Clustering` (.cpp+.hpp) and `sla/clustering.rs`

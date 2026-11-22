@@ -570,7 +570,8 @@ fn perimeter_generator_native_parity() {
 //
 // `PERIMETER_GENERATOR_PROCESS_VECTORS` names a file of the generator to read instead of the committed
 // one, `PG_PROC_FILTER` a substring of the tags to run, `PG_PROC_SHOW` how many differing results to
-// print (with a file of full results).
+// print (with a file of full results), `PG_PROC_NO_COUNTERBORE` runs the counterbore cases without the
+// counterbore hole bridging (the cases that then differ are those `process_no_bridge` changes).
 
 fn fnv(s: &str) -> String {
     let mut h: u64 = 1469598103934665603;
@@ -716,10 +717,12 @@ fn first_difference(a: &str, b: &str) -> String {
 #[test]
 fn perimeter_generator_process_native_parity() {
     use slicer::flow::FlowRole;
+    use slicer::print_config::enums::CounterboreHoleBridgingOption;
     let expected = read_process_vectors();
     let filter = std::env::var("PG_PROC_FILTER").ok();
     let show: usize = std::env::var("PG_PROC_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     let only_case: Option<usize> = std::env::var("PG_PROC_CASE").ok().and_then(|v| v.parse().ok());
+    let no_counterbore = std::env::var("PG_PROC_NO_COUNTERBORE").is_ok();
     const PARTS: [&str; 6] = ["flows", "loops", "gap_fill", "fill_surfaces", "fill_no_overlap", "loop_nodes"];
     // Per tag: the cases and, per part, those that differ.
     let mut stats: Vec<(String, usize, [usize; 6])> = Vec::new();
@@ -777,6 +780,16 @@ fn perimeter_generator_process_native_parity() {
             pc.alternate_extra_wall = kv["alternate_extra_wall"] == "1";
             pc.infill_wall_overlap_percent = kv["infill_wall_overlap"].trim_end_matches('%').parse().expect("infill_wall_overlap");
             pc.brim_outer_only = kv["brim_type"] == "outer_only" && kv["brim_width"].parse::<f64>().expect("brim_width") > 0.;
+            pc.counterbore_hole_bridging = match kv["counterbore_hole_bridging"].as_str() {
+                "none" => CounterboreHoleBridgingOption::ChbNone,
+                "partiallybridge" => CounterboreHoleBridgingOption::ChbBridges,
+                "sacrificiallayer" => CounterboreHoleBridgingOption::ChbFilled,
+                other => panic!("counterbore_hole_bridging {other}"),
+            };
+            // To see what `process_no_bridge` does to the cases: without it they differ from the pin.
+            if no_counterbore {
+                pc.counterbore_hole_bridging = CounterboreHoleBridgingOption::ChbNone;
+            }
         };
         layerm.make_perimeters_with(&slices, height, layer_id, print_z, &patch).expect("make_perimeters");
 
@@ -849,15 +862,19 @@ fn perimeter_generator_process_native_parity() {
         eprintln!("{tag:<36} {n:>5}  {}", bad.iter().map(|b| format!("{b:>3}")).collect::<Vec<_>>().join(" "));
     }
     eprintln!("perimeter_generator process parity: {cases} cases; differing {}", PARTS.iter().zip(total.iter()).map(|(p, b)| format!("{p} {b}")).collect::<Vec<_>>().join(", "));
-    // The classic walls (`PerimeterGenerator::process_classic`, gate PG_CLASSIC_PIN) are equal to the
-    // pin in every case. The Arachne walls are reported above, not asserted: the live `process_arachne`
-    // is not yet the pin's.
-    if std::env::var("PG_CLASSIC_PIN").as_deref() != Ok("0") {
-        let classic: Vec<String> = stats
+    // The classic walls (`PerimeterGenerator::process_classic`, gate PG_CLASSIC_PIN) and the Arachne walls
+    // (`PerimeterGenerator::process_arachne`, gate PG_ARACHNE_PIN; `scaled<coord_t>(float)` of the wall
+    // parameters, gate ARACHNE_SCALED_FLOAT) are equal to the pin in every case, with the counterbore hole
+    // bridging of `process_no_bridge` among them.
+    for (gate, prefix) in [("PG_CLASSIC_PIN", "classic"), ("PG_ARACHNE_PIN", "arachne")] {
+        if std::env::var(gate).as_deref() == Ok("0") || (prefix == "arachne" && std::env::var("ARACHNE_SCALED_FLOAT").as_deref() == Ok("0")) {
+            continue;
+        }
+        let differing: Vec<String> = stats
             .iter()
-            .filter(|(tag, n, bad)| tag.starts_with("classic") && *n > 0 && bad.iter().sum::<usize>() > 0)
+            .filter(|(tag, n, bad)| tag.starts_with(prefix) && !(no_counterbore && tag.contains("counterbore")) && *n > 0 && bad.iter().sum::<usize>() > 0)
             .map(|(tag, _, bad)| format!("{tag} {bad:?}"))
             .collect();
-        assert!(classic.is_empty(), "classic cases differ from the pin: {}", classic.join("; "));
+        assert!(differing.is_empty(), "{prefix} cases differ from the pin: {}", differing.join("; "));
     }
 }

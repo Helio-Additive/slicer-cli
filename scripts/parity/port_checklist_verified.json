@@ -3628,5 +3628,74 @@
    "DistanceField::tryGetNextPoint",
    "DistanceField::update"
   ]
+ },
+ {
+  "unit": "ShortestPath",
+  "round": 922,
+  "evidence": "tests/shortest_path_native_parity.rs: 4,543 lines against the pin's ShortestPath.cpp compiled into the generator, none differ: chain_points 360, both greedy chains with and without a start point (4 x 360, the partial chains of the second variant included), chain_polylines 360, reorder_by_shortest_traverse 112, the 2-opt pass 112, minimum_crossover_cost 576 and do_crossover 576, reorder_by_two_exchanges_with_segment_flipping 240, chain_expolygons 80, chain_extrusion_paths with its reorder 240 + 240, chain_extrusion_entities, reorder_extrusion_entities and chain_and_reorder_extrusion_entities (183, 159, 240), chain_lines 30, chain_clipper_polynodes and chain_path_items 80 + 80, chain_print_object_instances on Prints of boxes 96 + 96. Inputs include shared end points, duplicates, grids and single items.",
+  "functions": [
+   "chain_polylines",
+   "reorder_by_shortest_traverse",
+   "chain_segments_greedy_constrained_reversals",
+   "chain_segments_greedy",
+   "chain_segments_greedy_constrained_reversals2",
+   "chain_segments_greedy2",
+   "chain_extrusion_entities",
+   "reorder_extrusion_entities",
+   "chain_and_reorder_extrusion_entities",
+   "chain_extrusion_paths",
+   "chain_and_reorder_extrusion_paths",
+   "chain_expolygons",
+   "chain_points",
+   "minimum_crossover_cost",
+   "do_crossover",
+   "reorder_by_two_exchanges_with_segment_flipping",
+   "improve_ordering_by_two_exchanges_with_segment_flipping",
+   "chain_path_items",
+   "chain_clipper_polynodes",
+   "chain_print_object_instances",
+   "chain_lines"
+  ]
+ },
+ {
+  "unit": "Fill/FillRectilinear",
+  "round": 922,
+  "evidence": "tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.",
+  "functions": [
+   "slice_region_by_vertical_lines",
+   "connect_segment_intersections_by_contours",
+   "pinch_contours_insert_phony_outer_intersections",
+   "traverse_graph_generate_polylines",
+   "FillGlobalMonotonicLine::global_monotonic_sweep",
+   "FillMonotonicLineWGapFill::global_monotonic_sweep",
+   "FillAlignedRectilinear::_layer_angle",
+   "FillCubic::_layer_angle",
+   "FillGrid::_layer_angle",
+   "FillStars::_layer_angle",
+   "FillSupportBase::_layer_angle",
+   "FillTriangles::_layer_angle",
+   "ExPolygonWithOffset::bounding_box_src",
+   "ExPolygonWithOffset::bounding_box_inner"
+  ]
+ },
+ {
+  "unit": "PerimeterGenerator",
+  "round": 922,
+  "evidence": "tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).",
+  "functions": [
+   "PerimeterGenerator::process_arachne",
+   "PerimeterGenerator::add_infill_contour_for_arachne",
+   "PerimeterGenerator::should_enable_top_one_wall",
+   "PerimeterGenerator::process_no_bridge"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupport3D",
+  "round": 922,
+  "evidence": "tests/tree_support_3d_native_parity.rs: 11,494 lines, every required line equal. New: organic_smooth_branches_avoid_collisions (the elements after the smoothing, 417 layers), draw_branches (the meshes of 18 scenarios) and organic_draw_branches with its helpers (elements 417, cooldown 361, bottom contacts 18, top contacts 48, intermediate layers 443 lines). Reported, not required: slice_branches' intermediate layers (2 of 433 lines, from the closing in make_expolygons of triangle_mesh_slicer.rs).",
+  "functions": [
+   "organic_smooth_branches_avoid_collisions",
+   "draw_branches"
+  ]
  }
 ]

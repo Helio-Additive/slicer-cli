@@ -973,6 +973,17 @@ impl LayerRegion {
             infill_wall_overlap_percent: object_config.infill_wall_overlap * 100.,
             // PerimeterGenerator.cpp:268-276 `is_enable_overhang_speed`: one extruder, no filament override.
             enable_overhang_speed: object_config.enable_overhang_speed,
+            // What `PerimeterGenerator::process_arachne` and `process_no_bridge` of the pin read beside the
+            // above (R922). PerimeterGenerator.cpp:652 `config->outer_wall_line_width`
+            outer_wall_line_width: config.outer_wall_line_width,
+            // PerimeterGenerator.cpp:1956 `config->counterbore_hole_bridging`: not among the options this
+            // crate's region config holds; the default of PrintConfig.cpp.
+            counterbore_hole_bridging: crate::print_config::enums::CounterboreHoleBridgingOption::ChbNone,
+            // PerimeterGenerator.cpp:1982 `config->bridge_angle`
+            bridge_angle: config.bridge_angle,
+            // LayerRegion.cpp:193 `g.slice_z = this->layer()->slice_z`: read by the fuzzy skin only, whose
+            // port here takes no z.
+            slice_z: 0.,
         };
 
         patch(&mut perimeter_config);
@@ -999,8 +1010,14 @@ impl LayerRegion {
         // the body it replaces (`PG_CLASSIC_PIN=0`: `generate` and `process_classic_legacy`).
         let classic_pin = crate::faithful_gate("PG_CLASSIC_PIN")
             && (object_config.perimeter_mode == crate::print_config::PerimeterMode::Classic || spiral_mode);
-        if classic_pin {
-            let result = generator.process_classic(&surface_fill.surfaces);
+        // R922 PG_ARACHNE_PIN (on unless =0): the Arachne walls by the port of the pin's `process_arachne`
+        // (PerimeterGenerator.cpp:1489-1848), compared with the pin over whole layers by the same test.
+        // `PG_ARACHNE_PIN=0` is the body it replaces (`generate` and `process_arachne_legacy`).
+        let arachne_pin = crate::faithful_gate("PG_ARACHNE_PIN")
+            && object_config.perimeter_mode == crate::print_config::PerimeterMode::Arachne
+            && !spiral_mode;
+        if classic_pin || arachne_pin {
+            let result = if arachne_pin { generator.process_arachne(&surface_fill.surfaces) } else { generator.process_classic(&surface_fill.surfaces) };
             // The islands of `loops` one after the other, as the body this replaces stores them: the
             // loop of a node is then the index among the walls of all islands.
             let mut nodes = result.loop_nodes;
@@ -1632,12 +1649,45 @@ impl LayerRegion {
         self.slices.set_expolygons(trimmed, SurfaceType::Internal);
     }
 
-    /// Apply elephant foot compensation
-    /// LayerRegion.cpp:537-570
-    /// Apply elephant foot compensation to the first layer slices.
-    /// LayerRegion.cpp:704-713
-    /// Shrinks perimeters inward by compensation_xy to reduce elephant foot effect.
-    pub fn elephant_foot_compensation_step(&mut self, compensation_xy: f64) {
+    /// LayerRegion.cpp:972-981 `void LayerRegion::elephant_foot_compensation_step(const float
+    /// elephant_foot_compensation_perimeter_step, const Polygons &trimming_polygons)` with the two arguments
+    /// as a pair, `layerm.elephant_foot_compensation_step((step, &trimming_polygons))`; with one `f64` it is
+    /// the shrink of the slices the slicing path of this crate has called by that name
+    /// ([`LayerRegion::elephant_foot_compensation_step_legacy`]).
+    pub fn elephant_foot_compensation_step<A: ElephantFootCompensationStepArgs>(&mut self, args: A) {
+        args.apply(self)
+    }
+
+    /// LayerRegion.cpp:972-981: the slices trimmed by the compensated outline, with what an opening by the
+    /// step removes of them put back (the thin parts the compensation would lose).
+    fn elephant_foot_compensation_step_pin(&mut self, elephant_foot_compensation_perimeter_step: f32, trimming_polygons: &Polygons) {
+        use crate::clipper::{ClipType, Paths};
+        use crate::clipper_utils as u;
+        use crate::clipper_utils::ApplySafetyOffset;
+        use crate::support::support_common::cu;
+        // `ClipperUtils::SurfacesProvider`: per surface its contour, then its holes.
+        let expolygons: ExPolygons = self.slices.surfaces.iter().map(|s| s.expolygon.clone()).collect();
+        let surfaces: Paths = cu::expolygons_provider(&expolygons);
+        let trimming: Paths = cu::polygons_provider(trimming_polygons);
+        // ClipperUtils.cpp:709 `intersection(const Surfaces &, const Polygons &)`
+        let mut tmp: Polygons = cu::clipper_paths(ClipType::ctIntersection, &surfaces, &trimming, ApplySafetyOffset::No);
+        // ClipperUtils.hpp:426, ClipperUtils.cpp:625-631 `opening(const Surfaces &, delta)`: shrunk, then
+        // expanded, by the same delta.
+        let delta = elephant_foot_compensation_perimeter_step as f64;
+        let opened: Paths = u::expand_paths::<Paths>(
+            &u::shrink_paths::<Paths>(&surfaces, delta, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT),
+            delta,
+            cu::DEFAULT_JOIN_TYPE,
+            cu::DEFAULT_MITER_LIMIT,
+        );
+        // ClipperUtils.cpp:693 `diff(const Surfaces &, const Polygons &)`
+        tmp.extend(cu::clipper_paths(ClipType::ctDifference, &surfaces, &opened, ApplySafetyOffset::No));
+        self.slices.set_expolygons(cu::union_ex(&tmp), SurfaceType::Internal);
+    }
+
+    /// The function the slicing path of this crate has called `elephant_foot_compensation_step`: the slices
+    /// shrunk inward by `compensation_xy` millimetres. It is not LayerRegion.cpp's function of that name.
+    pub fn elephant_foot_compensation_step_legacy(&mut self, compensation_xy: f64) {
         if compensation_xy <= 0.0 || self.slices.surfaces.is_empty() {
             return;
         }
@@ -1690,6 +1740,22 @@ impl LayerRegion {
     /// Layer.hpp:140
     pub fn has_extrusions(&self) -> bool {
         !self.perimeters.entities.is_empty() || !self.fills.entities.is_empty()
+    }
+}
+
+/// What [`LayerRegion::elephant_foot_compensation_step`] is called with: the pair of the pin's arguments
+/// (LayerRegion.cpp:972), or the one `f64` of the body this crate's slicing path calls.
+pub trait ElephantFootCompensationStepArgs {
+    fn apply(self, layerm: &mut LayerRegion);
+}
+impl ElephantFootCompensationStepArgs for f64 {
+    fn apply(self, layerm: &mut LayerRegion) {
+        layerm.elephant_foot_compensation_step_legacy(self)
+    }
+}
+impl ElephantFootCompensationStepArgs for (f32, &Polygons) {
+    fn apply(self, layerm: &mut LayerRegion) {
+        layerm.elephant_foot_compensation_step_pin(self.0, self.1)
     }
 }
 

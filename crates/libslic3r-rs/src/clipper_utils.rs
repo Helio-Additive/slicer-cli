@@ -139,18 +139,27 @@ pub fn intersection(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     intersection_clib(subject, clip)
 }
 
+/// `CLIPPER_DIFF_EMPTY_CLIP` (on unless `CLIPPER_DIFF_EMPTY_CLIP=0`): a difference with an empty clip runs
+/// Clipper, as `diff` / `diff_ex` of the pin always do (ClipperUtils.cpp:640-673: `_clipper` and
+/// `clipper_do_polytree` do not test for an empty clip, so the subject comes back unioned, with Clipper's
+/// orientation, vertex order and first vertices). With the gate off the earlier arm returns the subject as it is.
+#[inline]
+fn diff_empty_clip_returns_subject() -> bool {
+    !crate::faithful_gate("CLIPPER_DIFF_EMPTY_CLIP")
+}
+
 /// Compute the difference of two sets of polygons (subject - clip).
 ///
 /// C++ `diff_ex(ExPolygons, ExPolygons)` (ClipperUtils.cpp:755-756), which
 /// `difference_clib` is (R728).
 ///
-/// FIDELITY-NOTE: with an empty clip the subject is returned as it is; the C++
-/// unions it.
+/// With an empty clip the C++ unions the subject; so does this unless `CLIPPER_DIFF_EMPTY_CLIP=0`
+/// (the earlier arm: the subject returned as it is).
 pub fn difference(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         return subject.to_vec();
     }
     difference_clib(subject, clip)
@@ -466,7 +475,7 @@ pub fn diff_ex(
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         return subject.iter().map(|s| s.expolygon.clone()).collect();
     }
 
@@ -498,7 +507,7 @@ pub fn diff_ex_surfaces_expolygons(
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         return subject.iter().map(|s| s.expolygon.clone()).collect();
     }
 
@@ -523,7 +532,7 @@ pub fn diff_ex_polygons_surfaces(
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         // Convert polygons to expolygons (no holes)
         return subject.iter().map(|p| ExPolygon::new(p.clone())).collect();
     }
@@ -2190,7 +2199,7 @@ pub fn difference_polygons_clib(subject: &[Polygon], clip: &[ExPolygon]) -> Vec<
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         return subject.to_vec();
     }
     let (subject_xy, subject_lens, subject_num) = clib_flatten_polygons(subject);
@@ -2259,7 +2268,7 @@ pub fn difference_clib(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons 
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         return subject.to_vec();
     }
 
@@ -2361,7 +2370,7 @@ pub fn difference_clib_safety(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPo
     if subject.is_empty() {
         return vec![];
     }
-    if clip.is_empty() {
+    if clip.is_empty() && diff_empty_clip_returns_subject() {
         return subject.to_vec();
     }
 
@@ -4391,5 +4400,2510 @@ mod tests {
         let result = expolygons_to_polylines(&expolygons);
         // Should have 2 polylines: one for outer contour, one for hole
         assert_eq!(result.len(), 2);
+    }
+}
+
+// ============================================================================
+// ClipperUtils.hpp / ClipperUtils.cpp under their C++ names
+// ============================================================================
+
+/// ClipperUtils.hpp and ClipperUtils.cpp as the pin declares them: the paths providers of `namespace
+/// ClipperUtils`, the templates of ClipperUtils.cpp, and every overload of every function under its C++ name
+/// (an overload set is a trait, one implementation per overload, so the name is the C++ one), over the port
+/// of ClipperLib (`crate::clipper`). The functions above this module are the earlier, differently named entry
+/// points of the crate; they stay as they are.
+#[allow(non_snake_case, non_camel_case_types, clippy::too_many_arguments, clippy::type_complexity)]
+pub mod cpp {
+    use super::ApplySafetyOffset;
+    use crate::clipper::{ClipType, EndType, IntPoint, JoinType, Path, Paths, PolyFillType, PolyTree};
+    use crate::geometry::{ExPolygon, ExPolygons, Line, Lines, Point, Points, Polygon, Polygons, Polyline, Polylines};
+    use crate::surface::Surface;
+
+    /// The bounding box the functions of this module take: its `min` and `max` are read, as the C++ reads them.
+    pub type BoundingBox = crate::geometry::BoundingBox;
+
+    /// ClipperUtils.hpp:29 `static constexpr const float ClipperSafetyOffset = 10.f;`
+    pub const CLIPPER_SAFETY_OFFSET: f32 = 10.;
+    /// ClipperUtils.hpp:31 `DefaultJoinType`
+    pub const DEFAULT_JOIN_TYPE: JoinType = JoinType::jtMiter;
+    /// ClipperUtils.hpp:32 `DefaultEndType`
+    pub const DEFAULT_END_TYPE: EndType = EndType::etOpenButt;
+    /// ClipperUtils.hpp:33-37 `DefaultMiterLimit`
+    //FIXME evaluate the default miter limit. 3 seems to be extreme, Cura uses 1.2.
+    // Mitter Limit 3 is useful for perimeter generator, where sharp corners are extruded without needing a gap fill.
+    // However such a high limit causes issues with large positive or negative offsets, where a sharp corner
+    // is extended excessively.
+    pub const DEFAULT_MITER_LIMIT: f64 = 3.;
+    /// ClipperUtils.hpp:39 `DefaultLineJoinType`
+    pub const DEFAULT_LINE_JOIN_TYPE: JoinType = JoinType::jtSquare;
+    /// ClipperUtils.hpp:40-41 `DefaultLineMiterLimit`: Miter limit is ignored for jtSquare.
+    pub const DEFAULT_LINE_MITER_LIMIT: f64 = 0.;
+    /// ClipperUtils.hpp:43-44 `ClipperOffsetShortestEdgeFactor`: Decimation factor applied on input contour when
+    /// doing offset, multiplied by the offset distance.
+    pub const CLIPPER_OFFSET_SHORTEST_EDGE_FACTOR: f64 = 0.005;
+    /// libslic3r.h:58 `SCALED_EPSILON`: `scale_(1e-4)`
+    const SCALED_EPSILON: f64 = 1e-4 / 0.00001;
+
+    // `ClipperLib::Path` of a `Points`: the two are one type at the pin (clipper.hpp `typedef Slic3r::Points Path`).
+    fn path_of_points(points: &[Point]) -> Path {
+        points.iter().map(|p| IntPoint::new(p.x as i32, p.y as i32)).collect()
+    }
+    fn points_of_path(path: &Path) -> Points {
+        path.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect()
+    }
+
+    // Polygon.hpp:267-274 `inline Polygons to_polygons(const std::vector<Points> &paths)`: a polygon of every path.
+    fn to_polygons(paths: Paths) -> Polygons {
+        let mut out: Polygons = Vec::with_capacity(paths.len());
+        for path in &paths {
+            out.push(Polygon::from_points(points_of_path(path)));
+        }
+        out
+    }
+
+    // ClipperUtils.cpp:175-211 `static ExPolygons PolyTreeToExPolygons(ClipperLib::PolyTree &&polytree)`
+    fn poly_tree_to_ex_polygons(polytree: PolyTree) -> ExPolygons {
+        super::poly_tree_to_ex_polygons(&polytree)
+    }
+
+    // ClipperUtils.cpp:213-229 `Polylines PolyTreeToPolylines(ClipperLib::PolyTree &&polytree)`
+    fn poly_tree_to_polylines(polytree: PolyTree) -> Polylines {
+        super::poly_tree_to_polylines(&polytree).iter().map(|path| Polyline::from_points(points_of_path(path))).collect()
+    }
+
+    // ============================================================================
+    // namespace ClipperUtils: the paths providers (ClipperUtils.hpp:51-314)
+    // ============================================================================
+
+    /// What the templates of ClipperUtils.cpp take as a `PathsProvider`: the paths ClipperLib reads from it, in the
+    /// order of its iterator. A `ClipperLib::Paths` is one too.
+    pub trait Provider {
+        fn to_clipper_paths(&self) -> Paths;
+    }
+    impl Provider for Paths {
+        fn to_clipper_paths(&self) -> Paths {
+            self.clone()
+        }
+    }
+
+    /// ClipperUtils.hpp:52-59 `class PathsProviderIteratorBase` and the `iterator` of every provider: a position in
+    /// the paths of the provider. `cbegin()` is the first position, `cend()` the one behind the last.
+    #[derive(Debug, Clone)]
+    pub struct ProviderIterator<'a> {
+        m_paths: Vec<&'a [Point]>,
+        m_idx: usize,
+    }
+    impl<'a> ProviderIterator<'a> {
+        /// `const Points& operator*() const`
+        pub fn get(&self) -> &'a [Point] {
+            self.m_paths[self.m_idx]
+        }
+        /// `iterator& operator++()`
+        pub fn inc(&mut self) -> &mut Self {
+            self.m_idx += 1;
+            self
+        }
+    }
+    impl PartialEq for ProviderIterator<'_> {
+        /// `bool operator==(const iterator &rhs) const`
+        fn eq(&self, rhs: &Self) -> bool {
+            self.m_idx == rhs.m_idx
+        }
+    }
+    impl<'a> Iterator for ProviderIterator<'a> {
+        type Item = &'a [Point];
+        /// `const Points& operator++(int)`, until `cend()`
+        fn next(&mut self) -> Option<&'a [Point]> {
+            if self.m_idx < self.m_paths.len() {
+                let out = self.m_paths[self.m_idx];
+                self.m_idx += 1;
+                Some(out)
+            } else {
+                None
+            }
+        }
+    }
+    fn provider_paths<'a>(begin: ProviderIterator<'a>) -> Paths {
+        begin.map(path_of_points).collect()
+    }
+
+    /// ClipperUtils.hpp:61-81 `class EmptyPathsProvider`
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct EmptyPathsProvider;
+    impl EmptyPathsProvider {
+        pub fn new() -> Self {
+            EmptyPathsProvider
+        }
+        // all iterators point to end.
+        pub fn cend(&self) -> ProviderIterator<'static> {
+            ProviderIterator { m_paths: Vec::new(), m_idx: 0 }
+        }
+        pub fn end(&self) -> ProviderIterator<'static> {
+            self.cend()
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'static> {
+            self.cend()
+        }
+        pub fn begin(&self) -> ProviderIterator<'static> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            0
+        }
+    }
+    impl Provider for EmptyPathsProvider {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// ClipperUtils.hpp:83-108 `class SinglePathProvider`
+    #[derive(Debug, Clone, Copy)]
+    pub struct SinglePathProvider<'a> {
+        m_points: &'a [Point],
+    }
+    impl<'a> SinglePathProvider<'a> {
+        pub fn new(points: &'a [Point]) -> Self {
+            SinglePathProvider { m_points: points }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            ProviderIterator { m_paths: vec![self.m_points], m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            ProviderIterator { m_paths: vec![self.m_points], m_idx: 1 }
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            1
+        }
+    }
+    impl Provider for SinglePathProvider<'_> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// ClipperUtils.hpp:110-135 `template<typename PathType> class PathsProvider`, of `Points`
+    #[derive(Debug, Clone, Copy)]
+    pub struct PathsProvider<'a> {
+        m_paths: &'a [Points],
+    }
+    impl<'a> PathsProvider<'a> {
+        pub fn new(paths: &'a [Points]) -> Self {
+            PathsProvider { m_paths: paths }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            ProviderIterator { m_paths: self.m_paths.iter().map(|p| p.as_slice()).collect(), m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            let mut it = self.cbegin();
+            it.m_idx = it.m_paths.len();
+            it
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            self.m_paths.len()
+        }
+    }
+    impl Provider for PathsProvider<'_> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// What `MultiPointsProvider` is made over: a `MultiPoint`, its `points`.
+    pub trait MultiPointType {
+        fn points(&self) -> &[Point];
+    }
+    impl MultiPointType for Polygon {
+        fn points(&self) -> &[Point] {
+            &self.points
+        }
+    }
+    impl MultiPointType for Polyline {
+        fn points(&self) -> &[Point] {
+            &self.points
+        }
+    }
+
+    /// ClipperUtils.hpp:137-162 `template<typename MultiPointType> class MultiPointsProvider`
+    #[derive(Debug)]
+    pub struct MultiPointsProvider<'a, M: MultiPointType> {
+        m_multipoints: &'a [M],
+    }
+    impl<'a, M: MultiPointType> MultiPointsProvider<'a, M> {
+        pub fn new(multipoints: &'a [M]) -> Self {
+            MultiPointsProvider { m_multipoints: multipoints }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            ProviderIterator { m_paths: self.m_multipoints.iter().map(|m| m.points()).collect(), m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            let mut it = self.cbegin();
+            it.m_idx = it.m_paths.len();
+            it
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            self.m_multipoints.len()
+        }
+    }
+    impl<M: MultiPointType> Provider for MultiPointsProvider<'_, M> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// ClipperUtils.hpp:164 `using PolygonsProvider = MultiPointsProvider<Polygon>;`
+    pub type PolygonsProvider<'a> = MultiPointsProvider<'a, Polygon>;
+    /// ClipperUtils.hpp:165 `using PolylinesProvider = MultiPointsProvider<Polyline>;`
+    pub type PolylinesProvider<'a> = MultiPointsProvider<'a, Polyline>;
+
+    // The contour of an expolygon, then its holes.
+    fn expolygon_paths<'a>(expoly: &'a ExPolygon, out: &mut Vec<&'a [Point]>) {
+        out.push(&expoly.contour.points);
+        for hole in &expoly.holes {
+            out.push(&hole.points);
+        }
+    }
+
+    /// ClipperUtils.hpp:167-191 `struct ExPolygonProvider`
+    #[derive(Debug, Clone, Copy)]
+    pub struct ExPolygonProvider<'a> {
+        m_expoly: &'a ExPolygon,
+    }
+    impl<'a> ExPolygonProvider<'a> {
+        pub fn new(expoly: &'a ExPolygon) -> Self {
+            ExPolygonProvider { m_expoly: expoly }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            let mut paths = Vec::with_capacity(self.size());
+            expolygon_paths(self.m_expoly, &mut paths);
+            ProviderIterator { m_paths: paths, m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            let mut it = self.cbegin();
+            it.m_idx = self.m_expoly.holes.len() + 1;
+            it
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            self.m_expoly.holes.len() + 1
+        }
+    }
+    impl Provider for ExPolygonProvider<'_> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// ClipperUtils.hpp:193-232 `struct ExPolygonsProvider`
+    #[derive(Debug, Clone, Copy)]
+    pub struct ExPolygonsProvider<'a> {
+        m_expolygons: &'a [ExPolygon],
+        m_size: usize,
+    }
+    impl<'a> ExPolygonsProvider<'a> {
+        pub fn new(expolygons: &'a [ExPolygon]) -> Self {
+            let mut m_size = 0;
+            for expoly in expolygons {
+                m_size += expoly.holes.len() + 1;
+            }
+            ExPolygonsProvider { m_expolygons: expolygons, m_size }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            let mut paths = Vec::with_capacity(self.m_size);
+            for expoly in self.m_expolygons {
+                expolygon_paths(expoly, &mut paths);
+            }
+            ProviderIterator { m_paths: paths, m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            let mut it = self.cbegin();
+            it.m_idx = it.m_paths.len();
+            it
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            self.m_size
+        }
+    }
+    impl Provider for ExPolygonsProvider<'_> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// ClipperUtils.hpp:234-273 `struct SurfacesProvider`
+    #[derive(Debug, Clone, Copy)]
+    pub struct SurfacesProvider<'a> {
+        m_surfaces: &'a [Surface],
+        m_size: usize,
+    }
+    impl<'a> SurfacesProvider<'a> {
+        pub fn new(surfaces: &'a [Surface]) -> Self {
+            let mut m_size = 0;
+            for surface in surfaces {
+                m_size += surface.expolygon.holes.len() + 1;
+            }
+            SurfacesProvider { m_surfaces: surfaces, m_size }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            let mut paths = Vec::with_capacity(self.m_size);
+            for surface in self.m_surfaces {
+                expolygon_paths(&surface.expolygon, &mut paths);
+            }
+            ProviderIterator { m_paths: paths, m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            let mut it = self.cbegin();
+            it.m_idx = it.m_paths.len();
+            it
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            self.m_size
+        }
+    }
+    impl Provider for SurfacesProvider<'_> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    /// ClipperUtils.hpp:275-314 `struct SurfacesPtrProvider`
+    #[derive(Debug, Clone, Copy)]
+    pub struct SurfacesPtrProvider<'a> {
+        m_surfaces: &'a [&'a Surface],
+        m_size: usize,
+    }
+    impl<'a> SurfacesPtrProvider<'a> {
+        pub fn new(surfaces: &'a [&'a Surface]) -> Self {
+            let mut m_size = 0;
+            for surface in surfaces {
+                m_size += surface.expolygon.holes.len() + 1;
+            }
+            SurfacesPtrProvider { m_surfaces: surfaces, m_size }
+        }
+        pub fn cbegin(&self) -> ProviderIterator<'a> {
+            let mut paths = Vec::with_capacity(self.m_size);
+            for surface in self.m_surfaces {
+                expolygon_paths(&surface.expolygon, &mut paths);
+            }
+            ProviderIterator { m_paths: paths, m_idx: 0 }
+        }
+        pub fn begin(&self) -> ProviderIterator<'a> {
+            self.cbegin()
+        }
+        pub fn cend(&self) -> ProviderIterator<'a> {
+            let mut it = self.cbegin();
+            it.m_idx = it.m_paths.len();
+            it
+        }
+        pub fn end(&self) -> ProviderIterator<'a> {
+            self.cend()
+        }
+        pub fn size(&self) -> usize {
+            self.m_size
+        }
+    }
+    impl Provider for SurfacesPtrProvider<'_> {
+        fn to_clipper_paths(&self) -> Paths {
+            provider_paths(self.begin())
+        }
+    }
+
+    // ============================================================================
+    // namespace ClipperUtils: clip_clipper_polygon_with_subject_bbox (ClipperUtils.cpp:63-173)
+    // ============================================================================
+
+    /// ClipperUtils.hpp:317-319: For ClipperLib with Z coordinates. `using ZPoint = Vec3i32;`
+    pub type ZPoint = [i32; 3];
+    pub type ZPoints = Vec<ZPoint>;
+
+    /// The `PointType` of `clip_clipper_polygon_with_subject_bbox_templ`: a Point or a ZPoint, its x and y.
+    pub trait PointType: Clone {
+        fn x(&self) -> i64;
+        fn y(&self) -> i64;
+    }
+    impl PointType for Point {
+        fn x(&self) -> i64 {
+            self.x
+        }
+        fn y(&self) -> i64 {
+            self.y
+        }
+    }
+    impl PointType for ZPoint {
+        fn x(&self) -> i64 {
+            self[0] as i64
+        }
+        fn y(&self) -> i64 {
+            self[1] as i64
+        }
+    }
+
+    // Clip source polygon to be used as a clipping polygon with a bouding box around the source (to be clipped) polygon.
+    // Useful as an optimization for expensive ClipperLib operations, for example when clipping source polygons one by one
+    // with a set of polygons covering the whole layer below.
+    // ClipperUtils.cpp:66-118
+    // template<typename PointType> inline void clip_clipper_polygon_with_subject_bbox_templ(const std::vector<PointType> &src,
+    //     const BoundingBox &bbox, std::vector<PointType> &out, const bool get_entire_polygons=false)
+    pub fn clip_clipper_polygon_with_subject_bbox_templ<P: PointType>(src: &[P], bbox: &BoundingBox, out: &mut Vec<P>, get_entire_polygons: bool) {
+        out.clear();
+        let cnt = src.len();
+        if cnt < 3 {
+            return;
+        }
+
+        // enum class Side
+        const LEFT: i32 = 1;
+        const RIGHT: i32 = 2;
+        const TOP: i32 = 4;
+        const BOTTOM: i32 = 8;
+        let sides = |p: &P| -> i32 {
+            (p.x() < bbox.min.x) as i32 * LEFT + (p.x() > bbox.max.x) as i32 * RIGHT + (p.y() < bbox.min.y) as i32 * BOTTOM + (p.y() > bbox.max.y) as i32 * TOP
+        };
+
+        let mut sides_prev = sides(&src[cnt - 1]);
+        let mut sides_this = sides(&src[0]);
+        let last = cnt - 1;
+        for i in 0..last {
+            let sides_next = sides(&src[i + 1]);
+            if
+            // This point is inside. Take it.
+            sides_this == 0 ||
+                // Either this point is outside and previous or next is inside, or
+                // the edge possibly cuts corner of the bounding box.
+                (sides_prev & sides_this & sides_next) == 0
+            {
+                out.push(src[i].clone());
+                sides_prev = sides_this;
+            } else {
+                // All the three points (this, prev, next) are outside at the same side.
+                // Ignore this point.
+            }
+            sides_this = sides_next;
+        }
+
+        // Never produce just a single point output polygon.
+        if !out.is_empty() {
+            if get_entire_polygons {
+                *out = src.to_vec();
+            } else {
+                let sides_next = sides(&out[0]);
+                if
+                // The last point is inside. Take it.
+                sides_this == 0 ||
+                    // Either this point is outside and previous or next is inside, or
+                    // the edge possibly cuts corner of the bounding box.
+                    (sides_prev & sides_this & sides_next) == 0
+                {
+                    out.push(src[cnt - 1].clone());
+                }
+            }
+        }
+    }
+
+    /// The overloads of `clip_clipper_polygon_with_subject_bbox` that write into `out`.
+    pub trait ClipClipperPolygonInto<Out: ?Sized> {
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox, out: &mut Out, get_entire_polygons: bool);
+    }
+    // ClipperUtils.cpp:120
+    // `void clip_clipper_polygon_with_subject_bbox(const Points &src, const BoundingBox &bbox, Points &out, const bool get_entire_polygons)`
+    impl ClipClipperPolygonInto<Points> for [Point] {
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox, out: &mut Points, get_entire_polygons: bool) {
+            clip_clipper_polygon_with_subject_bbox_templ(self, bbox, out, get_entire_polygons);
+        }
+    }
+    // ClipperUtils.cpp:121
+    // `void clip_clipper_polygon_with_subject_bbox(const ZPoints &src, const BoundingBox &bbox, ZPoints &out)`: `get_entire_polygons`
+    // is the default of the template, false, whatever is handed in here.
+    impl ClipClipperPolygonInto<ZPoints> for [ZPoint] {
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox, out: &mut ZPoints, _get_entire_polygons: bool) {
+            clip_clipper_polygon_with_subject_bbox_templ(self, bbox, out, false);
+        }
+    }
+    // ClipperUtils.cpp:133-135
+    // `void clip_clipper_polygon_with_subject_bbox(const Polygon &src, const BoundingBox &bbox, Polygon &out)`: `get_entire_polygons`
+    // is the default of the overload of Points, false, whatever is handed in here.
+    impl ClipClipperPolygonInto<Polygon> for Polygon {
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox, out: &mut Polygon, _get_entire_polygons: bool) {
+            ClipClipperPolygonInto::clip_clipper_polygon_with_subject_bbox(self.points.as_slice(), bbox, &mut out.points, false);
+        }
+    }
+
+    /// The second `clip_clipper_polygon_with_subject_bbox_templ` and the overloads of
+    /// `clip_clipper_polygon_with_subject_bbox` that return the clipped points.
+    pub trait ClipClipperPolygon {
+        type Output;
+        fn clip_clipper_polygon_with_subject_bbox_templ(&self, bbox: &BoundingBox) -> Self::Output;
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox) -> Self::Output;
+    }
+    impl ClipClipperPolygon for [Point] {
+        type Output = Points;
+        // ClipperUtils.cpp:123-128
+        // `template<typename PointType> std::vector<PointType> clip_clipper_polygon_with_subject_bbox_templ(const std::vector<PointType> &src, const BoundingBox &bbox)`
+        fn clip_clipper_polygon_with_subject_bbox_templ(&self, bbox: &BoundingBox) -> Points {
+            let mut out: Points = Vec::new();
+            ClipClipperPolygonInto::clip_clipper_polygon_with_subject_bbox(self, bbox, &mut out, false);
+            out
+        }
+        // ClipperUtils.cpp:130 `Points clip_clipper_polygon_with_subject_bbox(const Points &src, const BoundingBox &bbox)`
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox) -> Points {
+            ClipClipperPolygon::clip_clipper_polygon_with_subject_bbox_templ(self, bbox)
+        }
+    }
+    impl ClipClipperPolygon for [ZPoint] {
+        type Output = ZPoints;
+        // ClipperUtils.cpp:123-128, of ZPoints
+        fn clip_clipper_polygon_with_subject_bbox_templ(&self, bbox: &BoundingBox) -> ZPoints {
+            let mut out: ZPoints = Vec::new();
+            ClipClipperPolygonInto::clip_clipper_polygon_with_subject_bbox(self, bbox, &mut out, false);
+            out
+        }
+        // ClipperUtils.cpp:131 `ZPoints clip_clipper_polygon_with_subject_bbox(const ZPoints &src, const BoundingBox &bbox)`
+        fn clip_clipper_polygon_with_subject_bbox(&self, bbox: &BoundingBox) -> ZPoints {
+            ClipClipperPolygon::clip_clipper_polygon_with_subject_bbox_templ(self, bbox)
+        }
+    }
+
+    // ClipperUtils.cpp:137-142
+    // `Polygon clip_clipper_polygon_with_subject_bbox(const Polygon &src, const BoundingBox &bbox, const bool get_entire_polygons)`
+    pub fn clip_clipper_polygon_with_subject_bbox(src: &Polygon, bbox: &BoundingBox, get_entire_polygons: bool) -> Polygon {
+        let mut out = Polygon::from_points(Vec::new());
+        ClipClipperPolygonInto::clip_clipper_polygon_with_subject_bbox(src.points.as_slice(), bbox, &mut out.points, get_entire_polygons);
+        out
+    }
+
+    /// `clip_clipper_polygons_with_subject_bbox` of ClipperUtils.hpp:330-332: one implementation for every overload.
+    pub trait ClipClipperPolygons {
+        fn clip_clipper_polygons_with_subject_bbox(&self, bbox: &BoundingBox, get_entire_polygons: bool) -> Polygons;
+    }
+    // ClipperUtils.cpp:144-151
+    // `Polygons clip_clipper_polygons_with_subject_bbox(const Polygons &src, const BoundingBox &bbox)`: without `get_entire_polygons`,
+    // which is the default of the overload of a Polygon, false, whatever is handed in here.
+    impl ClipClipperPolygons for [Polygon] {
+        fn clip_clipper_polygons_with_subject_bbox(&self, bbox: &BoundingBox, _get_entire_polygons: bool) -> Polygons {
+            let mut out: Polygons = Vec::with_capacity(self.len());
+            for p in self {
+                out.push(clip_clipper_polygon_with_subject_bbox(p, bbox, false));
+            }
+            out.retain(|polygon| !polygon.points.is_empty());
+            out
+        }
+    }
+    // ClipperUtils.cpp:152-160
+    // `Polygons clip_clipper_polygons_with_subject_bbox(const ExPolygon &src, const BoundingBox &bbox, const bool get_entire_polygons)`
+    impl ClipClipperPolygons for ExPolygon {
+        fn clip_clipper_polygons_with_subject_bbox(&self, bbox: &BoundingBox, get_entire_polygons: bool) -> Polygons {
+            let mut out: Polygons = Vec::with_capacity(self.holes.len() + 1);
+            out.push(clip_clipper_polygon_with_subject_bbox(&self.contour, bbox, get_entire_polygons));
+            for p in &self.holes {
+                out.push(clip_clipper_polygon_with_subject_bbox(p, bbox, get_entire_polygons));
+            }
+            out.retain(|polygon| !polygon.points.is_empty());
+            out
+        }
+    }
+    // ClipperUtils.cpp:161-172
+    // `Polygons clip_clipper_polygons_with_subject_bbox(const ExPolygons &src, const BoundingBox &bbox, const bool get_entire_polygons)`
+    impl ClipClipperPolygons for [ExPolygon] {
+        fn clip_clipper_polygons_with_subject_bbox(&self, bbox: &BoundingBox, get_entire_polygons: bool) -> Polygons {
+            let mut out: Polygons = Vec::new();
+            for p in self {
+                let temp = ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(p, bbox, get_entire_polygons);
+                out.extend(temp);
+            }
+
+            out.retain(|polygon| !polygon.points.is_empty());
+            out
+        }
+    }
+
+    // ============================================================================
+    // ClipperUtils.cpp:231-268 has_duplicate_points(const ClipperLib::PolyTree &)
+    // ============================================================================
+
+    // Point.hpp:323-327 `inline bool has_duplicate_points(const std::vector<Point> &pts)` over Point.cpp:225-232: the
+    // points are copied, sorted and checked for duplicates globally.
+    fn has_duplicate_points_path(pts: &Path) -> bool {
+        let mut cpy: Vec<(i32, i32)> = pts.iter().map(|p| (p.x, p.y)).collect();
+        cpy.sort();
+        for i in 1..cpy.len() {
+            if cpy[i - 1] == cpy[i] {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The `#if 0` arm of ClipperUtils.cpp:231-247, which the pin does not compile: the global test.
+    pub mod global_test {
+        use super::{Path, PolyTree};
+        // ClipperUtils.cpp:233-247 `bool has_duplicate_points(const ClipperLib::PolyTree &polytree)`
+        pub fn has_duplicate_points(polytree: &PolyTree) -> bool {
+            // static void collect_points_recursive(const ClipperLib::PolyNode &polynode, ClipperLib::Path &out)
+            fn collect_points_recursive(polytree: &PolyTree, polynode: usize, out: &mut Path) {
+                // For each hole of the current expolygon:
+                let node = polytree.node(polynode);
+                out.extend(node.contour.iter().cloned());
+                for i in 0..node.child_count() as usize {
+                    collect_points_recursive(polytree, node.childs[i], out);
+                }
+            }
+            let mut pts = Path::new();
+            for i in 0..polytree.child_count() as usize {
+                collect_points_recursive(polytree, polytree.root.childs[i], &mut pts);
+            }
+            // Point.cpp:225-232 `bool has_duplicate_points(std::vector<Point> &&pts)`: sorted, a point equal to its neighbour
+            let mut pts: Vec<(i32, i32)> = pts.iter().map(|p| (p.x, p.y)).collect();
+            pts.sort();
+            for i in 1..pts.len() {
+                if pts[i - 1] == pts[i] {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
+    // Local test inside each of the contours.
+    // ClipperUtils.cpp:250-267 `bool has_duplicate_points(const ClipperLib::PolyTree &polytree)`
+    pub fn has_duplicate_points(polytree: &PolyTree) -> bool {
+        // static bool has_duplicate_points_recursive(const ClipperLib::PolyNode &polynode)
+        fn has_duplicate_points_recursive(polytree: &PolyTree, polynode: usize) -> bool {
+            let node = polytree.node(polynode);
+            if has_duplicate_points_path(&node.contour) {
+                return true;
+            }
+            for i in 0..node.child_count() as usize {
+                if has_duplicate_points_recursive(polytree, node.childs[i]) {
+                    return true;
+                }
+            }
+            false
+        }
+        for i in 0..polytree.child_count() as usize {
+            if has_duplicate_points_recursive(polytree, polytree.root.childs[i]) {
+                return true;
+            }
+        }
+        false
+    }
+
+    // For debugging the Clipper library, for providing bug reports to the Clipper author.
+    // ClipperUtils.cpp:26-57 (under CLIPPER_UTILS_DEBUG, which the pin does not define)
+    // `bool export_clipper_input_polygons_bin(const char *path, const ClipperLib::Paths &input_subject, const ClipperLib::Paths &input_clip)`
+    pub fn export_clipper_input_polygons_bin(path: &std::path::Path, input_subject: &Paths, input_clip: &Paths) -> bool {
+        use std::io::Write;
+        let Ok(mut pfile) = std::fs::File::create(path) else {
+            return false;
+        };
+        let mut bytes: Vec<u8> = Vec::new();
+        // `fwrite(path.data(), sizeof(ClipperLib::IntPoint), sz, pfile)`: the two ints of every point
+        let mut write_paths = |paths: &Paths| {
+            let sz = paths.len() as u32;
+            bytes.extend_from_slice(&sz.to_ne_bytes());
+            for path in paths {
+                let sz = path.len() as u32;
+                bytes.extend_from_slice(&sz.to_ne_bytes());
+                for p in path {
+                    bytes.extend_from_slice(&p.x.to_ne_bytes());
+                    bytes.extend_from_slice(&p.y.to_ne_bytes());
+                }
+            }
+        };
+        write_paths(input_subject);
+        write_paths(input_clip);
+        pfile.write_all(&bytes).is_ok()
+    }
+
+    // ============================================================================
+    // The templates of ClipperUtils.cpp over the providers (ClipperUtils.cpp:270-408, 508-557, 633-673, 737-739,
+    // 840-907). The offsets are the `float` of the C++; `super::` has the bodies, over `ClipperLib::Paths`.
+    // ============================================================================
+
+    // Offset CCW contours outside, CW contours (holes) inside.
+    // Don't calculate union of the output paths.
+    // ClipperUtils.cpp:272-300
+    pub fn raw_offset<P: Provider + ?Sized>(paths: &P, offset: f32, join_type: JoinType, miter_limit: f64, end_type: EndType) -> Paths {
+        super::raw_offset(&paths.to_clipper_paths(), offset as f64, join_type, miter_limit, end_type)
+    }
+
+    // Offset outside by 10um, one by one.
+    // ClipperUtils.cpp:303-307
+    pub fn safety_offset<P: Provider + ?Sized>(paths: &P) -> Paths {
+        raw_offset(paths, CLIPPER_SAFETY_OFFSET, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT, EndType::etClosedPolygon)
+    }
+
+    // ClipperUtils.cpp:324-337, the overload with `do_safety_offset` (the one without it is `super::clipper_do`)
+    pub fn clipper_do<TResult: super::ClipperResult, TSubj: Provider + ?Sized, TClip: Provider + ?Sized>(
+        clip_type: ClipType,
+        subject: &TSubj,
+        clip: &TClip,
+        fill_type: PolyFillType,
+        do_safety_offset: ApplySafetyOffset,
+    ) -> TResult {
+        // Safety offset only allowed on intersection and difference.
+        debug_assert!(do_safety_offset == ApplySafetyOffset::No || clip_type != ClipType::ctUnion);
+        if do_safety_offset == ApplySafetyOffset::Yes {
+            super::clipper_do::<TResult>(clip_type, &subject.to_clipper_paths(), &safety_offset(clip), fill_type)
+        } else {
+            super::clipper_do::<TResult>(clip_type, &subject.to_clipper_paths(), &clip.to_clipper_paths(), fill_type)
+        }
+    }
+
+    // ClipperUtils.cpp:339-350
+    pub fn clipper_union<TResult: super::ClipperResult, TSubj: Provider + ?Sized>(
+        subject: &TSubj,
+        // fillType pftNonZero and pftPositive "should" produce the same result for "normalized with implicit union" set of polygons
+        fill_type: PolyFillType,
+    ) -> TResult {
+        super::clipper_union::<TResult>(&subject.to_clipper_paths(), fill_type)
+    }
+
+    // ClipperUtils.cpp:359-364
+    pub fn raw_offset_polyline<P: Provider + ?Sized>(paths: &P, offset: f32, join_type: JoinType, miter_limit: f64, end_type: EndType) -> Paths {
+        debug_assert!(offset > 0.);
+        raw_offset(paths, offset, join_type, miter_limit, end_type)
+    }
+
+    // ClipperUtils.cpp:366-372
+    pub fn expand_paths<TResult: super::ClipperResult, P: Provider + ?Sized>(paths: &P, offset: f32, join_type: JoinType, miter_limit: f64) -> TResult {
+        // BBS
+        //assert(offset > 0);
+        super::expand_paths::<TResult>(&paths.to_clipper_paths(), offset as f64, join_type, miter_limit)
+    }
+
+    // ClipperUtils.cpp:381-397
+    pub fn shrink_paths<TResult: super::ClipperResult, P: Provider + ?Sized>(paths: &P, offset: f32, join_type: JoinType, miter_limit: f64) -> TResult {
+        // BBS
+        //assert(offset > 0);
+        super::shrink_paths::<TResult>(&paths.to_clipper_paths(), offset as f64, join_type, miter_limit)
+    }
+
+    // ClipperUtils.cpp:399-408
+    pub fn offset_paths<TResult: super::ClipperResult, P: Provider + ?Sized>(paths: &P, offset: f32, join_type: JoinType, miter_limit: f64) -> TResult {
+        // BBS
+        //assert(offset != 0);
+
+        if offset > 0. {
+            expand_paths::<TResult, P>(paths, offset, join_type, miter_limit)
+        } else {
+            shrink_paths::<TResult, P>(paths, -offset, join_type, miter_limit)
+        }
+    }
+
+    /// `offset_expolygon_inner` of ClipperUtils.cpp:436-511: one implementation for every overload.
+    pub trait OffsetExpolygonInner {
+        // returns number of expolygons collected (0 or 1).
+        fn offset_expolygon_inner(&self, delta: f32, join_type: JoinType, miter_limit: f64, out: &mut Paths) -> i32;
+    }
+    // ClipperUtils.cpp:437-506
+    // `static int offset_expolygon_inner(const Slic3r::ExPolygon &expoly, const float delta, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::Paths &out)`
+    impl OffsetExpolygonInner for ExPolygon {
+        fn offset_expolygon_inner(&self, delta: f32, join_type: JoinType, miter_limit: f64, out: &mut Paths) -> i32 {
+            let holes: Paths = self.holes.iter().map(|hole| path_of_points(&hole.points)).collect();
+            super::offset_expolygon_inner(&path_of_points(&self.contour.points), &holes, delta as f64, join_type, miter_limit, out)
+        }
+    }
+    // ClipperUtils.cpp:508-509
+    // `static int offset_expolygon_inner(const Slic3r::Surface &surface, ...)`
+    impl OffsetExpolygonInner for Surface {
+        fn offset_expolygon_inner(&self, delta: f32, join_type: JoinType, miter_limit: f64, out: &mut Paths) -> i32 {
+            OffsetExpolygonInner::offset_expolygon_inner(&self.expolygon, delta, join_type, miter_limit, out)
+        }
+    }
+    // ClipperUtils.cpp:510-511
+    // `static int offset_expolygon_inner(const Slic3r::Surface *surface, ...)`
+    impl OffsetExpolygonInner for &Surface {
+        fn offset_expolygon_inner(&self, delta: f32, join_type: JoinType, miter_limit: f64, out: &mut Paths) -> i32 {
+            OffsetExpolygonInner::offset_expolygon_inner(&self.expolygon, delta, join_type, miter_limit, out)
+        }
+    }
+
+    // ClipperUtils.cpp:513-518
+    pub fn expolygon_offset(expolygon: &ExPolygon, delta: f32, join_type: JoinType, miter_limit: f64) -> Paths {
+        let mut out = Paths::new();
+        OffsetExpolygonInner::offset_expolygon_inner(expolygon, delta, join_type, miter_limit, &mut out);
+        out
+    }
+
+    // This is a safe variant of the polygons offset, tailored for multiple ExPolygons.
+    // It is required, that the input expolygons do not overlap and that the holes of each ExPolygon don't intersect with their respective outer contours.
+    // Each ExPolygon is offsetted separately. For outer offset, the the offsetted ExPolygons shall be united outside of this function.
+    // ClipperUtils.cpp:523-535
+    pub fn expolygons_offset_raw<E: OffsetExpolygonInner>(expolygons: &[E], delta: f32, join_type: JoinType, miter_limit: f64) -> (Paths, usize) {
+        // Offsetted ExPolygons before they are united.
+        let mut output = Paths::new();
+        output.reserve(expolygons.len());
+        // How many non-empty offsetted expolygons were actually collected into output?
+        // If only one, then there is no need to do a final union.
+        let mut expolygons_collected: usize = 0;
+        for expoly in expolygons {
+            expolygons_collected += expoly.offset_expolygon_inner(delta, join_type, miter_limit, &mut output) as usize;
+        }
+        (output, expolygons_collected)
+    }
+
+    // See comment on expolygon_offsets_raw. In addition, for positive offset the contours are united.
+    // ClipperUtils.cpp:538-548
+    pub fn expolygons_offset<E: OffsetExpolygonInner>(expolygons: &[E], delta: f32, join_type: JoinType, miter_limit: f64) -> Paths {
+        let (output, expolygons_collected) = expolygons_offset_raw(expolygons, delta, join_type, miter_limit);
+        // Unite the offsetted expolygons.
+        if expolygons_collected > 1 && delta > 0. {
+            // There is a chance that the outwards offsetted expolygons may intersect. Perform a union.
+            clipper_union::<Paths, _>(&output, PolyFillType::pftNonZero)
+        } else {
+            // Negative offset. The shrunk expolygons shall not mutually intersect. Just copy the output.
+            output
+        }
+    }
+
+    // See comment on expolygons_offset_raw. In addition, the polygons are always united to conver to polytree.
+    // ClipperUtils.cpp:551-557
+    pub fn expolygons_offset_pt<E: OffsetExpolygonInner>(expolygons: &[E], delta: f32, join_type: JoinType, miter_limit: f64) -> PolyTree {
+        let (output, _expolygons_collected) = expolygons_offset_raw(expolygons, delta, join_type, miter_limit);
+        // Unite the offsetted expolygons for both the
+        clipper_union::<PolyTree, _>(&output, PolyFillType::pftNonZero)
+    }
+
+    // Fix of #117: A large fractal pyramid takes ages to slice
+    // The Clipper library has difficulties processing overlapping polygons.
+    // Namely, the function ClipperLib::JoinCommonEdges() has potentially a terrible time complexity if the output
+    // of the operation is of the PolyTree type.
+    // This function implemenets a following workaround:
+    // 1) Peform the Clipper operation with the output to Paths. This method handles overlaps in a reasonable time.
+    // 2) Run Clipper Union once again to extract the PolyTree from the result of 1).
+    // ClipperUtils.cpp:655-667, the overload with `do_safety_offset` (the one without it is `super::clipper_do_polytree`)
+    pub fn clipper_do_polytree<PathProvider1: Provider + ?Sized, PathProvider2: Provider + ?Sized>(
+        clip_type: ClipType,
+        subject: &PathProvider1,
+        clip: &PathProvider2,
+        fill_type: PolyFillType,
+        do_safety_offset: ApplySafetyOffset,
+    ) -> PolyTree {
+        debug_assert!(do_safety_offset == ApplySafetyOffset::No || clip_type != ClipType::ctUnion);
+        if do_safety_offset == ApplySafetyOffset::Yes {
+            super::clipper_do_polytree(clip_type, &subject.to_clipper_paths(), &safety_offset(clip), fill_type)
+        } else {
+            super::clipper_do_polytree(clip_type, &subject.to_clipper_paths(), &clip.to_clipper_paths(), fill_type)
+        }
+    }
+
+    // ClipperUtils.cpp:669-673
+    pub fn _clipper<TSubj: Provider + ?Sized, TClip: Provider + ?Sized>(clip_type: ClipType, subject: &TSubj, clip: &TClip, do_safety_offset: ApplySafetyOffset) -> Polygons {
+        to_polygons(clipper_do::<Paths, TSubj, TClip>(clip_type, subject, clip, PolyFillType::pftNonZero, do_safety_offset))
+    }
+
+    // ClipperUtils.cpp:737-739
+    pub fn _clipper_ex<TSubject: Provider + ?Sized, TClip: Provider + ?Sized>(
+        clip_type: ClipType,
+        subject: &TSubject,
+        clip: &TClip,
+        do_safety_offset: ApplySafetyOffset,
+        fill_type: PolyFillType,
+    ) -> ExPolygons {
+        poly_tree_to_ex_polygons(clipper_do_polytree(clip_type, subject, clip, fill_type, do_safety_offset))
+    }
+
+    // ClipperUtils.cpp:840-849
+    pub fn _clipper_pl_open<PathsProvider1: Provider + ?Sized, PathsProvider2: Provider + ?Sized>(clip_type: ClipType, subject: &PathsProvider1, clip: &PathsProvider2) -> Polylines {
+        let mut clipper = crate::clipper::Clipper::new(0);
+        clipper.add_paths(&subject.to_clipper_paths(), crate::clipper::PolyType::ptSubject, false);
+        clipper.add_paths(&clip.to_clipper_paths(), crate::clipper::PolyType::ptClip, true);
+        let mut retval = PolyTree::new();
+        clipper.execute_poly_tree(clip_type, &mut retval, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+        poly_tree_to_polylines(retval)
+    }
+
+    // If the split_at_first_point() call above happens to split the polygon inside the clipping area
+    // we would get two consecutive polylines instead of a single one, so we go through them in order
+    // to recombine continuous polylines.
+    // ClipperUtils.cpp:854-887
+    pub fn _clipper_pl_recombine(polylines: &mut Polylines) {
+        let mut i = 0;
+        while i < polylines.len() {
+            let mut j = i + 1;
+            while j < polylines.len() {
+                let (i_front, i_back) = (polylines[i].points[0], polylines[i].points[polylines[i].points.len() - 1]);
+                let (j_front, j_back) = (polylines[j].points[0], polylines[j].points[polylines[j].points.len() - 1]);
+                if i_back == j_front {
+                    /* If last point of i coincides with first point of j,
+                    append points of j to i and delete j */
+                    let tail: Points = polylines[j].points[1..].to_vec();
+                    polylines[i].points.extend(tail);
+                    polylines.remove(j);
+                    // `--j` and the `++j` of the loop
+                    continue;
+                } else if i_front == j_back {
+                    /* If first point of i coincides with last point of j,
+                    prepend points of j to i and delete j */
+                    let n = polylines[j].points.len();
+                    let head: Points = polylines[j].points[..n - 1].to_vec();
+                    polylines[i].points.splice(0..0, head);
+                    polylines.remove(j);
+                    continue;
+                } else if i_front == j_front {
+                    /* Since Clipper does not preserve orientation of polylines,
+                    also check the case when first point of i coincides with first point of j. */
+                    polylines[j].points.reverse();
+                    let n = polylines[j].points.len();
+                    let head: Points = polylines[j].points[..n - 1].to_vec();
+                    polylines[i].points.splice(0..0, head);
+                    polylines.remove(j);
+                    continue;
+                } else if i_back == j_back {
+                    /* Since Clipper does not preserve orientation of polylines,
+                    also check the case when last point of i coincides with last point of j. */
+                    polylines[j].points.reverse();
+                    let tail: Points = polylines[j].points[1..].to_vec();
+                    polylines[i].points.extend(tail);
+                    polylines.remove(j);
+                    continue;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+    }
+
+    // ClipperUtils.cpp:889-907
+    pub fn _clipper_pl_closed<PathProvider1: Provider + ?Sized, PathProvider2: Provider + ?Sized>(clip_type: ClipType, subject: &PathProvider1, clip: &PathProvider2) -> Polylines {
+        // Transform input polygons into open paths.
+        let subject = subject.to_clipper_paths();
+        let mut paths = Paths::new();
+        paths.reserve(subject.len());
+        for poly in &subject {
+            // Emplace polygon, duplicate the 1st point.
+            let mut path: Path = poly.clone();
+            // (`poly.front()` of a polygon without points is not defined in the C++; nothing is added here)
+            if let Some(front) = poly.first() {
+                path.push(*front);
+            }
+            paths.push(path);
+        }
+        // perform clipping
+        let mut retval = _clipper_pl_open(clip_type, &paths, clip);
+        _clipper_pl_recombine(&mut retval);
+        retval
+    }
+
+    // ============================================================================
+    // The functions of ClipperUtils.hpp, one implementation for every overload
+    // ============================================================================
+
+    /// `diff` of ClipperUtils.hpp: one implementation for every overload. Safety offset is applied to the clipping polygons only.
+    pub trait Diff<Clip: ?Sized> {
+        fn diff(&self, clip: &Clip, do_safety_offset: ApplySafetyOffset) -> Polygons;
+    }
+    // ClipperUtils.cpp:675-676 `diff(const Polygon &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl Diff<Polygon> for Polygon {
+        fn diff(&self, clip: &Polygon, do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctDifference, &SinglePathProvider::new(&self.points), &SinglePathProvider::new(&clip.points), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:677-678 `diff(const Polygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Diff<[Polygon]> for [Polygon] {
+        fn diff(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctDifference, &PolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:687-688 `diff(const Polygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Diff<[ExPolygon]> for [Polygon] {
+        fn diff(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctDifference, &PolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:689-690 `diff(const ExPolygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Diff<[Polygon]> for [ExPolygon] {
+        fn diff(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctDifference, &ExPolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:691-692 `diff(const ExPolygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Diff<[ExPolygon]> for [ExPolygon] {
+        fn diff(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctDifference, &ExPolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:693-694 `diff(const Surfaces &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Diff<[Polygon]> for [Surface] {
+        fn diff(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctDifference, &SurfacesProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+
+    /// `intersection` of ClipperUtils.hpp: one implementation for every overload. Safety offset is applied to the clipping polygons only.
+    pub trait Intersection<Clip: ?Sized> {
+        fn intersection(&self, clip: &Clip, do_safety_offset: ApplySafetyOffset) -> Polygons;
+    }
+    // ClipperUtils.cpp:695-696 `intersection(const Polygon &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<Polygon> for Polygon {
+        fn intersection(&self, clip: &Polygon, do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &SinglePathProvider::new(&self.points), &SinglePathProvider::new(&clip.points), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:699-700 `intersection(const Polygons &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<ExPolygon> for [Polygon] {
+        fn intersection(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &PolygonsProvider::new(self), &ExPolygonProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:701-702 `intersection(const Polygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<[Polygon]> for [Polygon] {
+        fn intersection(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &PolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:703-704 `intersection(const ExPolygon &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<ExPolygon> for ExPolygon {
+        fn intersection(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &ExPolygonProvider::new(self), &ExPolygonProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:705-706 `intersection(const ExPolygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<[Polygon]> for [ExPolygon] {
+        fn intersection(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &ExPolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:707-708 `intersection(const ExPolygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<[ExPolygon]> for [ExPolygon] {
+        fn intersection(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &ExPolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:709-710 `intersection(const Surfaces &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<[Polygon]> for [Surface] {
+        fn intersection(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &SurfacesProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:711-712 `intersection(const Surfaces &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<[ExPolygon]> for [Surface] {
+        fn intersection(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            _clipper(ClipType::ctIntersection, &SurfacesProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:714-719 `intersection(const Polygons &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl Intersection<Polygon> for [Polygon] {
+        fn intersection(&self, clip: &Polygon, do_safety_offset: ApplySafetyOffset) -> Polygons {
+            let mut clip_temp: Polygons = Vec::new();
+            clip_temp.push(clip.clone());
+            Intersection::intersection(self, clip_temp.as_slice(), do_safety_offset)
+        }
+    }
+
+    /// `diff_ex` of ClipperUtils.hpp: one implementation for every overload. Safety offset is applied to the clipping polygons only.
+    pub trait DiffEx<Clip: ?Sized> {
+        fn diff_ex(&self, clip: &Clip, do_safety_offset: ApplySafetyOffset) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:741-742 `diff_ex(const Polygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Polygon]> for [Polygon] {
+        fn diff_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &PolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:743-744 `diff_ex(const Polygons &subject, const Surfaces &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Surface]> for [Polygon] {
+        fn diff_ex(&self, clip: &[Surface], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &PolygonsProvider::new(self), &SurfacesProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:745-746 `diff_ex(const Polygon &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[ExPolygon]> for Polygon {
+        fn diff_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &SinglePathProvider::new(&self.points), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:747-748 `diff_ex(const Polygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[ExPolygon]> for [Polygon] {
+        fn diff_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &PolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:749-750 `diff_ex(const ExPolygon &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<Polygon> for ExPolygon {
+        fn diff_ex(&self, clip: &Polygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &ExPolygonProvider::new(self), &SinglePathProvider::new(&clip.points), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:751-752 `diff_ex(const ExPolygon &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Polygon]> for ExPolygon {
+        fn diff_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &ExPolygonProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:753-754 `diff_ex(const ExPolygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Polygon]> for [ExPolygon] {
+        fn diff_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &ExPolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:755-756 `diff_ex(const ExPolygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[ExPolygon]> for [ExPolygon] {
+        fn diff_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &ExPolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:757-758 `diff_ex(const Surfaces &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Polygon]> for [Surface] {
+        fn diff_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &SurfacesProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:759-760 `diff_ex(const Surfaces &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[ExPolygon]> for [Surface] {
+        fn diff_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &SurfacesProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:761-762 `diff_ex(const ExPolygons &subject, const Surfaces &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Surface]> for [ExPolygon] {
+        fn diff_ex(&self, clip: &[Surface], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &ExPolygonsProvider::new(self), &SurfacesProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:763-764 `diff_ex(const Surfaces &subject, const Surfaces &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Surface]> for [Surface] {
+        fn diff_ex(&self, clip: &[Surface], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &SurfacesProvider::new(self), &SurfacesProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:765-766 `diff_ex(const SurfacesPtr &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl<'s> DiffEx<[Polygon]> for [&'s Surface] {
+        fn diff_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &SurfacesPtrProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:767-768 `diff_ex(const SurfacesPtr &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl<'s> DiffEx<[ExPolygon]> for [&'s Surface] {
+        fn diff_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctDifference, &SurfacesPtrProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:770-776 `diff_ex(const Polygon &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[Polygon]> for Polygon {
+        fn diff_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            let mut subject_temp: Polygons = Vec::new();
+            subject_temp.push(self.clone());
+
+            DiffEx::diff_ex(subject_temp.as_slice(), clip, do_safety_offset)
+        }
+    }
+    // ClipperUtils.cpp:778-786 `diff_ex(const Polygon &subject, const Polygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<Polygon> for Polygon {
+        fn diff_ex(&self, clip: &Polygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            let mut subject_temp: Polygons = Vec::new();
+            let mut clip_temp: Polygons = Vec::new();
+
+            subject_temp.push(self.clone());
+            clip_temp.push(clip.clone());
+            DiffEx::diff_ex(subject_temp.as_slice(), clip_temp.as_slice(), do_safety_offset)
+        }
+    }
+    // ClipperUtils.hpp:470-478 `diff_ex(const ExPolygon &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<ExPolygon> for ExPolygon {
+        fn diff_ex(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            let _ = do_safety_offset;
+            let mut subject_temp: ExPolygons = Vec::new();
+            let mut clip_temp: ExPolygons = Vec::new();
+
+            subject_temp.push(self.clone());
+            clip_temp.push(clip.clone());
+            // `return diff_ex(subject_temp, clip_temp);`: the default, ApplySafetyOffset::No
+            DiffEx::diff_ex(subject_temp.as_slice(), clip_temp.as_slice(), ApplySafetyOffset::No)
+        }
+    }
+    // ClipperUtils.hpp:480-486 `diff_ex(const ExPolygon &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<[ExPolygon]> for ExPolygon {
+        fn diff_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            let mut subject_temp: ExPolygons = Vec::new();
+            subject_temp.push(self.clone());
+
+            DiffEx::diff_ex(subject_temp.as_slice(), clip, do_safety_offset)
+        }
+    }
+    // ClipperUtils.hpp:488-494 `diff_ex(const ExPolygons &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffEx<ExPolygon> for [ExPolygon] {
+        fn diff_ex(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            let mut clip_temp: ExPolygons = Vec::new();
+            clip_temp.push(clip.clone());
+
+            DiffEx::diff_ex(self, clip_temp.as_slice(), do_safety_offset)
+        }
+    }
+
+    /// `intersection_ex` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait IntersectionEx<Clip: ?Sized> {
+        fn intersection_ex(&self, clip: &Clip, do_safety_offset: ApplySafetyOffset) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:788-789 `intersection_ex(const Polygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[Polygon]> for [Polygon] {
+        fn intersection_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &PolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:790-791 `intersection_ex(const ExPolygon &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[Polygon]> for ExPolygon {
+        fn intersection_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &ExPolygonProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:792-793 `intersection_ex(const ExPolygon &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<ExPolygon> for ExPolygon {
+        fn intersection_ex(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &ExPolygonProvider::new(self), &ExPolygonProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:794-795 `intersection_ex(const Polygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[ExPolygon]> for [Polygon] {
+        fn intersection_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &PolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:796-797 `intersection_ex(const ExPolygons &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[Polygon]> for [ExPolygon] {
+        fn intersection_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &ExPolygonsProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:798-799 `intersection_ex(const ExPolygons &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<ExPolygon> for [ExPolygon] {
+        fn intersection_ex(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &ExPolygonsProvider::new(self), &ExPolygonProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:800-801 `intersection_ex(const ExPolygon &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[ExPolygon]> for ExPolygon {
+        fn intersection_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &ExPolygonProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:802-803 `intersection_ex(const ExPolygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[ExPolygon]> for [ExPolygon] {
+        fn intersection_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &ExPolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:804-805 `intersection_ex(const Surfaces &subject, const Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[Polygon]> for [Surface] {
+        fn intersection_ex(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &SurfacesProvider::new(self), &PolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:806-807 `intersection_ex(const Surfaces &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[ExPolygon]> for [Surface] {
+        fn intersection_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &SurfacesProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:808-809 `intersection_ex(const Surfaces &subject, const Surfaces &clip, ApplySafetyOffset do_safety_offset)`
+    impl IntersectionEx<[Surface]> for [Surface] {
+        fn intersection_ex(&self, clip: &[Surface], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &SurfacesProvider::new(self), &SurfacesProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:810-811 `intersection_ex(const SurfacesPtr &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl<'s> IntersectionEx<[ExPolygon]> for [&'s Surface] {
+        fn intersection_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctIntersection, &SurfacesPtrProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+
+    /// `xor_ex` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait XorEx<Clip: ?Sized> {
+        fn xor_ex(&self, clip: &Clip, do_safety_offset: ApplySafetyOffset) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:833-835 `xor_ex(const ExPolygons &subject, const ExPolygon &clip, ApplySafetyOffset do_safety_offset)`
+    impl XorEx<ExPolygon> for [ExPolygon] {
+        fn xor_ex(&self, clip: &ExPolygon, do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctXor, &ExPolygonsProvider::new(self), &ExPolygonProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+    // ClipperUtils.cpp:836-838 `xor_ex(const ExPolygons &subject, const ExPolygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl XorEx<[ExPolygon]> for [ExPolygon] {
+        fn xor_ex(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            _clipper_ex(ClipType::ctXor, &ExPolygonsProvider::new(self), &ExPolygonsProvider::new(clip), do_safety_offset, PolyFillType::pftNonZero)
+        }
+    }
+
+    /// `diff_pl` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait DiffPl<Clip: ?Sized> {
+        fn diff_pl(&self, clip: &Clip) -> Polylines;
+    }
+    // ClipperUtils.cpp:909-910 `diff_pl(const Polyline &subject, const Polygons &clip)`
+    impl DiffPl<[Polygon]> for Polyline {
+        fn diff_pl(&self, clip: &[Polygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctDifference, &SinglePathProvider::new(&self.points), &PolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:911-912 `diff_pl(const Polylines &subject, const Polygons &clip)`
+    impl DiffPl<[Polygon]> for [Polyline] {
+        fn diff_pl(&self, clip: &[Polygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctDifference, &PolylinesProvider::new(self), &PolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:913-914 `diff_pl(const Polyline &subject, const ExPolygon &clip)`
+    impl DiffPl<ExPolygon> for Polyline {
+        fn diff_pl(&self, clip: &ExPolygon) -> Polylines {
+            _clipper_pl_open(ClipType::ctDifference, &SinglePathProvider::new(&self.points), &ExPolygonProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:915-916 `diff_pl(const Polyline &subject, const ExPolygons &clip)`
+    impl DiffPl<[ExPolygon]> for Polyline {
+        fn diff_pl(&self, clip: &[ExPolygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctDifference, &SinglePathProvider::new(&self.points), &ExPolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:917-918 `diff_pl(const Polylines &subject, const ExPolygon &clip)`
+    impl DiffPl<ExPolygon> for [Polyline] {
+        fn diff_pl(&self, clip: &ExPolygon) -> Polylines {
+            _clipper_pl_open(ClipType::ctDifference, &PolylinesProvider::new(self), &ExPolygonProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:919-920 `diff_pl(const Polylines &subject, const ExPolygons &clip)`
+    impl DiffPl<[ExPolygon]> for [Polyline] {
+        fn diff_pl(&self, clip: &[ExPolygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctDifference, &PolylinesProvider::new(self), &ExPolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:921-922 `diff_pl(const Polygons &subject, const Polygons &clip)`
+    impl DiffPl<[Polygon]> for [Polygon] {
+        fn diff_pl(&self, clip: &[Polygon]) -> Polylines {
+            _clipper_pl_closed(ClipType::ctDifference, &PolygonsProvider::new(self), &PolygonsProvider::new(clip))
+        }
+    }
+
+    /// `intersection_pl` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait IntersectionPl<Clip: ?Sized> {
+        fn intersection_pl(&self, clip: &Clip) -> Polylines;
+    }
+    // ClipperUtils.cpp:923-924 `intersection_pl(const Polylines &subject, const Polygon &clip)`
+    impl IntersectionPl<Polygon> for [Polyline] {
+        fn intersection_pl(&self, clip: &Polygon) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &PolylinesProvider::new(self), &SinglePathProvider::new(&clip.points))
+        }
+    }
+    // ClipperUtils.cpp:925-926 `intersection_pl(const Polyline &subject, const ExPolygon &clip)`
+    impl IntersectionPl<ExPolygon> for Polyline {
+        fn intersection_pl(&self, clip: &ExPolygon) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &SinglePathProvider::new(&self.points), &ExPolygonProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:927-928 `intersection_pl(const Polylines &subject, const ExPolygon &clip)`
+    impl IntersectionPl<ExPolygon> for [Polyline] {
+        fn intersection_pl(&self, clip: &ExPolygon) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &PolylinesProvider::new(self), &ExPolygonProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:929-930 `intersection_pl(const Polyline &subject, const Polygons &clip)`
+    impl IntersectionPl<[Polygon]> for Polyline {
+        fn intersection_pl(&self, clip: &[Polygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &SinglePathProvider::new(&self.points), &PolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:931-932 `intersection_pl(const Polyline &subject, const ExPolygons &clip)`
+    impl IntersectionPl<[ExPolygon]> for Polyline {
+        fn intersection_pl(&self, clip: &[ExPolygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &SinglePathProvider::new(&self.points), &ExPolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:933-934 `intersection_pl(const Polylines &subject, const Polygons &clip)`
+    impl IntersectionPl<[Polygon]> for [Polyline] {
+        fn intersection_pl(&self, clip: &[Polygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &PolylinesProvider::new(self), &PolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:935-936 `intersection_pl(const Polylines &subject, const ExPolygons &clip)`
+    impl IntersectionPl<[ExPolygon]> for [Polyline] {
+        fn intersection_pl(&self, clip: &[ExPolygon]) -> Polylines {
+            _clipper_pl_open(ClipType::ctIntersection, &PolylinesProvider::new(self), &ExPolygonsProvider::new(clip))
+        }
+    }
+    // ClipperUtils.cpp:937-938 `intersection_pl(const Polygons &subject, const Polygons &clip)`
+    impl IntersectionPl<[Polygon]> for [Polygon] {
+        fn intersection_pl(&self, clip: &[Polygon]) -> Polylines {
+            _clipper_pl_closed(ClipType::ctIntersection, &PolygonsProvider::new(self), &PolygonsProvider::new(clip))
+        }
+    }
+
+    /// `offset` of ClipperUtils.hpp: one implementation for every overload. Wherever applicable, please use the expand() / shrink() variants instead, they convey their purpose better.
+    pub trait Offset {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons;
+    }
+    // ClipperUtils.cpp:410-411 `offset(const Polygon &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset for Polygon {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            to_polygons(raw_offset(&SinglePathProvider::new(&self.points), delta, join_type, miter_limit, EndType::etClosedPolygon))
+        }
+    }
+    // ClipperUtils.cpp:413-414 `offset(const Polygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset for [Polygon] {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            to_polygons(offset_paths::<Paths, _>(&PolygonsProvider::new(self), delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:559-560 `offset(const ExPolygon &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset for ExPolygon {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            to_polygons(expolygon_offset(self, delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:561-562 `offset(const ExPolygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset for [ExPolygon] {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            to_polygons(expolygons_offset(self, delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:563-564 `offset(const Surfaces &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset for [Surface] {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            to_polygons(expolygons_offset(self, delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:565-566 `offset(const SurfacesPtr &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl<'s> Offset for [&'s Surface] {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            to_polygons(expolygons_offset(self, delta, join_type, miter_limit))
+        }
+    }
+
+    /// `offset` of ClipperUtils.hpp: one implementation for every overload. The offsets of polylines (the defaults: DEFAULT_LINE_JOIN_TYPE, DEFAULT_LINE_MITER_LIMIT, DEFAULT_END_TYPE).
+    pub trait OffsetPolyline {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64, end_type: EndType) -> Polygons;
+    }
+    // ClipperUtils.cpp:418-419 `offset(const Polyline &x, const float delta, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType end_type)`
+    impl OffsetPolyline for Polyline {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64, end_type: EndType) -> Polygons {
+            debug_assert!(delta > 0.);
+            to_polygons(clipper_union::<Paths, _>(
+                &raw_offset_polyline(&SinglePathProvider::new(&self.points), delta, join_type, miter_limit, end_type),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:420-421 `offset(const Polylines &x, const float delta, ClipperLib::JoinType joinType, double miterLimit, ClipperLib::EndType end_type)`
+    impl OffsetPolyline for [Polyline] {
+        fn offset(&self, delta: f32, join_type: JoinType, miter_limit: f64, end_type: EndType) -> Polygons {
+            debug_assert!(delta > 0.);
+            to_polygons(clipper_union::<Paths, _>(
+                &raw_offset_polyline(&PolylinesProvider::new(self), delta, join_type, miter_limit, end_type),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+
+    /// `offset_ex` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait OffsetEx {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:415-416 `offset_ex(const Polygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OffsetEx for [Polygon] {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            poly_tree_to_ex_polygons(offset_paths::<PolyTree, _>(&PolygonsProvider::new(self), delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:567-569 `offset_ex(const ExPolygon &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OffsetEx for ExPolygon {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            //FIXME one may spare one Clipper Union call.
+            super::clipper_paths_to_slic3r_ex_polygons(&expolygon_offset(self, delta, join_type, miter_limit), false)
+        }
+    }
+    // ClipperUtils.cpp:570-571 `offset_ex(const ExPolygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OffsetEx for [ExPolygon] {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            poly_tree_to_ex_polygons(expolygons_offset_pt(self, delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:572-573 `offset_ex(const Surfaces &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OffsetEx for [Surface] {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            poly_tree_to_ex_polygons(expolygons_offset_pt(self, delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:574-575 `offset_ex(const SurfacesPtr &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl<'s> OffsetEx for [&'s Surface] {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            poly_tree_to_ex_polygons(expolygons_offset_pt(self, delta, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.hpp:358-364 `offset_ex(const Polygon &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OffsetEx for Polygon {
+        fn offset_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            let mut temp: Polygons = Vec::new();
+            temp.push(self.clone());
+
+            OffsetEx::offset_ex(temp.as_slice(), delta, join_type, miter_limit)
+        }
+    }
+
+    /// `contour_to_polygons` of ClipperUtils.hpp: one implementation for every overload. convert stroke to path by offsetting of contour
+    pub trait ContourToPolygons {
+        fn contour_to_polygons(&self, line_width: f32, join_type: JoinType, miter_limit: f64) -> Polygons;
+    }
+    // ClipperUtils.cpp:423-428 `contour_to_polygons(const Polygon &x, const float line_width, ClipperLib::JoinType join_type, double miter_limit)`
+    impl ContourToPolygons for Polygon {
+        fn contour_to_polygons(&self, line_width: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(line_width > 1.);
+            to_polygons(clipper_union::<Paths, _>(
+                &raw_offset(&SinglePathProvider::new(&self.points), line_width / 2., join_type, miter_limit, EndType::etClosedLine),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:429-434 `contour_to_polygons(const Polygons &x, const float line_width, ClipperLib::JoinType join_type, double miter_limit)`
+    impl ContourToPolygons for [Polygon] {
+        fn contour_to_polygons(&self, line_width: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(line_width > 1.);
+            to_polygons(clipper_union::<Paths, _>(
+                &raw_offset(&PolygonsProvider::new(self), line_width / 2., join_type, miter_limit, EndType::etClosedLine),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+
+    /// `union_safety_offset` of ClipperUtils.hpp:370-371.
+    pub trait UnionSafetyOffset {
+        fn union_safety_offset(&self) -> Polygons;
+    }
+    // ClipperUtils.hpp:370 `union_safety_offset(const Polygons &polygons)`
+    impl UnionSafetyOffset for [Polygon] {
+        fn union_safety_offset(&self) -> Polygons {
+            Offset::offset(self, CLIPPER_SAFETY_OFFSET, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT)
+        }
+    }
+    // ClipperUtils.hpp:371 `union_safety_offset(const ExPolygons &expolygons)`
+    impl UnionSafetyOffset for [ExPolygon] {
+        fn union_safety_offset(&self) -> Polygons {
+            Offset::offset(self, CLIPPER_SAFETY_OFFSET, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT)
+        }
+    }
+
+    /// `union_safety_offset_ex` of ClipperUtils.hpp:372-373.
+    pub trait UnionSafetyOffsetEx {
+        fn union_safety_offset_ex(&self) -> ExPolygons;
+    }
+    // ClipperUtils.hpp:372 `union_safety_offset_ex(const Polygons &polygons)`
+    impl UnionSafetyOffsetEx for [Polygon] {
+        fn union_safety_offset_ex(&self) -> ExPolygons {
+            OffsetEx::offset_ex(self, CLIPPER_SAFETY_OFFSET, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT)
+        }
+    }
+    // ClipperUtils.hpp:373 `union_safety_offset_ex(const ExPolygons &expolygons)`
+    impl UnionSafetyOffsetEx for [ExPolygon] {
+        fn union_safety_offset_ex(&self) -> ExPolygons {
+            OffsetEx::offset_ex(self, CLIPPER_SAFETY_OFFSET, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT)
+        }
+    }
+
+    /// `expand` of ClipperUtils.hpp: one implementation for every overload. Aliases for the various offset(...) functions, conveying the purpose of the offset.
+    pub trait Expand {
+        fn expand(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons;
+    }
+    // ClipperUtils.hpp:381-382 `expand(const Polygon &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Expand for Polygon {
+        fn expand(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(delta > 0.);
+            Offset::offset(self, delta, join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:383-384 `expand(const Polygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Expand for [Polygon] {
+        fn expand(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(delta > 0.);
+            Offset::offset(self, delta, join_type, miter_limit)
+        }
+    }
+
+    /// `shrink_ex` of ClipperUtils.hpp: one implementation for every overload. Input polygons for shrinking shall be "normalized": There must be no overlap / intersections between the input polygons.
+    pub trait ShrinkEx {
+        fn shrink_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons;
+    }
+    // ClipperUtils.hpp:390-391 `shrink_ex(const Polygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ShrinkEx for [Polygon] {
+        fn shrink_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta > 0.);
+            OffsetEx::offset_ex(self, -delta, join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:392-393 `shrink_ex(const ExPolygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ShrinkEx for [ExPolygon] {
+        fn shrink_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta > 0.);
+            OffsetEx::offset_ex(self, -delta, join_type, miter_limit)
+        }
+    }
+
+    /// `offset2_ex` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait Offset2Ex {
+        fn offset2_ex(&self, delta1: f32, delta2: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:581-584 `offset2_ex(const ExPolygons &x, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset2Ex for [ExPolygon] {
+        fn offset2_ex(&self, delta1: f32, delta2: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            poly_tree_to_ex_polygons(offset_paths::<PolyTree, _>(&expolygons_offset(self, delta1, join_type, miter_limit), delta2, join_type, miter_limit))
+        }
+    }
+    // ClipperUtils.cpp:585-589 `offset2_ex(const Surfaces &x, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Offset2Ex for [Surface] {
+        fn offset2_ex(&self, delta1: f32, delta2: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            //FIXME it may be more efficient to offset to_expolygons(surfaces) instead of to_polygons(surfaces).
+            poly_tree_to_ex_polygons(offset_paths::<PolyTree, _>(&expolygons_offset(self, delta1, join_type, miter_limit), delta2, join_type, miter_limit))
+        }
+    }
+
+    /// `closing` of ClipperUtils.hpp: one implementation for every overload; `Delta` is `(delta1, delta2)` or `delta`. Offset outside, then inside produces morphological closing. All deltas should be positive.
+    pub trait Closing<Delta> {
+        fn closing(&self, delta: Delta, join_type: JoinType, miter_limit: f64) -> Polygons;
+    }
+    // ClipperUtils.cpp:592-597 `closing(const Polygons &polygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Closing<(f32, f32)> for [Polygon] {
+        fn closing(&self, (delta1, delta2): (f32, f32), join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(delta1 > 0.);
+            debug_assert!(delta2 > 0.);
+            to_polygons(shrink_paths::<Paths, _>(
+                &expand_paths::<Paths, _>(&PolygonsProvider::new(self), delta1, join_type, miter_limit),
+                delta2,
+                join_type,
+                miter_limit,
+            ))
+        }
+    }
+    // ClipperUtils.hpp:407-408 `closing(const Polygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Closing<f32> for [Polygon] {
+        fn closing(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            Closing::closing(self, (delta, delta), join_type, miter_limit)
+        }
+    }
+
+    /// `closing_ex` of ClipperUtils.hpp: one implementation for every overload; `Delta` is `(delta1, delta2)` or `delta`.
+    pub trait ClosingEx<Delta> {
+        fn closing_ex(&self, delta: Delta, join_type: JoinType, miter_limit: f64) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:598-603 `closing_ex(const Polygons &polygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ClosingEx<(f32, f32)> for [Polygon] {
+        fn closing_ex(&self, (delta1, delta2): (f32, f32), join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta1 > 0.);
+            debug_assert!(delta2 > 0.);
+            poly_tree_to_ex_polygons(shrink_paths::<PolyTree, _>(
+                &expand_paths::<Paths, _>(&PolygonsProvider::new(self), delta1, join_type, miter_limit),
+                delta2,
+                join_type,
+                miter_limit,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:604-610 `closing_ex(const Surfaces &polygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ClosingEx<(f32, f32)> for [Surface] {
+        fn closing_ex(&self, (delta1, delta2): (f32, f32), join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta1 > 0.);
+            debug_assert!(delta2 > 0.);
+            //FIXME it may be more efficient to offset to_expolygons(surfaces) instead of to_polygons(surfaces).
+            poly_tree_to_ex_polygons(shrink_paths::<PolyTree, _>(
+                &expand_paths::<Paths, _>(&SurfacesProvider::new(self), delta1, join_type, miter_limit),
+                delta2,
+                join_type,
+                miter_limit,
+            ))
+        }
+    }
+    // ClipperUtils.hpp:410-411 `closing_ex(const Polygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ClosingEx<f32> for [Polygon] {
+        fn closing_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            ClosingEx::closing_ex(self, (delta, delta), join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:412-413 `closing_ex(const ExPolygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ClosingEx<f32> for [ExPolygon] {
+        fn closing_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta > 0.);
+            Offset2Ex::offset2_ex(self, delta, -delta, join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:414-415 `closing_ex(const Surfaces &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl ClosingEx<f32> for [Surface] {
+        fn closing_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta > 0.);
+            Offset2Ex::offset2_ex(self, delta, -delta, join_type, miter_limit)
+        }
+    }
+
+    /// `opening` of ClipperUtils.hpp: one implementation for every overload; `Delta` is `(delta1, delta2)` or `delta`. Offset inside, then outside produces morphological opening. All deltas should be positive. Input polygons for opening shall be "normalized": There must be no overlap / intersections between the input polygons.
+    pub trait Opening<Delta> {
+        fn opening(&self, delta: Delta, join_type: JoinType, miter_limit: f64) -> Polygons;
+    }
+    // ClipperUtils.cpp:613-618 `opening(const Polygons &polygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Opening<(f32, f32)> for [Polygon] {
+        fn opening(&self, (delta1, delta2): (f32, f32), join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(delta1 > 0.);
+            debug_assert!(delta2 > 0.);
+            to_polygons(expand_paths::<Paths, _>(
+                &shrink_paths::<Paths, _>(&PolygonsProvider::new(self), delta1, join_type, miter_limit),
+                delta2,
+                join_type,
+                miter_limit,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:619-624 `opening(const ExPolygons &polygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Opening<(f32, f32)> for [ExPolygon] {
+        fn opening(&self, (delta1, delta2): (f32, f32), join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(delta1 > 0.);
+            debug_assert!(delta2 > 0.);
+            to_polygons(expand_paths::<Paths, _>(
+                &shrink_paths::<Paths, _>(&ExPolygonsProvider::new(self), delta1, join_type, miter_limit),
+                delta2,
+                join_type,
+                miter_limit,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:625-631 `opening(const Surfaces &polygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Opening<(f32, f32)> for [Surface] {
+        fn opening(&self, (delta1, delta2): (f32, f32), join_type: JoinType, miter_limit: f64) -> Polygons {
+            debug_assert!(delta1 > 0.);
+            debug_assert!(delta2 > 0.);
+            //FIXME it may be more efficient to offset to_expolygons(surfaces) instead of to_polygons(surfaces).
+            to_polygons(expand_paths::<Paths, _>(
+                &shrink_paths::<Paths, _>(&SurfacesProvider::new(self), delta1, join_type, miter_limit),
+                delta2,
+                join_type,
+                miter_limit,
+            ))
+        }
+    }
+    // ClipperUtils.hpp:422-423 `opening(const Polygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Opening<f32> for [Polygon] {
+        fn opening(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            Opening::opening(self, (delta, delta), join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:424-425 `opening(const ExPolygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Opening<f32> for [ExPolygon] {
+        fn opening(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            Opening::opening(self, (delta, delta), join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:426-427 `opening(const Surfaces &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl Opening<f32> for [Surface] {
+        fn opening(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+            Opening::opening(self, (delta, delta), join_type, miter_limit)
+        }
+    }
+
+    /// `opening_ex` of ClipperUtils.hpp: one implementation for every overload.
+    pub trait OpeningEx {
+        fn opening_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons;
+    }
+    // ClipperUtils.hpp:428-429 `opening_ex(const ExPolygons &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OpeningEx for [ExPolygon] {
+        fn opening_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta > 0.);
+            Offset2Ex::offset2_ex(self, -delta, delta, join_type, miter_limit)
+        }
+    }
+    // ClipperUtils.hpp:430-431 `opening_ex(const Surfaces &x, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    impl OpeningEx for [Surface] {
+        fn opening_ex(&self, delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+            debug_assert!(delta > 0.);
+            Offset2Ex::offset2_ex(self, -delta, delta, join_type, miter_limit)
+        }
+    }
+
+    // ClipperUtils.hpp:385-386
+    // `inline Slic3r::ExPolygons expand_ex(const Slic3r::Polygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    pub fn expand_ex(polygons: &[Polygon], delta: f32, join_type: JoinType, miter_limit: f64) -> ExPolygons {
+        debug_assert!(delta > 0.);
+        OffsetEx::offset_ex(polygons, delta, join_type, miter_limit)
+    }
+
+    // Input polygons for shrinking shall be "normalized": There must be no overlap / intersections between the input polygons.
+    // ClipperUtils.hpp:388-389
+    // `inline Slic3r::Polygons shrink(const Slic3r::Polygons &polygons, const float delta, ClipperLib::JoinType joinType, double miterLimit)`
+    pub fn shrink(polygons: &[Polygon], delta: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+        debug_assert!(delta > 0.);
+        Offset::offset(polygons, -delta, join_type, miter_limit)
+    }
+
+    // Wherever applicable, please use the opening() / closing() variants instead, they convey their purpose better.
+    // Input polygons for negative offset shall be "normalized": There must be no overlap / intersections between the input polygons.
+    // ClipperUtils.cpp:577-580
+    // `Polygons offset2(const ExPolygons &expolygons, const float delta1, const float delta2, ClipperLib::JoinType joinType, double miterLimit)`
+    pub fn offset2(expolygons: &[ExPolygon], delta1: f32, delta2: f32, join_type: JoinType, miter_limit: f64) -> Polygons {
+        to_polygons(offset_paths::<Paths, _>(&expolygons_offset(expolygons, delta1, join_type, miter_limit), delta2, join_type, miter_limit))
+    }
+
+    // ----------------------------------------------------------------------------
+    // The bounding boxes of the `_clipped` functions, as BoundingBox.hpp and Polygon.cpp / ExPolygon.cpp make them.
+    // ----------------------------------------------------------------------------
+
+    // BoundingBox.hpp:14-102 `BoundingBoxBase<Point>`: (0, 0)-(0, 0) and not defined when default constructed; of a
+    // range of points, defined only with a positive area.
+    #[derive(Debug, Clone, Copy)]
+    struct BoundingBoxBase {
+        min: Point,
+        max: Point,
+        defined: bool,
+    }
+    impl BoundingBoxBase {
+        fn new() -> Self {
+            BoundingBoxBase { min: Point::new(0, 0), max: Point::new(0, 0), defined: false }
+        }
+        // BoundingBox.hpp:88-102 `construct<false>(out, from, to)`
+        fn of_points(points: &[Point]) -> Self {
+            let mut out = BoundingBoxBase::new();
+            if let Some(first) = points.first() {
+                out.min = *first;
+                out.max = out.min;
+                for vec in &points[1..] {
+                    out.min = Point::new(out.min.x.min(vec.x), out.min.y.min(vec.y));
+                    out.max = Point::new(out.max.x.max(vec.x), out.max.y.max(vec.y));
+                }
+                out.defined = out.min.x < out.max.x && out.min.y < out.max.y;
+            }
+            out
+        }
+        // BoundingBox.cpp `template <class PointClass> void BoundingBoxBase<PointClass>::merge(const BoundingBoxBase<PointClass> &bb)`
+        fn merge(&mut self, bb: &BoundingBoxBase) {
+            if bb.defined {
+                if self.defined {
+                    self.min = Point::new(self.min.x.min(bb.min.x), self.min.y.min(bb.min.y));
+                    self.max = Point::new(self.max.x.max(bb.max.x), self.max.y.max(bb.max.y));
+                } else {
+                    self.min = bb.min;
+                    self.max = bb.max;
+                    self.defined = true;
+                }
+            }
+        }
+        // BoundingBox.hpp:48 `inflated(coordf_t delta)` over BoundingBox.cpp `offset(coordf_t delta)`: `PointClass v(delta,
+        // delta)`, a Point of two doubles (lrint), whether the box is defined or not.
+        fn inflated(&self, delta: f64) -> BoundingBox {
+            let v = delta.round_ties_even() as i64;
+            let mut out = BoundingBox::from_points_minmax(Point::new(self.min.x - v, self.min.y - v), Point::new(self.max.x + v, self.max.y + v));
+            // the corners are all the clipping reads
+            out.min = Point::new(self.min.x - v, self.min.y - v);
+            out.max = Point::new(self.max.x + v, self.max.y + v);
+            out
+        }
+    }
+
+    // Polygon.cpp:411-425 `BoundingBox get_extents(const Polygons &polygons)`
+    fn get_extents_polygons(polygons: &[Polygon]) -> BoundingBoxBase {
+        let mut bb = BoundingBoxBase::new();
+        if !polygons.is_empty() {
+            bb = BoundingBoxBase::of_points(&polygons[0].points);
+            for i in 1..polygons.len() {
+                bb.merge(&BoundingBoxBase::of_points(&polygons[i].points));
+            }
+        }
+        bb
+    }
+
+    // ExPolygon.cpp:490-504 `BoundingBox get_extents(const ExPolygons &expolygons)`
+    fn get_extents_expolygons(expolygons: &[ExPolygon]) -> BoundingBoxBase {
+        let mut bbox = BoundingBoxBase::new();
+        if !expolygons.is_empty() {
+            for i in 0..expolygons.len() {
+                if !expolygons[i].contour.points.is_empty() {
+                    bbox.merge(&BoundingBoxBase::of_points(&expolygons[i].contour.points));
+                }
+            }
+        }
+        bbox
+    }
+
+    /// `diff_clipped` of ClipperUtils.hpp:441-443: one implementation for every overload.
+    // Optimized version clipping the "clipping" polygon using clip_clipper_polygon_with_subject_bbox().
+    // To be used with complex clipping polygons, where majority of the clipping polygons are outside of the source polygon.
+    pub trait DiffClipped<Clip: ?Sized> {
+        type Output;
+        fn diff_clipped(&self, clip: &Clip, do_safety_offset: ApplySafetyOffset) -> Self::Output;
+    }
+    // ClipperUtils.cpp:679-680
+    // `Slic3r::Polygons diff_clipped(const Slic3r::Polygons &subject, const Slic3r::Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffClipped<[Polygon]> for [Polygon] {
+        type Output = Polygons;
+        fn diff_clipped(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+            Diff::diff(
+                self,
+                ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(clip, &get_extents_polygons(self).inflated(SCALED_EPSILON), false).as_slice(),
+                do_safety_offset,
+            )
+        }
+    }
+    // ClipperUtils.cpp:681-682
+    // `Slic3r::ExPolygons diff_clipped(const Slic3r::ExPolygons &subject, const Slic3r::Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffClipped<[Polygon]> for [ExPolygon] {
+        type Output = ExPolygons;
+        fn diff_clipped(&self, clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            DiffEx::diff_ex(
+                self,
+                ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(clip, &get_extents_expolygons(self).inflated(SCALED_EPSILON), false).as_slice(),
+                do_safety_offset,
+            )
+        }
+    }
+    // ClipperUtils.cpp:683-686
+    // `Slic3r::ExPolygons diff_clipped(const Slic3r::ExPolygons & subject, const Slic3r::ExPolygons & clip, ApplySafetyOffset do_safety_offset)`
+    impl DiffClipped<[ExPolygon]> for [ExPolygon] {
+        type Output = ExPolygons;
+        fn diff_clipped(&self, clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+            DiffEx::diff_ex(
+                self,
+                ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(clip, &get_extents_expolygons(self).inflated(SCALED_EPSILON), false).as_slice(),
+                do_safety_offset,
+            )
+        }
+    }
+
+    // Optimized version clipping the "clipping" polygon using clip_clipper_polygon_with_subject_bbox().
+    // To be used with complex clipping polygons, where majority of the clipping polygons are outside of the source polygon.
+    // ClipperUtils.cpp:697-698
+    // `Slic3r::Polygons intersection_clipped(const Slic3r::Polygons &subject, const Slic3r::Polygons &clip, ApplySafetyOffset do_safety_offset)`
+    pub fn intersection_clipped(subject: &[Polygon], clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> Polygons {
+        Intersection::intersection(
+            subject,
+            ClipClipperPolygons::clip_clipper_polygons_with_subject_bbox(clip, &get_extents_polygons(subject).inflated(SCALED_EPSILON), false).as_slice(),
+            do_safety_offset,
+        )
+    }
+
+    /// `union_` of ClipperUtils.hpp:548-552: one implementation for every overload; `Arg` is `()` for the overloads
+    /// of one argument, else the second argument.
+    pub trait Union_<Arg> {
+        fn union_(&self, arg: Arg) -> Polygons;
+    }
+    // ClipperUtils.cpp:721-722 `Slic3r::Polygons union_(const Slic3r::Polygons &subject)`
+    impl Union_<()> for [Polygon] {
+        fn union_(&self, _: ()) -> Polygons {
+            _clipper(ClipType::ctUnion, &PolygonsProvider::new(self), &EmptyPathsProvider::new(), ApplySafetyOffset::No)
+        }
+    }
+    // ClipperUtils.cpp:723-724 `Slic3r::Polygons union_(const Slic3r::ExPolygons &subject)`
+    impl Union_<()> for [ExPolygon] {
+        fn union_(&self, _: ()) -> Polygons {
+            _clipper(ClipType::ctUnion, &ExPolygonsProvider::new(self), &EmptyPathsProvider::new(), ApplySafetyOffset::No)
+        }
+    }
+    // ClipperUtils.cpp:725-726 `Slic3r::Polygons union_(const Slic3r::Polygons &subject, const ClipperLib::PolyFillType fillType)`
+    impl Union_<PolyFillType> for [Polygon] {
+        fn union_(&self, fill_type: PolyFillType) -> Polygons {
+            to_polygons(clipper_do::<Paths, _, _>(ClipType::ctUnion, &PolygonsProvider::new(self), &EmptyPathsProvider::new(), fill_type, ApplySafetyOffset::No))
+        }
+    }
+    // ClipperUtils.cpp:727-734 `Slic3r::Polygons union_(const Slic3r::Polygons &subject, const Slic3r::Polygons &subject2)`
+    impl Union_<&[Polygon]> for [Polygon] {
+        fn union_(&self, subject2: &[Polygon]) -> Polygons {
+            // BBS
+            let mut polys: Polygons = self.to_vec();
+            for poly in subject2 {
+                polys.push(poly.clone());
+            }
+            Union_::union_(polys.as_slice(), ())
+        }
+    }
+    // ClipperUtils.cpp:735-736 `Slic3r::Polygons union_(const Slic3r::Polygons &subject, const Slic3r::ExPolygon &subject2)`
+    impl Union_<&ExPolygon> for [Polygon] {
+        fn union_(&self, subject2: &ExPolygon) -> Polygons {
+            _clipper(ClipType::ctUnion, &PolygonsProvider::new(self), &ExPolygonProvider::new(subject2), ApplySafetyOffset::No)
+        }
+    }
+
+    /// `union_ex` of ClipperUtils.hpp:554-559: one implementation for every overload; `Arg` is `()` for the
+    /// overloads of one argument, else the arguments after the first.
+    // May be used to "heal" unusual models (3DLabPrints etc.) by providing fill_type (pftEvenOdd, pftNonZero, pftPositive, pftNegative).
+    pub trait UnionEx<Arg> {
+        fn union_ex(&self, arg: Arg) -> ExPolygons;
+    }
+    // ClipperUtils.cpp:813-814 `Slic3r::ExPolygons union_ex(const Slic3r::Polygons &subject, ClipperLib::PolyFillType fill_type)`
+    impl UnionEx<PolyFillType> for [Polygon] {
+        fn union_ex(&self, fill_type: PolyFillType) -> ExPolygons {
+            _clipper_ex(ClipType::ctUnion, &PolygonsProvider::new(self), &EmptyPathsProvider::new(), ApplySafetyOffset::No, fill_type)
+        }
+    }
+    // ClipperUtils.cpp:815-816 `Slic3r::ExPolygons union_ex(const Slic3r::ExPolygons &subject)`
+    impl UnionEx<()> for [ExPolygon] {
+        fn union_ex(&self, _: ()) -> ExPolygons {
+            poly_tree_to_ex_polygons(super::clipper_do_polytree(
+                ClipType::ctUnion,
+                &ExPolygonsProvider::new(self).to_clipper_paths(),
+                &EmptyPathsProvider::new().to_clipper_paths(),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:817-821 `Slic3r::ExPolygons union_ex(const Slic3r::ExPolygons &subject, const Slic3r::Polygons &subject2)`
+    impl UnionEx<&[Polygon]> for [ExPolygon] {
+        fn union_ex(&self, subject2: &[Polygon]) -> ExPolygons {
+            poly_tree_to_ex_polygons(super::clipper_do_polytree(
+                ClipType::ctUnion,
+                &ExPolygonsProvider::new(self).to_clipper_paths(),
+                &PolygonsProvider::new(subject2).to_clipper_paths(),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+    // ClipperUtils.cpp:822-823 `Slic3r::ExPolygons union_ex(const Slic3r::Surfaces &subject)`
+    impl UnionEx<()> for [Surface] {
+        fn union_ex(&self, _: ()) -> ExPolygons {
+            poly_tree_to_ex_polygons(super::clipper_do_polytree(
+                ClipType::ctUnion,
+                &SurfacesProvider::new(self).to_clipper_paths(),
+                &EmptyPathsProvider::new().to_clipper_paths(),
+                PolyFillType::pftNonZero,
+            ))
+        }
+    }
+    // BBS
+    // ClipperUtils.cpp:825-831 `Slic3r::ExPolygons union_ex(const Slic3r::ExPolygons& poly1, const Slic3r::ExPolygons& poly2, bool safety_offset_)`
+    impl UnionEx<(&[ExPolygon], bool)> for [ExPolygon] {
+        fn union_ex(&self, (poly2, _safety_offset_): (&[ExPolygon], bool)) -> ExPolygons {
+            let mut expolys: ExPolygons = self.to_vec();
+            for expoly in poly2 {
+                expolys.push(expoly.clone());
+            }
+            UnionEx::union_ex(expolys.as_slice(), ())
+        }
+    }
+
+    // ClipperUtils.cpp:940-958
+    // `Lines _clipper_ln(ClipperLib::ClipType clipType, const Lines &subject, const Polygons &clip)`
+    pub fn _clipper_ln(clip_type: ClipType, subject: &[Line], clip: &[Polygon]) -> Lines {
+        // convert Lines to Polylines
+        let mut polylines: Polylines = Vec::with_capacity(subject.len());
+        for line in subject {
+            polylines.push(Polyline::from_points(vec![line.a, line.b]));
+        }
+
+        // perform operation
+        let polylines = _clipper_pl_open(clip_type, &PolylinesProvider::new(&polylines), &PolygonsProvider::new(clip));
+
+        // convert Polylines to Lines
+        let mut retval: Lines = Vec::new();
+        for polyline in &polylines {
+            if polyline.points.len() >= 2 {
+                //FIXME It may happen, that Clipper produced a polyline with more than 2 collinear points by clipping a single line with polygons. It is a very rare issue, but it happens, see GH #6933.
+                retval.push(Line { a: polyline.points[0], b: polyline.points[polyline.points.len() - 1] });
+            }
+        }
+        retval
+    }
+
+    // ClipperUtils.hpp:496-499 `inline Slic3r::Lines diff_ln(const Slic3r::Lines &subject, const Slic3r::Polygons &clip)`
+    pub fn diff_ln(subject: &[Line], clip: &[Polygon]) -> Lines {
+        _clipper_ln(ClipType::ctDifference, subject, clip)
+    }
+
+    /// `intersection_ln` of ClipperUtils.hpp:536-546: one implementation for every overload.
+    pub trait IntersectionLn {
+        fn intersection_ln(&self, clip: &[Polygon]) -> Lines;
+    }
+    // ClipperUtils.hpp:536-539 `inline Slic3r::Lines intersection_ln(const Slic3r::Lines &subject, const Slic3r::Polygons &clip)`
+    impl IntersectionLn for [Line] {
+        fn intersection_ln(&self, clip: &[Polygon]) -> Lines {
+            _clipper_ln(ClipType::ctIntersection, self, clip)
+        }
+    }
+    // ClipperUtils.hpp:541-546 `inline Slic3r::Lines intersection_ln(const Slic3r::Line &subject, const Slic3r::Polygons &clip)`
+    impl IntersectionLn for Line {
+        fn intersection_ln(&self, clip: &[Polygon]) -> Lines {
+            let mut lines: Lines = Vec::new();
+            lines.push(self.clone());
+            _clipper_ln(ClipType::ctIntersection, &lines, clip)
+        }
+    }
+
+    /// `union_pt` of ClipperUtils.hpp:561-564: one implementation for every overload.
+    // Convert polygons / expolygons into ClipperLib::PolyTree using ClipperLib::pftEvenOdd, thus union will NOT be performed.
+    // If the contours are not intersecting, their orientation shall not be modified by union_pt().
+    pub trait UnionPt {
+        fn union_pt(&self) -> PolyTree;
+    }
+    // ClipperUtils.cpp:962-965 `ClipperLib::PolyTree union_pt(const Polygons &subject)`
+    impl UnionPt for [Polygon] {
+        fn union_pt(&self) -> PolyTree {
+            super::clipper_do::<PolyTree>(ClipType::ctUnion, &PolygonsProvider::new(self).to_clipper_paths(), &EmptyPathsProvider::new().to_clipper_paths(), PolyFillType::pftEvenOdd)
+        }
+    }
+    // ClipperUtils.cpp:966-969 `ClipperLib::PolyTree union_pt(const ExPolygons &subject)`
+    impl UnionPt for [ExPolygon] {
+        fn union_pt(&self) -> PolyTree {
+            super::clipper_do::<PolyTree>(ClipType::ctUnion, &ExPolygonsProvider::new(self).to_clipper_paths(), &EmptyPathsProvider::new().to_clipper_paths(), PolyFillType::pftEvenOdd)
+        }
+    }
+
+    /// `ClipperLib::PolyNodes` (clipper.hpp:134 `typedef std::vector<PolyNode*> PolyNodes;`): the nodes of a
+    /// `PolyTree` by their index in it (`POLY_TREE_ROOT` is the tree itself).
+    pub type PolyNodes = Vec<usize>;
+
+    // Simple spatial ordering of Polynodes
+    // ClipperUtils.cpp:972-987 `ClipperLib::PolyNodes order_nodes(const ClipperLib::PolyNodes &nodes)`
+    pub fn order_nodes(tree: &PolyTree, nodes: &[usize]) -> PolyNodes {
+        // collect ordering points
+        let mut ordering_points: Points = Vec::with_capacity(nodes.len());
+
+        for &node in nodes {
+            let front = &tree.node(node).contour[0];
+            ordering_points.push(Point::new(front.x as i64, front.y as i64));
+        }
+
+        // perform the ordering
+        // ShortestPath.cpp:1975-1978 `chain_clipper_polynodes(points, items)` is `chain_path_items(points, items)`: the
+        // items in the order `chain_points` gives their points.
+        let ordered_nodes: PolyNodes = crate::shortest_path::chain_points(&ordering_points, None).into_iter().map(|idx| nodes[idx]).collect();
+
+        ordered_nodes
+    }
+
+    // Implementing generalized loop (foreach) over a list of nodes which can be
+    // ordered or unordered (performance gain) based on template parameter
+    // ClipperUtils.hpp:575-578 `enum class e_ordering`
+    #[allow(non_camel_case_types)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum e_ordering {
+        ON,
+        OFF,
+    }
+
+    // Wrapper function for the foreach_node which can deduce arguments automatically
+    // ClipperUtils.hpp:580-607 `template<e_ordering o, class Fn> void foreach_node(const ClipperLib::PolyNodes &nodes, Fn &&fn)`, with
+    // the two specializations of `_foreach_node`.
+    pub fn foreach_node(o: e_ordering, tree: &PolyTree, nodes: &[usize], func: &mut dyn FnMut(usize)) {
+        match o {
+            // Specialization with NO ordering
+            e_ordering::OFF => {
+                for &n in nodes {
+                    func(n);
+                }
+            }
+            // Specialization with ordering
+            e_ordering::ON => {
+                // `auto ordered_nodes = order_nodes(nodes); for (auto &n : nodes) fn(n);`: the pin orders the nodes and
+                // then walks them in their own order.
+                let _ordered_nodes = order_nodes(tree, nodes);
+                for &n in nodes {
+                    func(n);
+                }
+            }
+        }
+    }
+
+    /// The two `traverse_pt` of a node, ClipperUtils.hpp:609-650: what they collect the polygons of the tree into.
+    pub trait TraversePt: Sized {
+        fn traverse_pt(ordering: e_ordering, polytree: &PolyTree, tree: Option<usize>, out: &mut Self);
+    }
+    // Collecting polygons of the tree into a list of Polygons, holes have clockwise
+    // orientation.
+    // ClipperUtils.hpp:611-621 `template<e_ordering ordering = e_ordering::OFF> void traverse_pt(const ClipperLib::PolyNode *tree, Polygons *out)`
+    impl TraversePt for Polygons {
+        fn traverse_pt(ordering: e_ordering, polytree: &PolyTree, tree: Option<usize>, out: &mut Polygons) {
+            let Some(tree) = tree else {
+                return; // terminates recursion
+            };
+
+            // Push the contour of the current level
+            out.push(Polygon::from_points(points_of_path(&polytree.node(tree).contour)));
+
+            // Do the recursion for all the children.
+            traverse_pt(ordering, polytree, &polytree.node(tree).childs, out);
+        }
+    }
+    // Collecting polygons of the tree into a list of ExPolygons.
+    // ClipperUtils.hpp:623-650 `template<e_ordering ordering = e_ordering::OFF> void traverse_pt(const ClipperLib::PolyNode *tree, ExPolygons *out)`
+    impl TraversePt for ExPolygons {
+        fn traverse_pt(ordering: e_ordering, polytree: &PolyTree, tree: Option<usize>, out: &mut ExPolygons) {
+            let Some(tree) = tree else {
+                return;
+            };
+            if polytree.is_hole(tree) {
+                // Levels of holes are skipped and handled together with the
+                // contour levels.
+                traverse_pt(ordering, polytree, &polytree.node(tree).childs, out);
+                return;
+            }
+
+            let mut level = ExPolygon::new(Polygon::from_points(points_of_path(&polytree.node(tree).contour)));
+
+            foreach_node(ordering, polytree, &polytree.node(tree).childs, &mut |node: usize| {
+                // Holes are collected here.
+                level.holes.push(Polygon::from_points(points_of_path(&polytree.node(node).contour)));
+
+                // By doing a recursion, a new level expoly is created with the contour
+                // and holes of the lower level. Doing this for all the childs.
+                traverse_pt(ordering, polytree, &polytree.node(node).childs, out);
+            });
+
+            out.push(level);
+        }
+    }
+
+    // ClipperUtils.hpp:652-658
+    // `template<e_ordering o = e_ordering::OFF, class ExOrJustPolygons> void traverse_pt(const ClipperLib::PolyNodes &nodes, ExOrJustPolygons *retval)`
+    pub fn traverse_pt<ExOrJustPolygons: TraversePt>(o: e_ordering, polytree: &PolyTree, nodes: &[usize], retval: &mut ExOrJustPolygons) {
+        foreach_node(o, polytree, nodes, &mut |node: usize| {
+            TraversePt::traverse_pt(o, polytree, Some(node), retval);
+        });
+    }
+
+    // ClipperUtils.cpp:989-997 `static void traverse_pt_noholes(const ClipperLib::PolyNodes &nodes, Polygons *out)`
+    pub fn traverse_pt_noholes(polytree: &PolyTree, nodes: &[usize], out: &mut Polygons) {
+        foreach_node(e_ordering::ON, polytree, nodes, &mut |node: usize| {
+            traverse_pt_noholes(polytree, &polytree.node(node).childs, out);
+            out.push(Polygon::from_points(points_of_path(&polytree.node(node).contour)));
+            if polytree.is_hole(node) {
+                out.last_mut().unwrap().points.reverse(); // ccw
+            }
+        });
+    }
+
+    // ClipperUtils.cpp:999-1017 `static void traverse_pt_outside_in(ClipperLib::PolyNodes &&nodes, Polygons *retval)`
+    pub fn traverse_pt_outside_in(polytree: &PolyTree, nodes: &[usize], retval: &mut Polygons) {
+        // collect ordering points
+        let mut ordering_points: Points = Vec::with_capacity(nodes.len());
+        for &node in nodes {
+            let front = &polytree.node(node).contour[0];
+            ordering_points.push(Point::new(front.x as i64, front.y as i64));
+        }
+
+        // Perform the ordering, push results recursively.
+        //FIXME pass the last point to chain_clipper_polynodes?
+        for idx in crate::shortest_path::chain_points(&ordering_points, None) {
+            let node = nodes[idx];
+            retval.push(Polygon::from_points(points_of_path(&polytree.node(node).contour)));
+            if polytree.is_hole(node) {
+                // Orient a hole, which is clockwise oriented, to CCW.
+                retval.last_mut().unwrap().points.reverse();
+            }
+            // traverse the next depth
+            traverse_pt_outside_in(polytree, &polytree.node(node).childs, retval);
+        }
+    }
+
+    // ClipperUtils.cpp:1019-1024 `Polygons union_pt_chained_outside_in(const Polygons &subject)`
+    pub fn union_pt_chained_outside_in(subject: &[Polygon]) -> Polygons {
+        let mut retval: Polygons = Vec::new();
+        let tree = UnionPt::union_pt(subject);
+        traverse_pt_outside_in(&tree, &tree.root.childs, &mut retval);
+        retval
+    }
+
+    /* OTHER */
+    // ClipperUtils.cpp:1026-1041 `Polygons simplify_polygons(const Polygons &subject, bool preserve_collinear)`
+    pub fn simplify_polygons(subject: &[Polygon], preserve_collinear: bool) -> Polygons {
+        let output: Paths;
+        if preserve_collinear {
+            let mut c = crate::clipper::Clipper::new(0);
+            c.set_preserve_collinear(true);
+            c.set_strictly_simple(true);
+            c.add_paths(&PolygonsProvider::new(subject).to_clipper_paths(), crate::clipper::PolyType::ptSubject, true);
+            let mut out = Paths::new();
+            c.execute(ClipType::ctUnion, &mut out, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+            output = out;
+        } else {
+            output = crate::clipper::simplify_polygons(&PolygonsProvider::new(subject).to_clipper_paths(), PolyFillType::pftNonZero);
+        }
+
+        // convert into Slic3r polygons
+        to_polygons(output)
+    }
+
+    // ClipperUtils.cpp:1043-1057 `ExPolygons simplify_polygons_ex(const Polygons &subject, bool preserve_collinear)`
+    pub fn simplify_polygons_ex(subject: &[Polygon], preserve_collinear: bool) -> ExPolygons {
+        if !preserve_collinear {
+            return UnionEx::union_ex(simplify_polygons(subject, false).as_slice(), PolyFillType::pftNonZero);
+        }
+
+        let mut polytree = PolyTree::new();
+        let mut c = crate::clipper::Clipper::new(0);
+        c.set_preserve_collinear(true);
+        c.set_strictly_simple(true);
+        c.add_paths(&PolygonsProvider::new(subject).to_clipper_paths(), crate::clipper::PolyType::ptSubject, true);
+        c.execute_poly_tree(ClipType::ctUnion, &mut polytree, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+
+        // convert into ExPolygons
+        poly_tree_to_ex_polygons(polytree)
+    }
+
+    // ClipperUtils.cpp:1059-1074 `Polygons top_level_islands(const Slic3r::Polygons &polygons)`
+    pub fn top_level_islands(polygons: &[Polygon]) -> Polygons {
+        // init Clipper
+        let mut clipper = crate::clipper::Clipper::new(0);
+        clipper.clear();
+        // perform union
+        clipper.add_paths(&PolygonsProvider::new(polygons).to_clipper_paths(), crate::clipper::PolyType::ptSubject, true);
+        let mut polytree = PolyTree::new();
+        clipper.execute_poly_tree(ClipType::ctUnion, &mut polytree, PolyFillType::pftEvenOdd, PolyFillType::pftEvenOdd);
+        // Convert only the top level islands to the output.
+        let mut out: Polygons = Vec::with_capacity(polytree.child_count() as usize);
+        for i in 0..polytree.child_count() as usize {
+            out.push(Polygon::from_points(points_of_path(&polytree.node(polytree.root.childs[i]).contour)));
+        }
+        out
+    }
+
+    // ClipperUtils.cpp:1120-1258
+    // `ClipperLib::Path mittered_offset_path_scaled(const Points &contour, const std::vector<float> &deltas, double miter_limit)`
+    pub fn mittered_offset_path_scaled(contour: &[Point], deltas: &[f32], miter_limit: f64) -> Path {
+        debug_assert!(contour.len() == deltas.len());
+        super::mittered_offset_path_scaled(&path_of_points(contour), deltas, miter_limit)
+    }
+
+    // ClipperUtils.cpp:1260-1300
+    // `Polygons variable_offset_inner(const ExPolygon &expoly, const std::vector<std::vector<float>> &deltas, double miter_limit)`
+    pub fn variable_offset_inner(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
+        // 1) Offset the outer contour.
+        let contours: Paths =
+            super::fix_after_inner_offset(&mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit), PolyFillType::pftNegative, true);
+
+        // 2) Offset the holes one by one, collect the results.
+        let mut holes = Paths::new();
+        holes.reserve(expoly.holes.len());
+        for (i, hole) in expoly.holes.iter().enumerate() {
+            holes.extend(super::fix_after_outer_offset(&mittered_offset_path_scaled(&hole.points, &deltas[1 + i], miter_limit), PolyFillType::pftNegative, false));
+        }
+
+        // 3) Subtract holes from the contours.
+        let mut output = Paths::new();
+        if holes.is_empty() {
+            output = contours;
+        } else {
+            let mut clipper = crate::clipper::Clipper::new(0);
+            clipper.clear();
+            clipper.add_paths(&contours, crate::clipper::PolyType::ptSubject, true);
+            clipper.add_paths(&holes, crate::clipper::PolyType::ptClip, true);
+            clipper.execute(ClipType::ctDifference, &mut output, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+        }
+
+        to_polygons(output)
+    }
+
+    // ClipperUtils.cpp:1302-1342
+    // `Polygons variable_offset_outer(const ExPolygon &expoly, const std::vector<std::vector<float>> &deltas, double miter_limit)`
+    pub fn variable_offset_outer(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> Polygons {
+        // 1) Offset the outer contour.
+        let contours: Paths =
+            super::fix_after_outer_offset(&mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit), PolyFillType::pftPositive, false);
+
+        // 2) Offset the holes one by one, collect the results.
+        let mut holes = Paths::new();
+        holes.reserve(expoly.holes.len());
+        for (i, hole) in expoly.holes.iter().enumerate() {
+            holes.extend(super::fix_after_inner_offset(&mittered_offset_path_scaled(&hole.points, &deltas[1 + i], miter_limit), PolyFillType::pftPositive, true));
+        }
+
+        // 3) Subtract holes from the contours.
+        let mut output = Paths::new();
+        if holes.is_empty() {
+            output = contours;
+        } else {
+            let mut clipper = crate::clipper::Clipper::new(0);
+            clipper.clear();
+            clipper.add_paths(&contours, crate::clipper::PolyType::ptSubject, true);
+            clipper.add_paths(&holes, crate::clipper::PolyType::ptClip, true);
+            clipper.execute(ClipType::ctDifference, &mut output, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+        }
+
+        to_polygons(output)
+    }
+
+    // ClipperUtils.cpp:1344-1387
+    // `ExPolygons variable_offset_outer_ex(const ExPolygon &expoly, const std::vector<std::vector<float>> &deltas, double miter_limit)`
+    pub fn variable_offset_outer_ex(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> ExPolygons {
+        // 1) Offset the outer contour.
+        let contours: Paths =
+            super::fix_after_outer_offset(&mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit), PolyFillType::pftPositive, false);
+
+        // 2) Offset the holes one by one, collect the results.
+        let mut holes = Paths::new();
+        holes.reserve(expoly.holes.len());
+        for (i, hole) in expoly.holes.iter().enumerate() {
+            holes.extend(super::fix_after_inner_offset(&mittered_offset_path_scaled(&hole.points, &deltas[1 + i], miter_limit), PolyFillType::pftPositive, true));
+        }
+
+        // 3) Subtract holes from the contours.
+        let mut output: ExPolygons = Vec::new();
+        if holes.is_empty() {
+            output.reserve(contours.len());
+            for path in &contours {
+                output.push(ExPolygon::new(Polygon::from_points(points_of_path(path))));
+            }
+        } else {
+            let mut clipper = crate::clipper::Clipper::new(0);
+            clipper.add_paths(&contours, crate::clipper::PolyType::ptSubject, true);
+            clipper.add_paths(&holes, crate::clipper::PolyType::ptClip, true);
+            let mut polytree = PolyTree::new();
+            clipper.execute_poly_tree(ClipType::ctDifference, &mut polytree, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+            output = poly_tree_to_ex_polygons(polytree);
+        }
+
+        output
+    }
+
+    // ClipperUtils.cpp:1390-1433
+    // `ExPolygons variable_offset_inner_ex(const ExPolygon &expoly, const std::vector<std::vector<float>> &deltas, double miter_limit)`
+    pub fn variable_offset_inner_ex(expoly: &ExPolygon, deltas: &[Vec<f32>], miter_limit: f64) -> ExPolygons {
+        // 1) Offset the outer contour.
+        let contours: Paths =
+            super::fix_after_inner_offset(&mittered_offset_path_scaled(&expoly.contour.points, &deltas[0], miter_limit), PolyFillType::pftNegative, true);
+
+        // 2) Offset the holes one by one, collect the results.
+        let mut holes = Paths::new();
+        holes.reserve(expoly.holes.len());
+        for (i, hole) in expoly.holes.iter().enumerate() {
+            holes.extend(super::fix_after_outer_offset(&mittered_offset_path_scaled(&hole.points, &deltas[1 + i], miter_limit), PolyFillType::pftNegative, false));
+        }
+
+        // 3) Subtract holes from the contours.
+        let mut output: ExPolygons = Vec::new();
+        if holes.is_empty() {
+            output.reserve(contours.len());
+            for path in &contours {
+                output.push(ExPolygon::new(Polygon::from_points(points_of_path(path))));
+            }
+        } else {
+            let mut clipper = crate::clipper::Clipper::new(0);
+            clipper.add_paths(&contours, crate::clipper::PolyType::ptSubject, true);
+            clipper.add_paths(&holes, crate::clipper::PolyType::ptClip, true);
+            let mut polytree = PolyTree::new();
+            clipper.execute_poly_tree(ClipType::ctDifference, &mut polytree, PolyFillType::pftNonZero, PolyFillType::pftNonZero);
+            output = poly_tree_to_ex_polygons(polytree);
+        }
+
+        output
     }
 }

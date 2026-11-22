@@ -106,7 +106,10 @@ pub fn thick_polyline_to_multi_path(
     while i < lines.len() as i32 {
         // VariableWidth.cpp:12-13
         let line = lines[i as usize].clone();
-        debug_assert!(line.a_width >= SCALED_EPSILON && line.b_width >= SCALED_EPSILON);
+        // `assert(line.a_width >= SCALED_EPSILON && line.b_width >= SCALED_EPSILON);` is compiled out of the
+        // engine this follows (NDEBUG), which goes on with such a line: an overhang piece of an Arachne
+        // wall cut at a clip polygon's corner has a zero width at the cut (R922: the counterbore cases of
+        // tests/perimeter_generator_native_parity.rs reach it and come out equal to the pin).
 
         // VariableWidth.cpp:15
         // const coordf_t line_len = line.length();

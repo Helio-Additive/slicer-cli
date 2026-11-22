@@ -7507,3 +7507,1816 @@ pub fn extrude_branch(
 
     (zmin, zmax)
 }
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the organic smoothing and the mesh of all branches
+// (organic_smooth_branches_avoid_collisions() to draw_branches())
+// =============================================================================
+
+use crate::aabb_tree_lines::aabb_tree_indirect_2d as tree2d;
+
+/// Line.hpp:228-239 `class Linef`: a line of two `Vec2d`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Linef {
+    pub a: (f64, f64),
+    pub b: (f64, f64),
+}
+
+/// AABBTreeLines.hpp:166-200 `build_aabb_tree_over_indexed_lines(const std::vector<LineType> &lines)` for
+/// `LineType = Linef` (aabb_tree_lines.rs holds the one for `Line`): the tree is an
+/// `AABBTreeIndirect::Tree<2, double>`, the centroid of a line is `(line.a + line.b) * 0.5` in doubles.
+fn build_aabb_tree_over_indexed_linesf(lines: &[Linef]) -> tree2d::Tree {
+    struct InputType {
+        m_idx: usize,
+        m_bbox: tree2d::BoundingBox,
+        m_centroid: [f64; 2],
+    }
+    impl tree2d::SourceNode for InputType {
+        fn idx(&self) -> usize {
+            self.m_idx
+        }
+        fn centroid(&self) -> [f64; 2] {
+            self.m_centroid
+        }
+        fn bbox(&self) -> tree2d::BoundingBox {
+            self.m_bbox
+        }
+    }
+
+    let mut input: Vec<InputType> = Vec::with_capacity(lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        // n.m_centroid = (line.a + line.b) * 0.5;
+        let m_centroid = [(line.a.0 + line.b.0) * 0.5, (line.a.1 + line.b.1) * 0.5];
+        // n.m_bbox = BoundingBox(line.a, line.a); n.m_bbox.extend(line.b);
+        let mut m_bbox = tree2d::BoundingBox::from_point([line.a.0, line.a.1]);
+        m_bbox.extend_point([line.b.0, line.b.1]);
+        input.push(InputType { m_idx: i, m_bbox, m_centroid });
+    }
+
+    let mut out = tree2d::Tree::new();
+    out.build(input);
+    out
+}
+
+/// Line.hpp:42-68 `line_alg::distance_to_squared(const L &line, const Vec<Dim<L>, Scalar<L>> &point, Vec<Dim<L>,
+/// Scalar<L>> *nearest_point)` for `L = Linef`: everything in doubles, nothing truncated. The sums of products
+/// are those of `Vec2d` (a packet of the two products and their sum, see `squared_norm2`).
+fn distance_to_squared_linef(line: &Linef, point: (f64, f64), nearest_point: &mut (f64, f64)) -> f64 {
+    let v = (line.b.0 - line.a.0, line.b.1 - line.a.1);
+    let va = (point.0 - line.a.0, point.1 - line.a.1);
+    let l2 = squared_norm2(v); // avoid a sqrt
+    if l2 == 0.0 {
+        // a == b case
+        *nearest_point = line.a;
+        return squared_norm2(va);
+    }
+    // Consider the line extending the segment, parameterized as a + t (b - a).
+    // We find projection of this point onto the line.
+    // It falls where t = [(this-a) . (b-a)] / |b-a|^2
+    let t = dot2(va, v) / l2;
+    if t <= 0.0 {
+        // beyond the 'a' end of the segment
+        *nearest_point = line.a;
+        return squared_norm2(va);
+    } else if t >= 1.0 {
+        // beyond the 'b' end of the segment
+        *nearest_point = line.b;
+        return squared_norm2((point.0 - line.b.0, point.1 - line.b.1));
+    }
+
+    *nearest_point = (line.a.0 + t * v.0, line.a.1 + t * v.1);
+    squared_norm2((t * v.0 - va.0, t * v.1 - va.1))
+}
+
+/// `Eigen::AlignedBox<double, 2>::squaredExteriorDistance(p)`, which AABBTreeIndirect.hpp:551-567
+/// `squared_exterior_distance` hands on to for a box of a floating point scalar: `dist2 += aux*aux` is one
+/// expression, the product is contracted into the sum.
+fn squared_exterior_distance_f64(bbox: &tree2d::BoundingBox, p: [f64; 2]) -> f64 {
+    let mut dist2: f64 = 0.;
+    for k in 0..2 {
+        if bbox.min[k] > p[k] {
+            let aux = bbox.min[k] - p[k];
+            dist2 = aux.mul_add(aux, dist2);
+        } else if p[k] > bbox.max[k] {
+            let aux = p[k] - bbox.max[k];
+            dist2 = aux.mul_add(aux, dist2);
+        }
+    }
+    dist2
+}
+
+/// AABBTreeLines.hpp:16-35 `detail::IndexedLinesDistancer<Linef, Tree<2, double>, Vec2d>`
+struct IndexedLinesfDistancer<'a> {
+    lines: &'a [Linef],
+    tree: &'a tree2d::Tree,
+    origin: (f64, f64),
+}
+
+impl IndexedLinesfDistancer<'_> {
+    /// AABBTreeLines.hpp:28-34 `closest_point_to_origin(size_t primitive_index, ScalarType &squared_distance)`
+    fn closest_point_to_origin(&self, primitive_index: usize, squared_distance: &mut f64) -> (f64, f64) {
+        let mut nearest_point: (f64, f64) = (0., 0.);
+        let line = &self.lines[primitive_index];
+        *squared_distance = distance_to_squared_linef(line, self.origin, &mut nearest_point);
+        nearest_point
+    }
+}
+
+/// AABBTreeIndirect.hpp:569-632 `detail::squared_distance_to_indexed_primitives_recursive` for the distancer of
+/// `Linef` lines.
+fn squared_distance_to_indexed_primitives_recursive_linef(
+    distancer: &IndexedLinesfDistancer,
+    node_idx: usize,
+    low_sqr_d: f64,
+    mut up_sqr_d: f64,
+    i: &mut usize,
+    c: &mut (f64, f64),
+) -> f64 {
+    if low_sqr_d > up_sqr_d {
+        return low_sqr_d;
+    }
+
+    let node = distancer.tree.node(node_idx);
+    debug_assert!(node.is_valid());
+    if node.is_leaf() {
+        let mut sqr_dist: f64 = 0.;
+        let c_candidate = distancer.closest_point_to_origin(node.idx, &mut sqr_dist);
+        // set_min(sqr_dist, node.idx, c_candidate)
+        if sqr_dist < up_sqr_d {
+            *i = node.idx;
+            *c = c_candidate;
+            up_sqr_d = sqr_dist;
+        }
+    } else {
+        let left_node_idx = node_idx * 2 + 1;
+        let right_node_idx = left_node_idx + 1;
+        let node_left = distancer.tree.node(left_node_idx);
+        let node_right = distancer.tree.node(right_node_idx);
+        debug_assert!(node_left.is_valid());
+        debug_assert!(node_right.is_valid());
+
+        let mut looked_left = false;
+        let mut looked_right = false;
+        let origin = [distancer.origin.0, distancer.origin.1];
+        // look_left() / look_right(): the side, the best so far.
+        let look = |child_idx: usize, up_sqr_d: &mut f64, i: &mut usize, c: &mut (f64, f64)| {
+            let mut i_child: usize = 0;
+            let mut c_child = *c;
+            let sqr_d_child = squared_distance_to_indexed_primitives_recursive_linef(distancer, child_idx, low_sqr_d, *up_sqr_d, &mut i_child, &mut c_child);
+            // set_min(sqr_d_child, i_child, c_child)
+            if sqr_d_child < *up_sqr_d {
+                *i = i_child;
+                *c = c_child;
+                *up_sqr_d = sqr_d_child;
+            }
+        };
+
+        // must look left or right if in box
+        if node_left.bbox.contains(origin) {
+            look(left_node_idx, &mut up_sqr_d, i, c);
+            looked_left = true;
+        }
+        if node_right.bbox.contains(origin) {
+            look(right_node_idx, &mut up_sqr_d, i, c);
+            looked_right = true;
+        }
+        // if haven't looked left and could be less than current min, then look
+        let left_up_sqr_d = squared_exterior_distance_f64(&node_left.bbox, origin);
+        let right_up_sqr_d = squared_exterior_distance_f64(&node_right.bbox, origin);
+        if left_up_sqr_d < right_up_sqr_d {
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look(left_node_idx, &mut up_sqr_d, i, c);
+            }
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look(right_node_idx, &mut up_sqr_d, i, c);
+            }
+        } else {
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look(right_node_idx, &mut up_sqr_d, i, c);
+            }
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look(left_node_idx, &mut up_sqr_d, i, c);
+            }
+        }
+    }
+    up_sqr_d
+}
+
+/// AABBTreeLines.hpp:205-219 `squared_distance_to_indexed_lines(lines, tree, point, hit_idx_out, hit_point_out,
+/// max_sqr_dist)` for `Linef` lines and a `Vec2d` point.
+///
+/// Finding a closest line, its closest point and squared distance to the closest point.
+/// Returns squared distance to the closest point or -1 if the input is empty; `max_sqr_dist` when no point is
+/// closer than that (the outputs are then left as they were).
+fn squared_distance_to_indexed_linesf(
+    lines: &[Linef],
+    tree: &tree2d::Tree,
+    point: (f64, f64),
+    hit_idx_out: &mut usize,
+    hit_point_out: &mut (f64, f64),
+    max_sqr_dist: f64,
+) -> f64 {
+    if tree.empty() {
+        return -1.;
+    }
+    let distancer = IndexedLinesfDistancer { lines, tree, origin: point };
+    squared_distance_to_indexed_primitives_recursive_linef(&distancer, 0, 0., max_sqr_dist, hit_idx_out, hit_point_out)
+}
+
+/// TreeSupport3D.cpp:4177-4213 (draw_branches()) and :5458-5498 (organic_draw_branches()): all SupportElements
+/// are put into a layer independent storage to improve parallelization. `elements_with_link_down` holds of
+/// every element its layer and index in `move_bounds` (the pointer of the pin) and the index of its child in
+/// the layer below, -1 for none; `linear_data_layers` the first index of every layer and the count.
+///
+/// The pin finds the child through a list sorted by the address of the parent: only one link points to a node
+/// above from below (it asserts so), here the first element of the layer below that names the parent.
+pub fn organic_elements_with_link_down(move_bounds: &[SupportElements]) -> (Vec<((usize, usize), i32)>, Vec<usize>) {
+    let mut elements_with_link_down: Vec<((usize, usize), i32)> = Vec::new();
+    let mut linear_data_layers: Vec<usize> = Vec::new();
+    {
+        // By the index of the element of this layer: the element below.
+        let mut map_downwards_old: Vec<i32> = Vec::new();
+        linear_data_layers.push(0);
+        for layer_idx in 0..move_bounds.len() {
+            let layer_above: Option<&SupportElements> = if layer_idx + 1 < move_bounds.len() { Some(&move_bounds[layer_idx + 1]) } else { None };
+            let mut map_downwards_new: Vec<i32> = vec![-1; layer_above.map_or(0, |l| l.len())];
+            let layer = &move_bounds[layer_idx];
+            for (elem_idx, elem) in layer.iter().enumerate() {
+                let mut child: i32 = -1;
+                if layer_idx > 0 {
+                    if let Some(&c) = map_downwards_old.get(elem_idx) {
+                        child = c;
+                    }
+                }
+                for &parent_idx in &elem.parents {
+                    let parent: &SupportElement = &layer_above.expect("layer_above")[parent_idx as usize];
+                    if parent.state.result_on_layer_is_set() && map_downwards_new[parent_idx as usize] == -1 {
+                        map_downwards_new[parent_idx as usize] = elem_idx as i32;
+                    }
+                }
+
+                elements_with_link_down.push(((layer_idx, elem_idx), child));
+            }
+            map_downwards_old = map_downwards_new;
+            linear_data_layers.push(elements_with_link_down.len());
+        }
+    }
+    (elements_with_link_down, linear_data_layers)
+}
+
+/// TreeSupport3D.cpp:3850-4061 `void organic_smooth_branches_avoid_collisions(const PrintObject &print_object, const
+/// TreeModelVolumes &volumes, const TreeSupportSettings &config, const std::vector<std::pair<SupportElement*, int>>
+/// &elements_with_link_down, const std::vector<size_t> &linear_data_layers, std::function<void()> throw_on_cancel)`
+/// (`TREE_SUPPORT_ORGANIC_NUDGE_NEW` is defined at :51: this is the compiled one).
+///
+/// New version using per layer AABB trees of lines for nudging spheres away from an object.
+///
+/// The elements are named by layer and index, so `move_bounds` comes along. The pin moves the spheres of an
+/// iteration through `tbb::parallel_for`: a sphere reads the previous positions of its neighbours and writes
+/// its own position only, the order does not matter. The positions are `Vec3f`; where the pin computes in
+/// doubles the floats are widened first.
+pub fn organic_smooth_branches_avoid_collisions(
+    print_object: &pf::PrintObject,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    move_bounds: &mut [SupportElements],
+    elements_with_link_down: &[((usize, usize), i32)],
+    linear_data_layers: &[usize],
+    throw_on_cancel: ThrowOnCancel,
+) {
+    use crate::support::tree_support_common::{layer_idx_ceil, layer_idx_floor, layer_z};
+
+    struct LayerCollisionCache {
+        min_element_radius: Coord,
+        #[allow(dead_code)]
+        collision_radius: Coord,
+        lines: Vec<Linef>,
+        aabbtree_lines: tree2d::Tree,
+    }
+    impl LayerCollisionCache {
+        fn new() -> Self {
+            // coord_t min_element_radius{ std::numeric_limits<coord_t>::max() }; coord_t collision_radius{ 0 };
+            Self { min_element_radius: COORD_T_MAX, collision_radius: 0, lines: Vec::new(), aabbtree_lines: tree2d::Tree::new() }
+        }
+        fn min_element_radius_known(&self) -> bool {
+            self.min_element_radius != COORD_T_MAX
+        }
+        fn empty(&self) -> bool {
+            self.lines.is_empty()
+        }
+    }
+    let mut layer_collision_cache: Vec<LayerCollisionCache> = Vec::with_capacity(1024);
+    let slicing_params = print_object.slicing_parameters();
+    for element in elements_with_link_down {
+        let elem: &SupportElement = &move_bounds[element.0 .0][element.0 .1];
+        let layer_idx: LayerIndex = elem.state.layer_idx;
+        let num_layers = (layer_idx + 1) as usize;
+        if num_layers > layer_collision_cache.len() {
+            if num_layers > layer_collision_cache.capacity() {
+                let cap = crate::utils::next_highest_power_of_2(num_layers);
+                layer_collision_cache.reserve(cap - layer_collision_cache.len());
+            }
+            layer_collision_cache.resize_with(num_layers, LayerCollisionCache::new);
+        }
+        let l = &mut layer_collision_cache[layer_idx as usize];
+        l.min_element_radius = std::cmp::min(l.min_element_radius, support_element_radius(config, elem));
+    }
+
+    throw_on_cancel();
+
+    for layer_idx in 0..layer_collision_cache.len() as LayerIndex {
+        let l = &mut layer_collision_cache[layer_idx as usize];
+        if !l.min_element_radius_known() {
+            l.min_element_radius = 0;
+        } else {
+            //FIXME
+            l.min_element_radius = 0;
+            // `assert(res.has_value());`: the collision of radius zero is precalculated for every layer with elements.
+            let res: (Coord, crate::support::tree_model_volumes::PolygonsRef) =
+                volumes.get_collision_lower_bound_area(layer_idx, l.min_element_radius).expect("collision area of the layer");
+            l.collision_radius = res.0;
+            // Lines alines = to_lines(res->second.get());
+            l.lines.reserve(res.1.iter().map(|p| p.points.len()).sum());
+            // unscaled<double>(line.a), unscaled<double>(line.b)
+            let un = |p: &Point| (p.x as f64 * SCALING_FACTOR, p.y as f64 * SCALING_FACTOR);
+            for poly in res.1.iter() {
+                let n = poly.points.len();
+                for k in 0..n.saturating_sub(1) {
+                    l.lines.push(Linef { a: un(&poly.points[k]), b: un(&poly.points[k + 1]) });
+                }
+                l.lines.push(Linef { a: un(&poly.points[n - 1]), b: un(&poly.points[0]) });
+            }
+            l.aabbtree_lines = build_aabb_tree_over_indexed_linesf(&l.lines);
+            throw_on_cancel();
+        }
+    }
+
+    struct CollisionSphere {
+        element: (usize, usize),
+        element_below_id: i32,
+        locked: bool,
+        radius: f32,
+        // Current position, when nudged away from the collision.
+        position: Vec3f,
+        // Previous position, for Laplacian smoothing.
+        prev_position: Vec3f,
+        //
+        last_collision: Vec3f,
+        last_collision_depth: f64,
+        // Minimum Z for which the sphere collision will be evaluated.
+        // Limited by the minimum sloping angle and by the bottom of the tree.
+        min_z: f32,
+        // Maximum Z for which the sphere collision will be evaluated.
+        // Limited by the minimum sloping angle and by the tip of the current branch.
+        max_z: f32,
+        layer_begin: u32,
+        layer_end: u32,
+    }
+
+    let mut collision_spheres: Vec<CollisionSphere> = Vec::with_capacity(elements_with_link_down.len());
+    for element_with_link in elements_with_link_down {
+        let element: &SupportElement = &move_bounds[element_with_link.0 .0][element_with_link.0 .1];
+        let link_down: i32 = element_with_link.1;
+        // to_3d(unscaled<float>(element.state.result_on_layer), float(layer_z(slicing_params, config, element.state.layer_idx)))
+        let position = Vec3f::new(
+            unscaled_f32(element.state.result_on_layer.x),
+            unscaled_f32(element.state.result_on_layer.y),
+            layer_z(slicing_params, config, element.state.layer_idx as usize) as f32,
+        );
+        collision_spheres.push(CollisionSphere {
+            element: element_with_link.0,
+            element_below_id: link_down,
+            // locked
+            locked: element.parents.is_empty() || (link_down == -1 && element.state.layer_idx > 0),
+            radius: unscaled_f32(support_element_radius(config, element)),
+            // 3D position
+            position,
+            // The pin leaves the next two as they are (not read before they are written).
+            prev_position: Vec3f::new(0., 0., 0.),
+            last_collision: Vec3f::new(0., 0., 0.),
+            last_collision_depth: 0.,
+            min_z: -f32::MAX,
+            max_z: f32::MAX,
+            layer_begin: 0,
+            layer_end: 0,
+        });
+        // Update min_z coordinate to min_z of the tree below.
+        let last = collision_spheres.len() - 1;
+        if link_down != -1 {
+            let offset_below: usize = linear_data_layers[(element.state.layer_idx - 1) as usize];
+            collision_spheres[last].min_z = collision_spheres[offset_below + link_down as usize].min_z;
+        } else {
+            collision_spheres[last].min_z = collision_spheres[last].position.z;
+        }
+    }
+    // Update max_z by propagating max_z from the tips of the branches.
+    for collision_sphere_id in (0..collision_spheres.len()).rev() {
+        let element: &SupportElement = &move_bounds[collision_spheres[collision_sphere_id].element.0][collision_spheres[collision_sphere_id].element.1];
+        if element.parents.is_empty() {
+            // Tip
+            collision_spheres[collision_sphere_id].max_z = collision_spheres[collision_sphere_id].position.z;
+        } else {
+            // Below tip
+            let offset_above: usize = linear_data_layers[(element.state.layer_idx + 1) as usize];
+            for &iparent in &element.parents {
+                let parent_z: f32 = collision_spheres[offset_above + iparent as usize].max_z;
+                // collision_sphere.max_z = std::min(collision_sphere.max_z, parent_z);
+                if parent_z < collision_spheres[collision_sphere_id].max_z {
+                    collision_spheres[collision_sphere_id].max_z = parent_z;
+                }
+            }
+        }
+    }
+    // Update min_z / max_z to limit the search Z span of a given sphere for collision detection.
+    for collision_sphere in collision_spheres.iter_mut() {
+        let layer_idx: LayerIndex = move_bounds[collision_sphere.element.0][collision_sphere.element.1].state.layer_idx;
+        //FIXME limit the collision span by the tree slope.
+        // std::max(min_z, position.z() - radius), std::min(max_z, position.z() + radius): of floats.
+        let lo: f32 = collision_sphere.position.z - collision_sphere.radius;
+        if collision_sphere.min_z < lo {
+            collision_sphere.min_z = lo;
+        }
+        let hi: f32 = collision_sphere.position.z + collision_sphere.radius;
+        if hi < collision_sphere.max_z {
+            collision_sphere.max_z = hi;
+        }
+        collision_sphere.layer_begin = std::cmp::min(layer_idx, layer_idx_ceil(slicing_params, config, collision_sphere.min_z as f64)) as u32;
+        debug_assert!((collision_sphere.layer_begin as usize) < layer_collision_cache.len());
+        collision_sphere.layer_end = std::cmp::min(
+            layer_collision_cache.len() as LayerIndex,
+            std::cmp::max(layer_idx, layer_idx_floor(slicing_params, config, collision_sphere.max_z as f64)) + 1,
+        ) as u32;
+    }
+
+    throw_on_cancel();
+
+    const COLLISION_EXTRA_GAP: f64 = 0.1;
+    const MAX_NUDGE_COLLISION_AVOIDANCE: f64 = 0.5;
+    const MAX_NUDGE_SMOOTHING: f64 = 0.2;
+    const NUM_ITER: usize = 100; // 1000;
+    for _iter in 0..NUM_ITER {
+        // Back up prev position before Laplacian smoothing.
+        for collision_sphere in collision_spheres.iter_mut() {
+            collision_sphere.prev_position = collision_sphere.position;
+        }
+        let mut num_moved: usize = 0;
+        for collision_sphere_id in 0..collision_spheres.len() {
+            if collision_spheres[collision_sphere_id].locked {
+                continue;
+            }
+            let element: &SupportElement = &move_bounds[collision_spheres[collision_sphere_id].element.0][collision_spheres[collision_sphere_id].element.1];
+            let layer_idx: LayerIndex = element.state.layer_idx;
+            // Laplacian smoothing reads the previous positions of the neighbours: collected before the sphere is borrowed.
+            let offset_above: usize = linear_data_layers[(layer_idx + 1) as usize];
+            let parents_prev: Vec<(f64, f64)> = element
+                .parents
+                .iter()
+                .map(|&iparent| {
+                    let p = &collision_spheres[offset_above + iparent as usize].prev_position;
+                    (p.x as f64, p.y as f64)
+                })
+                .collect();
+            let below_prev: Option<(f64, f64)> = if collision_spheres[collision_sphere_id].element_below_id != -1 {
+                let offset_below: usize = linear_data_layers[(layer_idx - 1) as usize];
+                let p = &collision_spheres[offset_below + collision_spheres[collision_sphere_id].element_below_id as usize].prev_position;
+                Some((p.x as f64, p.y as f64))
+            } else {
+                None
+            };
+            let collision_sphere = &mut collision_spheres[collision_sphere_id];
+
+            // Calculate collision of multiple 2D layers against a collision sphere.
+            collision_sphere.last_collision_depth = -f64::MAX;
+            let mut layer_id: u32 = collision_sphere.layer_begin;
+            while layer_id != collision_sphere.layer_end {
+                if layer_id as usize >= layer_collision_cache.len() {
+                    layer_id = layer_id.wrapping_add(1);
+                    continue;
+                }
+                // `(layer_id - collision_sphere.element.state.layer_idx) * slicing_params.layer_height`: the
+                // difference of an `uint32_t` and an `int` is unsigned, it wraps for the layers below the
+                // element (dz is then about 4e9 layers and the layer is passed over).
+                let dz: f64 = layer_id.wrapping_sub(layer_idx as u32) as f64 * slicing_params.layer_height;
+                // sqr(collision_sphere.radius) - sqr(dz): the square of the float, then doubles.
+                let r2: f64 = (collision_sphere.radius * collision_sphere.radius) as f64 - dz * dz;
+                if r2 > 0. {
+                    let layer_collision_cache_item = &layer_collision_cache[layer_id as usize];
+                    if !layer_collision_cache_item.empty() {
+                        let mut hit_idx_out: usize = 0;
+                        // Not initialized at the pin: when no line is closer than the radius the distance comes
+                        // back as r2, the depth is zero and the point is stored but never used.
+                        let mut hit_point_out: (f64, f64) = (0., 0.);
+                        let dist: f64 = squared_distance_to_indexed_linesf(
+                            &layer_collision_cache_item.lines,
+                            &layer_collision_cache_item.aabbtree_lines,
+                            (collision_sphere.position.x as f64, collision_sphere.position.y as f64),
+                            &mut hit_idx_out,
+                            &mut hit_point_out,
+                            r2,
+                        )
+                        .sqrt();
+                        if dist >= 0. {
+                            let collision_depth: f64 = r2.sqrt() - dist;
+                            if collision_depth > collision_sphere.last_collision_depth {
+                                collision_sphere.last_collision_depth = collision_depth;
+                                collision_sphere.last_collision =
+                                    Vec3f::new(hit_point_out.0 as f32, hit_point_out.1 as f32, layer_z(slicing_params, config, layer_id as usize) as f32);
+                            }
+                        }
+                    }
+                }
+                layer_id = layer_id.wrapping_add(1);
+            }
+            if collision_sphere.last_collision_depth > 0. {
+                // Collision detected to be removed.
+                // Nudge the circle center away from the collision.
+                if collision_sphere.last_collision_depth > EPSILON {
+                    // a little bit of hysteresis to detect end of
+                    num_moved += 1;
+                }
+                // Shift by maximum 2mm.
+                // std::min(std::max(0., last_collision_depth + collision_extra_gap), max_nudge_collision_avoidance)
+                let d = collision_sphere.last_collision_depth + COLLISION_EXTRA_GAP;
+                let d = if 0. < d { d } else { 0. };
+                let nudge_dist: f64 = if MAX_NUDGE_COLLISION_AVOIDANCE < d { MAX_NUDGE_COLLISION_AVOIDANCE } else { d };
+                // (to_2d(position) - to_2d(last_collision)).cast<double>().normalized() * nudge_dist
+                let diff: (f64, f64) = (
+                    (collision_sphere.position.x - collision_sphere.last_collision.x) as f64,
+                    (collision_sphere.position.y - collision_sphere.last_collision.y) as f64,
+                );
+                let n = normalized2(diff);
+                let nudge_vector: (f64, f64) = (n.0 * nudge_dist, n.1 * nudge_dist);
+                // collision_sphere.position.head<2>() += (nudge_vector * nudge_dist).cast<float>();
+                collision_sphere.position.x += (nudge_vector.0 * nudge_dist) as f32;
+                collision_sphere.position.y += (nudge_vector.1 * nudge_dist) as f32;
+            }
+            // Laplacian smoothing
+            let mut avg: (f64, f64) = (0., 0.);
+            let mut weight: f64 = 0.;
+            for prev in &parents_prev {
+                let w: f64 = collision_sphere.radius as f64;
+                avg.0 += w * prev.0;
+                avg.1 += w * prev.1;
+                weight += w;
+            }
+            if let Some(prev) = below_prev {
+                let w: f64 = weight;
+                avg.0 += w * prev.0;
+                avg.1 += w * prev.1;
+                weight += w;
+            }
+            avg.0 /= weight;
+            avg.1 /= weight;
+            const SMOOTHING_FACTOR: f64 = 0.5;
+            let old_pos: (f64, f64) = (collision_sphere.position.x as f64, collision_sphere.position.y as f64);
+            let new_pos: (f64, f64) =
+                ((1. - SMOOTHING_FACTOR) * old_pos.0 + SMOOTHING_FACTOR * avg.0, (1. - SMOOTHING_FACTOR) * old_pos.1 + SMOOTHING_FACTOR * avg.1);
+            let shift: (f64, f64) = (new_pos.0 - old_pos.0, new_pos.1 - old_pos.1);
+            let nudge_dist_max: f64 = norm2(shift);
+            // Shift by maximum 1mm, less than the collision avoidance factor.
+            // std::min(std::max(0., nudge_dist_max), max_nudge_smoothing)
+            let d = if 0. < nudge_dist_max { nudge_dist_max } else { 0. };
+            let nudge_dist: f64 = if MAX_NUDGE_SMOOTHING < d { MAX_NUDGE_SMOOTHING } else { d };
+            let n = normalized2(shift);
+            collision_sphere.position.x += (n.0 * nudge_dist) as f32;
+            collision_sphere.position.y += (n.1 * nudge_dist) as f32;
+
+            throw_on_cancel();
+        }
+        if num_moved == 0 {
+            break;
+        }
+    }
+
+    for i in 0..collision_spheres.len() {
+        // scaled<coord_t>(to_2d(collision_spheres[i].position)): `(v / SCALING_FACTOR).cast<coord_t>()` of a
+        // vector of floats, the factor taken as a float; the cast to `int32_t` saturates.
+        let p = &collision_spheres[i].position;
+        let e = elements_with_link_down[i].0;
+        move_bounds[e.0][e.1].state.result_on_layer =
+            Point::new((p.x / SCALING_FACTOR as f32) as i32 as Coord, (p.y / SCALING_FACTOR as f32) as i32 as Coord);
+    }
+}
+
+// `Vec2d::normalized()` (Dot.h: `n / sqrt(z)` when `z > 0`, else a copy).
+#[inline]
+fn normalized2(v: (f64, f64)) -> (f64, f64) {
+    let z = squared_norm2(v);
+    if z > 0. {
+        let s = z.sqrt();
+        (v.0 / s, v.1 / s)
+    } else {
+        v
+    }
+}
+
+/// TreeSupport3D.cpp:4167-4285 `indexed_triangle_set draw_branches(PrintObject &print_object, const TreeModelVolumes
+/// &volumes, const TreeSupportSettings &config, std::vector<SupportElements> &move_bounds, std::function<void()>
+/// throw_on_cancel)`
+///
+/// Organic specific: Smooth branches and produce one cummulative mesh to be sliced.
+pub fn draw_branches(
+    print_object: &pf::PrintObject,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    move_bounds: &mut [SupportElements],
+    throw_on_cancel: ThrowOnCancel,
+) -> indexed_triangle_set {
+    // All SupportElements are put into a layer independent storage to improve parallelization.
+    let (elements_with_link_down, linear_data_layers) = organic_elements_with_link_down(move_bounds);
+
+    throw_on_cancel();
+
+    organic_smooth_branches_avoid_collisions(print_object, volumes, config, move_bounds, &elements_with_link_down, &linear_data_layers, throw_on_cancel);
+
+    // Unmark all nodes.
+    for elements in move_bounds.iter_mut() {
+        for element in elements.iter_mut() {
+            element.state.marked = false;
+        }
+    }
+
+    // Traverse all nodes, generate tubes.
+    // Traversal stack with nodes and thier current parent
+    let slicing_params = print_object.slicing_parameters();
+    let mut path: Vec<(usize, usize)> = Vec::new();
+    let mut cummulative_mesh = indexed_triangle_set::default();
+    let mut partial_mesh = indexed_triangle_set::default();
+    let mut layer_idx: usize = 0;
+    while layer_idx + 1 < move_bounds.len() {
+        for start_idx in 0..move_bounds[layer_idx].len() {
+            let start_parents: usize = move_bounds[layer_idx][start_idx].parents.len();
+            if !move_bounds[layer_idx][start_idx].state.marked && start_parents != 0 {
+                // Collect elements up to a bifurcation above.
+                move_bounds[layer_idx][start_idx].state.marked = true;
+                for parent_idx in 0..start_parents {
+                    path.clear();
+                    path.push((layer_idx, start_idx));
+                    // Traverse each branch until it branches again.
+                    let first_parent: (usize, usize) = (layer_idx + 1, move_bounds[layer_idx][start_idx].parents[parent_idx] as usize);
+                    path.push(first_parent);
+                    let first_parent_parents: usize = move_bounds[first_parent.0][first_parent.1].parents.len();
+                    if first_parent_parents < 2 {
+                        move_bounds[first_parent.0][first_parent.1].state.marked = true;
+                    }
+                    if first_parent_parents == 1 {
+                        let mut parent: (usize, usize) = first_parent;
+                        loop {
+                            let p: &SupportElement = &move_bounds[parent.0][parent.1];
+                            let next_parent: (usize, usize) = ((p.state.layer_idx + 1) as usize, p.parents[0] as usize);
+                            path.push(next_parent);
+                            let next_parent_parents: usize = move_bounds[next_parent.0][next_parent.1].parents.len();
+                            if next_parent_parents > 1 {
+                                break;
+                            }
+                            move_bounds[next_parent.0][next_parent.1].state.marked = true;
+                            if next_parent_parents == 0 {
+                                break;
+                            }
+                            parent = next_parent;
+                        }
+                    }
+                    // Triangulate the tube.
+                    partial_mesh.vertices.clear();
+                    partial_mesh.indices.clear();
+                    {
+                        let path_elements: Vec<&SupportElement> = path.iter().map(|&(l, i)| &move_bounds[l][i]).collect();
+                        extrude_branch(&path_elements, config, slicing_params, move_bounds, &mut partial_mesh, None);
+                    }
+                    crate::triangle_mesh::its_merge(&mut cummulative_mesh, &partial_mesh);
+                }
+                throw_on_cancel();
+            }
+        }
+        layer_idx += 1;
+    }
+    cummulative_mesh
+}
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the slices of the branches (slice_branches(), the helpers of
+// organic_draw_branches() and organic_draw_branches() itself)
+// =============================================================================
+
+// ClipperUtils.cpp `Polygons intersection_clipped(const Polygons &subject, const Polygons &clip, ApplySafetyOffset
+// do_safety_offset)`: the intersection with the clip polygons clipped by the bounding box of the subject.
+fn intersection_clipped(subject: &[Polygon], clip: &[Polygon]) -> Polygons {
+    // get_extents(subject).inflated(SCALED_EPSILON)
+    let mut bbox = crate::geometry::get_extents_polygons(subject);
+    if !bbox.is_defined() {
+        // The intersection of nothing.
+        return Vec::new();
+    }
+    let eps = SCALED_EPSILON as Coord;
+    bbox.min = Point::new(bbox.min.x - eps, bbox.min.y - eps);
+    bbox.max = Point::new(bbox.max.x + eps, bbox.max.y + eps);
+    cu::intersection(subject, &crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_polygons(clip, &bbox), cu::ApplySafetyOffset::No)
+}
+
+// Polygon.cpp:729-746 `make_circle(double radius, double error)`: the cosine and the sine of an angle are one
+// call in the pin's build (`crate::clipper::sin_cos`), the coordinates are truncated.
+fn make_circle_pin(radius: f64, error: f64) -> Polygon {
+    let angle: f64 = 2. * (1. - error / radius).acos();
+    let num_segments: usize = (2. * std::f64::consts::PI / angle).ceil() as usize;
+    let mut out = Polygon::new();
+    out.points.reserve(num_segments);
+    let angle_inc: f64 = 2.0 * std::f64::consts::PI / num_segments as f64;
+    for i in 0..num_segments {
+        let angle: f64 = angle_inc * i as f64;
+        let (s, c) = crate::clipper::sin_cos(angle);
+        out.points.push(Point::new((c * radius) as i32 as Coord, (s * radius) as i32 as Coord));
+    }
+    out
+}
+
+/// TreeSupport3D.cpp:4287-4348 `void slice_branches(PrintObject &print_object, const TreeModelVolumes &volumes, const
+/// TreeSupportSettings &config, const std::vector<Polygons> &overhangs, std::vector<SupportElements> &move_bounds,
+/// const indexed_triangle_set &cummulative_mesh, SupportGeneratorLayersPtr &bottom_contacts,
+/// SupportGeneratorLayersPtr &top_contacts, SupportGeneratorLayersPtr &intermediate_layers,
+/// SupportGeneratorLayerStorage &layer_storage, std::function<void()> throw_on_cancel)`
+///
+/// Organic specific: Slice the cummulative mesh produced by draw_branches(). (The pin does not call it:
+/// generate_support_areas() draws the branches with organic_draw_branches().)
+#[allow(clippy::too_many_arguments)]
+pub fn slice_branches(
+    print_object: &pf::PrintObject,
+    volumes: &TreeModelVolumes,
+    config: &TreeSupportSettings,
+    overhangs: &[Polygons],
+    move_bounds: &mut [SupportElements],
+    cummulative_mesh: &indexed_triangle_set,
+    bottom_contacts: &mut SupportGeneratorLayersPtr,
+    top_contacts: &mut SupportGeneratorLayersPtr,
+    intermediate_layers: &mut SupportGeneratorLayersPtr,
+    layer_storage: &mut SupportGeneratorLayerStorage,
+    throw_on_cancel: ThrowOnCancel,
+) {
+    use crate::triangle_mesh_slicer::{slice_mesh_ex_its_identity, MeshSlicingParamsEx, SlicingMode};
+
+    let slicing_params = print_object.slicing_parameters().clone();
+    let mut slice_z: Vec<f32> = Vec::new();
+    for layer_idx in 0..move_bounds.len() {
+        // `object_print_z_min + first_object_layer_height + layer_idx * layer_height`: the product is fused into
+        // the last addition.
+        let print_z: f64 = (layer_idx as f64).mul_add(slicing_params.layer_height, slicing_params.object_print_z_min + slicing_params.first_object_layer_height);
+        let layer_height: f64 = if layer_idx == 0 { slicing_params.first_object_layer_height } else { slicing_params.layer_height };
+        slice_z.push((-layer_height).mul_add(0.5, print_z) as f32);
+    }
+    // Remove the trailing slices.
+    while !slice_z.is_empty() {
+        if move_bounds[slice_z.len() - 1].is_empty() {
+            slice_z.pop();
+        } else {
+            break;
+        }
+    }
+
+    let mut params = MeshSlicingParamsEx::default();
+    params.closing_radius = cfg_float(print_object.config(), "slice_closing_radius") as f32;
+    params.base.mode = SlicingMode::Positive;
+    let mut slices: Vec<Vec<ExPolygon>> = slice_mesh_ex_its_identity(cummulative_mesh, &slice_z, &params, &|| throw_on_cancel());
+    for layer_idx in 0..slice_z.len() {
+        if !slices[layer_idx].is_empty() {
+            if intermediate_layers[layer_idx] == SUPPORT_GENERATOR_LAYER_PTR_NULL {
+                intermediate_layers[layer_idx] = layer_allocate(layer_storage, SupporLayerType::SltBase, &slicing_params, config, layer_idx);
+            }
+            let l = intermediate_layers[layer_idx];
+            let expolygons: Vec<ExPolygon> = std::mem::take(&mut slices[layer_idx]);
+            layer_storage[l].polygons.extend(crate::geometry::to_polygons(&expolygons));
+        }
+    }
+
+    // Trim the slices.
+    for layer_idx in 0..intermediate_layers.len() {
+        let layer = intermediate_layers[layer_idx];
+        if layer != SUPPORT_GENERATOR_LAYER_PTR_NULL {
+            let poly: Polygons = diff_clipped(&layer_storage[layer].polygons, &volumes.get_collision(0, layer_idx as LayerIndex, true));
+            layer_storage[layer].polygons = cu::intersection(&poly, std::slice::from_ref(&volumes.m_bed_area), cu::ApplySafetyOffset::No);
+        }
+    }
+
+    let mut support_layer_storage: Vec<Polygons> = vec![Vec::new(); move_bounds.len()];
+    let mut support_roof_storage: Vec<Polygons> = vec![Vec::new(); move_bounds.len()];
+    finalize_interface_and_support_areas(
+        print_object,
+        volumes,
+        config,
+        overhangs,
+        &mut support_layer_storage,
+        &mut support_roof_storage,
+        bottom_contacts,
+        top_contacts,
+        intermediate_layers,
+        layer_storage,
+        throw_on_cancel,
+    );
+}
+
+/// TreeSupport3D.cpp:5149-5234 `static void append_organic_plate_foot_slices(const std::vector<const SupportElement*>
+/// &path, const TreeSupportSettings &config, const LayerIndex layer_begin, std::vector<Polygons> &slices)`
+///
+/// Widen the single plate trunk in 2D after the tube is sliced.
+/// Extrude still uses the original branch radius, so self-intersection repair hemispheres
+/// do not grow.
+///
+/// Soft foot (not a hard push to bp_radius):
+///   r_plate = min(bp_radius, r_trunk + brim_extra)
+/// bp_radius stays the hard cap (legacy 7.5mm diameter / 3.75mm radius). Thin trunks get
+/// trunk+brim; thick trunks already near the cap get little or no extra flare.
+/// Profile uses ease-out so the flare is flatter near the trunk and opens toward the plate.
+/// Mean radial flare angle is limited to ~12deg (gentler than the legacy ~40deg
+/// bp_radius_increase). The quadratic ease-out is steepest at the plate and becomes
+/// tangent to the trunk at the blend point.
+/// Short trunks shrink the flare instead of exceeding the mean angle limit.
+///
+/// Circles merge with the tube via downstream non-zero union in diff_clipped()/intersection(),
+/// so a circle smaller than the tube never carves into it. Same getCollision(0,..,min_xy_dist)
+/// + bed clip as the tube: intentional crescent trim / neighbour merge near the model.
+pub fn append_organic_plate_foot_slices(path: &[&SupportElement], config: &TreeSupportSettings, layer_begin: LayerIndex, slices: &mut [Polygons]) {
+    use std::f64::consts::PI as M_PI;
+
+    if path.len() < 2 || slices.is_empty() {
+        return;
+    }
+    let root: &SupportElement = path[0];
+    if !root.state.to_buildplate || !root.state.result_on_layer_is_set() {
+        return;
+    }
+
+    let r_root: Coord = support_element_radius(config, root);
+    let r_cap: Coord = config.bp_radius;
+    if r_root <= 0 || r_cap <= 0 || r_root >= r_cap {
+        return;
+    }
+
+    // Fixed radial extension beyond the blend-in trunk radius; hard-capped by bp_radius.
+    const K_BRIM_MM: f64 = 1.2;
+    const K_MEAN_FLARE_ANGLE_RAD: f64 = 12. * M_PI / 180.;
+    // scaled<coord_t>(k_brim_mm)
+    let brim_extra: Coord = (K_BRIM_MM / SCALING_FACTOR) as i32 as Coord;
+    // config.layer_height is already scaled, matching bp_radius_increase_per_layer units.
+    let mean_flare_per_layer: f64 = K_MEAN_FLARE_ANGLE_RAD.tan() * config.layer_height as f64;
+    if mean_flare_per_layer <= 0. || brim_extra <= 0 {
+        return;
+    }
+
+    let max_flare: Coord = std::cmp::min(brim_extra, (r_cap - r_root) as i32 as Coord);
+    if max_flare <= 0 {
+        return;
+    }
+    // Upper bound on cone height from the gentler slope (not the legacy ~40deg).
+    let layers_needed: usize = (max_flare as f64 / mean_flare_per_layer).ceil() as usize;
+    if layers_needed == 0 {
+        return;
+    }
+    let top: usize = std::cmp::min(layers_needed, path.len() - 1);
+    if top == 0 {
+        return;
+    }
+
+    let el_top: &SupportElement = path[top];
+    let r_trunk: Coord = support_element_radius(config, el_top);
+    let z0: LayerIndex = root.state.layer_idx;
+    let z1: LayerIndex = el_top.state.layer_idx;
+    if z1 <= z0 {
+        return;
+    }
+
+    // Relative to trunk at the blend point; never force a full 3.75mm when trunk+brim is enough.
+    let mut r_plate: Coord = std::cmp::min(r_cap, (r_trunk + brim_extra) as i32 as Coord);
+    // Keep the mean radial flare angle within the limit: short trunks reduce the flare.
+    // coord_t(std::lround(double(r_trunk) + double(z1 - z0) * mean_flare_per_layer)): the product is fused.
+    r_plate = std::cmp::min(r_plate, ((z1 - z0) as f64).mul_add(mean_flare_per_layer, r_trunk as f64).round() as i64 as i32 as Coord);
+    if r_plate <= r_root || r_plate <= r_trunk {
+        return;
+    }
+
+    for k in 0..=top {
+        let el: &SupportElement = path[k];
+        if !el.state.result_on_layer_is_set() {
+            continue;
+        }
+        let si: i32 = el.state.layer_idx - layer_begin;
+        if si < 0 || si >= slices.len() as i32 {
+            continue;
+        }
+        // t=0 at plate, t=1 at trunk blend. Ease-out: s = 1-(1-t)^2 → flatter near the trunk.
+        let t: f64 = (el.state.layer_idx - z0) as f64 / (z1 - z0) as f64;
+        // `1. - (1. - t) * (1. - t)`: the product is fused into the difference.
+        let s: f64 = (-(1. - t)).mul_add(1. - t, 1.);
+        // coord_t(std::lround(double(r_plate) + s * double(r_trunk - r_plate))): the product is fused.
+        let target: Coord = s.mul_add((r_trunk - r_plate) as f64, r_plate as f64).round() as i64 as i32 as Coord;
+        if target <= 0 {
+            continue;
+        }
+        // make_circle(target, std::max(double(target) / 100., 1.))
+        let error: f64 = target as f64 / 100.;
+        let mut circle: Polygon = make_circle_pin(target as f64, if error < 1. { 1. } else { error });
+        circle.translate(el.state.result_on_layer);
+        slices[si as usize].push(circle);
+    }
+}
+
+/// TreeSupport3D.cpp:5236-5245 `static int hemisphere_circle_nsteps(double radius)`
+///
+/// Same sagitta as discretize_circle (eps=0.015). nsteps is taken from the full
+/// hemisphere radius so every layer of one cap uses an identical vertex count.
+pub fn hemisphere_circle_nsteps(radius: f64) -> i32 {
+    use std::f64::consts::PI as M_PI;
+    const EPS: f64 = 0.015;
+    // std::max(radius, eps)
+    let r: f64 = if radius < EPS { EPS } else { radius };
+    // std::clamp(1. - eps / r, -1., 1.)
+    let c: f64 = 1. - EPS / r;
+    let c: f64 = if c < -1. {
+        -1.
+    } else if 1. < c {
+        1.
+    } else {
+        c
+    };
+    let angle_step: f64 = 2. * c.acos();
+    // std::max(3, int(std::ceil(2. * M_PI / std::max(angle_step, 1e-6))))
+    let n: i32 = (2. * M_PI / if angle_step < 1e-6 { 1e-6 } else { angle_step }).ceil() as i32;
+    std::cmp::max(3, n)
+}
+
+/// TreeSupport3D.cpp:5247-5260 `static void hemisphere_disk_xy_basis(const Vec3d &normal, Vec2d &x2, Vec2d &y2)`
+///
+/// XY basis for make_oriented_disk_xy / prepared caps. Matches discretize_circle's
+/// local x-axis (n × (0,-1,0)) projected to XY, so phase is constant across layers.
+pub fn hemisphere_disk_xy_basis(normal: &Vec3d, x2: &mut (f64, f64), y2: &mut (f64, f64)) {
+    let mut x3: Vec3d = eigen::cross3(normal, &Vec3d::new(0., -1., 0.));
+    if eigen::squared_norm3(&x3) < 1e-12 {
+        x3 = eigen::cross3(normal, &Vec3d::new(1., 0., 0.));
+    }
+    *x2 = (x3.x, x3.y);
+    if squared_norm2(*x2) < 1e-12 {
+        *x2 = (1., 0.);
+    } else {
+        // x2.normalize()
+        *x2 = normalized2(*x2);
+    }
+    *y2 = (-x2.1, x2.0);
+}
+
+/// TreeSupport3D.cpp:5262-5276 `static Polygon make_oriented_disk_xy(const Vec3d &center, const Vec2d &x2, const Vec2d
+/// &y2, double rho, int nsteps)`
+///
+/// Horizontal n-gon of radius rho using a precomputed XY basis.
+pub fn make_oriented_disk_xy(center: &Vec3d, x2: &(f64, f64), y2: &(f64, f64), rho: f64, nsteps: i32) -> Polygon {
+    use std::f64::consts::PI as M_PI;
+    let mut poly = Polygon::new();
+    poly.points.reserve(nsteps.max(0) as usize);
+    let da: f64 = 2. * M_PI / nsteps as f64;
+    for i in 0..nsteps {
+        let a: f64 = da * i as f64;
+        // The cosine and the sine of `a`: one call.
+        let (sin_a, cos_a) = crate::clipper::sin_cos(a);
+        // `center.x() + rho * (x2.x() * std::cos(a) + y2.x() * std::sin(a))`: the left product of the sum is fused
+        // into it, the product with rho into the outer sum.
+        let px: f64 = rho.mul_add(x2.0.mul_add(cos_a, y2.0 * sin_a), center.x);
+        let py: f64 = rho.mul_add(x2.1.mul_add(cos_a, y2.1 * sin_a), center.y);
+        // scaled<coord_t>(px), scaled<coord_t>(py)
+        poly.points.push(Point::new((px / SCALING_FACTOR) as i32 as Coord, (py / SCALING_FACTOR) as i32 as Coord));
+    }
+    poly
+}
+
+/// TreeSupport3D.cpp:5278-5321 `static Polygon clip_convex_polygon_halfplane(const Polygon &in, double ax, double ay,
+/// double c)`
+///
+/// Convex clip: keep ax*x + ay*y <= c (unscaled XY). Inserts edge-line hits so the
+/// cut does not go through Clipper's large half-plane quad.
+pub fn clip_convex_polygon_halfplane(in_: &Polygon, ax: f64, ay: f64, c: f64) -> Polygon {
+    if in_.points.len() < 3 {
+        return Polygon::new();
+    }
+    // `ax * unscaled<double>(p.x()) + ay * unscaled<double>(p.y()) - c`: `unscaled` is a call; the first product
+    // is fused into the sum of the two, the difference is plain.
+    let side = |p: &Point| -> f64 { ax.mul_add(unscaled_f64(p.x), ay * unscaled_f64(p.y)) - c };
+    let hit = |p: &Point, q: &Point, sp: f64, sq: f64| -> Point {
+        // Inside is sp <= EPSILON, so sp may be slightly positive here and sp - sq
+        // arbitrarily small. Clamp to keep the hit on the segment; t == 0 then yields p,
+        // which is exactly the intended EPSILON overlap past the clip line.
+        // std::clamp(sp / (sp - sq), 0., 1.)
+        let t: f64 = sp / (sp - sq);
+        let t: f64 = if t < 0. {
+            0.
+        } else if 1. < t {
+            1.
+        } else {
+            t
+        };
+        // `unscaled<double>(p.x()) + t * (unscaled<double>(q.x()) - unscaled<double>(p.x()))`: fused.
+        let x: f64 = t.mul_add(unscaled_f64(q.x) - unscaled_f64(p.x), unscaled_f64(p.x));
+        let y: f64 = t.mul_add(unscaled_f64(q.y) - unscaled_f64(p.y), unscaled_f64(p.y));
+        // Point(scaled<coord_t>(x), scaled<coord_t>(y))
+        Point::new((x / SCALING_FACTOR) as i32 as Coord, (y / SCALING_FACTOR) as i32 as Coord)
+    };
+
+    let mut out = Polygon::new();
+    out.points.reserve(in_.points.len() + 2);
+    let n: usize = in_.points.len();
+    for i in 0..n {
+        let p: &Point = &in_.points[i];
+        let q: &Point = &in_.points[(i + 1) % n];
+        let sp: f64 = side(p);
+        let sq: f64 = side(q);
+        let pin: bool = sp <= EPSILON;
+        let qin: bool = sq <= EPSILON;
+        if pin && qin {
+            out.points.push(*q);
+        } else if pin && !qin {
+            out.points.push(hit(p, q, sp, sq));
+        } else if !pin && qin {
+            out.points.push(hit(p, q, sp, sq));
+            out.points.push(*q);
+        }
+    }
+    if out.points.len() < 3 {
+        return Polygon::new();
+    }
+    if out.area() < 0. {
+        out.make_counter_clockwise();
+    }
+    out
+}
+
+/// TreeSupport3D.cpp:5323-5360 `static bool hemisphere_slice_polygon(const Vec3d &center, const Vec3d &normal, double
+/// radius, bool is_bottom, double slice_z, int nsteps, const Vec2d &x2, const Vec2d &y2, Polygon &out)`
+///
+/// Horizontal cross-section of a hemisphere: disk of radius sqrt(r^2-dz^2) clipped to the
+/// half-plane of the section. Used to inject 61563 split-joint caps into production slices.
+#[allow(clippy::too_many_arguments)]
+pub fn hemisphere_slice_polygon(
+    center: &Vec3d,
+    normal: &Vec3d,
+    radius: f64,
+    is_bottom: bool,
+    slice_z: f64,
+    nsteps: i32,
+    x2: &(f64, f64),
+    y2: &(f64, f64),
+    out: &mut Polygon,
+) -> bool {
+    let dz: f64 = slice_z - center.z;
+    if dz.abs() >= radius - EPSILON {
+        return false;
+    }
+
+    // std::sqrt(std::max(0., radius * radius - dz * dz)): the left product is fused into the difference.
+    let d: f64 = radius.mul_add(radius, -(dz * dz));
+    let rho: f64 = (if 0. < d { d } else { 0. }).sqrt();
+    if rho < 1e-4 {
+        return false;
+    }
+
+    let mut disk: Polygon = make_oriented_disk_xy(center, x2, y2, rho, nsteps);
+
+    let nxy: f64 = normal.x.hypot(normal.y);
+    if nxy > 1e-6 {
+        // Half-plane in XY from plane equation n·(q-p) ≥ 0 with q.z = slice_z.
+        // n.x*(x-cx) + n.y*(y-cy) + n.z*dz  ≥  0
+        // `normal.x() * center.x() + normal.y() * center.y() - normal.z() * dz`: the first product is fused into the
+        // sum, the last one into the difference.
+        let rhs: f64 = (-normal.z).mul_add(dz, normal.x.mul_add(center.x, normal.y * center.y));
+        // bottom: n.xy · r <= rhs ; top: n.xy · r >= rhs  <=>  (-n.xy)·r <= -rhs
+        disk = if is_bottom {
+            clip_convex_polygon_halfplane(&disk, normal.x, normal.y, rhs)
+        } else {
+            clip_convex_polygon_halfplane(&disk, -normal.x, -normal.y, -rhs)
+        };
+        if disk.points.len() < 3 {
+            return false;
+        }
+    } else {
+        // Vertical axis: keep only the hemisphere side of the equator.
+        if is_bottom && dz > EPSILON {
+            return false;
+        }
+        if !is_bottom && dz < -EPSILON {
+            return false;
+        }
+    }
+
+    *out = disk;
+    true
+}
+
+/// TreeSupport3D.cpp:5362-5371 `struct PreparedSplitCap`
+///
+/// Production-slice cache for one ExtrudeSplitCap: valid mid-Z layer range, circle
+/// discretization and XY basis so injection walks O(H) layers per cap instead of O(S).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreparedSplitCap {
+    /// The cap itself (a pointer in the pin).
+    pub cap: ExtrudeSplitCap,
+    pub layer_begin: LayerIndex,
+    pub layer_end: LayerIndex,
+    pub nsteps: i32,
+    pub x2: (f64, f64),
+    pub y2: (f64, f64),
+}
+
+/// TreeSupport3D.cpp:5373-5397 `static PreparedSplitCap prepare_split_cap(const ExtrudeSplitCap &sc, const
+/// SlicingParameters &slicing_params, const TreeSupportSettings &config, LayerIndex num_layers)`
+pub fn prepare_split_cap(sc: &ExtrudeSplitCap, slicing_params: &crate::slicing::SlicingParams, config: &TreeSupportSettings, num_layers: LayerIndex) -> PreparedSplitCap {
+    use crate::support::tree_support_common::{layer_idx_mid_ceil, layer_idx_mid_floor};
+    let mut out = PreparedSplitCap { cap: *sc, layer_begin: 0, layer_end: 0, nsteps: 0, x2: (1., 0.), y2: (0., 1.) };
+    out.nsteps = hemisphere_circle_nsteps(sc.radius);
+    hemisphere_disk_xy_basis(&sc.normal, &mut out.x2, &mut out.y2);
+    // Write the hemisphere as m·(q-c) <= 0. It crosses the horizontal plane through its
+    // own center whenever the axis is tilted, still reaching r * sqrt(1 - m.z^2) on the
+    // far side; bounding the scan at that plane instead would drop the very band this
+    // injection restores. Bounding it by the full sphere only wastes layers.
+    let m: Vec3d = if sc.is_bottom { sc.normal } else { Vec3d::new(-sc.normal.x, -sc.normal.y, -sc.normal.z) };
+    // std::clamp(m.z(), -1., 1.)
+    let mz: f64 = if m.z < -1. {
+        -1.
+    } else if 1. < m.z {
+        1.
+    } else {
+        m.z
+    };
+    // sc.radius * std::sqrt(std::max(0., 1. - mz * mz)): the product is fused into the difference.
+    let d: f64 = (-mz).mul_add(mz, 1.);
+    let reach: f64 = sc.radius * (if 0. < d { d } else { 0. }).sqrt();
+    let z_lo: f64 = sc.center.z - if mz < 0. { reach } else { sc.radius };
+    let z_hi: f64 = sc.center.z + if mz > 0. { reach } else { sc.radius };
+    out.layer_begin = layer_idx_mid_ceil(slicing_params, config, z_lo, num_layers);
+    out.layer_end = layer_idx_mid_floor(slicing_params, config, z_hi, num_layers) + 1;
+    out.layer_begin = std::cmp::max(out.layer_begin, 0);
+    out.layer_end = std::cmp::min(out.layer_end, num_layers);
+    out
+}
+
+/// TreeSupport3D.cpp:5399-5438 `static std::vector<Polygons> merged_band_keep_out(const PrintObject &print_object,
+/// const TreeSupportSettings &config, size_t num_support_layers)`
+///
+/// BBS multi-diameter: per support layer, the merged bands starting within the top gap above it, kept at the
+/// XY gap the collision would apply to them. The collision only knows the lslices, so a branch growing next to
+/// such a band may end up under it and leave base slivers the roof does not cover. Only the finished areas are
+/// clipped: feeding the bands into the collision would also grow the avoidance and drop branches that have to
+/// pass close to them.
+pub fn merged_band_keep_out(print_object: &pf::PrintObject, config: &TreeSupportSettings, num_support_layers: usize) -> Vec<Polygons> {
+    use crate::support::support_common::merged_band_footprint;
+
+    let num_raft_layers: usize = config.raft_layers.len();
+    let mut band_keep_out: Vec<Polygons> = vec![Vec::new(); num_support_layers];
+    let mut band_footprint: Vec<Polygons> = vec![Vec::new(); print_object.layer_count()];
+    let mut has_band = false;
+    for obj_layer_idx in 0..band_footprint.len() {
+        let band: Polygons = merged_band_footprint(print_object.get_layer(obj_layer_idx as i32), obj_layer_idx);
+        if !band.is_empty() {
+            band_footprint[obj_layer_idx] = cu::union_(&band);
+            has_band = true;
+        }
+    }
+    if has_band && num_support_layers > num_raft_layers {
+        // Same XY gap as TreeModelVolumes::calculateCollision(): the full gap on the layer itself, fading out
+        // over the layers of the top gap above it, down to the bare footprint.
+        let z_distance_top_layers: usize = config.z_distance_top_layers;
+        let mut xy_gap: Vec<Coord> = vec![config.xy_min_distance; z_distance_top_layers + 1];
+        for dz in 1..=z_distance_top_layers {
+            // std::max<coord_t>(0, coord_t(double(config.xy_min_distance) * (1. - (double(dz) - (z_distance_top_layers
+            // == 1 ? 0.5 : 0.)) / double(z_distance_top_layers))))
+            let v: f64 = config.xy_min_distance as f64 * (1. - (dz as f64 - if z_distance_top_layers == 1 { 0.5 } else { 0. }) / z_distance_top_layers as f64);
+            xy_gap[dz] = std::cmp::max(0, v as i32 as Coord);
+        }
+        for layer_idx in num_raft_layers..num_support_layers {
+            let obj_layer_idx: usize = layer_idx - num_raft_layers;
+            let mut band: Polygons = Vec::new();
+            let mut dz: usize = 0;
+            while dz <= z_distance_top_layers && obj_layer_idx + dz < band_footprint.len() {
+                let footprint: &Polygons = &band_footprint[obj_layer_idx + dz];
+                if !footprint.is_empty() {
+                    if xy_gap[dz] > 0 {
+                        band.extend(cu::offset(footprint, xy_gap[dz] as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT));
+                    } else {
+                        band.extend(footprint.iter().cloned());
+                    }
+                }
+                dz += 1;
+            }
+            if !band.is_empty() {
+                band_keep_out[layer_idx] = cu::union_(&band);
+            }
+        }
+    }
+    band_keep_out
+}
+
+/// TreeSupport3D.cpp:5539-5543 `struct Branch` of organic_draw_branches(): the elements of a branch, by layer and
+/// index in `move_bounds`.
+#[derive(Debug, Clone, Default)]
+pub struct OrganicBranch {
+    pub path: Vec<(usize, usize)>,
+    pub has_root: bool,
+    pub has_tip: bool,
+}
+
+/// TreeSupport3D.cpp:5545-5549 `struct Slice` of organic_draw_branches()
+#[derive(Debug, Clone, Default)]
+pub struct OrganicSlice {
+    pub polygons: Polygons,
+    pub bottom_contacts: Polygons,
+    pub num_branches: usize,
+}
+
+/// TreeSupport3D.cpp:5551-5556 `struct Tree` of organic_draw_branches()
+#[derive(Debug, Clone)]
+pub struct OrganicTree {
+    pub branches: Vec<OrganicBranch>,
+    pub slices: Vec<OrganicSlice>,
+    pub first_layer_id: LayerIndex,
+}
+
+impl Default for OrganicTree {
+    fn default() -> Self {
+        // LayerIndex first_layer_id{ -1 };
+        Self { branches: Vec::new(), slices: Vec::new(), first_layer_id: -1 }
+    }
+}
+
+/// TreeSupport3D.cpp:5560-5611 `TreeVisitor::visit_recursive(std::vector<SupportElements>& move_bounds,
+/// SupportElement& start_element, Tree& out)` of organic_draw_branches()
+fn organic_visit_recursive(move_bounds: &mut [SupportElements], start_element: (usize, usize), out: &mut OrganicTree) {
+    // Collect elements up to a bifurcation above.
+    move_bounds[start_element.0][start_element.1].state.marked = true;
+    // For each branch bifurcating from this point:
+    let layer_above: usize = (move_bounds[start_element.0][start_element.1].state.layer_idx + 1) as usize;
+    let root: bool = out.branches.is_empty();
+    let start_parents: usize = move_bounds[start_element.0][start_element.1].parents.len();
+    for parent_idx in 0..start_parents {
+        let mut branch = OrganicBranch::default();
+        branch.path.push(start_element);
+        // Traverse each branch until it branches again.
+        let first_parent: (usize, usize) = (layer_above, move_bounds[start_element.0][start_element.1].parents[parent_idx] as usize);
+        branch.path.push(first_parent);
+        let first_parent_parents: usize = move_bounds[first_parent.0][first_parent.1].parents.len();
+        if first_parent_parents < 2 {
+            move_bounds[first_parent.0][first_parent.1].state.marked = true;
+        }
+        let mut next_branch: Option<(usize, usize)> = None;
+        if first_parent_parents == 1 {
+            let mut parent: (usize, usize) = first_parent;
+            loop {
+                let p: &SupportElement = &move_bounds[parent.0][parent.1];
+                let next_parent: (usize, usize) = ((p.state.layer_idx + 1) as usize, p.parents[0] as usize);
+                branch.path.push(next_parent);
+                let next_parent_parents: usize = move_bounds[next_parent.0][next_parent.1].parents.len();
+                if next_parent_parents > 1 {
+                    // Branching point was reached.
+                    next_branch = Some(next_parent);
+                    break;
+                }
+                move_bounds[next_parent.0][next_parent.1].state.marked = true;
+                if next_parent_parents == 0 {
+                    // Tip is reached.
+                    break;
+                }
+                parent = next_parent;
+            }
+        } else if first_parent_parents > 1 {
+            // Branching point was reached.
+            next_branch = Some(first_parent);
+        }
+        branch.has_root = root;
+        branch.has_tip = next_branch.is_none();
+        out.branches.push(branch);
+        if let Some(next_branch) = next_branch {
+            organic_visit_recursive(move_bounds, next_branch, out);
+        }
+    }
+}
+
+/// TreeSupport3D.cpp:5440-6049 `void organic_draw_branches(PrintObject& print_object, TreeModelVolumes& volumes, const
+/// TreeSupportSettings& config, std::vector<SupportElements>& move_bounds, SupportGeneratorLayersPtr& bottom_contacts,
+/// SupportGeneratorLayersPtr& top_contacts, InterfacePlacer& interface_placer, SupportGeneratorLayersPtr&
+/// intermediate_layers, SupportGeneratorLayerStorage& layer_storage, std::vector<ExPolygons>& cooldown_areas,
+/// std::function<void()> throw_on_cancel)`
+///
+/// The branches of the organic supports: the points of the elements smoothed and nudged off the object, every
+/// tree extruded branch by branch into meshes that are sliced at the middle of the layers, the slices of a tree
+/// put together, what the object cut off dropped, then the layers.
+///
+/// The pin takes the trees and the layers through `tbb::parallel_for`; a tree and a layer are written by their
+/// own pass only, here they go in their order (which is also the order the layers are allocated in).
+#[allow(clippy::too_many_arguments)]
+pub fn organic_draw_branches(
+    print_object: &pf::PrintObject,
+    volumes: &mut TreeModelVolumes,
+    config: &TreeSupportSettings,
+    move_bounds: &mut [SupportElements],
+    // I/O:
+    bottom_contacts: &mut SupportGeneratorLayersPtr,
+    top_contacts: &mut SupportGeneratorLayersPtr,
+    _interface_placer: &mut InterfacePlacer,
+    // Output:
+    intermediate_layers: &mut SupportGeneratorLayersPtr,
+    layer_storage: &mut SupportGeneratorLayerStorage,
+    cooldown_areas: &mut [Vec<ExPolygon>],
+    throw_on_cancel: ThrowOnCancel,
+) {
+    use crate::support::tree_support_common::{layer_idx_mid_ceil, layer_idx_mid_floor, layer_mid_z};
+    use crate::triangle_mesh_slicer::{slice_mesh_its_identity, MeshSlicingParams, SlicingMode};
+    use std::f64::consts::PI as M_PI;
+
+    // All SupportElements are put into a layer independent storage to improve parallelization.
+    let (elements_with_link_down, linear_data_layers) = organic_elements_with_link_down(move_bounds);
+
+    throw_on_cancel();
+
+    organic_smooth_branches_avoid_collisions(print_object, volumes, config, move_bounds, &elements_with_link_down, &linear_data_layers, throw_on_cancel);
+
+    //save the cooling area
+    let mut layer_idx: usize = 0;
+    while layer_idx + 1 < move_bounds.len() {
+        for elem_idx in 0..move_bounds[layer_idx].len() {
+            let elem: &SupportElement = &move_bounds[layer_idx][elem_idx];
+            if !elem.parents.is_empty() {
+                let layer_above: &SupportElements = &move_bounds[layer_idx + 1];
+                for &parent_elem in &elem.parents {
+                    let parent: &SupportElement = &layer_above[parent_elem as usize];
+                    // std::min(10.0, (parent.state.result_on_layer - elem.state.result_on_layer).cast<double>().norm() /
+                    // config.support_line_width * 10): the difference of two `Point`s wraps in 32 bits.
+                    let d: (f64, f64) = (
+                        (parent.state.result_on_layer.x - elem.state.result_on_layer.x) as i32 as f64,
+                        (parent.state.result_on_layer.y - elem.state.result_on_layer.y) as i32 as f64,
+                    );
+                    let v: f64 = norm2(d) / config.support_line_width as f64 * 10.;
+                    let overhang_degree: f64 = if v < 10.0 { v } else { 10.0 };
+
+                    if overhang_degree >= 2. {
+                        let radius: Coord = support_element_radius(config, parent);
+                        // make_circle(radius, radius / 100): a division of integers.
+                        let mut circle: Polygon = make_circle_pin(radius as f64, (radius / 100) as f64);
+                        circle.translate(parent.state.result_on_layer);
+                        cooldown_areas[layer_idx + 1].push(ExPolygon::new(circle));
+                    }
+                }
+            }
+        }
+        layer_idx += 1;
+    }
+
+    // Reduce memory footprint. After this point only finalize_interface_and_support_areas() will use volumes and from that only collisions with zero radius will be used.
+    volumes.clear_all_but_object_collision();
+    let volumes: &TreeModelVolumes = volumes;
+
+    // Unmark all nodes.
+    for elements in move_bounds.iter_mut() {
+        for element in elements.iter_mut() {
+            element.state.marked = false;
+        }
+    }
+
+    // Traverse all nodes, generate tubes.
+    // Traversal stack with nodes and their current parent
+    let mut trees: Vec<OrganicTree> = Vec::new();
+
+    let mut layer_idx: usize = 0;
+    while layer_idx + 1 < move_bounds.len() {
+        for start_idx in 0..move_bounds[layer_idx].len() {
+            let start_element: &SupportElement = &move_bounds[layer_idx][start_idx];
+            if !start_element.state.marked && !start_element.parents.is_empty() {
+                trees.push(OrganicTree::default());
+                let last = trees.len() - 1;
+                organic_visit_recursive(move_bounds, (layer_idx, start_idx), &mut trees[last]);
+            }
+        }
+        layer_idx += 1;
+    }
+
+    let slicing_params = print_object.slicing_parameters().clone();
+    let mut mesh_slicing_params = MeshSlicingParams::default();
+    mesh_slicing_params.mode = SlicingMode::Positive;
+
+    {
+        let move_bounds: &[SupportElements] = move_bounds;
+        let mut partial_mesh = indexed_triangle_set::default();
+        let mut slice_z: Vec<f32> = Vec::new();
+        let mut bottom_contacts: Vec<Polygons> = Vec::new();
+        let mesh_split_caps: bool = split_cap_use_mesh_hemispheres();
+        for tree in trees.iter_mut() {
+            for branch_idx in 0..tree.branches.len() {
+                let branch: &OrganicBranch = &tree.branches[branch_idx];
+                let path: Vec<&SupportElement> = branch.path.iter().map(|&(l, i)| &move_bounds[l][i]).collect();
+                let path_front: &SupportElement = path[0];
+                let path_back: &SupportElement = path[path.len() - 1];
+                // Triangulate the tube.
+                partial_mesh.vertices.clear();
+                partial_mesh.indices.clear();
+                let mut split_caps: Vec<ExtrudeSplitCap> = Vec::new();
+                let zspan: (f32, f32) =
+                    extrude_branch(&path, config, &slicing_params, move_bounds, &mut partial_mesh, if mesh_split_caps { None } else { Some(&mut split_caps) });
+                // Slice planes are layer mid-Z (not print_z). Map mesh/cap spans with
+                // layer_idx_mid_* so the last/first mid-plane inside the span is not skipped.
+                let num_layers: LayerIndex = move_bounds.len() as LayerIndex;
+                let mesh_begin: LayerIndex = if branch.has_root {
+                    path_front.state.layer_idx
+                } else {
+                    std::cmp::min(path_front.state.layer_idx, layer_idx_mid_ceil(&slicing_params, config, zspan.0 as f64, num_layers))
+                };
+                let mesh_end: LayerIndex = (if branch.has_tip {
+                    path_back.state.layer_idx
+                } else {
+                    std::cmp::max(path_back.state.layer_idx, layer_idx_mid_floor(&slicing_params, config, zspan.1 as f64, num_layers))
+                }) + 1;
+                // Analytic mode: mesh Z excludes split-joint hemispheres; expand the output
+                // layer range so 2D caps can be injected. Mesh mode already includes them in zspan.
+                let mut layer_begin: LayerIndex = mesh_begin;
+                let mut layer_end: LayerIndex = mesh_end;
+                let mut prepared_caps: Vec<PreparedSplitCap> = Vec::new();
+                if !split_caps.is_empty() {
+                    prepared_caps.reserve(split_caps.len());
+                    for sc in &split_caps {
+                        let pc: PreparedSplitCap = prepare_split_cap(sc, &slicing_params, config, num_layers);
+                        if pc.layer_begin >= pc.layer_end {
+                            continue;
+                        }
+                        layer_begin = std::cmp::min(layer_begin, pc.layer_begin);
+                        layer_end = std::cmp::max(layer_end, pc.layer_end);
+                        prepared_caps.push(pc);
+                    }
+                }
+                if branch.has_root {
+                    layer_begin = std::cmp::max(layer_begin, path_front.state.layer_idx);
+                }
+                if branch.has_tip {
+                    layer_end = std::cmp::min(layer_end, path_back.state.layer_idx + 1);
+                }
+                layer_begin = std::cmp::max(layer_begin, 0);
+                layer_end = std::cmp::min(layer_end, num_layers);
+                if layer_begin >= layer_end {
+                    continue;
+                }
+                slice_z.clear();
+                for layer_idx in layer_begin..layer_end {
+                    slice_z.push(layer_mid_z(&slicing_params, config, layer_idx) as f32);
+                }
+                let mut slices: Vec<Polygons>;
+                // Fast path: no analytic inject needed — slice the full mid-Z range once.
+                if prepared_caps.is_empty() {
+                    slices = slice_mesh_its_identity(&partial_mesh, &slice_z, &mesh_slicing_params, &|| throw_on_cancel());
+                } else {
+                    let clip_mesh_begin: LayerIndex = std::cmp::max(mesh_begin, layer_begin);
+                    let clip_mesh_end: LayerIndex = std::cmp::min(mesh_end, layer_end);
+                    let mut mesh_slice_z: Vec<f32> = Vec::new();
+                    if clip_mesh_begin < clip_mesh_end {
+                        mesh_slice_z.extend_from_slice(&slice_z[(clip_mesh_begin - layer_begin) as usize..(clip_mesh_end - layer_begin) as usize]);
+                    }
+                    let mesh_slices: Vec<Polygons> = if mesh_slice_z.is_empty() {
+                        Vec::new()
+                    } else {
+                        slice_mesh_its_identity(&partial_mesh, &mesh_slice_z, &mesh_slicing_params, &|| throw_on_cancel())
+                    };
+                    slices = vec![Vec::new(); slice_z.len()];
+                    for (i, s) in mesh_slices.into_iter().enumerate() {
+                        slices[(clip_mesh_begin - layer_begin) as usize + i] = s;
+                    }
+                    // Cap-driven inject: each prepared cap only walks its mid-Z [begin,end).
+                    for pc in &prepared_caps {
+                        let inj_begin: LayerIndex = std::cmp::max(pc.layer_begin, layer_begin);
+                        let inj_end: LayerIndex = std::cmp::min(pc.layer_end, layer_end);
+                        for layer_idx in inj_begin..inj_end {
+                            let mut poly = Polygon::new();
+                            if hemisphere_slice_polygon(
+                                &pc.cap.center,
+                                &pc.cap.normal,
+                                pc.cap.radius,
+                                pc.cap.is_bottom,
+                                slice_z[(layer_idx - layer_begin) as usize] as f64,
+                                pc.nsteps,
+                                &pc.x2,
+                                &pc.y2,
+                                &mut poly,
+                            ) {
+                                slices[(layer_idx - layer_begin) as usize].push(poly);
+                            }
+                        }
+                    }
+                }
+
+                // Plate cone on the single trunk only. Must not change extrude radii.
+                if branch.has_root {
+                    append_organic_plate_foot_slices(&path, config, layer_begin, &mut slices);
+                }
+
+                bottom_contacts.clear();
+                //FIXME parallelize?
+                for i in 0..slices.len() {
+                    slices[i] = diff_clipped(&slices[i], &volumes.get_collision(0, layer_begin + i as LayerIndex, true)); // FIXME parent_uses_min || draw_area.element->state.use_min_xy_dist);
+                    slices[i] = cu::intersection(&slices[i], std::slice::from_ref(&volumes.m_bed_area), cu::ApplySafetyOffset::No);
+                }
+                // Per-branch model-severed fragment removal is deferred to a tree-level
+                // connectivity pass (keep_main) that runs after sibling branches are merged,
+                // so a fragment held up by a sibling branch is not dropped prematurely.
+                let mut num_empty: usize = 0;
+                if slices[0].is_empty() {
+                    // Some of the initial layers are empty.
+                    num_empty = slices.iter().position(|s| !s.is_empty()).unwrap_or(slices.len());
+                } else if branch.has_root {
+                    if path_front.state.to_model_gracious {
+                        if config.settings.support_floor_layers > 0 {
+                            //FIXME one may just take the whole tree slice as bottom interface.
+                            bottom_contacts.push(intersection_clipped(&slices[0], &volumes.get_placeable_areas(0, layer_begin, &|| {})));
+                        }
+                    } else if layer_begin > 0 {
+                        // Drop down areas that do rest non - gracefully on the model to ensure the branch actually rests on something.
+                        struct BottomExtraSlice {
+                            polygons: Polygons,
+                            #[allow(dead_code)]
+                            area: f64,
+                        }
+                        let mut bottom_extra_slices: Vec<BottomExtraSlice> = Vec::new();
+                        let mut rest_support: Polygons = Vec::new();
+                        let bottom_radius: Coord = support_element_radius(config, path_front);
+                        // nofloat (Solution 1): drop the non-gracious "fake root" until it
+                        // wraps onto the model surface (rest area pinched below
+                        // support_area_stop) or reaches the bed, instead of a fixed
+                        // layers_propagate_max budget that left the bottom floating. Sibling
+                        // overlaps are welded later by the per-tree union + keep_main pass.
+                        let layer_bottommost: LayerIndex = 0;
+                        let branch_radius: f64 = config.branch_radius as f64;
+                        let support_area_min_radius: f64 = M_PI * (branch_radius * branch_radius);
+                        // std::max(0.2 * M_PI * sqr(double(bottom_radius)), 0.5 * support_area_min_radius)
+                        let bottom_radius_f: f64 = bottom_radius as f64;
+                        let a: f64 = 0.2 * M_PI * (bottom_radius_f * bottom_radius_f);
+                        let b: f64 = 0.5 * support_area_min_radius;
+                        let support_area_stop: f64 = if a < b { b } else { a };
+                        // Only propagate until the rest area is smaller than this threshold.
+                        let mut layer_idx: LayerIndex = layer_begin - 1;
+                        while layer_idx >= layer_bottommost {
+                            // Drop is now bounded by the model/bed instead of layers_propagate_max, so poll cancel every 16 layers.
+                            if ((layer_begin - 1 - layer_idx) & 15) == 15 {
+                                throw_on_cancel();
+                            }
+                            rest_support = diff_clipped(if rest_support.is_empty() { &slices[0] } else { &rest_support }, &volumes.get_collision(0, layer_idx, false));
+                            let rest_support_area: f64 = area(&rest_support);
+                            if rest_support_area < support_area_stop {
+                                // Don't propagate a fraction of the tree contact surface.
+                                break;
+                            }
+                            bottom_extra_slices.push(BottomExtraSlice { polygons: rest_support.clone(), area: rest_support_area });
+                            layer_idx -= 1;
+                        }
+                        // Now remove those bottom slices that are not supported at all.
+                        if config.settings.support_floor_layers > 0 {
+                            let mut i: i32 = bottom_extra_slices.len() as i32 - 2;
+                            while i >= 0 {
+                                bottom_contacts
+                                    .push(intersection_clipped(&bottom_extra_slices[i as usize].polygons, &volumes.get_placeable_areas(0, layer_begin - i - 1, &|| {})));
+                                i -= 1;
+                            }
+                        }
+                        layer_begin -= bottom_extra_slices.len() as LayerIndex;
+                        // slices.insert(slices.begin(), bottom_extra_slices.size(), {}); then the extra slices from the
+                        // last one to the first.
+                        let mut new_slices: Vec<Polygons> = Vec::with_capacity(bottom_extra_slices.len() + slices.len());
+                        for src in bottom_extra_slices.into_iter().rev() {
+                            new_slices.push(src.polygons);
+                        }
+                        new_slices.append(&mut slices);
+                        slices = new_slices;
+                    }
+                }
+
+                layer_begin += num_empty as LayerIndex;
+                while !slices.is_empty() && slices[slices.len() - 1].is_empty() {
+                    slices.pop();
+                    layer_end -= 1;
+                }
+                if layer_begin < layer_end {
+                    let new_begin: LayerIndex = if tree.first_layer_id == -1 { layer_begin } else { std::cmp::min(tree.first_layer_id, layer_begin) };
+                    let new_end: LayerIndex =
+                        if tree.first_layer_id == -1 { layer_end } else { std::cmp::max(tree.first_layer_id + tree.slices.len() as LayerIndex, layer_end) };
+                    let new_size: usize = (new_end - new_begin) as usize;
+                    if tree.first_layer_id == -1 {
+                    } else {
+                        // Empty slices in front (the pin makes a new vector when the capacity does not do).
+                        let dif: LayerIndex = tree.first_layer_id - new_begin;
+                        if dif > 0 {
+                            let mut new_slices: Vec<OrganicSlice> = Vec::with_capacity(new_size);
+                            new_slices.resize_with(dif as usize, OrganicSlice::default);
+                            new_slices.append(&mut tree.slices);
+                            tree.slices = new_slices;
+                        }
+                    }
+                    tree.slices.resize_with(new_size, OrganicSlice::default);
+                    layer_begin -= num_empty as LayerIndex;
+                    for i in layer_begin..layer_end {
+                        let j: usize = (i - layer_begin) as usize;
+                        if !slices[j].is_empty() {
+                            let src: Polygons = std::mem::take(&mut slices[j]);
+                            let dst: &mut OrganicSlice = &mut tree.slices[(i - new_begin) as usize];
+                            dst.num_branches += 1;
+                            if dst.num_branches > 1 {
+                                dst.polygons.extend(src);
+                                if j < bottom_contacts.len() {
+                                    dst.bottom_contacts.extend(std::mem::take(&mut bottom_contacts[j]));
+                                }
+                            } else {
+                                dst.polygons = src;
+                                if j < bottom_contacts.len() {
+                                    dst.bottom_contacts = std::mem::take(&mut bottom_contacts[j]);
+                                }
+                            }
+                        }
+                    }
+                    tree.first_layer_id = new_begin;
+                }
+            }
+        }
+    }
+
+    for tree in trees.iter_mut() {
+        for slice in tree.slices.iter_mut() {
+            if slice.num_branches > 1 {
+                slice.polygons = cu::union_(&slice.polygons);
+                slice.bottom_contacts = cu::union_(&slice.bottom_contacts);
+                slice.num_branches = 1;
+            }
+        }
+        // keep_main (tree level): now that sibling branches of this tree are merged per
+        // layer, drop slice components not connected through vertical overlap to any branch
+        // axis of this tree. Running at tree scope (instead of per branch) keeps fragments
+        // held up by a sibling branch, which a per-branch pass cannot see.
+        if tree.first_layer_id >= 0 {
+            let base: LayerIndex = tree.first_layer_id;
+            let n: usize = tree.slices.len();
+            // 25 um: treat an axis point on/near a part boundary as inside.
+            let axis_touch_tol: f64 = scaled_f64(0.025);
+            let mut parts: Vec<Vec<ExPolygon>> = Vec::with_capacity(n);
+            let mut keep: Vec<Vec<bool>> = Vec::with_capacity(n);
+            for i in 0..n {
+                parts.push(cu::union_ex(&tree.slices[i].polygons));
+                keep.push(vec![false; parts[i].len()]);
+            }
+            // Seed with every branch axis node of this tree.
+            for branch in &tree.branches {
+                for &(l, e) in &branch.path {
+                    let el: &SupportElement = &move_bounds[l][e];
+                    let layer: LayerIndex = el.state.layer_idx;
+                    if layer < base || (layer - base) as usize >= n {
+                        continue;
+                    }
+                    let i: usize = (layer - base) as usize;
+                    if parts[i].is_empty() {
+                        continue;
+                    }
+                    let axis: Point = el.state.result_on_layer;
+                    for j in 0..parts[i].len() {
+                        if keep[i][j] {
+                            continue;
+                        }
+                        let mut ok: bool = cu_expolygon::contains(&parts[i][j], &axis, true);
+                        if !ok {
+                            let mut pt: Point = axis;
+                            move_inside(&parts[i][j].to_polygons(), &mut pt, 0, i64::MAX);
+                            // (axis - pt).cast<double>().norm(): the difference wraps in 32 bits.
+                            ok = norm2(((axis.x - pt.x) as i32 as f64, (axis.y - pt.y) as i32 as f64)) < axis_touch_tol;
+                        }
+                        if ok {
+                            keep[i][j] = true;
+                        }
+                    }
+                }
+            }
+            // Cache each layer's kept contour union; invalidated when its keep[] changes.
+            let mut kept_cache: Vec<Polygons> = vec![Vec::new(); n];
+            let mut cache_dirty: Vec<bool> = vec![true; n];
+            fn kept_polys(i: usize, parts: &[Vec<ExPolygon>], keep: &[Vec<bool>], kept_cache: &mut [Polygons], cache_dirty: &mut [bool]) {
+                if cache_dirty[i] {
+                    let mut out: Polygons = Vec::new();
+                    for j in 0..parts[i].len() {
+                        if keep[i][j] {
+                            out.extend(parts[i][j].to_polygons());
+                        }
+                    }
+                    kept_cache[i] = out;
+                    cache_dirty[i] = false;
+                }
+            }
+            // One directional sweep: keep any part overlapping a kept part in the adjacent
+            // lower (up) / upper (down) layer. Returns whether keep[] changed.
+            let sweep = |up: bool, keep: &mut Vec<Vec<bool>>, kept_cache: &mut Vec<Polygons>, cache_dirty: &mut Vec<bool>| -> bool {
+                let mut changed = false;
+                for s in 1..n {
+                    let i: usize = if up { s } else { n - 1 - s };
+                    let p: usize = if up { i - 1 } else { i + 1 };
+                    kept_polys(p, &parts, keep, kept_cache, cache_dirty);
+                    if kept_cache[p].is_empty() {
+                        continue;
+                    }
+                    for j in 0..parts[i].len() {
+                        if !keep[i][j] && !cu::intersection(&parts[i][j].to_polygons(), &kept_cache[p], cu::ApplySafetyOffset::No).is_empty() {
+                            keep[i][j] = true;
+                            cache_dirty[i] = true;
+                            changed = true;
+                        }
+                    }
+                }
+                changed
+            };
+            // Iterate to a fixpoint: a single up+down pass is not a connected-component
+            // computation and would drop fragments linked to an axis through zig-zag
+            // (multi-direction) layer chains. Keep flags only grow, so this terminates.
+            let mut changed = true;
+            while changed {
+                let up_changed: bool = sweep(true, &mut keep, &mut kept_cache, &mut cache_dirty);
+                let down_changed: bool = sweep(false, &mut keep, &mut kept_cache, &mut cache_dirty);
+                changed = up_changed || down_changed;
+            }
+            for i in 0..n {
+                kept_polys(i, &parts, &keep, &mut kept_cache, &mut cache_dirty);
+                let kept: Polygons = kept_cache[i].clone();
+                if !tree.slices[i].bottom_contacts.is_empty() {
+                    tree.slices[i].bottom_contacts = cu::intersection(&tree.slices[i].bottom_contacts, &kept, cu::ApplySafetyOffset::No);
+                }
+                tree.slices[i].polygons = kept;
+            }
+        }
+        throw_on_cancel();
+    }
+
+    let mut num_layers: usize = 0;
+    for tree in &trees {
+        if tree.first_layer_id >= 0 {
+            num_layers = std::cmp::max(num_layers, tree.first_layer_id as usize + tree.slices.len());
+        }
+    }
+
+    let mut slices: Vec<OrganicSlice> = vec![OrganicSlice::default(); num_layers];
+    for tree in trees.iter_mut() {
+        if tree.first_layer_id >= 0 {
+            for i in tree.first_layer_id..tree.first_layer_id + tree.slices.len() as LayerIndex {
+                let src: &mut OrganicSlice = &mut tree.slices[(i - tree.first_layer_id) as usize];
+                if !src.polygons.is_empty() {
+                    let dst: &mut OrganicSlice = &mut slices[i as usize];
+                    dst.num_branches += 1;
+                    if dst.num_branches > 1 {
+                        dst.polygons.extend(std::mem::take(&mut src.polygons));
+                        dst.bottom_contacts.extend(std::mem::take(&mut src.bottom_contacts));
+                    } else {
+                        dst.polygons = std::mem::take(&mut src.polygons);
+                        dst.bottom_contacts = std::mem::take(&mut src.bottom_contacts);
+                    }
+                }
+            }
+        }
+    }
+
+    let num_final_layers: usize = std::cmp::min(move_bounds.len(), slices.len());
+    let band_keep_out: Vec<Polygons> = merged_band_keep_out(print_object, config, num_final_layers);
+
+    for layer_idx in 0..num_final_layers {
+        let slice: &mut OrganicSlice = &mut slices[layer_idx];
+        let mut base_layer_polygons: Polygons = if slice.num_branches > 1 { cu::union_(&slice.polygons) } else { std::mem::take(&mut slice.polygons) };
+        let mut bottom_contact_polygons: Polygons =
+            if slice.num_branches > 1 { cu::union_(&slice.bottom_contacts) } else { std::mem::take(&mut slice.bottom_contacts) };
+
+        if !base_layer_polygons.is_empty() {
+            // Most of the time in this function is this union call. Can take 300+ ms when a lot of areas are to be unioned.
+            base_layer_polygons = crate::mutable_polygon::smooth_outward_polygons(cu::union_(&base_layer_polygons), config.support_line_width); //FIXME was .smooth(50);
+            // simplify a bit, to ensure the output does not contain outrageous amounts of vertices. Should not be necessary, just a precaution.
+            // std::min(scaled<double>(0.03), double(config.resolution))
+            let resolution = config.resolution as f64;
+            let tolerance = if resolution < scaled_f64(0.03) { resolution } else { scaled_f64(0.03) };
+            base_layer_polygons = crate::support::tree_model_volumes::polygons_simplify_pin(&base_layer_polygons, tolerance);
+        }
+        let band: &Polygons = &band_keep_out[layer_idx];
+        if !band.is_empty() {
+            if !base_layer_polygons.is_empty() {
+                base_layer_polygons = cu::diff(&base_layer_polygons, band, cu::ApplySafetyOffset::No);
+            }
+            if !bottom_contact_polygons.is_empty() {
+                bottom_contact_polygons = cu::diff(&bottom_contact_polygons, band, cu::ApplySafetyOffset::No);
+            }
+        }
+
+        // Subtract top contact layer polygons from support base.
+        let top_contact_layer: usize = if top_contacts.is_empty() { SUPPORT_GENERATOR_LAYER_PTR_NULL } else { top_contacts[layer_idx] };
+        if top_contact_layer != SUPPORT_GENERATOR_LAYER_PTR_NULL && !layer_storage[top_contact_layer].polygons.is_empty() && !base_layer_polygons.is_empty() {
+            base_layer_polygons = cu::diff(&base_layer_polygons, &layer_storage[top_contact_layer].polygons, cu::ApplySafetyOffset::No);
+            if !bottom_contact_polygons.is_empty() {
+                //FIXME it may be better to clip bottom contacts with top contacts first after they are propagated to produce interface layers.
+                bottom_contact_polygons = cu::diff(&bottom_contact_polygons, &layer_storage[top_contact_layer].polygons, cu::ApplySafetyOffset::No);
+            }
+        }
+        if !bottom_contact_polygons.is_empty() {
+            base_layer_polygons = cu::diff(&base_layer_polygons, &bottom_contact_polygons, cu::ApplySafetyOffset::No);
+            let bottom_contact_layer: usize = layer_allocate(layer_storage, SupporLayerType::SltBottomContact, &slicing_params, config, layer_idx);
+            bottom_contacts[layer_idx] = bottom_contact_layer;
+            layer_storage[bottom_contact_layer].polygons = bottom_contact_polygons;
+        }
+        if !base_layer_polygons.is_empty() {
+            let base_layer: usize = layer_allocate(layer_storage, SupporLayerType::SltBase, &slicing_params, config, layer_idx);
+            intermediate_layers[layer_idx] = base_layer;
+            layer_storage[base_layer].polygons = cu::union_(&base_layer_polygons);
+        }
+
+        throw_on_cancel();
+    }
+}

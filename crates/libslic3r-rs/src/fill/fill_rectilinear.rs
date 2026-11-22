@@ -2506,6 +2506,12 @@ pub fn generate_fill_rectilinear(
     is_grid: bool,
 ) -> Vec<InfillPath> {
     ADJUSTED_SPACING_MM.with(|c| c.set(None));
+    // FILL_RECTILINEAR_PIN (on unless =0): one direction is laid by
+    // `FillRectilinear::fill_surface_by_lines` in the arithmetic of the pin (the classes at the
+    // end of this file, compared with the pin by tests/fill_rectilinear_native_parity.rs).
+    if !is_grid && live_entries_at_the_pin() && (!config.consistent_pattern || config.object_bounding_box.is_some()) {
+        return generate_fill_rectilinear_pin(fill_area, config, layer_index, false);
+    }
     let mut paths = Vec::new();
 
     // Native Fill::_infill_direction (FillBase.cpp:239) adds an UNCONDITIONAL
@@ -2847,6 +2853,29 @@ pub fn generate_grid_raw_lines(
     config: &InfillConfig,
     layer_index: usize,
 ) -> (Vec<Polyline>, Vec<Polygon>) {
+    // FILL_RECTILINEAR_PIN (on unless =0): the lines of the two sweeps as
+    // `FillRectilinear::fill_surface_by_multilines` lays them for FillGrid (FillRectilinear.cpp:3037-3063,
+    // 3118-3125) in the arithmetic of the pin: `scale_` as a division, the sweep density halved in
+    // float, the offset polygon turned by `ExPolygonWithOffset(base, -angle)` and the lines turned back
+    // by `Point::rotated(cos, sin)` with fused products and one `__sincos_stret` call.
+    if fill_rectilinear_pin()
+        && crate::faithful_gate("GRID_ANGLE_F32")
+        && crate::faithful_gate("GRID_FILL_LINES_FAITHFUL")
+        && crate::faithful_gate("RECT_OFFSET_FAITHFUL")
+        && crate::faithful_gate("TOPFILL_FAITHFUL")
+    {
+        let mut f = FillGrid::new();
+        live_fill_members(&mut f.0.base, config, layer_index);
+        let surface = live_surface(expoly, config);
+        let mut params = live_fill_params(config, false);
+        // params.density /= double(sweep_params.size());
+        params.density = (((params.density as f32) as f64 / 2.0) as f32) as f64;
+        let sweeps = [SweepParams { angle_base: 0., pattern_shift: 0. }, SweepParams { angle_base: (std::f64::consts::PI / 2.) as f32, pattern_shift: 0. }];
+        return match f.0.fill_lines_of_sweeps(&surface, &params, &sweeps) {
+            Some((poly_with_offset_base, fill_lines)) => (fill_lines, poly_with_offset_base.polygons_outer),
+            None => (Vec::new(), Vec::new()),
+        };
+    }
     // FillBase.hpp:207 — _layer_angle alternates 0 / 90° on odd/even layers.
     let layer_angle = if layer_index & 1 == 1 {
         std::f64::consts::FRAC_PI_2
@@ -4106,7 +4135,14 @@ fn monotonous_region_path_length(
         i_vline += 1;
     }
 
-    total_length / crate::SCALING_FACTOR as f32
+    // FillRectilinear.cpp:2148 — `return unscale<float>(total_length);`: libslic3r.h:112
+    // `T(v) * T(SCALING_FACTOR)`, a product with the float 0.00001f. FILL_RECTILINEAR_PIN=0
+    // divides by 100000f, which is an ulp away for about every second length.
+    if fill_rectilinear_pin() {
+        total_length * (crate::libslic3r::SCALING_FACTOR as f32)
+    } else {
+        total_length / crate::SCALING_FACTOR as f32
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5083,6 +5119,18 @@ pub fn generate_fill_rectilinear_monotonic(
     monotonic: bool,
 ) -> Vec<InfillPath> {
     ADJUSTED_SPACING_MM.with(|c| c.set(None));
+    // FILL_RECTILINEAR_PIN (on unless =0): the lines of a top surface (ipMonotonicLine, which
+    // `Fill::new_from_type` makes a FillMonotonicLineWGapFill, FillBase.cpp:48) are laid by
+    // `FillMonotonicLineWGapFill::fill_surface_by_lines`, every other one-direction fill by
+    // `FillRectilinear::fill_surface_by_lines` with `params.monotonic` (FillMonotonic::fill_surface).
+    if !is_grid && live_entries_at_the_pin() && !config.consistent_pattern {
+        if monotonic && config.pattern == super::InfillPattern::MonotonicLine && !config.connect_infill && config.dont_adjust {
+            return generate_fill_monotonic_line_w_gap_fill_pin(fill_area, config, layer_index);
+        }
+        if !monotonic || fill_monotonic_pin() {
+            return generate_fill_rectilinear_pin(fill_area, config, layer_index, monotonic);
+        }
+    }
     let mut paths = Vec::new();
 
     // Same missing native _infill_direction +90 as generate_fill_rectilinear.
@@ -5240,6 +5288,1191 @@ pub fn sample_grid_pattern_polygons(
         spacing,
         global_bounding_box,
     )
+}
+
+// ---------------------------------------------------------------------------
+// The fillers of FillRectilinear.hpp under their C++ names
+// ---------------------------------------------------------------------------
+//
+// `class FillRectilinear` and the fillers derived from it (FillRectilinear.hpp:11-217), with
+// `fill_surface_by_lines`, `fill_surface_by_multilines` and `make_fill_lines` (FillRectilinear.cpp:2825-3204)
+// in the arithmetic of the pin: the angle in `float`, `scale_` as a division, the rotations with one
+// `__sincos_stret` call and fused products, `coord_t` truncation where the C++ converts. These are what
+// tests/fill_rectilinear_native_parity.rs compares with the pin; the entries the slicing path calls
+// (`generate_fill_rectilinear`, `generate_fill_rectilinear_monotonic`, `generate_grid_raw_lines`) go
+// through them when `FILL_RECTILINEAR_PIN` is on.
+
+use super::fill_base::Fill;
+use super::FillParams;
+use crate::surface::Surface;
+
+/// `FILL_RECTILINEAR_PIN` (on unless `=0`): the entries of the slicing path lay their lines through the
+/// classes below. `=0` keeps the arithmetic those entries had before R922.
+pub fn fill_rectilinear_pin() -> bool {
+    crate::faithful_gate("FILL_RECTILINEAR_PIN")
+}
+
+/// `FILL_MONOTONIC_PIN`: the connected monotonic fill of a bottom surface (ipMonotonic, FillMonotonic) is
+/// laid by `FillRectilinear::fill_surface_by_lines` with `params.monotonic` too (see
+/// `generate_fill_rectilinear_monotonic`).
+fn fill_monotonic_pin() -> bool {
+    crate::faithful_gate("FILL_MONOTONIC_PIN")
+}
+
+/// MultiPoint.cpp:27-35 — `void MultiPoint::rotate(double cos_angle, double sin_angle)`; the same body as
+/// `Point::rotate(double cos_a, double sin_a)` (Point.hpp:227-232). One fused product per coordinate.
+fn point_rotate_cos_sin(pt: &mut Point, cos_angle: f64, sin_angle: f64) {
+    let cur_x = pt.x as f64;
+    let cur_y = pt.y as f64;
+    pt.x = cos_angle.mul_add(cur_x, -(sin_angle * cur_y)).round() as Coord;
+    pt.y = cos_angle.mul_add(cur_y, sin_angle * cur_x).round() as Coord;
+}
+
+/// MultiPoint.hpp:42 — `void rotate(double angle) { this->rotate(cos(angle), sin(angle)); }`: the cosine and
+/// the sine of one argument, one `__sincos_stret` call.
+fn multi_point_rotate(points: &mut [Point], angle: f64) {
+    let (sin_angle, cos_angle) = crate::clipper::sin_cos(angle);
+    for pt in points.iter_mut() {
+        point_rotate_cos_sin(pt, cos_angle, sin_angle);
+    }
+}
+
+/// `sinf(x)` and `cosf(x)` of one argument, in the order (sin, cos): clang for macOS turns the two calls
+/// into one call of `__sincosf_stret` (see `crate::clipper::sin_cos` for the doubles), which this calls
+/// itself on Apple targets.
+///
+/// FIDELITY-NOTE: on the other targets this is `x.sin()` and `x.cos()`; whether the Linux and Windows
+/// builds of the C++ get the same bits there has not been tested.
+#[inline]
+fn sin_cos_f32(x: f32) -> (f32, f32) {
+    #[cfg(target_vendor = "apple")]
+    {
+        #[repr(C)]
+        struct Float2 {
+            sinval: f32,
+            cosval: f32,
+        }
+        extern "C" {
+            fn __sincosf_stret(x: f32) -> Float2;
+        }
+        // SAFETY: `__sincosf_stret` of libSystem takes a float and returns the two floats by value.
+        let r = unsafe { __sincosf_stret(x) };
+        (r.sinval, r.cosval)
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    {
+        (x.sin(), x.cos())
+    }
+}
+
+/// Point.hpp:233 — `Point rotated(double angle) const`.
+fn point_rotated(pt: Point, angle: f64) -> Point {
+    let (sin_angle, cos_angle) = crate::clipper::sin_cos(angle);
+    let mut res = pt;
+    point_rotate_cos_sin(&mut res, cos_angle, sin_angle);
+    res
+}
+
+/// BoundingBox.hpp:226-246 — `align_to_grid(coord, spacing)`, `align_to_grid(Point, Point, Point base)`.
+fn align_to_grid_coord(coord: Coord, spacing: Coord) -> Coord {
+    // Current C++ standard defines the result of integer division to be rounded to zero,
+    // for both positive and negative numbers. Here we want to round down for negative
+    // numbers as well.
+    if coord < 0 {
+        ((coord - spacing + 1) / spacing) * spacing
+    } else {
+        (coord / spacing) * spacing
+    }
+}
+fn align_to_grid_base(coord: Point, spacing: Point, base: Point) -> Point {
+    Point::new(
+        base.x + align_to_grid_coord(coord.x - base.x, spacing.x),
+        base.y + align_to_grid_coord(coord.y - base.y, spacing.y),
+    )
+}
+
+impl ExPolygonWithOffset {
+    /// FillRectilinear.cpp:453-499 — the constructor
+    /// `ExPolygonWithOffset(const ExPolygon &expolygon, float angle, coord_t aoffset1, coord_t aoffset2 = 0)`.
+    pub fn new_pin(expolygon: &ExPolygon, angle: f32, aoffset1: Coord, aoffset2: Coord) -> Self {
+        // Copy and rotate the source polygons.
+        let mut polygons_src = expolygon.clone();
+        if angle != 0. {
+            multi_point_rotate(&mut polygons_src.contour.points, angle as f64);
+            for hole in &mut polygons_src.holes {
+                multi_point_rotate(&mut hole.points, angle as f64);
+            }
+        }
+
+        // double miterLimit = DefaultMiterLimit; (3., ClipperUtils.hpp)
+        crate::ex_polygon::remove_sticks_expoly(&mut polygons_src);
+        // polygons_outer = aoffset1 == 0 ? to_polygons(polygons_src) : offset(polygons_src, float(aoffset1), ClipperLib::jtMiter, miterLimit);
+        let mut polygons_outer: Vec<Polygon> = if aoffset1 == 0 {
+            expolygon_to_polygons(&polygons_src)
+        } else {
+            crate::clipper_utils::offset_expolygons_clib_raw_scaled(
+                std::slice::from_ref(&polygons_src),
+                (aoffset1 as f32) as f64,
+                OffsetJoinType::Miter,
+            )
+        };
+        // if (aoffset2 < 0)
+        //     polygons_inner = shrink(polygons_outer, float(aoffset1 - aoffset2), ClipperLib::jtMiter, miterLimit);
+        let mut polygons_inner: Vec<Polygon> = if aoffset2 < 0 {
+            crate::clipper_utils::offset_polygons_clib(&polygons_outer, -(((aoffset1 - aoffset2) as f32) as f64), OffsetJoinType::Miter)
+        } else {
+            Vec::new()
+        };
+        // Filter out contours with zero area or small area, contours with 2 points only.
+        let min_area_threshold = 0.01 * aoffset2 as f64 * aoffset2 as f64;
+        crate::geometry::remove_small_polygons(&mut polygons_outer, min_area_threshold);
+        crate::geometry::remove_small_polygons(&mut polygons_inner, min_area_threshold);
+        crate::geometry::remove_sticks_polygons(&mut polygons_outer);
+        crate::geometry::remove_sticks_polygons(&mut polygons_inner);
+        let n_contours_outer = polygons_outer.len();
+        let n_contours_inner = polygons_inner.len();
+        let n_contours = n_contours_outer + n_contours_inner;
+        let mut polygons_ccw = vec![false; n_contours];
+        for i in 0..n_contours {
+            let contour = if i < n_contours_outer { &mut polygons_outer[i] } else { &mut polygons_inner[i - n_contours_outer] };
+            crate::multi_point::remove_duplicate_points(&mut contour.points);
+            polygons_ccw[i] = crate::geometry::geometry::is_ccw(contour);
+        }
+        Self { polygons_src, polygons_outer, polygons_inner, n_contours_outer, n_contours_inner, n_contours, polygons_ccw }
+    }
+
+    /// FillRectilinear.cpp:501-511 — `ExPolygonWithOffset(const ExPolygonWithOffset &rhs, float angle)`.
+    pub fn new_rotated(rhs: &ExPolygonWithOffset, angle: f32) -> Self {
+        let mut this = Self {
+            polygons_src: rhs.polygons_src.clone(),
+            polygons_outer: rhs.polygons_outer.clone(),
+            polygons_inner: rhs.polygons_inner.clone(),
+            n_contours_outer: rhs.n_contours_outer,
+            n_contours_inner: rhs.n_contours_inner,
+            n_contours: rhs.n_contours,
+            polygons_ccw: rhs.polygons_ccw.clone(),
+        };
+        if angle != 0. {
+            multi_point_rotate(&mut this.polygons_src.contour.points, angle as f64);
+            for hole in &mut this.polygons_src.holes {
+                multi_point_rotate(&mut hole.points, angle as f64);
+            }
+            for poly in &mut this.polygons_outer {
+                multi_point_rotate(&mut poly.points, angle as f64);
+            }
+            for poly in &mut this.polygons_inner {
+                multi_point_rotate(&mut poly.points, angle as f64);
+            }
+        }
+        this
+    }
+
+    /// FillRectilinear.cpp:527-528 — `bounding_box_src()`: `get_extents(polygons_src)`, the extents of the
+    /// contour (ExPolygon.cpp `get_extents(const ExPolygon &)`).
+    pub fn bounding_box_src_pin(&self) -> BoundingBox {
+        BoundingBox::from_points(&self.polygons_src.contour.points)
+    }
+
+    /// FillRectilinear.cpp:531-532 — `bounding_box_inner()`.
+    pub fn bounding_box_inner(&self) -> BoundingBox {
+        let mut bbox = BoundingBox::new();
+        for poly in &self.polygons_inner {
+            bbox.merge(&poly.bounding_box());
+        }
+        bbox
+    }
+}
+
+/// FillRectilinear.cpp:2994-3031 —
+/// `void make_fill_lines(const ExPolygonWithOffset &poly_with_offset, Point refpt, double angle, coord_t x_margin, coord_t line_spacing, coord_t pattern_shift, Polylines &fill_lines)`
+pub fn make_fill_lines(
+    poly_with_offset: &ExPolygonWithOffset,
+    mut refpt: Point,
+    angle: f64,
+    x_margin: Coord,
+    line_spacing: Coord,
+    pattern_shift: Coord,
+    fill_lines: &mut Vec<Polyline>,
+) {
+    let mut bounding_box = poly_with_offset.bounding_box_src_pin();
+    // Don't produce infill lines, which fully overlap with the infill perimeter.
+    let x_min = bounding_box.min.x + x_margin;
+    let x_max = bounding_box.max.x - x_margin;
+    // extend bounding box so that our pattern will be aligned with other layers
+    // align_to_grid will not work correctly with positive pattern_shift.
+    let pattern_shift_scaled = pattern_shift % line_spacing;
+    refpt.x -= if pattern_shift_scaled >= 0 { pattern_shift_scaled } else { line_spacing + pattern_shift_scaled };
+    bounding_box.merge_point(align_to_grid_base(bounding_box.min, Point::new(line_spacing, line_spacing), refpt));
+
+    // Intersect a set of euqally spaced vertical lines wiht expolygon.
+    // n_vlines = ceil(bbox_width / line_spacing)
+    let n_vlines = ((bounding_box.max.x - bounding_box.min.x + line_spacing - 1) / line_spacing) as usize;
+    // const double cos_a = cos(angle); const double sin_a = sin(angle); — one call
+    let (sin_a, cos_a) = crate::clipper::sin_cos(angle);
+    for vline in &slice_region_by_vertical_lines(poly_with_offset, n_vlines, bounding_box.min.x, line_spacing) {
+        if vline.pos >= x_min {
+            if vline.pos > x_max {
+                break;
+            }
+            let n = vline.intersections.len();
+            let mut it = 0usize;
+            while it < n {
+                let it_low = it;
+                it += 1;
+                if vline.intersections[it_low].itype != SegmentIntersectionType::OuterLow {
+                    continue;
+                }
+                let it_high = it;
+                // (The C++ reads *it_high without a test for the end; an OUTER_LOW is followed by its
+                // OUTER_HIGH where no inner contour was sliced.)
+                if it_high < n && vline.intersections[it_high].itype == SegmentIntersectionType::OuterHigh {
+                    let mut a = Point::new(vline.pos, vline.intersections[it_low].pos());
+                    let mut b = Point::new(vline.pos, vline.intersections[it_high].pos());
+                    if angle != 0. {
+                        point_rotate_cos_sin(&mut a, cos_a, sin_a);
+                        point_rotate_cos_sin(&mut b, cos_a, sin_a);
+                    }
+                    fill_lines.push(Polyline::from_points(vec![a, b]));
+                    it += 1;
+                }
+            }
+        }
+    }
+}
+
+/// The class of a filler made from `FillRectilinear` (FillRectilinear.hpp): what its virtual functions
+/// `_layer_angle`, `has_consistent_pattern`, `no_sort` and `is_self_crossing` return.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FillRectilinearClass {
+    Rectilinear,
+    AlignedRectilinear,
+    Monotonic,
+    MonotonicLine,
+    Grid,
+    Triangles,
+    Stars,
+    Cubic,
+    SupportBase,
+    ZigZag,
+    CrossZag,
+    LockedZag,
+    Lattice2D,
+}
+
+/// FillRectilinear.hpp:26-29 — `struct SweepParams`: fill by multiple sweeps of differing directions.
+#[derive(Debug, Clone, Copy)]
+pub struct SweepParams {
+    pub angle_base: f32,
+    pub pattern_shift: f32,
+}
+
+/// FillRectilinear.hpp:11-34 — `class FillRectilinear : public Fill`.
+#[derive(Debug, Clone)]
+pub struct FillRectilinear {
+    /// The members of the base class (FillBase.hpp:114-141).
+    pub base: Fill,
+    /// The dynamic type.
+    pub class: FillRectilinearClass,
+}
+
+impl Default for FillRectilinear {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FillRectilinear {
+    pub fn new() -> Self {
+        Self::with_class(FillRectilinearClass::Rectilinear)
+    }
+
+    pub fn with_class(class: FillRectilinearClass) -> Self {
+        Self { base: Fill::new(), class }
+    }
+
+    /// FillRectilinear.hpp:18 — `bool is_self_crossing() override { return false; }`, and the overrides of
+    /// FillGrid, FillTriangles, FillStars and FillCubic (FillRectilinear.hpp:63, 76, 89, 102).
+    pub fn is_self_crossing(&self) -> bool {
+        use FillRectilinearClass::*;
+        matches!(self.class, Grid | Triangles | Stars | Cubic)
+    }
+
+    /// FillBase.hpp:217 — `_layer_angle` of the base class, and the overrides that keep the angle constant
+    /// between the layers (FillRectilinear.hpp:43, 67, 80, 93, 106, 118, 212).
+    pub fn _layer_angle(&self, idx: usize) -> f32 {
+        use FillRectilinearClass::*;
+        match self.class {
+            AlignedRectilinear | Grid | Triangles | Stars | Cubic | SupportBase | Lattice2D => 0.,
+            _ => self.base._layer_angle(idx),
+        }
+    }
+
+    /// FillBase.hpp:162, FillRectilinear.hpp:165, 174, 187 — `has_consistent_pattern()`.
+    pub fn has_consistent_pattern(&self) -> bool {
+        use FillRectilinearClass::*;
+        matches!(self.class, ZigZag | CrossZag | LockedZag)
+    }
+
+    /// FillBase.hpp:157, FillRectilinear.hpp:52, 61 — `no_sort()`.
+    pub fn no_sort(&self) -> bool {
+        use FillRectilinearClass::*;
+        matches!(self.class, Monotonic | MonotonicLine)
+    }
+
+    /// FillBase.cpp:197-241 — `Fill::_infill_direction` with the `_layer_angle` of this class.
+    pub fn _infill_direction(&self, surface: &Surface) -> (f32, Point) {
+        self.base._infill_direction_with(surface, |idx| self._layer_angle(idx))
+    }
+
+    /// FillRectilinear.cpp:2815-2823 — `BoundingBox FillRectilinear::extended_object_bounding_box() const`
+    pub fn extended_object_bounding_box(&self) -> BoundingBox {
+        extended_object_bounding_box(&self.base.bounding_box)
+    }
+
+    /// FillRectilinear.cpp:2825-2992 —
+    /// `bool FillRectilinear::fill_surface_by_lines(const Surface *surface, const FillParams &params, float angleBase, float pattern_shift, Polylines &polylines_out)`
+    ///
+    /// Fill by single directional lines, interconnect the lines along perimeters.
+    pub fn fill_surface_by_lines(&mut self, surface: &Surface, params: &FillParams, angle_base: f32, pattern_shift: f32, polylines_out: &mut Vec<Polyline>) -> bool {
+        self.fill_surface_by_lines_spacing_written(surface, params, angle_base, pattern_shift, polylines_out).0
+    }
+
+    /// The body of `fill_surface_by_lines`; the second value says whether `this->spacing` was written
+    /// (FillRectilinear.cpp:2864), which the caller of the C++ reads back from the filler
+    /// (FillBase.cpp:138-149) and the slicing path of this crate from `ADJUSTED_SPACING_MM`.
+    fn fill_surface_by_lines_spacing_written(&mut self, surface: &Surface, params: &FillParams, angle_base: f32, pattern_shift: f32, polylines_out: &mut Vec<Polyline>) -> (bool, bool) {
+        let mut spacing_written = false;
+        // At the end, only the new polylines will be rotated back.
+        let n_polylines_out_initial = polylines_out.len();
+
+        // Shrink the input polygon a bit first to not push the infill lines out of the perimeters.
+        const INFILL_OVERLAP_OVER_SPACING: f32 = 0.45;
+
+        // Rotate polygons so that we can work with vertical lines here
+        let mut rotate_vector = self._infill_direction(surface);
+        if params.locked_zag {
+            rotate_vector.0 += (std::f64::consts::PI / 2.) as f32;
+        }
+        rotate_vector.0 += angle_base;
+
+        let density = (params.density as f32) as f64;
+        // coord_t line_spacing = coord_t(scale_(this->spacing) / params.density);
+        let mut line_spacing = ((self.base.spacing / crate::libslic3r::SCALING_FACTOR) / density) as Coord;
+
+        // On the polygons of poly_with_offset, the infill lines will be connected.
+        //     float(scale_(this->overlap - (0.5 - INFILL_OVERLAP_OVER_SPACING) * this->spacing)),
+        //     float(scale_(this->overlap - 0.5f * this->spacing)));
+        // two floats handed to `coord_t` parameters.
+        let c = 0.5 - INFILL_OVERLAP_OVER_SPACING as f64;
+        let aoffset1 = (((-c).mul_add(self.base.spacing, self.base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32) as Coord;
+        let aoffset2 = (((-0.5f64).mul_add(self.base.spacing, self.base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32) as Coord;
+        let poly_with_offset = ExPolygonWithOffset::new_pin(&surface.expolygon, -rotate_vector.0, aoffset1, aoffset2);
+        if poly_with_offset.n_contours_inner == 0 {
+            // Not a single infill line fits.
+            //FIXME maybe one shall trigger the gap fill here?
+            return (true, spacing_written);
+        }
+
+        // For infill that needs to be consistent between layers (like Zig Zag),
+        // we use bounding box of whole object to match vertical lines between layers.
+        let bounding_box_src = poly_with_offset.bounding_box_src_pin();
+        let mut bounding_box = if self.has_consistent_pattern() { self.extended_object_bounding_box() } else { bounding_box_src };
+
+        // define flow spacing according to requested density
+        if params.full_infill() && !params.dont_adjust {
+            line_spacing = Fill::_adjust_solid_spacing(bounding_box_src.max.x - bounding_box_src.min.x, line_spacing);
+            // this->spacing = unscale<double>(line_spacing);
+            self.base.spacing = line_spacing as f64 * crate::libslic3r::SCALING_FACTOR;
+            spacing_written = true;
+        } else {
+            // extend bounding box so that our pattern will be aligned with other layers
+            // Transform the reference point to the rotated coordinate system.
+            let mut refpt = point_rotated(rotate_vector.1, (-rotate_vector.0) as f64);
+            // align_to_grid will not work correctly with positive pattern_shift.
+            let pattern_shift_scaled = ((pattern_shift as f64 / crate::libslic3r::SCALING_FACTOR) as Coord) % line_spacing;
+            refpt.x -= if pattern_shift_scaled >= 0 { pattern_shift_scaled } else { line_spacing + pattern_shift_scaled };
+            bounding_box.merge_point(align_to_grid_base(bounding_box.min, Point::new(line_spacing, line_spacing), refpt));
+        }
+
+        // Intersect a set of euqally spaced vertical lines wiht expolygon.
+        // n_vlines = ceil(bbox_width / line_spacing)
+        let mut n_vlines = ((bounding_box.max.x - bounding_box.min.x + line_spacing - 1) / line_spacing) as usize;
+        let mut x0 = bounding_box.min.x;
+        if params.full_infill() {
+            x0 += (line_spacing + SCALED_EPSILON) / 2;
+        }
+
+        // int gap_line = params.horiz_move / line_spacing;  (a float quotient, truncated)
+        let gap_line = (params.horiz_move / line_spacing as f32) as i32;
+        // x0 += params.horiz_move - gap_line * line_spacing;  (the sum is taken in float)
+        if gap_line % 2 == 0 {
+            x0 = (x0 as f32 + (params.horiz_move - (gap_line as i64 * line_spacing) as f32)) as Coord;
+        } else {
+            x0 = (x0 as f32 + (params.horiz_move - ((gap_line - 1) as i64 * line_spacing) as f32)) as Coord;
+            n_vlines += 1;
+        }
+
+        let mut segs = slice_region_by_vertical_lines(&poly_with_offset, n_vlines, x0, line_spacing);
+        // Connect by horizontal / vertical links, classify the links based on link_max_length as too long.
+        let rparams = FillRectilinearParams {
+            density: params.density,
+            monotonic: params.monotonic,
+            dont_connect: params.dont_connect(),
+            link_max_length: self.base.link_max_length,
+            full_infill: params.full_infill(),
+            dont_adjust: params.dont_adjust,
+            consistent_pattern: self.has_consistent_pattern(),
+        };
+        connect_segment_intersections_by_contours(&poly_with_offset, &mut segs, &rparams, self.base.link_max_length);
+
+        //FIXME this is a hack to get the monotonic infill rolling. We likely want a smarter switch, likely based on user decison.
+        let monotonic_infill = params.monotonic; // || params.density > 0.99;
+        if monotonic_infill {
+            // Sometimes the outer contour pinches the inner contour from both sides along a single vertical line.
+            // This situation is not handled correctly by generate_montonous_regions().
+            // Insert phony OUTER_HIGH / OUTER_LOW pairs at the position where the contour is pinched.
+            pinch_contours_insert_phony_outer_intersections(&mut segs);
+            let mut regions = generate_monotonous_regions(&mut segs);
+            connect_monotonic_regions(&mut regions, &poly_with_offset, &segs);
+            if !regions.is_empty() {
+                // std::mt19937_64 rng; (seeded in chain_monotonic_regions)
+                let path = chain_monotonic_regions(&mut regions, &poly_with_offset, &segs);
+                polylines_from_paths(&path, &regions, &poly_with_offset, &segs, polylines_out);
+            }
+        } else {
+            traverse_graph_generate_polylines(&poly_with_offset, &rparams, &mut segs, polylines_out);
+        }
+
+        // paths must be rotated back
+        for it in polylines_out[n_polylines_out_initial..].iter_mut() {
+            // No need to translate, the absolute position is irrelevant.
+            multi_point_rotate(&mut it.points, rotate_vector.0 as f64);
+            //FIXME rather simplify the paths to avoid very short edges?
+            crate::multi_point::remove_duplicate_points(&mut it.points);
+
+            //get origin direction infill
+            if params.symmetric_infill_y_axis {
+                crate::multi_point::symmetric_y(&mut it.points, params.symmetric_y_axis);
+            }
+        }
+
+        (true, spacing_written)
+    }
+
+    /// FillRectilinear.cpp:3033-3073 —
+    /// `bool FillRectilinear::fill_surface_by_multilines(const Surface *surface, FillParams params, const std::initializer_list<SweepParams> &sweep_params, Polylines &polylines_out)`
+    ///
+    /// Fill by multiple sweeps of differing directions.
+    pub fn fill_surface_by_multilines(&mut self, surface: &Surface, mut params: FillParams, sweep_params: &[SweepParams], polylines_out: &mut Vec<Polyline>) -> bool {
+        debug_assert!(!sweep_params.is_empty());
+        // params.density /= double(sweep_params.size());  (a float member)
+        params.density = (((params.density as f32) as f64 / sweep_params.len() as f64) as f32) as f64;
+        let (poly_with_offset_base, mut fill_lines) = match self.fill_lines_of_sweeps(surface, &params, sweep_params) {
+            Some(lines) => lines,
+            // Not a single infill line fits.
+            None => return true,
+        };
+
+        // FillRectilinear.cpp:3065-3070
+        if params.dont_connect() || fill_lines.len() <= 1 {
+            if fill_lines.len() > 1 {
+                fill_lines = crate::shortest_path::chain_polylines(fill_lines, None);
+            }
+            polylines_out.extend(fill_lines);
+        } else {
+            let bbox = BoundingBox::from_points(&surface.expolygon.contour.points);
+            Fill::connect_infill_polygons(fill_lines, &poly_with_offset_base.polygons_outer, &bbox, polylines_out, self.base.spacing, &params);
+        }
+
+        true
+    }
+
+    /// FillRectilinear.cpp:3038-3063 — the part of `fill_surface_by_multilines` that lays the lines of
+    /// every sweep, with `params.density` already divided by the number of sweeps: the offset polygon
+    /// the lines are connected along afterwards and the lines; `None` where no contour is left.
+    fn fill_lines_of_sweeps(&self, surface: &Surface, params: &FillParams, sweep_params: &[SweepParams]) -> Option<(ExPolygonWithOffset, Vec<Polyline>)> {
+        let n_multilines = params.multiline;
+
+        // ExPolygonWithOffset poly_with_offset_base(surface->expolygon, 0, float(scale_(this->overlap - 0.5 * this->spacing)));
+        let aoffset1 = (((-0.5f64).mul_add(self.base.spacing, self.base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32) as Coord;
+        let poly_with_offset_base = ExPolygonWithOffset::new_pin(&surface.expolygon, 0., aoffset1, 0);
+        if poly_with_offset_base.n_contours == 0 {
+            // Not a single infill line fits.
+            return None;
+        }
+
+        let mut fill_lines: Vec<Polyline> = Vec::new();
+        let line_width = (self.base.spacing / crate::libslic3r::SCALING_FACTOR) as Coord;
+        let line_spacing = ((self.base.spacing / crate::libslic3r::SCALING_FACTOR) * params.multiline as f64 / params.density) as Coord;
+        let rotate_vector = self._infill_direction(surface);
+        for sweep in sweep_params {
+            // Rotate polygons so that we can work with vertical lines here
+            let angle: f32 = rotate_vector.0 + sweep.angle_base;
+            //Fill Multiline
+            for i in 0..n_multilines {
+                let group_offset: Coord = i as Coord * line_spacing;
+                // coord_t internal_offset = (i - (n_multilines - 1) / 2.0f) * line_width;  (in float)
+                let internal_offset: Coord = ((i as f32 - (n_multilines - 1) as f32 / 2.0f32) * line_width as f32) as Coord;
+                let total_offset: Coord = group_offset + internal_offset;
+                // coord_t pattern_shift = scale_(sweep.pattern_shift + unscale_(total_offset));
+                let pattern_shift: Coord =
+                    ((total_offset as f64).mul_add(crate::libslic3r::SCALING_FACTOR, sweep.pattern_shift as f64) / crate::libslic3r::SCALING_FACTOR) as Coord;
+
+                make_fill_lines(
+                    &ExPolygonWithOffset::new_rotated(&poly_with_offset_base, -angle),
+                    point_rotated(rotate_vector.1, (-angle) as f64),
+                    angle as f64,
+                    line_width + SCALED_EPSILON,
+                    line_spacing,
+                    pattern_shift,
+                    &mut fill_lines,
+                );
+            }
+        }
+
+        Some((poly_with_offset_base, fill_lines))
+    }
+
+    /// FillRectilinear.cpp:3075-3095 — `Polylines FillRectilinear::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        if params.conformal {
+            let mut conformal_out: Vec<Polyline> = Vec::new();
+            if super::fill_conformal::fill_surface(&self.base, Some(surface), params, &mut conformal_out) {
+                return conformal_out;
+            }
+        }
+
+        use crate::print_config::InfillPattern as P;
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        if params.full_infill() || params.multiline == 1 || params.pattern == P::CrossZag || params.pattern == P::ZigZag || params.pattern == P::LockedZag {
+            // if (!fill_surface_by_lines(surface, params, 0.f, 0.f, polylines_out)) BOOST_LOG_TRIVIAL(error) << ...
+            self.fill_surface_by_lines(surface, params, 0., 0., &mut polylines_out);
+        } else {
+            self.fill_surface_by_multilines(surface, params.clone(), &[SweepParams { angle_base: 0., pattern_shift: 0. }], &mut polylines_out);
+        }
+        polylines_out
+    }
+}
+
+macro_rules! filler_of_fill_rectilinear {
+    ($(#[$doc:meta])* $name:ident, $class:ident) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone)]
+        pub struct $name(pub FillRectilinear);
+        impl Default for $name {
+            fn default() -> Self {
+                Self(FillRectilinear::with_class(FillRectilinearClass::$class))
+            }
+        }
+        impl $name {
+            pub fn new() -> Self {
+                Self::default()
+            }
+        }
+    };
+}
+
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:36-44 — `class FillAlignedRectilinear : public FillRectilinear`.
+    FillAlignedRectilinear, AlignedRectilinear);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:46-53 — `class FillMonotonic : public FillRectilinear`.
+    FillMonotonic, Monotonic);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:55-62 — `class FillMonotonicLine : public FillRectilinear`.
+    FillMonotonicLine, MonotonicLine);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:64-75 — `class FillGrid : public FillRectilinear`.
+    FillGrid, Grid);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:77-88 — `class FillTriangles : public FillRectilinear`.
+    FillTriangles, Triangles);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:90-101 — `class FillStars : public FillRectilinear`.
+    FillStars, Stars);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:103-114 — `class FillCubic : public FillRectilinear`.
+    FillCubic, Cubic);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:116-126 — `class FillSupportBase : public FillRectilinear`.
+    FillSupportBase, SupportBase);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:158-166 — `class FillZigZag : public FillRectilinear`.
+    FillZigZag, ZigZag);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:168-175 — `class FillCrossZag : public FillRectilinear`.
+    FillCrossZag, CrossZag);
+filler_of_fill_rectilinear!(
+    /// FillRectilinear.hpp:204-214 — `class Fill2DLattice : public FillRectilinear`.
+    Fill2DLattice, Lattice2D);
+
+impl FillAlignedRectilinear {
+    /// FillRectilinear.hpp:43 — always generate infill at the same angle.
+    pub fn _layer_angle(&self, _idx: usize) -> f32 {
+        0.
+    }
+    /// The `fill_surface` of the base class (FillRectilinear.cpp:3075-3095).
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        self.0.fill_surface(surface, params)
+    }
+}
+
+impl FillMonotonic {
+    /// FillRectilinear.hpp:52 — `bool no_sort() const override { return true; }`
+    pub fn no_sort(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.cpp:3097-3105 — `Polylines FillMonotonic::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        let mut params2 = params.clone();
+        params2.monotonic = true;
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        self.0.fill_surface_by_lines(surface, &params2, 0., 0., &mut polylines_out);
+        polylines_out
+    }
+}
+
+impl FillMonotonicLine {
+    /// FillRectilinear.hpp:61 — `bool no_sort() const override { return true; }`
+    pub fn no_sort(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.cpp:3107-3116 — `Polylines FillMonotonicLine::fill_surface(const Surface* surface, const FillParams& params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        let mut params2 = params.clone();
+        params2.monotonic = true;
+        params2.anchor_length_max = 0.0;
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        self.0.fill_surface_by_lines(surface, &params2, 0., 0., &mut polylines_out);
+        polylines_out
+    }
+}
+
+impl FillGrid {
+    /// FillRectilinear.hpp:72 — `bool is_self_crossing() override { return true; }`
+    pub fn is_self_crossing(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.hpp:75 — the grid fill keeps the angle constant between the layers.
+    pub fn _layer_angle(&self, _idx: usize) -> f32 {
+        0.
+    }
+    /// FillRectilinear.cpp:3118-3131 — `Polylines FillGrid::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        self.0.fill_surface_by_multilines(
+            surface,
+            params.clone(),
+            &[SweepParams { angle_base: 0., pattern_shift: 0. }, SweepParams { angle_base: (std::f64::consts::PI / 2.) as f32, pattern_shift: 0. }],
+            &mut polylines_out,
+        );
+
+        if self.0.base.layer_id % 2 == 1 {
+            for pl in polylines_out.iter_mut() {
+                pl.points.reverse();
+            }
+        }
+        polylines_out
+    }
+}
+
+impl FillTriangles {
+    /// FillRectilinear.hpp:85 — `bool is_self_crossing() override { return true; }`
+    pub fn is_self_crossing(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.hpp:88
+    pub fn _layer_angle(&self, _idx: usize) -> f32 {
+        0.
+    }
+    /// FillRectilinear.cpp:3133-3142 — `Polylines FillTriangles::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        self.0.fill_surface_by_multilines(
+            surface,
+            params.clone(),
+            &[
+                SweepParams { angle_base: 0., pattern_shift: 0. },
+                SweepParams { angle_base: (std::f64::consts::PI / 3.) as f32, pattern_shift: 0. },
+                SweepParams { angle_base: (2. * std::f64::consts::PI / 3.) as f32, pattern_shift: 0. },
+            ],
+            &mut polylines_out,
+        );
+        polylines_out
+    }
+}
+
+impl FillStars {
+    /// FillRectilinear.hpp:98 — `bool is_self_crossing() override { return true; }`
+    pub fn is_self_crossing(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.hpp:101
+    pub fn _layer_angle(&self, _idx: usize) -> f32 {
+        0.
+    }
+    /// FillRectilinear.cpp:3144-3153 — `Polylines FillStars::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        // float((3./2.) * this->spacing * params.multiline / params.density)
+        let shift = ((3. / 2.) * self.0.base.spacing * params.multiline as f64 / ((params.density as f32) as f64)) as f32;
+        self.0.fill_surface_by_multilines(
+            surface,
+            params.clone(),
+            &[
+                SweepParams { angle_base: 0., pattern_shift: 0. },
+                SweepParams { angle_base: (std::f64::consts::PI / 3.) as f32, pattern_shift: 0. },
+                SweepParams { angle_base: (2. * std::f64::consts::PI / 3.) as f32, pattern_shift: shift },
+            ],
+            &mut polylines_out,
+        );
+        polylines_out
+    }
+}
+
+impl FillCubic {
+    /// FillRectilinear.hpp:111 — `bool is_self_crossing() override { return true; }`
+    pub fn is_self_crossing(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.hpp:114
+    pub fn _layer_angle(&self, _idx: usize) -> f32 {
+        0.
+    }
+    /// FillRectilinear.cpp:3155-3165 — `Polylines FillCubic::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        let dx: f64 = 0.5f64.sqrt() * self.0.base.z;
+        self.0.fill_surface_by_multilines(
+            surface,
+            params.clone(),
+            &[
+                SweepParams { angle_base: 0., pattern_shift: dx as f32 },
+                SweepParams { angle_base: (std::f64::consts::PI / 3.) as f32, pattern_shift: -(dx as f32) },
+                SweepParams { angle_base: (std::f64::consts::PI * 2. / 3.) as f32, pattern_shift: dx as f32 },
+            ],
+            &mut polylines_out,
+        );
+        polylines_out
+    }
+}
+
+impl FillSupportBase {
+    /// FillRectilinear.hpp:125
+    pub fn _layer_angle(&self, _idx: usize) -> f32 {
+        0.
+    }
+    /// FillRectilinear.cpp:3182-3204 — `Polylines FillSupportBase::fill_surface(const Surface *surface, const FillParams &params)`
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        debug_assert!(!params.full_infill());
+
+        let mut polylines_out: Vec<Polyline> = Vec::new();
+        let rotate_vector = self.0._infill_direction(surface);
+        let spacing = self.0.base.spacing;
+        // ExPolygonWithOffset poly_with_offset(surface->expolygon, - rotate_vector.first, float(scale_(this->overlap - 0.5 * this->spacing)));
+        let aoffset1 = (((-0.5f64).mul_add(spacing, self.0.base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32) as Coord;
+        let poly_with_offset = ExPolygonWithOffset::new_pin(&surface.expolygon, -rotate_vector.0, aoffset1, 0);
+        if poly_with_offset.n_contours > 0 {
+            let mut fill_lines: Vec<Polyline> = Vec::new();
+            let line_spacing = ((spacing / crate::libslic3r::SCALING_FACTOR) / ((params.density as f32) as f64)) as Coord;
+            // Create infill lines, keep them vertical.
+            make_fill_lines(&poly_with_offset, point_rotated(rotate_vector.1, (-rotate_vector.0) as f64), 0., 0, line_spacing, 0, &mut fill_lines);
+            // Both the poly_with_offset and polylines_out are rotated, so the infill lines are strictly vertical.
+            Fill::connect_base_support_polygons(fill_lines, &poly_with_offset.polygons_outer, &poly_with_offset.bounding_box_outer(), &mut polylines_out, spacing, params);
+            // Rotate back by rotate_vector.first
+            //     const double cos_a = cos(rotate_vector.first);
+            //     const double sin_a = sin(rotate_vector.first);
+            // The argument is a float, so these are the float overloads of <cmath> (one
+            // `__sincosf_stret` call), widened afterwards.
+            let (sin_a, cos_a) = sin_cos_f32(rotate_vector.0);
+            let (sin_a, cos_a) = (sin_a as f64, cos_a as f64);
+            for pl in polylines_out.iter_mut() {
+                for pt in pl.points.iter_mut() {
+                    point_rotate_cos_sin(pt, cos_a, sin_a);
+                }
+            }
+        }
+        polylines_out
+    }
+}
+
+impl FillZigZag {
+    /// FillRectilinear.hpp:165 — `bool has_consistent_pattern() const override { return true; }`
+    pub fn has_consistent_pattern(&self) -> bool {
+        true
+    }
+    /// The `fill_surface` of the base class (FillRectilinear.cpp:3075-3095).
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        self.0.fill_surface(surface, params)
+    }
+}
+
+impl FillCrossZag {
+    /// FillRectilinear.hpp:174 — `bool has_consistent_pattern() const override { return true; }`
+    pub fn has_consistent_pattern(&self) -> bool {
+        true
+    }
+    /// The `fill_surface` of the base class (FillRectilinear.cpp:3075-3095).
+    pub fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Vec<Polyline> {
+        self.0.fill_surface(surface, params)
+    }
+}
+
+/// FillRectilinear.hpp:128-146 — `class FillMonotonicLineWGapFill : public Fill`, and
+/// `class FillGlobalMonotonicLine` (FillRectilinear.hpp:148-156), which overrides `global_monotonic_sweep`.
+/// (`fill_surface_extrusion`, FillRectilinear.cpp:3641-3753, is laid out by the slicing path in layer.rs.)
+#[derive(Debug, Clone)]
+pub struct FillMonotonicLineWGapFill {
+    /// The members of the base class (FillBase.hpp:114-141).
+    pub base: Fill,
+    /// FillRectilinear.hpp:135 — `float gap_compensation_ratio{0.0};`
+    pub gap_compensation_ratio: f32,
+    /// The dynamic type: FillGlobalMonotonicLine.
+    global_monotonic_sweep: bool,
+}
+
+impl Default for FillMonotonicLineWGapFill {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// FillRectilinear.hpp:148-156 — `class FillGlobalMonotonicLine : public FillMonotonicLineWGapFill`.
+#[derive(Debug, Clone)]
+pub struct FillGlobalMonotonicLine(pub FillMonotonicLineWGapFill);
+
+impl Default for FillGlobalMonotonicLine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FillGlobalMonotonicLine {
+    pub fn new() -> Self {
+        let mut f = FillMonotonicLineWGapFill::new();
+        f.global_monotonic_sweep = true;
+        Self(f)
+    }
+    /// FillRectilinear.hpp:155 — `bool global_monotonic_sweep() const override { return true; }`
+    pub fn global_monotonic_sweep(&self) -> bool {
+        true
+    }
+}
+
+impl FillMonotonicLineWGapFill {
+    pub fn new() -> Self {
+        Self { base: Fill::new(), gap_compensation_ratio: 0., global_monotonic_sweep: false }
+    }
+
+    /// FillRectilinear.hpp:133 — `bool is_self_crossing() override { return false; }`
+    pub fn is_self_crossing(&self) -> bool {
+        false
+    }
+
+    /// FillRectilinear.hpp:139 — `bool no_sort() const override { return true; }`
+    pub fn no_sort(&self) -> bool {
+        true
+    }
+
+    /// FillRectilinear.hpp:142 — `virtual bool global_monotonic_sweep() const { return false; }`: when true,
+    /// keep monotonic-line geometry, sweep columns left-to-right, and alternate direction by column.
+    pub fn global_monotonic_sweep(&self) -> bool {
+        self.global_monotonic_sweep
+    }
+
+    /// FillRectilinear.cpp:3755-3874 —
+    /// `void FillMonotonicLineWGapFill::fill_surface_by_lines(const Surface* surface, const FillParams& params, Polylines& polylines_out)`
+    pub fn fill_surface_by_lines(&mut self, surface: &Surface, params: &FillParams, polylines_out: &mut Vec<Polyline>) {
+        // `params.flow.spacing()` is a float (Flow.hpp:66).
+        self.fill_surface_by_lines_flow_spacing(surface, params, params.flow.spacing() as f32, polylines_out)
+    }
+
+    /// The body of `fill_surface_by_lines` with `params.flow.spacing()` handed in.
+    pub fn fill_surface_by_lines_flow_spacing(&mut self, surface: &Surface, params: &FillParams, flow_spacing: f32, polylines_out: &mut Vec<Polyline>) {
+        // At the end, only the new polylines will be rotated back.
+        let n_polylines_out_initial = polylines_out.len();
+
+        // Shrink the input polygon a bit first to not push the infill lines out of the perimeters.
+        const INFILL_OVERLAP_OVER_SPACING: f32 = 0.45;
+
+        // Rotate polygons so that we can work with vertical lines here
+        let rotate_vector = self.base._infill_direction(surface);
+
+        let density = params.density as f32;
+        // Flow.hpp:68 — `coord_t scaled_spacing() const { return coord_t(scale_(m_spacing)); }`
+        let scaled_spacing = (flow_spacing as f64 / crate::libslic3r::SCALING_FACTOR) as Coord;
+        // if (params.density < (float) params.flow.spacing() / (float) INT32_MAX || params.density < EPSILON)
+        //     line_spacing = INT32_MAX;
+        // else
+        //     line_spacing = params.flow.scaled_spacing() / params.density;   (a float quotient)
+        let mut line_spacing: Coord = if density < flow_spacing / (i32::MAX as f32) || (density as f64) < crate::libslic3r::EPSILON {
+            i32::MAX as Coord
+        } else {
+            (scaled_spacing as f32 / density) as Coord
+        };
+
+        // On the polygons of poly_with_offset, the infill lines will be connected.
+        //     float(scale_(0 - (0.5 - INFILL_OVERLAP_OVER_SPACING) * params.flow.spacing())),
+        //     float(scale_(0 - 0.5f * params.flow.spacing())));
+        let c = 0.5 - INFILL_OVERLAP_OVER_SPACING as f64;
+        let aoffset1 = (((-c).mul_add(flow_spacing as f64, 0.) / crate::libslic3r::SCALING_FACTOR) as f32) as Coord;
+        // 0.5f * float is a float product; the difference is an int minus that float, in float.
+        let aoffset2 = ((((0.0f32 - 0.5f32 * flow_spacing) as f64) / crate::libslic3r::SCALING_FACTOR) as f32) as Coord;
+        let poly_with_offset = ExPolygonWithOffset::new_pin(&surface.expolygon, -rotate_vector.0, aoffset1, aoffset2);
+        if poly_with_offset.n_contours_inner == 0 {
+            // Not a single infill line fits.
+            //FIXME maybe one shall trigger the gap fill here?
+            return;
+        }
+
+        let mut bounding_box = poly_with_offset.bounding_box_src_pin();
+
+        // define flow spacing according to requested density
+        if params.full_infill() && !params.dont_adjust {
+            line_spacing = Fill::_adjust_solid_spacing(bounding_box.max.x - bounding_box.min.x, line_spacing);
+            self.base.spacing = line_spacing as f64 * crate::libslic3r::SCALING_FACTOR;
+        } else {
+            // extend bounding box so that our pattern will be aligned with other layers
+            // Transform the reference point to the rotated coordinate system.
+            let refpt = point_rotated(rotate_vector.1, (-rotate_vector.0) as f64);
+            bounding_box.merge_point(align_to_grid_base(bounding_box.min, Point::new(line_spacing, line_spacing), refpt));
+        }
+
+        // Intersect a set of euqally spaced vertical lines wiht expolygon.
+        let n_vlines = ((bounding_box.max.x - bounding_box.min.x + line_spacing - 1) / line_spacing) as usize;
+        let mut x0 = bounding_box.min.x;
+        if params.full_infill() {
+            x0 += (line_spacing + SCALED_EPSILON) / 2;
+        }
+
+        let mut segs = slice_region_by_vertical_lines(&poly_with_offset, n_vlines, x0, line_spacing);
+        // Connect by horizontal / vertical links, classify the links based on link_max_length as too long.
+        let rparams = FillRectilinearParams {
+            density: params.density,
+            monotonic: params.monotonic,
+            dont_connect: params.dont_connect(),
+            link_max_length: self.base.link_max_length,
+            full_infill: params.full_infill(),
+            dont_adjust: params.dont_adjust,
+            consistent_pattern: false,
+        };
+        connect_segment_intersections_by_contours(&poly_with_offset, &mut segs, &rparams, self.base.link_max_length);
+
+        // Sometimes the outer contour pinches the inner contour from both sides along a single vertical line.
+        // This situation is not handled correctly by generate_montonous_regions().
+        // Insert phony OUTER_HIGH / OUTER_LOW pairs at the position where the contour is pinched.
+        pinch_contours_insert_phony_outer_intersections(&mut segs);
+        let mut regions = generate_monotonous_regions(&mut segs);
+
+        connect_monotonic_regions(&mut regions, &poly_with_offset, &segs);
+        if !regions.is_empty() {
+            // std::mt19937_64 rng; (seeded in chain_monotonic_regions)
+            let path = chain_monotonic_regions(&mut regions, &poly_with_offset, &segs);
+            polylines_from_paths(&path, &regions, &poly_with_offset, &segs, polylines_out);
+        }
+
+        // Keep the same line geometry / spacing / wall overlap as monotonic line.
+        // Sweep columns strictly from left to right. Within one column, visit all
+        // disconnected segments from one side to the other, then reverse the
+        // direction for the next column.
+        if self.global_monotonic_sweep() && polylines_out.len() > n_polylines_out_initial {
+            let scan_x = |line: &Polyline| -> Coord { line.points[0].x.min(line.points[line.points.len() - 1].x) };
+            let scan_y = |line: &Polyline| -> Coord { line.points[0].y.min(line.points[line.points.len() - 1].y) };
+            let new_lines = &mut polylines_out[n_polylines_out_initial..];
+            // std::sort (libc++: the order of equal keys is the algorithm's), over the keys with the
+            // index of each line; the lines are then put into that order.
+            let mut keyed: Vec<(Coord, Coord, usize)> = new_lines.iter().enumerate().map(|(i, l)| (scan_x(l), scan_y(l), i)).collect();
+            crate::clipper::libcxx_sort(&mut keyed, |a: &(Coord, Coord, usize), b: &(Coord, Coord, usize)| {
+                if a.0 != b.0 {
+                    return a.0 < b.0;
+                }
+                a.1 < b.1
+            });
+            let sorted: Vec<Polyline> = keyed.iter().map(|k| std::mem::take(&mut new_lines[k.2])).collect();
+            for (dst, src) in new_lines.iter_mut().zip(sorted) {
+                *dst = src;
+            }
+
+            let mut column_idx = 0usize;
+            let mut column_begin = 0usize;
+            while column_begin != new_lines.len() {
+                let column_x = scan_x(&new_lines[column_begin]);
+                let mut column_end = column_begin + 1;
+                while column_end != new_lines.len() && scan_x(&new_lines[column_end]) == column_x {
+                    column_end += 1;
+                }
+
+                let upward = (column_idx & 1) == 0;
+                if !upward {
+                    new_lines[column_begin..column_end].reverse();
+                }
+                for it in new_lines[column_begin..column_end].iter_mut() {
+                    if (it.points[0].y < it.points[it.points.len() - 1].y) != upward {
+                        it.points.reverse();
+                    }
+                }
+
+                column_begin = column_end;
+                column_idx += 1;
+            }
+        }
+
+        // paths must be rotated back
+        for it in polylines_out[n_polylines_out_initial..].iter_mut() {
+            // No need to translate, the absolute position is irrelevant.
+            multi_point_rotate(&mut it.points, rotate_vector.0 as f64);
+            //FIXME rather simplify the paths to avoid very short edges?
+            crate::multi_point::remove_duplicate_points(&mut it.points);
+        }
+    }
+}
+
+/// Whether the entries of the slicing path lay their lines through the classes above: `FILL_RECTILINEAR_PIN`
+/// on, and none of the earlier gates of those entries turned off (so that each of their arms can still be
+/// reproduced).
+fn live_entries_at_the_pin() -> bool {
+    fill_rectilinear_pin()
+        && crate::faithful_gate("TOPFILL_FAITHFUL")
+        && crate::faithful_gate("RECT_ANGLE_F32")
+        && crate::faithful_gate("FILL_BRIDGE_ANGLE")
+        && crate::faithful_gate("RECT_OFFSET_FAITHFUL")
+        && crate::faithful_gate("RECT_HORIZ_MOVE")
+        && std::env::var("RASTER_QUANT").is_err()
+}
+
+/// The members of the filler and the surface as `Layer::make_fills` sets them (Fill.cpp:699-844) from what
+/// the slicing path hands over in `InfillConfig`.
+fn live_fill_members(base: &mut Fill, config: &InfillConfig, layer_index: usize) {
+    base.layer_id = layer_index;
+    base.spacing = config.extrusion_width;
+    base.overlap = config.overlap;
+    // `params.angle = float(Geometry::deg2rad(...))` (Fill.cpp), the configuration value in degrees.
+    let mut angle: f32 = (std::f64::consts::PI * config.angle / 180.0) as f32;
+    // Fill.cpp:704-709 — the zig zag turns from layer pair to layer pair.
+    if let Some(infill_rotate_step) = config.zigzag_rotate_step {
+        let half_layers = (layer_index / 2) as f32;
+        angle = if layer_index % 2 == 0 { (-infill_rotate_step).mul_add(half_layers, angle) } else { infill_rotate_step.mul_add(half_layers, angle) };
+    }
+    base.angle = angle;
+    base.link_max_length = config.link_max_length;
+    // Fill.cpp:699 `f->set_bounding_box(bbox)`: the bounding box of the object, which is centred at the
+    // origin (Print.hpp:442). Where the slicing path hands none over, a box with that centre.
+    match config.object_bounding_box.as_ref() {
+        Some(bbox) => base.set_bounding_box(bbox),
+        None => base.set_bounding_box(&BoundingBox::from_points_minmax(Point::new(-1, -1), Point::new(1, 1))),
+    }
+}
+
+fn live_surface(expoly: &ExPolygon, config: &InfillConfig) -> Surface {
+    let mut surface = Surface::new(crate::surface::SurfaceType::Internal, expoly.clone());
+    // Surface.hpp:41: negative means undefined.
+    surface.bridge_angle = if config.bridge_angle >= 0.0 { Some(config.bridge_angle) } else { None };
+    surface
+}
+
+fn live_fill_params(config: &InfillConfig, monotonic: bool) -> FillParams {
+    let mut params = FillParams::new();
+    params.density = config.density;
+    // FillBase.hpp:56 — `dont_connect()` is `anchor_length_max < 0.05f`.
+    params.anchor_length_max = if config.connect_infill { 1000.0 } else { 0.0 };
+    params.dont_adjust = config.dont_adjust;
+    params.monotonic = monotonic;
+    params.locked_zag = config.locked_zag;
+    params.horiz_move = config.horiz_move;
+    if let Some(symmetric_y_axis) = config.symmetric_y_axis {
+        params.symmetric_infill_y_axis = true;
+        params.symmetric_y_axis = symmetric_y_axis;
+    }
+    params
+}
+
+/// `generate_fill_rectilinear` / `generate_fill_rectilinear_monotonic` of one direction through
+/// `FillRectilinear::fill_surface_by_lines` (FILL_RECTILINEAR_PIN).
+fn generate_fill_rectilinear_pin(fill_area: &[ExPolygon], config: &InfillConfig, layer_index: usize, monotonic: bool) -> Vec<InfillPath> {
+    let mut paths = Vec::new();
+    for expoly in fill_area {
+        let mut f = FillRectilinear::with_class(if config.consistent_pattern { FillRectilinearClass::ZigZag } else { FillRectilinearClass::Rectilinear });
+        live_fill_members(&mut f.base, config, layer_index);
+        let surface = live_surface(expoly, config);
+        let params = live_fill_params(config, monotonic);
+        let mut polylines = Vec::new();
+        let (_, spacing_written) = f.fill_surface_by_lines_spacing_written(&surface, &params, 0., 0., &mut polylines);
+        if spacing_written {
+            ADJUSTED_SPACING_MM.with(|c| c.set(Some(f.base.spacing)));
+        }
+        for polyline in polylines {
+            if polyline.points.len() >= 2 {
+                paths.push(InfillPath::Line(polyline));
+            }
+        }
+    }
+    paths
+}
+
+/// The monotonic lines of a top surface through `FillMonotonicLineWGapFill::fill_surface_by_lines`
+/// (FILL_RECTILINEAR_PIN): the slicing path hands the spacing of the flow over as the extrusion width.
+fn generate_fill_monotonic_line_w_gap_fill_pin(fill_area: &[ExPolygon], config: &InfillConfig, layer_index: usize) -> Vec<InfillPath> {
+    let mut paths = Vec::new();
+    for expoly in fill_area {
+        let mut f = FillMonotonicLineWGapFill::new();
+        live_fill_members(&mut f.base, config, layer_index);
+        let surface = live_surface(expoly, config);
+        let params = live_fill_params(config, true);
+        let mut polylines = Vec::new();
+        f.fill_surface_by_lines_flow_spacing(&surface, &params, config.extrusion_width as f32, &mut polylines);
+        if params.full_infill() && !params.dont_adjust && !polylines.is_empty() {
+            ADJUSTED_SPACING_MM.with(|c| c.set(Some(f.base.spacing)));
+        }
+        for polyline in polylines {
+            if polyline.points.len() >= 2 {
+                paths.push(InfillPath::Line(polyline));
+            }
+        }
+    }
+    paths
+}
+
+/// What tests/fill_rectilinear_native_parity.rs reads of the stages of the monotonic path, whose types are
+/// private to this file: the vertical lines after `pinch_contours_insert_phony_outer_intersections`, the
+/// regions after `generate_montonous_regions` and `connect_monotonic_regions` (left and right boundary,
+/// len1, len2, flips, the indices of the neighbours), the chain of `chain_monotonic_regions` (region,
+/// flipped) and the polylines of `polylines_from_paths`.
+#[doc(hidden)]
+pub struct MonotonicStages {
+    pub segs: Vec<SegmentedIntersectionLine>,
+    pub regions: Vec<([usize; 6], f32, f32, bool, Vec<usize>, Vec<usize>)>,
+    pub chain: Vec<(usize, bool)>,
+    pub polylines: Vec<Polyline>,
+}
+
+#[doc(hidden)]
+pub fn monotonic_stages(poly_with_offset: &ExPolygonWithOffset, segs: &[SegmentedIntersectionLine]) -> MonotonicStages {
+    let mut segs: Vec<SegmentedIntersectionLine> = segs.to_vec();
+    pinch_contours_insert_phony_outer_intersections(&mut segs);
+    let segs_pinched = segs.clone();
+    let mut regions = generate_monotonous_regions(&mut segs);
+    connect_monotonic_regions(&mut regions, poly_with_offset, &segs);
+    let regions_out = regions
+        .iter()
+        .map(|r| {
+            (
+                [r.left.vline, r.left.low, r.left.high, r.right.vline, r.right.low, r.right.high],
+                r.len1,
+                r.len2,
+                r.flips,
+                r.left_neighbors.clone(),
+                r.right_neighbors.clone(),
+            )
+        })
+        .collect();
+    let mut chain = Vec::new();
+    let mut polylines = Vec::new();
+    if !regions.is_empty() {
+        let path = chain_monotonic_regions(&mut regions, poly_with_offset, &segs);
+        chain = path.iter().map(|l| (l.region_idx, l.flipped)).collect();
+        polylines_from_paths(&path, &regions, poly_with_offset, &segs, &mut polylines);
+    }
+    MonotonicStages { segs: segs_pinched, regions: regions_out, chain, polylines }
 }
 
 // ---------------------------------------------------------------------------
