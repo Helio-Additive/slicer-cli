@@ -694,6 +694,26 @@ fn run_scenario(c: &mut Ctx, scenario: usize) {
         dump_generator_layers(c, &format!("{s} organic top_contacts"), &storage, &top);
         dump_generator_layers(c, &format!("{s} organic intermediate_layers"), &storage, &intermediate);
     }
+
+    // generate_overhangs() (TreeSupport3D.cpp:226-345) over the layers of the scenario: the overhangs by the index
+    // of the support layer and the extrudable slices it leaves in the layers. Last, as it rewrites
+    // lslices_extrudable. The object is taken out of the print for the `PrintObject &` of the C++.
+    {
+        let cfg: TreeSupportSettings = cfg.clone();
+        drop(volumes);
+        let mut po = print.m_objects.remove(0);
+        let go = generate_overhangs(&cfg, &print, &mut po, None, &|| false, &|| {}).expect("generate_overhangs");
+        c.r.out(format!("{s} generate_overhangs {}", go.len()));
+        for (i, polys) in go.iter().enumerate() {
+            if !polys.is_empty() {
+                c.outb(format!("{s} generate_overhangs layer {i}"), polys_s(polys));
+            }
+        }
+        for i in 0..po.layer_count() {
+            c.outb(format!("{s} generate_overhangs extrudable {i}"), expolys_s(&po.get_layer(i as i32).lslices_extrudable));
+        }
+        print.m_objects.insert(0, po);
+    }
 }
 
 /// gen.cpp `copy_generator_layers(src, storage)`

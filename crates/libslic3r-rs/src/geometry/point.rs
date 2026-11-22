@@ -39,6 +39,13 @@ pub struct Point {
     pub y: Coord,
 }
 
+/// The gate `POINT_NEW_SCALE_PIN` of [`Point::new_scale`], read once.
+#[inline]
+fn point_new_scale_pin() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| crate::opt_in_gate("POINT_NEW_SCALE_PIN"))
+}
+
 impl Point {
     // Create a new point with the given coordinates.
     //
@@ -55,8 +62,21 @@ impl Point {
     /// *truncates* `v / SCALING_FACTOR` toward zero, whereas the crate-wide `scale()`
     /// primitive rounds. This is the shared crate scaling posture (cross-cutting); it
     /// is left delegating to `scale()` rather than diverging this one call site.
+    ///
+    /// Gate `POINT_NEW_SCALE_PIN` (R924, an `opt_in_gate`: off unless `POINT_NEW_SCALE_PIN=1`, because tests
+    /// of other units assert values built with the rounding arm): on, the pin's own conversion, `Point(coord_t(scale_(x)),
+    /// coord_t(scale_(y)))` with `scale_(v)` = `v / SCALING_FACTOR` (libslic3r.h) and `coord_t` =
+    /// `int32_t`, which truncates toward zero; off, the earlier rounding through `scale()`.
+    /// tests/point_native_parity.rs compares the on arm with the pin.
     #[inline]
     pub fn new_scale(x: CoordF, y: CoordF) -> Self {
+        if point_new_scale_pin() {
+            // Point.hpp:183
+            return Self {
+                x: (x / crate::libslic3r::SCALING_FACTOR) as i32 as Coord,
+                y: (y / crate::libslic3r::SCALING_FACTOR) as i32 as Coord,
+            };
+        }
         Self {
             x: scale(x),
             y: scale(y),
@@ -472,6 +492,60 @@ impl Point {
         running_projection
     }
 
+    /// `Point::projection_onto(const Line &line)` under its C++ name.
+    ///
+    /// Point.cpp:157-180
+    pub fn projection_onto(&self, line: &crate::geometry::Line) -> Point {
+        self.project_onto_segment(line.a, line.b)
+    }
+
+    /// `Point::projection_onto(const MultiPoint &poly)` with the pin's shape: `poly.first_point()` and the
+    /// result of the virtual `poly.lines()` are passed in (a Polygon's lines include the closing edge, a
+    /// Polyline's do not; `projection_onto_multipoint` above is the Polyline case only).
+    ///
+    /// Point.cpp:141-155
+    pub fn projection_onto_multi_point_overload(&self, first_point: Point, lines: &[crate::geometry::Line]) -> Point {
+        // Point.cpp:143-144
+        let mut running_projection = first_point;
+        let mut running_min = (running_projection - *self).length();
+        // Point.cpp:146-147
+        for line in lines {
+            // Point.cpp:148
+            let point_temp = self.projection_onto(line);
+            // Point.cpp:149-152
+            if (point_temp - *self).length() < running_min {
+                running_projection = point_temp;
+                running_min = (running_projection - *self).length();
+            }
+        }
+        // Point.cpp:154
+        running_projection
+    }
+
+    /// `Point::rotated(double angle) const` under its C++ name.
+    ///
+    /// Point.hpp:234
+    #[inline]
+    pub fn rotated(&self, angle: CoordF) -> Self {
+        self.rotate(angle)
+    }
+
+    /// `Point::rotated(double cos_a, double sin_a) const`.
+    ///
+    /// Point.hpp:235
+    #[inline]
+    pub fn rotated_cos_sin_overload(&self, cos_a: CoordF, sin_a: CoordF) -> Self {
+        self.rotate_by_cos_sin(cos_a, sin_a)
+    }
+
+    /// `Point::rotated(double angle, const Point &center) const`.
+    ///
+    /// Point.hpp:236
+    #[inline]
+    pub fn rotated_center_overload(&self, angle: CoordF, center: &Point) -> Self {
+        self.rotate_around(angle, *center)
+    }
+
     /// Point.cpp:183-223 (`Point::is_in_lines(const Points &pts)`)
     pub fn is_in_lines(&self, pts: &[Point]) -> bool {
         // Point.cpp:185
@@ -523,8 +597,15 @@ impl Point {
             // check if in line
             // Point.cpp:216-217: Line line(prev_pt, pt); double distance = line.distance_to(*this);
             // Line::distance_to(point) => distance to the (clamped) segment.
+            // Gate `POINT_IS_IN_LINES_PIN` (R924): on, the pin's `Line::distance_to(point)` (Line.hpp:169,
+            // 188: the square root of `line_alg::distance_to_squared`, Line.hpp:43-68, in doubles); off, the
+            // earlier distance to the integer foot point of `Point::projection_onto`.
             let line = crate::geometry::Line::new(prev_pt, pt);
-            let distance = line.distance_to_point(&check_point);
+            let distance = if crate::faithful_gate("POINT_IS_IN_LINES_PIN") {
+                line.distance_to(&check_point)
+            } else {
+                line.distance_to_point(&check_point)
+            };
             // Point.cpp:218
             if distance.abs() < crate::libslic3r::SCALED_EPSILON {
                 return true;

@@ -1,0 +1,286 @@
+// Generator of the vectors of tests/fill_native_parity.rs: `group_fills` of libslic3r's Fill/Fill.cpp at
+// the pin (references/BambuStudio/src/libslic3r; the override layer has no copy of Fill.cpp), on a real
+// Print made by `Print::apply` and layers whose fill surfaces are set by hand.
+//
+// Build as tests/data/perimeter_generator/gen.cpp says (the build's compile line of a libslic3r source,
+// linked with the build's libslic3r_core and the libraries it links), then `./gen vectors.txt`.
+// Fill.cpp is compiled into this file (SurfaceFillParams and SurfaceFill are defined in it), with the
+// private members of Print and Layer made public.
+//
+// "gcfg<TAB>tag<TAB>key=value..." holds the options as the pin's Print holds them after `Print::apply`.
+// "gf <layer> <surfaces> <lower layer> => <the SurfaceFill list>": tokens separated by one space; a
+// double is its 16 hexadecimal digits, a float its 8, an integer decimal.
+// The vectors were made on macOS arm64 with Apple clang and Eigen 5.0.1.
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include <memory>
+#include <random>
+#include <string>
+#include <thread>
+#include <unordered_set>
+#include <vector>
+
+// Before the access specifiers are redefined: tbb declares nested classes ahead of their definition.
+#include <tbb/blocked_range.h>
+#include <tbb/concurrent_unordered_map.h>
+#include <tbb/concurrent_unordered_set.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/global_control.h>
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_for_each.h>
+#include <tbb/spin_mutex.h>
+
+#define private public
+#define protected public
+#include "libslic3r/Print.hpp"
+#include "libslic3r/Fill/Fill.cpp"
+#undef private
+#undef protected
+
+#include "libslic3r/Model.hpp"
+#include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/TriangleMesh.hpp"
+
+using namespace Slic3r;
+
+typedef std::vector<std::pair<std::string, std::string>> KeyValues;
+
+static FILE *g_out = nullptr;
+
+static std::string hD(double v)
+{
+    uint64_t u;
+    std::memcpy(&u, &v, 8);
+    char b[32];
+    std::snprintf(b, sizeof(b), "%016llx", (unsigned long long) u);
+    return b;
+}
+static std::string hF(float v)
+{
+    uint32_t u;
+    std::memcpy(&u, &v, 4);
+    char b[16];
+    std::snprintf(b, sizeof(b), "%08x", u);
+    return b;
+}
+static std::string hI(long long v) { return std::to_string(v); }
+static std::string hB(bool v) { return v ? "1" : "0"; }
+static void out(const std::string &s) { std::fprintf(g_out, "%s\n", s.c_str()); }
+static std::string PT(const Point &p) { return hI(p.x()) + " " + hI(p.y()); }
+static std::string POLY(const Polygon &p)
+{
+    std::string o = hI((long long) p.points.size());
+    for (const Point &pt : p.points) o += " " + PT(pt);
+    return o;
+}
+static std::string POLYS(const Polygons &ps)
+{
+    std::string o = hI((long long) ps.size());
+    for (const Polygon &p : ps) o += " " + POLY(p);
+    return o;
+}
+static std::string EXPOLY(const ExPolygon &e)
+{
+    std::string o = POLY(e.contour) + " " + hI((long long) e.holes.size());
+    for (const Polygon &h : e.holes) o += " " + POLY(h);
+    return o;
+}
+static std::string EXPOLYS(const ExPolygons &es)
+{
+    std::string o = hI((long long) es.size());
+    for (const ExPolygon &e : es) o += " " + EXPOLY(e);
+    return o;
+}
+// The corners of a box that is defined, "0" alone of one that is not.
+static std::string BBOX(const BoundingBox &b) { return b.defined ? "1 " + PT(b.min) + " " + PT(b.max) : std::string("0"); }
+struct Lcg
+{
+    uint64_t s;
+    explicit Lcg(uint64_t seed) : s(seed) {}
+    uint32_t next()
+    {
+        s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+        return uint32_t(s >> 33);
+    }
+    // An integer in [lo, hi].
+    long long range(long long lo, long long hi) { return lo + (long long) (next() % uint32_t(hi - lo + 1)); }
+};
+
+static Polygon rect(coord_t x0, coord_t y0, coord_t x1, coord_t y1)
+{
+    Polygon p;
+    p.points = {Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1)};
+    return p;
+}
+// A convex polygon of eight corners around (cx, cy), counter clockwise, with integer corners that
+
+static void set_keys(DynamicPrintConfig &full, const KeyValues &kvs)
+{
+    for (const auto &kv : kvs) full.set_deserialize_strict(kv.first, kv.second);
+}
+
+// The options of the "gcfg" line: what group_fills reads.
+static const char *const fill_keys[] = {
+    // PrintConfig
+    "nozzle_diameter", "initial_layer_line_width", "initial_layer_infill_line_width", "initial_layer_print_height",
+    // PrintObjectConfig
+    "layer_height", "line_width", "thick_bridges", "raft_layers", "detect_narrow_internal_solid_infill",
+    // PrintRegionConfig
+    "wall_loops", "wall_filament", "sparse_infill_filament", "solid_infill_filament", "outer_wall_line_width", "inner_wall_line_width", "sparse_infill_line_width",
+    "internal_solid_infill_line_width", "top_surface_line_width", "sparse_infill_density", "sparse_infill_pattern", "top_surface_pattern", "bottom_surface_pattern",
+    "internal_solid_infill_pattern", "infill_direction", "infill_wall_overlap", "infill_combination", "bridge_angle", "bridge_flow", "bottom_shell_layers", "top_shell_layers",
+    "minimum_sparse_infill_area", "ironing_type",
+};
+
+struct FillCase
+{
+    const char *tag;
+    KeyValues   kvs;
+};
+
+// The list of SurfaceFill of group_fills, in its order.
+static std::string FILLS(const std::vector<SurfaceFill> &fills)
+{
+    std::string o = hI((long long) fills.size());
+    for (const SurfaceFill &f : fills) {
+        const SurfaceFillParams &p = f.params;
+        o += " F " + hI(f.region_id == size_t(-1) ? -1 : (long long) f.region_id) + " " + hI((int) f.surface.surface_type) + " " + hD(f.surface.thickness) + " " + hI(p.extruder) + " " +
+             hI((int) p.pattern) + " " + hD(p.spacing) + " " + hD(p.overlap) + " " + hF(p.angle) + " " + hB(p.bridge) + " " + hF(p.bridge_angle) + " " + hF(p.density) + " " +
+             hI(p.multiline) + " " + hF(p.anchor_length) + " " + hF(p.anchor_length_max) + " " + hF(p.flow.width()) + " " + hF(p.flow.height()) + " " + hF(p.flow.nozzle_diameter()) +
+             " " + hF(p.flow.spacing()) + " " + hB(p.flow.bridge()) + " " + hI((int) p.extrusion_role) + " " + hI((long long) f.region_id_group.size());
+        for (size_t r : f.region_id_group) o += " " + hI((long long) r);
+        o += " " + EXPOLYS(f.expolygons) + " " + EXPOLYS(f.no_overlap_expolygons);
+    }
+    return o;
+}
+
+static void run_group_fills()
+{
+    // What the cases share: the keys of the process of the fixtures (a 0.16 mm layer, a 0.4 mm nozzle).
+    static const KeyValues base = {{"layer_height", "0.16"},
+                                   {"initial_layer_print_height", "0.2"},
+                                   {"wall_loops", "2"},
+                                   {"outer_wall_line_width", "0.42"},
+                                   {"inner_wall_line_width", "0.45"},
+                                   {"line_width", "0.42"},
+                                   {"sparse_infill_line_width", "0.45"},
+                                   {"internal_solid_infill_line_width", "0.42"},
+                                   {"top_surface_line_width", "0.42"},
+                                   {"initial_layer_line_width", "0.5"},
+                                   {"initial_layer_infill_line_width", "0.5"},
+                                   {"sparse_infill_density", "15%"},
+                                   {"infill_wall_overlap", "15%"},
+                                   {"bottom_shell_layers", "4"},
+                                   {"top_shell_layers", "6"}};
+    static const std::vector<FillCase> cases = {
+        {"base", {}},
+        {"grid", {{"sparse_infill_pattern", "grid"}}},
+        {"gyroid_25", {{"sparse_infill_pattern", "gyroid"}, {"sparse_infill_density", "25%"}}},
+        {"line_40", {{"sparse_infill_pattern", "line"}, {"sparse_infill_density", "40%"}}},
+        {"dense_100", {{"sparse_infill_density", "100%"}}},
+        {"no_infill", {{"sparse_infill_density", "0%"}}},
+        {"top_concentric", {{"top_surface_pattern", "concentric"}}},
+        {"top_monotonicline", {{"top_surface_pattern", "monotonicline"}}},
+        {"bottom_concentric", {{"bottom_surface_pattern", "concentric"}}},
+        {"solid_concentric", {{"internal_solid_infill_pattern", "concentric"}}},
+        {"solid_rectilinear", {{"internal_solid_infill_pattern", "zig-zag"}}},
+        {"direction_30", {{"infill_direction", "30"}}},
+        {"no_narrow", {{"detect_narrow_internal_solid_infill", "0"}}},
+        {"thick_bridges", {{"thick_bridges", "1"}}},
+        {"bridge_flow_09", {{"bridge_flow", "0.9"}}},
+        {"layer_02", {{"layer_height", "0.2"}}},
+        {"widths", {{"sparse_infill_line_width", "0.6"}, {"internal_solid_infill_line_width", "0.5"}, {"top_surface_line_width", "0.4"}}},
+        {"overlap_30", {{"infill_wall_overlap", "30%"}}},
+        {"bridge_angle_45", {{"bridge_angle", "45"}}},
+        {"honeycomb", {{"sparse_infill_pattern", "honeycomb"}}},
+    };
+    static const SurfaceType types[] = {stTop, stBottom, stBottomBridge, stInternal, stInternalSolid, stInternalBridge, stInternalVoid};
+    Lcg g(0x9e3779b97f4a7c15ULL);
+    for (const FillCase &fc : cases) {
+        Model        model;
+        ModelObject *o = model.add_object();
+        o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+        o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+        set_keys(config, base);
+        set_keys(config, fc.kvs);
+        Print print;
+        print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+        print.apply(model, config);
+        PrintObject       *obj    = print.m_objects.front();
+        const PrintRegion &region = *obj->m_shared_regions->all_regions.front();
+        std::string        cfg    = std::string("gcfg\t") + fc.tag;
+        for (const char *key : fill_keys) {
+            const ConfigBase *holder = region.config().has(key) ? static_cast<const ConfigBase *>(&region.config()) :
+                                       obj->config().has(key)   ? static_cast<const ConfigBase *>(&obj->config()) :
+                                       print.config().has(key)  ? static_cast<const ConfigBase *>(&print.config()) :
+                                                                  nullptr;
+            cfg += std::string("\t") + key + "=" + (holder == nullptr ? std::string("?") : holder->opt_serialize(key));
+        }
+        out(cfg);
+        const double layer_height       = obj->config().layer_height.value;
+        const double first_layer_height = print.config().initial_layer_print_height.value;
+        for (int c = 0; c < 12; ++c) {
+            // The first layer in two cases of twelve.
+            const size_t layer_id = c < 2 ? 0 : (size_t) g.range(1, 9);
+            const double height   = layer_id == 0 ? first_layer_height : layer_height;
+            const double print_z  = first_layer_height + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * height;
+            Layer        lower(layer_id == 0 ? 0 : layer_id - 1, obj, layer_height, print_z - height, slice_z - height);
+            Layer        layer(layer_id, obj, height, print_z, slice_z);
+            LayerRegion *layerm = layer.add_region(&region);
+            // Two to six rectangles apart from each other, from narrow (under the 3 mm of
+            // NARROW_INFILL_AREA_THRESHOLD on a side) to wide, every surface type in turn.
+            const int   n  = (int) g.range(2, 6);
+            std::string in = hI((long long) layer_id) + " " + hD(height) + " " + hD(print_z) + " " + hD(slice_z) + " " + hI(n);
+            ExPolygons  rects;
+            for (int i = 0; i < n; ++i) {
+                const coord_t     x0 = coord_t(i) * 2000000 + g.range(-100000, 100000), y0 = g.range(-100000, 100000);
+                const coord_t     w = g.range(0, 2) == 0 ? g.range(50000, 500000) : g.range(700000, 1500000), h = g.range(0, 2) == 0 ? g.range(50000, 500000) : g.range(700000, 1500000);
+                const SurfaceType type = c == 0 ? (i % 2 == 0 ? stBottom : stInternalSolid) : types[g.range(0, 6)];
+                Surface           s(type, ExPolygon(rect(x0, y0, x0 + w, y0 + h)));
+                if (g.range(0, 5) == 0) s.thickness = 2. * layer_height;
+                if (s.is_bridge() && g.range(0, 1) == 0) s.bridge_angle = 0.1 * double(g.range(0, 31));
+                layerm->fill_surfaces.surfaces.emplace_back(s);
+                rects.emplace_back(s.expolygon);
+                in += " " + hI((int) type) + " " + hD(s.thickness) + " " + hD(s.bridge_angle) + " " + EXPOLY(s.expolygon);
+            }
+            // The layer below: sparse infill under some of the rectangles (Fill.cpp, the narrow solid areas).
+            const bool has_lower = layer_id > 0 && g.range(0, 3) != 0;
+            ExPolygons lower_internal;
+            if (has_lower) {
+                LayerRegion *lm = lower.add_region(&region);
+                for (int i = 0; i < n; ++i)
+                    if (g.range(0, 1) == 0) {
+                        lm->fill_surfaces.surfaces.emplace_back(Surface(stInternal, rects[i]));
+                        lower_internal.emplace_back(rects[i]);
+                    }
+                layer.lower_layer = &lower;
+            }
+            in += " " + hB(has_lower) + " " + EXPOLYS(lower_internal);
+            LockRegionParam          lock_param;
+            std::vector<SurfaceFill> fills = group_fills(layer, lock_param);
+            out("gf " + in + " => " + FILLS(fills));
+        }
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+        std::fprintf(stderr, "usage: gen <vectors.txt>\n");
+        return 2;
+    }
+    tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
+    g_out = std::fopen(argv[1], "w");
+    if (g_out == nullptr) return 1;
+    run_group_fills();
+    std::fclose(g_out);
+    return 0;
+}

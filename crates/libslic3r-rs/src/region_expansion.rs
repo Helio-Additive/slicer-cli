@@ -1412,8 +1412,17 @@ pub fn process_external_surfaces_wave(
 
     // Build expansion parameters
     // Into sparse infill: expand by expansion_min (perimeter spacing)
+    // LAYER_REGION_EXTERNAL_PIN (faithful gate, R924): the pin passes
+    // expansion_min as it is (LayerRegion.cpp:824); with no walls it is
+    // float(SCALED_EPSILON) (LayerRegion.cpp:804-805), which the floor of half
+    // a step turned into 0.05 mm.
+    let expansion_min_into_sparse = if crate::faithful_gate("LAYER_REGION_EXTERNAL_PIN") {
+        config.expansion_min
+    } else {
+        config.expansion_min.max(EXPANSION_STEP * 0.5) // ensure positive
+    };
     let params_into_sparse = RegionExpansionParameters::build(
-        config.expansion_min.max(EXPANSION_STEP * 0.5), // ensure positive
+        expansion_min_into_sparse,
         EXPANSION_STEP,
         MAX_NR_EXPANSION_STEPS,
     );
@@ -1450,7 +1459,17 @@ pub fn process_external_surfaces_wave(
         ));
 
         // If there's nothing to expand into, skip this layer
-        if shells.is_empty() && sparse.is_empty() && top_expolygons.is_empty() {
+        // LAYER_REGION_EXTERNAL_EMPTY_ZONES (faithful gate, R924): the pin has no
+        // such exit (LayerRegion.cpp:821-862): with the three zones empty the
+        // bridges, bottoms and tops still go through expand_merge_surfaces /
+        // expand_bridges_detect_orientations (closing_ex and the template's
+        // thickness, LayerRegion.cpp:762,768-773). No vector covers it yet; on,
+        // it raises the in-order score of the three fixtures (+11, +50, +163).
+        if shells.is_empty()
+            && sparse.is_empty()
+            && top_expolygons.is_empty()
+            && !crate::faithful_gate("LAYER_REGION_EXTERNAL_EMPTY_ZONES")
+        {
             continue;
         }
 

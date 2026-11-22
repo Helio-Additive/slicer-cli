@@ -196,8 +196,13 @@ const KINDS: [&str; 6] = ["flow", "clip", "prep", "trim", "efc", "pes"];
 /// The kinds whose lines have to be equal to the pin: the test fails on a difference in one of them and
 /// reports the others.
 /// R923: `flow` and `prep` are equal with the gates LAYER_REGION_FLOW_PIN and LAYER_REGION_PREPARE_PIN on
-/// (their default); `pes` (process_external_surfaces) is reported, not asserted.
+/// (their default); `pes` (process_external_surfaces) is reported, and held to the bound below.
 const ASSERTED: [&str; 5] = ["flow", "clip", "prep", "trim", "efc"];
+/// R924: with the gate LAYER_REGION_EXTERNAL_PIN on (its default: the solid and sparse surfaces carry the
+/// layer thickness, LayerRegion.cpp:891-898, and expansion_min is not floored, LayerRegion.cpp:804-805,824)
+/// `pes` differs from the pin on 3 of 280 lines (no_walls 2, large_min_area 1: a few points of one expanded
+/// contour are 1 to 30 units off, the token counts are equal). Not equal yet: the test holds the count.
+const PES_KNOWN_DIFFERING: usize = 3;
 
 #[test]
 fn layer_region_native_parity() {
@@ -302,4 +307,5 @@ fn layer_region_native_parity() {
     eprintln!("layer_region parity: {} lines, {} differ", lines.iter().sum::<usize>(), bad.iter().sum::<usize>());
     let failing: Vec<String> = (0..6).filter(|k| ASSERTED.contains(&KINDS[*k]) && bad[*k] > 0).map(|k| format!("{} {}", KINDS[k], bad[k])).collect();
     assert!(failing.is_empty(), "LayerRegion differs from the pin: {}", failing.join(", "));
+    assert!(bad[5] <= PES_KNOWN_DIFFERING, "process_external_surfaces: {} lines differ from the pin, {PES_KNOWN_DIFFERING} are known", bad[5]);
 }

@@ -247,6 +247,14 @@ impl Line {
         None
     }
 
+    /// `Line::distance_to(const Point &point) const` under its C++ name: `distance_to(point, a, b)`, which is
+    /// `sqrt(distance_to_squared(point, a, b))`.
+    ///
+    /// Line.hpp:169, 188
+    pub fn distance_to(&self, point: &Point) -> f64 {
+        Self::distance_to_squared(*point, self.a, self.b).sqrt()
+    }
+
     /// Static method: Calculate the squared distance from a point to a line segment.
     /// This matches libslic3r's `Line::distance_to_squared()` static method.
     pub fn distance_to_squared(p: Point, a: Point, b: Point) -> f64 {

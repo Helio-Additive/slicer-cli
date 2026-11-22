@@ -1617,10 +1617,36 @@ impl LayerRegion {
             .expect("config hierarchy not wired — call wire_layer_hierarchy")
             .minimum_sparse_infill_area;
 
+        // LAYER_REGION_EXTERNAL_PIN (faithful gate, R924): the pin's solid and
+        // sparse templates carry `layer_thickness` (LayerRegion.cpp:891-898),
+        // the thickness `fill_surfaces_extract_expolygons` read from the last
+        // surface of the last of {stInternalSolid}, {stInternal}, {stTop} that
+        // has a surface (LayerRegion.cpp:212-219, 820-823). The wave port left
+        // the default (-1) on them.
+        let mut layer_thickness: Option<f64> = None;
+        if crate::faithful_gate("LAYER_REGION_EXTERNAL_PIN") {
+            for surface_type in [SurfaceType::InternalSolid, SurfaceType::Internal, SurfaceType::Top] {
+                for surface in &self.fill_surfaces.surfaces {
+                    if surface.surface_type == surface_type {
+                        layer_thickness = Some(surface.thickness);
+                    }
+                }
+            }
+        }
+
         // LayerRegion.cpp:518 — operate on this region's fill_surfaces in place.
         let mut surfaces = vec![std::mem::take(&mut self.fill_surfaces.surfaces)];
         process_external_surfaces_wave(&mut surfaces, &config);
         self.fill_surfaces.surfaces = surfaces.into_iter().next().unwrap_or_default();
+        if let Some(layer_thickness) = layer_thickness {
+            // LayerRegion.cpp:891-898 `solid_templ.thickness = layer_thickness`,
+            // `sparse_templ.thickness = layer_thickness`.
+            for surface in &mut self.fill_surfaces.surfaces {
+                if matches!(surface.surface_type, SurfaceType::InternalSolid | SurfaceType::Internal) {
+                    surface.thickness = layer_thickness;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -2057,6 +2083,19 @@ impl Layer {
             layerm.object_config = Some(object_config.clone());
             layerm.print_config = Some(print_config.clone());
         }
+    }
+
+    /// The configs of the object and of the print a Layer of the pin reaches through `m_object`
+    /// (Layer.hpp:139), for a Layer that stands on its own (tests/fill_native_parity.rs): what
+    /// `wire_config_hierarchy` stamps on the layer itself. The regions keep what
+    /// `LayerRegion::set_config_hierarchy` gave them.
+    pub fn set_object_configs(
+        &mut self,
+        object_config: Arc<crate::print_config::PrintObjectConfig>,
+        print_config: Arc<crate::print_config::PrintConfig>,
+    ) {
+        self.object_config = Some(object_config);
+        self.print_config = Some(print_config);
     }
 
     /// Get bottom Z coordinate

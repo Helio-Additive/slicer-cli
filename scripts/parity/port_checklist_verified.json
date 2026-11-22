@@ -3786,5 +3786,32 @@
    "remove_short_backtracks",
    "make_expolygons"
   ]
+ },
+ {
+  "unit": "Point",
+  "round": 924,
+  "evidence": "tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)",
+  "functions": [
+   "has_duplicate_points",
+   "collect_duplicates",
+   "Point::nearest_point_index",
+   "Point::nearest_point",
+   "Point::ccw",
+   "Point::ccw_angle",
+   "Point::projection_onto",
+   "Point::is_in_lines",
+   "Point::both_comp",
+   "Point::any_comp",
+   "Point::rotated",
+   "Point::rotate_90_degree_ccw"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupport3D",
+  "round": 924,
+  "evidence": "tests/tree_support_3d_native_parity.rs: generate_overhangs (TreeSupport3D.cpp 226-345) on the 18 scenarios, 654 lines (the overhangs of every layer and the extrudable slices), none differ; 12,148 lines in all. The enforcer, blocker and automatic threshold arms are not reached by the scenarios.",
+  "functions": [
+   "generate_overhangs"
+  ]
  }
 ]

@@ -842,6 +842,18 @@ static void run_scenario(int scenario)
         dump_generator_layers(S + " organic top_contacts", top);
         dump_generator_layers(S + " organic intermediate_layers", intermediate);
     }
+
+    // generate_overhangs() (TreeSupport3D.cpp:226-345) over the layers of the scenario: the overhangs by the index
+    // of the support layer and the extrudable slices it leaves in the layers. Last, as it rewrites
+    // lslices_extrudable.
+    {
+        const std::vector<Polygons> go = generate_overhangs(c, *obj, [] {});
+        out(S + " generate_overhangs " + hI((long long) go.size()));
+        for (size_t i = 0; i < go.size(); ++i)
+            if (! go[i].empty()) outb(S + " generate_overhangs layer " + hI((long long) i), POLYS(go[i]));
+        for (size_t i = 0; i < obj->layer_count(); ++i)
+            outb(S + " generate_overhangs extrudable " + hI((long long) i), EXPOLYS(obj->get_layer(int(i))->lslices_extrudable));
+    }
 }
 
 // The helpers that take no volumes.

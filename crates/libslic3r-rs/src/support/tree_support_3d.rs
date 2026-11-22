@@ -3314,6 +3314,218 @@ pub fn get_polygon_as_string(poly: &[Polygon]) -> String {
     ret
 }
 
+// `config.<key>.value` of an int or enum option.
+fn cfg_int(config: &crate::print_config::config_def::DynamicPrintConfig, key: &str) -> i32 {
+    use crate::config::ConfigOptionResolver;
+    config.option(key).and_then(|o| o.get_int().ok()).unwrap_or(0)
+}
+
+// `ClipperUtils::ExPolygonsProvider` (ClipperUtils.hpp): every expolygon's contour, then its holes.
+fn expolygons_provider(src: &[ExPolygon]) -> Polygons {
+    let mut out = Polygons::new();
+    for expoly in src {
+        out.push(expoly.contour.clone());
+        out.extend(expoly.holes.iter().cloned());
+    }
+    out
+}
+
+/// TreeSupport3D.cpp:226-345 `[[nodiscard]] static const std::vector<Polygons> generate_overhangs(const
+/// TreeSupportSettings &settings, PrintObject &print_object, std::function<void()> throw_on_cancel)`
+///
+/// `print_object.print()` is `print`; `print_object.print()->canceled()` is `canceled` (the crate's Print keeps
+/// its cancel state private, as `TreeSupport::canceled` of support/tree_support.rs says).
+/// `PrintObject::project_and_append_custom_facets` (PrintObject.cpp:6726-6765) is not ported over the faithful
+/// PrintObject: the caller hands it in as `custom_facets_projector` (the trait of support/tree_support.rs);
+/// without one the object counts as not painted, which is what the C++ does for a model without painted facets.
+/// Both `tbb::parallel_for` are plain loops: every layer writes only its own slot. An exception of the C++
+/// (a flow that cannot be made, a cancellation while the modifier volumes are sliced) is the `Err`.
+pub fn generate_overhangs(
+    settings: &TreeSupportSettings,
+    print: &pf::Print,
+    print_object: &mut pf::PrintObject,
+    custom_facets_projector: Option<&dyn crate::support::tree_support::CustomFacetsProjector>,
+    canceled: &dyn Fn() -> bool,
+    throw_on_cancel: ThrowOnCancel,
+) -> crate::Result<Vec<Polygons>> {
+    use crate::flow::FlowRole;
+    use crate::model::ModelVolumeType;
+    use crate::print_config::config_def::{is_auto, multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+    use crate::print_config::enums::SupportType;
+    use crate::support::support_parameters::support_nozzle_diameter;
+    use crate::triangle_selector::EnforcerBlockerType;
+
+    // 228-231
+    let num_raft_layers: usize = settings.raft_layers.len();
+    let num_object_layers: usize = print_object.layer_count();
+    let num_layers: usize = num_object_layers + num_raft_layers;
+    let mut out: Vec<Polygons> = vec![Polygons::new(); num_layers];
+
+    // 233-236 (`print_config` is used by the commented out remove_bridges_from_contacts() only)
+    let support_type = match cfg_int(print_object.config(), "support_type") {
+        0 => SupportType::StNormalAuto,
+        1 => SupportType::StTreeAuto,
+        2 => SupportType::StNormal,
+        _ => SupportType::StTree,
+    };
+    let support_auto: bool = is_auto(support_type);
+    let support_enforce_layers: i32 = cfg_int(print_object.config(), "enforce_support_layers");
+    // 237-240 `print_object.slice_support_enforcers()` / `slice_support_blockers()` (Print.hpp:544-545)
+    let mut enforcers_layers: Vec<Polygons> = print_object
+        .slice_support_volumes(print, ModelVolumeType::SupportEnforcer)
+        .map_err(|e| crate::Error::Slicing(e.what().to_string()))?;
+    let mut blockers_layers: Vec<Polygons> = print_object
+        .slice_support_volumes(print, ModelVolumeType::SupportBlocker)
+        .map_err(|e| crate::Error::Slicing(e.what().to_string()))?;
+    if let Some(projector) = custom_facets_projector {
+        projector.project_and_append_custom_facets(print_object, print, false, EnforcerBlockerType::ENFORCER, &mut enforcers_layers, None);
+        projector.project_and_append_custom_facets(print_object, print, false, EnforcerBlockerType::BLOCKER, &mut blockers_layers, None);
+    }
+    // 241-244
+    let support_threshold: i32 = cfg_int(print_object.config(), "support_threshold_angle");
+    let support_threshold_auto: bool = support_threshold == 0;
+    // +1 makes the threshold inclusive
+    let tan_threshold: f64 = if support_threshold_auto { 0. } else { (std::f64::consts::PI * f64::from(support_threshold + 1) / 180.).tan() };
+    //FIXME this is a fudge constant!
+    // Same as the classic path: dilate by the effective tip, not the raw setting. settings.min_radius is
+    // half the already clamped tree_support_tip_diameter and is in scaled units.
+    // 248
+    let enforcer_overhang_offset: f64 = (settings.min_radius * 2) as f64;
+    // 249 `g_config_tree_support_collision_resolution` (libslic3r.h:92) is the float 0.2
+    let radius_sample_resolution: CoordF = f64::from(0.2f32);
+
+    // calc the extrudable expolygons of each layer
+    // 252-257
+    let extrusion_width: CoordF = {
+        let config = print_object.config();
+        let full_print_config = print.full_print_config();
+        crate::flow::Flow::extrusion_width_for_nozzle(
+            &crate::config::ConfigOptionFloat::with_value(cfg_float(config, "line_width")),
+            primary_nozzle_diameter(full_print_config) as f32,
+            support_nozzle_diameter(print, cfg_int(config, "support_filament") as u32),
+            multi_nozzle_diameter_mode_enabled(full_print_config),
+        )
+    };
+    let extrusion_width_scaled: CoordF = extrusion_width / SCALING_FACTOR;
+    // 258-267
+    for layer_nr in 0..print_object.layer_count() {
+        if canceled() {
+            break;
+        }
+        let layer = &mut print_object.m_layers[layer_nr];
+        // Filter out areas whose diameter that is smaller than extrusion_width, but we don't want to lose any details.
+        layer.lslices_extrudable = cu::intersection_ex(
+            &expolygons_provider(&layer.lslices),
+            &expolygons_provider(&cu::offset2_ex(
+                &layer.lslices,
+                (-extrusion_width_scaled / 2.) as f32,
+                extrusion_width_scaled as f32,
+                cu::DEFAULT_JOIN_TYPE,
+                cu::DEFAULT_MITER_LIMIT,
+            )),
+            cu::ApplySafetyOffset::No,
+        );
+    }
+
+    // 269 `size_t(support_enforce_layers)` wraps a negative value, as the cast does.
+    let num_overhang_layers: usize = if support_auto {
+        num_object_layers
+    } else {
+        std::cmp::min(num_object_layers, std::cmp::max(support_enforce_layers as usize, enforcers_layers.len()))
+    };
+    // 270-342
+    for layer_id in 1..num_overhang_layers as LayerIndex {
+        let current_layer = print_object.get_layer(layer_id);
+        let lower_layer = print_object.get_layer(layer_id - 1);
+        // Full overhangs with zero lower_layer_offset and no blockers applied.
+        let mut raw_overhangs = Polygons::new();
+        let mut raw_overhangs_calculated = false;
+        // Final overhangs.
+        let mut overhangs = Polygons::new();
+        // For how many layers full overhangs shall be supported.
+        let enforced_layer: bool = layer_id < support_enforce_layers;
+        if support_auto || enforced_layer {
+            let lower_layer_offset: f32;
+            if enforced_layer {
+                lower_layer_offset = 0.;
+            } else if support_threshold_auto {
+                // 287-291 the sum is a float; `LayerRegion::flow(role)` is `flow(role, m_layer->height)`
+                let mut external_perimeter_width: f32 = 0.;
+                for layerm in lower_layer.regions() {
+                    external_perimeter_width += layerm.flow(FlowRole::ExternalPerimeter, lower_layer.height)?.scaled_width() as f32;
+                }
+                external_perimeter_width /= lower_layer.region_count() as f32;
+                lower_layer_offset = (0.5 * f64::from(external_perimeter_width)) as f32;
+            } else {
+                // 293 `scaled<float>(v)` is `float(v / SCALING_FACTOR)` (Point.hpp)
+                lower_layer_offset = ((lower_layer.height / tan_threshold) / SCALING_FACTOR) as f32;
+            }
+            let lower_layer_offseted: Polygons =
+                cu::offset_expolygons(&lower_layer.lslices_extrudable, lower_layer_offset, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT);
+            overhangs = cu::diff(&expolygons_provider(&current_layer.lslices_extrudable), &lower_layer_offseted, cu::ApplySafetyOffset::No);
+            if lower_layer_offset == 0. {
+                raw_overhangs = overhangs.clone();
+                raw_overhangs_calculated = true;
+            }
+            if !(enforced_layer || blockers_layers.is_empty() || blockers_layers[layer_id as usize].is_empty()) {
+                overhangs = cu::diff_pe(
+                    &overhangs,
+                    &cu::offset_ex(
+                        &cu::union_(&blockers_layers[layer_id as usize]),
+                        (radius_sample_resolution / SCALING_FACTOR) as f32,
+                        cu::DEFAULT_JOIN_TYPE,
+                        cu::DEFAULT_MITER_LIMIT,
+                    ),
+                    cu::ApplySafetyOffset::Yes,
+                );
+            }
+            //if (config.bridge_no_support) {
+            //    for (const LayerRegion *layerm : current_layer.regions())
+            //        remove_bridges_from_contacts(print_config, lower_layer, *layerm,
+            //            float(layerm->flow(frExternalPerimeter).scaled_width()), overhangs);
+            //}
+        }
+        //check_self_intersections(overhangs, "generate_overhangs1");
+        if !enforcers_layers.is_empty() && !enforcers_layers[layer_id as usize].is_empty() {
+            // Has some support enforcers at this layer, apply them to the overhangs, don't apply the support threshold angle.
+            let mut enforced_overhangs: Polygons = cu::intersection(
+                &if raw_overhangs_calculated {
+                    raw_overhangs
+                } else {
+                    cu::diff(
+                        &expolygons_provider(&current_layer.lslices),
+                        &expolygons_provider(&lower_layer.lslices),
+                        cu::ApplySafetyOffset::No,
+                    )
+                },
+                &enforcers_layers[layer_id as usize], /*, ApplySafetyOffset::Yes */
+                cu::ApplySafetyOffset::No,
+            );
+            if !enforced_overhangs.is_empty() {
+                //FIXME this is a hack to make enforcers work on steep overhangs.
+                //FIXME enforcer_overhang_offset is a fudge constant!
+                enforced_overhangs = cu::diff_pe(
+                    &cu::offset_expolygons(
+                        &cu::union_ex(&enforced_overhangs),
+                        enforcer_overhang_offset as f32,
+                        cu::DEFAULT_JOIN_TYPE,
+                        cu::DEFAULT_MITER_LIMIT,
+                    ),
+                    &lower_layer.lslices,
+                    cu::ApplySafetyOffset::No,
+                );
+                //check_self_intersections(enforced_overhangs, "generate_overhangs - enforced overhangs2");
+                overhangs = if overhangs.is_empty() { enforced_overhangs } else { cu::union_2(&overhangs, &enforced_overhangs) };
+                //check_self_intersections(overhangs, "generate_overhangs - enforcers");
+            }
+        }
+        out[layer_id as usize + num_raft_layers] = overhangs;
+        throw_on_cancel();
+    }
+
+    Ok(out)
+}
+
 /// TreeSupport3D.cpp:349-370 `static LayerIndex precalculate(const Print &print, const std::vector<Polygons>
 /// &overhangs, const TreeSupportSettings &config, const std::vector<size_t> &object_ids, TreeModelVolumes
 /// &volumes, std::function<void()> throw_on_cancel)`
