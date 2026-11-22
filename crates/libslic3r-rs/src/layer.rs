@@ -719,6 +719,22 @@ impl LayerRegion {
         layer_id: usize,
         print_z: f64,
     ) -> Result<()> {
+        self.make_perimeters_with(surface_fill, layer_height, layer_id, print_z, &|_| {})
+    }
+
+    /// `make_perimeters` (LayerRegion.cpp:131-206) with the `PerimeterConfig` handed to `patch` before the
+    /// generator is made from it. The configs of this crate's layers do not hold every option the pin's
+    /// PerimeterGenerator reads (PerimeterGenerator.cpp:872, 935, 938, 1131, 1141, 1275, 1378); the
+    /// comparison with the pin (tests/perimeter_generator_native_parity.rs) sets those through `patch`
+    /// and runs the same body the slicing path runs. `make_perimeters` patches nothing.
+    pub fn make_perimeters_with(
+        &mut self,
+        surface_fill: &SurfaceCollection,
+        layer_height: f64,
+        layer_id: usize,
+        print_z: f64,
+        patch: &dyn Fn(&mut crate::perimeter_generator::PerimeterConfig),
+    ) -> Result<()> {
         use crate::perimeter_generator::{PerimeterConfig, PerimeterGenerator};
 
         // LayerRegion.cpp:133-134
@@ -829,7 +845,7 @@ impl LayerRegion {
         }
 
         // Build PerimeterConfig from PrintRegionConfig
-        let perimeter_config = PerimeterConfig {
+        let mut perimeter_config = PerimeterConfig {
             // PerimeterGenerator.cpp:1536-1553 -- raw option values; the
             // arithmetic lives in perimeter_generator at the C++ line.
             min_nozzle_diameter: print_config.nozzle_diameter,
@@ -931,7 +947,35 @@ impl LayerRegion {
             overhang_flow: self
                 .bridging_flow(FlowRole::Perimeter, object_config.thick_bridges, layer_height)
                 .ok(),
+            // What `PerimeterGenerator::process_classic` of the pin reads beside the above (R921).
+            // `precise_outer_wall` and `alternate_extra_wall` are not among the options this crate's
+            // region config holds: the defaults of PrintConfig.cpp.
+            precise_outer_wall: false,
+            alternate_extra_wall: false,
+            // PerimeterGenerator.cpp:938, 1131 `object_config->top_one_wall_type`
+            top_one_wall_type: object_config.top_one_wall_type,
+            // PerimeterGenerator.cpp:938 `object_config->only_one_wall_first_layer`
+            only_one_wall_first_layer: object_config.only_one_wall_first_layer,
+            // LayerRegion.cpp:148, 191 `first_object_layer = this->layer()->id() == 0 || starts_at_object_base`
+            starts_at_object_base: layer_id == 0,
+            // PerimeterGenerator.cpp:1275-1276
+            brim_outer_only: object_config.brim_type == crate::print_config::BrimType::OuterOnly && object_config.brim_width > 0.,
+            // PerimeterGenerator.cpp:895 `config->gap_infill_speed`
+            gap_infill_speed: config.gap_fill_speed,
+            // PerimeterGenerator.cpp:1378 `config->filter_out_gap_fill`
+            filter_out_gap_fill: config.filter_out_gap_fill,
+            // LayerRegion.cpp:153-156, 168
+            spiral_vase: spiral_mode,
+            // LayerRegion.cpp:199 `g.solid_infill_flow = wall_flow(frSolidInfill);`
+            solid_infill_flow: self.flow(FlowRole::SolidInfill, layer_height).ok(),
+            // PerimeterGenerator.cpp:1411 `config->infill_wall_overlap`: the region config of this crate
+            // holds the fraction.
+            infill_wall_overlap_percent: object_config.infill_wall_overlap * 100.,
+            // PerimeterGenerator.cpp:268-276 `is_enable_overhang_speed`: one extruder, no filament override.
+            enable_overhang_speed: object_config.enable_overhang_speed,
         };
+
+        patch(&mut perimeter_config);
 
         // Create PerimeterGenerator
         let generator = PerimeterGenerator::new(perimeter_config);
@@ -943,8 +987,53 @@ impl LayerRegion {
             .map(|s| s.expolygon.clone())
             .collect();
 
-        // LayerRegion.cpp:174
-        // C++: g.process_classic();
+        // LayerRegion.cpp:202-205
+        // C++: if (this->layer()->object()->config().wall_generator.value == PerimeterGeneratorType::Arachne && !spiral_mode)
+        // C++:     g.process_arachne();
+        // C++: else
+        // C++:     g.process_classic();
+        // R921 PG_CLASSIC_PIN (on unless =0): the classic walls by the port of the pin's
+        // `process_classic` (PerimeterGenerator.cpp:859-1452), which is compared with the pin over whole
+        // layers (tests/perimeter_generator_native_parity.rs). It hands back all of `loops`, `gap_fill`,
+        // `fill_surfaces`, `fill_no_overlap` and `loop_nodes`; the gap fill block further down belongs to
+        // the body it replaces (`PG_CLASSIC_PIN=0`: `generate` and `process_classic_legacy`).
+        let classic_pin = crate::faithful_gate("PG_CLASSIC_PIN")
+            && (object_config.perimeter_mode == crate::print_config::PerimeterMode::Classic || spiral_mode);
+        if classic_pin {
+            let result = generator.process_classic(&surface_fill.surfaces);
+            // The islands of `loops` one after the other, as the body this replaces stores them: the
+            // loop of a node is then the index among the walls of all islands.
+            let mut nodes = result.loop_nodes;
+            for island in result.entities.entities {
+                let base = self.perimeters.entities.len();
+                match island {
+                    crate::extrusion_entity::ExtrusionEntityType::Collection(coll) => {
+                        for n in nodes[coll.loop_node_range.0..coll.loop_node_range.1].iter_mut() {
+                            n.loop_id += base;
+                        }
+                        self.perimeters.entities.extend(coll.entities);
+                    }
+                    other => self.perimeters.entities.push(other),
+                }
+            }
+            self.perimeters.loop_node_range = (0, nodes.len());
+            self.loop_nodes_out = nodes;
+            for infill_expoly in result.infill_area {
+                let fill_surface = Surface {
+                    expolygon: infill_expoly,
+                    surface_type: SurfaceType::Internal,
+                    thickness: layer_height,
+                    thickness_layers: 1,
+                    bridge_angle: None,
+                    extra_perimeters: 0,
+                };
+                self.fill_surfaces.surfaces.push(fill_surface.clone());
+                self.fill_expolygons.push(fill_surface.expolygon);
+            }
+            self.fill_no_overlap_expolygons.extend(result.no_overlap_area);
+            self.thin_fills.entities.extend(result.gap_fill.entities);
+            return Ok(());
+        }
         // Generate perimeters
         let mut result = generator.generate(&slices);
         // R253 (GAPTRIM_PRETAIL): per-surface pre-tail inputs for the
@@ -4727,6 +4816,20 @@ impl LayerRegion {
     /// Layer.cpp:1327-1332
     pub fn set_slices(&mut self, slices: SurfaceCollection) {
         self.slices = slices;
+    }
+
+    /// The region and the configs of the object and of the print a LayerRegion of the pin reaches through
+    /// `m_region` and `m_layer->object()` (Layer.hpp:38, 130-131): what `Layer::wire_config_hierarchy`
+    /// stamps, for a LayerRegion that stands on its own.
+    pub fn set_config_hierarchy(
+        &mut self,
+        region: Arc<crate::print_region::PrintRegion>,
+        object_config: Arc<crate::print_config::PrintObjectConfig>,
+        print_config: Arc<crate::print_config::PrintConfig>,
+    ) {
+        self.region = Some(region);
+        self.object_config = Some(object_config);
+        self.print_config = Some(print_config);
     }
 }
 

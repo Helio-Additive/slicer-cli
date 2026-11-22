@@ -11,22 +11,22 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**69.2% of the named C++ functions are ported or verified (6621 of 9574); 67.5% by size of body.**
+**69.6% of the named C++ functions are ported or verified (6667 of 9574); 68.5% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 593 | 6.2% | 9.6% |
-| partial `[~]` | 2360 | 24.7% | 22.9% |
-| ported `[x]` | 3914 | 40.9% | 27.6% |
-| verified `[v]` | 2707 | 28.3% | 39.9% |
+| not started `[ ]` | 583 | 6.1% | 9.5% |
+| partial `[~]` | 2324 | 24.3% | 22.1% |
+| ported `[x]` | 3860 | 40.3% | 26.7% |
+| verified `[v]` | 2807 | 29.3% | 41.7% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
 | no Rust file of that name | 4 |
 | partial | 237 |
-| every named function ported | 62 |
-| every named function verified | 14 |
+| every named function ported | 61 |
+| every named function verified | 15 |
 
 C++ still run through the FFI shim crates: 0 functions called from the engine (`clipper-z-sys` 0, `clipper2-z-sys` 0, `eigen-transform-sys` 0, `boost-voronoi-sys` 0). They are listed at
 the end; the goal is none.
@@ -94,7 +94,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `AStar` | 3 | `a_star.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `BlacklistedLibraryCheck` | 1 | `blacklisted_library_check.rs` | partial | 5 | 0 | 1 | 4 | 0 |
 | `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 26 | 28 | 1 |
-| `BridgeDetector` | 1 | `bridge_detector.rs` | partial | 11 | 1 | 5 | 5 | 0 |
+| `BridgeDetector` | 1 | `bridge_detector.rs` | partial | 11 | 0 | 3 | 0 | 8 |
 | `Brim` | 2 | `brim.rs` | ported | 32 | 0 | 0 | 5 | 27 |
 | `BrimEarsPoint` | 2 | `brim_ears_point.rs` | partial | 3 | 0 | 1 | 2 | 0 |
 | `BuildVolume` | 1 | `build_volume.rs` | partial | 20 | 1 | 2 | 17 | 0 |
@@ -158,7 +158,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 3 | 0 |
 | `Fill/Fill3DHoneycomb` | 1 | `fill/fill3_d_honeycomb.rs` | partial | 13 | 0 | 3 | 10 | 0 |
 | `Fill/FillAdaptive` | 1 | `fill/fill_adaptive.rs` | partial | 32 | 8 | 8 | 16 | 0 |
-| `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 13 | 22 | 33 | 0 |
+| `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 11 | 13 | 33 | 11 |
 | `Fill/FillConcentric` | 1 | `fill/fill_concentric.rs` | partial | 5 | 0 | 3 | 2 | 0 |
 | `Fill/FillConcentricInternal` | 1 | `fill/fill_concentric_internal.rs` | partial | 4 | 0 | 1 | 3 | 0 |
 | `Fill/FillConformal` | 1 | `fill/fill_conformal.rs` | partial | 29 | 0 | 2 | 27 | 0 |
@@ -171,11 +171,11 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Fill/FillLine` | 1 | `fill/fill_line.rs` | partial | 5 | 0 | 2 | 3 | 0 |
 | `Fill/FillPlanePath` | 1 | `fill/fill_plane_path.rs` | partial | 25 | 2 | 11 | 12 | 0 |
 | `Fill/FillRadialZigZag` | 1 | `fill/fill_radial_zig_zag.rs` | partial | 83 | 0 | 2 | 81 | 0 |
-| `Fill/FillRectilinear` | 1 | `fill/fill_rectilinear.rs` | partial | 109 | 17 | 44 | 48 | 0 |
-| `Fill/Lightning/DistanceField` | 1 | `fill/lightning/distance_field.rs` | partial | 11 | 1 | 1 | 9 | 0 |
-| `Fill/Lightning/Generator` | 1 | `fill/lightning/generator.rs` | partial | 6 | 5 | 1 | 0 | 0 |
-| `Fill/Lightning/Layer` | 1 | `fill/lightning/layer.rs` | partial | 11 | 0 | 1 | 10 | 0 |
-| `Fill/Lightning/TreeNode` | 1 | `fill/lightning/tree_node.rs` | partial | 27 | 1 | 9 | 17 | 0 |
+| `Fill/FillRectilinear` | 1 | `fill/fill_rectilinear.rs` | partial | 109 | 14 | 47 | 48 | 0 |
+| `Fill/Lightning/DistanceField` | 1 | `fill/lightning/distance_field.rs` | partial | 11 | 1 | 1 | 7 | 2 |
+| `Fill/Lightning/Generator` | 1 | `fill/lightning/generator.rs` | partial | 6 | 4 | 1 | 0 | 1 |
+| `Fill/Lightning/Layer` | 1 | `fill/lightning/layer.rs` | partial | 11 | 0 | 1 | 5 | 5 |
+| `Fill/Lightning/TreeNode` | 1 | `fill/lightning/tree_node.rs` | partial | 27 | 1 | 8 | 12 | 6 |
 | `Flow` | 1 | `flow.rs` | partial | 31 | 0 | 6 | 6 | 19 |
 | `FlushVolCalc` | 1 | `flush_vol_calc.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `FlushVolPredictor` | 3 | `flush_vol_predictor.rs` | partial | 14 | 3 | 1 | 10 | 0 |
@@ -263,7 +263,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 1 | 12 | 54 | 7 |
 | `MultiNozzleUtils` | 1 | `multi_nozzle_utils.rs` | partial | 59 | 0 | 6 | 0 | 53 |
 | `MultiPoint` | 1 | `multi_point.rs` | partial | 52 | 0 | 38 | 13 | 1 |
-| `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 20 | 27 | 0 |
+| `MutablePolygon` | 1 | `mutable_polygon.rs` | partial | 47 | 0 | 2 | 4 | 41 |
 | `MutablePriorityQueue` | 1 | `mutable_priority_queue.rs` | partial | 37 | 0 | 17 | 20 | 0 |
 | `NormalUtils` | 3 | `normal_utils.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `NozzleInventory` | 3 | `nozzle_inventory.rs` | partial | 49 | 1 | 0 | 0 | 48 |
@@ -280,7 +280,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `ParameterUtils` | 1 | `parameter_utils.rs` | partial | 3 | 1 | 1 | 1 | 0 |
 | `pchheader` | 3 | `pchheader.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `PerfTrace` | 3 | `perf_trace.rs` | verified | 1 | 0 | 0 | 0 | 1 |
-| `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 1 | 6 | 8 | 14 |
+| `PerimeterGenerator` | 1 | `perimeter_generator.rs` | partial | 29 | 1 | 4 | 4 | 20 |
 | `PlaceholderParser` | 1 | `placeholder_parser.rs` | partial | 85 | 0 | 10 | 1 | 74 |
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 0 | 13 | 11 | 0 |
@@ -333,11 +333,11 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `SlicingAdaptive` | 2 | `slicing_adaptive.rs` | ported | 6 | 0 | 0 | 6 | 0 |
 | `Support/SupportCommon` | 2 | `support/support_common.rs` | partial | 31 | 0 | 5 | 2 | 24 |
 | `Support/SupportLayer` | 2 | `support/support_layer.rs` | ported | 4 | 0 | 0 | 4 | 0 |
-| `Support/SupportMaterial` | 2 | `support/support_material.rs` | partial | 51 | 0 | 8 | 10 | 33 |
+| `Support/SupportMaterial` | 2 | `support/support_material.rs` | partial | 51 | 0 | 4 | 8 | 39 |
 | `Support/SupportParameters` | 2 | `support/support_parameters.rs` | verified | 13 | 0 | 0 | 0 | 13 |
 | `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 0 | 10 | 10 | 14 |
 | `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 4 | 4 | 25 | 39 |
-| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 11 | 8 | 21 | 36 |
+| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 8 | 5 | 15 | 48 |
 | `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 0 | 1 | 0 | 14 |
 | `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
 | `SupportRecommendedParams` | 3 | `support_recommended_params.rs` | verified | 9 | 0 | 0 | 0 | 9 |
@@ -369,7 +369,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `TryCatchSignalSEH` | 3 | `try_catch_signal_seh.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Utils` | 1 | `utils.rs` | partial | 36 | 0 | 15 | 21 | 0 |
 | `utils` | 1 | `utils.rs` | partial | 66 | 7 | 25 | 25 | 9 |
-| `VariableWidth` | 1 | `variable_width.rs` | ported | 3 | 0 | 0 | 2 | 1 |
+| `VariableWidth` | 1 | `variable_width.rs` | verified | 3 | 0 | 0 | 0 | 3 |
 | `VectorFormatter` | 3 | `vector_formatter.rs` | ported | 0 | 0 | 0 | 0 | 0 |
 | `Win10ModelRepair` | 3 | none | not started | 0 | 0 | 0 | 0 | 0 |
 | `Zipper` | 3 | `zipper.rs` | partial | 7 | 2 | 3 | 2 | 0 |
@@ -1266,20 +1266,20 @@ Rust file: `bridge_detector.rs`. Status: **partial**. Not listed: 3 constructors
 
 **free functions**
 
-- [x] `detect_bridging_direction` (line 77) → `bridge_detector.rs:815`
+- [v] `detect_bridging_direction` (line 77) → `bridge_detector.rs:1053` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ. (the body reads as divergent to the estimate)
 - [~] `detect_bridging_direction` (line 124) → `bridge_detector.rs` — another overload of the name is ported
-- [x] `get_trapezoids2` (line 236) → `bridge_detector.rs:543`
+- [v] `get_trapezoids2` (line 236) → `bridge_detector.rs:504` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
 - [~] `get_trapezoids2` (line 266) → `bridge_detector.rs` — another overload of the name is ported
-- [ ] `get_trapezoids3_half` (line 278) → `bridge_detector.rs`
+- [v] `get_trapezoids3_half` (line 278) → `bridge_detector.rs:555` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
 
 **class `BridgeDetector`**
 
-- [x] `initialize` (line 35) → `bridge_detector.rs:126`
-- [~] `detect_angle` (line 75) → `bridge_detector.rs:160` — partial
-- [x] `bridge_direction_candidates` (line 179) → `bridge_detector.rs:356`
-- [~] `coverage` (line 315) → `bridge_detector.rs:417` — partial
+- [v] `initialize` (line 35) → `bridge_detector.rs:121` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
+- [v] `detect_angle` (line 75) → `bridge_detector.rs:156` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
+- [v] `bridge_direction_candidates` (line 179) → `bridge_detector.rs:292` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
+- [v] `coverage` (line 315) → `bridge_detector.rs:347` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
 - [~] `unsupported_edges` (line 413) → `bridge_detector.rs` — another overload of the name is ported
-- [x] `unsupported_edges` (line 454) → `bridge_detector.rs:520`
+- [v] `unsupported_edges` (line 454) → `bridge_detector.rs:484` — R921: tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.
 
 ### `Brim` (.cpp+.hpp)
 
@@ -2143,7 +2143,7 @@ Rust file: `clipper2_utils.rs`. Status: **partial**.
 - [x] `intersection_pl_2` (line 138) → `clipper2_utils.rs:349`
 - [x] `diff_pl_2` (line 140) → `clipper2_utils.rs:357`
 - [~] `union_ex_2` (line 143) → `clipper2_utils.rs:381` — divergent
-- [~] `union_ex_2` (line 158) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `union_ex_2` (line 158) → `perimeter_generator.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [x] `offset_ex_2` (line 174) → `clipper2_utils.rs:426`
 - [x] `offset2_ex_2` (line 186) → `clipper2_utils.rs:462`
 
@@ -2197,18 +2197,18 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `clipper_do` (line 325) → `clipper_utils.rs` — another overload of the name is ported
 - [x] `clipper_union` (line 340) → `clipper_utils.rs:1019`
 - [x] `ClipperPaths_to_Slic3rExPolygons` (line 354) → `clipper_utils.rs:1037`
-- [~] `offset_ex` (line 358) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
+- [~] `offset_ex` (line 358) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [x] `raw_offset_polyline` (line 360) → `clipper_utils.rs:1048`
 - [x] `expand_paths` (line 367) → `clipper_utils.rs:1062`
-- [~] `union_safety_offset` (line 370) → `bridge_detector.rs, support/support_common.rs` — not in the paired file
-- [~] `union_safety_offset` (line 371) → `bridge_detector.rs, support/support_common.rs` — not in the paired file
+- [~] `union_safety_offset` (line 370) → `support/support_common.rs` — not in the paired file
+- [~] `union_safety_offset` (line 371) → `support/support_common.rs` — not in the paired file
 - [~] `union_safety_offset_ex` (line 372) → `support/support_common.rs` — not in the paired file
 - [x] `union_safety_offset_ex` (line 373) → `clipper_utils.rs:3689`
 - [x] `remove_outermost_polygon` (line 376) → `clipper_utils.rs:817`
 - [x] `remove_outermost_polygon` (line 378) → `clipper_utils.rs:837`
-- [~] `expand` (line 381) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
+- [~] `expand` (line 381) → `build_volume.rs, extrusion_simulator.rs, gcode/wipe_tower.rs` — not in the paired file
 - [x] `shrink_paths` (line 382) → `clipper_utils.rs:1079`
-- [~] `expand` (line 383) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
+- [~] `expand` (line 383) → `build_volume.rs, extrusion_simulator.rs, gcode/wipe_tower.rs` — not in the paired file
 - [ ] `expand_ex` (line 385) → `clipper_utils.rs`
 - [x] `shrink` (line 388) → `clipper_utils.rs:339`
 - [~] `shrink_ex` (line 390) → `adaptive_layer_merge.rs, brim.rs, support/support_common.rs` — not in the paired file
@@ -2216,18 +2216,18 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [x] `offset_paths` (line 400) → `clipper_utils.rs:1125`
 - [x] `closing` (line 407) → `clipper_utils.rs:610`
 - [~] `closing_ex` (line 410) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `offset` (line 410) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 410) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `closing_ex` (line 412) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `offset` (line 413) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 413) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `closing_ex` (line 414) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `offset_ex` (line 415) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
-- [~] `offset` (line 418) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `offset` (line 420) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset_ex` (line 415) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `offset` (line 418) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
+- [~] `offset` (line 420) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
 - [~] `opening` (line 422) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 423) → `clipper_utils.rs`
 - [x] `opening` (line 424) → `clipper_utils.rs:429`
 - [~] `opening` (line 426) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
-- [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs, gcode/timelapse_pos_picker.rs, support/tree_support.rs` — not in the paired file
+- [~] `opening_ex` (line 428) → `adaptive_layer_merge.rs, gcode/timelapse_pos_picker.rs, perimeter_generator.rs` — not in the paired file
 - [ ] `contour_to_polygons` (line 429) → `clipper_utils.rs`
 - [x] `opening_ex` (line 430) → `clipper_utils.rs:444`
 - [x] `offset_expolygon_inner` (line 437) → `clipper_utils.rs:1193`
@@ -2243,17 +2243,17 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [x] `expolygons_offset` (line 539) → `clipper_utils.rs:1325`
 - [~] `intersection_ln` (line 541) → `bridge_detector.rs, internal_bridge_detector.rs, support/tree_support.rs` — not in the paired file
 - [v] `expolygons_offset_pt` (line 552) → `clipper_utils.rs:1347` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
-- [~] `offset` (line 559) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `offset` (line 561) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `offset` (line 563) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `offset` (line 565) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
-- [~] `offset_ex` (line 567) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
-- [~] `offset_ex` (line 570) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
-- [~] `offset_ex` (line 572) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
-- [~] `offset_ex` (line 574) → `bridge_detector.rs, cut_surface.rs, emboss.rs` — not in the paired file
+- [~] `offset` (line 559) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
+- [~] `offset` (line 561) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
+- [~] `offset` (line 563) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
+- [~] `offset` (line 565) → `arrange.rs, bounding_box.rs, geometry/voronoi_offset.rs` — not in the paired file
+- [~] `offset_ex` (line 567) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `offset_ex` (line 570) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `offset_ex` (line 572) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
+- [~] `offset_ex` (line 574) → `cut_surface.rs, emboss.rs, fill/fill_conformal.rs` — not in the paired file
 - [~] `offset2` (line 577) → `clipper_utils.rs:633` — divergent
-- [~] `offset2_ex` (line 581) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
-- [~] `offset2_ex` (line 585) → `support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `offset2_ex` (line 581) → `perimeter_generator.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
+- [~] `offset2_ex` (line 585) → `perimeter_generator.rs, support/support_common.rs, support/tree_support.rs` — not in the paired file
 - [~] `closing` (line 592) → `support/support_common.rs` — not in the paired file
 - [~] `closing_ex` (line 598) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
 - [~] `closing_ex` (line 604) → `print_object_slice.rs, support/support_common.rs` — not in the paired file
@@ -2286,11 +2286,11 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `intersection` (line 709) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
 - [~] `intersection` (line 711) → `aabb_tree_lines.rs, arrange.rs, enum_bitmask.rs` — not in the paired file
 - [x] `intersection` (line 714) → `clipper_utils.rs:135`
-- [~] `union_` (line 721) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
-- [~] `union_` (line 723) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
-- [~] `union_` (line 725) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
+- [~] `union_` (line 721) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
+- [~] `union_` (line 723) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
+- [~] `union_` (line 725) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
 - [~] `union_` (line 727) → `clipper_utils.rs:81` — divergent
-- [~] `union_` (line 735) → `bridge_detector.rs, clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs` — not in the paired file
+- [~] `union_` (line 735) → `clipper2/clipper_h.rs, clipper2/clipper_minkowski.rs, enum_bitmask.rs` — not in the paired file
 - [v] `_clipper_ex` (line 738) → `clipper_utils.rs:1467` — R910: tests/clipper_utils_geo_free_native_parity.rs: the helpers taken off geo-clipper against the pin's ClipperUtils.cpp (shim exports cz_ref_cu_*), 12,000 random and degenerate cases per helper, point for point
 - [~] `diff_ex` (line 741) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 743) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
@@ -2308,18 +2308,18 @@ Rust file: `clipper_utils.rs`. Status: **partial**. Not listed: 15 constructors,
 - [~] `diff_ex` (line 767) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 770) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `diff_ex` (line 778) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 788) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 790) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 792) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 794) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 796) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 798) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 800) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 802) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 804) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
-- [~] `intersection_ex` (line 806) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 788) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 790) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 792) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 794) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 796) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 798) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 800) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 802) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 804) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
+- [~] `intersection_ex` (line 806) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
 - [~] `intersection_ex` (line 808) → `clipper_utils.rs:549` — partial
-- [~] `intersection_ex` (line 810) → `bridge_detector.rs, cut_surface.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
+- [~] `intersection_ex` (line 810) → `cut_surface.rs, fill/fill_radial_zig_zag.rs, gcode/avoid_crossing_perimeters.rs` — not in the paired file
 - [~] `union_ex` (line 813) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `union_ex` (line 815) → `cut_surface.rs, emboss.rs, fill/fill_radial_zig_zag.rs` — not in the paired file
 - [~] `union_ex` (line 817) → `clipper_utils.rs:99` — divergent
@@ -3655,24 +3655,24 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `to_polylines` (line 231) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 250) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 267) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [~] `to_polygons` (line 286) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
-- [~] `to_polygons` (line 295) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 286) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 295) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [ ] `to_polygon_ptrs` (line 306) → `ex_polygon.rs`
 - [ ] `to_polygon_ptrs` (line 316) → `ex_polygon.rs`
-- [~] `to_polygons` (line 328) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
-- [~] `to_polygons` (line 339) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 328) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 339) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `to_expolygons` (line 352) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
 - [~] `to_expolygons` (line 361) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
 - [~] `to_points` (line 370) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
 - [~] `translate` (line 380) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
-- [~] `polygons_append` (line 385) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `polygons_append` (line 392) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `polygons_append` (line 401) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `polygons_append` (line 410) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `polygons_append` (line 385) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
+- [~] `polygons_append` (line 392) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
+- [~] `polygons_append` (line 401) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
+- [~] `polygons_append` (line 410) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
 - [~] `expolygons_append` (line 421) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_append` (line 426) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_rotate` (line 437) → `geometry/expolygon.rs` — not in the paired file
-- [~] `expolygons_contain` (line 443) → `geometry/expolygon.rs` — not in the paired file
+- [~] `expolygons_contain` (line 443) → `bridge_detector.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_simplify` (line 451) → `geometry/expolygon.rs, print_object_slice.rs, support/tree_support.rs` — not in the paired file
 - [x] `get_expolygons_area` (line 455) → `ex_polygon.rs:563`
 - [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:572` — partial
@@ -3714,8 +3714,8 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [x] `point_projection` (line 132) → `ex_polygon.rs:223`
 - [x] `symmetric_y` (line 151) → `ex_polygon.rs:266`
 - [~] `overlaps` (line 158) → `ex_polygon.rs:277` — partial
-- [~] `simplify_p` (line 225) → `geometry/expolygon.rs` — not in the paired file
-- [~] `simplify_p` (line 231) → `geometry/expolygon.rs` — not in the paired file
+- [~] `simplify_p` (line 225) → `geometry/expolygon.rs, perimeter_generator.rs` — not in the paired file
+- [~] `simplify_p` (line 231) → `geometry/expolygon.rs, perimeter_generator.rs` — not in the paired file
 - [~] `simplify` (line 253) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `simplify` (line 258) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `medial_axis` (line 263) → `geometry/expolygon.rs` — not in the paired file
@@ -4322,7 +4322,7 @@ Rust file: `fill/fill_adaptive.rs`. Status: **partial**. Not listed: 4 construct
 **class `Filler`**
 
 - [~] `clone` (line 62) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 73) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
+- [~] `no_sort` (line 73) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `is_self_crossing` (line 74) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `_fill_surface_single` (line 1326) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
 
@@ -4344,55 +4344,55 @@ Rust file: `fill/fill_base.rs`. Status: **partial**. Not listed: 3 constructors,
 
 **free functions**
 
-- [~] `closed_contour_distance_ccw` (line 300) → `fill/fill_base.rs:214` — partial
-- [x] `closed_contour_distance_cw` (line 311) → `fill/fill_base.rs:225`
-- [~] `path_length_along_contour_ccw` (line 317) → `fill/fill_base.rs:231` — partial
-- [x] `path_lengths_along_contour` (line 327) → `fill/fill_base.rs:243`
-- [x] `take_cw_full` (line 346) → `fill/fill_base.rs:266`
-- [x] `take_cw_limited` (line 360) → `fill/fill_base.rs:285`
-- [x] `take_ccw_full` (line 400) → `fill/fill_base.rs:332`
-- [x] `take_ccw_limited` (line 416) → `fill/fill_base.rs:352`
+- [~] `closed_contour_distance_ccw` (line 300) → `fill/fill_base.rs:230` — partial
+- [x] `closed_contour_distance_cw` (line 311) → `fill/fill_base.rs:241`
+- [~] `path_length_along_contour_ccw` (line 317) → `fill/fill_base.rs:247` — partial
+- [x] `path_lengths_along_contour` (line 327) → `fill/fill_base.rs:259`
+- [x] `take_cw_full` (line 346) → `fill/fill_base.rs:282`
+- [x] `take_cw_limited` (line 360) → `fill/fill_base.rs:301`
+- [x] `take_ccw_full` (line 400) → `fill/fill_base.rs:348`
+- [x] `take_ccw_limited` (line 416) → `fill/fill_base.rs:368`
 - [~] `take` (line 457) → `clonable_ptr.rs` — not in the paired file
 - [~] `take` (line 481) → `clonable_ptr.rs` — not in the paired file
-- [x] `take_limited` (line 503) → `fill/fill_base.rs:467`
-- [x] `clip_start_segment_and_point` (line 613) → `fill/fill_base.rs:628`
-- [x] `clip_end_segment_and_point` (line 638) → `fill/fill_base.rs:651`
-- [~] `line_rounded_thick_segment_collision` (line 667) → `fill/fill_base.rs:683` — partial
+- [x] `take_limited` (line 503) → `fill/fill_base.rs:483`
+- [x] `clip_start_segment_and_point` (line 613) → `fill/fill_base.rs:644`
+- [x] `clip_end_segment_and_point` (line 638) → `fill/fill_base.rs:667`
+- [~] `line_rounded_thick_segment_collision` (line 667) → `fill/fill_base.rs:699` — partial
 - [ ] `inside_interval` (line 771) → `fill/fill_base.rs`
 - [ ] `interval_inside_interval` (line 776) → `fill/fill_base.rs`
 - [ ] `cyclic_interval_inside_interval` (line 783) → `fill/fill_base.rs`
 - [ ] `export_infill_to_svg` (line 798) → `fill/fill_base.rs`
 - [ ] `validate_boundary_intersections` (line 909) → `fill/fill_base.rs`
-- [~] `mark_boundary_segments_touching_infill` (line 922) → `fill/fill_base.rs:810` — partial
-- [x] `mark_boundary_segments_overlapping_infill` (line 1278) → `fill/fill_base.rs:1132`
-- [x] `create_boundary_infill_graph` (line 1358) → `fill/fill_base.rs:1275`
-- [x] `base_support_extend_infill_lines` (line 1742) → `fill/fill_base.rs:1895`
-- [~] `emit_loops_in_band` (line 1863) → `fill/fill_base.rs:2209` — partial
+- [v] `mark_boundary_segments_touching_infill` (line 922) → `fill/fill_base.rs:833` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
+- [x] `mark_boundary_segments_overlapping_infill` (line 1278) → `fill/fill_base.rs:1166`
+- [x] `create_boundary_infill_graph` (line 1358) → `fill/fill_base.rs:1309`
+- [x] `base_support_extend_infill_lines` (line 1742) → `fill/fill_base.rs:1972`
+- [~] `emit_loops_in_band` (line 1863) → `fill/fill_base.rs:2286` — partial
 - [ ] `export_partial_infill_to_svg` (line 2050) → `fill/fill_base.rs`
-- [x] `evaluate_support_arch_cost` (line 2092) → `fill/fill_base.rs:2348`
-- [x] `evaluate_support_arches` (line 2111) → `fill/fill_base.rs:2373`
-- [x] `multiline_fill` (line 2620) → `fill/fill_base.rs:3141`
+- [x] `evaluate_support_arch_cost` (line 2092) → `fill/fill_base.rs:2425`
+- [x] `evaluate_support_arches` (line 2111) → `fill/fill_base.rs:2450`
+- [v] `multiline_fill` (line 2620) → `fill/fill_base.rs:3370` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
 
 **class `BoundaryInfillGraph`**
 
 - [ ] `interpolate_contour_point` (line 1207) → `fill/fill_base.rs`
-- [x] `dir` (line 1232) → `fill/fill_base.rs:1071`
-- [x] `dir_prev` (line 1238) → `fill/fill_base.rs:1086`
-- [x] `dir_next` (line 1245) → `fill/fill_base.rs:1096`
-- [x] `first` (line 1252) → `fill/fill_base.rs:1106`
-- [x] `prev_vertical` (line 1264) → `fill/fill_base.rs:1116`
-- [x] `next_vertical` (line 1268) → `fill/fill_base.rs:1122`
+- [x] `dir` (line 1232) → `fill/fill_base.rs:1105`
+- [x] `dir_prev` (line 1238) → `fill/fill_base.rs:1120`
+- [x] `dir_next` (line 1245) → `fill/fill_base.rs:1130`
+- [x] `first` (line 1252) → `fill/fill_base.rs:1140`
+- [x] `prev_vertical` (line 1264) → `fill/fill_base.rs:1150`
+- [x] `next_vertical` (line 1268) → `fill/fill_base.rs:1156`
 
 **class `ContourIntersectionPoint`**
 
-- [x] `consume_prev` (line 270) → `fill/fill_base.rs:151`
-- [x] `consume_next` (line 271) → `fill/fill_base.rs:157`
-- [x] `trim_prev` (line 273) → `fill/fill_base.rs:164`
-- [x] `trim_next` (line 279) → `fill/fill_base.rs:171`
-- [x] `could_take_prev` (line 287) → `fill/fill_base.rs:180`
-- [x] `could_take_next` (line 289) → `fill/fill_base.rs:185`
-- [x] `could_connect_prev` (line 292) → `fill/fill_base.rs:193`
-- [x] `could_connect_next` (line 295) → `fill/fill_base.rs:202`
+- [x] `consume_prev` (line 270) → `fill/fill_base.rs:167`
+- [x] `consume_next` (line 271) → `fill/fill_base.rs:173`
+- [x] `trim_prev` (line 273) → `fill/fill_base.rs:180`
+- [x] `trim_next` (line 279) → `fill/fill_base.rs:187`
+- [x] `could_take_prev` (line 287) → `fill/fill_base.rs:196`
+- [x] `could_take_next` (line 289) → `fill/fill_base.rs:201`
+- [x] `could_connect_prev` (line 292) → `fill/fill_base.rs:209`
+- [x] `could_connect_next` (line 295) → `fill/fill_base.rs:218`
 
 **class `Fill`**
 
@@ -4402,22 +4402,22 @@ Rust file: `fill/fill_base.rs`. Status: **partial**. Not listed: 3 constructors,
 - [~] `fill_surface` (line 99) → `fill/fill_conformal.rs` — not in the paired file
 - [ ] `fill_surface_arachne` (line 115) → `fill/fill_base.rs`
 - [~] `fill_surface_extrusion` (line 127) → `fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs, fill/mod.rs` — not in the paired file
-- [~] `set_bounding_box` (line 155) → `extrusion_simulator.rs` — not in the paired file
-- [~] `use_bridge_flow` (line 158) → `fill/fill.rs, fill/fill3_d_honeycomb.rs, fill/fill_gyroid.rs` — not in the paired file
-- [~] `no_sort` (line 161) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
-- [ ] `has_consistent_pattern` (line 166) → `fill/fill_base.rs`
-- [ ] `copy_fill_data` (line 176) → `fill/fill_base.rs`
-- [~] `_adjust_solid_spacing` (line 184) → `fill/fill_base.rs:1871` — partial
-- [~] `_infill_direction` (line 204) → `fill/mod.rs` — not in the paired file
+- [v] `set_bounding_box` (line 155) → `fill/fill_base.rs:3225` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [x] `use_bridge_flow` (line 158) → `fill/fill_base.rs:3236`
+- [x] `no_sort` (line 161) → `fill/fill_base.rs:3242`
+- [x] `has_consistent_pattern` (line 166) → `fill/fill_base.rs:3248`
+- [x] `copy_fill_data` (line 176) → `fill/fill_base.rs:3254`
+- [v] `_adjust_solid_spacing` (line 184) → `fill/fill_base.rs:1936` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `_infill_direction` (line 204) → `fill/fill_base.rs:3280` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as divergent to the estimate)
 - [~] `_fill_surface_single` (line 206) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
 - [~] `_fill_surface_single` (line 214) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_cross_hatch.rs` — not in the paired file
-- [~] `_layer_angle` (line 220) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [v] `_layer_angle` (line 220) → `fill/fill_base.rs:3267` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
 - [~] `connect_infill` (line 1169) → `fill/mod.rs` — not in the paired file
-- [~] `connect_infill` (line 1180) → `fill/mod.rs` — not in the paired file
-- [x] `extended_object_bounding_box` (line 1495) → `fill/fill_base.rs:1859`
-- [x] `connect_infill` (line 1506) → `fill/fill_base.rs:1516`
-- [x] `connect_base_support` (line 2155) → `fill/fill_base.rs:2482`
-- [~] `connect_base_support` (line 2610) → `fill/fill_base.rs` — another overload of the name is ported
+- [v] `connect_infill` (line 1180) → `fill/fill_base.rs:3353` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
+- [v] `extended_object_bounding_box` (line 1495) → `fill/fill_base.rs:1919` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `connect_infill` (line 1506) → `fill/fill_base.rs:1568` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `connect_base_support` (line 2155) → `fill/fill_base.rs:2559` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
+- [v] `connect_base_support` (line 2610) → `fill/fill_base.rs:3358` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product). (the body reads as partial to the estimate)
 
 **class `FillParams`**
 
@@ -4426,7 +4426,7 @@ Rust file: `fill/fill_base.rs`. Status: **partial**. Not listed: 3 constructors,
 
 **class `SegmentPoint`**
 
-- [x] `valid` (line 610) → `fill/fill_base.rs:622`
+- [x] `valid` (line 610) → `fill/fill_base.rs:638`
 
 ### `Fill/FillConcentric` (.cpp+.hpp)
 
@@ -4810,23 +4810,23 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 **class `Fill2DLattice`**
 
 - [~] `clone` (line 205) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `_layer_angle` (line 211) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 211) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillAlignedRectilinear`**
 
 - [~] `clone` (line 39) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `_layer_angle` (line 44) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 44) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillCrossZag`**
 
 - [~] `clone` (line 171) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [ ] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs`
+- [~] `has_consistent_pattern` (line 174) → `fill/fill_base.rs` — not in the paired file
 
 **class `FillCubic`**
 
 - [~] `clone` (line 107) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 110) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 114) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 114) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillGlobalMonotonicLine`**
 
@@ -4837,30 +4837,30 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 
 - [~] `clone` (line 68) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 71) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 75) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 75) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillLockedZag`**
 
 - [~] `clone` (line 180) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [ ] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs`
+- [~] `has_consistent_pattern` (line 187) → `fill/fill_base.rs` — not in the paired file
 - [ ] `set_lock_region_param` (line 188) → `fill/fill_rectilinear.rs`
 - [ ] `set_skin_and_skeleton_pattern` (line 196) → `fill/fill_rectilinear.rs`
 
 **class `FillMonotonic`**
 
 - [~] `clone` (line 50) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 53) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
+- [~] `no_sort` (line 53) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 
 **class `FillMonotonicLine`**
 
 - [~] `clone` (line 59) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 62) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
+- [~] `no_sort` (line 62) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 
 **class `FillMonotonicLineWGapFill`**
 
 - [~] `is_self_crossing` (line 134) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [~] `clone` (line 139) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `no_sort` (line 140) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
+- [~] `no_sort` (line 140) → `fill/fill_base.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
 - [ ] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs`
 
 **class `FillRectilinear`**
@@ -4872,23 +4872,23 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 
 - [~] `clone` (line 94) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 97) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 101) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 101) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillSupportBase`**
 
 - [~] `clone` (line 120) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [~] `_layer_angle` (line 126) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 126) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillTriangles`**
 
 - [~] `clone` (line 81) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
 - [~] `is_self_crossing` (line 84) → `fill/fill3_d_honeycomb.rs, fill/fill_concentric.rs, fill/fill_concentric_internal.rs` — not in the paired file
-- [~] `_layer_angle` (line 88) → `fill/fill_honeycomb.rs, fill/fill_plane_path.rs, fill/mod.rs` — not in the paired file
+- [~] `_layer_angle` (line 88) → `fill/fill_base.rs, fill/fill_honeycomb.rs, fill/fill_plane_path.rs` — not in the paired file
 
 **class `FillZigZag`**
 
 - [~] `clone` (line 162) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [ ] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs`
+- [~] `has_consistent_pattern` (line 165) → `fill/fill_base.rs` — not in the paired file
 
 **class `SegmentIntersection`**
 
@@ -4949,11 +4949,11 @@ Rust file: `fill/lightning/distance_field.rs`. Status: **partial**. Not listed: 
 
 **class `DistanceField`**
 
-- [x] `tryGetNextPoint` (line 43) → `fill/lightning/distance_field.rs:356`
-- [x] `update` (line 98) → `fill/lightning/distance_field.rs:389`
+- [v] `tryGetNextPoint` (line 43) → `fill/lightning/distance_field.rs:351` — R921: tests/tree_support_native_parity.rs: the lightning trees of five support scenarios equal to the pin, which needs the same unsupported points in the same order (see Fill/Lightning/Generator); tests/lightning_native_parity.rs: the stable sort of the constructor.
+- [v] `update` (line 98) → `fill/lightning/distance_field.rs:384` — R921: tests/tree_support_native_parity.rs: the lightning trees of five support scenarios equal to the pin, which needs the same unsupported points in the same order (see Fill/Lightning/Generator); tests/lightning_native_parity.rs: the stable sort of the constructor.
 - [~] `update` (line 156) → `gcode/g_code_processor.rs, gcode/pressure_equalizer.rs, mutable_priority_queue.rs` — not in the paired file
-- [x] `to_grid_point` (line 191) → `fill/lightning/distance_field.rs:498`
-- [x] `from_grid_point` (line 198) → `fill/lightning/distance_field.rs:506`
+- [x] `to_grid_point` (line 191) → `fill/lightning/distance_field.rs:493`
+- [x] `from_grid_point` (line 198) → `fill/lightning/distance_field.rs:501`
 
 **class `DistanceField::UnsupportedPointsGrid`**
 
@@ -4975,9 +4975,9 @@ Rust file: `fill/lightning/generator.rs`. Status: **partial**. Not listed: 2 con
 **class `Generator`**
 
 - [ ] `infilll_extrusion_width` (line 62) → `fill/lightning/generator.rs`
-- [~] `generateInitialInternalOverhangs` (line 148) → `fill/lightning/generator.rs:220` — partial
+- [~] `generateInitialInternalOverhangs` (line 148) → `fill/lightning/generator.rs:212` — partial
 - [ ] `generateTrees` (line 176) → `fill/lightning/generator.rs`
-- [ ] `generateTreesforSupport` (line 232) → `fill/lightning/generator.rs`
+- [v] `generateTreesforSupport` (line 232) → `fill/lightning/generator.rs:490` — R921: tests/tree_support_native_parity.rs: the support constructor of the lightning generator (Generator.cpp:100-143) in the five lightning scenarios, both passes: the trees of every layer (nodes depth first) and the lines of convertToLines equal to the pin, with Darwin's rand() seeded alike on both sides. tests/lightning_native_parity.rs: the rand() sequence (56 values) and libc++'s stable_sort with the pin's inconsistent comparator of DistanceField (42 sorts).
 
 ### `Fill/Lightning/Layer` (.cpp+.hpp)
 
@@ -4986,7 +4986,7 @@ Rust file: `fill/lightning/layer.rs`. Status: **partial**.
 **free functions**
 
 - [x] `to_grid_point` (line 30) → `fill/lightning/layer.rs:78`
-- [x] `polygonCollidesWithLineSegment` (line 88) → `fill/lightning/layer.rs:568`
+- [x] `polygonCollidesWithLineSegment` (line 88) → `fill/lightning/layer.rs:570`
 - [~] `moveInside` (line 320) → `support/tree_support_3d.rs` — not in the paired file
 
 **class `GroundingLocation`**
@@ -4997,11 +4997,11 @@ Rust file: `fill/lightning/layer.rs`. Status: **partial**.
 
 - [x] `getWeightedDistance` (line 19) → `fill/lightning/layer.rs:69`
 - [x] `fillLocator` (line 35) → `fill/lightning/layer.rs:130`
-- [x] `generateNewTrees` (line 44) → `fill/lightning/layer.rs:146`
-- [x] `getBestGroundingLocation` (line 117) → `fill/lightning/layer.rs:231`
-- [x] `attach` (line 202) → `fill/lightning/layer.rs:381`
-- [x] `reconnectRoots` (line 220) → `fill/lightning/layer.rs:411`
-- [x] `convertToLines` (line 436) → `fill/lightning/layer.rs:549`
+- [v] `generateNewTrees` (line 44) → `fill/lightning/layer.rs:146` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer and the lines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
+- [v] `getBestGroundingLocation` (line 117) → `fill/lightning/layer.rs:231` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer and the lines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
+- [v] `attach` (line 202) → `fill/lightning/layer.rs:381` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer and the lines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
+- [v] `reconnectRoots` (line 220) → `fill/lightning/layer.rs:411` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer and the lines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
+- [v] `convertToLines` (line 436) → `fill/lightning/layer.rs:549` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer and the lines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
 
 ### `Fill/Lightning/TreeNode` (.cpp+.hpp)
 
@@ -5023,20 +5023,20 @@ Rust file: `fill/lightning/tree_node.rs`. Status: **partial**. Not listed: 1 con
 - [~] `addChild` (line 34) → `clipper.rs, clipper2/clipper_engine.rs` — not in the paired file
 - [x] `addChild` (line 41) → `fill/lightning/tree_node.rs:161`
 - [~] `create` (line 45) → `fill/lightning/tree_node.rs:64` — divergent
-- [x] `propagateToNextLayer` (line 51) → `fill/lightning/tree_node.rs:176`
+- [v] `propagateToNextLayer` (line 51) → `fill/lightning/tree_node.rs:176` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
 - [x] `setLocation` (line 65) → `fill/lightning/tree_node.rs:79`
 - [x] `visitBranches` (line 68) → `fill/lightning/tree_node.rs:201`
 - [x] `visitNodes` (line 78) → `fill/lightning/tree_node.rs:219`
-- [x] `deepCopy` (line 91) → `fill/lightning/tree_node.rs:233`
+- [v] `deepCopy` (line 91) → `fill/lightning/tree_node.rs:233` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
 - [~] `reroot` (line 109) → `fill/lightning/tree_node.rs:262` — partial
 - [x] `closestNode` (line 127) → `fill/lightning/tree_node.rs:293`
 - [x] `isRoot` (line 153) → `fill/lightning/tree_node.rs:84`
-- [x] `realign` (line 190) → `fill/lightning/tree_node.rs:419`
+- [v] `realign` (line 190) → `fill/lightning/tree_node.rs:419` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
 - [~] `straighten` (line 230) → `fill/lightning/tree_node.rs` — another overload of the name is ported
-- [~] `straighten` (line 235) → `fill/lightning/tree_node.rs:518` — partial
+- [v] `straighten` (line 235) → `fill/lightning/tree_node.rs:518` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator). (the body reads as partial to the estimate)
 - [ ] `draw_tree` (line 250) → `fill/lightning/tree_node.rs`
-- [x] `prune` (line 313) → `fill/lightning/tree_node.rs:679`
-- [x] `convertToPolylines` (line 350) → `fill/lightning/tree_node.rs:750`
+- [v] `prune` (line 313) → `fill/lightning/tree_node.rs:679` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
+- [v] `convertToPolylines` (line 350) → `fill/lightning/tree_node.rs:750` — R921: tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).
 - [~] `convertToPolylines` (line 359) → `fill/lightning/tree_node.rs` — another overload of the name is ported
 - [x] `removeJunctionOverlap` (line 379) → `fill/lightning/tree_node.rs:798`
 
@@ -7228,7 +7228,7 @@ Rust file: `gcode/wipe_tower.rs`. Status: **partial**. Not listed: 8 constructor
 - [x] `translate` (line 154) → `gcode/wipe_tower.rs:283`
 - [~] `translate` (line 158) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [x] `expand` (line 159) → `gcode/wipe_tower.rs:290`
-- [~] `expand` (line 165) → `bridge_detector.rs, build_volume.rs, extrusion_simulator.rs` — not in the paired file
+- [~] `expand` (line 165) → `build_volume.rs, extrusion_simulator.rs, geometry/bounding_box.rs` — not in the paired file
 
 **class `WipeTowerWriter`**
 
@@ -7834,7 +7834,7 @@ Rust file: `geometry/voronoi_offset.rs`. Status: **partial**.
 - [~] `annotate_inside_outside` (line 650) → `geometry/voronoi_offset.rs:1550` — partial
 - [x] `signed_vertex_distances` (line 969) → `geometry/voronoi_offset.rs:702`
 - [x] `edge_offset_contour_intersections` (line 1012) → `geometry/voronoi_offset.rs:791`
-- [~] `offset` (line 1329) → `arrange.rs, bounding_box.rs, bridge_detector.rs` — not in the paired file
+- [~] `offset` (line 1329) → `arrange.rs, bounding_box.rs, perimeter_generator.rs` — not in the paired file
 - [x] `offset` (line 1513) → `geometry/voronoi_offset.rs:1278`
 - [x] `skeleton_edges_rough` (line 1535) → `geometry/voronoi_offset.rs:1295`
 
@@ -8063,57 +8063,57 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2343`
-- [x] `zs_from_layers` (line 411) → `layer.rs:4819`
-- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:4807`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2432`
+- [x] `zs_from_layers` (line 411) → `layer.rs:4922`
+- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:4910`
 - [~] `get_extents` (line 750) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `get_extents` (line 761) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 
 **class `ContinuitiousDistancer`**
 
-- [v] `distance_from_perimeter` (line 428) → `layer.rs:4766` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `to_lines` (line 446) → `layer.rs:4793`
+- [v] `distance_from_perimeter` (line 428) → `layer.rs:4869` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `to_lines` (line 446) → `layer.rs:4896`
 
 **class `Layer`**
 
-- [x] `empty` (line 25) → `layer.rs:1933`
-- [x] `add_region` (line 34) → `layer.rs:1920`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2497` — divergent
-- [x] `make_slices` (line 47) → `layer.rs:2250`
-- [~] `backup_untyped_slices` (line 84) → `layer.rs:2353` — partial
-- [~] `restore_untyped_slices` (line 104) → `layer.rs:2392` — partial
-- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2421`
-- [x] `merged` (line 150) → `layer.rs:2448`
-- [x] `id` (line 158) → `layer.rs:1819`
-- [x] `set_id` (line 159) → `layer.rs:1825`
+- [x] `empty` (line 25) → `layer.rs:2022`
+- [x] `add_region` (line 34) → `layer.rs:2009`
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2586` — divergent
+- [x] `make_slices` (line 47) → `layer.rs:2339`
+- [~] `backup_untyped_slices` (line 84) → `layer.rs:2442` — partial
+- [~] `restore_untyped_slices` (line 104) → `layer.rs:2481` — partial
+- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2510`
+- [x] `merged` (line 150) → `layer.rs:2537`
+- [x] `id` (line 158) → `layer.rs:1908`
+- [x] `set_id` (line 159) → `layer.rs:1914`
 - [~] `object` (line 160) → `g_code.rs` — not in the paired file
-- [x] `object` (line 161) → `layer.rs:1842`
-- [x] `bottom_z` (line 169) → `layer.rs:1884`
-- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:1963` — partial
-- [x] `region_count` (line 193) → `layer.rs:1890`
+- [x] `object` (line 161) → `layer.rs:1931`
+- [x] `bottom_z` (line 169) → `layer.rs:1973`
+- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:2052` — partial
+- [x] `region_count` (line 193) → `layer.rs:1979`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
-- [x] `get_region` (line 195) → `layer.rs:1896`
-- [~] `make_perimeters` (line 203) → `layer.rs:2046` — divergent
-- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:4830`
-- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:4840`
-- [x] `make_fills` (line 223) → `layer.rs:2771`
-- [x] `has_extrusions` (line 239) → `layer.rs:4851`
-- [x] `effective_print_height` (line 242) → `layer.rs:4862`
-- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:4881`
-- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:4895`
-- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:4902`
-- [x] `idx_higher_or_equal` (line 278) → `layer.rs:4916`
-- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2523` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2673`
-- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5055`
-- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5079`
-- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5086`
-- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5117`
-- [~] `simplify_support_path` (line 638) → `layer.rs:5131` — partial
-- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5143` — partial
-- [~] `simplify_support_loop` (line 670) → `layer.rs:5157` — partial
-- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5171`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2710` — partial
+- [x] `get_region` (line 195) → `layer.rs:1985`
+- [~] `make_perimeters` (line 203) → `layer.rs:2135` — divergent
+- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:4933`
+- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:4943`
+- [x] `make_fills` (line 223) → `layer.rs:2860`
+- [x] `has_extrusions` (line 239) → `layer.rs:4954`
+- [x] `effective_print_height` (line 242) → `layer.rs:4965`
+- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:4984`
+- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:4998`
+- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5005`
+- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5019`
+- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2612` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2762`
+- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5158`
+- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5182`
+- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5189`
+- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5220`
+- [~] `simplify_support_path` (line 638) → `layer.rs:5234` — partial
+- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5246` — partial
+- [~] `simplify_support_loop` (line 670) → `layer.rs:5260` — partial
+- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5274`
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2799` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs, print.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs, print.rs` — not in the paired file
 
@@ -8121,7 +8121,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 - [~] `layer` (line 39) → `debug/compare.rs, fill/fill_conformal_chart.rs, g_code.rs` — not in the paired file
 - [~] `layer` (line 40) → `debug/compare.rs, fill/fill_conformal_chart.rs, g_code.rs` — not in the paired file
-- [x] `has_extrusions` (line 132) → `layer.rs:1602`
+- [x] `has_extrusions` (line 132) → `layer.rs:1691`
 - [~] `simplify_infill_extrusion_entity` (line 134) → `layer_region.rs` — not in the paired file
 - [~] `simplify_wall_extrusion_entity` (line 135) → `layer_region.rs` — not in the paired file
 
@@ -8130,7 +8130,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
 - [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
 - [~] `interface_id` (line 372) → `print.rs` — not in the paired file
-- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5184`
+- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5287`
 
 ### `LayerRegion` (.cpp)
 
@@ -9392,65 +9392,65 @@ Rust file: `mutable_polygon.rs`. Status: **partial**. Not listed: 7 constructors
 
 **free functions**
 
-- [x] `remove_duplicates` (line 8) → `mutable_polygon.rs:561`
-- [~] `remove_duplicates` (line 24) → `emboss.rs, orient.rs` — not in the paired file
-- [~] `remove_duplicates` (line 40) → `emboss.rs, orient.rs` — not in the paired file
-- [x] `clip_narrow_corner` (line 74) → `mutable_polygon.rs:656`
-- [x] `smooth_outward` (line 258) → `mutable_polygon.rs:876`
-- [~] `remove_duplicates` (line 312) → `emboss.rs, orient.rs` — not in the paired file
-- [~] `smooth_outward` (line 332) → `mutable_polygon.rs` — another overload of the name is ported
-- [~] `smooth_outward` (line 340) → `mutable_polygon.rs` — another overload of the name is ported
-- [~] `smooth_outward` (line 352) → `mutable_polygon.rs` — another overload of the name is ported
+- [v] `remove_duplicates` (line 8) → `mutable_polygon.rs:668` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `remove_duplicates` (line 24) → `mutable_polygon.rs:690` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `remove_duplicates` (line 40) → `mutable_polygon.rs:716` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `clip_narrow_corner` (line 74) → `mutable_polygon.rs:767` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `smooth_outward` (line 258) → `mutable_polygon.rs:924` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `remove_duplicates` (line 312) → `mutable_polygon.rs:1065` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `smooth_outward` (line 332) → `mutable_polygon.rs:1089` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `smooth_outward` (line 340) → `mutable_polygon.rs:1102` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `smooth_outward` (line 352) → `mutable_polygon.rs:1119` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
 
 **class `MutablePolygon`**
 
-- [~] `assign` (line 138) → `config.rs, extrusion_entity_collection.rs, model.rs` — not in the paired file
-- [x] `assign` (line 145) → `mutable_polygon.rs:210`
-- [~] `polygon` (line 149) → `bounding_box.rs, build_volume.rs, clipper2/clipper_engine.rs` — not in the paired file
-- [x] `polygon` (line 160) → `mutable_polygon.rs:231`
-- [x] `empty` (line 166) → `mutable_polygon.rs:239`
-- [x] `size` (line 167) → `mutable_polygon.rs:244`
-- [x] `capacity` (line 168) → `mutable_polygon.rs:249`
-- [x] `valid` (line 169) → `mutable_polygon.rs:254`
-- [x] `clear` (line 170) → `mutable_polygon.rs:259`
-- [x] `begin` (line 172) → `mutable_polygon.rs:268`
-- [x] `cbegin` (line 173) → `mutable_polygon.rs:273`
-- [~] `begin` (line 174) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, preset.rs` — not in the paired file
-- [x] `end` (line 176) → `mutable_polygon.rs:279`
-- [x] `cend` (line 177) → `mutable_polygon.rs:290`
-- [~] `end` (line 178) → `arachne/utils/extrusion_line.rs, preset.rs, print_apply.rs` — not in the paired file
-- [~] `remove` (line 182) → `arachne/utils/extrusion_line.rs, cut_surface.rs, extrusion_entity_collection.rs` — not in the paired file
-- [~] `insert` (line 185) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
-- [x] `assign_inner` (line 207) → `mutable_polygon.rs:365`
-- [x] `remove` (line 221) → `mutable_polygon.rs:389`
-- [~] `insert` (line 242) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
+- [v] `assign` (line 138) → `mutable_polygon.rs:480` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `assign` (line 145) → `mutable_polygon.rs:333` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `polygon` (line 149) → `mutable_polygon.rs:488` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `polygon` (line 160) → `mutable_polygon.rs:343` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `empty` (line 166) → `mutable_polygon.rs:351` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `size` (line 167) → `mutable_polygon.rs:356` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `capacity` (line 168) → `mutable_polygon.rs:362` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `valid` (line 169) → `mutable_polygon.rs:367` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `clear` (line 170) → `mutable_polygon.rs:372` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `begin` (line 172) → `mutable_polygon.rs:381` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `cbegin` (line 173) → `mutable_polygon.rs:386` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `begin` (line 174) → `mutable_polygon.rs:461` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `end` (line 176) → `mutable_polygon.rs:392` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `cend` (line 177) → `mutable_polygon.rs:397` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `end` (line 178) → `mutable_polygon.rs:466` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `remove` (line 182) → `mutable_polygon.rs:292` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ. (the body reads as partial to the estimate)
+- [v] `insert` (line 185) → `mutable_polygon.rs:412` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [x] `assign_inner` (line 207) → `mutable_polygon.rs:428`
+- [v] `remove` (line 221) → `mutable_polygon.rs:512` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `insert` (line 242) → `mutable_polygon.rs:537` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
 
 **class `MutablePolygon::const_iterator`**
 
-- [~] `prev` (line 27) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `next` (line 28) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `valid` (line 29) → `build_volume.rs, fill/fill_base.rs, gcode/conflict_checker.rs` — not in the paired file
-- [~] `size` (line 33) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [~] `prev` (line 27) → `mutable_polygon.rs:205` — partial
+- [~] `next` (line 28) → `mutable_polygon.rs:210` — partial
+- [x] `valid` (line 29) → `mutable_polygon.rs:215`
+- [x] `size` (line 33) → `mutable_polygon.rs:225`
 
 **class `MutablePolygon::iterator`**
 
-- [~] `prev` (line 49) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `next` (line 50) → `arachne/utils/polygons_point_index.rs, arachne/utils/polygons_segment_index.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `valid` (line 51) → `mutable_polygon.rs:178`
-- [~] `size` (line 55) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [x] `insert` (line 57) → `mutable_polygon.rs:418`
+- [v] `prev` (line 49) → `mutable_polygon.rs:262` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ. (the body reads as partial to the estimate)
+- [v] `next` (line 50) → `mutable_polygon.rs:267` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ. (the body reads as partial to the estimate)
+- [v] `valid` (line 51) → `mutable_polygon.rs:272` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `size` (line 55) → `mutable_polygon.rs:287` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `insert` (line 57) → `mutable_polygon.rs:298` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
 
 **class `MutablePolygon::range`**
 
-- [x] `begin` (line 74) → `mutable_polygon.rs:468`
-- [x] `end` (line 76) → `mutable_polygon.rs:473`
-- [x] `empty` (line 78) → `mutable_polygon.rs:477`
-- [x] `process_next` (line 81) → `mutable_polygon.rs:483`
-- [x] `advance_front` (line 88) → `mutable_polygon.rs:491`
-- [x] `retract_back` (line 96) → `mutable_polygon.rs:501`
-- [x] `remove_front` (line 104) → `mutable_polygon.rs:511`
-- [x] `remove_back` (line 110) → `mutable_polygon.rs:519`
-- [x] `make_empty` (line 122) → `mutable_polygon.rs:527`
+- [v] `begin` (line 74) → `mutable_polygon.rs:578` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `end` (line 76) → `mutable_polygon.rs:583` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `empty` (line 78) → `mutable_polygon.rs:587` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `process_next` (line 81) → `mutable_polygon.rs:593` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `advance_front` (line 88) → `mutable_polygon.rs:600` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `retract_back` (line 96) → `mutable_polygon.rs:609` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `remove_front` (line 104) → `mutable_polygon.rs:618` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [v] `remove_back` (line 110) → `mutable_polygon.rs:626` — R921: tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.
+- [x] `make_empty` (line 122) → `mutable_polygon.rs:634`
 
 ### `MutablePriorityQueue` (.hpp)
 
@@ -9594,7 +9594,7 @@ Rust file: `nsvg_utils.rs`. Status: **partial**. Not listed: 2 constructors.
 **free functions**
 
 - [ ] `create_shape_with_ids` (line 25) → `nsvg_utils.rs`
-- [~] `to_polygons` (line 62) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 62) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `bounds` (line 78) → `optimize/optimizer.rs` — not in the paired file
 - [ ] `nsvgParseFromFile` (line 93) → `nsvg_utils.rs`
 - [~] `read_from_disk` (line 99) → `nsvg_utils.rs:515` — divergent
@@ -9960,41 +9960,41 @@ Rust file: `perimeter_generator.rs`. Status: **partial**. Not listed: 3 construc
 - [~] `random_value` (line 31) → `fuzzy_skin.rs` — not in the paired file
 - [~] `fuzzy_polygon` (line 66) → `fuzzy_skin.rs` — not in the paired file
 - [~] `fuzzy_extrusion_line` (line 100) → `fuzzy_skin.rs` — not in the paired file
-- [v] `lowpass_filter_by_paths_overhang_degree` (line 147) → `perimeter_generator.rs:5761` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [x] `detect_bridge_wall` (line 244) → `perimeter_generator.rs:2675`
-- [v] `is_enable_overhang_speed` (line 272) → `perimeter_generator.rs:5858` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as partial to the estimate)
-- [v] `fuzzy_skin_allows_overhang_slowdown` (line 282) → `perimeter_generator.rs:5889` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
-- [~] `traverse_loops` (line 288) → `perimeter_generator.rs:2712` — partial
-- [v] `smooth_overhang_level` (line 514) → `perimeter_generator.rs:5624` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `detect_brigde_wall_arachne` (line 597) → `perimeter_generator.rs:6113` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `traverse_extrusions` (line 621) → `perimeter_generator.rs:6177` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `to_polygons_with_flag` (line 835) → `perimeter_generator.rs:5899` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `lowpass_filter_by_paths_overhang_degree` (line 147) → `perimeter_generator.rs:5811` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [x] `detect_bridge_wall` (line 244) → `perimeter_generator.rs:2725`
+- [v] `is_enable_overhang_speed` (line 272) → `perimeter_generator.rs:5908` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as partial to the estimate)
+- [v] `fuzzy_skin_allows_overhang_slowdown` (line 282) → `perimeter_generator.rs:5939` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
+- [v] `traverse_loops` (line 288) → `perimeter_generator.rs:7289` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `smooth_overhang_level` (line 514) → `perimeter_generator.rs:5674` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `detect_brigde_wall_arachne` (line 597) → `perimeter_generator.rs:6163` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `traverse_extrusions` (line 621) → `perimeter_generator.rs:6275` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `to_polygons_with_flag` (line 835) → `perimeter_generator.rs:5949` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 
 **class `PerimeterGenerator`**
 
-- [x] `ext_mm3_per_mm` (line 115) → `perimeter_generator.rs:520`
-- [x] `mm3_per_mm` (line 116) → `perimeter_generator.rs:524`
-- [x] `mm3_per_mm_overhang` (line 117) → `perimeter_generator.rs:528`
-- [x] `smaller_width_ext_mm3_per_mm` (line 119) → `perimeter_generator.rs:533`
-- [x] `lower_slices_polygons` (line 120) → `perimeter_generator.rs:541`
-- [v] `dist_boundary` (line 232) → `perimeter_generator.rs:5926` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `effective_wall_loops` (line 849) → `perimeter_generator.rs:5942` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [~] `process_classic` (line 859) → `perimeter_generator.rs:606` — divergent
-- [~] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:4525` — partial
-- [x] `process_arachne` (line 1489) → `perimeter_generator.rs:3451`
-- [x] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:3385`
-- [v] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs:5957` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `ext_mm3_per_mm` (line 115) → `perimeter_generator.rs:570` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `mm3_per_mm` (line 116) → `perimeter_generator.rs:574` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `mm3_per_mm_overhang` (line 117) → `perimeter_generator.rs:578` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [v] `smaller_width_ext_mm3_per_mm` (line 119) → `perimeter_generator.rs:583` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [x] `lower_slices_polygons` (line 120) → `perimeter_generator.rs:591`
+- [v] `dist_boundary` (line 232) → `perimeter_generator.rs:5976` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `effective_wall_loops` (line 849) → `perimeter_generator.rs:5992` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `process_classic` (line 859) → `perimeter_generator.rs:6600` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
+- [~] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:4575` — partial
+- [x] `process_arachne` (line 1489) → `perimeter_generator.rs:3501`
+- [x] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:3435`
+- [v] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs:6007` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 - [ ] `process_no_bridge` (line 1953) → `perimeter_generator.rs`
 
 **class `PerimeterGeneratorLoop`**
 
-- [v] `is_external` (line 59) → `perimeter_generator.rs:5916` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `is_internal_contour` (line 1875) → `perimeter_generator.rs:411` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `is_external` (line 59) → `perimeter_generator.rs:5966` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `is_internal_contour` (line 1875) → `perimeter_generator.rs:451` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 
 **class `PerimeterRegion`**
 
-- [v] `has_compatible_perimeter_regions` (line 1917) → `perimeter_generator.rs:6036` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
-- [v] `merge_compatible_perimeter_regions` (line 1929) → `perimeter_generator.rs:6059` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
+- [v] `has_compatible_perimeter_regions` (line 1917) → `perimeter_generator.rs:6086` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280. (the body reads as divergent to the estimate)
+- [v] `merge_compatible_perimeter_regions` (line 1929) → `perimeter_generator.rs:6109` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 
 ### `PlaceholderParser` (.cpp+.hpp)
 
@@ -10290,7 +10290,7 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [x] `area` (line 130) → `geometry/polygon.rs:1712`
 - [~] `area` (line 132) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `polygons_append` (line 151) → `geometry/polygon.rs:1729` — partial
-- [~] `polygons_append` (line 153) → `bridge_detector.rs, geometry/expolygon.rs, support/support_common.rs` — not in the paired file
+- [~] `polygons_append` (line 153) → `geometry/expolygon.rs, support/support_common.rs, surface.rs` — not in the paired file
 - [x] `polygons_rotate` (line 165) → `geometry/polygon.rs:1734`
 - [x] `polygons_reverse` (line 173) → `geometry/polygon.rs:1744`
 - [x] `to_points` (line 179) → `geometry/polygon.rs:1768`
@@ -10303,8 +10303,8 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 - [~] `to_polylines` (line 242) → `geometry/expolygon.rs, geometry/polyline.rs, support/support_common.rs` — not in the paired file
 - [x] `to_polygons` (line 257) → `geometry/polygon.rs:1847`
 - [x] `filter_points_by_vectors` (line 263) → `geometry/polygon.rs:1003`
-- [~] `to_polygons` (line 267) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
-- [~] `to_polygons` (line 276) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 267) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 276) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `filter_convex_concave_points_by_angle_threshold` (line 284) → `geometry/polygon.rs:1030`
 - [x] `get_extents` (line 411) → `geometry/polygon.rs:1149`
 - [~] `get_extents` (line 416) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
@@ -12454,7 +12454,7 @@ Rust file: `sla_print_steps.rs`. Status: **partial**. Not listed: 2 constructors
 **class `FaceHash`**
 
 - [ ] `to_chars` (line 155) → `sla_print_steps.rs`
-- [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, config.rs, gcode/wipe_tower.rs` — not in the paired file
+- [~] `hash` (line 174) → `arachne/utils/polygons_point_index.rs, bridge_detector.rs, config.rs` — not in the paired file
 - [ ] `facekey` (line 185) → `sla_print_steps.rs`
 - [~] `find` (line 210) → `desensitize.rs, format/bbs_3mf.rs, geometry/point.rs` — not in the paired file
 
@@ -12608,66 +12608,66 @@ Rust file: `support/support_material.rs`. Status: **partial**. Not listed: 6 con
 
 **free functions**
 
-- [x] `layer_z` (line 19) → `support/support_material.rs:325`
-- [x] `support_surface_type_to_color_name` (line 75) → `support/support_material.rs:431`
-- [x] `export_support_surface_type_legend_to_svg_box_size` (line 90) → `support/support_material.rs:447`
-- [x] `export_support_surface_type_legend_to_svg` (line 95) → `support/support_material.rs:454`
-- [~] `export_print_z_polygons_to_svg` (line 123) → `support/support_material.rs:519` — divergent
-- [~] `export_print_z_polygons_and_extrusions_to_svg` (line 141) → `support/support_material.rs:543` — partial
-- [v] `rasterize_polygons` (line 172) → `support/support_material.rs:3586` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `contours_simplified` (line 206) → `support/support_material.rs:3630` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [~] `layers_append` (line 366) → `support/support_material.rs:116` — partial
-- [x] `collect_region_slices_by_type` (line 635) → `support/support_material.rs:142`
-- [x] `collect_slices_outer` (line 655) → `support/support_material.rs:174`
+- [x] `layer_z` (line 19) → `support/support_material.rs:327`
+- [x] `support_surface_type_to_color_name` (line 75) → `support/support_material.rs:433`
+- [x] `export_support_surface_type_legend_to_svg_box_size` (line 90) → `support/support_material.rs:449`
+- [x] `export_support_surface_type_legend_to_svg` (line 95) → `support/support_material.rs:456`
+- [~] `export_print_z_polygons_to_svg` (line 123) → `support/support_material.rs:521` — divergent
+- [~] `export_print_z_polygons_and_extrusions_to_svg` (line 141) → `support/support_material.rs:545` — partial
+- [v] `rasterize_polygons` (line 172) → `support/support_material.rs:3588` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `contours_simplified` (line 206) → `support/support_material.rs:3632` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `layers_append` (line 366) → `support/support_material.rs:118` — R921: tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly. (the body reads as partial to the estimate)
+- [v] `collect_region_slices_by_type` (line 635) → `support/support_material.rs:144` — R921: tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly.
+- [v] `collect_slices_outer` (line 655) → `support/support_material.rs:176` — R921: tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly.
 - [~] `has_bridging_perimeters` (line 1174) → `support/support_material.rs` — another overload of the name is ported
-- [v] `has_bridging_perimeters` (line 1181) → `support/support_material.rs:869` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
-- [v] `has_bridging_fills` (line 1196) → `support/support_material.rs:895` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `has_bridging_extrusions` (line 1209) → `support/support_material.rs:919` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `has_bridging_perimeters` (line 1181) → `support/support_material.rs:871` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
+- [v] `has_bridging_fills` (line 1196) → `support/support_material.rs:897` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `has_bridging_extrusions` (line 1209) → `support/support_material.rs:921` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
 - [~] `collect_bridging_perimeter_areas` (line 1220) → `support/support_material.rs` — another overload of the name is ported
-- [v] `collect_bridging_perimeter_areas` (line 1246) → `support/support_material.rs:964` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `remove_bridges_from_contacts` (line 1260) → `support/support_material.rs:987` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `detect_overhangs` (line 1406) → `support/support_material.rs:1151` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `detect_contacts` (line 1599) → `support/support_material.rs:1382` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `sync_gap_with_object_layer` (line 1739) → `support/support_material.rs:1525` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `new_contact_layer` (line 1783) → `support/support_material.rs:1587` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `fill_contact_layer` (line 1887) → `support/support_material.rs:1715` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `merge_contact_layers` (line 2040) → `support/support_material.rs:229` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `add_overhang` (line 2135) → `support/support_material.rs:1899` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `detect_bottom_contacts` (line 2433) → `support/support_material.rs:2380` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `project_support_to_grid` (line 2572) → `support/support_material.rs:2522` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
+- [v] `collect_bridging_perimeter_areas` (line 1246) → `support/support_material.rs:966` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `remove_bridges_from_contacts` (line 1260) → `support/support_material.rs:989` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `detect_overhangs` (line 1406) → `support/support_material.rs:1153` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `detect_contacts` (line 1599) → `support/support_material.rs:1384` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `sync_gap_with_object_layer` (line 1739) → `support/support_material.rs:1527` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `new_contact_layer` (line 1783) → `support/support_material.rs:1589` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `fill_contact_layer` (line 1887) → `support/support_material.rs:1717` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `merge_contact_layers` (line 2040) → `support/support_material.rs:231` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `add_overhang` (line 2135) → `support/support_material.rs:1901` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `detect_bottom_contacts` (line 2433) → `support/support_material.rs:2382` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `project_support_to_grid` (line 2572) → `support/support_material.rs:2524` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
 
 **class `OverhangCluster`**
 
-- [x] `insert` (line 2099) → `support/support_material.rs:1860`
-- [x] `height` (line 2113) → `support/support_material.rs:1876`
-- [x] `intersects` (line 2117) → `support/support_material.rs:1882`
+- [v] `insert` (line 2099) → `support/support_material.rs:1862` — R921: tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly.
+- [v] `height` (line 2113) → `support/support_material.rs:1878` — R921: tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly.
+- [v] `intersects` (line 2117) → `support/support_material.rs:1884` — R921: tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly.
 
 **class `PrintObjectSupportMaterial`**
 
-- [v] `has_raft` (line 62) → `support/support_material.rs:1966` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `has_support` (line 64) → `support/support_material.rs:1970` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `build_plate_only` (line 65) → `support/support_material.rs:1974` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `synchronize_layers` (line 67) → `support/support_material.rs:1978` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `has_contact_loops` (line 68) → `support/support_material.rs:1983` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `generate` (line 376) → `support/support_material.rs:3293` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `buildplate_covered` (line 1344) → `support/support_material.rs:2007` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `top_contact_layers` (line 2155) → `support/support_material.rs:2040` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `bottom_contact_layers_and_layer_support_areas` (line 2653) → `support/support_material.rs:2563` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `trim_top_contacts_by_bottom_contacts` (line 2796) → `support/support_material.rs:2706` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `raft_and_intermediate_support_layers` (line 2821) → `support/support_material.rs:2746` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `generate_base_layers` (line 3011) → `support/support_material.rs:2927` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
-- [v] `trim_support_layers_by_object` (line 3164) → `support/support_material.rs:3063` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `has_raft` (line 62) → `support/support_material.rs:1968` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `has_support` (line 64) → `support/support_material.rs:1972` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `build_plate_only` (line 65) → `support/support_material.rs:1976` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `synchronize_layers` (line 67) → `support/support_material.rs:1980` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `has_contact_loops` (line 68) → `support/support_material.rs:1985` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `generate` (line 376) → `support/support_material.rs:3295` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `buildplate_covered` (line 1344) → `support/support_material.rs:2009` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `top_contact_layers` (line 2155) → `support/support_material.rs:2042` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `bottom_contact_layers_and_layer_support_areas` (line 2653) → `support/support_material.rs:2565` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `trim_top_contacts_by_bottom_contacts` (line 2796) → `support/support_material.rs:2708` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `raft_and_intermediate_support_layers` (line 2821) → `support/support_material.rs:2748` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `generate_base_layers` (line 3011) → `support/support_material.rs:2929` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
+- [v] `trim_support_layers_by_object` (line 3164) → `support/support_material.rs:3065` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
 
 **class `SupportGridPattern`**
 
-- [v] `extract_support` (line 786) → `support/support_material.rs:3902` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
-- [~] `serialize` (line 912) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
-- [~] `deserialize` (line 944) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [~] `deserialize_` (line 952) → `config.rs, multi_nozzle_utils.rs, sla/support_point.rs` — not in the paired file
-- [v] `dilate_trimming_region` (line 1027) → `support/support_material.rs:4010` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [v] `seed_fill_block` (line 1048) → `support/support_material.rs:4034` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
-- [x] `island_sample` (line 1093) → `support/support_material.rs:4086`
-- [v] `island_samples` (line 1117) → `support/support_material.rs:4117` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `extract_support` (line 786) → `support/support_material.rs:3908` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ. (the body reads as partial to the estimate)
+- [x] `serialize` (line 912) → `support/support_material.rs:4156`
+- [x] `deserialize` (line 944) → `support/support_material.rs:4193`
+- [x] `deserialize_` (line 952) → `support/support_material.rs:4218`
+- [v] `dilate_trimming_region` (line 1027) → `support/support_material.rs:4016` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [v] `seed_fill_block` (line 1048) → `support/support_material.rs:4040` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
+- [x] `island_sample` (line 1093) → `support/support_material.rs:4092`
+- [v] `island_samples` (line 1117) → `support/support_material.rs:4123` — R920: tests/support_material_native_parity.rs: the grid group on polygons (rasterize_polygons 24, dilate 16, seed fill 24, contours_simplified 40, island samples 16, SupportGridParams 14, SupportGridPattern 48 patterns x 4 extractions) and 17 objects with hand-written layers built with the pin's Print::apply (enforcers, blockers, build plate only, snug, tied layers, two nozzle diameters) stage by stage: the bridging helpers, the gap sync, buildplate_covered, the annotations, the overhangs, top_contact_layers with the sharp tails, bottom_contact_layers_and_layer_support_areas, raft_and_intermediate_support_layers, trim_support_layers_by_object, generate_base_layers, trim_top_contacts_by_bottom_contacts and the support layers after generate(): 3,176 lines against the pin's SupportMaterial.cpp compiled into the generator, none differ.
 
 ### `Support/SupportParameters` (.hpp)
 
@@ -12748,93 +12748,93 @@ Rust file: `support/tree_support.rs`. Status: **partial**. Not listed: 6 constru
 
 **free functions**
 
-- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:1122`
-- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:1130`
-- [x] `normal` (line 66) → `support/tree_support.rs:1138`
-- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:1299`
+- [x] `dot_with_unscale` (line 56) → `support/tree_support.rs:1139`
+- [x] `vsize2_with_unscale` (line 61) → `support/tree_support.rs:1147`
+- [x] `normal` (line 66) → `support/tree_support.rs:1155`
+- [x] `spanning_tree_to_lines` (line 154) → `support/tree_support.rs:1316`
 - [ ] `draw_contours_and_nodes_to_svg` (line 184) → `support/tree_support.rs`
 - [ ] `draw_layer_mst` (line 246) → `support/tree_support.rs`
-- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:1347`
-- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1473`
-- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1642`
-- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1672`
+- [x] `move_inside_expoly` (line 275) → `support/tree_support.rs:1364`
+- [x] `move_inside_expolys` (line 401) → `support/tree_support.rs:1490`
+- [x] `find_closest_ex` (line 526) → `support/tree_support.rs:1659`
+- [x] `move_outside_expolys` (line 545) → `support/tree_support.rs:1689`
 - [~] `is_inside_ex` (line 550) → `support/tree_support.rs` — another overload of the name is ported
-- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1695`
-- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1708`
-- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1754`
-- [v] `add_overhang` (line 779) → `support/tree_support.rs:2653` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `is_stable` (line 785) → `support/tree_support.rs:1760`
-- [v] `fill_expolygon_generate_paths` (line 1598) → `support/tree_support.rs:6527` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `fill_expolygons_generate_paths` (line 1625) → `support/tree_support.rs:6554` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `_make_loops` (line 1641) → `support/tree_support.rs:6573` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `make_perimeter_and_inner_brim` (line 1676) → `support/tree_support.rs:6611` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `make_perimeter_and_infill` (line 1683) → `support/tree_support.rs:6619` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `tree_support_node_disk` (line 1758) → `support/tree_support.rs:2767` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [x] `is_inside_ex` (line 558) → `support/tree_support.rs:1712`
+- [x] `move_out_expolys` (line 569) → `support/tree_support.rs:1725`
+- [x] `bounding_box_middle` (line 599) → `support/tree_support.rs:1771`
+- [v] `add_overhang` (line 779) → `support/tree_support.rs:2670` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `is_stable` (line 785) → `support/tree_support.rs:1777`
+- [v] `fill_expolygon_generate_paths` (line 1598) → `support/tree_support.rs:6565` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `fill_expolygons_generate_paths` (line 1625) → `support/tree_support.rs:6592` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `_make_loops` (line 1641) → `support/tree_support.rs:6611` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `make_perimeter_and_inner_brim` (line 1676) → `support/tree_support.rs:6649` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `make_perimeter_and_infill` (line 1683) → `support/tree_support.rs:6657` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `tree_support_node_disk` (line 1758) → `support/tree_support.rs:2784` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 - [ ] `deleteDirectoryContents` (line 3498) → `support/tree_support.rs`
-- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1845`
-- [v] `carried_area` (line 4613) → `support/tree_support.rs:2808` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `carried_area_ratio` (line 4628) → `support/tree_support.rs:2830` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `smooth_filter` (line 5103) → `support/tree_support.rs:2846` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `densify_polygon` (line 5124) → `support/tree_support.rs:2879` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `avoid_object_remove_extra_small_parts` (line 3810) → `support/tree_support.rs:1862`
+- [v] `carried_area` (line 4613) → `support/tree_support.rs:2825` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `carried_area_ratio` (line 4628) → `support/tree_support.rs:2847` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `smooth_filter` (line 5103) → `support/tree_support.rs:2863` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `densify_polygon` (line 5124) → `support/tree_support.rs:2896` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 
 **class `LayerHeightData`**
 
-- [x] `bottom_z` (line 35) → `support/tree_support.rs:584`
+- [x] `bottom_z` (line 35) → `support/tree_support.rs:601`
 
 **class `SupportNode`**
 
-- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:854`
+- [x] `total_carried_mass` (line 136) → `support/tree_support.rs:871`
 
 **class `TreeSupport`**
 
-- [x] `create_node` (line 416) → `support/tree_support.rs:2458`
-- [v] `init_top_z_by_nozzle` (line 651) → `support/tree_support.rs:2489` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).
-- [v] `top_z_at` (line 715) → `support/tree_support.rs:2566` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `top_z_for_overhang` (line 724) → `support/tree_support.rs:2578` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `union_outlines_within_top_z` (line 744) → `support/tree_support.rs:2608` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `detect_overhangs` (line 796) → `support/tree_support.rs:8022` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `create_tree_support_layers` (line 1554) → `support/tree_support.rs:2906` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `support_flare_step_width` (line 1745) → `support/tree_support.rs:2953` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `fold_nodes_multi_diameter` (line 1806) → `support/tree_support.rs:9450` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).
-- [v] `smooth_line_width_multi_diameter` (line 2894) → `support/tree_support.rs:10445` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).
-- [x] `fold_carriers_above` (line 2978) → `support/tree_support.rs:2978`
-- [v] `generate_toolpaths` (line 2990) → `support/tree_support.rs:6845` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines). (the body reads as partial to the estimate)
+- [x] `create_node` (line 416) → `support/tree_support.rs:2475`
+- [v] `init_top_z_by_nozzle` (line 651) → `support/tree_support.rs:2506` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).
+- [v] `top_z_at` (line 715) → `support/tree_support.rs:2583` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `top_z_for_overhang` (line 724) → `support/tree_support.rs:2595` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `union_outlines_within_top_z` (line 744) → `support/tree_support.rs:2625` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `detect_overhangs` (line 796) → `support/tree_support.rs:8060` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `create_tree_support_layers` (line 1554) → `support/tree_support.rs:2923` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `support_flare_step_width` (line 1745) → `support/tree_support.rs:2970` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `fold_nodes_multi_diameter` (line 1806) → `support/tree_support.rs:9488` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).
+- [v] `smooth_line_width_multi_diameter` (line 2894) → `support/tree_support.rs:10483` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines).
+- [x] `fold_carriers_above` (line 2978) → `support/tree_support.rs:2995`
+- [v] `generate_toolpaths` (line 2990) → `support/tree_support.rs:6883` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines). (the body reads as partial to the estimate)
 - [ ] `move_bounds_to_contact_nodes` (line 3505) → `support/tree_support.rs`
-- [v] `generate` (line 3534) → `support/tree_support.rs:10790` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines). (the body reads as partial to the estimate)
-- [v] `calc_branch_radius` (line 3702) → `support/tree_support.rs:3013` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ (the body reads as partial to the estimate)
+- [v] `generate` (line 3534) → `support/tree_support.rs:10828` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines). (the body reads as partial to the estimate)
+- [v] `calc_branch_radius` (line 3702) → `support/tree_support.rs:3030` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ (the body reads as partial to the estimate)
 - [~] `calc_branch_radius` (line 3722) → `support/tree_support.rs` — another overload of the name is ported
-- [v] `calc_radius` (line 3745) → `support/tree_support.rs:3030` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `get_radius` (line 3750) → `support/tree_support.rs:3035`
-- [v] `get_avoidance` (line 3757) → `support/tree_support.rs:3044` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
-- [v] `get_collision` (line 3774) → `support/tree_support.rs:3049` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
-- [v] `get_collision_polys` (line 3791) → `support/tree_support.rs:3054` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
-- [v] `get_trim_support_regions` (line 3829) → `support/tree_support.rs:8737` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `draw_circles` (line 3905) → `support/tree_support.rs:5264` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `resolve_material_covered_by_folded_interfaces` (line 4635) → `support/tree_support.rs:6260` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines). (the body reads as partial to the estimate)
-- [v] `prune_floating_supports` (line 4903) → `support/tree_support.rs:8841` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
-- [v] `drop_nodes` (line 5147) → `support/tree_support.rs:4135` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `smooth_nodes` (line 6036) → `support/tree_support.rs:3066` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `calc_radius` (line 3745) → `support/tree_support.rs:3047` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `get_radius` (line 3750) → `support/tree_support.rs:3052`
+- [v] `get_avoidance` (line 3757) → `support/tree_support.rs:3061` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
+- [v] `get_collision` (line 3774) → `support/tree_support.rs:3066` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as divergent to the estimate)
+- [v] `get_collision_polys` (line 3791) → `support/tree_support.rs:3071` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed) (the body reads as partial to the estimate)
+- [v] `get_trim_support_regions` (line 3829) → `support/tree_support.rs:8775` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `draw_circles` (line 3905) → `support/tree_support.rs:5302` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `resolve_material_covered_by_folded_interfaces` (line 4635) → `support/tree_support.rs:6298` — R920: tests/tree_support_native_parity.rs: 86 scenarios (the 49 of R919, 7 hand-written and 30 random Prints with two nozzle diameters, regions and thin layers), 46,814 lines, none differ. New in this round: the merge plan of the object, fold_nodes_multi_diameter and smooth_line_width_multi_diameter (the folded and the widened nodes), the tops per nozzle of objects with regions, and generate() as a whole (state, folds, nodes, areas and toolpaths after the pin's generate()). Not asserted: 65 lines of the generate() pass of one random scenario, where drop_nodes rounds one neighbour pull differently, and the lightning toolpaths (235 lines). (the body reads as partial to the estimate)
+- [v] `prune_floating_supports` (line 4903) → `support/tree_support.rs:8879` — R919: tests/tree_support_native_parity.rs: 49 scenarios, 22,356 lines, none differ. New in this round: generate_toolpaths with a recording filler on both sides (the fills and the extrusion entities of every support layer, loops included; the lightning infill of three scenarios is counted and not compared), detect_overhangs on all 49 scenarios (extrudable slices, overhangs with their types, sharp tails and their heights, cantilevers, the flags and the highest overhang layer: 2,575 lines), prune_floating_supports (1,373 lines, 16 layers changed by it) and get_trim_support_regions (196 lines).
+- [v] `drop_nodes` (line 5147) → `support/tree_support.rs:4152` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `smooth_nodes` (line 6036) → `support/tree_support.rs:3083` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 - [~] `smooth_nodes` (line 6138) → `support/tree_support.rs` — another overload of the name is ported
-- [v] `plan_layer_heights` (line 6257) → `support/tree_support.rs:3165` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `generate_contact_points` (line 6389) → `support/tree_support.rs:3731` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
-- [v] `insert_dropped_node` (line 6693) → `support/tree_support.rs:3317` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `plan_layer_heights` (line 6257) → `support/tree_support.rs:3182` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `generate_contact_points` (line 6389) → `support/tree_support.rs:3748` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
+- [v] `insert_dropped_node` (line 6693) → `support/tree_support.rs:3334` — R918: tests/tree_support_native_parity.rs: 45 scenarios built with the pin's Print::apply (branches landing on the object, build plate only, strong, hybrid, lightning, square supports, raft, enforcers, 117 layers, 30 random ones): contact points, planned layer heights, every node after drop_nodes and smooth_nodes, the dropped nodes, the node disks and every support layer after draw_circles (areas, islands, area groups) against the pin, 16,184 lines, none differ
 
 **class `TreeSupportData`**
 
-- [v] `get_contours` (line 6786) → `support/tree_support.rs:2045` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [v] `get_contours_with_holes` (line 6796) → `support/tree_support.rs:2054` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
-- [x] `create_node` (line 6806) → `support/tree_support.rs:2066`
-- [x] `clear_nodes` (line 6819) → `support/tree_support.rs:2105`
-- [v] `ceil_radius` (line 6825) → `support/tree_support.rs:2110` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `get_contours` (line 6786) → `support/tree_support.rs:2062` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [v] `get_contours_with_holes` (line 6796) → `support/tree_support.rs:2071` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
+- [x] `create_node` (line 6806) → `support/tree_support.rs:2083`
+- [x] `clear_nodes` (line 6819) → `support/tree_support.rs:2122`
+- [v] `ceil_radius` (line 6825) → `support/tree_support.rs:2127` — R917: tests/tree_support_native_parity.rs: helpers on polygons and four scenarios built with the pin's Print::apply: constructor, collision and avoidance areas, branch radii, top gaps, create_tree_support_layers against the pin (the node stages drop_nodes, smooth_nodes, insert_dropped_node, the node disk and, in one scenario, contact points and planned heights do not match yet and are not listed)
 
 **class `TreeSupportProfiler`**
 
-- [x] `stage_start` (line 103) → `support/tree_support.rs:1035`
-- [x] `stage_finish` (line 111) → `support/tree_support.rs:1047`
-- [x] `tic` (line 120) → `support/tree_support.rs:1060`
-- [~] `toc` (line 121) → `support/tree_support.rs:1065` — partial
-- [x] `stage_add` (line 125) → `support/tree_support.rs:1072`
-- [x] `report` (line 132) → `support/tree_support.rs:1083`
+- [x] `stage_start` (line 103) → `support/tree_support.rs:1052`
+- [x] `stage_finish` (line 111) → `support/tree_support.rs:1064`
+- [x] `tic` (line 120) → `support/tree_support.rs:1077`
+- [~] `toc` (line 121) → `support/tree_support.rs:1082` — partial
+- [x] `stage_add` (line 125) → `support/tree_support.rs:1089`
+- [x] `report` (line 132) → `support/tree_support.rs:1100`
 
 ### `Support/TreeSupport3D` (.cpp+.hpp)
 
@@ -12890,18 +12890,18 @@ Rust file: `support/tree_support_3d.rs`. Status: **partial**. Not listed: 5 cons
 - [v] `create_nodes_from_area` (line 2683) → `support/tree_support_3d.rs:6220` — R920: tests/tree_support_3d_native_parity.rs: 18 scenarios built with the pin's Print::apply plus direct calls of the helpers, against the pin's TreeSupport3D.cpp compiled into the generator on one thread (arenas of 1 and 8 slots for the bucket count of merge_influence_areas): the helpers, generate_initial_areas (fills, contacts, interfaces, the raft contact), the elements after create_layer_pathing (417 layers, 14,301 elements), after create_nodes_from_area (14,278), the branch areas after generate_branch_areas and after smooth_branch_areas: every required line equal. Reported and not required: draw_areas (47 of 501 lines differ) because smooth_outward of mutable_polygon.rs is not equal to the pin on the same input.
 - [v] `generate_branch_areas` (line 2819) → `support/tree_support_3d.rs:6330` — R920: tests/tree_support_3d_native_parity.rs: 18 scenarios built with the pin's Print::apply plus direct calls of the helpers, against the pin's TreeSupport3D.cpp compiled into the generator on one thread (arenas of 1 and 8 slots for the bucket count of merge_influence_areas): the helpers, generate_initial_areas (fills, contacts, interfaces, the raft contact), the elements after create_layer_pathing (417 layers, 14,301 elements), after create_nodes_from_area (14,278), the branch areas after generate_branch_areas and after smooth_branch_areas: every required line equal. Reported and not required: draw_areas (47 of 501 lines differ) because smooth_outward of mutable_polygon.rs is not equal to the pin on the same input.
 - [v] `smooth_branch_areas` (line 2959) → `support/tree_support_3d.rs:6480` — R920: tests/tree_support_3d_native_parity.rs: 18 scenarios built with the pin's Print::apply plus direct calls of the helpers, against the pin's TreeSupport3D.cpp compiled into the generator on one thread (arenas of 1 and 8 slots for the bucket count of merge_influence_areas): the helpers, generate_initial_areas (fills, contacts, interfaces, the raft contact), the elements after create_layer_pathing (417 layers, 14,301 elements), after create_nodes_from_area (14,278), the branch areas after generate_branch_areas and after smooth_branch_areas: every required line equal. Reported and not required: draw_areas (47 of 501 lines differ) because smooth_outward of mutable_polygon.rs is not equal to the pin on the same input. (the body reads as partial to the estimate)
-- [x] `drop_non_gracious_areas` (line 3090) → `support/tree_support_3d.rs:6600`
-- [x] `finalize_interface_and_support_areas` (line 3125) → `support/tree_support_3d.rs:6647`
-- [~] `draw_areas` (line 3280) → `support/tree_support_3d.rs:6806` — partial
-- [x] `circles_intersect` (line 3435) → `support/tree_support_3d.rs:6883`
-- [x] `triangulate_fan` (line 3454) → `support/tree_support_3d.rs:6902`
-- [x] `triangulate_strip` (line 3470) → `support/tree_support_3d.rs:6932`
-- [~] `discretize_circle` (line 3536) → `support/tree_support_3d.rs:7055` — partial
-- [x] `discretize_polygon` (line 3562) → `support/tree_support_3d.rs:7085`
-- [ ] `split_cap_use_mesh_hemispheres` (line 3584) → `support/tree_support_3d.rs`
-- [ ] `extrude_branch_tube` (line 3601) → `support/tree_support_3d.rs`
-- [ ] `section_circles_intersect` (line 3708) → `support/tree_support_3d.rs`
-- [~] `extrude_branch` (line 3748) → `support/branch_mesh.rs` — not in the paired file
+- [v] `drop_non_gracious_areas` (line 3090) → `support/tree_support_3d.rs:6600` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `finalize_interface_and_support_areas` (line 3125) → `support/tree_support_3d.rs:6647` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `draw_areas` (line 3280) → `support/tree_support_3d.rs:6806` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps). (the body reads as partial to the estimate)
+- [v] `circles_intersect` (line 3435) → `support/tree_support_3d.rs:6883` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `triangulate_fan` (line 3454) → `support/tree_support_3d.rs:6902` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `triangulate_strip` (line 3470) → `support/tree_support_3d.rs:6932` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `discretize_circle` (line 3536) → `support/tree_support_3d.rs:7055` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps). (the body reads as partial to the estimate)
+- [v] `discretize_polygon` (line 3562) → `support/tree_support_3d.rs:7085` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `split_cap_use_mesh_hemispheres` (line 3584) → `support/tree_support_3d.rs:7118` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `extrude_branch_tube` (line 3601) → `support/tree_support_3d.rs:7172` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `section_circles_intersect` (line 3708) → `support/tree_support_3d.rs:7309` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
+- [v] `extrude_branch` (line 3748) → `support/tree_support_3d.rs:7384` — R921: tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).
 - [ ] `organic_smooth_branches_avoid_collisions` (line 3852) → `support/tree_support_3d.rs`
 - [ ] `organic_smooth_branches_avoid_collisions` (line 4064) → `support/tree_support_3d.rs`
 - [ ] `draw_branches` (line 4168) → `support/tree_support_3d.rs`
@@ -13018,19 +13018,19 @@ Rust file: `surface.rs`. Status: **partial**. Not listed: 7 constructors.
 - [x] `export_surface_type_legend_to_svg_box_size` (line 51) → `surface.rs:642`
 - [x] `export_surface_type_legend_to_svg` (line 56) → `surface.rs:649`
 - [x] `export_to_svg` (line 86) → `surface.rs:748`
-- [~] `to_polygons` (line 121) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
-- [~] `to_polygons` (line 126) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 121) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `to_polygons` (line 126) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `to_polygons` (line 131) → `surface.rs:449`
-- [~] `to_polygons` (line 146) → `bridge_detector.rs, brim.rs, clipper_utils.rs` — not in the paired file
+- [~] `to_polygons` (line 146) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [x] `to_expolygons` (line 161) → `surface.rs:483`
 - [~] `to_expolygons` (line 170) → `print_object_slice.rs, sla/concave_hull.rs, surface_collection.rs` — not in the paired file
 - [~] `to_expolygons` (line 180) → `print_object_slice.rs, sla/concave_hull.rs, surface_collection.rs` — not in the paired file
 - [x] `number_polygons` (line 191) → `surface.rs:505`
 - [~] `number_polygons` (line 198) → `geometry/expolygon.rs` — not in the paired file
 - [x] `polygons_append` (line 207) → `surface.rs:535`
-- [~] `polygons_append` (line 216) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `polygons_append` (line 227) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `polygons_append` (line 236) → `bridge_detector.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `polygons_append` (line 216) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
+- [~] `polygons_append` (line 227) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
+- [~] `polygons_append` (line 236) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
 - [~] `surfaces_append` (line 247) → `surface.rs:411` — partial
 - [~] `surfaces_append` (line 253) → `surface.rs` — another overload of the name is ported
 - [~] `surfaces_append` (line 259) → `surface.rs` — another overload of the name is ported
@@ -14061,13 +14061,13 @@ Rust file: `utils.rs`. Status: **partial**. Not listed: 2 constructors, 2 destru
 
 ### `VariableWidth` (.cpp+.hpp)
 
-Rust file: `variable_width.rs`. Status: **ported**.
+Rust file: `variable_width.rs`. Status: **verified**.
 
 **free functions**
 
 - [v] `thick_polyline_to_multi_path` (line 5) → `variable_width.rs:67` — R920: tests/perimeter_generator_native_parity.rs, bridge_wall: detect_brigde_wall_arachne hands its pieces to thick_polyline_to_multi_path; widths and mm3_per_mm of 300 cases equal to the pin bit for bit with the fused spacing_to_width (VariableWidth.cpp:66, gate VARIABLE_WIDTH_FMA).
-- [x] `thick_polyline_to_extrusion_paths_2` (line 101) → `variable_width.rs:335`
-- [x] `variable_width` (line 214) → `variable_width.rs:527`
+- [v] `thick_polyline_to_extrusion_paths_2` (line 101) → `variable_width.rs:346` — R921: tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).
+- [v] `variable_width` (line 214) → `variable_width.rs:546` — R921: tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).
 
 ### `VectorFormatter` (.hpp)
 

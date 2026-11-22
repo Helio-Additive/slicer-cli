@@ -20,8 +20,10 @@
 //! - `debug`: the SVG exports of `#ifdef SLIC3R_DEBUG`, which the engine does not compile.
 //!
 //! Compared with the pin by tests/support_material_native_parity.rs (tests/data/support_material/gen.cpp).
-//! Not ported: `SupportGridPattern::serialize`, `deserialize` and `deserialize_`, which exist only with
-//! `SLIC3R_DEBUG` and without `SUPPORT_USE_AGG_RASTERIZER` (they read and write the EdgeGrid branch of the class).
+//! `SupportGridPattern::serialize`, `deserialize` and `deserialize_` exist only with `SLIC3R_DEBUG` and
+//! without `SUPPORT_USE_AGG_RASTERIZER` (they read and write the EdgeGrid branch of the class): the engine
+//! does not compile them; they are ported and round-trip in tests/support_material_native_parity.rs, not
+//! compared with the pin.
 //!
 //! coord_t -> i64, coordf_t -> f64 per crate conventions.
 
@@ -3514,8 +3516,8 @@ pub mod material {
 //
 // `#define SUPPORT_USE_AGG_RASTERIZER` (SupportMaterial.cpp:22) is set, so the branch of the Anti-Grain
 // rasterizer is the one ported, over the crate's port of AGG (`crate::sla::agg`). The code under
-// `SLIC3R_DEBUG` (SVG and PNG dumps, `serialize` / `deserialize`, which also need the EdgeGrid branch)
-// is not compiled into the engine and is not ported.
+// `SLIC3R_DEBUG` (the PNG dumps; `serialize` / `deserialize`, which also need the EdgeGrid branch, are
+// ported at the end of the class) is not compiled into the engine.
 // ============================================================================
 
 pub use grid::{contours_simplified, rasterize_polygons, SupportGridParams, SupportGridPattern};
@@ -3807,6 +3809,9 @@ pub mod grid {
         m_pixel_size: f64,
         m_bbox: BBox,
         m_grid2: Vec<u8>,
+        /// `Slic3r::EdgeGrid::Grid m_grid`: the member of the branch without `SUPPORT_USE_AGG_RASTERIZER`
+        /// (SupportMaterial.cpp:1162-1164); only `deserialize_` fills it.
+        m_grid: crate::edge_grid::EdgeGrid,
     }
 
     impl SupportGridPattern {
@@ -3829,6 +3834,7 @@ pub mod grid {
                 m_pixel_size: 0.,
                 m_bbox: BBox::new(),
                 m_grid2: Vec::new(),
+                m_grid: crate::edge_grid::EdgeGrid::new(),
             };
             if this.m_style == SMS_DEFAULT {
                 this.m_style = SMS_GRID;
@@ -4138,6 +4144,182 @@ pub mod grid {
             // Sort the points lexicographically, so a binary search could be used to locate points inside a bounding box.
             pts.sort_by(|a, b| (a.x, a.y).cmp(&(b.x, b.y)));
             pts
+        }
+
+        /// SupportMaterial.cpp:912-942 (`#if defined(SLIC3R_DEBUG) && ! defined(SUPPORT_USE_AGG_RASTERIZER)`: not
+        /// compiled into the engine, ported for completeness)
+        /// C++: `void serialize(const std::string &path)`
+        ///
+        /// The file: the spacing and the angle (8 bytes each), then the support polygons and the trimming
+        /// polygons, each a count (4 bytes) followed per polygon by its number of points (4 bytes) and the
+        /// points (`sizeof(coord_t)` = 8 bytes a coordinate), in the byte order of the machine.
+        pub fn serialize(&self, path: &str) -> std::io::Result<()> {
+            use std::io::Write;
+            // FILE *file = ::fopen(path.c_str(), "wb");
+            let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
+            file.write_all(&self.m_support_spacing.to_ne_bytes())?;
+            file.write_all(&self.m_support_angle.to_ne_bytes())?;
+            let mut n_polygons: u32 = self.m_support_polygons.len() as u32;
+            file.write_all(&n_polygons.to_ne_bytes())?;
+            for i in 0..n_polygons {
+                let poly = &self.m_support_polygons[i as usize];
+                let n_points: u32 = poly.points.len() as u32;
+                file.write_all(&n_points.to_ne_bytes())?;
+                for j in 0..n_points {
+                    let pt = &poly.points[j as usize];
+                    file.write_all(&pt.x.to_ne_bytes())?;
+                    file.write_all(&pt.y.to_ne_bytes())?;
+                }
+            }
+            n_polygons = self.m_trimming_polygons.len() as u32;
+            file.write_all(&n_polygons.to_ne_bytes())?;
+            for i in 0..n_polygons {
+                let poly = &self.m_trimming_polygons[i as usize];
+                let n_points: u32 = poly.points.len() as u32;
+                file.write_all(&n_points.to_ne_bytes())?;
+                for j in 0..n_points {
+                    let pt = &poly.points[j as usize];
+                    file.write_all(&pt.x.to_ne_bytes())?;
+                    file.write_all(&pt.y.to_ne_bytes())?;
+                }
+            }
+            // ::fclose(file);
+            file.flush()
+        }
+
+        /// SupportMaterial.cpp:944-949 (same `#if`), with the private `SupportGridPattern() {}` of
+        /// SupportMaterial.cpp:1022, which leaves the members as they are (here: zero and empty).
+        /// C++: `static SupportGridPattern deserialize(const std::string &path, int which = -1)`
+        pub fn deserialize(path: &str, which: i32) -> Self {
+            let mut out = SupportGridPattern {
+                m_style: 0,
+                m_support_polygons: Vec::new(),
+                m_trimming_polygons: Vec::new(),
+                m_support_angle: 0.,
+                m_support_spacing: 0.,
+                m_extrusion_width: 0.,
+                m_support_material_closing_radius: 0.,
+                m_grid_size: (0, 0),
+                m_pixel_size: 0.,
+                m_bbox: BBox::new(),
+                m_grid2: Vec::new(),
+                m_grid: crate::edge_grid::EdgeGrid::new(),
+            };
+            out.deserialize_(path, which);
+            out
+        }
+
+        /// SupportMaterial.cpp:951-1013 (same `#if`)
+        /// C++: `bool deserialize_(const std::string &path, int which = -1)`
+        ///
+        /// Deserialization constructor. `m_support_polygons` and `m_trimming_polygons` point to
+        /// `m_support_polygons_deserialized` and `m_trimming_polygons_deserialized` from here on: the two
+        /// members this struct owns anyway.
+        pub fn deserialize_(&mut self, path: &str, which: i32) -> bool {
+            // FILE *file = ::fopen(path.c_str(), "rb"); if (file == nullptr) return false;
+            let Ok(data) = std::fs::read(path) else {
+                return false;
+            };
+            // ::fread leaves its target as it is at the end of the file; here a short file reads zeros.
+            let mut pos: usize = 0;
+            let mut take = |n: usize| -> [u8; 8] {
+                let mut b = [0u8; 8];
+                if pos + n <= data.len() {
+                    b[..n].copy_from_slice(&data[pos..pos + n]);
+                }
+                pos += n;
+                b
+            };
+            let read_u32 = |take: &mut dyn FnMut(usize) -> [u8; 8]| -> u32 {
+                let b = take(4);
+                u32::from_ne_bytes([b[0], b[1], b[2], b[3]])
+            };
+
+            self.m_support_polygons.clear();
+            self.m_trimming_polygons.clear();
+
+            self.m_support_spacing = f64::from_ne_bytes(take(8));
+            self.m_support_angle = f64::from_ne_bytes(take(8));
+            //FIXME
+            //m_support_spacing *= 0.01 / 2;
+            let mut n_polygons: u32 = read_u32(&mut take);
+            self.m_support_polygons.reserve(n_polygons as usize);
+            let scale: i32 = 1;
+            for i in 0..n_polygons {
+                let mut poly = Polygon::default();
+                let n_points: u32 = read_u32(&mut take);
+                poly.points.reserve(n_points as usize);
+                for _j in 0..n_points {
+                    let x = i64::from_ne_bytes(take(8));
+                    let y = i64::from_ne_bytes(take(8));
+                    poly.points.push(Point::new(x * scale as i64, y * scale as i64));
+                }
+                // if (which == -1 || which == i): `which` is converted to unsigned for the comparison
+                if which == -1 || which as u32 == i {
+                    // emplace_back(std::move(poly)): the polygon is empty afterwards
+                    self.m_support_polygons.push(std::mem::take(&mut poly));
+                }
+                // printf("Polygon %d, area: %lf\n", i, area(poly.points)); MultiPoint.hpp:144-149
+                let mut area: f64 = 0.;
+                let n = poly.points.len();
+                if n > 0 {
+                    let mut j = n - 1;
+                    for k in 0..n {
+                        area += (poly.points[k].x + poly.points[j].x) as f64 * (poly.points[k].y - poly.points[j].y) as f64;
+                        j = k;
+                    }
+                }
+                println!("Polygon {}, area: {:.6}", i as i32, area);
+            }
+            n_polygons = read_u32(&mut take);
+            self.m_trimming_polygons.reserve(n_polygons as usize);
+            for _i in 0..n_polygons {
+                let mut poly = Polygon::default();
+                let n_points: u32 = read_u32(&mut take);
+                poly.points.reserve(n_points as usize);
+                for _j in 0..n_points {
+                    let x = i64::from_ne_bytes(take(8));
+                    let y = i64::from_ne_bytes(take(8));
+                    poly.points.push(Point::new(x * scale as i64, y * scale as i64));
+                }
+                self.m_trimming_polygons.push(poly);
+            }
+            // ::fclose(file);
+
+            // simplify_polygons(m_support_polygons_deserialized, false), ClipperUtils.cpp:1026-1041:
+            // ClipperLib::SimplifyPolygons(subject, pftNonZero)
+            self.m_support_polygons = cu::to_polygons(&crate::clipper::simplify_polygons(
+                &cu::polygons_provider(&self.m_support_polygons),
+                crate::clipper::PolyFillType::pftNonZero,
+            ));
+            //m_support_polygons_deserialized = to_polygons(union_ex(m_support_polygons_deserialized, false));
+
+            // Create an EdgeGrid, initialize it with projection, initialize signed distance field.
+            let grid_resolution: i64 = scale_(self.m_support_spacing) as i64;
+            let mut bbox: BBox = get_extents_polygons_bbox(&self.m_support_polygons);
+            bbox.offset(20.);
+            // BoundingBox.cpp:257-263 `BoundingBox::align_to_grid(const coord_t cell_size)`
+            if bbox.defined {
+                bbox.min.x = crate::geometry::align_to_grid(bbox.min.x, grid_resolution);
+                bbox.min.y = crate::geometry::align_to_grid(bbox.min.y, grid_resolution);
+            }
+            self.m_grid.set_bbox(bbox.to_bounding_box());
+            self.m_grid.create_from_polygons(&self.m_support_polygons, grid_resolution);
+            self.m_grid.calculate_sdf();
+            true
+        }
+
+        /// SupportMaterial.cpp:1015 (same `#if`) `const Polygons& support_polygons() const`
+        pub fn support_polygons(&self) -> &Polygons {
+            &self.m_support_polygons
+        }
+        /// SupportMaterial.cpp:1016 (same `#if`) `const Polygons& trimming_polygons() const`
+        pub fn trimming_polygons(&self) -> &Polygons {
+            &self.m_trimming_polygons
+        }
+        /// SupportMaterial.cpp:1017 (same `#if`) `const EdgeGrid::Grid& grid() const`
+        pub fn grid(&self) -> &crate::edge_grid::EdgeGrid {
+            &self.m_grid
         }
 
         /// `m_style`: the style the constructor settled on (see `SMS_*`).

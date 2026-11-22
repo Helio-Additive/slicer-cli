@@ -404,6 +404,103 @@ static ExtrusionPath pathmm(ExtrusionRole role, float width, float height, std::
 
 typedef std::vector<std::pair<std::string, std::string>> Cfg;
 
+// ---------------------------------------------------------------------------------------------------------
+// The helpers the scenarios do not reach with every branch (the "misc" group): layers_append,
+// collect_region_slices_by_type and collect_slices_outer on a layer of two regions whose surfaces have
+// holes, OverhangCluster (insert, height, intersects) and add_overhang.
+// ---------------------------------------------------------------------------------------------------------
+
+// A rectangle with, when `hole`, a rectangular hole inside.
+static ExPolygon rnd_expoly(coord_t area, coord_t ext, bool hole)
+{
+    const coord_t ox = irand(0, int(area)), oy = irand(0, int(area));
+    const coord_t w = irand(int(ext / 3), int(ext)), h = irand(int(ext / 3), int(ext));
+    ExPolygon e(rect(ox, oy, ox + w, oy + h));
+    if (hole) {
+        Polygon hl = rect(ox + w / 4, oy + h / 4, ox + w / 4 + w / 3, oy + h / 4 + h / 3);
+        hl.reverse();
+        e.holes.emplace_back(hl);
+    }
+    return e;
+}
+
+static void run_misc()
+{
+    // layers_append
+    for (int k = 0; k < 6; ++k) {
+        SupportGeneratorLayerStorage storage;
+        const int n = irand(1, 9);
+        for (int i = 0; i < n; ++i) storage.allocate(SupporLayerType(irand(1, 6)));
+        reindex(storage);
+        std::vector<SupportGeneratorLayer *> all;
+        for (SupportGeneratorLayer &l : storage.m_storage) all.emplace_back(&l);
+        SupportGeneratorLayersPtr dst, src;
+        const int nd = irand(0, 5), ns = irand(0, 5);
+        for (int i = 0; i < nd; ++i) dst.emplace_back(all[size_t(irand(0, n - 1))]);
+        for (int i = 0; i < ns; ++i) src.emplace_back(all[size_t(irand(0, n - 1))]);
+        out("in misc la " + hI(n) + " " + LIST(dst) + " " + LIST(src));
+        layers_append(dst, src);
+        out("misc la " + LIST(dst));
+    }
+    // collect_region_slices_by_type, collect_slices_outer
+    for (int k = 0; k < 8; ++k) {
+        Layer layer(0, nullptr, 0.2, 0.2, 0.1);
+        const int nr = irand(1, 3);
+        std::string in = "in misc crs " + hI(nr);
+        for (int r = 0; r < nr; ++r) {
+            LayerRegion *lr = layer.add_region(nullptr);
+            const int    ns = irand(0, 5);
+            for (int i = 0; i < ns; ++i) {
+                static const SurfaceType types[] = {stTop, stBottom, stBottomBridge, stInternal};
+                lr->slices.surfaces.emplace_back(types[irand(0, 3)], rnd_expoly(4000000, 3000000, irand(0, 2) == 0));
+            }
+            in += " " + SURFS(lr->slices.surfaces);
+        }
+        const int nl = irand(0, 4);
+        for (int i = 0; i < nl; ++i) layer.lslices.emplace_back(rnd_expoly(4000000, 3000000, irand(0, 1) == 0));
+        out(in + " " + EXPOLYS(layer.lslices));
+        out("misc crs " + POLYS(collect_region_slices_by_type(layer, stTop)) + " " + POLYS(collect_region_slices_by_type(layer, stBottom)) + " " +
+            POLYS(collect_region_slices_by_type(layer, stBottomBridge)) + " " + POLYS(collect_region_slices_by_type(layer, stInternal)) + " " + POLYS(collect_slices_outer(layer)));
+    }
+    // OverhangCluster and add_overhang: overhangs of consecutive layers go into the clusters one by one.
+    for (int k = 0; k < 16; ++k) {
+        static const double offsets[] = {0., 1e-5, 200000., 420000., 650000., 1000000.};
+        const double offset_scaled = offsets[k % 6];
+        const int    n             = irand(3, 14);
+        ExPolygons   overhangs;
+        std::vector<int> layer_nrs;
+        int          layer_nr = irand(0, 2);
+        for (int i = 0; i < n; ++i) {
+            overhangs.emplace_back(rnd_expoly(6000000, 2500000, irand(0, 3) == 0));
+            layer_nrs.emplace_back(layer_nr);
+            layer_nr += irand(0, 2) == 0 ? irand(0, 3) : irand(0, 1);
+        }
+        std::string in = "in misc oc " + hD(offset_scaled) + " " + hI(n);
+        for (int i = 0; i < n; ++i) in += " " + hI(layer_nrs[size_t(i)]) + " " + EXPOLY(overhangs[size_t(i)]);
+        out(in);
+        std::vector<OverhangCluster> clusters;
+        clusters.reserve(size_t(n));
+        std::string added = "misc oc added";
+        for (int i = 0; i < n; ++i) {
+            // What every cluster answers before the overhang is added.
+            std::string hits;
+            for (OverhangCluster &c : clusters) hits += hB(c.intersects(overhangs[size_t(i)], layer_nrs[size_t(i)]));
+            OverhangCluster *c = add_overhang(clusters, &overhangs[size_t(i)], layer_nrs[size_t(i)], offset_scaled);
+            added += " " + hI((long long) (c - clusters.data())) + ":" + (hits.empty() ? std::string("-") : hits);
+        }
+        out(added);
+        out("misc oc clusters " + hI((long long) clusters.size()));
+        for (OverhangCluster &c : clusters) {
+            std::string o = "misc oc C " + hI(c.min_layer) + " " + hI(c.max_layer) + " " + hI(c.height()) + " " + hD(c.offset_scaled) + " " + hI((long long) c.layer_overhangs.size());
+            for (const auto &kv : c.layer_overhangs) {
+                o += " " + hI(kv.first) + " " + hI((long long) kv.second.size());
+                for (const ExPolygon *e : kv.second) o += " " + hI((long long) (e - overhangs.data()));
+            }
+            out(o + " " + EXPOLYS(c.merged_overhangs_dilated));
+        }
+    }
+}
+
 struct Scen
 {
     Cfg cfg;
@@ -717,6 +814,7 @@ int main(int argc, char **argv)
     const int max_stage = argc > 2 ? std::atoi(argv[2]) : 3;
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism, 1);
     run_grid();
+    run_misc();
     const std::vector<Scen> s = scenarios();
     for (size_t i = 0; i < s.size(); ++i) run_object(int(i), s[i], max_stage);
     std::fclose(g_out);

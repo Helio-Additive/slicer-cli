@@ -1124,6 +1124,11 @@ impl PrintRegionConfig {
                 self.wall_sequence = match value {
                     "outer_wall_first" | "outer/inner" => WallSequence::OuterInner,
                     "inner_outer_inner" | "inner/outer/inner" => WallSequence::InnerOuterInner,
+                    // R921 WALL_SEQUENCE_KEYS (on unless =0): the values of the option at the pin are
+                    // "inner wall/outer wall", "outer wall/inner wall" and "inner-outer-inner wall"
+                    // (PrintConfig.cpp:2790-2792); the two that are not the default were read as it.
+                    "outer wall/inner wall" if crate::faithful_gate("WALL_SEQUENCE_KEYS") => WallSequence::OuterInner,
+                    "inner-outer-inner wall" if crate::faithful_gate("WALL_SEQUENCE_KEYS") => WallSequence::InnerOuterInner,
                     _ => WallSequence::InnerOuter, // "inner_outer_first" / "inner/outer"
                 };
                 true

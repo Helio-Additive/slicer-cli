@@ -24,6 +24,11 @@
 //! the nodes, the areas of the support layers and their toolpaths. The scenarios from 200000 on are random
 //! ones with two nozzle diameters (the filaments of the supports and of the object, regions with perimeters
 //! and fills in the layers, layers of half the height).
+//!
+//! A scenario with the lightning pattern in the bases of its supports makes the generator of the lightning
+//! infill (Fill/Lightning/Generator.cpp:100-143, `Generator::new_for_support`): its trees and the polylines of
+//! every layer are compared ("lightning_trees"). `rand()`, which picks the branch a polyline goes on with, is
+//! restarted with `srand(1)` on both sides.
 
 use slicer::config::{
     ConfigBase, ConfigOptionInts, ConfigOptionResolver, ConfigOptionStrings, ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule,
@@ -596,6 +601,61 @@ fn area_groups_s(l: &slicer::print::faithful::SupportLayer) -> String {
 }
 
 /// gen.cpp `dump_support_layers(tag, obj)`
+// The trees of the lightning infill of the supports, a line per layer: every root depth first, a node as its
+// location, whether it is a root and the number of its children.
+fn dump_lightning_node(n: &slicer::fill::lightning::tree_node::NodeSPtr, body: &mut String) {
+    let n = n.borrow();
+    *body += &format!(" {} {} {} {}", n.m_p.x, n.m_p.y, hb(n.m_is_root), n.m_children.len());
+    for c in &n.m_children {
+        dump_lightning_node(c, body);
+    }
+}
+fn dump_lightning(r: &mut Run, head: &str, generator: &slicer::fill::lightning::generator::Generator) {
+    r.out(format!(
+        "{head} {} {} {} {} {}",
+        generator.m_supporting_radius,
+        generator.m_wall_supporting_radius,
+        generator.m_prune_length,
+        generator.m_straightening_max_distance,
+        generator.m_lightning_layers.len()
+    ));
+    for (i, layer) in generator.m_lightning_layers.iter().enumerate() {
+        let mut body = format!("{}", layer.tree_roots.len());
+        for root in &layer.tree_roots {
+            dump_lightning_node(root, &mut body);
+        }
+        r.outb(format!("{head} {i}"), body, true);
+    }
+    // Layer::convertToLines() of every layer, clipped by a rectangle inside of the extents of its trees: the
+    // polylines before generate_toolpaths() chains them. rand() restarts for it.
+    slicer::fill::lightning::tree_node::c_srand(1);
+    for (i, layer) in generator.m_lightning_layers.iter().enumerate() {
+        if !layer.tree_roots.is_empty() {
+            let bb = slicer::fill::lightning::tree_node::get_extents_roots(&layer.tree_roots);
+            let (dx, dy) = ((bb.max.x - bb.min.x) / 8, (bb.max.y - bb.min.y) / 8);
+            let limit = Polygon::from_points(vec![
+                Point::new(bb.min.x + dx, bb.min.y + dy),
+                Point::new(bb.max.x - dx, bb.min.y + dy),
+                Point::new(bb.max.x - dx, bb.max.y - dy),
+                Point::new(bb.min.x + dx, bb.max.y - dy),
+            ]);
+            let lines = layer.convert_to_lines(std::slice::from_ref(&limit), 0);
+            let mut body = format!("{}", lines.len());
+            for pl in &lines {
+                body += &format!(" {}", pts_s(&pl.points));
+            }
+            r.outb(format!("{head} lines {i}"), body, true);
+            // and chained, as generate_toolpaths() chains them (ShortestPath.cpp chain_polylines())
+            let chained = slicer::shortest_path::chain_polylines(lines.clone(), None);
+            let mut body = format!("{}", chained.len());
+            for pl in &chained {
+                body += &format!(" {}", pts_s(&pl.points));
+            }
+            r.outb(format!("{head} chained {i}"), body, true);
+        }
+    }
+}
+
 fn dump_support_layers(r: &mut Run, tag: &str, obj: &PrintObject) {
     let layers = obj.support_layers();
     r.out(format!("{tag} {}", layers.len()));
@@ -924,6 +984,7 @@ fn run_scenario(r: &mut Run, scenario: usize) {
     );
 
     let mut ts = TreeSupport::new(&mut obj, &print, &sp, params, &bed);
+    ts.lightning_support_generator = Some(Box::new(FillLightningSupportGenerator));
 
     // The constructor.
     r.out(format!(
@@ -1177,27 +1238,32 @@ fn run_scenario(r: &mut Run, scenario: usize) {
             line += &format!(" {} {}", hd(z.0), z.1);
         }
         r.out(line);
-        // The generator of the lightning infill is not made here: what draw_circles() hands its constructor
-        // (Fill/Lightning/Generator.cpp:99-130: the radius of the density, the overhangs).
+        // The generator of the lightning infill draw_circles() made (Fill/Lightning/Generator.cpp:100-143, the
+        // constructor for the supports): its width, the radius of the density, the overhangs, then its trees.
         if let Some(line) = r.input(&format!("in {s} lightning_width")) {
+            let generator = ts.generator.as_ref().expect("the lightning generator");
             let m_infill_extrusion_width = Tok::new(&line).f();
-            let density = ts.lightning_support_density.max(0.15);
-            let m_supporting_radius = ((m_infill_extrusion_width / density) as i64).max((0.05 / slicer::libslic3r::SCALING_FACTOR) as i64);
-            let mut body = format!("{} {}", m_supporting_radius, ts.lightning_overhangs.len());
-            for polys in &ts.lightning_overhangs {
+            assert_eq!(generator.m_infill_extrusion_width.to_bits(), m_infill_extrusion_width.to_bits(), "{s} m_infill_extrusion_width");
+            let mut body = format!("{} {}", generator.m_supporting_radius, generator.m_overhang_per_layer.len());
+            for polys in &generator.m_overhang_per_layer {
                 body += &format!(" {}", polys_s(polys));
             }
             r.outb(format!("{s} lightning_generator"), body, true);
+            dump_lightning(r, &format!("{s} lightning_trees"), generator);
         }
     }
 
     // The toolpaths, with the generator's fillers. A scenario with the lightning pattern in the bases writes
-    // "toolpaths_lightning" lines, which are counted and not compared: there is no generator of the lightning
-    // infill to hand to the tree support.
+    // "toolpaths_lightning" lines, which are counted and not compared: the trees of the lightning generator and
+    // the polylines of Layer::convertToLines() are equal ("lightning_trees"), but generate_toolpaths() chains
+    // the polylines with ShortestPath.cpp's chain_polylines(), and the port of that orders polylines that share
+    // an end point differently (the "lightning_trees chained" lines, not compared either).
     {
         let tag = if ts.m_support_params.base_fill_pattern == InfillPattern::Lightning { format!("{s} toolpaths_lightning") } else { format!("{s} toolpaths") };
         let log: Log = Rc::new(RefCell::new(Vec::new()));
         let factory = RecFactory { log: log.clone() };
+        // Node::convertToPolylines() takes the branch a polyline goes on with from rand(): the stream starts here
+        slicer::fill::lightning::tree_node::c_srand(1);
         ts.generate_toolpaths(&factory).expect("generate_toolpaths");
         let mut fills: Vec<String> = log.borrow_mut().drain(..).collect();
         fills.sort();
@@ -1250,6 +1316,7 @@ fn run_scenario(r: &mut Run, scenario: usize) {
     {
         let params = SupportParameters::new(&obj, &print).expect("SupportParameters");
         let mut ts3 = TreeSupport::new(&mut obj, &print, &sp, params, &bed);
+        ts3.lightning_support_generator = Some(Box::new(FillLightningSupportGenerator));
         // TreeSupport.hpp `smsTreeOrganic`
         if ts3.m_support_params.support_style == slicer::print_config::enums::SupportMaterialStyle::SmsTreeOrganic as i32 {
             r.out(format!("{s} generate organic"));
@@ -1257,6 +1324,7 @@ fn run_scenario(r: &mut Run, scenario: usize) {
         }
         let log: Log = Rc::new(RefCell::new(Vec::new()));
         let factory = RecFactory { log: log.clone() };
+        slicer::fill::lightning::tree_node::c_srand(1);
         ts3.generate(&factory, &NoOrganic).expect("generate");
         r.out(format!(
             "{s} generate state {} {} {} {} {} {} {} {} {}",
@@ -1273,6 +1341,9 @@ fn run_scenario(r: &mut Run, scenario: usize) {
         dump_fold(r, &format!("{s} generate fold"), &ts3);
         dump_nodes_of(r, &format!("{s} generate nodes"), &ts3.m_ts_data.contact_nodes, &ts3.contact_nodes, true, true);
         dump_support_layers(r, &format!("{s} generate areas"), ts3.m_object);
+        if let Some(generator) = ts3.generator.as_ref() {
+            dump_lightning(r, &format!("{s} generate lightning_trees"), generator);
+        }
         let tag =
             if ts3.m_support_params.base_fill_pattern == InfillPattern::Lightning { format!("{s} generate_toolpaths_lightning") } else { format!("{s} generate_toolpaths") };
         let mut fills: Vec<String> = log.borrow_mut().drain(..).collect();
@@ -1340,10 +1411,6 @@ fn tree_support_native_parity() {
     }
     let mut mismatches = r.surplus;
     let mut not_compared = 0usize;
-    // Not equal to the pin yet, reported and not asserted: the generate() pass of the scenario 200026, where
-    // drop_nodes() moves one node of support layer 31 by (0, -8391) and the pin by (3, -8391) (the pull towards
-    // the neighbours, TreeSupport.cpp:5690-5771); the nodes below it, their areas and toolpaths follow.
-    let mut known_differences = 0usize;
     let mut by_kind: std::collections::BTreeMap<String, (usize, usize)> = std::collections::BTreeMap::new();
     for k in 0..r.expected.len().max(r.lines.len()) {
         let e = r.expected.get(k).map(|s| s.as_str()).unwrap_or("<missing>");
@@ -1354,12 +1421,8 @@ fn tree_support_native_parity() {
         if e != l {
             entry.1 += 1;
             // Counted, not compared: see the toolpaths of run_scenario().
-            if matches!(e.split(' ').nth(1), Some("toolpaths_lightning") | Some("generate_toolpaths_lightning")) {
+            if matches!(e.split(' ').nth(1), Some("toolpaths_lightning") | Some("generate_toolpaths_lightning")) || e.contains(" lightning_trees chained ") {
                 not_compared += 1;
-                continue;
-            }
-            if e.starts_with("s200026 generate") {
-                known_differences += 1;
                 continue;
             }
             mismatches += 1;
@@ -1374,7 +1437,6 @@ fn tree_support_native_parity() {
     }
     eprintln!("{} lines, {} mismatches", r.expected.len(), mismatches);
     eprintln!("{not_compared} lines of the lightning toolpaths differ and are not compared");
-    eprintln!("{known_differences} lines of the generate() pass of s200026 differ (drop_nodes) and are not asserted");
     // Every line has to be equal; the surplus lines (a stage that wrote more lines than the pin) count.
     assert_eq!(mismatches, 0);
 }

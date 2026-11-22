@@ -47,12 +47,14 @@
 
 #define private public
 #define protected public
+#include "libslic3r/Print.hpp"
 #include "libslic3r/PerimeterGenerator.cpp"
 #undef private
 #undef protected
 
-#include "libslic3r/Print.hpp"
+#include "libslic3r/Model.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/TriangleMesh.hpp"
 
 using namespace Slic3r;
 
@@ -748,21 +750,428 @@ static void run_traverse()
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The whole of process_classic and process_arachne: LayerRegion::make_perimeters of a layer
+// ---------------------------------------------------------------------------------------------
+
+// Every long result of a "proc" line in full (the third argument "full"), or "#" and its hash.
+static bool g_full = false;
+static std::string fnv(const std::string &s)
+{
+    uint64_t h = 1469598103934665603ULL;
+    for (unsigned char c : s) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    char b[32];
+    std::snprintf(b, sizeof(b), "%016llx", (unsigned long long) h);
+    return b;
+}
+static std::string part(const std::string &body) { return g_full ? body : "#" + fnv(body); }
+
+// A path of a wall with what the G-code reads of it.
+static std::string WPATHS(const ExtrusionPaths &paths)
+{
+    std::string o = hI((long long) paths.size());
+    for (const ExtrusionPath &p : paths) {
+        o += " " + hI((int) p.role()) + " " + hD(p.mm3_per_mm) + " " + hF(p.width) + " " + hF(p.height) + " " + hD(p.overhang_degree) + " " + hI(p.curve_degree) + " " +
+             hI((int) p.get_customize_flag()) + " " + hI((long long) p.polyline.points.size());
+        for (const Point &pt : p.polyline.points) o += " " + PT(pt);
+    }
+    return o;
+}
+// The entities of a collection and of the collections in it, in order: "L role flag paths" (a loop),
+// "M paths" (a multi path), "P paths" (a path).
+static void leaves(const ExtrusionEntityCollection &coll, std::string &o, long long &n)
+{
+    for (const ExtrusionEntity *e : coll.entities) {
+        if (const ExtrusionEntityCollection *c = dynamic_cast<const ExtrusionEntityCollection *>(e))
+            leaves(*c, o, n);
+        else if (const ExtrusionLoop *l = dynamic_cast<const ExtrusionLoop *>(e)) {
+            o += " L " + hI((int) l->loop_role()) + " " + hI((int) l->get_customize_flag()) + " " + WPATHS(l->paths);
+            ++n;
+        } else if (const ExtrusionMultiPath *m = dynamic_cast<const ExtrusionMultiPath *>(e)) {
+            o += " M " + WPATHS(m->paths);
+            ++n;
+        } else if (const ExtrusionPath *p = dynamic_cast<const ExtrusionPath *>(e)) {
+            o += " P " + WPATHS({*p});
+            ++n;
+        } else
+            o += " ?";
+    }
+}
+static std::string LEAVES(const ExtrusionEntityCollection &coll)
+{
+    std::string o;
+    long long   n = 0;
+    leaves(coll, o, n);
+    return hI(n) + o;
+}
+// The islands of the walls: per collection in `loops` the number of its entities and the range of its
+// loop nodes.
+static std::string ISLANDS(const ExtrusionEntityCollection &coll)
+{
+    std::string o = hI((long long) coll.entities.size());
+    for (const ExtrusionEntity *e : coll.entities) {
+        if (const ExtrusionEntityCollection *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+            std::string t;
+            long long   n = 0;
+            leaves(*c, t, n);
+            o += " " + hI(n) + " " + hI((long long) c->loop_node_range.first) + " " + hI((long long) c->loop_node_range.second);
+        } else
+            o += " 1 0 0";
+    }
+    return o;
+}
+
+// The loop nodes with their points and their widths apart: a loop of the classic walls has one width.
+// The loop of a node is written as its index among the walls of all the islands of `loops`: the index in
+// the collection of its island (what the pin stores) plus the number of the walls of the islands before.
+static std::string PNODES(const std::vector<LoopNode> &nodes, const ExtrusionEntityCollection &loops)
+{
+    std::vector<long long> base(nodes.size(), 0);
+    long long              before = 0;
+    for (const ExtrusionEntity *e : loops.entities) {
+        if (const ExtrusionEntityCollection *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+            for (size_t k = c->loop_node_range.first; k < c->loop_node_range.second && k < nodes.size(); ++k) base[k] = before;
+            std::string t;
+            long long   n = 0;
+            leaves(*c, t, n);
+            before += n;
+        } else
+            ++before;
+    }
+    std::string o = hI((long long) nodes.size());
+    for (size_t k = 0; k < nodes.size(); ++k) {
+        const LoopNode &n = nodes[k];
+        o += " " + hI(n.node_id) + " " + hI(n.loop_id + base[k]) + " " + BBOX(n.bbox) + " " + hB(n.node_contour.is_loop) + " " + hI((long long) n.node_contour.pts.size());
+        for (const Point &pt : n.node_contour.pts) o += " " + PT(pt);
+        o += " " + hI((long long) n.node_contour.widths.size());
+        for (const coord_t w : n.node_contour.widths) o += " " + hI((long long) w);
+    }
+    return o;
+}
+
+// The keys the walls of a layer read, written for every case as the pin holds them after Print::apply.
+static const char *const proc_keys[] = {
+    // PrintConfig
+    "nozzle_diameter", "resolution", "enable_arc_fitting", "z_direction_outwall_speed_continuous", "spiral_mode", "initial_layer_line_width",
+    "initial_layer_infill_line_width", "enable_overhang_speed", "initial_layer_print_height",
+    // PrintObjectConfig
+    "layer_height", "line_width", "wall_generator", "top_one_wall_type", "top_area_threshold", "only_one_wall_first_layer", "brim_type", "brim_width", "min_feature_size",
+    "min_bead_width", "wall_transition_length", "wall_transition_angle", "wall_transition_filter_deviation", "wall_distribution_count", "thick_bridges", "raft_layers",
+    // PrintRegionConfig
+    "wall_loops", "wall_filament", "sparse_infill_filament", "solid_infill_filament", "outer_wall_line_width", "inner_wall_line_width", "sparse_infill_line_width",
+    "internal_solid_infill_line_width", "top_surface_line_width", "wall_sequence", "precise_outer_wall", "gap_infill_speed", "filter_out_gap_fill", "alternate_extra_wall",
+    "detect_thin_wall", "detect_overhang_wall", "fuzzy_skin", "sparse_infill_density", "infill_wall_overlap", "counterbore_hole_bridging", "bridge_angle",
+    "bridge_flow", "bottom_shell_layers", "bottom_shell_thickness", "top_shell_layers", "smooth_speed_discontinuity_area", "smooth_coefficient",
+};
+
+static Polygon circle(coord_t cx, coord_t cy, double r, int n, double phase)
+{
+    Polygon p;
+    for (int i = 0; i < n; ++i) {
+        const double a = phase + 2. * M_PI * i / n;
+        p.points.emplace_back(Point(cx + coord_t(std::lround(r * std::cos(a))), cy + coord_t(std::lround(r * std::sin(a)))));
+    }
+    return p;
+}
+static ExPolygon holed(Polygon contour, Polygon hole)
+{
+    ExPolygon e(contour);
+    hole.make_clockwise();
+    e.holes.emplace_back(hole);
+    return e;
+}
+static coord_t mm(Lcg &g, double lo, double hi) { return g.range((long long) (lo * 100000.), (long long) (hi * 100000.)); }
+
+// One island of a kind, around (cx, cy).
+static ExPolygons island(Lcg &g, int kind, coord_t cx, coord_t cy)
+{
+    ExPolygons es;
+    switch (kind) {
+    case 0: { // a rectangle
+        const coord_t w = mm(g, 8., 25.), h = mm(g, 5., 20.);
+        es.emplace_back(rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2));
+        break;
+    }
+    case 1: { // a rectangle with a round hole
+        const coord_t w = mm(g, 12., 25.), h = mm(g, 12., 20.);
+        es.emplace_back(holed(rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2),
+                              circle(cx + mm(g, -1., 1.), cy + mm(g, -1., 1.), double(mm(g, 1.2, 4.)), (int) g.range(16, 40), 0.1 * g.range(0, 30))));
+        break;
+    }
+    case 2: { // a ring, down to a wall that two loops do not fit into
+        const double r = double(mm(g, 5., 11.));
+        const double t = double(mm(g, 0.5, 3.));
+        const int    n = (int) g.range(24, 64);
+        es.emplace_back(holed(circle(cx, cy, r, n, 0.05 * g.range(0, 60)), circle(cx + mm(g, -0.2, 0.2), cy, r - t, n - (int) g.range(0, 8), 0.05 * g.range(0, 60))));
+        break;
+    }
+    case 3: { // an L
+        const coord_t w = mm(g, 10., 22.), h = mm(g, 10., 22.), a = mm(g, 1.5, 6.), b = mm(g, 1.5, 6.);
+        Polygon       p;
+        p.points = {Point(cx - w / 2, cy - h / 2), Point(cx + w / 2, cy - h / 2), Point(cx + w / 2, cy - h / 2 + b), Point(cx - w / 2 + a, cy - h / 2 + b),
+                    Point(cx - w / 2 + a, cy + h / 2), Point(cx - w / 2, cy + h / 2)};
+        es.emplace_back(p);
+        break;
+    }
+    case 4: { // a strip, from thinner than a wall to four walls
+        static const double hs[] = {0.25, 0.38, 0.5, 0.7, 0.86, 0.95, 1.2, 1.5, 1.74, 2.1};
+        const coord_t w = mm(g, 6., 20.), h = coord_t(hs[g.range(0, 9)] * 100000.) + g.range(-900, 900);
+        es.emplace_back(rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2));
+        break;
+    }
+    case 5: { // a wedge with a sharp tip
+        const coord_t l = mm(g, 10., 22.), b = mm(g, 1.5, 5.);
+        Polygon       p;
+        p.points = {Point(cx - l / 2, cy - b / 2), Point(cx + l / 2, cy + coord_t(g.range(-3000, 3000))), Point(cx - l / 2, cy + b / 2)};
+        es.emplace_back(p);
+        break;
+    }
+    case 6: { // two plates joined by a neck
+        const coord_t w = mm(g, 5., 9.), h = mm(g, 6., 12.), nl = mm(g, 2., 6.), nh = mm(g, 0.3, 1.6) / 2;
+        Polygon       p;
+        p.points = {Point(cx - nl / 2 - w, cy - h / 2), Point(cx - nl / 2, cy - h / 2), Point(cx - nl / 2, cy - nh), Point(cx + nl / 2, cy - nh),
+                    Point(cx + nl / 2, cy - h / 2), Point(cx + nl / 2 + w, cy - h / 2), Point(cx + nl / 2 + w, cy + h / 2), Point(cx + nl / 2, cy + h / 2),
+                    Point(cx + nl / 2, cy + nh),    Point(cx - nl / 2, cy + nh),         Point(cx - nl / 2, cy + h / 2),     Point(cx - nl / 2 - w, cy + h / 2)};
+        es.emplace_back(p);
+        break;
+    }
+    case 7: { // a blob with a blob in it
+        const coord_t rx = mm(g, 4., 10.), ry = mm(g, 4., 10.);
+        ExPolygon     e(blob(g, cx, cy, rx, ry));
+        if (g.range(0, 1) == 0) {
+            Polygon hole = blob(g, cx + g.range(-rx / 6, rx / 6), cy + g.range(-ry / 6, ry / 6), rx / 3, ry / 3);
+            hole.reverse();
+            e.holes.emplace_back(hole);
+        }
+        es.emplace_back(e);
+        break;
+    }
+    case 8: { // a star
+        const int    n  = 2 * (int) g.range(4, 9);
+        const double ro = double(mm(g, 6., 11.)), ri = ro * (0.35 + 0.05 * g.range(0, 6)), ph = 0.07 * g.range(0, 40);
+        Polygon      p;
+        for (int i = 0; i < n; ++i) {
+            const double a = ph + 2. * M_PI * i / n, r = i % 2 == 0 ? ro : ri;
+            p.points.emplace_back(Point(cx + coord_t(std::lround(r * std::cos(a))), cy + coord_t(std::lround(r * std::sin(a)))));
+        }
+        es.emplace_back(p);
+        break;
+    }
+    default: { // a disc
+        es.emplace_back(circle(cx, cy, double(mm(g, 2., 9.)), (int) g.range(12, 72), 0.05 * g.range(0, 60)));
+        break;
+    }
+    }
+    return es;
+}
+
+// The slices of the layer below or above: `how` 0 the same, 1 smaller all around, 2 moved, 3 one half,
+// 4 larger all around, 5 none.
+static ExPolygons neighbour(Lcg &g, const ExPolygons &slices, int how)
+{
+    switch (how) {
+    case 0: return slices;
+    case 1: return offset_ex(slices, -float(mm(g, 0.1, 1.6)));
+    case 2: {
+        ExPolygons es = slices;
+        const Point d(mm(g, -1.5, 1.5), mm(g, -1.5, 1.5));
+        for (ExPolygon &e : es) e.translate(d);
+        return es;
+    }
+    case 3: {
+        const BoundingBox bb = get_extents(slices);
+        const coord_t     x  = bb.min.x() + (bb.max.x() - bb.min.x()) * g.range(30, 70) / 100;
+        return intersection_ex(slices, ExPolygons{ExPolygon(rect(bb.min.x() - 1000, bb.min.y() - 1000, x, bb.max.y() + 1000))});
+    }
+    case 4: return offset_ex(slices, float(mm(g, 0.1, 1.2)));
+    default: return ExPolygons();
+    }
+}
+
+struct ProcCase
+{
+    const char *tag;
+    KeyValues   kvs;
+};
+
+static void run_process()
+{
+    // What the cases share: the keys of the process of the fixtures (a 0.16 mm layer, two walls of
+    // 0.45 and 0.42 mm, a 0.4 mm nozzle).
+    static const KeyValues base = {{"layer_height", "0.16"},
+                                   {"initial_layer_print_height", "0.2"},
+                                   {"wall_loops", "2"},
+                                   {"outer_wall_line_width", "0.42"},
+                                   {"inner_wall_line_width", "0.45"},
+                                   {"line_width", "0.42"},
+                                   {"sparse_infill_line_width", "0.45"},
+                                   {"internal_solid_infill_line_width", "0.42"},
+                                   {"top_surface_line_width", "0.42"},
+                                   {"initial_layer_line_width", "0.5"},
+                                   {"initial_layer_infill_line_width", "0.5"},
+                                   {"resolution", "0.012"},
+                                   {"enable_arc_fitting", "0"},
+                                   {"z_direction_outwall_speed_continuous", "1"},
+                                   {"sparse_infill_density", "15%"},
+                                   {"infill_wall_overlap", "15%"},
+                                   {"detect_overhang_wall", "1"},
+                                   {"gap_infill_speed", "250"},
+                                   {"bottom_shell_layers", "4"},
+                                   {"top_shell_layers", "6"},
+                                   {"brim_type", "no_brim"},
+                                   {"wall_generator", "classic"}};
+    static const std::vector<ProcCase> cases = {
+        {"classic", {}},
+        {"classic_1wall", {{"wall_loops", "1"}}},
+        {"classic_3walls", {{"wall_loops", "3"}}},
+        {"classic_4walls_outer_inner", {{"wall_loops", "4"}, {"wall_sequence", "outer wall/inner wall"}}},
+        {"classic_3walls_inner_outer_inner", {{"wall_loops", "3"}, {"wall_sequence", "inner-outer-inner wall"}}},
+        {"classic_thin_walls", {{"detect_thin_wall", "1"}}},
+        {"classic_no_overhang", {{"detect_overhang_wall", "0"}}},
+        {"classic_top_none", {{"top_one_wall_type", "not apply"}}},
+        {"classic_topmost", {{"top_one_wall_type", "topmost"}}},
+        {"classic_arc", {{"enable_arc_fitting", "1"}}},
+        {"classic_no_z_continuity", {{"z_direction_outwall_speed_continuous", "0"}}},
+        {"classic_no_gap_fill", {{"gap_infill_speed", "0"}}},
+        {"classic_no_infill", {{"sparse_infill_density", "0%"}}},
+        {"classic_precise", {{"precise_outer_wall", "1"}}},
+        {"classic_spiral", {{"spiral_mode", "1"}, {"wall_loops", "1"}, {"top_shell_layers", "0"}, {"sparse_infill_density", "0%"}, {"bottom_shell_layers", "2"}}},
+        {"classic_alternate", {{"alternate_extra_wall", "1"}}},
+        {"classic_first_layer_1wall", {{"only_one_wall_first_layer", "1"}}},
+        {"classic_no_overhang_speed", {{"enable_overhang_speed", "0"}}},
+        {"classic_same_widths", {{"layer_height", "0.2"}, {"outer_wall_line_width", "0.45"}, {"inner_wall_line_width", "0.45"}}},
+        {"classic_filter_gap", {{"filter_out_gap_fill", "1.5"}}},
+        {"classic_brim", {{"brim_type", "outer_only"}, {"brim_width", "5"}}},
+        {"arachne", {{"wall_generator", "arachne"}}},
+        {"arachne_1wall", {{"wall_generator", "arachne"}, {"wall_loops", "1"}}},
+        {"arachne_3walls", {{"wall_generator", "arachne"}, {"wall_loops", "3"}}},
+        {"arachne_4walls_outer_inner", {{"wall_generator", "arachne"}, {"wall_loops", "4"}, {"wall_sequence", "outer wall/inner wall"}}},
+        {"arachne_3walls_inner_outer_inner", {{"wall_generator", "arachne"}, {"wall_loops", "3"}, {"wall_sequence", "inner-outer-inner wall"}}},
+        {"arachne_no_overhang", {{"wall_generator", "arachne"}, {"detect_overhang_wall", "0"}}},
+        {"arachne_top_none", {{"wall_generator", "arachne"}, {"top_one_wall_type", "not apply"}}},
+        {"arachne_topmost", {{"wall_generator", "arachne"}, {"top_one_wall_type", "topmost"}}},
+        {"arachne_no_z_continuity", {{"wall_generator", "arachne"}, {"z_direction_outwall_speed_continuous", "0"}}},
+        {"arachne_precise", {{"wall_generator", "arachne"}, {"precise_outer_wall", "1"}}},
+        {"arachne_arc", {{"wall_generator", "arachne"}, {"enable_arc_fitting", "1"}}},
+        {"arachne_first_layer_1wall", {{"wall_generator", "arachne"}, {"only_one_wall_first_layer", "1"}}},
+        {"arachne_beads", {{"wall_generator", "arachne"}, {"min_bead_width", "60%"}, {"min_feature_size", "15%"}, {"wall_distribution_count", "2"}, {"wall_loops", "3"}}},
+        {"arachne_no_overhang_speed", {{"wall_generator", "arachne"}, {"enable_overhang_speed", "0"}}},
+    };
+    Lcg g(0x3c6ef372fe94f82bULL);
+    for (const ProcCase &pc : cases) {
+        Model        model;
+        ModelObject *o = model.add_object();
+        o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+        o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+        set_keys(config, base);
+        set_keys(config, pc.kvs);
+        Print print;
+        print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+        print.apply(model, config);
+        PrintObject       *obj    = print.m_objects.front();
+        const PrintRegion &region = *obj->m_shared_regions->all_regions.front();
+        std::string        cfg    = std::string("pcfg\t") + pc.tag;
+        for (const char *key : proc_keys) {
+            const ConfigBase *holder = region.config().has(key) ? static_cast<const ConfigBase *>(&region.config()) :
+                                       obj->config().has(key)   ? static_cast<const ConfigBase *>(&obj->config()) :
+                                       print.config().has(key)  ? static_cast<const ConfigBase *>(&print.config()) :
+                                                                  nullptr;
+            cfg += std::string("\t") + key + "=" + (holder == nullptr ? std::string("?") : holder->opt_serialize(key));
+        }
+        out(cfg);
+        const double layer_height       = obj->config().layer_height.value;
+        const double first_layer_height = print.config().initial_layer_print_height.value;
+
+        const int n_layers = 12;
+        for (int c = 0; c < n_layers; ++c) {
+            // The layer: the first one in two cases of twelve, an odd and an even one among the rest.
+            const size_t layer_id = c < 2 ? 0 : (size_t) g.range(1, 9);
+            const double height   = layer_id == 0 ? first_layer_height : layer_height;
+            const double print_z  = first_layer_height + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * height;
+            // One to three islands, apart from each other.
+            const int             n_islands = c % 4 == 3 ? (int) g.range(2, 3) : 1;
+            ExPolygons            slices;
+            static const coord_t  xs[] = {-3000000, 0, 3000000};
+            for (int i = 0; i < n_islands; ++i) {
+                // The kinds in turn, so every case has every kind.
+                const int kind = n_islands == 1 ? (c + int(&pc - &cases[0])) % 10 : (int) g.range(0, 9);
+                append(slices, island(g, kind, (n_islands == 1 ? 0 : xs[i]) + g.range(-200000, 200000), g.range(-200000, 200000)));
+            }
+            std::vector<unsigned short> extra;
+            for (size_t i = 0; i < slices.size(); ++i) extra.push_back(g.range(0, 7) == 0 ? 1 : 0);
+
+            const int  lower_how = layer_id == 0 ? 6 : (int) g.range(0, 5);
+            const int  upper_how = (int) g.range(0, 6);
+            const bool has_lower = lower_how != 6, has_upper = upper_how != 6;
+            Layer      lower(layer_id == 0 ? 0 : layer_id - 1, obj, layer_height, print_z - height, slice_z - height);
+            Layer      upper(layer_id + 1, obj, layer_height, print_z + layer_height, slice_z + layer_height);
+            Layer      layer(layer_id, obj, height, print_z, slice_z);
+            if (has_lower) {
+                lower.lslices     = neighbour(g, slices, lower_how);
+                layer.lower_layer = &lower;
+            }
+            if (has_upper) {
+                upper.lslices     = neighbour(g, slices, upper_how);
+                layer.upper_layer = &upper;
+            }
+            LayerRegion *layerm = layer.add_region(&region);
+            for (size_t i = 0; i < slices.size(); ++i) {
+                Surface s(stInternal, slices[i]);
+                s.extra_perimeters = extra[i];
+                layerm->slices.surfaces.emplace_back(s);
+            }
+            SurfaceCollection     fill_surfaces;
+            ExPolygons            fill_no_overlap;
+            std::vector<LoopNode> loop_nodes;
+            const PerimeterRegions perimeter_regions;
+            layerm->make_perimeters(layerm->slices, perimeter_regions, &fill_surfaces, &fill_no_overlap, loop_nodes);
+
+            std::string in = hI((long long) layer_id) + " " + hD(height) + " " + hD(print_z) + " " + hD(slice_z) + " " + hI((long long) slices.size());
+            for (size_t i = 0; i < slices.size(); ++i) in += " " + hI(extra[i]) + " " + EXPOLY(slices[i]);
+            in += " " + hB(has_lower) + " " + EXPOLYS(lower.lslices) + " " + hB(has_upper) + " " + EXPOLYS(upper.lslices);
+            ExPolygons fill_expolygons;
+            for (const Surface &s : fill_surfaces.surfaces) fill_expolygons.emplace_back(s.expolygon);
+            // The flows the walls were made with, to tell a difference of the flows from one of the walls.
+            const Flow  pf = layerm->flow(frPerimeter), ef = layerm->flow(frExternalPerimeter), sf = layerm->flow(frSolidInfill);
+            const Flow  of = layerm->bridging_flow(frPerimeter, obj->config().thick_bridges);
+            std::string flows;
+            for (const Flow *f : {&pf, &ef, &sf, &of}) flows += std::string(flows.empty() ? "" : " ") + hF(f->width()) + " " + hF(f->height()) + " " + hF(f->spacing()) + " " + hD(f->mm3_per_mm());
+            out("proc " + in + " => " + flows + " | " + part(LEAVES(layerm->perimeters)) + " | " + part(LEAVES(layerm->thin_fills)) + " | " + part(EXPOLYS(fill_expolygons)) + " | " +
+                part(EXPOLYS(fill_no_overlap)) + " | " + part(PNODES(loop_nodes, layerm->perimeters)) + " | " + part(ISLANDS(layerm->perimeters)));
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: gen <vectors.txt>\n");
+        std::fprintf(stderr, "usage: gen <vectors.txt> [<process_vectors.txt> [full]]\n");
         return 1;
     }
-    g_out = std::fopen(argv[1], "w");
-    if (g_out == nullptr) return 1;
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
-    run_filters();
-    run_flags();
-    run_configs();
-    run_regions();
-    run_bridge_walls();
-    run_traverse();
-    std::fclose(g_out);
+    if (std::strcmp(argv[1], "-") != 0) {
+        g_out = std::fopen(argv[1], "w");
+        if (g_out == nullptr) return 1;
+        run_filters();
+        run_flags();
+        run_configs();
+        run_regions();
+        run_bridge_walls();
+        run_traverse();
+        std::fclose(g_out);
+    }
+    // The whole of the walls of a layer goes to a file of its own.
+    if (argc >= 3) {
+        g_full = argc >= 4 && std::strcmp(argv[3], "full") == 0;
+        g_out  = std::fopen(argv[2], "w");
+        if (g_out == nullptr) return 1;
+        run_process();
+        std::fclose(g_out);
+    }
     return 0;
 }

@@ -52,9 +52,25 @@ const EPSILON: f64 = 1e-4;
 
 // `scale_(val)` in a floating-point context: val / SCALING_FACTOR (the C++ macro)
 // where SCALING_FACTOR == 1e-5, i.e. multiply by the crate's SCALING_FACTOR (1e5).
+//
+// FILL_BASE_PIN (on unless `FILL_BASE_PIN=0`): the pin's `scale_(val)` is the division
+// `val / SCALING_FACTOR` by 0.00001 (libslic3r.h:58-84), which differs from the multiplication by 1e5
+// by a unit in the last place for some values; with the gate off the earlier multiplication is kept.
 #[inline]
 fn scale_f(v: f64) -> f64 {
-    v * SCALING_FACTOR
+    if fill_base_pin() {
+        v / crate::libslic3r::SCALING_FACTOR
+    } else {
+        v * SCALING_FACTOR
+    }
+}
+
+/// The gate of the changes of R921 that bring the connectors of the live path to the pin's arithmetic
+/// (tests/fill_base_native_parity.rs): on unless `FILL_BASE_PIN=0`.
+#[inline]
+fn fill_base_pin() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("FILL_BASE_PIN"))
 }
 
 // Sentinel for a null `ContourIntersectionPoint*`.
@@ -781,12 +797,19 @@ fn ray_circle_intersection_interval_extend(
     let mut pts = (Vec2d::zero(), Vec2d::zero());
     let p0 = Vec2d::new(line_pt.x - segment_pt.x, line_pt.y - segment_pt.y);
     let lv2 = line_vec.x * line_vec.x + line_vec.y * line_vec.y; // squaredNorm
+    // `- line_vec.y() * p0.x() + line_vec.x() * p0.y()` is one expression: the left product is fused into
+    // the sum (FILL_BASE_PIN).
+    let c = if fill_base_pin() {
+        (-line_vec.y).mul_add(p0.x, line_vec.x * p0.y)
+    } else {
+        -line_vec.y * p0.x + line_vec.x * p0.y
+    };
     if ray_circle_intersections_r2_lv2_c(
         offset2,
         line_vec.y,
         -line_vec.x,
         lv2,
-        -line_vec.y * p0.x + line_vec.x * p0.y,
+        c,
         &mut pts,
     ) != 0
     {
@@ -830,9 +853,14 @@ fn mark_boundary_segments_touching_infill(
             .iter()
             .map(|pts| Polyline::from_points(pts.clone()))
             .collect();
-        grid.create_from_polylines(
+        // grid.create(boundary, coord_t(...)): the overload of `std::vector<Points>` with two arguments is
+        // `create(polygons, resolution, false)` (EdgeGrid.hpp:111): CLOSED contours. The earlier port
+        // created open polylines, which leaves the closing segment of every contour out of the grid, so
+        // an infill line along it trimmed nothing (kept with FILL_BASE_PIN=0).
+        grid.create_from_polylines_flag(
             &polylines,
             (clip_distance.max(distance_colliding) + scale_f(10.0)) as Coord,
+            !fill_base_pin(),
         );
     }
 
@@ -884,8 +912,14 @@ fn mark_boundary_segments_touching_infill(
                         Vec2d::zero()
                     }
                 };
-                let vperp = perp(Point::new(vn.x as Coord, vn.y as Coord));
-                let vperp = Vec2d::new(vperp.x as f64, vperp.y as f64);
+                // Vec2d vperp = perp(v): of the doubles, `(-v.y(), v.x())`. The earlier port truncated v to
+                // integers first (kept with FILL_BASE_PIN=0).
+                let vperp = if fill_base_pin() {
+                    Vec2d::new(-vn.y, vn.x)
+                } else {
+                    let vperp = perp(Point::new(vn.x as Coord, vn.y as Coord));
+                    Vec2d::new(vperp.x as f64, vperp.y as f64)
+                };
 
                 let visit = |a: Vec2d, b: Vec2d, cps: &mut [ContourIntersectionPoint]| {
                     grid.visit_cells_intersecting_line(
@@ -1322,11 +1356,29 @@ pub fn create_boundary_infill_graph(
                 }
             }
             // FillBase.cpp:1376-1381
-            intersection_points.sort_by(|cp1, cp2| {
-                let a = (cp1.0.contour_idx, cp1.0.start_point_idx, cp1.0.t);
-                let b = (cp2.0.contour_idx, cp2.0.start_point_idx, cp2.0.t);
-                a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            if fill_base_pin() {
+                // std::sort with the comparator of the pin: two end points at one place of a contour stay in
+                // the order libc++ leaves them in. The indices are sorted, then the elements put in that order.
+                let less = |cp1: &(crate::edge_grid::ClosestPointResult, usize), cp2: &(crate::edge_grid::ClosestPointResult, usize)| {
+                    cp1.0.contour_idx < cp2.0.contour_idx
+                        || (cp1.0.contour_idx == cp2.0.contour_idx
+                            && (cp1.0.start_point_idx < cp2.0.start_point_idx
+                                || (cp1.0.start_point_idx == cp2.0.start_point_idx && cp1.0.t < cp2.0.t)))
+                };
+                let mut order: Vec<usize> = (0..intersection_points.len()).collect();
+                crate::clipper::libcxx_sort(&mut order, |&a, &b| less(&intersection_points[a], &intersection_points[b]));
+                let mut sorted = Vec::with_capacity(intersection_points.len());
+                for i in order {
+                    sorted.push(intersection_points[i].clone());
+                }
+                intersection_points = sorted;
+            } else {
+                intersection_points.sort_by(|cp1, cp2| {
+                    let a = (cp1.0.contour_idx, cp1.0.start_point_idx, cp1.0.t);
+                    let b = (cp2.0.contour_idx, cp2.0.start_point_idx, cp2.0.t);
+                    a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
         }
 
         // FillBase.cpp:1383-1463
@@ -1555,6 +1607,7 @@ pub fn connect_infill(
     let line_half_width = 0.5 * scale_f(spacing);
 
     // FillBase.cpp:1611-1622
+    #[derive(Clone, Copy)]
     struct Arc {
         intersection: usize,
         arc_length: f64,
@@ -1582,7 +1635,14 @@ pub fn connect_infill(
                 });
             }
         }
-        arches.sort_by(|l, r| l.arc_length.partial_cmp(&r.arc_length).unwrap_or(std::cmp::Ordering::Equal));
+        // std::sort(arches.begin(), arches.end(), [](const auto& l, const auto& r) { return l.arc_length < r.arc_length; });
+        // Lines at one pitch leave many arcs of one length: the order libc++'s sort leaves them in decides
+        // which are joined first (FILL_BASE_PIN; the stable sort of the earlier port with the gate off).
+        if fill_base_pin() {
+            crate::clipper::libcxx_sort(&mut arches, |l, r| l.arc_length < r.arc_length);
+        } else {
+            arches.sort_by(|l, r| l.arc_length.partial_cmp(&r.arc_length).unwrap_or(std::cmp::Ordering::Equal));
+        }
         if fb_dbg {
             FB_ARCHES.fetch_add(arches.len(), std::sync::atomic::Ordering::Relaxed);
         }
@@ -1862,7 +1922,12 @@ pub fn extended_object_bounding_box(bounding_box: &BoundingBox) -> BoundingBox {
     out.merge_point(Point::new(out.max.y(), out.max.x()));
     // The bounding box is scaled by sqrt(2.) to ensure that the bounding box
     // covers any possible rotations.
-    out.scaled(2.0_f64.sqrt())
+    // out.scaled(sqrt(2.)): BoundingBox.cpp:56-68 `min *= factor; max *= factor;` with Point.hpp:199
+    // `Point::operator*=(const double &rhs)`: `coord_t(x * rhs)`, which truncates (it does not round).
+    let factor = 2.0_f64.sqrt();
+    out.min = Point::new((out.min.x as f64 * factor) as Coord, (out.min.y as f64 * factor) as Coord);
+    out.max = Point::new((out.max.x as f64 * factor) as Coord, (out.max.y as f64 * factor) as Coord);
+    out
 }
 
 // Calculate a new spacing to fill width with possibly integer number of lines,
@@ -1872,19 +1937,31 @@ pub fn adjust_solid_spacing(width: Coord, distance: Coord) -> Coord {
     debug_assert!(width >= 0);
     debug_assert!(distance > 0);
     // floor(width / distance)
-    // FIDELITY-NOTE(F2): C++ `coord_t(...)` truncates the double to int32. Mirror
-    // the int32 truncation via `as i32 as Coord` (spacing values always fit i32).
-    let number_of_intervals = ((width as f64 - EPSILON) / distance as f64) as i32 as Coord;
+    // `coord_t(...)`: coord_t is int64_t at the pin; the truncation through i32 of the earlier port gives
+    // the same value for every spacing that fits 32 bits and is kept with FILL_BASE_PIN=0.
+    let trunc = |v: f64| -> Coord {
+        if fill_base_pin() {
+            v as Coord
+        } else {
+            v as i32 as Coord
+        }
+    };
+    let number_of_intervals = trunc((width as f64 - EPSILON) / distance as f64);
     let mut distance_new = if number_of_intervals == 0 {
         distance
     } else {
-        ((width as f64 - EPSILON) / number_of_intervals as f64) as i32 as Coord
+        trunc((width as f64 - EPSILON) / number_of_intervals as f64)
     };
     let factor = distance_new as f64 / distance as f64;
     // How much could the extrusion width be increased? By 20%.
     let factor_max = 1.2;
     if factor > factor_max {
-        distance_new = (distance as f64 * factor_max + 0.5).floor() as i32 as Coord;
+        // coord_t(floor((coordf_t(distance) * factor_max + 0.5))): one expression, the product fused into the sum
+        distance_new = if fill_base_pin() {
+            trunc((distance as f64).mul_add(factor_max, 0.5).floor())
+        } else {
+            trunc((distance as f64 * factor_max + 0.5).floor())
+        };
     }
     distance_new
 }
@@ -2629,9 +2706,14 @@ pub fn connect_base_support(
 
     // FillBase.cpp:2366-2369
     let arches = evaluate_support_arches(&graph);
-    let cost_low = line_spacing * 1.3;
-    let cost_high = line_spacing * 2.0;
-    let cost_veryhigh = line_spacing * 3.0;
+    // FillBase.cpp:2372-2374:
+    //     static const double cost_low      = line_spacing * 1.3;
+    //     static const double cost_high     = line_spacing * 2.;
+    //     static const double cost_veryhigh = line_spacing * 3.;
+    // The three are `static`: they are initialized by the FIRST call of the process and keep the line
+    // spacing of that call for every later one, whatever its spacing and density. Ported as written.
+    static COSTS: std::sync::OnceLock<[f64; 3]> = std::sync::OnceLock::new();
+    let [cost_low, cost_high, cost_veryhigh] = *COSTS.get_or_init(|| [line_spacing * 1.3, line_spacing * 2.0, line_spacing * 3.0]);
 
     // FillBase.cpp:2371-2408 — Connect along the high-cost arches.
     {
@@ -2662,9 +2744,9 @@ pub fn connect_base_support(
             }
         }
         // Take the longest arch first.
-        selected.sort_by(|&l, &r| {
-            arches[r].cost.partial_cmp(&arches[l].cost).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // std::sort(selected.begin(), selected.end(), [](const auto *l, const auto *r) { return l->cost > r->cost; });
+        // in the order libc++ leaves equal costs in
+        crate::clipper::libcxx_sort(&mut selected, |&l, &r| arches[l].cost > arches[r].cost);
         for arc in selected {
             let cp_idx = arc / 2;
             if !graph.map_infill_end_point_to_boundary[cp_idx].consumed {
@@ -2781,9 +2863,9 @@ pub fn connect_base_support(
                 candidates.push(cp_idx * 2 + 1);
             }
         }
-        candidates.sort_by(|&c1, &c2| {
-            arches[c2].cost.partial_cmp(&arches[c1].cost).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // std::sort(candidates.begin(), candidates.end(), [](auto *c1, auto *c2) { return c1->cost > c2->cost; });
+        // in the order libc++ leaves equal costs in
+        crate::clipper::libcxx_sort(&mut candidates, |&c1, &c2| arches[c1].cost > arches[c2].cost);
         for candidate in candidates {
             let cp_idx = candidate / 2;
             let prev = (candidate & 1) == 0;
@@ -3133,6 +3215,153 @@ impl Fill {
 impl Default for Fill {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The members of `class Fill` that do not depend on the pattern (FillBase.hpp:144-234, FillBase.cpp), under
+/// their C++ names. The virtual ones are the implementations of the base class.
+impl Fill {
+    /// FillBase.hpp:151 — `void set_bounding_box(const Slic3r::BoundingBox &bbox) { bounding_box = bbox; }`
+    pub fn set_bounding_box(&mut self, bbox: &BoundingBox) {
+        self.bounding_box = *bbox;
+    }
+
+    /// FillBase.cpp:1490-1499 — `BoundingBox Fill::extended_object_bounding_box() const`
+    pub fn extended_object_bounding_box(&self) -> BoundingBox {
+        extended_object_bounding_box(&self.bounding_box)
+    }
+
+    /// FillBase.hpp:154 — `virtual bool use_bridge_flow() const { return false; }`
+    /// Use bridge flow for the fill?
+    pub fn use_bridge_flow(&self) -> bool {
+        false
+    }
+
+    /// FillBase.hpp:157 — `virtual bool no_sort() const { return false; }`
+    /// Do not sort the fill lines to optimize the print head path?
+    pub fn no_sort(&self) -> bool {
+        false
+    }
+
+    /// FillBase.hpp:162 — `virtual bool has_consistent_pattern() const { return false; }`
+    /// Return true if infill has a consistent pattern between layers.
+    pub fn has_consistent_pattern(&self) -> bool {
+        false
+    }
+
+    /// FillBase.hpp:172-184 — `virtual void copy_fill_data(const Fill *f)`. (`adapt_fill_octree` and
+    /// `no_overlap_expolygons` are kept by the fillers that use them.)
+    pub fn copy_fill_data(&mut self, f: &Fill) {
+        self.layer_id = f.layer_id;
+        self.lock_region_id = f.lock_region_id;
+        self.z = f.z;
+        self.spacing = f.spacing;
+        self.overlap = f.overlap;
+        self.angle = f.angle;
+        self.link_max_length = f.link_max_length;
+        self.loop_clipping = f.loop_clipping;
+        self.bounding_box = f.bounding_box;
+    }
+
+    /// FillBase.hpp:217 — `virtual float _layer_angle(size_t idx) const { return (idx & 1) ? float(M_PI/2.) : 0; }`
+    pub fn _layer_angle(&self, idx: usize) -> f32 {
+        if idx & 1 != 0 {
+            (std::f64::consts::PI / 2.) as f32
+        } else {
+            0.
+        }
+    }
+
+    /// FillBase.cpp:197-241 — `std::pair<float, Point> Fill::_infill_direction(const Surface *surface) const`
+    ///
+    /// Returns orientation of the infill and the reference point of the infill pattern.
+    /// For a normal print, the reference point is the center of a bounding box of the STL.
+    /// (A filler that overrides `_layer_angle` passes its own through `_infill_direction_with`.)
+    pub fn _infill_direction(&self, surface: &crate::surface::Surface) -> (f32, Point) {
+        self._infill_direction_with(surface, |idx| self._layer_angle(idx))
+    }
+
+    /// `_infill_direction` with the `_layer_angle` of the filler (a virtual function of the C++).
+    pub fn _infill_direction_with(&self, surface: &crate::surface::Surface, layer_angle: impl Fn(usize) -> f32) -> (f32, Point) {
+        // set infill angle
+        let mut out_angle: f32 = self.angle;
+
+        if out_angle == f32::MAX {
+            //FIXME Vojtech: Add a warning?
+            // BOOST_LOG_TRIVIAL(warning) << "Using undefined infill angle";
+            out_angle = 0.;
+        }
+
+        // Bounding box is the bounding box of a perl object Slic3r::Print::Object (c++ object Slic3r::PrintObject)
+        // The bounding box is only undefined in unit tests.
+        // BoundingBox.hpp:248-252 `empty(bb)`: `! bb.defined || bb.min(0) >= bb.max(0) || bb.min(1) >= bb.max(1)`
+        let bb = &self.bounding_box;
+        let empty = bb.is_empty() || bb.min.x >= bb.max.x || bb.min.y >= bb.max.y;
+        let out_shift: Point = if empty {
+            // surface->expolygon.contour.bounding_box().center(): the integer mean of the corners
+            let pts = &surface.expolygon.contour.points;
+            if pts.is_empty() {
+                Point::new(0, 0)
+            } else {
+                let (mut min, mut max) = (pts[0], pts[0]);
+                for p in pts.iter() {
+                    min = Point::new(min.x.min(p.x), min.y.min(p.y));
+                    max = Point::new(max.x.max(p.x), max.y.max(p.y));
+                }
+                Point::new((min.x + max.x) / 2, (min.y + max.y) / 2)
+            }
+        } else {
+            Point::new((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2)
+        };
+
+        // `Surface::bridge_angle` is negative when undefined (Surface.hpp:41); here it is `None`.
+        match surface.bridge_angle {
+            Some(bridge_angle) if bridge_angle >= 0. => {
+                // use bridge angle
+                out_angle = bridge_angle as f32;
+            }
+            _ => {
+                if self.layer_id != usize::MAX {
+                    // alternate fill direction
+                    out_angle += layer_angle(self.layer_id / surface.thickness_layers);
+                } else {
+                    //    	printf("Layer_ID undefined!\n");
+                }
+            }
+        }
+
+        out_angle += (std::f64::consts::PI / 2.) as f32;
+        (out_angle, out_shift)
+    }
+
+    /// FillBase.cpp:173-195 — `coord_t Fill::_adjust_solid_spacing(const coord_t width, const coord_t distance)`
+    pub fn _adjust_solid_spacing(width: Coord, distance: Coord) -> Coord {
+        adjust_solid_spacing(width, distance)
+    }
+
+    /// FillBase.cpp:1168-1177 — `Fill::connect_infill(Polylines &&, const ExPolygon &, Polylines &, const double, const FillParams &)`
+    pub fn connect_infill_expolygon(infill_ordered: Vec<Polyline>, boundary: &ExPolygon, polylines_out: &mut Vec<Polyline>, spacing: f64, params: &FillParams) {
+        connect_infill_expolygon(infill_ordered, boundary, polylines_out, spacing, params)
+    }
+
+    /// FillBase.cpp:1179-1186 — `Fill::connect_infill(Polylines &&, const Polygons &, const BoundingBox &, Polylines &, const double, const FillParams &)`
+    pub fn connect_infill_polygons(infill_ordered: Vec<Polyline>, boundary: &[Polygon], bbox: &BoundingBox, polylines_out: &mut Vec<Polyline>, spacing: f64, params: &FillParams) {
+        connect_infill_polygons(infill_ordered, boundary, bbox, polylines_out, spacing, params)
+    }
+
+    /// FillBase.cpp:1501-1733 — `Fill::connect_infill(Polylines &&, const std::vector<const Polygon*> &, const BoundingBox &, Polylines &, double, const FillParams &)`
+    pub fn connect_infill(infill_ordered: Vec<Polyline>, boundary: &[&Polygon], bbox: &BoundingBox, polylines_out: &mut Vec<Polyline>, spacing: f64, params: &FillParams) {
+        connect_infill(infill_ordered, boundary, bbox, polylines_out, spacing, params)
+    }
+
+    /// FillBase.cpp:2150-2603 — `Fill::connect_base_support(Polylines &&, const std::vector<const Polygon*> &, const BoundingBox &, Polylines &, const double, const FillParams &)`
+    pub fn connect_base_support(infill_ordered: Vec<Polyline>, boundary_src: &[&Polygon], bbox: &BoundingBox, polylines_out: &mut Vec<Polyline>, spacing: f64, params: &FillParams) {
+        connect_base_support(infill_ordered, boundary_src, bbox, polylines_out, spacing, params)
+    }
+
+    /// FillBase.cpp:2605-2612 — `Fill::connect_base_support(Polylines &&, const Polygons &, const BoundingBox &, Polylines &, const double, const FillParams &)`
+    pub fn connect_base_support_polygons(infill_ordered: Vec<Polyline>, boundary_src: &[Polygon], bbox: &BoundingBox, polylines_out: &mut Vec<Polyline>, spacing: f64, params: &FillParams) {
+        connect_base_support_polygons(infill_ordered, boundary_src, bbox, polylines_out, spacing, params)
     }
 }
 

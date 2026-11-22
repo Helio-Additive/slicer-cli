@@ -3465,5 +3465,168 @@
    "add_sampling_points",
    "detect_overhang_degree"
   ]
+ },
+ {
+  "unit": "PerimeterGenerator",
+  "round": 921,
+  "evidence": "tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).",
+  "functions": [
+   "traverse_loops",
+   "PerimeterGenerator::process_classic",
+   "PerimeterGenerator::ext_mm3_per_mm",
+   "PerimeterGenerator::mm3_per_mm",
+   "PerimeterGenerator::mm3_per_mm_overhang",
+   "PerimeterGenerator::smaller_width_ext_mm3_per_mm"
+  ]
+ },
+ {
+  "unit": "VariableWidth",
+  "round": 921,
+  "evidence": "tests/perimeter_generator_native_parity.rs, process test: the gap fill of the 252 classic cases goes through variable_width and thick_polyline_to_extrusion_paths; equal to the pin with Polyline::append skipping a repeated point (Polyline.hpp:59-65, gate VARIABLE_WIDTH_APPEND) and the fused length sum (VariableWidth.cpp:130, gate VARIABLE_WIDTH_SUM_FMA).",
+  "functions": [
+   "variable_width",
+   "thick_polyline_to_extrusion_paths_2"
+  ]
+ },
+ {
+  "unit": "BridgeDetector",
+  "round": 921,
+  "evidence": "tests/bridge_detector_native_parity.rs: 126 bridges over anchors (56 scenes and turned copies) against the pin's BridgeDetector.cpp compiled into the generator: the members after initialize, the direction candidates, detect_angle with and without an override, coverage (plain and precise, own and given angle), unsupported_edges, the overlap, get_trapezoids2 (both) and get_trapezoids3_half, and detect_bridging_direction on lines (64) and on areas (48): 1,924 lines, none differ.",
+  "functions": [
+   "detect_bridging_direction",
+   "get_trapezoids2",
+   "get_trapezoids3_half",
+   "BridgeDetector::initialize",
+   "BridgeDetector::detect_angle",
+   "BridgeDetector::bridge_direction_candidates",
+   "BridgeDetector::coverage",
+   "BridgeDetector::unsupported_edges"
+  ]
+ },
+ {
+  "unit": "Fill/FillBase",
+  "round": 921,
+  "evidence": "tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).",
+  "functions": [
+   "multiline_fill",
+   "mark_boundary_segments_touching_infill",
+   "Fill::_adjust_solid_spacing",
+   "Fill::_infill_direction",
+   "Fill::_layer_angle",
+   "Fill::extended_object_bounding_box",
+   "Fill::set_bounding_box",
+   "Fill::connect_infill",
+   "Fill::connect_base_support"
+  ]
+ },
+ {
+  "unit": "MutablePolygon",
+  "round": 921,
+  "evidence": "tests/mutable_polygon_native_parity.rs: the container operations (5,280), the four remove_duplicates overloads (1,070), clip_narrow_corner (1,201) and the smooth_outward overloads (2,564, with 24 polygons that reach the closing triangle branch) against the pin's MutablePolygon.cpp compiled into the generator: 10,116 lines, none differ (gate MUTABLE_POLYGON_PIN: the epsilon 0.01/SCALING_FACTOR as a double, two fused discriminants, 32-bit coordinates, no assertions in the control flow). With the gate off 470 lines differ.",
+  "functions": [
+   "remove_duplicates",
+   "clip_narrow_corner",
+   "smooth_outward",
+   "MutablePolygon::assign",
+   "MutablePolygon::polygon",
+   "MutablePolygon::empty",
+   "MutablePolygon::size",
+   "MutablePolygon::capacity",
+   "MutablePolygon::valid",
+   "MutablePolygon::clear",
+   "MutablePolygon::begin",
+   "MutablePolygon::cbegin",
+   "MutablePolygon::end",
+   "MutablePolygon::cend",
+   "MutablePolygon::remove",
+   "MutablePolygon::insert",
+   "MutablePolygon::iterator::prev",
+   "MutablePolygon::iterator::next",
+   "MutablePolygon::iterator::valid",
+   "MutablePolygon::iterator::size",
+   "MutablePolygon::iterator::insert",
+   "MutablePolygon::range::begin",
+   "MutablePolygon::range::end",
+   "MutablePolygon::range::empty",
+   "MutablePolygon::range::process_next",
+   "MutablePolygon::range::advance_front",
+   "MutablePolygon::range::retract_back",
+   "MutablePolygon::range::remove_front",
+   "MutablePolygon::range::remove_back"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupport3D",
+  "round": 921,
+  "evidence": "tests/tree_support_3d_native_parity.rs: 8,397 lines, none differ, every line required. New: draw_areas with finalize_interface_and_support_areas and drop_non_gracious_areas (bottom contacts 18, intermediate layers 435, top contacts 48 lines; equal since smooth_outward is at the pin), and the mesh helpers of the organic part called directly: circles_intersect (300), discretize_circle, triangulate_fan, triangulate_strip (60), discretize_polygon (12), section_circles_intersect (600), extrude_branch_tube (80 paths x 4 cap pairs), extrude_branch (80 paths, 46 with split caps).",
+  "functions": [
+   "finalize_interface_and_support_areas",
+   "draw_areas",
+   "drop_non_gracious_areas",
+   "circles_intersect",
+   "triangulate_fan",
+   "triangulate_strip",
+   "discretize_circle",
+   "discretize_polygon",
+   "split_cap_use_mesh_hemispheres",
+   "extrude_branch_tube",
+   "section_circles_intersect",
+   "extrude_branch"
+  ]
+ },
+ {
+  "unit": "Support/SupportMaterial",
+  "round": 921,
+  "evidence": "tests/support_material_native_parity.rs: 3,595 lines, none differ. New: layers_append (6), collect_region_slices_by_type and collect_slices_outer on layers of one to three regions with holes (8), add_overhang with OverhangCluster::insert, height and intersects (117), called directly.",
+  "functions": [
+   "layers_append",
+   "collect_region_slices_by_type",
+   "collect_slices_outer",
+   "OverhangCluster::insert",
+   "OverhangCluster::height",
+   "OverhangCluster::intersects"
+  ]
+ },
+ {
+  "unit": "Fill/Lightning/Generator",
+  "round": 921,
+  "evidence": "tests/tree_support_native_parity.rs: the support constructor of the lightning generator (Generator.cpp:100-143) in the five lightning scenarios, both passes: the trees of every layer (nodes depth first) and the lines of convertToLines equal to the pin, with Darwin's rand() seeded alike on both sides. tests/lightning_native_parity.rs: the rand() sequence (56 values) and libc++'s stable_sort with the pin's inconsistent comparator of DistanceField (42 sorts).",
+  "functions": [
+   "Generator::generateTreesforSupport"
+  ]
+ },
+ {
+  "unit": "Fill/Lightning/Layer",
+  "round": 921,
+  "evidence": "tests/tree_support_native_parity.rs: the lightning trees of every layer and the lines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).",
+  "functions": [
+   "Layer::generateNewTrees",
+   "Layer::getBestGroundingLocation",
+   "Layer::attach",
+   "Layer::reconnectRoots",
+   "Layer::convertToLines"
+  ]
+ },
+ {
+  "unit": "Fill/Lightning/TreeNode",
+  "round": 921,
+  "evidence": "tests/tree_support_native_parity.rs: the lightning trees of every layer (after propagateToNextLayer: deep copy, prune, straighten, realign) and the polylines of convertToLines in five lightning support scenarios equal to the pin (see Fill/Lightning/Generator).",
+  "functions": [
+   "Node::propagateToNextLayer",
+   "Node::deepCopy",
+   "Node::prune",
+   "Node::straighten",
+   "Node::realign",
+   "Node::convertToPolylines"
+  ]
+ },
+ {
+  "unit": "Fill/Lightning/DistanceField",
+  "round": 921,
+  "evidence": "tests/tree_support_native_parity.rs: the lightning trees of five support scenarios equal to the pin, which needs the same unsupported points in the same order (see Fill/Lightning/Generator); tests/lightning_native_parity.rs: the stable sort of the constructor.",
+  "functions": [
+   "DistanceField::tryGetNextPoint",
+   "DistanceField::update"
+  ]
  }
 ]

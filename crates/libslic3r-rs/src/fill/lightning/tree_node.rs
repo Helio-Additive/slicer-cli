@@ -1024,23 +1024,36 @@ fn point_in_polygon(pt: &Point, path: &[Point]) -> i32 {
 }
 
 thread_local! {
-    // Faithful replacement for C libc rand(): a glibc-compatible state so that
-    // `rand() % n` selections at junctions can be made deterministic per run.
+    // The state of the C library's `rand()`, `next` of the oracle's libc (seeded with 1), kept per thread here.
     static RAND_STATE: RefCell<u64> = const { RefCell::new(1) };
 }
 
-/// C `rand()` returning a value in [0, RAND_MAX]. TreeNode.cpp:365 uses `rand() % n`.
-/// Implemented with the POSIX-documented minimal-standard LCG so junction selection
-/// is reproducible; the exact stream is not byte-identical to the platform libc, which
-/// is acceptable because `convertToPolylines` only chooses which equivalent branch to
-/// continue first (the resulting polyline set is the same up to ordering).
+/// C `rand()` as the oracle's C library has it (macOS, Libc stdlib/FreeBSD/rand.c `do_rand`): the minimal
+/// standard generator of Park and Miller, `x = 7^5 * x mod (2^31 - 1)`, computed without overflow, returned
+/// modulo `RAND_MAX + 1`. TreeNode.cpp:365 uses `rand() % n` to pick the branch a polyline goes on with, so the
+/// polylines depend on the stream. The first value after `srand(1)` is 16807.
 #[inline]
-fn c_rand() -> i32 {
+pub fn c_rand() -> i32 {
     RAND_STATE.with(|s| {
-        let mut state = s.borrow_mut();
-        *state = state.wrapping_mul(1103515245).wrapping_add(12345);
-        ((*state >> 16) & 0x7fff) as i32
+        let mut ctx = s.borrow_mut();
+        // Can't be initialized with 0, so use another value.
+        if *ctx == 0 {
+            *ctx = 123459876;
+        }
+        let hi: i64 = (*ctx / 127773) as i64;
+        let lo: i64 = (*ctx % 127773) as i64;
+        let mut x: i64 = 16807 * lo - 2836 * hi;
+        if x < 0 {
+            x += 0x7fffffff;
+        }
+        *ctx = x as u64;
+        ((x as u64) % (0x7fffffff_u64 + 1)) as i32
     })
+}
+
+/// C `srand(seed)` of the same C library (`next = seed`): restarts the stream of `rand()` of this thread.
+pub fn c_srand(seed: u32) {
+    RAND_STATE.with(|s| *s.borrow_mut() = seed as u64);
 }
 
 /// `weak_ptr<Node>::lock() == shared_from_this()` equality used in the debug asserts.

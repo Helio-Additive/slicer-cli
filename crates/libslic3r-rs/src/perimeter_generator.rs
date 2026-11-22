@@ -291,6 +291,33 @@ pub struct PerimeterConfig {
 
     /// Overhang flow (used for fully unsupported segments)
     pub overhang_flow: Option<Flow>,
+
+    // --- What process_classic of the pin reads and the legacy body did not (R921) ---
+    /// `config->precise_outer_wall` (PerimeterGenerator.cpp:872)
+    pub precise_outer_wall: bool,
+    /// `config->alternate_extra_wall` (PerimeterGenerator.cpp:935)
+    pub alternate_extra_wall: bool,
+    /// `object_config->top_one_wall_type` (PerimeterGenerator.cpp:938, 1131)
+    pub top_one_wall_type: crate::print_config::TopOneWallType,
+    /// `object_config->only_one_wall_first_layer` (PerimeterGenerator.cpp:938)
+    pub only_one_wall_first_layer: bool,
+    /// `starts_at_object_base` (PerimeterGenerator.hpp:40, LayerRegion.cpp:148, 191)
+    pub starts_at_object_base: bool,
+    /// `object_config->brim_type == BrimType::btOuterOnly && object_config->brim_width.value > 0`
+    /// (PerimeterGenerator.cpp:1275-1276)
+    pub brim_outer_only: bool,
+    /// `config->gap_infill_speed.get_at(...)` (PerimeterGenerator.cpp:895)
+    pub gap_infill_speed: f64,
+    /// `config->filter_out_gap_fill.value` (PerimeterGenerator.cpp:1378), mm
+    pub filter_out_gap_fill: f64,
+    /// `m_spiral_vase` (PerimeterGenerator.hpp:128)
+    pub spiral_vase: bool,
+    /// `solid_infill_flow` (PerimeterGenerator.hpp:45)
+    pub solid_infill_flow: Option<Flow>,
+    /// `config->infill_wall_overlap.value`, the percent (PerimeterGenerator.cpp:1411)
+    pub infill_wall_overlap_percent: f64,
+    /// `is_enable_overhang_speed(perimeter_generator)` (PerimeterGenerator.cpp:268-276)
+    pub enable_overhang_speed: bool,
 }
 
 impl Default for PerimeterConfig {
@@ -342,6 +369,19 @@ impl Default for PerimeterConfig {
             z_direction_outwall_speed_continuous: false,
             raft_layers: 0,
             overhang_flow: None,
+            // PrintConfig.cpp defaults.
+            precise_outer_wall: false,
+            alternate_extra_wall: false,
+            top_one_wall_type: crate::print_config::TopOneWallType::AllTop,
+            only_one_wall_first_layer: false,
+            starts_at_object_base: false,
+            brim_outer_only: false,
+            gap_infill_speed: 30.,
+            filter_out_gap_fill: 0.,
+            spiral_vase: false,
+            solid_infill_flow: None,
+            infill_wall_overlap_percent: 15.,
+            enable_overhang_speed: true,
         }
     }
 }
@@ -475,6 +515,14 @@ pub struct PerimeterResult {
     /// here returned per-generate() call and merged by the Layer). node_id is
     /// LOCAL to this result — the Layer rebases on append.
     pub loop_nodes: Vec<crate::layer::LoopNode>,
+
+    /// `gap_fill` of the pin's generator (PerimeterGenerator.hpp:54, PerimeterGenerator.cpp:1393): the gap
+    /// fill extrusions. Filled by [`PerimeterGenerator::process_classic`] only; the legacy body hands
+    /// the areas over in `gap_fills` and the layer makes the extrusions.
+    pub gap_fill: crate::extrusion_entity::ExtrusionEntityCollection,
+    /// The result is the whole of the pin's outputs (`loops`, `gap_fill`, `fill_surfaces`,
+    /// `fill_no_overlap`, `loop_nodes`): nothing is left for the layer to do.
+    pub pin: bool,
 }
 
 impl PerimeterResult {
@@ -488,6 +536,8 @@ impl PerimeterResult {
             tail_inputs: Vec::new(),
             top_band: Vec::new(),
             loop_nodes: Vec::new(),
+            gap_fill: crate::extrusion_entity::ExtrusionEntityCollection::new(),
+            pin: false,
         }
     }
 }
@@ -596,14 +646,14 @@ impl PerimeterGenerator {
         if self.config.wall_generator_mode == WallGeneratorMode::Arachne {
             return self.process_arachne(slices);
         }
-        self.process_classic(slices, result)
+        self.process_classic_legacy(slices, result)
     }
 
-    /// PerimeterGenerator.cpp:859-1453 `void PerimeterGenerator::process_classic()`: the surfaces in the
-    /// order of chain_expolygons, each through `generate_classic_one` (the body of the loop over the
-    /// surfaces, :930-1452). `slices` is `this->slices`, the result carries what the C++ writes to
-    /// `loops`, `gap_fill`, `fill_surfaces`, `fill_no_overlap` and `loop_nodes`.
-    pub fn process_classic(&self, slices: &[ExPolygon], mut result: PerimeterResult) -> PerimeterResult {
+    /// The body `process_classic` had up to R920 (the arm of `PG_CLASSIC_PIN=0`): the surfaces in the
+    /// order of chain_expolygons, each through `generate_classic_one`, in millimetres and over the
+    /// C++ ClipperLib shims; the gap fill extrusions are left to the layer. The port of the pin's
+    /// function is [`PerimeterGenerator::process_classic`].
+    pub fn process_classic_legacy(&self, slices: &[ExPolygon], mut result: PerimeterResult) -> PerimeterResult {
         self.set_mm3_per_mm_members(true);
         // C++ process_classic() loops: for (const Surface &surface : this->slices->surfaces)
         // Each surface is processed independently with its own last/contours/holes state.
@@ -1761,7 +1811,7 @@ impl PerimeterGenerator {
         // PerimeterGenerator.cpp:1242-1420
         // C++: ExtrusionEntityCollection entities = traverse_loops(perimeter_generator, contours[0], thin_walls);
         // Convert top-level contours (depth 0) to extrusion entities
-        result.entities = traverse_loops(
+        result.entities = traverse_loops_legacy(
             &contours[0],
             &mut thin_walls,
             self.config.layer_height,
@@ -2709,7 +2759,7 @@ fn detect_bridge_wall(
 /// Convert perimeter loops to extrusion entities with proper ordering
 /// PerimeterGenerator.cpp:280-503
 /// C++: static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perimeter_generator, const PerimeterGeneratorLoops &loops, ThickPolylines &thin_walls)
-fn traverse_loops(
+fn traverse_loops_legacy(
     loops: &[PerimeterLoop],
     thin_walls: &mut ThickPolylines,
     layer_height: f64,
@@ -3306,7 +3356,7 @@ fn traverse_loops(
             /// C++: ExtrusionEntityCollection children = traverse_loops(perimeter_generator, loop.children, thin_walls);
             let loop_item = &loops[orig_idx];
             let mut child_thin_walls = ThickPolylines::new();
-            let children = traverse_loops(
+            let children = traverse_loops_legacy(
                 &loop_item.children,
                 &mut child_thin_walls,
                 layer_height,
@@ -6142,14 +6192,22 @@ pub struct PerimeterGeneratorArachneExtrusion<'a> {
 }
 
 /// The members of the C++ `PerimeterGenerator` (PerimeterGenerator.hpp:32-134) that `traverse_extrusions`
-/// reads through its `perimeter_generator`. `loop_nodes`, which it writes, is an argument of its own.
-pub struct PerimeterGeneratorArachneMembers<'a> {
-    /// The Print of `print_config` (`print.config()` is the PrintConfig).
-    pub print: &'a crate::print::faithful::Print,
-    /// `const PrintRegionConfig *config`
-    pub config: &'a crate::print_config::config_def::DynamicPrintConfig,
-    /// `const PrintObjectConfig *object_config`
-    pub object_config: &'a crate::print_config::config_def::DynamicPrintConfig,
+/// reads through its `perimeter_generator`, the options of its configs as the values the function reads
+/// of them. `loop_nodes`, which it writes, is an argument of its own.
+pub struct PerimeterGeneratorArachneMembers {
+    /// `print_config->z_direction_outwall_speed_continuous` (PerimeterGenerator.cpp:625, 640)
+    pub z_direction_outwall_speed_continuous: bool,
+    /// `nozzle_diameter_for_filament(*print_config, config->wall_filament)` (PerimeterGenerator.cpp:650, 673)
+    pub wall_nozzle_diameter: f32,
+    /// `config->outer_wall_line_width` (PerimeterGenerator.cpp:652)
+    pub outer_wall_line_width: f64,
+    /// `config->detect_overhang_wall` (PerimeterGenerator.cpp:668)
+    pub detect_overhang_wall: bool,
+    /// `object_config->raft_layers` (PerimeterGenerator.cpp:668)
+    pub raft_layers: i32,
+    /// `is_enable_overhang_speed(perimeter_generator) && fuzzy_skin_allows_overhang_slowdown(perimeter_generator)`
+    /// (PerimeterGenerator.cpp:268-283, 702)
+    pub overhang_speed: bool,
     pub layer_id: i32,
     pub starts_at_object_base: bool,
     pub slice_z: f64,
@@ -6158,10 +6216,50 @@ pub struct PerimeterGeneratorArachneMembers<'a> {
     pub overhang_flow: Flow,
     pub preset_nozzle_diameter: f32,
     pub multi_nozzle_diameter_mode: bool,
-    /// `perimeter_regions->empty()`
-    pub perimeter_regions_empty: bool,
     /// `lower_slices_polygons()`, the member process_arachne sets.
     pub lower_slices_polygons: Vec<Polygon>,
+}
+
+impl PerimeterGeneratorArachneMembers {
+    /// The values of the options out of the configs of the pin's generator: `print.config()` is its
+    /// `print_config`, `config` its PrintRegionConfig, `object_config` its PrintObjectConfig,
+    /// `perimeter_regions_empty` is `perimeter_regions->empty()`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_configs(
+        print: &crate::print::faithful::Print,
+        config: &crate::print_config::config_def::DynamicPrintConfig,
+        object_config: &crate::print_config::config_def::DynamicPrintConfig,
+        perimeter_regions_empty: bool,
+        layer_id: i32,
+        starts_at_object_base: bool,
+        slice_z: f64,
+        perimeter_flow: Flow,
+        ext_perimeter_flow: Flow,
+        overhang_flow: Flow,
+        preset_nozzle_diameter: f32,
+        multi_nozzle_diameter_mode: bool,
+        lower_slices_polygons: Vec<Polygon>,
+    ) -> Self {
+        use crate::config::{ConfigOptionFloat, ConfigOptionResolverTyped};
+        let print_config = print.config();
+        Self {
+            z_direction_outwall_speed_continuous: pg_cfg_bool(print_config, "z_direction_outwall_speed_continuous"),
+            wall_nozzle_diameter: crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32),
+            outer_wall_line_width: config.option_typed::<ConfigOptionFloat>("outer_wall_line_width").unwrap_or_else(|| panic!("option outer_wall_line_width")).value,
+            detect_overhang_wall: pg_cfg_bool(config, "detect_overhang_wall"),
+            raft_layers: pg_cfg_int(object_config, "raft_layers"),
+            overhang_speed: is_enable_overhang_speed(print, config) && fuzzy_skin_allows_overhang_slowdown(config, perimeter_regions_empty),
+            layer_id,
+            starts_at_object_base,
+            slice_z,
+            perimeter_flow,
+            ext_perimeter_flow,
+            overhang_flow,
+            preset_nozzle_diameter,
+            multi_nozzle_diameter_mode,
+            lower_slices_polygons,
+        }
+    }
 }
 
 /// PerimeterGenerator.cpp:621-832 `static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator&
@@ -6183,12 +6281,10 @@ pub fn traverse_extrusions(
     use crate::arachne::utils::extrusion_line::{extrusion_paths_append_line, extrusion_paths_append_zpaths};
     use crate::clipper_z::{clip_extrusion, ClipType};
     use crate::clipper_z_utils::{ZPath, ZPaths};
-    use crate::config::{ConfigOptionFloat, ConfigOptionResolverTyped};
+    use crate::config::ConfigOptionFloat;
     use crate::extrusion_entity::{CustomizeFlag, ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole, ExtrusionMultiPath};
 
-    let print_config = perimeter_generator.print.config();
-    let config = perimeter_generator.config;
-    let z_direction_outwall_speed_continuous = pg_cfg_bool(print_config, "z_direction_outwall_speed_continuous");
+    let z_direction_outwall_speed_continuous = perimeter_generator.z_direction_outwall_speed_continuous;
 
     let mut extrusion_coll = ExtrusionEntityCollection::new();
     if z_direction_outwall_speed_continuous {
@@ -6215,13 +6311,12 @@ pub fn traverse_extrusions(
             // get_extents(node.node_contour.pts): BoundingBox(points), defined where it has an area
             let mut bbox = crate::geometry::BoundingBox::new();
             crate::geometry::BoundingBox::construct(&mut bbox, &node_contour.pts, false);
-            let nozzle_diameter: f32 = crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32);
+            let nozzle_diameter: f32 = perimeter_generator.wall_nozzle_diameter;
             // node.bbox.offset(width / 2): BoundingBox.hpp `PointClass v(delta, delta); min -= v; max += v;`
             // The width is in millimetres and Point(double, double) rounds it with lrint.
-            let outer_wall_line_width =
-                config.option_typed::<ConfigOptionFloat>("outer_wall_line_width").unwrap_or_else(|| panic!("option outer_wall_line_width"));
+            let outer_wall_line_width = ConfigOptionFloat { value: perimeter_generator.outer_wall_line_width };
             let delta: f64 = Flow::extrusion_width_for_nozzle(
-                outer_wall_line_width,
+                &outer_wall_line_width,
                 perimeter_generator.preset_nozzle_diameter,
                 nozzle_diameter,
                 perimeter_generator.multi_nozzle_diameter_mode,
@@ -6248,13 +6343,12 @@ pub fn traverse_extrusions(
         let mut paths: Vec<ExtrusionPath> = Vec::new();
         // detect overhanging/bridging perimeters
 
-        if pg_cfg_bool(config, "detect_overhang_wall")
-            && perimeter_generator.layer_id > pg_cfg_int(perimeter_generator.object_config, "raft_layers")
+        if perimeter_generator.detect_overhang_wall
+            && perimeter_generator.layer_id > perimeter_generator.raft_layers
             && !perimeter_generator.starts_at_object_base
         {
             // `ClipperLib_Z::Path extrusion_path` is filled and not read.
-            let nozzle_diameter: f64 =
-                crate::print::faithful::nozzle_diameter_for_filament(print_config, pg_cfg_int(config, "wall_filament") as u32) as f64;
+            let nozzle_diameter: f64 = perimeter_generator.wall_nozzle_diameter as f64;
             let mut lower_layer_polys: Vec<Polygon> = perimeter_generator.lower_slices_polygons.clone();
 
             let mut extrusion_path_bbox = crate::geometry::BoundingBox::new();
@@ -6287,8 +6381,7 @@ pub fn traverse_extrusions(
                 }
             }
 
-            let overhang_speed = is_enable_overhang_speed(perimeter_generator.print, config)
-                && fuzzy_skin_allows_overhang_slowdown(config, perimeter_generator.perimeter_regions_empty);
+            let overhang_speed = perimeter_generator.overhang_speed;
             let flow: &Flow = if is_external { &perimeter_generator.ext_perimeter_flow } else { &perimeter_generator.perimeter_flow };
             if overhang_speed {
                 // OverhangDetector.cpp:168-300 `detect_overhang_degree(flow, role, lower_polys, clip_paths,
@@ -6408,4 +6501,1026 @@ pub fn traverse_extrusions(
     }
 
     extrusion_coll
+}
+
+// ---------------------------------------------------------------------------------------------
+// PerimeterGenerator::process_classic as the pin has it (R921)
+// ---------------------------------------------------------------------------------------------
+
+/// The ClipperUtils.cpp overloads process_classic calls, with the default join type and miter limit
+/// (ClipperUtils.hpp:31, 37). `delta` is the `const float` of the C++.
+mod pgcu {
+    use crate::clipper::{ClipType, PolyFillType};
+    use crate::clipper_utils as u;
+    use crate::clipper_utils::ApplySafetyOffset;
+    use crate::geometry::{ExPolygon, ExPolygons, Polygon, Polygons};
+    use crate::support::support_common::{cu, cu_expolygon};
+
+    /// ClipperUtils.cpp:813 `union_ex(const Polygons &subject, pftNonZero)`
+    pub fn union_ex(subject: &[Polygon]) -> ExPolygons {
+        cu::union_ex(subject)
+    }
+    /// ClipperUtils.cpp:825-831 `union_ex(const ExPolygons &poly1, const ExPolygons &poly2, bool = false)`
+    pub fn union_ex_2(poly1: &[ExPolygon], poly2: &[ExPolygon]) -> ExPolygons {
+        cu_expolygon::union_ex_2(poly1, poly2)
+    }
+    /// ClipperUtils.cpp:581-584 `offset2_ex(const ExPolygons &, float delta1, float delta2)`
+    pub fn offset2_ex(expolygons: &[ExPolygon], delta1: f32, delta2: f32) -> ExPolygons {
+        cu::offset2_ex(expolygons, delta1, delta2, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+    }
+    /// ClipperUtils.hpp:428-429 `opening_ex(const ExPolygons &, float delta)`: `offset2_ex(polygons, -delta, delta)`
+    pub fn opening_ex(expolygons: &[ExPolygon], delta: f32) -> ExPolygons {
+        offset2_ex(expolygons, -delta, delta)
+    }
+    /// ClipperUtils.cpp:561 `offset(const ExPolygons &, float delta)`
+    pub fn offset(expolygons: &[ExPolygon], delta: f32) -> Polygons {
+        cu::offset_expolygons(expolygons, delta, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+    }
+    /// ClipperUtils.cpp:413 `offset(const Polygons &, float delta)`
+    pub fn offset_polygons(polygons: &[Polygon], delta: f32) -> Polygons {
+        cu::offset(polygons, delta, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+    }
+    /// ClipperUtils.cpp:567-569 `offset_ex(const ExPolygon &, float delta)`
+    pub fn offset_ex_expolygon(expolygon: &ExPolygon, delta: f32) -> ExPolygons {
+        cu_expolygon::offset_ex(expolygon, delta, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+    }
+    /// ClipperUtils.cpp:570 `offset_ex(const ExPolygons &, float delta)`
+    pub fn offset_ex(expolygons: &[ExPolygon], delta: f32) -> ExPolygons {
+        cu::offset_ex_expolygons(expolygons, delta, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+    }
+    /// ClipperUtils.cpp:755 `diff_ex(const ExPolygons &, const ExPolygons &, ApplySafetyOffset)`
+    pub fn diff_ex(subject: &[ExPolygon], clip: &[ExPolygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+        cu::diff_ex_ee(subject, clip, do_safety_offset)
+    }
+    /// ClipperUtils.cpp:753 `diff_ex(const ExPolygons &, const Polygons &, ApplySafetyOffset)`
+    pub fn diff_ex_ep(subject: &[ExPolygon], clip: &[Polygon], do_safety_offset: ApplySafetyOffset) -> ExPolygons {
+        cu::diff_ex_ep(subject, clip, do_safety_offset)
+    }
+    /// ClipperUtils.cpp:741 `diff_ex(const Polygons &, const Polygons &, ApplySafetyOffset::No)`
+    pub fn diff_ex_pp(subject: &[Polygon], clip: &[Polygon]) -> ExPolygons {
+        cu::diff_ex(subject, clip, ApplySafetyOffset::No)
+    }
+    /// ClipperUtils.cpp:802 `intersection_ex(const ExPolygons &, const ExPolygons &, ApplySafetyOffset::No)`
+    pub fn intersection_ex(subject: &[ExPolygon], clip: &[ExPolygon]) -> ExPolygons {
+        u::_clipper_ex(ClipType::ctIntersection, &cu::expolygons_provider(subject), &cu::expolygons_provider(clip), ApplySafetyOffset::No, PolyFillType::pftNonZero)
+    }
+    /// ExPolygon.cpp:231-251 `Polygons ExPolygon::simplify_p(double tolerance) const`: the rings after
+    /// `MultiPoint::_douglas_peucker` (closed by their first point) through `simplify_polygons`
+    /// (ClipperUtils.cpp:1026-1041, `ClipperLib::SimplifyPolygons(pftNonZero)`).
+    pub fn simplify_p(expolygon: &ExPolygon, tolerance: f64) -> Polygons {
+        let pp = expolygon.simplify_p_dp_rings_faithful(tolerance);
+        cu::to_polygons(&crate::clipper::simplify_polygons(&cu::polygons_provider(&pp), PolyFillType::pftNonZero))
+    }
+}
+
+/// libslic3r.h:81 `scale_(val)`: `val / SCALING_FACTOR`, a double.
+#[inline]
+fn pg_scale_(val: f64) -> f64 {
+    val / SCALING_FACTOR_PIN
+}
+
+/// Point.hpp:536-541 `scaled<coord_t>(float v)`: `coord_t(v / float(SCALING_FACTOR))`, a division of floats.
+#[inline]
+fn pg_scaled_float(v: f32) -> Coord {
+    (v / (SCALING_FACTOR_PIN as f32)) as Coord
+}
+
+impl PerimeterGenerator {
+    /// PerimeterGenerator.cpp:859-1452 `void PerimeterGenerator::process_classic()`. `surfaces` is
+    /// `this->slices->surfaces`; the result carries what the C++ writes: `entities` is `loops` (the
+    /// collections of the islands one after the other), `gap_fill`, `infill_area` the expolygons of
+    /// `fill_surfaces`, `no_overlap_area` is `fill_no_overlap`, `loop_nodes`.
+    ///
+    /// Not carried by this crate's inputs, with the value the port takes: the multi nozzle diameter mode
+    /// is off (`effective_wall_loops()` is `wall_loops`, `Flow::extrusion_width_for_nozzle` hands the
+    /// width back, Flow.cpp:100-102); a Surface has no circle compensation (`counter_circle_compensation`
+    /// false, `holes_circle_compensation` empty, PerimeterGenerator.cpp:941-946); `counterbore_hole_bridging`
+    /// is `chbNone`, with which `process_no_bridge` (:1953-2115) changes nothing; there are no perimeter
+    /// regions.
+    pub fn process_classic(&self, surfaces: &[crate::surface::Surface]) -> PerimeterResult {
+        use crate::clipper_utils::ApplySafetyOffset;
+        use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
+        use crate::print_config::{TopOneWallType, WallSequence};
+        use pgcu::*;
+
+        let cfg = &self.config;
+        let mut result = PerimeterResult::new();
+        result.pin = true;
+
+        // other perimeters
+        self.m_mm3_per_mm.set(cfg.perimeter_flow.mm3_per_mm().unwrap_or(-1.));
+        let perimeter_width: Coord = cfg.perimeter_flow.scaled_width();
+        let perimeter_spacing: Coord = cfg.perimeter_flow.scaled_spacing();
+
+        // external perimeters
+        self.m_ext_mm3_per_mm.set(cfg.ext_perimeter_flow.mm3_per_mm().unwrap_or(-1.));
+        let ext_perimeter_width: Coord = cfg.ext_perimeter_flow.scaled_width();
+        let ext_perimeter_spacing: Coord = cfg.ext_perimeter_flow.scaled_spacing();
+        // Orca: ignore precise_outer_wall if wall_sequence is not InnerOuter
+        let ext_perimeter_spacing2: Coord = if cfg.precise_outer_wall && cfg.wall_sequence == WallSequence::InnerOuter {
+            pg_scaled_float(0.5f32 * (cfg.ext_perimeter_flow.width() as f32 + cfg.perimeter_flow.width() as f32))
+        } else {
+            pg_scaled_float(0.5f32 * (cfg.ext_perimeter_flow.spacing() as f32 + cfg.perimeter_flow.spacing() as f32))
+        };
+
+        // overhang perimeters
+        self.m_mm3_per_mm_overhang.set(cfg.overhang_flow.as_ref().and_then(|f| f.mm3_per_mm().ok()).unwrap_or(-1.));
+
+        // solid infill
+        let solid_infill_flow = cfg.solid_infill_flow.as_ref().unwrap_or(&cfg.perimeter_flow);
+        let solid_infill_spacing: Coord = solid_infill_flow.scaled_spacing();
+
+        // Calculate the minimum required spacing between two adjacent traces.
+        let min_spacing: Coord = (perimeter_spacing as f64 * (1. - INSET_OVERLAP_TOLERANCE)) as Coord;
+        let ext_min_spacing: Coord = (ext_perimeter_spacing as f64 * (1. - INSET_OVERLAP_TOLERANCE)) as Coord;
+        let has_gap_fill = cfg.gap_infill_speed > 0.;
+
+        // BBS: this flow is for smaller external perimeter for small area
+        let ext_min_spacing_smaller: Coord = (ext_perimeter_spacing as f64 * (1. - SMALLER_EXT_INSET_OVERLAP_TOLERANCE)) as Coord;
+        // `with_width(SCALING_FACTOR * (ext_perimeter_width - 0.5 * SMALLER_EXT_INSET_OVERLAP_TOLERANCE *
+        // ext_perimeter_spacing))`: the product is fused into the subtraction, the width is a float.
+        let smaller_width = SCALING_FACTOR_PIN * (-(0.5 * SMALLER_EXT_INSET_OVERLAP_TOLERANCE)).mul_add(ext_perimeter_spacing as f64, ext_perimeter_width as f64);
+        let smaller_ext_perimeter_flow = cfg.ext_perimeter_flow.with_width((smaller_width as f32) as f64).unwrap_or_else(|_| cfg.ext_perimeter_flow.clone());
+        self.m_ext_mm3_per_mm_smaller_width.set(smaller_ext_perimeter_flow.mm3_per_mm().unwrap_or(-1.));
+
+        // prepare grown lower layer slices for overhang detection
+        let nozzle_diameter = cfg.perimeter_flow.nozzle_diameter() as f32;
+        let lower_slices = cfg.lower_slices.as_ref();
+        let m_lower_polygons_series = pg_generate_lower_polygons_series(lower_slices, cfg.perimeter_flow.width() as f32, nozzle_diameter);
+        let m_lower_overhang_dist_boundary = pg_dist_boundary((cfg.perimeter_flow.width() as f32) as f64, nozzle_diameter);
+        let (m_external_lower_polygons_series, m_external_overhang_dist_boundary) = if ext_perimeter_width == perimeter_width {
+            (m_lower_polygons_series.clone(), m_lower_overhang_dist_boundary)
+        } else {
+            (
+                pg_generate_lower_polygons_series(lower_slices, cfg.ext_perimeter_flow.width() as f32, nozzle_diameter),
+                pg_dist_boundary((cfg.ext_perimeter_flow.width() as f32) as f64, nozzle_diameter),
+            )
+        };
+        let members = PerimeterGeneratorClassicMembers {
+            config: cfg,
+            m_smaller_external_lower_polygons_series: pg_generate_lower_polygons_series(lower_slices, smaller_ext_perimeter_flow.width() as f32, nozzle_diameter),
+            m_smaller_external_overhang_dist_boundary: pg_dist_boundary((smaller_ext_perimeter_flow.width() as f32) as f64, nozzle_diameter),
+            smaller_ext_perimeter_flow: &smaller_ext_perimeter_flow,
+            m_lower_polygons_series,
+            m_external_lower_polygons_series,
+            m_lower_overhang_dist_boundary,
+            m_external_overhang_dist_boundary,
+            m_ext_mm3_per_mm: self.m_ext_mm3_per_mm.get(),
+            m_mm3_per_mm: self.m_mm3_per_mm.get(),
+            m_mm3_per_mm_overhang: self.m_mm3_per_mm_overhang.get(),
+            m_ext_mm3_per_mm_smaller_width: self.m_ext_mm3_per_mm_smaller_width.get(),
+        };
+
+        let all_surfaces: Vec<crate::surface::Surface> = surfaces.to_vec();
+        // process_no_bridge(all_surfaces, perimeter_spacing, ext_perimeter_width): nothing with chbNone.
+
+        // PerimeterGenerator.hpp:97 `m_scaled_resolution`
+        let m_scaled_resolution = pg_scale_(if cfg.surface_simplify_resolution > crate::libslic3r::EPSILON { cfg.surface_simplify_resolution } else { crate::libslic3r::EPSILON });
+        // BBS: don't simplify too much which influence arc fitting when export gcode if arc_fitting is enabled
+        let surface_simplify_resolution =
+            if cfg.arc_fitting_enabled && cfg.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None { 0.2 * m_scaled_resolution } else { m_scaled_resolution };
+        //BBS: reorder the surface to reduce the travel time
+        let surface_exp: ExPolygons = all_surfaces.iter().map(|s| s.expolygon.clone()).collect();
+        let surface_order = crate::shortest_path::chain_expolygons(&surface_exp);
+        for order_idx in 0..surface_order.len() {
+            let surface = &all_surfaces[surface_order[order_idx]];
+            // detect how many perimeters must be generated for this island
+            let wall_loops: i32 = cfg.perimeter_count as i32;
+            let mut loop_number: i32 = wall_loops + surface.extra_perimeters as i32 - 1; // 0-indexed loops
+            if cfg.alternate_extra_wall && cfg.layer_id % 2 == 1 && !cfg.spiral_vase {
+                loop_number += 1;
+            }
+            //BBS: set the topmost and bottom most layer to be one wall
+            if loop_number > 0
+                && ((cfg.top_one_wall_type != TopOneWallType::None && cfg.upper_slices.is_none()) || (cfg.only_one_wall_first_layer && cfg.starts_at_object_base))
+            {
+                loop_number = 0;
+            }
+
+            let mut last: ExPolygons = union_ex(&simplify_p(&surface.expolygon, surface_simplify_resolution));
+            let mut gaps: ExPolygons = Vec::new();
+            let mut top_fills: ExPolygons = Vec::new();
+            let mut fill_clip: ExPolygons = Vec::new();
+            let mut outwall_paths: Vec<crate::layer::NodeContour> = Vec::new();
+            if loop_number >= 0 {
+                // In case no perimeters are to be generated, loop_number will equal to -1.
+                let mut contours: Vec<Vec<PerimeterLoop>> = vec![Vec::new(); loop_number as usize + 1]; // depth => loops
+                let mut holes: Vec<Vec<PerimeterLoop>> = vec![Vec::new(); loop_number as usize + 1]; // depth => loops
+                // In the pin's layout: `widths` is two per segment, scaled ([`pg_thick_polyline`]).
+                let mut thin_walls: ThickPolylines = Vec::new();
+                // we loop one time more than needed in order to find gaps after the last perimeter was applied
+                let mut i: i32 = 0;
+                loop {
+                    // outer loop is 0
+                    // Calculate next onion shell of perimeters.
+                    let mut offsets: ExPolygons = Vec::new();
+                    let mut offsets_with_smaller_width: ExPolygons = Vec::new();
+                    if i == 0 {
+                        // look for thin walls
+                        if cfg.detect_thin_wall {
+                            // the minimum thickness of a single loop is:
+                            // ext_width/2 + ext_spacing/2 + spacing/2 + width/2
+                            offsets = offset2_ex(
+                                &last,
+                                -((ext_perimeter_width as f64 / 2. + ext_min_spacing as f64 / 2. - 1.) as f32),
+                                (ext_min_spacing as f64 / 2. - 1.) as f32,
+                            );
+                            // the following offset2 ensures almost nothing in @thin_walls is narrower than $min_width
+                            // (actually, something larger than that still may exist due to mitering or other causes)
+                            let min_width: Coord = pg_scale_((cfg.ext_perimeter_flow.nozzle_diameter() as f32 / 3.) as f64) as Coord;
+                            let expp = opening_ex(
+                                // medial axis requires non-overlapping geometry
+                                &diff_ex_ep(&last, &offset(&offsets, (ext_perimeter_width as f64 / 2.) as f32 + 10f32), ApplySafetyOffset::No),
+                                (min_width as f64 / 2.) as f32,
+                            );
+                            // the maximum thickness of our thin wall area is equal to the minimum thickness of a single loop
+                            for ex in &expp {
+                                let mut pp: Vec<crate::geometry::MedialAxisThickPolyline> = Vec::new();
+                                ex.medial_axis_thick_polylines(min_width as f64, (ext_perimeter_width + ext_perimeter_spacing2) as f64, &mut pp);
+                                for pl in &pp {
+                                    if let Some(tp) = pg_thick_polyline(pl) {
+                                        thin_walls.push(tp);
+                                    }
+                                }
+                            }
+                        } else {
+                            let ext_perimeter_smaller_width: Coord = smaller_ext_perimeter_flow.scaled_width();
+                            for expolygon in &last {
+                                // BBS: judge whether it's narrow but not too long island which is hard to place two line
+                                let expolys = vec![expolygon.clone()];
+                                let offset_result = offset2_ex(
+                                    &expolys,
+                                    -((ext_perimeter_width as f64 / 2. + ext_min_spacing_smaller as f64 / 2.) as f32),
+                                    (ext_min_spacing_smaller as f64 / 2.) as f32,
+                                );
+                                if offset_result.is_empty()
+                                    && expolygon.area() < (ext_perimeter_width + ext_min_spacing_smaller) as f64 * pg_scale_(NARROW_LOOP_LENGTH_THRESHOLD)
+                                {
+                                    // BBS: for narrow external loop, use smaller line width
+                                    offsets_with_smaller_width.extend(offset_ex_expolygon(expolygon, -((ext_perimeter_smaller_width as f64 / 2.) as f32)));
+                                } else {
+                                    //BBS: for not narrow loop, use normal external perimeter line width
+                                    offsets.extend(offset_ex_expolygon(expolygon, -((ext_perimeter_width as f64 / 2.) as f32)));
+                                }
+                            }
+                        }
+                        if cfg.spiral_vase && (offsets.len() > 1 || offsets_with_smaller_width.len() > 1) {
+                            // Remove all but the largest area polygon.
+                            crate::geometry::keep_largest_contour_only(&mut offsets);
+                            //BBS
+                            if offsets.is_empty() {
+                                //BBS: only have small width loop, then keep the largest in spiral vase mode
+                                crate::geometry::keep_largest_contour_only(&mut offsets_with_smaller_width);
+                            } else {
+                                //BBS: have large area, clean the small width loop
+                                offsets_with_smaller_width.clear();
+                            }
+                        }
+                    } else {
+                        //FIXME Is this offset correct if the line width of the inner perimeters differs
+                        // from the line width of the infill?
+                        let distance: Coord = if i == 1 { ext_perimeter_spacing2 } else { perimeter_spacing };
+                        //BBS: For internal perimeter, we should "enable" thin wall strategy in which offset2 is used to
+                        // remove too closed line, so that gap fill can be used for such internal narrow area in following
+                        // handling.
+                        offsets = offset2_ex(&last, -((distance as f64 + min_spacing as f64 / 2. - 1.) as f32), (min_spacing as f64 / 2. - 1.) as f32);
+                        // look for gaps
+                        if has_gap_fill {
+                            // not using safety offset here would "detect" very narrow gaps
+                            // (but still long enough to escape the area threshold) that gap fill
+                            // won't be able to fill but we'd still remove from infill area
+                            gaps.extend(diff_ex_pp(&offset(&last, -((0.5 * distance as f64) as f32)), &offset(&offsets, (0.5 * distance as f64 + 10.) as f32))); // safety offset
+                        }
+                    }
+                    if offsets.is_empty() && offsets_with_smaller_width.is_empty() {
+                        // Store the number of loops actually generated.
+                        loop_number = i - 1;
+                        // No region left to be filled in.
+                        last.clear();
+                        break;
+                    } else if i > loop_number {
+                        // If i > loop_number, we were looking just for gaps.
+                        break;
+                    }
+                    {
+                        let depth = i as usize;
+                        let width = if i == 0 { cfg.ext_perimeter_flow.width() } else { cfg.perimeter_flow.width() };
+                        for expolygon in &offsets {
+                            // Outer contour may overlap with an inner contour,
+                            // inner contour may overlap with another inner contour,
+                            // outer contour may overlap with itself.
+                            contours[depth].push(PerimeterLoop::new(expolygon.contour.clone(), depth, true, false, width));
+                            for hole in &expolygon.holes {
+                                holes[depth].push(PerimeterLoop::new(hole.clone(), depth, false, false, width));
+                            }
+                        }
+
+                        //BBS: save perimeter loop which use smaller width
+                        if i == 0 {
+                            //store outer wall
+                            if cfg.z_direction_outwall_speed_continuous {
+                                // not loop
+                                for polyline in thin_walls.iter() {
+                                    outwall_paths.push(crate::layer::NodeContour {
+                                        is_loop: false,
+                                        pts: polyline.points.clone(),
+                                        widths: polyline.widths.iter().map(|w| *w as Coord).collect(),
+                                    });
+                                }
+                                // loop: `to_polylines(const ExPolygons &)` closes every ring by its first point
+                                // (ExPolygon.hpp:231-247).
+                                let mut rings = |expolygons: &ExPolygons, width: Coord| {
+                                    for expolygon in expolygons {
+                                        for poly in std::iter::once(&expolygon.contour).chain(expolygon.holes.iter()) {
+                                            let mut pts = poly.points.clone();
+                                            if let Some(first) = pts.first().copied() {
+                                                pts.push(first);
+                                            }
+                                            outwall_paths.push(crate::layer::NodeContour { is_loop: true, pts, widths: vec![width] });
+                                        }
+                                    }
+                                };
+                                rings(&offsets_with_smaller_width, pg_scale_((smaller_ext_perimeter_flow.width() as f32) as f64) as Coord);
+                                rings(&offsets, pg_scale_((cfg.ext_perimeter_flow.width() as f32) as f64) as Coord);
+                            }
+
+                            let smaller = smaller_ext_perimeter_flow.width();
+                            for expolygon in &offsets_with_smaller_width {
+                                contours[depth].push(PerimeterLoop::new(expolygon.contour.clone(), depth, true, true, smaller));
+                                for hole in &expolygon.holes {
+                                    holes[depth].push(PerimeterLoop::new(hole.clone(), depth, false, true, smaller));
+                                }
+                            }
+                        }
+                    }
+
+                    last = offsets;
+
+                    //BBS: refer to superslicer
+                    //store surface for top infill if only_one_wall_top
+                    if i == 0 && i != loop_number && cfg.top_one_wall_type == TopOneWallType::AllTop && cfg.upper_slices.is_some() {
+                        //split the polygons with top/not_top
+                        //get the offset from solid surface anchor
+                        let mut offset_top_surface: Coord = pg_scale_(
+                            1.5 * (if wall_loops == 0 { 0. } else { (ext_perimeter_width + perimeter_spacing * (wall_loops as Coord - 1)) as f64 * SCALING_FACTOR_PIN }),
+                        ) as Coord;
+                        // if possible, try to not push the extra perimeters inside the sparse infill
+                        let inside = 0.9 * (if wall_loops <= 1 { 0. } else { (perimeter_spacing * (wall_loops as Coord - 1)) as f64 });
+                        if offset_top_surface as f64 > inside {
+                            offset_top_surface -= inside as Coord;
+                        } else {
+                            offset_top_surface = 0;
+                        }
+                        //don't takes into account too thin areas
+                        let min_width_top_surface: f64 = (cfg.top_area_threshold / 100.) * f64::max(ext_perimeter_spacing as f64 / 2.0, perimeter_width as f64 / 2.0);
+
+                        //BBS: get boungding box of last
+                        // `last_box.offset(SCALED_EPSILON)`: a Point of doubles, rounded (BoundingBox.hpp:42-47).
+                        let mut last_box = crate::geometry::get_extents(&last);
+                        let eps = pg_scale_(crate::libslic3r::EPSILON).round_ties_even() as Coord;
+                        last_box.min = Point::new(last_box.min.x - eps, last_box.min.y - eps);
+                        last_box.max = Point::new(last_box.max.x + eps, last_box.max.y + eps);
+
+                        // BBS: get the Polygons upper the polygon this layer
+                        let mut upper_polygons_series_clipped =
+                            crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(cfg.upper_slices.as_ref().unwrap(), &last_box, false);
+                        upper_polygons_series_clipped = offset_polygons(&upper_polygons_series_clipped, min_width_top_surface as f32);
+
+                        //set the clip to a virtual "second perimeter"
+                        fill_clip = offset_ex(&last, -(ext_perimeter_spacing as f64) as f32);
+                        // get the real top surface
+                        let mut top_polygons = diff_ex_ep(&last, &upper_polygons_series_clipped, ApplySafetyOffset::Yes);
+                        //get the not-top surface, from the "real top" but enlarged by external_infill_margin (and the min_width_top_surface we removed a bit before)
+                        let temp_gap = diff_ex(&top_polygons, &fill_clip, ApplySafetyOffset::No);
+                        let mut inner_polygons = diff_ex(
+                            &last,
+                            &offset_ex(&top_polygons, (offset_top_surface as f64 + min_width_top_surface - (ext_perimeter_spacing / 2) as f64) as f32),
+                            ApplySafetyOffset::Yes,
+                        );
+                        // BBS: check whether surface be bridge or not
+                        if let Some(lower_slices) = cfg.lower_slices.as_ref() {
+                            // BBS: get the Polygons below the polygon this layer
+                            let lower_polygons_series_clipped = crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_expolygons(lower_slices, &last_box, false);
+
+                            let bridge_offset = f64::max(ext_perimeter_spacing as f64, perimeter_width as f64);
+                            let bridge_checker = offset_ex(&diff_ex_ep(&last, &lower_polygons_series_clipped, ApplySafetyOffset::Yes), (1.5 * bridge_offset) as f32);
+
+                            // BBS: Check which piece the bridge belongs to. If the bridge has a connection with the non-top area, it should belong to the non-top area, otherwise it should belong to the top area to get a better surface.
+                            if !bridge_checker.is_empty() && !intersection_ex(&bridge_checker, &inner_polygons).is_empty() {
+                                inner_polygons = union_ex_2(&inner_polygons, &bridge_checker);
+                            }
+                        }
+                        // get the enlarged top surface, by using inner_polygons instead of upper_slices, and clip it for it to be exactly the polygons to fill.
+                        top_polygons = diff_ex(&fill_clip, &inner_polygons, ApplySafetyOffset::Yes);
+                        // increase by half peri the inner space to fill the frontier between last and stored.
+                        top_fills = union_ex_2(&top_fills, &top_polygons);
+                        //set the clip to the external wall but go back inside by infill_extrusion_width/2 to be sure the extrusion won't go outside even with a 100% overlap.
+                        let infill_spacing_unscaled: f64 = cfg.sparse_infill_line_width;
+                        fill_clip = offset_ex(&last, ((ext_perimeter_spacing / 2) as f64 - pg_scale_(infill_spacing_unscaled / 2.)) as f32);
+                        last = intersection_ex(&inner_polygons, &last);
+                        if has_gap_fill {
+                            last = union_ex_2(&last, &temp_gap);
+                        }
+                    }
+
+                    if i == loop_number && (!has_gap_fill || cfg.sparse_infill_density == 0.) {
+                        // The last run of this loop is executed to collect gaps for gap fill.
+                        // As the gap fill is either disabled or not
+                        break;
+                    }
+                    i += 1;
+                }
+
+                // nest loops: holes first
+                for d in 0..=(loop_number.max(-1) + 1) as usize {
+                    if d as i32 > loop_number {
+                        break;
+                    }
+                    // loop through all holes having depth == d
+                    let holes_d = std::mem::take(&mut holes[d]);
+                    let mut kept: Vec<PerimeterLoop> = Vec::new();
+                    'next_loop: for hole in holes_d {
+                        // find the hole loop that contains this one, if any
+                        for t in (d + 1)..=(loop_number as usize) {
+                            for j in 0..holes[t].len() {
+                                if holes[t][j].polygon.contains(&hole.polygon.first_point()) {
+                                    holes[t][j].children.push(hole);
+                                    continue 'next_loop;
+                                }
+                            }
+                        }
+                        // if no hole contains this hole, find the contour loop that contains it
+                        for t in (0..=(loop_number as usize)).rev() {
+                            for j in 0..contours[t].len() {
+                                if contours[t][j].polygon.contains(&hole.polygon.first_point()) {
+                                    contours[t][j].children.push(hole);
+                                    continue 'next_loop;
+                                }
+                            }
+                        }
+                        kept.push(hole);
+                    }
+                    holes[d] = kept;
+                }
+                // nest contour loops
+                let mut d = loop_number;
+                while d >= 1 {
+                    let du = d as usize;
+                    // loop through all contours having depth == d
+                    let contours_d = std::mem::take(&mut contours[du]);
+                    let mut kept: Vec<PerimeterLoop> = Vec::new();
+                    'next_contour: for contour in contours_d {
+                        // find the contour loop that contains it
+                        for t in (0..du).rev() {
+                            for j in 0..contours[t].len() {
+                                if contours[t][j].polygon.contains(&contour.polygon.first_point()) {
+                                    contours[t][j].children.push(contour);
+                                    continue 'next_contour;
+                                }
+                            }
+                        }
+                        kept.push(contour);
+                    }
+                    contours[du] = kept;
+                    d -= 1;
+                }
+                // at this point, all loops should be in contours[0]
+                let mut entities = if contours.is_empty() {
+                    crate::extrusion_entity::ExtrusionEntityCollection::new()
+                } else {
+                    traverse_loops(&members, &contours[0], &mut thin_walls)
+                };
+                // The fuzzy skin of the pin is put on the polygon of a loop before its overhangs are looked
+                // for (`apply_fuzzy_skin`, PerimeterGenerator.cpp:348-349, FuzzySkin.cpp, whose noise cannot
+                // be repeated); this arm fuzzes the finished walls, as the body before it does.
+                if cfg.fuzzy_skin_mode != crate::region_config::FuzzySkinMode::None {
+                    let fs_config = crate::fuzzy_skin::FuzzySkinConfig {
+                        thickness: cfg.fuzzy_skin_thickness,
+                        point_distance: cfg.fuzzy_skin_point_distance,
+                        mode: cfg.fuzzy_skin_mode,
+                    };
+                    for entity in &mut entities.entities {
+                        apply_fuzzy_skin_to_entity(entity, &fs_config, cfg.fuzzy_skin_mode);
+                    }
+                }
+                // if brim will be printed, reverse the order of perimeters so that
+                // we continue inwards after having finished the brim
+                let is_outer_wall_first = cfg.wall_sequence == WallSequence::OuterInner;
+                if is_outer_wall_first
+                    //BBS: always print outer wall first when there indeed has brim.
+                    || (cfg.starts_at_object_base && cfg.brim_outer_only)
+                {
+                    entities.reverse();
+                }
+                //BBS. adjust wall generate seq
+                else if cfg.wall_sequence == WallSequence::InnerOuterInner {
+                    if entities.entities.len() > 1 {
+                        let mut entities_reorder: Vec<ExtrusionEntityType> = Vec::new();
+                        let mut entities_second_wall: Vec<ExtrusionEntityType> = Vec::new();
+                        for entity in std::mem::take(&mut entities.entities) {
+                            // `static_cast<ExtrusionLoop *>` of every entity: a thin wall is no loop; its
+                            // bytes are not read as a loop role here.
+                            let second = matches!(&entity, ExtrusionEntityType::Loop(l) if l.loop_role.contains(crate::extrusion_entity::ExtrusionLoopRole::SECOND_PERIMETER));
+                            if second {
+                                entities_second_wall.push(entity);
+                            } else {
+                                let external = entity_role(&entity) == Some(ExtrusionRole::ExternalPerimeter);
+                                entities_reorder.push(entity);
+                                if external && !entities_second_wall.is_empty() {
+                                    entities_reorder.append(&mut entities_second_wall);
+                                }
+                            }
+                        }
+                        entities.entities = entities_reorder;
+                    }
+                }
+
+                //BBS: add node for loops
+                if !outwall_paths.is_empty() && cfg.layer_id > 0 {
+                    let node_of = |node_id: usize, loop_id: usize, contour: &crate::layer::NodeContour| {
+                        // `node.bbox = get_extents(node.node_contour.pts); node.bbox.offset(SCALED_EPSILON);`
+                        let mut bbox = crate::geometry::BoundingBox::from_points(&contour.pts);
+                        let eps = pg_scale_(crate::libslic3r::EPSILON).round_ties_even() as Coord;
+                        bbox.min = Point::new(bbox.min.x - eps, bbox.min.y - eps);
+                        bbox.max = Point::new(bbox.max.x + eps, bbox.max.y + eps);
+                        let mut node = crate::layer::LoopNode::new(node_id, loop_id, bbox);
+                        node.node_contour = contour.clone();
+                        node
+                    };
+                    entities.loop_node_range.0 = result.loop_nodes.len();
+                    if outwall_paths.len() == 1 {
+                        result.loop_nodes.push(node_of(result.loop_nodes.len(), 0, &outwall_paths[0]));
+                    } else {
+                        let mut matched = vec![false; outwall_paths.len()];
+                        for entity_idx in 0..entities.entities.len() {
+                            //skip inner wall
+                            if entity_role(&entities.entities[entity_idx]) == Some(ExtrusionRole::Perimeter) {
+                                continue;
+                            }
+                            let Some(first_point) = entity_first_point(&entities.entities[entity_idx]) else { continue };
+                            for lines_idx in 0..outwall_paths.len() {
+                                if matched[lines_idx] {
+                                    continue;
+                                }
+                                if point_is_in_lines(&first_point, &outwall_paths[lines_idx].pts) {
+                                    matched[lines_idx] = true;
+                                    result.loop_nodes.push(node_of(result.loop_nodes.len(), entity_idx, &outwall_paths[lines_idx]));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    entities.loop_node_range.1 = result.loop_nodes.len();
+                }
+
+                // append perimeters for this slice as a collection
+                if !entities.entities.is_empty() {
+                    result.entities.entities.push(ExtrusionEntityType::Collection(Box::new(entities)));
+                }
+            } // for each loop of an island
+
+            // fill gaps
+            if !gaps.is_empty() {
+                // collapse
+                let min: f64 = 0.2 * perimeter_width as f64 * (1. - INSET_OVERLAP_TOLERANCE);
+                let max: f64 = 2. * perimeter_spacing as f64;
+                let mut gaps_ex = diff_ex(
+                    //FIXME offset2 would be enough and cheaper.
+                    &opening_ex(&gaps, (min / 2.) as f32),
+                    &offset2_ex(&gaps, -((max / 2.) as f32), (max / 2. + 10.) as f32),
+                    ApplySafetyOffset::No,
+                );
+                let mut polylines: ThickPolylines = Vec::new();
+                for ex in gaps_ex.iter_mut() {
+                    //BBS: Use DP simplify to avoid duplicated points and accelerate medial-axis calculation as well.
+                    ex.contour.douglas_peucker(surface_simplify_resolution);
+                    for hole in ex.holes.iter_mut() {
+                        hole.douglas_peucker(surface_simplify_resolution);
+                    }
+                    let mut pp: Vec<crate::geometry::MedialAxisThickPolyline> = Vec::new();
+                    ex.medial_axis_thick_polylines(min, max, &mut pp);
+                    for pl in &pp {
+                        // OrcaSlicer: filter out tiny gap fills
+                        if pg_polyline_length(&pl.points) < pg_scale_(cfg.filter_out_gap_fill) {
+                            continue;
+                        }
+                        if let Some(tp) = pg_thick_polyline(pl) {
+                            polylines.push(tp);
+                        }
+                    }
+                }
+
+                if !polylines.is_empty() {
+                    let mut gap_fill = crate::extrusion_entity::ExtrusionEntityCollection::new();
+                    pg_variable_width(&polylines, ExtrusionRole::GapFill, solid_infill_flow, &mut gap_fill.entities);
+                    /*  Make sure we don't infill narrow parts that are already gap-filled
+                        (we only consider this surface's gaps to reduce the diff() complexity).
+                        Growing actual extrusions ensures that gaps not filled by medial axis
+                        are not subtracted from fill surfaces (they might be too short gaps
+                        that medial axis skips but infill might join with other infill regions
+                        and use zigzag).  */
+                    let mut covered: Vec<Polygon> = Vec::new();
+                    for entity in &gap_fill.entities {
+                        match entity {
+                            ExtrusionEntityType::Path(path) => path.polygons_covered_by_width(&mut covered, 10.0),
+                            ExtrusionEntityType::Loop(l) => l.polygons_covered_by_width(&mut covered, 10.0),
+                            ExtrusionEntityType::MultiPath(m) => m.polygons_covered_by_width(&mut covered, 10.0),
+                            ExtrusionEntityType::Collection(_) => {}
+                        }
+                    }
+                    last = diff_ex_ep(&last, &covered, ApplySafetyOffset::No);
+                    result.gap_fill.entities.append(&mut gap_fill.entities);
+                }
+            }
+
+            // create one more offset to be used as boundary for fill
+            // we offset by half the perimeter spacing (to get to the actual infill boundary)
+            // and then we offset back and forth by half the infill spacing to only consider the
+            // non-collapsing regions
+            let mut inset: Coord = if loop_number < 0 {
+                0
+            } else if loop_number == 0 {
+                // one loop
+                ext_perimeter_spacing / 2
+            } else {
+                // two or more loops?
+                perimeter_spacing / 2
+            };
+            // only apply infill overlap if we actually have one perimeter
+            let mut infill_peri_overlap: Coord = 0;
+            if inset > 0 {
+                // `config->infill_wall_overlap.get_abs_value(unscale<double>(inset + solid_infill_spacing / 2))`:
+                // `ratio_over * value / 100` (Config.hpp:1216)
+                let ratio_over = (inset + solid_infill_spacing / 2) as f64 * SCALING_FACTOR_PIN;
+                infill_peri_overlap = pg_scale_(ratio_over * cfg.infill_wall_overlap_percent / 100.) as Coord;
+                inset -= infill_peri_overlap;
+            }
+            // simplify infill contours according to resolution
+            let mut pp: Vec<Polygon> = Vec::new();
+            for ex in &last {
+                pp.extend(simplify_p(ex, m_scaled_resolution));
+            }
+            let not_filled_exp = union_ex(&pp);
+            // collapse too narrow infill areas
+            let min_perimeter_infill_spacing: Coord = (solid_infill_spacing as f64 * (1. - INSET_OVERLAP_TOLERANCE)) as Coord;
+
+            let mut infill_exp = offset2_ex(
+                &not_filled_exp,
+                (-(inset as f64) - min_perimeter_infill_spacing as f64 / 2.) as f32,
+                (min_perimeter_infill_spacing as f64 / 2.) as f32,
+            );
+            // append infill areas to fill_surfaces
+            //if any top_fills, grow them by ext_perimeter_spacing/2 to have the real un-anchored fill
+            let top_infill_exp = intersection_ex(&fill_clip, &offset_ex(&top_fills, (ext_perimeter_spacing / 2) as f64 as f32));
+            if !top_fills.is_empty() {
+                infill_exp = union_ex_2(&infill_exp, &offset_ex(&top_infill_exp, infill_peri_overlap as f64 as f32));
+            }
+            result.infill_area.extend(infill_exp);
+
+            // BBS: get the no-overlap infill expolygons
+            {
+                let mut poly_without_overlap = if min_perimeter_infill_spacing / 2 > infill_peri_overlap {
+                    offset2_ex(
+                        &not_filled_exp,
+                        (-(inset as f64) - min_perimeter_infill_spacing as f64 / 2.) as f32,
+                        (min_perimeter_infill_spacing / 2 - infill_peri_overlap) as f32,
+                    )
+                } else {
+                    offset_ex(&not_filled_exp, (-inset - infill_peri_overlap) as f64 as f32)
+                };
+                if !top_fills.is_empty() {
+                    poly_without_overlap = union_ex_2(&poly_without_overlap, &top_infill_exp);
+                }
+                result.no_overlap_area.extend(poly_without_overlap);
+            }
+        } // for each island
+        result
+    }
+}
+
+/// A polyline of the medial axis as a `ThickPolyline` in the pin's layout (Polyline.hpp:245-285): `widths` is
+/// the C++ `width`, two per segment, in scaled units (not the one per point in millimetres of the legacy
+/// body); `edge_widths` holds the same pairs, which `thicklines()` reads first.
+fn pg_thick_polyline(pl: &crate::geometry::MedialAxisThickPolyline) -> Option<ThickPolyline> {
+    if pl.points.len() < 2 || pl.width.is_empty() {
+        return None;
+    }
+    let mut tp = ThickPolyline::with_capacity(pl.points.len());
+    tp.points = pl.points.clone();
+    tp.widths = pl.width.clone();
+    tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
+    tp.edge_widths = pl.width.clone();
+    Some(tp)
+}
+
+/// Polyline.cpp `Polyline::length()`: the sum of the lengths of the segments, each the norm of the
+/// difference of its points as doubles.
+fn pg_polyline_length(points: &[Point]) -> f64 {
+    let mut l = 0.;
+    for w in points.windows(2) {
+        let dx = (w[1].x - w[0].x) as f64;
+        let dy = (w[1].y - w[0].y) as f64;
+        l += dx.mul_add(dx, dy * dy).sqrt();
+    }
+    l
+}
+
+/// VariableWidth.cpp:214-231 `variable_width(polylines, role, flow, out)` ([`crate::variable_width::variable_width`])
+/// over thick polylines in the pin's layout ([`pg_thick_polyline`]).
+fn pg_variable_width(polylines: &ThickPolylines, role: ExtrusionRole, flow: &Flow, out: &mut Vec<ExtrusionEntityType>) {
+    crate::variable_width::variable_width(polylines, role, flow, out);
+}
+
+/// PerimeterGenerator.cpp:1886-1909 `PerimeterGenerator::generate_lower_polygons_series(float width)` with
+/// the nozzle diameter of the wall filament handed in (`nozzle_diameter_for_filament(*print_config,
+/// config->wall_filament)`, a float there): the arithmetic of
+/// [`PerimeterGenerator::generate_lower_polygons_series`].
+fn pg_generate_lower_polygons_series(lower_slices: Option<&ExPolygons>, width: f32, nozzle_diameter: f32) -> Vec<crate::geometry::Polygons> {
+    use crate::support::support_common::cu;
+    let start_offset: f32 = (-0.5 * width as f64) as f32;
+    let end_offset: f32 = (0.5 * nozzle_diameter as f64) as f32;
+    // generate offsets
+    let offset_series: [f32; 2] =
+        [(start_offset as f64 + 0.5 * (end_offset - start_offset) as f64 / (crate::overhang_detector::OVERHANG_SAMPLING_NUMBER - 1) as f64) as f32, end_offset];
+    let mut lower_polygons_series: Vec<crate::geometry::Polygons> = Vec::new();
+    let Some(lower_slices) = lower_slices else {
+        return lower_polygons_series;
+    };
+    // offset expolygon to generate series of polygons
+    for o in offset_series {
+        lower_polygons_series.push(cu::offset_expolygons(lower_slices, (o as f64 / SCALING_FACTOR_PIN) as f32, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT));
+    }
+    lower_polygons_series
+}
+
+/// PerimeterGenerator.cpp:232-242 `PerimeterGenerator::dist_boundary(double width)` with the nozzle diameter
+/// of the wall filament handed in: the arithmetic of [`PerimeterGenerator::dist_boundary`].
+fn pg_dist_boundary(width: f64, nozzle_diameter: f32) -> (f64, f64) {
+    let start_offset: f32 = (-0.5 * width) as f32;
+    let end_offset: f32 = (0.5 * nozzle_diameter as f64) as f32;
+    let degree_0: f64 =
+        (start_offset as f64 + 0.5 * (end_offset - start_offset) as f64 / (crate::overhang_detector::OVERHANG_SAMPLING_NUMBER - 1) as f64) / SCALING_FACTOR_PIN;
+    (0., end_offset as f64 / SCALING_FACTOR_PIN - degree_0)
+}
+
+/// The members of the PerimeterGenerator `traverse_loops` reads (PerimeterGenerator.cpp:293-501,
+/// PerimeterGenerator.hpp:60-66, 130-134), as process_classic sets them (:862-916).
+struct PerimeterGeneratorClassicMembers<'a> {
+    config: &'a PerimeterConfig,
+    smaller_ext_perimeter_flow: &'a Flow,
+    m_lower_polygons_series: Vec<crate::geometry::Polygons>,
+    m_external_lower_polygons_series: Vec<crate::geometry::Polygons>,
+    m_smaller_external_lower_polygons_series: Vec<crate::geometry::Polygons>,
+    m_lower_overhang_dist_boundary: (f64, f64),
+    m_external_overhang_dist_boundary: (f64, f64),
+    m_smaller_external_overhang_dist_boundary: (f64, f64),
+    m_ext_mm3_per_mm: f64,
+    m_mm3_per_mm: f64,
+    m_mm3_per_mm_overhang: f64,
+    m_ext_mm3_per_mm_smaller_width: f64,
+}
+
+/// PerimeterGenerator.cpp:293-501 `static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator
+/// &perimeter_generator, const PerimeterGeneratorLoops &loops, ThickPolylines &thin_walls)`.
+///
+/// Not carried by this crate's inputs: the circle compensation of a loop (`need_circle_compensation`, the
+/// flag stays `cfNone`), the perimeter regions (none), and `apply_fuzzy_skin` (:348-349), which hands the
+/// polygon back where the fuzzy skin is off.
+fn traverse_loops(
+    perimeter_generator: &PerimeterGeneratorClassicMembers,
+    loops: &[PerimeterLoop],
+    thin_walls: &mut ThickPolylines,
+) -> ExtrusionEntityCollection {
+    use crate::clipper2_utils::{diff_pl_2, intersection_pl_2};
+    use crate::clipper_utils::clip_clipper_polygons_with_subject_bbox_polygons;
+    use crate::extrusion_entity::CustomizeFlag;
+    let cfg = perimeter_generator.config;
+    let overhang_flow = cfg.overhang_flow.as_ref().unwrap_or(&cfg.perimeter_flow);
+    let empty: crate::geometry::Polygons = Vec::new();
+    // `bbox.offset(SCALED_EPSILON)`: a Point of doubles, rounded (BoundingBox.hpp:42-47).
+    let eps = pg_scale_(crate::libslic3r::EPSILON).round_ties_even() as Coord;
+
+    // loops is an arrayref of ::Loop objects
+    // turn each one into an ExtrusionLoop object
+    let mut coll = ExtrusionEntityCollection::new();
+    for loop_ in loops {
+        let is_external = loop_.is_external();
+        let is_small_width = loop_.is_smaller_width;
+        let flag = CustomizeFlag::None;
+
+        let role = if is_external { ExtrusionRole::ExternalPerimeter } else { ExtrusionRole::Perimeter };
+        let mut loop_role = if loop_.is_internal_contour() {
+            // Note that we set loop role to ContourInternalPerimeter
+            // also when loop is both internal and external (i.e.
+            // there's only one contour loop).
+            ExtrusionLoopRole::CONTOUR_INTERNAL_PERIMETER
+        } else if loop_.is_contour {
+            ExtrusionLoopRole::DEFAULT
+        } else {
+            ExtrusionLoopRole::PERIMETER_HOLE
+        };
+
+        if loop_.perimeter_index == 1 {
+            if loop_role == ExtrusionLoopRole::DEFAULT {
+                loop_role = ExtrusionLoopRole::SECOND_PERIMETER;
+            } else {
+                loop_role = loop_role | ExtrusionLoopRole::SECOND_PERIMETER;
+            }
+        }
+
+        // detect overhanging/bridging perimeters
+        let mut paths: Vec<ExtrusionPath> = Vec::new();
+
+        // BBS: get lower polygons series, width, mm3_per_mm
+        let (lower_polygons_series, overhang_dist_boundary, extrusion_mm3_per_mm, extrusion_width): (&Vec<crate::geometry::Polygons>, &(f64, f64), f64, f64) =
+            if is_external {
+                if is_small_width {
+                    //BBS: smaller width external perimeter
+                    (
+                        &perimeter_generator.m_smaller_external_lower_polygons_series,
+                        &perimeter_generator.m_smaller_external_overhang_dist_boundary,
+                        perimeter_generator.m_ext_mm3_per_mm_smaller_width,
+                        perimeter_generator.smaller_ext_perimeter_flow.width(),
+                    )
+                } else {
+                    //BBS: normal external perimeter
+                    (
+                        &perimeter_generator.m_external_lower_polygons_series,
+                        &perimeter_generator.m_external_overhang_dist_boundary,
+                        perimeter_generator.m_ext_mm3_per_mm,
+                        cfg.ext_perimeter_flow.width(),
+                    )
+                }
+            } else {
+                //BBS: normal perimeter
+                (&perimeter_generator.m_lower_polygons_series, &perimeter_generator.m_lower_overhang_dist_boundary, perimeter_generator.m_mm3_per_mm, cfg.perimeter_flow.width())
+            };
+
+        // Apply fuzzy skin if it is enabled for at least some part of the polygon.
+        let polygon = &loop_.polygon;
+
+        if cfg.detect_overhang_wall && cfg.layer_id > cfg.raft_layers && !cfg.starts_at_object_base {
+            // get non 100% overhang paths by intersecting this loop with the grown lower slices
+            // prepare grown lower layer slices for overhang detection
+            let mut bbox = crate::geometry::BoundingBox::from_points(&polygon.points);
+            bbox.min = Point::new(bbox.min.x - eps, bbox.min.y - eps);
+            bbox.max = Point::new(bbox.max.x + eps, bbox.max.y + eps);
+
+            //BBS: don't calculate overhang degree when enable fuzzy skin. It's unmeaning
+            // (Without lower slices the series is empty and the pin reads the back of an empty vector;
+            // no layer reaches this with `layer_id > raft_layers`.)
+            let lower_polygons_series_clipped = clip_clipper_polygons_with_subject_bbox_polygons(lower_polygons_series.last().unwrap_or(&empty), &bbox);
+
+            let polyline = crate::geometry::polygon::to_polyline(polygon);
+            let inside_polines = intersection_pl_2(std::slice::from_ref(&polyline), &lower_polygons_series_clipped);
+
+            let remain_polines = diff_pl_2(std::slice::from_ref(&polyline), &lower_polygons_series_clipped);
+
+            // `is_enable_overhang_speed(perimeter_generator) && fuzzy_skin_allows_overhang_slowdown(perimeter_generator)`
+            let detect_overhang_speed = cfg.enable_overhang_speed && cfg.fuzzy_skin_mode == crate::region_config::FuzzySkinMode::None;
+
+            if !detect_overhang_speed {
+                if !inside_polines.is_empty() {
+                    crate::overhang_detector::extrusion_paths_append(&mut paths, inside_polines, 0., 0, role, extrusion_mm3_per_mm, extrusion_width as f32, cfg.layer_height as f32);
+                }
+            } else {
+                let lower_polygons_series_clipped = clip_clipper_polygons_with_subject_bbox_polygons(lower_polygons_series.first().unwrap_or(&empty), &bbox);
+
+                let middle_overhang_polyines = diff_pl_2(&inside_polines, &lower_polygons_series_clipped);
+                //BBS: add zero_degree_path
+                let zero_degree_polines = intersection_pl_2(&inside_polines, &lower_polygons_series_clipped);
+                if !zero_degree_polines.is_empty() {
+                    crate::overhang_detector::extrusion_paths_append(&mut paths, zero_degree_polines, 0., 0, role, extrusion_mm3_per_mm, extrusion_width as f32, cfg.layer_height as f32);
+                }
+                //BBS: detect middle line overhang
+                if !middle_overhang_polyines.is_empty() {
+                    crate::overhang_detector::detect_overhang_degree(
+                        lower_polygons_series.first().unwrap_or(&empty).clone(),
+                        role,
+                        extrusion_mm3_per_mm,
+                        extrusion_width,
+                        cfg.layer_height,
+                        middle_overhang_polyines,
+                        overhang_dist_boundary.0,
+                        overhang_dist_boundary.1,
+                        &mut paths,
+                    );
+                }
+            }
+
+            // get 100% overhang paths by checking what parts of this loop fall
+            // outside the grown lower slices (thus where the distance between
+            // the loop centerline and original lower slices is >= half nozzle diameter
+            if !remain_polines.is_empty() {
+                // Detect overhang perimeter / bridge. Zero-gap support must not force normal wall role/flow here:
+                // unsupported walls still need erOverhangPerimeter + overhang_flow. See GitHub #11462.
+                detect_bridge_wall(
+                    &mut paths,
+                    &remain_polines,
+                    ExtrusionRole::OverhangPerimeter,
+                    perimeter_generator.m_mm3_per_mm_overhang,
+                    overhang_flow.width() as f32,
+                    overhang_flow.height() as f32,
+                );
+            }
+
+            if paths.is_empty() {
+                continue;
+            }
+
+            // Reapply the nearest point search for starting point.
+            // We allow polyline reversal because Clipper may have randomly reversed polylines during clipping.
+            let start = paths[0].first_point();
+            crate::shortest_path::chain_and_reorder_extrusion_paths(&mut paths, Some(&start));
+        } else {
+            let mut path = ExtrusionPath::new(role);
+            //BBS.
+            path.polyline = polygon.split_at_first_point();
+            path.overhang_degree = 0.;
+            path.curve_degree = 0;
+            path.mm3_per_mm = extrusion_mm3_per_mm;
+            path.width = extrusion_width;
+            path.height = cfg.layer_height;
+            paths.push(path);
+        }
+
+        for path in paths.iter_mut() {
+            path.set_customize_flag(flag);
+        }
+
+        coll.entities.push(ExtrusionEntityType::Loop(ExtrusionLoop::new_with_flag(paths, loop_role, flag)));
+    }
+
+    // Append thin walls to the nearest-neighbor search (only for first iteration)
+    let mut zero_point = Point::new(0, 0);
+
+    if !thin_walls.is_empty() {
+        // `bbox.merge(entity->as_polyline().bounding_box())` of every loop; a box of nothing has both corners
+        // at the origin (BoundingBox.hpp:21).
+        let mut bbox = crate::geometry::BoundingBox::new();
+        for entity in &coll.entities {
+            if let ExtrusionEntityType::Loop(l) = entity {
+                for path in &l.paths {
+                    for p in &path.polyline.points {
+                        bbox.merge_point(*p);
+                    }
+                }
+            }
+        }
+        let (bbox_min, bbox_max) = if bbox.is_defined() { (bbox.min, bbox.max) } else { (Point::new(0, 0), Point::new(0, 0)) };
+        for thin_wall in thin_walls.iter() {
+            // find the corner of bbox that's farthest from the thin wall
+            let first = thin_wall.points[0];
+            let squared_norm = |c: &Point| {
+                let dx = c.x as f64 - first.x as f64;
+                let dy = c.y as f64 - first.y as f64;
+                dx.mul_add(dx, dy * dy)
+            };
+            let mut corner_far = bbox_min;
+            if squared_norm(&corner_far) < squared_norm(&bbox_max) {
+                corner_far = bbox_max;
+            }
+            zero_point = corner_far;
+        }
+        pg_variable_width(thin_walls, ExtrusionRole::ExternalPerimeter, &cfg.ext_perimeter_flow, &mut coll.entities);
+        thin_walls.clear();
+    }
+
+    // Traverse children and build the final collection.
+    let chain: Vec<(usize, bool)> = crate::shortest_path::chain_extrusion_entities(&coll.entities, Some(&zero_point));
+    let mut entities: Vec<Option<ExtrusionEntityType>> = coll.entities.drain(..).map(Some).collect();
+    let mut out = ExtrusionEntityCollection::new();
+    for (idx, reversed) in chain {
+        let mut entity = entities[idx].take().unwrap();
+        if idx >= loops.len() {
+            // This is a thin wall.
+            if reversed {
+                entity_reverse_inplace(&mut entity);
+            }
+            out.entities.push(entity);
+        } else {
+            let loop_ = &loops[idx];
+            debug_assert!(thin_walls.is_empty());
+            let children = traverse_loops(perimeter_generator, &loop_.children, thin_walls);
+            match entity {
+                ExtrusionEntityType::Loop(mut eloop) => {
+                    if loop_.is_contour {
+                        eloop.make_counter_clockwise();
+                        out.entities.extend(children.entities);
+                        out.entities.push(ExtrusionEntityType::Loop(eloop));
+                    } else {
+                        eloop.make_clockwise();
+                        out.entities.push(ExtrusionEntityType::Loop(eloop));
+                        out.entities.extend(children.entities);
+                    }
+                }
+                // A thin wall where a loop was skipped for having no path: the pin casts it to a loop.
+                other => {
+                    out.entities.extend(children.entities);
+                    out.entities.push(other);
+                }
+            }
+        }
+    }
+    out
 }

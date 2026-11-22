@@ -303,26 +303,21 @@ impl DistanceField {
             }
         } // end of parallel_for
 
-        // DistanceField.cpp:74-79
-        field
-            .m_unsupported_points
-            .sort_by(|a: &UnsupportedCell, b: &UnsupportedCell| {
-                // DistanceField.cpp:75
-                const PRIME_FOR_HASH: usize = 191;
-                // DistanceField.cpp:76-78
-                // PointHash returns size_t (unsigned); `% prime_for_hash` converts
-                // the coord_t prime to size_t, so the modulo is unsigned.
-                let less = if (b.dist_to_boundary - a.dist_to_boundary).abs() > radius {
-                    a.dist_to_boundary < b.dist_to_boundary
-                } else {
-                    (point_hash(&a.loc) % PRIME_FOR_HASH) < (point_hash(&b.loc) % PRIME_FOR_HASH)
-                };
-                if less {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Greater
-                }
-            });
+        // DistanceField.cpp:74-79 — `std::stable_sort` with a comparator that is not a strict weak ordering (the
+        // two rules disagree on some triples), so the result is whatever the algorithm of the C++ library makes
+        // of it: `libcxx_stable_sort`.
+        libcxx_stable_sort(&mut field.m_unsupported_points, |a: &UnsupportedCell, b: &UnsupportedCell| {
+            // DistanceField.cpp:75
+            const PRIME_FOR_HASH: usize = 191;
+            // DistanceField.cpp:76-78
+            // PointHash returns size_t (unsigned); `% prime_for_hash` converts
+            // the coord_t prime to size_t, so the modulo is unsigned.
+            if (b.dist_to_boundary - a.dist_to_boundary).abs() > radius {
+                a.dist_to_boundary < b.dist_to_boundary
+            } else {
+                (point_hash(&a.loc) % PRIME_FOR_HASH) < (point_hash(&b.loc) % PRIME_FOR_HASH)
+            }
+        });
 
         // DistanceField.cpp:81
         field
@@ -505,5 +500,150 @@ impl DistanceField {
     #[inline]
     fn from_grid_point(&self, point: &Point) -> Point {
         *point * self.m_cell_size + self.m_unsupported_points_bbox.min
+    }
+}
+
+// ----------------------------------------------------------------------------
+// `std::stable_sort` of libc++ (`__algorithm/stable_sort.h`), for a value type that is not trivially copy
+// assignable (a struct with a Point: `__stable_sort_switch` is 0, so the in-place insertion sort is never
+// taken) and with the temporary buffer of `len` elements it gets from `get_temporary_buffer`. `comp(a, b)` is
+// the C++ comparator, `a < b`. With a comparator that is a strict weak ordering this is any stable sort; with
+// one that is not (DistanceField.cpp:74-79) the result is the one of this algorithm.
+// ----------------------------------------------------------------------------
+
+/// `std::stable_sort(first, last, comp)` (libc++ `__stable_sort_impl`).
+pub fn libcxx_stable_sort<T: Clone, F: FnMut(&T, &T) -> bool>(v: &mut [T], mut comp: F) {
+    let len = v.len();
+    // `get_temporary_buffer<value_type>(len)`
+    let mut buff: Vec<T> = v.to_vec();
+    libcxx_stable_sort_rec(v, 0, len, &mut comp, &mut buff, 0);
+}
+
+// libc++ `__stable_sort(first, last, comp, len, buff, buff_size)` with `len <= buff_size`: sorts `a[first..last]`
+// in place, through `b[boff..boff + len]`.
+fn libcxx_stable_sort_rec<T: Clone, F: FnMut(&T, &T) -> bool>(a: &mut [T], first: usize, last: usize, comp: &mut F, b: &mut [T], boff: usize) {
+    let len = last - first;
+    match len {
+        0 | 1 => return,
+        2 => {
+            if comp(&a[last - 1], &a[first]) {
+                a.swap(first, last - 1);
+            }
+            return;
+        }
+        _ => {}
+    }
+    let l2 = len / 2;
+    let m = first + l2;
+    libcxx_stable_sort_move(a, first, m, comp, b, boff);
+    libcxx_stable_sort_move(a, m, last, comp, b, boff + l2);
+    // `__merge_move_assign(buff, buff + l2, buff + l2, buff + len, first, comp)`
+    let (mut first1, last1, mut first2, last2, mut result) = (boff, boff + l2, boff + l2, boff + len, first);
+    while first1 != last1 {
+        if first2 == last2 {
+            while first1 != last1 {
+                a[result] = b[first1].clone();
+                first1 += 1;
+                result += 1;
+            }
+            return;
+        }
+        if comp(&b[first2], &b[first1]) {
+            a[result] = b[first2].clone();
+            first2 += 1;
+        } else {
+            a[result] = b[first1].clone();
+            first1 += 1;
+        }
+        result += 1;
+    }
+    while first2 != last2 {
+        a[result] = b[first2].clone();
+        first2 += 1;
+        result += 1;
+    }
+}
+
+// libc++ `__stable_sort_move(first1, last1, comp, len, first2)`: sorts `a[first1..last1]` into `b[first2..]`.
+fn libcxx_stable_sort_move<T: Clone, F: FnMut(&T, &T) -> bool>(a: &mut [T], first1: usize, last1: usize, comp: &mut F, b: &mut [T], first2: usize) {
+    let len = last1 - first1;
+    match len {
+        0 => return,
+        1 => {
+            b[first2] = a[first1].clone();
+            return;
+        }
+        2 => {
+            if comp(&a[last1 - 1], &a[first1]) {
+                b[first2] = a[last1 - 1].clone();
+                b[first2 + 1] = a[first1].clone();
+            } else {
+                b[first2] = a[first1].clone();
+                b[first2 + 1] = a[last1 - 1].clone();
+            }
+            return;
+        }
+        _ => {}
+    }
+    if len <= 8 {
+        // `__insertion_sort_move(first1, last1, first2, comp)`
+        let mut last2 = first2;
+        b[last2] = a[first1].clone();
+        last2 += 1;
+        let mut f1 = first1 + 1;
+        while f1 != last1 {
+            let mut j2 = last2;
+            let mut i2 = j2 - 1;
+            if comp(&a[f1], &b[i2]) {
+                b[j2] = b[i2].clone();
+                j2 -= 1;
+                // `for (--j2; i2 != first2 && comp(*first1, *--i2); --j2) *j2 = std::move(*i2);`
+                while i2 != first2 && {
+                    i2 -= 1;
+                    comp(&a[f1], &b[i2])
+                } {
+                    b[j2] = b[i2].clone();
+                    j2 -= 1;
+                }
+                b[j2] = a[f1].clone();
+            } else {
+                b[j2] = a[f1].clone();
+            }
+            last2 += 1;
+            f1 += 1;
+        }
+        return;
+    }
+    let l2 = len / 2;
+    let m = first1 + l2;
+    libcxx_stable_sort_rec(a, first1, m, comp, b, first2);
+    libcxx_stable_sort_rec(a, m, last1, comp, b, first2 + l2);
+    // `__merge_move_construct(first1, m, m, last1, first2, comp)`
+    let (mut f1, l1, mut f2, l2e, mut result) = (first1, m, m, last1, first2);
+    loop {
+        if f1 == l1 {
+            while f2 != l2e {
+                b[result] = a[f2].clone();
+                f2 += 1;
+                result += 1;
+            }
+            return;
+        }
+        if f2 == l2e {
+            while f1 != l1 {
+                b[result] = a[f1].clone();
+                f1 += 1;
+                result += 1;
+            }
+            return;
+        }
+        if comp(&a[f2], &a[f1]) {
+            b[result] = a[f2].clone();
+            f2 += 1;
+        } else {
+            b[result] = a[f1].clone();
+            f1 += 1;
+        }
+        result += 1;
     }
 }

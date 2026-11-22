@@ -254,6 +254,23 @@ fn point_mul(pt: Point, r: f64) -> Point {
     Point::new((pt.x as f64 * r).round_ties_even() as Coord, (pt.y as f64 * r).round_ties_even() as Coord)
 }
 
+// The pin's `coord_t` is a 32 bit integer (libslic3r.h:39 `using coord_t = int32_t`); this port keeps coordinates
+// in 64 bits, which is the same as long as nothing leaves the range of an int. `wrap32` is what an int
+// arithmetic of the pin leaves of a value that does: its low 32 bits.
+#[inline]
+fn wrap32(v: i64) -> Coord {
+    v as i32 as Coord
+}
+
+// `Point(coord_t(std::round(x)), coord_t(std::round(y)))` (TreeSupport.cpp:5771-5773). Measured on the oracle
+// (clang, arm64, -O3): the two conversions are done as one vector conversion to 64 bit integers that is then
+// narrowed, so a rounded value outside of the range of an int keeps its low 32 bits (-10000022439 becomes
+// -1410087847) instead of saturating. It happens: a neighbour one unit away weighs 1e10.
+#[inline]
+fn point_of_rounded_pair(x: f64, y: f64) -> Point {
+    Point::new(wrap32(x.round() as i64), wrap32(y.round() as i64))
+}
+
 // Point.hpp:179 `Point(double x, double y) : Vec2crd(coord_t(lrint(x)), coord_t(lrint(y)))`
 #[inline]
 fn point_from_f64(x: f64, y: f64) -> Point {
@@ -4811,8 +4828,9 @@ impl<'a> TreeSupport<'a> {
                             }
                         }
 
-                        let sum_direction = Point::new(sum_dir_d.0.round() as Coord, sum_dir_d.1.round() as Coord);
-                        let base_direction = Point::new(base_dir_d.0.round() as Coord, base_dir_d.1.round() as Coord);
+                        // TreeSupport.cpp:5771-5773: an int conversion that wraps, see point_of_rounded_pair
+                        let sum_direction = point_of_rounded_pair(sum_dir_d.0, sum_dir_d.1);
+                        let base_direction = point_of_rounded_pair(base_dir_d.0, base_dir_d.1);
                         if !is_strong {
                             move_to_neighbor_center = sum_direction;
                             move_to_neighbor_center_base = base_direction;
@@ -4890,18 +4908,26 @@ impl<'a> TreeSupport<'a> {
                     }
                     let mut movement: Point;
                     if support_on_buildplate_only {
-                        // `Point * 2`: Eigen's integer product
-                        movement = Point::new(move_to_neighbor_center.x + direction_to_outer.x * 2, move_to_neighbor_center.y + direction_to_outer.y * 2);
+                        // `Point * 2` and the sum are int arithmetic at the pin (wrap32): move_to_neighbor_center can be
+                        // anywhere in the range of an int (see point_of_rounded_pair)
+                        movement = Point::new(
+                            wrap32(move_to_neighbor_center.x + direction_to_outer.x * 2),
+                            wrap32(move_to_neighbor_center.y + direction_to_outer.y * 2),
+                        );
                     } else if !is_strong {
                         // `direction_to_outer * (1 / dist2_to_outer)`: the member operator* of a non-const Point (lrint)
                         let outer = if dist2_to_outer > EPSILON { point_mul(direction_to_outer, 1.0 / dist2_to_outer) } else { Point::new(0, 0) };
-                        movement = Point::new(move_to_neighbor_center.x * 2 + outer.x, move_to_neighbor_center.y * 2 + outer.y);
+                        // int arithmetic at the pin (wrap32)
+                        movement = Point::new(wrap32(move_to_neighbor_center.x * 2 + outer.x), wrap32(move_to_neighbor_center.y * 2 + outer.y));
                     } else {
                         // `movement` is a default constructed Point here, (0, 0): its dot product is 0
                         movement = Point::new(0, 0);
                         let dot = movement.x * move_to_neighbor_center.x + movement.y * move_to_neighbor_center.y;
                         if dot as f64 >= 0.2 || move_to_neighbor_center == Point::new(0, 0) {
-                            movement = Point::new(direction_to_outer.x + move_to_neighbor_center.x, direction_to_outer.y + move_to_neighbor_center.y);
+                            movement = Point::new(
+                                wrap32(direction_to_outer.x + move_to_neighbor_center.x),
+                                wrap32(direction_to_outer.y + move_to_neighbor_center.y),
+                            );
                         } else {
                             movement = move_to_neighbor_center; // otherwise move to neighbor center first
                         }
@@ -5143,11 +5169,23 @@ impl DrawCirclesCollision {
 
 /// `FillLightning::Generator(PrintObject *m_object, std::vector<Polygons> &contours, std::vector<Polygons> &overhangs,
 /// const std::function<void()> &throw_on_cancel_callback, float density)` (Fill/Lightning/Generator.cpp:100-143), the
-/// constructor draw_circles() makes `TreeSupport::generator` with. The crate's `fill::lightning::generator::Generator`
-/// has no constructor yet (its `generateTreesforSupport` waits on Fill/Lightning/Layer.cpp), so the caller hands it in.
+/// constructor draw_circles() makes `TreeSupport::generator` with. The caller hands it in:
+/// `FillLightningSupportGenerator` is the crate's port of it (`Generator::new_for_support`).
 pub trait LightningSupportGenerator {
     fn generate(&self, object: &PrintObject, print: &Print, contours: &mut Vec<Polygons>, overhangs: &mut Vec<Polygons>, density: f32)
         -> crate::fill::lightning::generator::Generator;
+}
+
+/// The `LightningSupportGenerator` that runs the crate's port of the constructor
+/// (`fill::lightning::generator::Generator::new_for_support`, Fill/Lightning/Generator.cpp:100-143).
+pub struct FillLightningSupportGenerator;
+
+impl LightningSupportGenerator for FillLightningSupportGenerator {
+    fn generate(&self, object: &PrintObject, print: &Print, contours: &mut Vec<Polygons>, overhangs: &mut Vec<Polygons>, density: f32)
+        -> crate::fill::lightning::generator::Generator {
+        // `[this]() { m_object->print()->throw_if_canceled(); }`: nothing is cancelled here
+        crate::fill::lightning::generator::Generator::new_for_support(object, print, contours, overhangs, &|| {}, density)
+    }
 }
 
 // `std::unordered_map<double, size_t>`: the key of a double; 0.0 and -0.0 are one key.

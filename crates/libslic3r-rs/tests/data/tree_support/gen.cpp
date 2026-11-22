@@ -62,6 +62,8 @@
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/Clipper2Utils.hpp"
 #include "libslic3r/Fill/FillBase.hpp"
+#include "libslic3r/Fill/Lightning/Generator.hpp"
+#include "libslic3r/Fill/Lightning/TreeNode.hpp"
 #include "libslic3r/I18N.hpp"
 #include "libslic3r/Layer.hpp"
 #include "libslic3r/MinimumSpanningTree.hpp"
@@ -1021,6 +1023,50 @@ static std::vector<std::pair<std::string, std::string>> scenario_config(int scen
     return c;
 }
 
+// The trees of the lightning infill of the supports, a line per layer: every root depth first, a node as its
+// location, whether it is a root and the number of its children.
+static void dump_lightning_node(const FillLightning::Node &n, std::string &body)
+{
+    body += " " + hI((long long) n.m_p.x()) + " " + hI((long long) n.m_p.y()) + " " + hB(n.m_is_root) + " " + hI((long long) n.m_children.size());
+    for (const FillLightning::NodeSPtr &c : n.m_children) dump_lightning_node(*c, body);
+}
+static void dump_lightning(const std::string &head, const FillLightning::Generator &generator)
+{
+    out(head + " " + hI((long long) generator.m_supporting_radius) + " " + hI((long long) generator.m_wall_supporting_radius) + " " +
+        hI((long long) generator.m_prune_length) + " " + hI((long long) generator.m_straightening_max_distance) + " " +
+        hI((long long) generator.m_lightning_layers.size()));
+    size_t i = 0;
+    for (const FillLightning::Layer &layer : generator.m_lightning_layers) {
+        std::string body = hI((long long) layer.tree_roots.size());
+        for (const FillLightning::NodeSPtr &root : layer.tree_roots) dump_lightning_node(*root, body);
+        outb(head + " " + hI((long long) i), body, true);
+        ++i;
+    }
+    // Layer::convertToLines() of every layer, clipped by a rectangle inside of the extents of its trees: the
+    // polylines before generate_toolpaths() chains them. rand() restarts for it.
+    srand(1);
+    i = 0;
+    for (const FillLightning::Layer &layer : generator.m_lightning_layers) {
+        if (! layer.tree_roots.empty()) {
+            const BoundingBox bb = get_extents(layer.tree_roots);
+            const coord_t     dx = (bb.max.x() - bb.min.x()) / 8, dy = (bb.max.y() - bb.min.y()) / 8;
+            Polygon           limit;
+            limit.points = {Point(bb.min.x() + dx, bb.min.y() + dy), Point(bb.max.x() - dx, bb.min.y() + dy), Point(bb.max.x() - dx, bb.max.y() - dy),
+                            Point(bb.min.x() + dx, bb.max.y() - dy)};
+            const Polylines lines = layer.convertToLines({limit}, 0);
+            std::string     body  = hI((long long) lines.size());
+            for (const Polyline &pl : lines) body += " " + PTS(pl.points);
+            outb(head + " lines " + hI((long long) i), body, true);
+            // and chained, as generate_toolpaths() chains them (ShortestPath.cpp chain_polylines())
+            const Polylines chained = chain_polylines(lines);
+            body                    = hI((long long) chained.size());
+            for (const Polyline &pl : chained) body += " " + PTS(pl.points);
+            outb(head + " chained " + hI((long long) i), body, true);
+        }
+        ++i;
+    }
+}
+
 static void run_scenario(int scenario)
 {
     const std::string S = "s" + hI(scenario);
@@ -1246,15 +1292,18 @@ static void run_scenario(int scenario)
             std::string body = hI((long long) ts.generator->m_supporting_radius) + " " + hI((long long) ts.generator->m_overhang_per_layer.size());
             for (const Polygons &polys : ts.generator->m_overhang_per_layer) body += " " + POLYS(polys);
             outb(S + " lightning_generator", body, true);
+            dump_lightning(S + " lightning_trees", *ts.generator);
         }
     }
 
     // The toolpaths. The fillers are the generator's (RecFill); what they were asked is written sorted, the
     // layers being filled in the order tbb takes them. A scenario with the lightning pattern in the bases
-    // writes its lines as "toolpaths_lightning": the Rust test has no generator of the lightning infill.
+    // writes its lines as "toolpaths_lightning".
     {
         const std::string T = S + (ts.m_support_params.base_fill_pattern == ipLightning ? " toolpaths_lightning" : " toolpaths");
         g_fills.clear();
+        // Node::convertToPolylines() takes the branch a polyline goes on with from rand(): the stream starts here
+        srand(1);
         ts.generate_toolpaths();
         std::sort(g_fills.begin(), g_fills.end());
         std::string body;
@@ -1298,6 +1347,7 @@ static void run_scenario(int scenario)
             return;
         }
         g_fills.clear();
+        srand(1);
         ts3.generate();
         out(S + " generate state " + hB(ts3.has_sharp_tails) + " " + hB(ts3.has_cantilever) + " " + hD(ts3.max_cantilever_dist) + " " +
             hI((long long) ts3.m_highest_overhang_layer) + " " + hI((long long) ts3.m_raft_layers) + " " + hI((long long) ts3.contact_nodes.size()) + " " +
@@ -1305,6 +1355,7 @@ static void run_scenario(int scenario)
         dump_fold(S + " generate fold", ts3, *obj);
         dump_nodes(S + " generate nodes", ts3.contact_nodes, true, true);
         dump_support_layers(S + " generate areas", *obj);
+        if (ts3.generator != nullptr) dump_lightning(S + " generate lightning_trees", *ts3.generator);
         const std::string T = S + (ts3.m_support_params.base_fill_pattern == ipLightning ? " generate_toolpaths_lightning" : " generate_toolpaths");
         std::sort(g_fills.begin(), g_fills.end());
         std::string body;

@@ -870,7 +870,8 @@ static void run_helpers()
             const Vec3d p2 = p1 + Vec3d(g.uni(-2, 2), g.uni(-2, 2), g.uni(0, 2));
             const Vec3d n1 = Vec3d(g.uni(-1, 1), g.uni(-1, 1), g.uni(0.2, 1)).normalized();
             // Now and then the same plane normal.
-            Vec3d       n2 = i % 37 == 5 ? n1 : Vec3d(g.uni(-1, 1), g.uni(-1, 1), g.uni(0.2, 1)).normalized();
+            Vec3d       n2 = Vec3d(g.uni(-1, 1), g.uni(-1, 1), g.uni(0.2, 1)).normalized();
+            if (i % 37 == 5) n2 = n1;
             if (n1.dot(n2) < 0) n2 = -n2;
             const double r1 = g.uni(0.2, 3), r2 = g.uni(0.2, 3);
             out("in circles " + D3(p1) + " " + D3(n1) + " " + hD(r1) + " " + D3(p2) + " " + D3(n2) + " " + hD(r2));
@@ -885,8 +886,10 @@ static void run_helpers()
         for (int i = 0; i < 60; ++i) {
             const Vec3f c1(float(g.uni(-5, 5)), float(g.uni(-5, 5)), float(g.uni(0, 5)));
             const Vec3f c2 = c1 + Vec3f(float(g.uni(-1, 1)), float(g.uni(-1, 1)), float(g.uni(0.1, 1)));
-            const Vec3f n1 = i % 11 == 4 ? Vec3f(0.f, -1.f, 0.f) : Vec3f(float(g.uni(-1, 1)), float(g.uni(-1, 1)), float(g.uni(0.2, 1))).normalized();
-            const Vec3f n2 = i % 5 == 0 ? Vec3f(0.f, 0.f, 1.f) : Vec3f(float(g.uni(-1, 1)), float(g.uni(-1, 1)), float(g.uni(0.2, 1))).normalized();
+            Vec3f       n1 = Vec3f(float(g.uni(-1, 1)), float(g.uni(-1, 1)), float(g.uni(0.2, 1))).normalized();
+            if (i % 11 == 4) n1 = Vec3f(0.f, -1.f, 0.f);
+            Vec3f       n2 = Vec3f(float(g.uni(-1, 1)), float(g.uni(-1, 1)), float(g.uni(0.2, 1))).normalized();
+            if (i % 5 == 0) n2 = Vec3f(0.f, 0.f, 1.f);
             const float r1 = float(g.uni(0.3, 4)), r2 = float(g.uni(0.3, 4));
             const float eps = g.of({0.015f, 0.05f, 0.2f});
             out("in mesh " + F3(c1) + " " + F3(n1) + " " + hF(r1) + " " + F3(c2) + " " + F3(n2) + " " + hF(r2) + " " + hF(eps));
@@ -913,8 +916,105 @@ static void run_helpers()
         std::vector<Vec3f> pts{center};
         const std::pair<int, int> r = discretize_polygon(center, polys, pts);
         std::string line = "discretize_polygon " + hI(i) + " " + hI(r.first) + " " + hI(r.second);
-        for (const Vec3f &v : pts) line += " " + hF(v.x()) + " " + hF(v.y()) + " " + hF(v.z());
+        // Not the centre, of which the function reads the height only.
+        for (size_t k = 1; k < pts.size(); ++k) line += " " + hF(pts[k].x()) + " " + hF(pts[k].y()) + " " + hF(pts[k].z());
         out(line);
+    }
+    // section_circles_intersect()
+    {
+        auto D3 = [](const Vec3d &v) { return hD(v.x()) + " " + hD(v.y()) + " " + hD(v.z()); };
+        std::string line = "section_circles_intersect ";
+        for (int i = 0; i < 600; ++i) {
+            const Vec3d p1(g.uni(-5, 5), g.uni(-5, 5), g.uni(0, 5));
+            const Vec3d p2 = p1 + Vec3d(g.uni(-1.5, 1.5), g.uni(-1.5, 1.5), g.uni(0, 0.5));
+            const Vec3d n1 = Vec3d(g.uni(-1, 1), g.uni(-1, 1), g.uni(0.2, 1)).normalized();
+            Vec3d       n2 = Vec3d(g.uni(-1, 1), g.uni(-1, 1), g.uni(0.2, 1)).normalized();
+            // The same normal, normals a tilt of about 1e-4 apart (the threshold of the test) and a small tilt.
+            if (i % 9 == 3) n2 = n1;
+            if (i % 9 == 5) n2 = (n1 + Vec3d(g.uni(-2, 2) * 1e-4, g.uni(-2, 2) * 1e-4, 0.)).normalized();
+            if (i % 9 == 7) n2 = (n1 + Vec3d(g.uni(-0.3, 0.3), g.uni(-0.3, 0.3), 0.)).normalized();
+            const double r1 = g.uni(0.2, 3), r2 = g.uni(0.2, 3);
+            out("in sections " + D3(p1) + " " + D3(n1) + " " + hD(r1) + " " + D3(p2) + " " + D3(n2) + " " + hD(r2));
+            line += section_circles_intersect(p1, n1, r1, p2, n2, r2) ? "1" : "0";
+        }
+        out(line);
+    }
+    // extrude_branch_tube() with the four pairs of end caps, extrude_branch() with and without the descriptors of
+    // the split caps: paths of elements one layer apart, every fourth over two raft layers.
+    {
+        auto D3 = [](const Vec3d &v) { return hD(v.x()) + " " + hD(v.y()) + " " + hD(v.z()); };
+        auto ITS = [](const indexed_triangle_set &its) {
+            std::string o = hI((long long) its.vertices.size());
+            for (const Vec3f &v : its.vertices) o += " " + hF(v.x()) + " " + hF(v.y()) + " " + hF(v.z());
+            o += " " + hI((long long) its.indices.size());
+            for (const auto &f : its.indices) o += " " + hI(f(0)) + " " + hI(f(1)) + " " + hI(f(2));
+            return o;
+        };
+        TreeSupportMeshGroupSettings m;
+        m.support_tree_branch_diameter_angle = 0.14;
+        m.support_tree_tip_diameter          = 60000;
+        m.support_xy_distance_overhang       = 15000;
+        SlicingParameters sp;
+        sp.layer_height = 0.2;
+        const TreeSupportSettings c(m, sp);
+        TreeSupportSettings       c_raft(m, sp);
+        c_raft.raft_layers = {0.1, 0.2};
+        // What layer_z() reads of the slicing parameters.
+        SlicingParameters spz;
+        spz.layer_height              = 0.2;
+        spz.first_object_layer_height = 0.25;
+        spz.object_print_z_min        = 0.;
+        SlicingParameters spz_raft = spz;
+        spz_raft.object_print_z_min = 0.3;
+        const std::vector<SupportElements> no_move_bounds;
+        for (int i = 0; i < 80; ++i) {
+            const int    n    = 2 + g.pick(7);
+            const bool   raft = i % 4 == 3;
+            const double step = g.of({0.05, 0.3, 1., 2.5});
+            std::vector<SupportElement> elems;
+            Point          pos   = g.pt(20.);
+            const int      layer = raft ? g.pick(2) : 1 + g.pick(30);
+            const uint32_t dtt   = uint32_t(n + g.pick(40));
+            for (int k = 0; k < n; ++k) {
+                SupportElementState s;
+                s.layer_idx               = layer + k;
+                s.result_on_layer         = pos;
+                s.target_position         = pos;
+                s.next_position           = pos;
+                s.distance_to_top         = dtt - uint32_t(k);
+                s.effective_radius_height = uint32_t(g.pick(30));
+                s.elephant_foot_increases = g.pick(3) == 0 ? g.uni(0, 6) : 0.;
+                elems.emplace_back(s, Polygons{});
+                pos += Point(scale_(g.uni(-step, step)), scale_(g.uni(-step, step)));
+            }
+            out("in path " + hI(n) + " " + hB(raft));
+            std::vector<const SupportElement*> path;
+            for (const SupportElement &e : elems) {
+                out("in pstate " + STATE(e.state));
+                path.emplace_back(&e);
+            }
+            const TreeSupportSettings &cc = raft ? c_raft : c;
+            const SlicingParameters   &ss = raft ? spz_raft : spz;
+            for (int caps = 0; caps < 4; ++caps) {
+                indexed_triangle_set its;
+                // Now and then a mesh that is not empty: the tube is appended.
+                if (caps == 3) its.vertices.emplace_back(Vec3f(1.f, 2.f, 3.f));
+                const std::pair<float, float> span = extrude_branch_tube(path, cc, ss, no_move_bounds, its, (caps & 1) ? TubeEndCap::FlatDisk : TubeEndCap::HemisphereMesh,
+                                                                         (caps & 2) ? TubeEndCap::FlatDisk : TubeEndCap::HemisphereMesh);
+                outb("extrude_branch_tube " + hI(i) + " " + hI(caps) + " " + hF(span.first) + " " + hF(span.second) + " " + hI((long long) its.vertices.size()), ITS(its));
+            }
+            {
+                indexed_triangle_set         its;
+                std::vector<ExtrudeSplitCap> split_caps;
+                const std::pair<float, float> span = extrude_branch(path, cc, ss, no_move_bounds, its, &split_caps);
+                std::string body = ITS(its);
+                for (const ExtrudeSplitCap &cap : split_caps) body += " " + D3(cap.center) + " " + D3(cap.normal) + " " + hD(cap.radius) + " " + hB(cap.is_bottom);
+                outb("extrude_branch " + hI(i) + " " + hF(span.first) + " " + hF(span.second) + " " + hI((long long) its.vertices.size()) + " " + hI((long long) split_caps.size()), body);
+                indexed_triangle_set its2;
+                const std::pair<float, float> span2 = extrude_branch(path, cc, ss, no_move_bounds, its2);
+                outb("extrude_branch_plain " + hI(i) + " " + hF(span2.first) + " " + hF(span2.second), ITS(its2));
+            }
+        }
     }
 }
 

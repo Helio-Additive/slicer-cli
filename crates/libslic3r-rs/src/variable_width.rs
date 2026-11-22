@@ -329,6 +329,17 @@ pub fn thick_polyline_to_multi_path(
     multi_path
 }
 
+/// Polyline.hpp:59-65 `void Polyline::append(const Point &point)`: "BBS: don't need to append same point",
+/// a point equal to the last one is not appended. R921 VARIABLE_WIDTH_APPEND (on unless =0): the paths of
+/// `thick_polyline_to_extrusion_paths_2` are put together with it (VariableWidth.cpp:131, 133, 198, 200), so
+/// a segment of no length inside a thick polyline leaves no doubled point; =0 pushes every point.
+fn polyline_append(polyline: &mut crate::geometry::Polyline, point: Point) {
+    if crate::faithful_gate("VARIABLE_WIDTH_APPEND") && polyline.points.last() == Some(&point) {
+        return;
+    }
+    polyline.points.push(point);
+}
+
 /// VariableWidth.cpp:100-101
 /// BBS: new function to filter width to avoid too fragmented segments
 /// C++: static ExtrusionPaths thick_polyline_to_extrusion_paths_2(const ThickPolyline& thick_polyline, ExtrusionRole role, const Flow& flow, const float tolerance)
@@ -385,11 +396,19 @@ fn thick_polyline_to_extrusion_paths_2(
                 // VariableWidth.cpp:128-132
                 for idx in start_index..i as usize {
                     length += lines[idx].length();
-                    sum += lines[idx].length() * 0.5 * (lines[idx].a_width + lines[idx].b_width);
-                    path.polyline.points.push(lines[idx].a);
+                    // R921 VARIABLE_WIDTH_SUM_FMA (on unless =0): `sum += len * 0.5 * (a + b)` is one
+                    // expression, which the pin's compiler contracts: the product `(len * 0.5) * (a + b)`
+                    // is fused into the sum. (In the last path, :197, the last product is the exact one
+                    // by 0.5, so the fused sum is the plain one.)
+                    sum = if crate::faithful_gate("VARIABLE_WIDTH_SUM_FMA") {
+                        (lines[idx].length() * 0.5).mul_add(lines[idx].a_width + lines[idx].b_width, sum)
+                    } else {
+                        sum + lines[idx].length() * 0.5 * (lines[idx].a_width + lines[idx].b_width)
+                    };
+                    polyline_append(&mut path.polyline, lines[idx].a);
                 }
                 // VariableWidth.cpp:133
-                path.polyline.points.push(lines[i as usize].a);
+                polyline_append(&mut path.polyline, lines[i as usize].a);
                 // VariableWidth.cpp:134
                 if length > SCALED_EPSILON {
                     // VariableWidth.cpp:135-136
@@ -498,10 +517,10 @@ fn thick_polyline_to_extrusion_paths_2(
         for idx in start_index..final_size {
             length += lines[idx].length();
             sum += lines[idx].length() * (lines[idx].a_width + lines[idx].b_width) * 0.5;
-            path.polyline.points.push(lines[idx].a);
+            polyline_append(&mut path.polyline, lines[idx].a);
         }
         // VariableWidth.cpp:200
-        path.polyline.points.push(lines[final_size - 1].b);
+        polyline_append(&mut path.polyline, lines[final_size - 1].b);
         // VariableWidth.cpp:201
         if length > SCALED_EPSILON {
             // VariableWidth.cpp:202-203

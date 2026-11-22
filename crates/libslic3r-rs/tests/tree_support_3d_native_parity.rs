@@ -4,7 +4,8 @@
 //! The generator runs the helpers that take no volumes on polylines, polygons and points of a linear
 //! congruential generator (`polyline_sample_next_point_at_distance`, `ensure_maximum_distance_polyline`,
 //! `move_inside`, `move_inside_if_outside`, `getEffectiveDTT`, the `support_element_*radius` functions,
-//! `SupportElementState::propagate_down`), and for eighteen scenarios builds a Print of one box with
+//! `SupportElementState::propagate_down`, and of the organic part `circles_intersect`, `discretize_circle`,
+//! `triangulate_fan`, `triangulate_strip`, `discretize_polygon`), and for eighteen scenarios builds a Print of one box with
 //! `Print::apply`, fills in the layers of its object and their overhangs by hand and runs, on one thread:
 //! `group_meshes`, the constructor of `TreeModelVolumes`, `precalculate`, `get_avoidance_status`,
 //! `convert_lines_to_internal`, `evaluate_point_for_next_layer_function`, `split_lines`,
@@ -13,7 +14,9 @@
 //! (with `increase_areas_one_layer`, `increase_single_area` and `merge_influence_areas`),
 //! `create_nodes_from_area` (with `set_points_on_areas`, `set_to_model_contact` and
 //! `remove_deleted_elements`), `generate_branch_areas`, `smooth_branch_areas` and `draw_areas` (with
-//! `drop_non_gracious_areas` and `finalize_interface_and_support_areas`).
+//! `drop_non_gracious_areas` and `finalize_interface_and_support_areas`). The layers `draw_areas` hands on
+//! are required like every other line (they depend on `smooth_outward` of mutable_polygon.rs, whose gate
+//! `MUTABLE_POLYGON_PIN` has to be on, the default).
 //!
 //! The fillers are the generator's `RecFill`, which this test has as well: everything around the fillers
 //! is compared, not the fillers of the engine. The lines of the vectors that start with "in" are the
@@ -59,10 +62,6 @@ fn fnv(s: &str) -> String {
 struct Ctx {
     r: Run,
     full: bool,
-    /// The scenarios whose draw_areas() stopped at a debug assertion.
-    draw_stopped: usize,
-    /// The calls of smooth_outward() by this test that stopped at a debug assertion.
-    smooth_outward_stopped: usize,
 }
 impl Ctx {
     /// gen.cpp `outb(head, body)`
@@ -568,8 +567,8 @@ fn run_scenario(c: &mut Ctx, scenario: usize) {
         dump_draw_areas(c, &format!("{s} branch"), &mb, &linear_data, &linear_data_layers);
         smooth_branch_areas(cfg, &mut mb, &mut linear_data, &linear_data_layers, &|| {});
         dump_draw_areas(c, &format!("{s} smooth"), &mb, &linear_data, &linear_data_layers);
-        // The union of the areas of every layer (required) and smooth_outward() of it (reported, see the end
-        // of the test).
+        // The union of the areas of every layer and smooth_outward() of it (MutablePolygon.cpp), the first step of
+        // finalize_interface_and_support_areas() on the areas of a layer.
         for layer_idx in 0..linear_data_layers.len().saturating_sub(1) {
             let mut all: Polygons = Vec::new();
             for a in &linear_data[linear_data_layers[layer_idx]..linear_data_layers[layer_idx + 1]] {
@@ -580,14 +579,8 @@ fn run_scenario(c: &mut Ctx, scenario: usize) {
             }
             let u = cu::union_(&all);
             c.outb(format!("{s} layer_union {layer_idx}"), polys_s(&u));
-            let width = cfg.support_line_width;
-            match std::panic::catch_unwind(|| slicer::mutable_polygon::smooth_outward_polygons(u, width)) {
-                Ok(smoothed) => c.outb(format!("{s} smooth_outward {layer_idx}"), polys_s(&smoothed)),
-                Err(_) => {
-                    c.smooth_outward_stopped += 1;
-                    c.r.out(format!("{s} smooth_outward {layer_idx} stopped at a debug assertion"));
-                }
-            }
+            let smoothed = slicer::mutable_polygon::smooth_outward_polygons(u, cfg.support_line_width);
+            c.outb(format!("{s} smooth_outward {layer_idx}"), polys_s(&smoothed));
         }
     }
     let mut bottom_contacts: SupportGeneratorLayersPtr = Vec::new();
@@ -595,28 +588,18 @@ fn run_scenario(c: &mut Ctx, scenario: usize) {
     if support_params.has_bottom_contacts {
         bottom_contacts = vec![SUPPORT_GENERATOR_LAYER_PTR_NULL; num_support_layers];
     }
-    // draw_areas() ends in finalize_interface_and_support_areas(), which smooths the areas of a layer with
-    // smooth_outward() of mutable_polygon.rs. That port is not equal to the pin yet (see the end of the test):
-    // a debug assertion of it (MutablePolygon.cpp:242 is an `assert`, which the pin's release build does not
-    // have) stops some scenarios here. The stop is counted and the scenario goes on with what it has.
-    let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        draw_areas(
-            obj,
-            &volumes,
-            cfg,
-            &overhangs,
-            &mut move_bounds,
-            &mut bottom_contacts,
-            &mut top_contacts,
-            &mut intermediate_layers,
-            &mut layer_storage,
-            &|| {},
-        );
-    }))
-    .is_err();
-    if stopped {
-        c.draw_stopped += 1;
-    }
+    draw_areas(
+        obj,
+        &volumes,
+        cfg,
+        &overhangs,
+        &mut move_bounds,
+        &mut bottom_contacts,
+        &mut top_contacts,
+        &mut intermediate_layers,
+        &mut layer_storage,
+        &|| {},
+    );
     dump_generator_layers(c, &format!("{s} draw bottom_contacts"), &layer_storage, &bottom_contacts);
     dump_generator_layers(c, &format!("{s} draw top_contacts"), &layer_storage, &top_contacts);
     dump_generator_layers(c, &format!("{s} draw intermediate_layers"), &layer_storage, &intermediate_layers);
@@ -792,6 +775,102 @@ fn run_helpers(c: &mut Ctx) {
             i += 1;
         }
     }
+    // section_circles_intersect()
+    {
+        use slicer::geometry::geometry::Vec3d;
+        let mut line = String::from("section_circles_intersect ");
+        while let Some(l) = c.r.input("in sections") {
+            let mut t = Tok::new(&l);
+            let v3 = |t: &mut Tok| Vec3d::new(t.d(), t.d(), t.d());
+            let p1 = v3(&mut t);
+            let n1 = v3(&mut t);
+            let r1 = t.d();
+            let p2 = v3(&mut t);
+            let n2 = v3(&mut t);
+            let r2 = t.d();
+            line += if section_circles_intersect(&p1, &n1, r1, &p2, &n2, r2) { "1" } else { "0" };
+        }
+        c.r.out(line);
+    }
+    // extrude_branch_tube(), extrude_branch()
+    {
+        use slicer::geometry::geometry::Vec3d;
+        use slicer::normal_utils::{indexed_triangle_set, Vec3f};
+        let d3 = |v: &Vec3d| format!("{} {} {}", hd(v.x), hd(v.y), hd(v.z));
+        let its_s = |its: &indexed_triangle_set| {
+            let mut o = format!("{}", its.vertices.len());
+            for v in &its.vertices {
+                o += &format!(" {} {} {}", hf(v.x), hf(v.y), hf(v.z));
+            }
+            o += &format!(" {}", its.indices.len());
+            for f in &its.indices {
+                o += &format!(" {} {} {}", f[0], f[1], f[2]);
+            }
+            o
+        };
+        let mut m = TreeSupportMeshGroupSettings::default();
+        m.support_tree_branch_diameter_angle = 0.14;
+        m.support_tree_tip_diameter = 60000;
+        m.support_xy_distance_overhang = 15000;
+        let mut sp = SlicingParams::default();
+        sp.layer_height = 0.2;
+        let cfg = TreeSupportSettings::new(&m, &sp);
+        let mut cfg_raft = cfg.clone();
+        cfg_raft.raft_layers = vec![0.1, 0.2];
+        // What layer_z() reads of the slicing parameters.
+        let mut spz = SlicingParams::default();
+        spz.layer_height = 0.2;
+        spz.first_object_layer_height = 0.25;
+        spz.object_print_z_min = 0.;
+        let mut spz_raft = spz.clone();
+        spz_raft.object_print_z_min = 0.3;
+        let no_move_bounds: Vec<SupportElements> = Vec::new();
+        let mut i = 0usize;
+        while let Some(l) = c.r.input("in path") {
+            let mut t = Tok::new(&l);
+            let n = t.i() as usize;
+            let raft = t.s() == "1";
+            let mut elems: Vec<SupportElement> = Vec::new();
+            for _ in 0..n {
+                let line = c.r.input("in pstate").expect("pstate");
+                let s = tok_state(&mut Tok::new(&line));
+                assert_eq!(state_s(&s), line, "a state read back");
+                elems.push(SupportElement::new(s, Vec::new()));
+            }
+            let path: Vec<&SupportElement> = elems.iter().collect();
+            let (cc, ss) = if raft { (&cfg_raft, &spz_raft) } else { (&cfg, &spz) };
+            for caps in 0..4 {
+                let mut its = indexed_triangle_set::default();
+                if caps == 3 {
+                    its.vertices.push(Vec3f::new(1., 2., 3.));
+                }
+                let span = extrude_branch_tube(
+                    &path,
+                    cc,
+                    ss,
+                    &no_move_bounds,
+                    &mut its,
+                    if caps & 1 != 0 { TubeEndCap::FlatDisk } else { TubeEndCap::HemisphereMesh },
+                    if caps & 2 != 0 { TubeEndCap::FlatDisk } else { TubeEndCap::HemisphereMesh },
+                );
+                c.outb(format!("extrude_branch_tube {i} {caps} {} {} {}", hf(span.0), hf(span.1), its.vertices.len()), its_s(&its));
+            }
+            {
+                let mut its = indexed_triangle_set::default();
+                let mut split_caps: Vec<ExtrudeSplitCap> = Vec::new();
+                let span = extrude_branch(&path, cc, ss, &no_move_bounds, &mut its, Some(&mut split_caps));
+                let mut body = its_s(&its);
+                for cap in &split_caps {
+                    body += &format!(" {} {} {} {}", d3(&cap.center), d3(&cap.normal), hd(cap.radius), hb(cap.is_bottom));
+                }
+                c.outb(format!("extrude_branch {i} {} {} {} {}", hf(span.0), hf(span.1), its.vertices.len(), split_caps.len()), body);
+                let mut its2 = indexed_triangle_set::default();
+                let span2 = extrude_branch(&path, cc, ss, &no_move_bounds, &mut its2, None);
+                c.outb(format!("extrude_branch_plain {i} {} {}", hf(span2.0), hf(span2.1)), its_s(&its2));
+            }
+            i += 1;
+        }
+    }
 }
 
 /// gen.cpp `NUM_SCENARIOS`
@@ -807,7 +886,7 @@ fn tree_support_3d_native_parity() {
         }
         Err(_) => Run::load("tree_support_3d"),
     };
-    let mut c = Ctx { r: run, full: false, draw_stopped: 0, smooth_outward_stopped: 0 };
+    let mut c = Ctx { r: run, full: false };
     c.full = c.r.input("in mode").expect("mode") == "full";
     // A diagnostic: one scenario only, of a file the generator wrote for that scenario.
     let only: Option<usize> = std::env::var("TREE_SUPPORT_3D_PARITY_ONLY").ok().and_then(|v| v.parse().ok());
@@ -852,35 +931,5 @@ fn tree_support_3d_native_parity() {
     }
     let bad = c.r.finish();
     eprintln!("{} lines, {} mismatches", c.r.expected.len(), bad);
-    // The stage "draw" (the layers draw_areas() hands on) and the lines "smooth_outward" are reported, not
-    // required. The branch areas are equal to the pin's before and after the smoothing of the branches (the
-    // stages "branch" and "smooth"), and so is their union by layer ("layer_union").
-    // finalize_interface_and_support_areas() then runs that union through smooth_outward() of
-    // mutable_polygon.rs, which does not give the pin's polygons yet: the lines "smooth_outward" are that call
-    // by itself, on the same unions. Every other line is required, and so are these from the moment they come
-    // out equal.
-    let (mut draw_lines, mut draw_bad, mut smooth_lines, mut smooth_bad, mut required_bad) = (0usize, 0usize, 0usize, 0usize, 0usize);
-    for (kind, (n, bad)) in &by_kind {
-        if kind.starts_with("draw ") {
-            draw_lines += n;
-            draw_bad += bad;
-        } else if kind == "smooth_outward" {
-            smooth_lines += n;
-            smooth_bad += bad;
-        } else {
-            required_bad += bad;
-        }
-    }
-    eprintln!(
-        "smooth_outward of mutable_polygon.rs (reported, not required): {smooth_bad} of {smooth_lines} lines differ, {} calls stopped at a debug assertion",
-        c.smooth_outward_stopped
-    );
-    eprintln!(
-        "draw_areas (reported, not required): {draw_bad} of {draw_lines} lines differ, {} scenarios stopped at a debug assertion of smooth_outward",
-        c.draw_stopped
-    );
-    assert_eq!(required_bad, 0, "lines of the vectors that differ, the stage \"draw\" and the lines \"smooth_outward\" aside");
-    if draw_bad == 0 && c.draw_stopped == 0 && smooth_bad == 0 && c.smooth_outward_stopped == 0 {
-        assert_eq!(bad, 0, "lines of the vectors that differ");
-    }
+    assert_eq!(bad, 0, "lines of the vectors that differ");
 }

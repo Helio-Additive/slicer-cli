@@ -560,7 +560,9 @@ impl Layer {
         }
 
         // Layer.cpp:445 — return intersection_pl(result_lines, limit_to_outline);
-        crate::clipper2_utils::intersection_pl_2(&result_lines, limit_to_outline)
+        // ClipperLib's (ClipperUtils.cpp:933 `intersection_pl(const Polylines &, const Polygons &)`), not Clipper2's:
+        // the two round the crossing points differently.
+        crate::support::support_common::cu::intersection_pl(&result_lines, limit_to_outline)
     }
 }
 

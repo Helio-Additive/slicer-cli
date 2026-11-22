@@ -22,6 +22,7 @@ use slicer::support::support_common::{cu, BBox, InfillFailedException, SupportFi
 use slicer::support::support_layer::{SupportGeneratorLayer, SupportGeneratorLayerStorage, SupportGeneratorLayersPtr};
 use slicer::support::support_material::grid::{contours_simplified, rasterize_polygons, SupportGridParams, SupportGridPattern, SMS_GRID};
 use slicer::support::support_material::material::*;
+use slicer::support::support_material::{collect_region_slices_by_type, collect_slices_outer, layers_append};
 use slicer::surface::{Surface, SurfaceType};
 use support_shared::*;
 
@@ -535,6 +536,72 @@ fn run_object(r: &mut Run, scenario: usize) -> bool {
     true
 }
 
+/// gen.cpp `run_misc`: layers_append, collect_region_slices_by_type, collect_slices_outer, OverhangCluster
+/// and add_overhang called directly.
+fn run_misc(r: &mut Run) {
+    while let Some(line) = r.input("in misc la") {
+        let mut t = Tok::new(&line);
+        let _n = t.i();
+        let mut read = |t: &mut Tok| -> SupportGeneratorLayersPtr {
+            let n = t.i();
+            (0..n).map(|_| t.i() as usize).collect()
+        };
+        let mut dst = read(&mut t);
+        let src = read(&mut t);
+        layers_append(&mut dst, &src);
+        r.out(format!("misc la {}", list_s(&dst)));
+    }
+    while let Some(line) = r.input("in misc crs") {
+        let mut t = Tok::new(&line);
+        let nr = t.i() as usize;
+        let mut layer = Layer::new(0, 0, 0.2, 0.2, 0.1);
+        for k in 0..nr {
+            let mut lr = LayerRegion::new(0, k);
+            lr.slices.surfaces = tok_surfs(&mut t);
+            layer.add_region(lr);
+        }
+        layer.lslices = t.expolys();
+        r.out(format!(
+            "misc crs {} {} {} {} {}",
+            polys_s(&collect_region_slices_by_type(&layer, SurfaceType::Top)),
+            polys_s(&collect_region_slices_by_type(&layer, SurfaceType::Bottom)),
+            polys_s(&collect_region_slices_by_type(&layer, SurfaceType::BottomBridge)),
+            polys_s(&collect_region_slices_by_type(&layer, SurfaceType::Internal)),
+            polys_s(&collect_slices_outer(&layer))
+        ));
+    }
+    while let Some(line) = r.input("in misc oc") {
+        let mut t = Tok::new(&line);
+        let offset_scaled = t.d();
+        let n = t.i() as usize;
+        let mut layer_nrs: Vec<i32> = Vec::new();
+        let mut overhangs = Vec::new();
+        for _ in 0..n {
+            layer_nrs.push(t.i() as i32);
+            overhangs.push(t.expoly());
+        }
+        let mut clusters: Vec<OverhangCluster> = Vec::new();
+        let mut added = String::from("misc oc added");
+        for i in 0..n {
+            let hits: String = clusters.iter().map(|c| hb(c.intersects(&overhangs[i], layer_nrs[i]))).collect();
+            let c = add_overhang(&mut clusters, (0, i), &overhangs[i], layer_nrs[i], offset_scaled);
+            added += &format!(" {}:{}", c, if hits.is_empty() { "-".to_string() } else { hits });
+        }
+        r.out(added);
+        r.out(format!("misc oc clusters {}", clusters.len()));
+        for c in &clusters {
+            let mut o = format!("misc oc C {} {} {} {} {}", c.min_layer, c.max_layer, c.height(), hd(c.offset_scaled), c.layer_overhangs.len());
+            for (k, v) in &c.layer_overhangs {
+                o += &format!(" {} {}", k, v.len());
+                for e in v {
+                    o += &format!(" {}", e.1);
+                }
+            }
+            r.out(o + " " + &expolys_s(&c.merged_overhangs_dilated));
+        }
+    }
+}
+
 /// A filler that fills nothing: the extrusions of the supports are not compared (they are the fillers').
 struct NoFill {
     base: Fill,
@@ -561,13 +628,14 @@ impl SupportFillFactory for NoFillFactory {
 fn support_material_native_parity() {
     let mut r = Run::load("support_material");
     run_grid(&mut r);
+    run_misc(&mut r);
     let mut scenarios = 0;
     while run_object(&mut r, scenarios) {
         scenarios += 1;
     }
     eprintln!("support_material: {scenarios} object scenarios");
     let n = r.expected.iter().filter(|l| !l.starts_with("in ")).count();
-    for tag in ["rast ", "dil ", "seed ", "cs ", "isl ", "par ", "pat ", "ext "] {
+    for tag in ["rast ", "dil ", "seed ", "cs ", "isl ", "par ", "pat ", "ext ", "misc la ", "misc crs ", "misc oc "] {
         let (total, ok) = r.tally(tag);
         eprintln!("support_material: {tag}: {ok} of {total}");
     }
@@ -583,4 +651,57 @@ fn support_material_native_parity() {
     let bad = r.finish();
     eprintln!("support_material: {} result lines, {} differ", n, bad);
     assert_eq!(bad, 0);
+}
+
+/// `SupportGridPattern::serialize` / `deserialize` (SupportMaterial.cpp:912-1013) exist only in a build with
+/// `SLIC3R_DEBUG` and without the AGG rasterizer, so there is nothing of the pin to compare with: the file
+/// layout is checked byte by byte and the polygons have to come back.
+#[test]
+fn support_grid_pattern_serialize_round_trip() {
+    use slicer::geometry::Polygon;
+    let sq = |x0: i64, y0: i64, x1: i64, y1: i64| Polygon::from_points(vec![Point::new(x0, y0), Point::new(x1, y0), Point::new(x1, y1), Point::new(x0, y1)]);
+    let support: Polygons = vec![sq(0, 0, 3_000_000, 2_000_000), sq(5_000_000, -1_000_000, 9_000_000, 4_000_000)];
+    let trimming: Polygons = vec![sq(-500_000, -500_000, 200_000, 200_000)];
+    let params = SupportGridParams {
+        style: SMS_GRID,
+        grid_resolution: 2.5,
+        support_angle: 0.,
+        extrusion_width: 0.42,
+        support_closing_radius: 2.,
+        expansion_to_slice: 21_005,
+        expansion_to_propagate: -3,
+    };
+    let pattern = SupportGridPattern::new(&support, &trimming, &params);
+    let path = std::env::temp_dir().join(format!("support_grid_pattern_{}.bin", std::process::id()));
+    let path_s = path.to_str().expect("path");
+    pattern.serialize(path_s).expect("serialize");
+    let bytes = std::fs::read(&path).expect("read");
+    // 8 + 8, then 4 + (4 + 4 * 16) * 2 for the support polygons and 4 + (4 + 4 * 16) for the trimming ones
+    assert_eq!(bytes.len(), 16 + 4 + 2 * 68 + 4 + 68);
+    assert_eq!(f64::from_ne_bytes(bytes[0..8].try_into().unwrap()), 2.5);
+    assert_eq!(f64::from_ne_bytes(bytes[8..16].try_into().unwrap()), 0.);
+    assert_eq!(u32::from_ne_bytes(bytes[16..20].try_into().unwrap()), 2);
+    assert_eq!(u32::from_ne_bytes(bytes[20..24].try_into().unwrap()), 4);
+    assert_eq!(i64::from_ne_bytes(bytes[40..48].try_into().unwrap()), 3_000_000);
+
+    let back = SupportGridPattern::deserialize(path_s, -1);
+    assert_eq!(back.trimming_polygons(), &trimming);
+    // The support polygons went through ClipperLib::SimplifyPolygons: the same two squares, whatever their
+    // first points.
+    assert_eq!(back.support_polygons().len(), 2);
+    let area = |p: &Polygon| p.area().abs();
+    let mut areas: Vec<f64> = back.support_polygons().iter().map(area).collect();
+    areas.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(areas, vec![6e12, 2e13]);
+    // coord_t(scale_(m_support_spacing)): 2.5 / 0.00001 is 249999.99999999997, truncated
+    assert_eq!(back.grid().resolution(), (2.5 / 0.00001) as i64);
+    assert_eq!(back.grid().resolution(), 249_999);
+    // Only the polygon asked for; a file that is not there.
+    let one = SupportGridPattern::deserialize(path_s, 1);
+    assert_eq!(one.support_polygons().len(), 1);
+    assert_eq!(area(&one.support_polygons()[0]), 2e13);
+    let _ = std::fs::remove_file(&path);
+    let mut none = SupportGridPattern::new(&support, &trimming, &params);
+    assert!(!none.deserialize_(path_s, -1));
+    assert_eq!(none.support_polygons().len(), 2);
 }

@@ -14,21 +14,13 @@
 //! from top to bottom, growing trees from overhang points toward the build
 //! plate and propagating them downward.
 //!
-//! PORTING STATUS (partial): the tractable surface — the class data layout, the
-//! constructor magic-value math, `get_trees_for_layer`, and
-//! `generate_initial_internal_overhangs` — is ported faithfully against existing
-//! crate primitives. The two `Generator(...)` constructors and the
-//! `generate_trees` / `generate_trees_for_support` orchestration loops are
-//! BLOCKED. The config hierarchy is now fully wired (PrintObject::print()->config()
-//! works, nozzle_diameter scalar is equivalent to max-element over a single-nozzle
-//! vector, and sparse_infill_density is mapped to fill_density). The sole remaining
-//! blocker is:
-//!   * `Layer::generateNewTrees`, `Layer::reconnectRoots` (Fill/Lightning/Layer.cpp)
-//!     — `lightning::layer::Layer` does not yet implement these methods.
-//!     `Node::propagateToNextLayer`, `get_extents(const NodeSPtr&)`,
-//!     `locator_cell_size`, and the `NodeSPtr` (`Rc<RefCell<Node>>`) tree-mutation
-//!     semantics are all ported in `tree_node.rs`.
-//! These are listed faithfully below where they are called.
+//! PORTING STATUS (partial): the constructor for the supports (`Generator::new_for_support`,
+//! Generator.cpp:100-143) and `generate_trees_for_support` (Generator.cpp:238-278) are ported over the
+//! PrintObject of `crate::print::faithful` and compared with the pin through the tree support
+//! (tests/tree_support_native_parity.rs, the "lightning_trees" lines). The constructor for the infill of an
+//! object and `generate_trees` are still the commented references below: they read the layers of the
+//! old-world `crate::print_object::PrintObject`, and `generate_initial_internal_overhangs` runs on the `geo`
+//! clipper (see its FIDELITY-NOTE).
 
 // Generator.cpp:4-11
 //   #include "Generator.hpp"
@@ -400,6 +392,195 @@ impl Generator {
     //     self.bboxs.resize(contours.len(), BoundingBox::default());
     //     ... (identical locator + per-layer loop as generate_trees, using
     //          `contours[layer_id]` in place of `infill_outlines[layer_id]`) ...
+}
+
+impl Generator {
+    /// Generator.cpp:100-143 — `Generator::Generator(PrintObject* m_object, std::vector<Polygons>& contours,
+    ///   std::vector<Polygons>& overhangs, const std::function<void()> &throw_on_cancel_callback, float density)`,
+    /// the constructor the tree support makes the generator of its lightning infill with (TreeSupport.cpp
+    /// draw_circles()), over the PrintObject of `crate::print::faithful`.
+    pub fn new_for_support(
+        m_object: &crate::print::faithful::PrintObject,
+        print: &crate::print::faithful::Print,
+        contours: &mut Vec<Vec<Polygon>>,
+        overhangs: &mut Vec<Vec<Polygon>>,
+        throw_on_cancel_callback: &dyn Fn(),
+        density: f32,
+    ) -> Self {
+        use crate::config::{ConfigOptionFloat, ConfigOptionFloats, ConfigOptionFloatsNullable, ConfigOptionResolver};
+        let mut this = Generator::default();
+        // Generator.cpp:102-104
+        let print_config = print.config();
+        let object_config = m_object.config();
+        let shared_regions = m_object.m_shared_regions.as_ref().expect("PrintObject::shared_regions").borrow();
+        let region = shared_regions.all_regions.first().expect("all_regions.front()").borrow();
+        let region_config = region.config();
+        let cfg_float = |config: &crate::print_config::config_def::DynamicPrintConfig, key: &str| -> f64 {
+            config.option(key).and_then(|o| o.get_float().ok()).unwrap_or(0.0)
+        };
+        // Generator.cpp:105-106
+        let nozzle_diameters: Vec<f64> = match print_config.option("nozzle_diameter") {
+            Some(opt) => {
+                if let Some(o) = opt.as_any().downcast_ref::<ConfigOptionFloats>() {
+                    o.values.clone()
+                } else if let Some(o) = opt.as_any().downcast_ref::<ConfigOptionFloatsNullable>() {
+                    o.values.clone()
+                } else {
+                    Vec::new()
+                }
+            }
+            None => Vec::new(),
+        };
+        // `*std::max_element(begin, end)`: the first of the largest values
+        let mut max_nozzle_diameter: f64 = nozzle_diameters[0];
+        for &d in &nozzle_diameters[1..] {
+            if max_nozzle_diameter < d {
+                max_nozzle_diameter = d;
+            }
+        }
+        // Generator.cpp:108: `float Flow::auto_extrusion_width(FlowRole, float)` (Flow.cpp:22-37), `1.125f *
+        // nozzle_diameter` of floats for the infill
+        let default_infill_extrusion_width: f64 = (1.125f32 * (max_nozzle_diameter as f32)) as f64;
+        // Note: There's not going to be a layer below the first one, so the 'initial layer height' doesn't have to be taken into account.
+        // Generator.cpp:110: `scaled<double>(v)` is `v / SCALING_FACTOR` (Point.hpp:527-530)
+        let layer_thickness: f64 = crate::scaled_f(cfg_float(object_config, "layer_height"));
+
+        // Generator.cpp:112-116: `scaled<float>(double)` is `float(v / SCALING_FACTOR)`
+        let sparse_infill_filament = region_config.option("sparse_infill_filament").and_then(|o| o.get_int().ok()).unwrap_or(0);
+        this.m_infill_extrusion_width = crate::scaled_f(crate::flow::Flow::extrusion_width_for_nozzle(
+            &ConfigOptionFloat::with_value(cfg_float(region_config, "sparse_infill_line_width")),
+            crate::print_config::config_def::primary_nozzle_diameter(print.full_print_config()) as f32,
+            crate::print::faithful::nozzle_diameter_for_filament(print_config, sparse_infill_filament as u32),
+            crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(print.full_print_config()),
+        )) as f32;
+        // sparse_infill_line_width may be 0 (auto) in a support-only context; fall back to the
+        // nozzle-derived default so the supporting radius (and thus the DistanceField cell size)
+        // never collapses to 0, which would make sample_grid_pattern loop forever.
+        // Generator.cpp:120-121: `SCALED_EPSILON` is `scale_(1e-4)`, a double the float is compared with as a float
+        if this.m_infill_extrusion_width < (crate::scaled_f(1e-4) as f32) {
+            this.m_infill_extrusion_width = crate::scaled_f(default_infill_extrusion_width) as f32;
+        }
+        //m_supporting_radius: against to the density of lightning, failures may happen if set to high density
+        //higher density lightning makes support harder, more time-consuming on computing and printing, but more reliable on supporting overhangs
+        //lower density lightning performs opposite
+        //TODO: decide whether enable density controller in advanced options or not
+        // Generator.cpp:126-127: a float quotient cut to a coord_t (an int at the pin); `scaled<coord_t>(0.05)`
+        // is `coord_t(0.05 / SCALING_FACTOR)`
+        let density = 0.15f32.max(density);
+        this.m_supporting_radius = (((this.m_infill_extrusion_width / density) as i32) as Coord).max(crate::scaled_f(0.05) as i32 as Coord);
+
+        // Generator.cpp:129-134: doubles assigned to coord_t members
+        let lightning_infill_overhang_angle: f64 = std::f64::consts::PI / 4.0; // 45 degrees
+        let lightning_infill_prune_angle: f64 = std::f64::consts::PI / 4.0; // 45 degrees
+        let lightning_infill_straightening_angle: f64 = std::f64::consts::PI / 4.0; // 45 degrees
+        this.m_wall_supporting_radius = (layer_thickness * lightning_infill_overhang_angle.tan()) as i32 as Coord;
+        this.m_prune_length = (layer_thickness * lightning_infill_prune_angle.tan()) as i32 as Coord;
+        this.m_straightening_max_distance = (layer_thickness * lightning_infill_straightening_angle.tan()) as i32 as Coord;
+
+        // Generator.cpp:136
+        this.m_overhang_per_layer = overhangs.clone();
+
+        // Generator.cpp:138
+        this.generate_trees_for_support(contours, throw_on_cancel_callback);
+        this
+    }
+
+    /// Generator.cpp:238-278 — `void Generator::generateTreesforSupport(std::vector<Polygons>& contours,
+    ///   const std::function<void()> &throw_on_cancel_callback)`
+    pub fn generate_trees_for_support(&mut self, contours: &mut Vec<Vec<Polygon>>, throw_on_cancel_callback: &dyn Fn()) {
+        use super::tree_node::LOCATOR_CELL_SIZE;
+        use crate::edge_grid::EdgeGrid;
+        use crate::geometry::polygon::get_extents_polygons;
+        // The bounding boxes of the locator are those of `crate::geometry` (what EdgeGrid and the tree nodes take).
+        // `bbox.inflated(SCALED_EPSILON)` (BoundingBox.hpp:48, BoundingBox.cpp `offset(coordf_t delta)`: `PointClass
+        // v(delta, delta)`, a Point made of doubles, lrint): `scale_(1e-4)` rounds to 10.
+        let scaled_epsilon: Coord = crate::scaled_f(1e-4).round_ties_even() as Coord;
+        type GeoBoundingBox = crate::geometry::BoundingBox;
+        // Generator.cpp:240
+        if contours.is_empty() {
+            return;
+        }
+
+        // Generator.cpp:242-243
+        self.m_lightning_layers.resize(contours.len(), Layer::default());
+        self.bboxs.resize(contours.len(), BoundingBox::default());
+
+        // For various operations its beneficial to quickly locate nearby features on the polygon:
+        // Generator.cpp:246-248
+        let top_layer_id: usize = contours.len() - 1;
+        let mut outlines_locator = EdgeGrid::new();
+        outlines_locator.set_bbox(get_extents_polygons(&contours[top_layer_id]).expanded(scaled_epsilon));
+        outlines_locator.create_from_polygons(&contours[top_layer_id], LOCATOR_CELL_SIZE);
+
+        // For-each layer from top to bottom:
+        // Generator.cpp:251-277
+        let callback = || throw_on_cancel_callback();
+        for layer_id in (0..=top_layer_id).rev() {
+            throw_on_cancel_callback();
+            let current_outlines: &Vec<Polygon> = &contours[layer_id];
+            let current_outlines_bbox: GeoBoundingBox = get_extents_polygons(current_outlines);
+
+            self.bboxs[layer_id] = if current_outlines_bbox.is_defined() {
+                BoundingBox { min: current_outlines_bbox.min, max: current_outlines_bbox.max, defined: true }
+            } else {
+                BoundingBox::default()
+            };
+
+            // register all trees propagated from the previous layer as to-be-reconnected
+            let to_be_reconnected_tree_roots: Vec<super::tree_node::NodeSPtr> = self.m_lightning_layers[layer_id].tree_roots.clone();
+
+            self.m_lightning_layers[layer_id].generate_new_trees(
+                &self.m_overhang_per_layer[layer_id],
+                current_outlines,
+                &current_outlines_bbox,
+                &outlines_locator,
+                self.m_supporting_radius,
+                self.m_wall_supporting_radius,
+                &callback,
+            );
+            self.m_lightning_layers[layer_id].reconnect_roots(
+                &to_be_reconnected_tree_roots,
+                current_outlines,
+                &current_outlines_bbox,
+                &outlines_locator,
+                self.m_supporting_radius,
+                self.m_wall_supporting_radius,
+            );
+
+            // Initialize trees for next lower layer from the current one.
+            if layer_id == 0 {
+                return;
+            }
+
+            let below_outlines: &Vec<Polygon> = &contours[layer_id - 1];
+            let mut below_outlines_bbox: GeoBoundingBox = get_extents_polygons(below_outlines).expanded(scaled_epsilon);
+            let outlines_locator_bbox = *outlines_locator.bbox();
+            if outlines_locator_bbox.is_defined() {
+                below_outlines_bbox.merge(&outlines_locator_bbox);
+            }
+
+            if !self.m_lightning_layers[layer_id].tree_roots.is_empty() {
+                below_outlines_bbox.merge(&super::tree_node::get_extents_roots(&self.m_lightning_layers[layer_id].tree_roots).expanded(scaled_epsilon));
+            }
+
+            outlines_locator.set_bbox(below_outlines_bbox);
+            outlines_locator.create_from_polygons(below_outlines, LOCATOR_CELL_SIZE);
+
+            let (lower, upper) = self.m_lightning_layers.split_at_mut(layer_id);
+            let lower_trees: &mut Vec<super::tree_node::NodeSPtr> = &mut lower[layer_id - 1].tree_roots;
+            for tree in &upper[0].tree_roots {
+                super::tree_node::propagate_to_next_layer(
+                    tree,
+                    lower_trees,
+                    below_outlines,
+                    &outlines_locator,
+                    self.m_prune_length,
+                    self.m_straightening_max_distance,
+                    LOCATOR_CELL_SIZE / 2,
+                );
+            }
+        }
+    }
 }
 
 // Generator.cpp:265 — } // namespace Slic3r::FillLightning

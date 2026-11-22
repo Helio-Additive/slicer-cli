@@ -489,21 +489,21 @@ fn perimeter_generator_native_parity() {
                 }
                 // gen.cpp: the nodes of the islands before this one.
                 let mut loop_nodes: Vec<LoopNode> = (0..nodes_before).map(|i| LoopNode::new(i, i, BoundingBox::new())).collect();
-                let members = PerimeterGeneratorArachneMembers {
-                    print: &c.print,
-                    config: &c.region_config,
-                    object_config: &c.object_config,
+                let members = PerimeterGeneratorArachneMembers::from_configs(
+                    &c.print,
+                    &c.region_config,
+                    &c.object_config,
+                    true,
                     layer_id,
                     starts_at_object_base,
                     slice_z,
                     perimeter_flow,
                     ext_perimeter_flow,
                     overhang_flow,
-                    preset_nozzle_diameter: 0.4,
-                    multi_nozzle_diameter_mode: c.multi_nozzle_diameter_mode,
-                    perimeter_regions_empty: true,
+                    0.4,
+                    c.multi_nozzle_diameter_mode,
                     lower_slices_polygons,
-                };
+                );
                 let mut pg_extrusions: Vec<PerimeterGeneratorArachneExtrusion> = lines
                     .iter_mut()
                     .zip(contours.iter())
@@ -553,4 +553,311 @@ fn perimeter_generator_native_parity() {
     eprintln!("perimeter_generator parity: {} lines, {} mismatches", expected.len(), mismatches);
     assert_eq!(lines.len(), expected.len());
     assert_eq!(mismatches, 0, "{mismatches} of {} lines differ from the pin", expected.len());
+}
+
+// ---------------------------------------------------------------------------------------------
+// The whole of process_classic and process_arachne: LayerRegion::make_perimeters of a layer
+// ---------------------------------------------------------------------------------------------
+//
+// tests/data/perimeter_generator/process_vectors.txt.gz, made by gen.cpp `run_process`: a line
+// "pcfg<TAB>tag<TAB>key=value..." holds the options the walls read as the pin's Print holds them after
+// `Print::apply`, a line "proc <layer> => <flows> | <loops> | <gap fill> | <fill surfaces> |
+// <fill_no_overlap> | <loop nodes> | <islands>" one call of the pin's `LayerRegion::make_perimeters`
+// (PerimeterGenerator::process_classic or process_arachne). A long result is "#" and the FNV-1a hash
+// of its text unless the generator ran with "full". The test builds the configs of this crate from
+// the options through their `set_deserialize`, as the slicing path does, and calls the live
+// `LayerRegion::make_perimeters_with`.
+//
+// `PERIMETER_GENERATOR_PROCESS_VECTORS` names a file of the generator to read instead of the committed
+// one, `PG_PROC_FILTER` a substring of the tags to run, `PG_PROC_SHOW` how many differing results to
+// print (with a file of full results).
+
+fn fnv(s: &str) -> String {
+    let mut h: u64 = 1469598103934665603;
+    for c in s.bytes() {
+        h ^= c as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    format!("{h:016x}")
+}
+
+/// ExtrusionEntity.hpp:45-70 `enum ExtrusionRole`: the declaration order of both sides is the same.
+fn role_int(r: ExtrusionRole) -> i64 {
+    r as i64
+}
+
+/// gen.cpp `WPATHS(paths)`
+fn wpaths_s(paths: &[ExtrusionPath]) -> String {
+    let mut o = paths.len().to_string();
+    for p in paths {
+        o += &format!(
+            " {} {} {:08x} {:08x} {} {} {} {}",
+            role_int(p.role),
+            hd(p.mm3_per_mm),
+            (p.width as f32).to_bits(),
+            (p.height as f32).to_bits(),
+            hd(p.overhang_degree),
+            p.curve_degree,
+            p.customize_flag as i32,
+            p.polyline.points.len()
+        );
+        for q in &p.polyline.points {
+            o += &format!(" {}", pt(q));
+        }
+    }
+    o
+}
+
+/// gen.cpp `leaves(coll, o, n)`
+fn leaves(coll: &ExtrusionEntityCollection, o: &mut String, n: &mut usize) {
+    for e in &coll.entities {
+        match e {
+            ExtrusionEntityType::Collection(c) => leaves(c, o, n),
+            ExtrusionEntityType::Loop(l) => {
+                *o += &format!(" L {} {} {}", l.loop_role.0, l.customize_flag as i32, wpaths_s(&l.paths));
+                *n += 1;
+            }
+            ExtrusionEntityType::MultiPath(m) => {
+                *o += &format!(" M {}", wpaths_s(&m.paths));
+                *n += 1;
+            }
+            ExtrusionEntityType::Path(p) => {
+                *o += &format!(" P {}", wpaths_s(std::slice::from_ref(p)));
+                *n += 1;
+            }
+        }
+    }
+}
+/// gen.cpp `LEAVES(coll)`
+fn leaves_s(coll: &ExtrusionEntityCollection) -> String {
+    let mut o = String::new();
+    let mut n = 0usize;
+    leaves(coll, &mut o, &mut n);
+    format!("{n}{o}")
+}
+
+/// gen.cpp `PNODES(nodes)`
+fn pnodes_s(nodes: &[LoopNode]) -> String {
+    let mut o = nodes.len().to_string();
+    for n in nodes {
+        o += &format!(" {} {} {} {} {}", n.node_id, n.loop_id, bbox_s(&n.bbox), hb(n.node_contour.is_loop), n.node_contour.pts.len());
+        for q in &n.node_contour.pts {
+            o += &format!(" {}", pt(q));
+        }
+        o += &format!(" {}", n.node_contour.widths.len());
+        for w in &n.node_contour.widths {
+            o += &format!(" {w}");
+        }
+    }
+    o
+}
+
+fn read_process_vectors() -> Vec<String> {
+    if let Ok(path) = std::env::var("PERIMETER_GENERATOR_PROCESS_VECTORS") {
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        return text.lines().map(|l| l.to_string()).collect();
+    }
+    let path = format!("{}/tests/data/perimeter_generator/process_vectors.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).unwrap_or_else(|e| panic!("{path}: {e}"));
+    text.lines().map(|l| l.to_string()).collect()
+}
+
+/// The options of a "pcfg" line and the configs of this crate made of them.
+struct ProcCfg {
+    tag: String,
+    kv: std::collections::BTreeMap<String, String>,
+    print_config: std::sync::Arc<slicer::print_config::PrintConfig>,
+    object_config: std::sync::Arc<slicer::print_config::PrintObjectConfig>,
+    region: std::sync::Arc<slicer::print_region::PrintRegion>,
+}
+
+fn proc_cfg(rest: &str) -> ProcCfg {
+    let fields: Vec<&str> = rest.split('\t').collect();
+    let mut print_config = slicer::print_config::PrintConfig::default();
+    let mut object_config = slicer::print_config::PrintObjectConfig::default();
+    let mut region_config = slicer::region_config::PrintRegionConfig::default();
+    let mut kv = std::collections::BTreeMap::new();
+    for f in &fields[1..] {
+        let (key, value) = f.split_once('=').expect("key=value");
+        kv.insert(key.to_string(), value.to_string());
+        // The project's values of the options with a value per extruder or filament are lists; the
+        // slicing path hands the first one over (app_slice.rs `load_bambustudio_settings`).
+        let first = match key {
+            "nozzle_diameter" | "gap_infill_speed" | "enable_overhang_speed" => value.split(',').next().unwrap_or(value),
+            _ => value,
+        };
+        print_config.set_deserialize(key, first);
+        object_config.set_deserialize(key, first);
+        region_config.set_deserialize(key, first);
+    }
+    ProcCfg {
+        tag: fields[0].to_string(),
+        kv,
+        print_config: std::sync::Arc::new(print_config),
+        object_config: std::sync::Arc::new(object_config),
+        region: std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config)),
+    }
+}
+
+/// The first token two texts differ in, with the tokens around it.
+fn first_difference(a: &str, b: &str) -> String {
+    let ta: Vec<&str> = a.split(' ').collect();
+    let tb: Vec<&str> = b.split(' ').collect();
+    let k = ta.iter().zip(tb.iter()).position(|(x, y)| x != y).unwrap_or(ta.len().min(tb.len()));
+    let from = k.saturating_sub(12);
+    let cut = |t: &[&str]| t[from.min(t.len())..(k + 14).min(t.len())].join(" ");
+    // The entity the token is in: the markers before it.
+    let entity = ta[..k.min(ta.len())].iter().filter(|x| matches!(**x, "L" | "M" | "P")).count();
+    format!("token {k} of {} / {} (entity {entity})\n      C++:  {}\n      Rust: {}", ta.len(), tb.len(), cut(&ta), cut(&tb))
+}
+
+#[test]
+fn perimeter_generator_process_native_parity() {
+    use slicer::flow::FlowRole;
+    let expected = read_process_vectors();
+    let filter = std::env::var("PG_PROC_FILTER").ok();
+    let show: usize = std::env::var("PG_PROC_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let only_case: Option<usize> = std::env::var("PG_PROC_CASE").ok().and_then(|v| v.parse().ok());
+    const PARTS: [&str; 6] = ["flows", "loops", "gap_fill", "fill_surfaces", "fill_no_overlap", "loop_nodes"];
+    // Per tag: the cases and, per part, those that differ.
+    let mut stats: Vec<(String, usize, [usize; 6])> = Vec::new();
+    let mut cfg: Option<ProcCfg> = None;
+    let mut shown = 0usize;
+    let mut case_in_tag = 0usize;
+    for (line_no, line) in expected.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix("pcfg\t") {
+            let c = proc_cfg(rest);
+            stats.push((c.tag.clone(), 0, [0; 6]));
+            cfg = Some(c);
+            case_in_tag = 0;
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("proc ") else { panic!("unknown line {}", line_no + 1) };
+        let c = cfg.as_ref().expect("pcfg");
+        case_in_tag += 1;
+        if filter.as_ref().is_some_and(|f| !c.tag.contains(f.as_str())) {
+            continue;
+        }
+        if only_case.is_some_and(|k| k != case_in_tag - 1) {
+            continue;
+        }
+        let (inputs, results) = rest.split_once(" => ").expect("results");
+        let mut t = Tok::new(inputs);
+        let layer_id = t.i() as usize;
+        let height = t.d();
+        let print_z = t.d();
+        let _slice_z = t.d();
+        let n = t.i();
+        let mut slices = slicer::surface_collection::SurfaceCollection::new();
+        let mut extra: Vec<usize> = Vec::new();
+        for _ in 0..n {
+            extra.push(t.i() as usize);
+            let mut surface = Surface::new(SurfaceType::Internal, t.expoly());
+            surface.extra_perimeters = *extra.last().unwrap();
+            slices.surfaces.push(surface);
+        }
+        let has_lower = t.b();
+        let lower = t.expolys();
+        let has_upper = t.b();
+        let upper = t.expolys();
+
+        let mut layerm = LayerRegion::new(layer_id, 0);
+        layerm.set_config_hierarchy(c.region.clone(), c.object_config.clone(), c.print_config.clone());
+        layerm.lower_slices = if has_lower { Some(lower) } else { None };
+        layerm.upper_slices = if has_upper { Some(upper) } else { None };
+        layerm.slices = slices.clone();
+        let kv = &c.kv;
+        let patch = |pc: &mut PerimeterConfig| {
+            // The options the configs of this crate's layers do not hold.
+            pc.top_one_wall = kv["top_one_wall_type"] == "all top";
+            pc.top_area_threshold = kv["top_area_threshold"].trim_end_matches('%').parse().expect("top_area_threshold");
+            pc.precise_outer_wall = kv["precise_outer_wall"] == "1";
+            pc.alternate_extra_wall = kv["alternate_extra_wall"] == "1";
+            pc.infill_wall_overlap_percent = kv["infill_wall_overlap"].trim_end_matches('%').parse().expect("infill_wall_overlap");
+            pc.brim_outer_only = kv["brim_type"] == "outer_only" && kv["brim_width"].parse::<f64>().expect("brim_width") > 0.;
+        };
+        layerm.make_perimeters_with(&slices, height, layer_id, print_z, &patch).expect("make_perimeters");
+
+        let mut flows = String::new();
+        let thick_bridges = kv["thick_bridges"] == "1";
+        let list = [
+            layerm.flow(FlowRole::Perimeter, height),
+            layerm.flow(FlowRole::ExternalPerimeter, height),
+            layerm.flow(FlowRole::SolidInfill, height),
+            layerm.bridging_flow(FlowRole::Perimeter, thick_bridges, height),
+        ];
+        for f in list {
+            let f = f.expect("flow");
+            if !flows.is_empty() {
+                flows += " ";
+            }
+            flows += &format!(
+                "{:08x} {:08x} {:08x} {}",
+                (f.width() as f32).to_bits(),
+                (f.height() as f32).to_bits(),
+                (f.spacing() as f32).to_bits(),
+                hd(f.mm3_per_mm().unwrap_or(-1.))
+            );
+        }
+        let fill: ExPolygons = layerm.fill_surfaces.surfaces.iter().map(|s| s.expolygon.clone()).collect();
+        let mine = [
+            flows,
+            leaves_s(&layerm.perimeters),
+            leaves_s(&layerm.thin_fills),
+            expolys_s(&fill),
+            expolys_s(&layerm.fill_no_overlap_expolygons),
+            pnodes_s(&layerm.loop_nodes_out),
+        ];
+        let theirs: Vec<&str> = results.split(" | ").collect();
+        assert!(theirs.len() >= 6, "line {}: {} results", line_no + 1, theirs.len());
+        let entry = stats.last_mut().unwrap();
+        entry.1 += 1;
+        let mut header_printed = false;
+        for (k, part) in PARTS.iter().enumerate() {
+            let equal = match theirs[k].strip_prefix('#') {
+                Some(hash) => fnv(&mine[k]) == hash,
+                None => mine[k] == theirs[k],
+            };
+            if !equal {
+                entry.2[k] += 1;
+                if shown < show && !theirs[k].starts_with('#') {
+                    if !header_printed {
+                        eprintln!("line {} {} case {} (layer {layer_id}, {n} islands, lower {has_lower}, upper {has_upper}):", line_no + 1, c.tag, case_in_tag - 1);
+                        header_printed = true;
+                    }
+                    eprintln!("    {part}: {}", first_difference(theirs[k], &mine[k]));
+                }
+            }
+        }
+        if header_printed {
+            shown += 1;
+        }
+    }
+    let mut total = [0usize; 6];
+    let mut cases = 0usize;
+    eprintln!("{:<36} {:>5}  {}", "tag", "cases", PARTS.join(" "));
+    for (tag, n, bad) in &stats {
+        if *n == 0 {
+            continue;
+        }
+        cases += n;
+        for k in 0..6 {
+            total[k] += bad[k];
+        }
+        eprintln!("{tag:<36} {n:>5}  {}", bad.iter().map(|b| format!("{b:>3}")).collect::<Vec<_>>().join(" "));
+    }
+    eprintln!("perimeter_generator process parity: {cases} cases; differing {}", PARTS.iter().zip(total.iter()).map(|(p, b)| format!("{p} {b}")).collect::<Vec<_>>().join(", "));
+    // The classic walls (`PerimeterGenerator::process_classic`, gate PG_CLASSIC_PIN) are equal to the
+    // pin in every case. The Arachne walls are reported above, not asserted: the live `process_arachne`
+    // is not yet the pin's.
+    if std::env::var("PG_CLASSIC_PIN").as_deref() != Ok("0") {
+        let classic: Vec<String> = stats
+            .iter()
+            .filter(|(tag, n, bad)| tag.starts_with("classic") && *n > 0 && bad.iter().sum::<usize>() > 0)
+            .map(|(tag, _, bad)| format!("{tag} {bad:?}"))
+            .collect();
+        assert!(classic.is_empty(), "classic cases differ from the pin: {}", classic.join("; "));
+    }
 }

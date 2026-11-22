@@ -7094,3 +7094,416 @@ pub fn discretize_polygon(center: &Vec3f, polys: &[Polygon], pts: &mut Vec<Vec3f
     }
     (begin, pts.len() as i32)
 }
+
+// =============================================================================
+// The port of the pin: TreeSupport3D.cpp, the tube of a branch (TubeEndCap to extrude_branch())
+// =============================================================================
+
+/// TreeSupport3D.cpp:3576-3579 `enum class TubeEndCap { HemisphereMesh, FlatDisk };`
+///
+/// End treatment of a tube piece. HemisphereMesh is the original closed cap.
+/// FlatDisk is used at 61563 split joints: close the frustum in the section plane
+/// without a polar hemisphere; the missing hemisphere is injected later as 2D slices.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TubeEndCap {
+    HemisphereMesh,
+    FlatDisk,
+}
+
+/// TreeSupport3D.cpp:3581-3594 `static bool split_cap_use_mesh_hemispheres()`
+///
+/// TREE_SUPPORT_SPLIT_CAP_MODE:
+///   analytic (default) — FlatDisk + hemisphere_slice_polygon() injection
+///   mesh               — 61563-style 3D hemispheres at split joints (no 2D inject)
+pub fn split_cap_use_mesh_hemispheres() -> bool {
+    static USE_MESH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *USE_MESH.get_or_init(|| match std::env::var_os("TREE_SUPPORT_SPLIT_CAP_MODE") {
+        Some(v) => v == "mesh" || v == "3d" || v == "Mesh" || v == "MESH",
+        None => false,
+    })
+}
+
+// `to_3d(unscaled<double>(p), z)`: Point.hpp:565-577, `p.cast<double>() * SCALING_FACTOR`.
+#[inline]
+fn unscaled_to_3d(p: &Point, z: f64) -> Vec3d {
+    Vec3d::new(p.x as f64 * crate::libslic3r::SCALING_FACTOR, p.y as f64 * crate::libslic3r::SCALING_FACTOR, z)
+}
+
+// `unscaled<float>(v)` of a coordinate: Point.hpp:556-563, `float(v) * float(SCALING_FACTOR)`.
+#[inline]
+fn unscaled_f32(v: Coord) -> f32 {
+    v as f32 * crate::libslic3r::SCALING_FACTOR as f32
+}
+
+// `unscaled<double>(v)` of a coordinate: Point.hpp:556-563, `double(v) * SCALING_FACTOR`.
+#[inline]
+fn unscaled_f64(v: Coord) -> f64 {
+    v as f64 * crate::libslic3r::SCALING_FACTOR
+}
+
+// `v.cast<float>()` of a `Vec3d`
+#[inline]
+fn cast3f(v: &Vec3d) -> Vec3f {
+    Vec3f::new(v.x as f32, v.y as f32, v.z as f32)
+}
+
+#[inline]
+fn sub3d(a: &Vec3d, b: &Vec3d) -> Vec3d {
+    Vec3d::new(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+
+#[inline]
+fn add3d(a: &Vec3d, b: &Vec3d) -> Vec3d {
+    Vec3d::new(a.x + b.x, a.y + b.y, a.z + b.z)
+}
+
+/// TreeSupport3D.cpp:3596-3701 `static std::pair<float, float> extrude_branch_tube(const std::vector<const
+/// SupportElement*> &path, const TreeSupportSettings &config, const SlicingParameters &slicing_params, const
+/// std::vector<SupportElements> &move_bounds, indexed_triangle_set &result, TubeEndCap bottom_cap =
+/// TubeEndCap::HemisphereMesh, TubeEndCap top_cap = TubeEndCap::HemisphereMesh)`
+///
+/// Returns Z span of the generated mesh. Generates one closed tube (bottom cap,
+/// bisector-normal section circles connected by zig-zag strips, top cap) for the
+/// given continuous path. This is the original extrude_branch body, now a reusable piece
+/// generator invoked by extrude_branch(), which may split a path into self-intersection-free
+/// pieces before calling this.
+///
+/// `cos(angle)` and `sin(angle)` of the hemispheres take a `float` and are one call (see `sin_cos_f32`).
+pub fn extrude_branch_tube(
+    path: &[&SupportElement],
+    config: &TreeSupportSettings,
+    slicing_params: &crate::slicing::SlicingParams,
+    _move_bounds: &[SupportElements],
+    result: &mut indexed_triangle_set,
+    bottom_cap: TubeEndCap,
+    top_cap: TubeEndCap,
+) -> (f32, f32) {
+    use crate::support::tree_support_common::layer_z;
+    use std::f64::consts::PI as M_PI;
+
+    let mut p1: Vec3d;
+    let mut p2: Vec3d;
+    let mut p3: Vec3d;
+    let mut v1: Vec3d;
+    let mut v2: Vec3d;
+    let mut nprev: Vec3d;
+    let mut ncurrent: Vec3d;
+    const EPS: f32 = 0.015;
+    // Not initialized at the pin; a bottom hemisphere of one step (a radius under 0.052 mm) would leave it so.
+    let mut prev_strip: (i32, i32) = (0, 0);
+    let vertex_begin: usize = result.vertices.len();
+
+    for ipath in 1..path.len() {
+        let prev: &SupportElement = path[ipath - 1];
+        let current: &SupportElement = path[ipath];
+        p1 = unscaled_to_3d(&prev.state.result_on_layer, layer_z(slicing_params, config, prev.state.layer_idx as usize));
+        p2 = unscaled_to_3d(&current.state.result_on_layer, layer_z(slicing_params, config, current.state.layer_idx as usize));
+        v1 = eigen::normalized3(&sub3d(&p2, &p1));
+        if ipath == 1 {
+            nprev = v1;
+            let radius: f32 = unscaled_f32(support_element_radius(config, prev));
+            if bottom_cap == TubeEndCap::FlatDisk {
+                // Section-plane disk at p1; no polar vertices, so mesh Z stays inside the frustum.
+                let ifan = result.vertices.len() as i32;
+                result.vertices.push(cast3f(&p1));
+                prev_strip = discretize_circle(&cast3f(&p1), &cast3f(&nprev), radius, EPS, &mut result.vertices);
+                triangulate_fan(result, false, ifan, prev_strip.0, prev_strip.1);
+            } else {
+                // Extrude the bottom half sphere.
+                // `float angle_step = 2. * acos(1. - eps / radius);`: the quotient of the floats, the rest in doubles.
+                let mut angle_step: f32 = (2. * (1. - (EPS / radius) as f64).acos()) as f32;
+                let nsteps: i32 = (M_PI / (2. * angle_step as f64)).ceil() as i32;
+                angle_step = (M_PI / (2. * nsteps as f64)) as f32;
+                let ifan = result.vertices.len() as i32;
+                // (p1 - nprev * radius).cast<float>()
+                let r = radius as f64;
+                result.vertices.push(cast3f(&Vec3d::new(p1.x - nprev.x * r, p1.y - nprev.y * r, p1.z - nprev.z * r)));
+                let mut angle: f32 = angle_step;
+                let mut i = 1;
+                while i < nsteps {
+                    let (s, c) = sin_cos_f32(angle);
+                    // (p1 - nprev * radius * cos(angle)).cast<float>()
+                    let c = c as f64;
+                    let center = Vec3d::new(p1.x - nprev.x * r * c, p1.y - nprev.y * r * c, p1.z - nprev.z * r * c);
+                    let strip = discretize_circle(&cast3f(&center), &cast3f(&nprev), radius * s, EPS, &mut result.vertices);
+                    if i == 1 {
+                        triangulate_fan(result, false, ifan, strip.0, strip.1);
+                    } else {
+                        triangulate_strip(result, prev_strip.0, prev_strip.1, strip.0, strip.1);
+                    }
+                    prev_strip = strip;
+                    i += 1;
+                    angle += angle_step;
+                }
+            }
+        }
+        if ipath + 1 == path.len() {
+            // End of the tube.
+            ncurrent = v1;
+            let radius: f32 = unscaled_f32(support_element_radius(config, current));
+            if top_cap == TubeEndCap::FlatDisk {
+                let strip = discretize_circle(&cast3f(&p2), &cast3f(&ncurrent), radius, EPS, &mut result.vertices);
+                triangulate_strip(result, prev_strip.0, prev_strip.1, strip.0, strip.1);
+                let ifan = result.vertices.len() as i32;
+                result.vertices.push(cast3f(&p2));
+                triangulate_fan(result, true, ifan, strip.0, strip.1);
+            } else {
+                // Extrude the top half sphere.
+                let mut angle_step: f32 = (2. * (1. - (EPS / radius) as f64).acos()) as f32;
+                let nsteps: i32 = (M_PI / (2. * angle_step as f64)).ceil() as i32;
+                angle_step = (M_PI / (2. * nsteps as f64)) as f32;
+                let mut angle: f32 = (M_PI / 2.) as f32;
+                let r = radius as f64;
+                for _ in 0..nsteps {
+                    let (s, c) = sin_cos_f32(angle);
+                    // (p2 + ncurrent * radius * cos(angle)).cast<float>()
+                    let c = c as f64;
+                    let center = Vec3d::new(p2.x + ncurrent.x * r * c, p2.y + ncurrent.y * r * c, p2.z + ncurrent.z * r * c);
+                    let strip = discretize_circle(&cast3f(&center), &cast3f(&ncurrent), radius * s, EPS, &mut result.vertices);
+                    triangulate_strip(result, prev_strip.0, prev_strip.1, strip.0, strip.1);
+                    prev_strip = strip;
+                    angle -= angle_step;
+                }
+                let ifan = result.vertices.len() as i32;
+                // (p2 + ncurrent * radius).cast<float>()
+                result.vertices.push(cast3f(&Vec3d::new(p2.x + ncurrent.x * r, p2.y + ncurrent.y * r, p2.z + ncurrent.z * r)));
+                triangulate_fan(result, true, ifan, prev_strip.0, prev_strip.1);
+            }
+        } else {
+            let next: &SupportElement = path[ipath + 1];
+            p3 = unscaled_to_3d(&next.state.result_on_layer, layer_z(slicing_params, config, next.state.layer_idx as usize));
+            v2 = eigen::normalized3(&sub3d(&p3, &p2));
+            ncurrent = eigen::normalized3(&add3d(&v1, &v2));
+            let radius: f32 = unscaled_f32(support_element_radius(config, current));
+            let strip = discretize_circle(&cast3f(&p2), &cast3f(&ncurrent), radius, EPS, &mut result.vertices);
+            triangulate_strip(result, prev_strip.0, prev_strip.1, strip.0, strip.1);
+            prev_strip = strip;
+        }
+    }
+
+    // A tilted hemisphere reaches farther in Z than its axis pole. Compute the
+    // span from every generated vertex so callers slice the complete mesh.
+    let mut zmin: f32 = f32::MAX;
+    let mut zmax: f32 = -f32::MAX;
+    for i in vertex_begin..result.vertices.len() {
+        let z = result.vertices[i].z;
+        // std::min(zmin, z), std::max(zmax, z)
+        if z < zmin {
+            zmin = z;
+        }
+        if zmax < z {
+            zmax = z;
+        }
+    }
+    (zmin, zmax)
+}
+
+/// TreeSupport3D.cpp:3703-3731 `static bool section_circles_intersect(const Vec3d &p1, const Vec3d &n1, const double
+/// r1, const Vec3d &p2, const Vec3d &n2, const double r2)`
+///
+/// Geometrically correct section-circle intersection test (the file-scope circles_intersect
+/// above is incomplete dead code). Two oriented section discs (p1,n1,r1) and (p2,n2,r2)
+/// intersect only when each disc crosses the other's plane AND their chords on the shared
+/// plane-intersection line overlap. Near-parallel normals mean cleanly stacked circles
+/// (a straight tube segment) -> not intersecting.
+pub fn section_circles_intersect(p1: &Vec3d, n1: &Vec3d, r1: f64, p2: &Vec3d, n2: &Vec3d, r2: f64) -> bool {
+    // std::max(0.0, x)
+    #[inline]
+    fn max0(x: f64) -> f64 {
+        if 0.0 < x {
+            x
+        } else {
+            0.0
+        }
+    }
+    // std::clamp(n1.dot(n2), -1.0, 1.0)
+    let d = eigen::dot3(n1, n2);
+    let cos_tilt: f64 = if d < -1.0 {
+        -1.0
+    } else if 1.0 < d {
+        1.0
+    } else {
+        d
+    };
+    // `1.0 - cos_tilt * cos_tilt`: one expression, the product contracted into the difference.
+    let sin_tilt: f64 = max0((-cos_tilt).mul_add(cos_tilt, 1.0)).sqrt(); // sin of tilt angle
+    if sin_tilt < 1e-4 {
+        return false;
+    }
+    let delta: Vec3d = sub3d(p1, p2);
+    // Signed distance of each center to the other section's plane; a disc reaches the other
+    // plane only if this does not exceed the disc's projected extent (r * sin_tilt).
+    let dist1: f64 = eigen::dot3(n2, &delta);
+    let dist2: f64 = eigen::dot3(n1, &delta);
+    if dist1.abs() > r1 * sin_tilt || dist2.abs() > r2 * sin_tilt {
+        return false;
+    }
+    // Both discs cross the plane-intersection line, but they truly intersect only if their
+    // chords on that line overlap. e = n1 x n2 runs along the line with |e| = sin_tilt; h1/h2
+    // are the chord half-lengths, axial is the gap between the two chord midpoints.
+    let e: Vec3d = eigen::cross3(n1, n2);
+    let axial: f64 = eigen::dot3(&e, &delta).abs() / sin_tilt;
+    // `r1 * r1 - (dist1 / sin_tilt) * (dist1 / sin_tilt)`: one expression, the left product contracted.
+    let q1 = dist1 / sin_tilt;
+    let q2 = dist2 / sin_tilt;
+    let h1: f64 = max0(r1.mul_add(r1, -(q1 * q1))).sqrt();
+    let h2: f64 = max0(r2.mul_add(r2, -(q2 * q2))).sqrt();
+    axial <= h1 + h2
+}
+
+/// TreeSupport3D.cpp:3740-3746 `struct ExtrudeSplitCap`
+///
+/// Split-joint hemisphere descriptors for analytic 2D injection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExtrudeSplitCap {
+    pub center: Vec3d,
+    pub normal: Vec3d,
+    pub radius: f64,
+    pub is_bottom: bool,
+}
+
+impl Default for ExtrudeSplitCap {
+    // center { Vec3d::Zero() }, normal { Vec3d::UnitZ() }, radius { 0. }, is_bottom { false }
+    fn default() -> Self {
+        ExtrudeSplitCap { center: Vec3d::new(0., 0., 0.), normal: Vec3d::new(0., 0., 1.), radius: 0., is_bottom: false }
+    }
+}
+
+/// TreeSupport3D.cpp:3733-3739, 3748-3847 `static std::pair<float, float> extrude_branch(const std::vector<const
+/// SupportElement*> &path, const TreeSupportSettings &config, const SlicingParameters &slicing_params, const
+/// std::vector<SupportElements> &move_bounds, indexed_triangle_set &result, std::vector<ExtrudeSplitCap>
+/// *split_caps = nullptr)`
+///
+/// Safe-joints wrapper around extrude_branch_tube. When consecutive section circles
+/// intersect in 3D, the zig-zag triangulation self-folds and slicing drops that area
+/// (a gap / missing slice in the sliced layers). In that case split the path at the
+/// offending edges and emit each unsafe edge as a standalone closed capsule. Adjacent
+/// pieces meet at a FlatDisk in the shared node's section plane; the missing hemispheres
+/// are injected later as analytic 2D slices and merged by the downstream non-zero fill
+/// clipping (diff_clipped / intersection), same as the original overlapping end-caps.
+pub fn extrude_branch(
+    path: &[&SupportElement],
+    config: &TreeSupportSettings,
+    slicing_params: &crate::slicing::SlicingParams,
+    move_bounds: &[SupportElements],
+    result: &mut indexed_triangle_set,
+    mut split_caps: Option<&mut Vec<ExtrudeSplitCap>>,
+) -> (f32, f32) {
+    use crate::support::tree_support_common::layer_z;
+
+    let n: usize = path.len();
+    if n < 3 {
+        return extrude_branch_tube(path, config, slicing_params, move_bounds, result, TubeEndCap::HemisphereMesh, TubeEndCap::HemisphereMesh);
+    }
+
+    // Per-node section circle: interior nodes use the bisector normal (matches
+    // extrude_branch_tube's mid-tube sections), endpoints use the segment direction.
+    let mut node_pos: Vec<Vec3d> = vec![Vec3d::new(0., 0., 0.); n];
+    let mut node_radius: Vec<f64> = vec![0.; n];
+    let mut node_normal: Vec<Vec3d> = vec![Vec3d::new(0., 0., 0.); n];
+    for i in 0..n {
+        node_pos[i] = unscaled_to_3d(&path[i].state.result_on_layer, layer_z(slicing_params, config, path[i].state.layer_idx as usize));
+        node_radius[i] = unscaled_f64(support_element_radius(config, path[i]));
+    }
+    node_normal[0] = eigen::normalized3(&sub3d(&node_pos[1], &node_pos[0]));
+    node_normal[n - 1] = eigen::normalized3(&sub3d(&node_pos[n - 1], &node_pos[n - 2]));
+    for i in 1..n - 1 {
+        let v1: Vec3d = eigen::normalized3(&sub3d(&node_pos[i], &node_pos[i - 1]));
+        let v2: Vec3d = eigen::normalized3(&sub3d(&node_pos[i + 1], &node_pos[i]));
+        node_normal[i] = eigen::normalized3(&add3d(&v1, &v2));
+    }
+
+    // Mark unsafe edges.
+    let mut edge_unsafe: Vec<bool> = vec![false; n - 1];
+    let mut any_unsafe = false;
+    for k in 0..n - 1 {
+        if section_circles_intersect(&node_pos[k], &node_normal[k], node_radius[k], &node_pos[k + 1], &node_normal[k + 1], node_radius[k + 1]) {
+            edge_unsafe[k] = true;
+            any_unsafe = true;
+        }
+    }
+
+    if !any_unsafe {
+        return extrude_branch_tube(path, config, slicing_params, move_bounds, result, TubeEndCap::HemisphereMesh, TubeEndCap::HemisphereMesh);
+    }
+
+    // Split into ordered pieces: maximal safe runs + isolated unsafe single-edge capsules.
+    // Adjacent pieces share the boundary node and close with FlatDisks there; analytic
+    // hemispheres are injected as 2D slices and merged by downstream clipping.
+    let mut zmin: f32 = f32::MAX;
+    let mut zmax: f32 = -f32::MAX;
+    let mut piece_path: Vec<&SupportElement> = Vec::new();
+    let mut piece_mesh = indexed_triangle_set::default();
+    // Original path ends keep a 3D hemisphere. Split joints: FlatDisk + later 2D
+    // inject (default), or HemisphereMesh when TREE_SUPPORT_SPLIT_CAP_MODE=mesh.
+    let mesh_caps: bool = split_cap_use_mesh_hemispheres();
+    let mut emit_piece = |begin: usize, end: usize| {
+        piece_path.clear();
+        piece_path.extend_from_slice(&path[begin..end + 1]);
+        piece_mesh.vertices.clear();
+        piece_mesh.indices.clear();
+        let bottom_cap = if begin > 0 {
+            if mesh_caps {
+                TubeEndCap::HemisphereMesh
+            } else {
+                TubeEndCap::FlatDisk
+            }
+        } else {
+            TubeEndCap::HemisphereMesh
+        };
+        let top_cap = if end < n - 1 {
+            if mesh_caps {
+                TubeEndCap::HemisphereMesh
+            } else {
+                TubeEndCap::FlatDisk
+            }
+        } else {
+            TubeEndCap::HemisphereMesh
+        };
+        let span: (f32, f32) = extrude_branch_tube(&piece_path, config, slicing_params, move_bounds, &mut piece_mesh, bottom_cap, top_cap);
+        // std::min(zmin, span.first), std::max(zmax, span.second)
+        if span.0 < zmin {
+            zmin = span.0;
+        }
+        if zmax < span.1 {
+            zmax = span.1;
+        }
+        crate::triangle_mesh::its_merge(result, &piece_mesh);
+        // Descriptors for analytic hemispheres at piece ends that are not the original path ends.
+        if let Some(split_caps) = split_caps.as_deref_mut() {
+            if end > begin {
+                if begin > 0 {
+                    split_caps.push(ExtrudeSplitCap {
+                        center: node_pos[begin],
+                        normal: eigen::normalized3(&sub3d(&node_pos[begin + 1], &node_pos[begin])),
+                        radius: node_radius[begin],
+                        is_bottom: true,
+                    });
+                }
+                if end < n - 1 {
+                    split_caps.push(ExtrudeSplitCap {
+                        center: node_pos[end],
+                        normal: eigen::normalized3(&sub3d(&node_pos[end], &node_pos[end - 1])),
+                        radius: node_radius[end],
+                        is_bottom: false,
+                    });
+                }
+            }
+        }
+    };
+    let mut run_start: usize = 0;
+    for k in 0..n - 1 {
+        if edge_unsafe[k] {
+            if run_start < k {
+                emit_piece(run_start, k); // safe run [run_start, k]
+            }
+            emit_piece(k, k + 1); // unsafe edge as its own capsule
+            run_start = k + 1;
+        }
+    }
+    if run_start < n - 1 {
+        emit_piece(run_start, n - 1); // trailing safe run [run_start, n-1]
+    }
+
+    (zmin, zmax)
+}
