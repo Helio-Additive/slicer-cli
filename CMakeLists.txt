@@ -1012,7 +1012,7 @@ add_executable(slicer_cli src/cli_result_json.cpp
     src/cli_arrange_geometry.cpp
     src/cli_preset_staging.cpp
     src/cli_percent_widths.cpp
-    src/cli_project_settings.cpp src/cli_project_load.cpp)
+    src/cli_project_settings.cpp src/cli_project_load.cpp src/cli_bed_fit.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
 
 # Cache the engine headers shared by the front end. Boost.Log declarations must
