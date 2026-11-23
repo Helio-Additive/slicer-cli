@@ -234,6 +234,25 @@ impl Circle {
         })
     }
 
+    /// Circle.cpp:15-55 under the C++ name and shape: `new_circle` is written only when a
+    /// circle is found (the body is `try_create_circle_from_points`). Verified through
+    /// tests/arc_fitter_native_parity.rs (ArcFitter::do_arc_fitting_and_simplify, bit for bit).
+    pub fn try_create_circle(
+        p1: Point,
+        p2: Point,
+        p3: Point,
+        max_radius: f64,
+        new_circle: &mut Circle,
+    ) -> bool {
+        match Circle::try_create_circle_from_points(p1, p2, p3, max_radius) {
+            Some(c) => {
+                *new_circle = c;
+                true
+            }
+            None => false,
+        }
+    }
+
     // Attempt to create the best-fitting circle from a list of points.
     // Circle.cpp:57-95
     // C++: bool Circle::try_create_circle(const Points& points, const double max_radius, const double tolerance, Circle& new_circle)

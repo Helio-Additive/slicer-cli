@@ -286,9 +286,17 @@ impl ThickPolyline {
     }
 
     /// Reverse the polyline direction (in place).
+    /// Polyline.hpp:260-264 `ThickPolyline::reverse()`: the points and the whole `width`
+    /// array reversed and the endpoints swapped (Polyline.hpp:260-264). `edge_widths`, where
+    /// set, is the C++ `width` array (two per segment), so it
+    /// is reversed with the points (THICK_POLYLINE_REVERSE_PIN, on unless =0; =0 leaves it
+    /// as it was, which made `thicklines()` read the widths of the other direction).
     pub fn reverse(&mut self) {
         self.points.reverse();
         self.widths.reverse();
+        if !self.edge_widths.is_empty() && crate::faithful_gate("THICK_POLYLINE_REVERSE_PIN") {
+            self.edge_widths.reverse();
+        }
         self.endpoints.swap(0, 1);
     }
 
@@ -768,6 +776,23 @@ mod tests {
         assert_eq!(tp.widths[0], 0.6);
         assert_eq!(tp.widths[1], 0.2);
         assert_eq!(tp.endpoints, [false, true]);
+    }
+
+    /// Polyline.hpp:260-264: the C++ `width` array (here `edge_widths`, two per segment)
+    /// is reversed with the points, so `thicklines()` gives the reversed lines.
+    #[test]
+    fn test_thick_polyline_reverse_edge_widths() {
+        let mut tp = ThickPolyline::from_points_and_widths(
+            vec![Point::new(0, 0), Point::new(s(10.0), 0), Point::new(s(10.0), s(5.0))],
+            vec![0.2, 0.5, 0.4],
+        );
+        tp.edge_widths = vec![0.2, 0.3, 0.5, 0.4];
+        tp.reverse();
+        assert_eq!(tp.edge_widths, vec![0.4, 0.5, 0.3, 0.2]);
+        let lines = tp.thicklines();
+        assert_eq!(lines.len(), 2);
+        assert_eq!((lines[0].a_width, lines[0].b_width), (0.4, 0.5));
+        assert_eq!((lines[1].a_width, lines[1].b_width), (0.3, 0.2));
     }
 
     #[test]

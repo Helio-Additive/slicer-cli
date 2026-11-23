@@ -500,7 +500,24 @@ fn tower_block_changes_tool(gcode: &str, toolchange_prefix: &str, new_tool: usiz
 /// previous one is left unmodified, and an axis unchanged from the previous move
 /// is omitted. The C++ `never_skip_tag` branch is dropped — the Rust wipe-tower
 /// generator never emits that tag.
-pub fn post_process_wipe_tower_moves(gcode: &str, mut pos: crate::gcode::wipe_tower::Vec2f, translation: crate::gcode::wipe_tower::Vec2f, angle: f32) -> String {
+pub fn post_process_wipe_tower_moves(gcode: &str, pos: crate::gcode::wipe_tower::Vec2f, translation: crate::gcode::wipe_tower::Vec2f, angle: f32) -> String {
+    post_process_wipe_tower_moves_tc(gcode, pos, translation, angle, None)
+}
+
+/// `post_process_wipe_tower_moves` with the tool change's start (GCode.cpp:1383-1462): after the
+/// `[change_filament_gcode]` line the C++ sets `pos = tcr.tool_change_start_pos` (tower-local,
+/// GCode.cpp:1457-1459), so a following `G1` that omits an axis takes it from the tool change's
+/// start, not from the last move before the placeholder. `tool_change_start_local` is that point
+/// in the tower-local frame (the Rust tcr keeps it in bed coordinates; the caller subtracts the
+/// tower offset as for `pos`). Gate TOWER_XFORM_TC_START_POS (=0: the position carries on).
+pub fn post_process_wipe_tower_moves_tc(
+    gcode: &str,
+    mut pos: crate::gcode::wipe_tower::Vec2f,
+    translation: crate::gcode::wipe_tower::Vec2f,
+    angle: f32,
+    tool_change_start_local: Option<crate::gcode::wipe_tower::Vec2f>,
+) -> String {
+    let tc_start_gate = crate::faithful_gate("TOWER_XFORM_TC_START_POS");
     let cos_a = angle.cos();
     let sin_a = angle.sin();
     // C++ seeds old_pos with a sentinel no real coordinate matches, so the first
@@ -518,6 +535,12 @@ pub fn post_process_wipe_tower_moves(gcode: &str, mut pos: crate::gcode::wipe_to
                 // tracker forgets its position, so the next move re-emits X and Y.
                 if line == "[change_filament_gcode]" && crate::faithful_gate("TOWER_XFORM_TC_RESET") {
                     old_pos = crate::gcode::wipe_tower::Vec2f::new(-1000.1, -1000.1);
+                    // GCode.cpp:1458 `pos = tcr.tool_change_start_pos;`
+                    if tc_start_gate {
+                        if let Some(p) = tool_change_start_local {
+                            pos = p;
+                        }
+                    }
                 }
                 return line.to_string();
             }
@@ -690,7 +713,17 @@ pub(crate) fn append_tcr(
     } else {
         off
     };
-    let g = post_process_wipe_tower_moves(&tcr.gcode, local_seed, off_gcode, 0.0);
+    // GCode.cpp:1458: the tool change's start in the tower-local frame (the tcr keeps it in bed
+    // coordinates, like start_pos).
+    let tc_start_local = if tcr.is_tool_change {
+        Some(crate::gcode::wipe_tower::Vec2f::new(
+            tcr.tool_change_start_pos.x - off.x,
+            tcr.tool_change_start_pos.y - off.y,
+        ))
+    } else {
+        None
+    };
+    let g = post_process_wipe_tower_moves_tc(&tcr.gcode, local_seed, off_gcode, 0.0, tc_start_local);
     // Substitute the tower's `[change_filament_gcode]` placeholder with the
     // evaluated custom tool-change template (append_tcr, GCode.cpp:936-1058).
     // Only real tool changes carry one; the finish_layer tcr has no placeholder,
@@ -11700,7 +11733,14 @@ pub fn split_and_mapping_speed(
         if smooth_length_count >= smooth_length {
             left_paths.extend(this_path.drain(idx..));
             *this_path = std::mem::take(&mut left_paths);
-            // C++ does `this_path = std::move(left_paths); break;`
+            // C++ does `this_path = std::move(left_paths); break;` (GCode.cpp:7254-7258), so the paths pushed
+            // back still get `final_v` below (GCode.cpp:7352-7355). Gate SPLIT_MAPPING_SPEED_BREAK_PIN (R938, an
+            // opt_in_gate: off unless =1, because with it Majora loses 3 lines in order while Benchy classic gains
+            // 115 and Benchy arachne 870; the counterpart that loses them is not found yet); off: the earlier early
+            // return, which left them at their own speed.
+            if crate::opt_in_gate("SPLIT_MAPPING_SPEED_BREAK_PIN") {
+                break;
+            }
             interpolated_paths.append(&mut splited_path);
             return;
         }
@@ -15177,5 +15217,36 @@ mod loop_role_pin_tests {
         let gap = role_to_string(ExtrusionRole::GapFill);
         assert_eq!(tags, vec![solid, gap, solid], "{out}");
         assert_eq!(writer.last_extrusion_role(), Some(ExtrusionRole::SolidInfill));
+    }
+}
+
+#[cfg(test)]
+mod tower_xform_tc_start_tests {
+    use super::*;
+    use crate::gcode::wipe_tower::Vec2f;
+
+    // GCode.cpp:1441-1459: after `[change_filament_gcode]` the post-processor forgets the last
+    // output position AND restarts from `tcr.tool_change_start_pos`, so a `G1` that names only X
+    // takes Y from the tool change's start (Majora layer 1: pin `G1  X188.729 Y197.797  E0.1630 F990`).
+    #[test]
+    fn axis_less_move_after_the_placeholder_starts_from_the_tool_change_start() {
+        let gcode = "G1 X1 Y30 E1\n[change_filament_gcode]\nG1 X3 E0.1630 F990";
+        let out = post_process_wipe_tower_moves_tc(
+            gcode,
+            Vec2f::new(0.0, 0.0),
+            Vec2f::new(10.0, 20.0),
+            0.0,
+            Some(Vec2f::new(0.5, 0.5)),
+        );
+        let last = out.split('\n').filter(|l| l.starts_with("G1")).last().unwrap().to_string();
+        if crate::faithful_gate("TOWER_XFORM_TC_START_POS") && crate::faithful_gate("TOWER_XFORM_TC_RESET") {
+            assert_eq!(last, "G1  X13.000 Y20.500  E0.1630 F990", "{out}");
+        }
+        // Without a start the position carries on from the move before the placeholder.
+        let out_none = post_process_wipe_tower_moves(gcode, Vec2f::new(0.0, 0.0), Vec2f::new(10.0, 20.0), 0.0);
+        let last_none = out_none.split('\n').filter(|l| l.starts_with("G1")).last().unwrap().to_string();
+        if crate::faithful_gate("TOWER_XFORM_TC_RESET") {
+            assert_eq!(last_none, "G1  X13.000 Y50.000  E0.1630 F990", "{out_none}");
+        }
     }
 }

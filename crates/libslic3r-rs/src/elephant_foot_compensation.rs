@@ -853,8 +853,54 @@ pub fn elephant_foot_compensation_with_flow(
     compensation: f64,
 ) -> ExPolygon {
     // The contour shall be wide enough to apply the external perimeter plus compensation on both sides.
-    let min_contour_width = external_perimeter_flow.width() + external_perimeter_flow.spacing();
+    // :623 `double(external_perimeter_flow.width() + external_perimeter_flow.spacing())`: a sum of
+    // two FLOATS, widened after (R938 gate EFC_WIDTH_F32, faithful; =0 sums in double).
+    let min_contour_width = if crate::faithful_gate("EFC_WIDTH_F32") {
+        (external_perimeter_flow.width() as f32 + external_perimeter_flow.spacing() as f32) as f64
+    } else {
+        external_perimeter_flow.width() as f64 + external_perimeter_flow.spacing() as f64
+    };
     elephant_foot_compensation_with_width(input, min_contour_width, compensation)
+}
+
+/// `expolygons_simplify(input, SCALED_EPSILON)` as ElephantFootCompensation.cpp:630 and :640 call it:
+/// ExPolygon.hpp:451-458, i.e. `ExPolygon::simplify(SCALED_EPSILON)` of every expolygon
+/// (ExPolygon.cpp:231-261) = `union_ex(simplify_p(tolerance))`, where `simplify_p` is each ring
+/// through `MultiPoint::_douglas_peucker` (closed by its first point, the point removed after) and
+/// the rings through `simplify_polygons` (ClipperUtils.cpp:1026-1041,
+/// `ClipperLib::SimplifyPolygons(pftNonZero)`). R938 gate EFC_SIMPLIFY_PIN (faithful): the earlier
+/// arm (`=0`) is `geometry::expolygons_simplify` (ExPolygon::simplified with a rounded-projection
+/// Douglas-Peucker and no union), which drops near-collinear points the pin keeps (found in R919
+/// on PrintObjectSlice's layer 0, where print_object_slice.rs carries the same faithful helper).
+fn efc_expolygons_simplify(input: &ExPolygons) -> ExPolygons {
+    if !crate::faithful_gate("EFC_SIMPLIFY_PIN") {
+        return expolygons_simplify(input, EPSILON);
+    }
+    use crate::clipper as cl;
+    // SCALED_EPSILON = scale_(EPSILON), a division by SCALING_FACTOR (libslic3r.h:58-84)
+    let tolerance = EPSILON / crate::libslic3r::SCALING_FACTOR;
+    let path_of = |points: &[Point]| -> cl::Path {
+        points.iter().map(|p| cl::IntPoint::new(p.x as i32, p.y as i32)).collect()
+    };
+    let mut out: ExPolygons = Vec::with_capacity(input.len());
+    for exp in input {
+        let pp = exp.simplify_p_dp_rings_faithful(tolerance);
+        let paths: cl::Paths = pp.iter().map(|p| path_of(&p.points)).collect();
+        let simplified = crate::clipper_utils::clib_polygons_from_paths(&cl::simplify_polygons(
+            &paths,
+            cl::PolyFillType::pftNonZero,
+        ));
+        // ClipperUtils.cpp:813-814 union_ex(const Polygons &, pftNonZero) = _clipper_ex(ctUnion, ..., ApplySafetyOffset::No)
+        let simplified_paths: cl::Paths = simplified.iter().map(|p| path_of(&p.points)).collect();
+        out.extend(crate::clipper_utils::_clipper_ex(
+            cl::ClipType::ctUnion,
+            &simplified_paths,
+            &cl::Paths::new(),
+            crate::clipper_utils::ApplySafetyOffset::No,
+            cl::PolyFillType::pftNonZero,
+        ));
+    }
+    out
 }
 
 // ElephantFootCompensation.cpp:627-635
@@ -871,7 +917,7 @@ pub fn elephant_foot_compensation_expolygons_with_flow(
     // `expolygons_simplify` instead rescales its argument via `scale()` (mm in), so
     // pass the unscaled-mm equivalent EPSILON (scale(EPSILON) == SCALED_EPSILON == 10)
     // to reproduce the identical Douglas-Peucker tolerance.
-    let simplified_exps = expolygons_simplify(input, EPSILON);
+    let simplified_exps = efc_expolygons_simplify(input);
     out.reserve(simplified_exps.len());
     for expoly in &simplified_exps {
         out.push(elephant_foot_compensation_with_flow(
@@ -894,7 +940,7 @@ pub fn elephant_foot_compensation_expolygons_with_width(
     // C++: expolygons_simplify(input, SCALED_EPSILON). See note above: Rust's
     // `expolygons_simplify` rescales its tolerance (mm in), so pass EPSILON so that
     // scale(EPSILON) == SCALED_EPSILON == 10, matching the C++ Douglas-Peucker tolerance.
-    let simplified_exps = expolygons_simplify(input, EPSILON);
+    let simplified_exps = efc_expolygons_simplify(input);
     out.reserve(simplified_exps.len());
     for expoly in &simplified_exps {
         out.push(elephant_foot_compensation_with_width(

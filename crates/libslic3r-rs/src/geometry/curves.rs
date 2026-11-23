@@ -242,8 +242,7 @@ impl PiecewiseFittedCurve {
             parameter_index = parameter_index.clamp(0, self.coefficients.ncols() as i32 - 1);
             // Geometry/Curves.hpp:84
             // result += Kernel::kernel(normalized_segment_distance) * coefficients.col(parameter_index);
-            let k =
-                CubicKernelWrapper::<K>::kernel(normalized_segment_distance as f64) as f32;
+            let k = cubic_kernel_value::<K>(normalized_segment_distance);
             let col = parameter_index as usize;
             for dim in 0..dimension {
                 result[dim] += k * self.coefficients[(dim, col)];
@@ -254,6 +253,48 @@ impl PiecewiseFittedCurve {
         // return result;
         result
     }
+}
+
+/// `Kernel::kernel(x)` as `fit_curve` / `get_fitted_value` call it: `CubicKernelWrapper<...<float>>`,
+/// so the pin evaluates the polynomial in FLOAT, and clang (-ffp-contract=on) fuses each
+/// `+ a * x^n` of the one return expression into an fmaf (Geometry/Bicubic.hpp:198-213):
+/// `fmaf(a13, x3, fmaf(a12, x2, fmaf(a11, x, a10)))`, `x2 = x * x`, `x3 = x2 * x` rounded apart.
+/// The coefficients are `T(c / 6.)`, i.e. the double quotient rounded to float.
+/// R938 gate CURVES_KERNEL_F32: opt_in (off unless `=1`) because on the fixtures it moved Benchy arachne
+/// 241,857 -> 241,855 in order (classic 190,197 -> 190,198); its counterpart is the solver
+/// (`fullPivHouseholderQr`, Curves.hpp:166-169), which this file still does with a thin Householder QR.
+pub fn cubic_kernel_value<K: KernelCoefficients>(x: f32) -> f32 {
+    if !crate::opt_in_gate("CURVES_KERNEL_F32") {
+        return CubicKernelWrapper::<K>::kernel(x as f64) as f32;
+    }
+    cubic_kernel_f32::<K>(x)
+}
+
+/// Geometry/Bicubic.hpp:198-213 `CubicKernelWrapper<Kernel>::kernel` with `FloatType = float`.
+pub fn cubic_kernel_f32<K: KernelCoefficients>(x: f32) -> f32 {
+    // Bicubic.hpp:200 x = fabs(x);
+    let x = x.abs();
+    // Bicubic.hpp:201-202
+    if x >= 2.0f32 {
+        return 0.0f32;
+    }
+    // Bicubic.hpp:203-207
+    if x <= 1.0f32 {
+        let x2 = x * x;
+        let x3 = x2 * x;
+        return (K::a13() as f32).mul_add(
+            x3,
+            (K::a12() as f32).mul_add(x2, (K::a11() as f32).mul_add(x, K::a10() as f32)),
+        );
+    }
+    // Bicubic.hpp:209-212
+    let x = x - 1.0f32;
+    let x2 = x * x;
+    let x3 = x2 * x;
+    (K::a03() as f32).mul_add(
+        x3,
+        (K::a02() as f32).mul_add(x2, (K::a01() as f32).mul_add(x, K::a00() as f32)),
+    )
 }
 
 // Geometry/Curves.hpp:90-95
@@ -381,8 +422,7 @@ pub fn fit_curve<K: KernelCoefficients>(
             parameter_index = parameter_index.clamp(0, parameters_count as i32 - 1);
             // Geometry/Curves.hpp:153
             // T(i, parameter_index) += Kernel::kernel(normalized_segment_distance) * sqrt_weights[i];
-            let k =
-                CubicKernelWrapper::<K>::kernel(normalized_segment_distance as f64) as f32;
+            let k = cubic_kernel_value::<K>(normalized_segment_distance);
             // `T(i, j) += kernel * sqrt_weights[i]` is fused at the pin (R937 gate CURVES_FMA)
             if crate::faithful_gate("CURVES_FMA") {
                 t[(i, parameter_index as usize)] =

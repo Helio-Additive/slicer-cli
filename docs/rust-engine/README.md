@@ -131,19 +131,19 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R937) |
+| Fixture | As brought over (R808) | Now (R938) |
 |-|-|-|
-| Benchy classic | 30,486 (15.72%) | 190,197 (99.81%) |
-| Benchy arachne | 32,769 (13.68%) | 241,857 (99.44%) |
-| Majora | 1,512,438 (55.88%) | 2,856,232 (99.59%) |
+| Benchy classic | 30,486 (15.72%) | 190,216 (99.82%) |
+| Benchy arachne | 32,769 (13.68%) | 241,930 (99.47%) |
+| Majora | 1,512,438 (55.88%) | 2,856,694 (99.61%) |
 | Majora, prime tower | 83.5% | 99.6% |
 
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R937:
-Benchy classic 196,193 of 196,495 (99.8%), Benchy arachne 247,090 of 248,190
-(99.6%), Majora 3,017,713 of 3,024,752 (99.8%).
+missing most often. Lines of the oracle's body the port has verbatim, at R938:
+Benchy classic 196,215 of 196,495 (99.9%), Benchy arachne 247,163 of 248,190
+(99.6%), Majora 3,018,146 of 3,024,752 (99.8%).
 
 Majora's percentage rose in R853 with the matched count unchanged: the port wrote
 `; LINE_WIDTH` twice after each prime tower visit (3,339 lines), and no longer does.

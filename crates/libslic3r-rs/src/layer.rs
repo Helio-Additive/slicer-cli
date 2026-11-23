@@ -4697,7 +4697,57 @@ impl Layer {
                 };
 
                 if generated.is_empty() {
-                    route_no_lines_areas.append(&mut route_areas);
+                    // FILL_ROUTE_NO_LINES_PIN (on unless =0): an expoly that laid no line
+                    // still runs FillMonotonicLineWGapFill::fill_surface_extrusion's gap part
+                    // (FillRectilinear.cpp:3686-3687 unextruded_areas = no_overlap_expolygons,
+                    // new_flow = params.flow; 3695-3752): its gaps go into its own no-sort
+                    // collection in the planner's leftover order, as the pin pushes one
+                    // collection per expoly (Fill.cpp:837-841). =0 hands its islands to the
+                    // region tail below.
+                    if route_pin && crate::faithful_gate("FILL_ROUTE_NO_LINES_PIN") {
+                        if !route_areas.is_empty() {
+                            let mut collection = ExtrusionEntityCollection::new();
+                            collection.no_sort = crate::faithful_gate("FILL_NO_SORT")
+                                && !surface_fill.params.bridge;
+                            let new_flow = surface_fill.params.flow.clone();
+                            let line_mm3 = new_flow.mm3_per_mm().unwrap_or(0.0);
+                            let gap_comp =
+                                (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                            let mut no_lines: Vec<crate::geometry::Polyline> = Vec::new();
+                            Self::monotonic_route_gap_fill(
+                                &mut collection,
+                                &route_areas,
+                                &mut no_lines,
+                                &route_island_end,
+                                route_scan_angle,
+                                &new_flow,
+                                line_mm3,
+                                surface_fill.params.flow.height() as f32,
+                                mono_density,
+                                resolution,
+                                surface_fill.params.extrusion_role,
+                                &surface_fill.params.flow,
+                                gap_comp,
+                            );
+                            if crate::probe_enabled("FILL_ROUTE_NO_LINES_PROBE") {
+                                eprintln!(
+                                    "ROUTE_NO_LINES z={:.3} areas={} entities={}",
+                                    self.print_z,
+                                    route_areas.len(),
+                                    collection.entities.len()
+                                );
+                            }
+                            if !collection.entities.is_empty() {
+                                self.regions[region_id].fills.entities.push(
+                                    crate::extrusion_entity::ExtrusionEntityType::Collection(
+                                        Box::new(collection),
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
+                        route_no_lines_areas.append(&mut route_areas);
+                    }
                     if fsdbg {
                         use std::sync::atomic::Ordering::Relaxed;
                         crate::fill::SPARSE_NOGEN_N.fetch_add(1, Relaxed);
@@ -4716,7 +4766,57 @@ impl Layer {
                 }
 
                 if polylines.is_empty() {
-                    route_no_lines_areas.append(&mut route_areas);
+                    // FILL_ROUTE_NO_LINES_PIN (on unless =0): an expoly that laid no line
+                    // still runs FillMonotonicLineWGapFill::fill_surface_extrusion's gap part
+                    // (FillRectilinear.cpp:3686-3687 unextruded_areas = no_overlap_expolygons,
+                    // new_flow = params.flow; 3695-3752): its gaps go into its own no-sort
+                    // collection in the planner's leftover order, as the pin pushes one
+                    // collection per expoly (Fill.cpp:837-841). =0 hands its islands to the
+                    // region tail below.
+                    if route_pin && crate::faithful_gate("FILL_ROUTE_NO_LINES_PIN") {
+                        if !route_areas.is_empty() {
+                            let mut collection = ExtrusionEntityCollection::new();
+                            collection.no_sort = crate::faithful_gate("FILL_NO_SORT")
+                                && !surface_fill.params.bridge;
+                            let new_flow = surface_fill.params.flow.clone();
+                            let line_mm3 = new_flow.mm3_per_mm().unwrap_or(0.0);
+                            let gap_comp =
+                                (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                            let mut no_lines: Vec<crate::geometry::Polyline> = Vec::new();
+                            Self::monotonic_route_gap_fill(
+                                &mut collection,
+                                &route_areas,
+                                &mut no_lines,
+                                &route_island_end,
+                                route_scan_angle,
+                                &new_flow,
+                                line_mm3,
+                                surface_fill.params.flow.height() as f32,
+                                mono_density,
+                                resolution,
+                                surface_fill.params.extrusion_role,
+                                &surface_fill.params.flow,
+                                gap_comp,
+                            );
+                            if crate::probe_enabled("FILL_ROUTE_NO_LINES_PROBE") {
+                                eprintln!(
+                                    "ROUTE_NO_LINES z={:.3} areas={} entities={}",
+                                    self.print_z,
+                                    route_areas.len(),
+                                    collection.entities.len()
+                                );
+                            }
+                            if !collection.entities.is_empty() {
+                                self.regions[region_id].fills.entities.push(
+                                    crate::extrusion_entity::ExtrusionEntityType::Collection(
+                                        Box::new(collection),
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
+                        route_no_lines_areas.append(&mut route_areas);
+                    }
                     if fsdbg {
                         use std::sync::atomic::Ordering::Relaxed;
                         crate::fill::SPARSE_NOGEN_N.fetch_add(1, Relaxed);
@@ -4981,124 +5081,22 @@ impl Layer {
 
                 // FILL_MONOTONIC_ROUTE_PIN: FillRectilinear.cpp:3692-3746 for this expoly.
                 if route_pin && !route_areas.is_empty() {
-                    use crate::clipper_utils::{difference_clib, offset2_clib, union_polygons_ex};
-                    use crate::extrusion_entity::ExtrusionEntityType;
-                    // FillRectilinear.cpp:3692 unextruded_areas = diff_ex(no_overlap_expolygons,
-                    //     union_ex(coll_nosort->polygons_covered_by_spacing(10))), 3694-3695.
-                    let mut covered: Vec<crate::geometry::Polygon> = Vec::new();
-                    for ent in &collection.entities {
-                        if let ExtrusionEntityType::Path(path) = ent {
-                            path.polygons_covered_by_spacing(&mut covered, 10.0);
-                        } else if let ExtrusionEntityType::MultiPath(mp) = ent {
-                            for path in &mp.paths {
-                                path.polygons_covered_by_spacing(&mut covered, 10.0);
-                            }
-                        }
-                    }
-                    let unextruded_areas: ExPolygons = if covered.is_empty() {
-                        route_areas.clone()
-                    } else {
-                        difference_clib(&route_areas, &union_polygons_ex(&covered))
-                    };
-                    // FillRectilinear.cpp:3699-3701 (as the region tail below).
-                    let gapfill_areas =
-                        crate::clipper_utils::intersection_clib(&unextruded_areas, &route_areas);
-                    let mut gap_polylines: crate::geometry::ThickPolylines = Vec::new();
-                    if !gapfill_areas.is_empty() && mono_density >= 1.0 {
-                        // FillRectilinear.cpp:3703-3707, min / max from new_flow.scaled_spacing()
-                        // (the doubles of trunc(spacing / 1e-5), as the region tail below).
-                        let s_sc = (fill_flow_eff.spacing() / 0.00001).trunc();
-                        let min_sc = 0.2 * s_sc * (1.0 - 0.4);
-                        let max_sc = 2.0 * s_sc;
-                        const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
-                        let opened_min = offset2_clib(
-                            &gapfill_areas,
-                            min_sc / 2.0 / crate::SCALING_FACTOR,
-                            min_sc / 2.0 / crate::SCALING_FACTOR,
-                            OffsetJoinType::Miter,
-                        );
-                        let wide_part = offset2_clib(
-                            &gapfill_areas,
-                            max_sc / 2.0 / crate::SCALING_FACTOR,
-                            max_sc / 2.0 / crate::SCALING_FACTOR + CLIPPER_SAFETY_OFFSET,
-                            OffsetJoinType::Miter,
-                        );
-                        let mut gaps_ex = difference_clib(&opened_min, &wide_part);
-                        // FillRectilinear.cpp:3708-3717: the gaps ordered by chain_points of their
-                        // contours' first points.
-                        let ordering_points: Vec<crate::geometry::Point> =
-                            gaps_ex.iter().map(|ex| ex.contour.points[0]).collect();
-                        let order = crate::shortest_path::chain_points(&ordering_points, None);
-                        let mut gaps_ex_sorted: ExPolygons = Vec::with_capacity(gaps_ex.len());
-                        for i in order {
-                            gaps_ex_sorted.push(std::mem::take(&mut gaps_ex[i]));
-                        }
-                        // FillRectilinear.cpp:3719-3723
-                        let simplify_resolution = crate::scale(resolution) as f64 * 0.1;
-                        for ex in &mut gaps_ex_sorted {
-                            ex.douglas_peucker(simplify_resolution);
-                            // ExPolygon::medial_axis (ExPolygon.cpp:263-371): the C++ `width` array
-                            // kept as it is, two per segment in scaled units, in `widths` (the pair
-                            // layout ThickPolyline::thicklines and reverse() read), which
-                            // thick_polyline_to_extrusion_paths_2 takes (VariableWidth.cpp:103-211).
-                            let mut pp: Vec<crate::geometry::MedialAxisThickPolyline> =
-                                Vec::new();
-                            ex.medial_axis_thick_polylines(min_sc, max_sc, &mut pp);
-                            for pl in pp {
-                                if pl.points.len() < 2 || pl.width.is_empty() {
-                                    continue;
-                                }
-                                let mut tp = crate::geometry::ThickPolyline::with_capacity(pl.points.len());
-                                tp.points = pl.points;
-                                tp.widths = pl.width;
-                                tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
-                                gap_polylines.push(tp);
-                            }
-                        }
-                        // FillRectilinear.cpp:3725-3734: tiny gaps dropped (filter_out_gap_fill is
-                        // never set by Fill.cpp: 0), none for a bridge.
-                        if !gap_polylines.is_empty()
-                            && !crate::extrusion_entity::is_bridge(surface_fill.params.extrusion_role)
-                        {
-                            // libslic3r.h SCALED_EPSILON = scale_(EPSILON), EPSILON = 1e-4.
-                            let scaled_epsilon = 1e-4 / 0.00001;
-                            gap_polylines.retain(|p| !(p.length() <= scaled_epsilon || p.length() < 0.0));
-                        } else {
-                            gap_polylines.clear();
-                        }
-                    }
-                    // FillRectilinear.cpp:3736-3746
-                    if !gap_polylines.is_empty() {
-                        collection.entities.clear();
-                        let flow_width = fill_flow_eff.width();
-                        let link_max = 3.0 * (((flow_width as f32) as f64 / 0.00001) as i64) as f64;
-                        let island_end: Vec<usize> = if route_island_end.last() == Some(&route_lines.len()) {
-                            route_island_end.clone()
-                        } else {
-                            vec![route_lines.len()]
-                        };
-                        let route = crate::fill::fill_rectilinear::plan_monotonic_route(
-                            &route_lines,
-                            &mut gap_polylines,
-                            link_max,
-                            route_scan_angle,
-                            &island_end,
-                        );
-                        let gap_comp = (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
-                        crate::fill::fill_rectilinear::append_monotonic_route(
-                            &mut collection.entities,
-                            &route,
-                            &mut route_lines,
-                            &gap_polylines,
-                            surface_fill.params.extrusion_role,
-                            mm3_per_mm,
-                            flow_width as f32,
-                            path_height,
-                            crate::extrusion_entity::ExtrusionRole::GapFill,
-                            &surface_fill.params.flow,
-                            gap_comp,
-                        );
-                    }
+                    let gap_comp = (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                    Self::monotonic_route_gap_fill(
+                        &mut collection,
+                        &route_areas,
+                        &mut route_lines,
+                        &route_island_end,
+                        route_scan_angle,
+                        &fill_flow_eff,
+                        mm3_per_mm,
+                        path_height,
+                        mono_density,
+                        resolution,
+                        surface_fill.params.extrusion_role,
+                        &surface_fill.params.flow,
+                        gap_comp,
+                    );
                 }
 
                 if !collection.entities.is_empty() {
@@ -5318,6 +5316,146 @@ impl Layer {
         }
 
         Ok(())
+    }
+
+    /// FillRectilinear.cpp:3670-3746, the part of
+    /// `FillMonotonicLineWGapFill::fill_surface_extrusion` after the lines are laid into
+    /// `collection`: the gap fills of the unextruded part of `route_areas` (the expoly's
+    /// no-overlap islands) planned into the order of the lines (`plan_monotonic_route`) and
+    /// the collection rebuilt in that order (`append_monotonic_route`). `new_flow` is the
+    /// flow of 3672 (`params.flow`, or `params.flow.with_spacing(this->spacing)` when lines
+    /// were laid, 3674-3685), `line_mm3_per_mm` and its width the line flow's; `gap_flow`
+    /// is `params.flow`. With no line laid (`route_lines` empty, `island_end` all zero) the
+    /// gaps are the planner's leftover, in its nearest-neighbour order (3446-3482).
+    #[allow(clippy::too_many_arguments)]
+    fn monotonic_route_gap_fill(
+        collection: &mut ExtrusionEntityCollection,
+        route_areas: &ExPolygons,
+        route_lines: &mut Vec<crate::geometry::Polyline>,
+        route_island_end: &[usize],
+        route_scan_angle: f32,
+        new_flow: &Flow,
+        line_mm3_per_mm: f64,
+        path_height: f32,
+        density: f32,
+        resolution: f64,
+        extrusion_role: crate::extrusion_entity::ExtrusionRole,
+        gap_flow: &Flow,
+        gap_comp: f32,
+    ) {
+        use crate::clipper_utils::{difference_clib, offset2_clib, union_polygons_ex};
+        use crate::extrusion_entity::ExtrusionEntityType;
+        // FillRectilinear.cpp:3692 unextruded_areas = diff_ex(no_overlap_expolygons,
+        //     union_ex(coll_nosort->polygons_covered_by_spacing(10))), 3694-3695.
+        let mut covered: Vec<crate::geometry::Polygon> = Vec::new();
+        for ent in &collection.entities {
+            if let ExtrusionEntityType::Path(path) = ent {
+                path.polygons_covered_by_spacing(&mut covered, 10.0);
+            } else if let ExtrusionEntityType::MultiPath(mp) = ent {
+                for path in &mp.paths {
+                    path.polygons_covered_by_spacing(&mut covered, 10.0);
+                }
+            }
+        }
+        let unextruded_areas: ExPolygons = if covered.is_empty() {
+            route_areas.clone()
+        } else {
+            difference_clib(route_areas, &union_polygons_ex(&covered))
+        };
+        // FillRectilinear.cpp:3699-3701.
+        let gapfill_areas = crate::clipper_utils::intersection_clib(&unextruded_areas, route_areas);
+        let mut gap_polylines: crate::geometry::ThickPolylines = Vec::new();
+        if !gapfill_areas.is_empty() && density >= 1.0 {
+            // FillRectilinear.cpp:3703-3707, min / max from new_flow.scaled_spacing()
+            // (the doubles of trunc(spacing / 1e-5)).
+            let s_sc = (new_flow.spacing() / 0.00001).trunc();
+            let min_sc = 0.2 * s_sc * (1.0 - 0.4);
+            let max_sc = 2.0 * s_sc;
+            const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
+            let opened_min = offset2_clib(
+                &gapfill_areas,
+                min_sc / 2.0 / crate::SCALING_FACTOR,
+                min_sc / 2.0 / crate::SCALING_FACTOR,
+                OffsetJoinType::Miter,
+            );
+            let wide_part = offset2_clib(
+                &gapfill_areas,
+                max_sc / 2.0 / crate::SCALING_FACTOR,
+                max_sc / 2.0 / crate::SCALING_FACTOR + CLIPPER_SAFETY_OFFSET,
+                OffsetJoinType::Miter,
+            );
+            let mut gaps_ex = difference_clib(&opened_min, &wide_part);
+            // FillRectilinear.cpp:3708-3717: the gaps ordered by chain_points of their
+            // contours' first points.
+            let ordering_points: Vec<crate::geometry::Point> =
+                gaps_ex.iter().map(|ex| ex.contour.points[0]).collect();
+            let order = crate::shortest_path::chain_points(&ordering_points, None);
+            let mut gaps_ex_sorted: ExPolygons = Vec::with_capacity(gaps_ex.len());
+            for i in order {
+                gaps_ex_sorted.push(std::mem::take(&mut gaps_ex[i]));
+            }
+            // FillRectilinear.cpp:3719-3723
+            let simplify_resolution = crate::scale(resolution) as f64 * 0.1;
+            for ex in &mut gaps_ex_sorted {
+                ex.douglas_peucker(simplify_resolution);
+                // ExPolygon::medial_axis (ExPolygon.cpp:263-371): the C++ `width` array kept
+                // as it is, two per segment in scaled units, in `widths` (the pair layout
+                // ThickPolyline::thicklines and reverse() read), which
+                // thick_polyline_to_extrusion_paths_2 takes (VariableWidth.cpp:103-211).
+                let mut pp: Vec<crate::geometry::MedialAxisThickPolyline> = Vec::new();
+                ex.medial_axis_thick_polylines(min_sc, max_sc, &mut pp);
+                for pl in pp {
+                    if pl.points.len() < 2 || pl.width.is_empty() {
+                        continue;
+                    }
+                    let mut tp = crate::geometry::ThickPolyline::with_capacity(pl.points.len());
+                    tp.points = pl.points;
+                    tp.widths = pl.width;
+                    tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
+                    gap_polylines.push(tp);
+                }
+            }
+            // FillRectilinear.cpp:3725-3734: tiny gaps dropped (filter_out_gap_fill is never
+            // set by Fill.cpp: 0), none for a bridge.
+            if !gap_polylines.is_empty() && !crate::extrusion_entity::is_bridge(extrusion_role) {
+                // libslic3r.h SCALED_EPSILON = scale_(EPSILON), EPSILON = 1e-4.
+                let scaled_epsilon = 1e-4 / 0.00001;
+                gap_polylines.retain(|p| !(p.length() <= scaled_epsilon || p.length() < 0.0));
+            } else {
+                gap_polylines.clear();
+            }
+        }
+        // FillRectilinear.cpp:3736-3746
+        if !gap_polylines.is_empty() {
+            collection.entities.clear();
+            let flow_width = new_flow.width();
+            let link_max = 3.0 * (((flow_width as f32) as f64 / 0.00001) as i64) as f64;
+            let island_end: Vec<usize> = if route_island_end.last() == Some(&route_lines.len()) {
+                route_island_end.to_vec()
+            } else {
+                vec![route_lines.len()]
+            };
+            let route = crate::fill::fill_rectilinear::plan_monotonic_route(
+                route_lines,
+                &mut gap_polylines,
+                link_max,
+                route_scan_angle,
+                &island_end,
+            );
+            crate::fill::fill_rectilinear::append_monotonic_route(
+                &mut collection.entities,
+                &route,
+                route_lines,
+                &gap_polylines,
+                extrusion_role,
+                line_mm3_per_mm,
+                flow_width as f32,
+                path_height,
+                crate::extrusion_entity::ExtrusionRole::GapFill,
+                gap_flow,
+                gap_comp,
+            );
+        }
     }
 
     /// Generate the sparse-infill polylines used to anchor internal bridges.

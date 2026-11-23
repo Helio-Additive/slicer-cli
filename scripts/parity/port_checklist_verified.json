@@ -4317,5 +4317,31 @@
   "functions": [
    "append_monotonic_route"
   ]
+ },
+ {
+  "unit": "ArcFitter",
+  "round": 938,
+  "evidence": "tests/arc_fitter_native_parity.rs: the pin's ArcFitter::do_arc_fitting_and_simplify (and through it do_arc_fitting, try_create_arc, are_points_within_slice) on 1,500 noisy polylines, 1,169 arcs, 0 mismatches.",
+  "functions": [
+   "ArcFitter::do_arc_fitting_and_simplify"
+  ]
+ },
+ {
+  "unit": "Circle",
+  "round": 938,
+  "evidence": "tests/arc_fitter_native_parity.rs: ArcSegment is_point_inside / clip_start / clip_end / reverse / split_at (Circle.cpp 203-254) on 1,169 arcs; Circle::try_create_circle from three points on 1,476 triples (666 circles); calc_arc_radian / radius / length (Circle.cpp 479-514) on 2,000 cases; try_create_arc and are_points_within_slice through the fitting; 0 mismatches.",
+  "functions": [
+   "ArcSegment::reverse",
+   "ArcSegment::clip_start",
+   "ArcSegment::clip_end",
+   "ArcSegment::split_at",
+   "ArcSegment::is_point_inside",
+   "ArcSegment::try_create_arc",
+   "ArcSegment::are_points_within_slice",
+   "ArcSegment::calc_arc_radian",
+   "ArcSegment::calc_arc_radius",
+   "ArcSegment::calc_arc_length",
+   "Circle::try_create_circle"
+  ]
  }
 ]

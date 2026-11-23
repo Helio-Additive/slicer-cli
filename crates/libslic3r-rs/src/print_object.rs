@@ -2035,16 +2035,29 @@ impl PrintObject {
                     if let Ok(ext_flow) =
                         region.flow(crate::flow::FlowRole::ExternalPerimeter, layer_height)
                     {
-                        let comp: crate::geometry::ExPolygons = raw
-                            .iter()
-                            .map(|ex| {
-                                crate::elephant_foot_compensation::elephant_foot_compensation_with_flow(
-                                    ex,
-                                    &ext_flow,
-                                    object_config.elephant_foot_compensation,
-                                )
-                            })
-                            .collect();
+                        // PrintObjectSlice.cpp:2309-2312: the pin calls the ExPolygons overload
+                        // (ElephantFootCompensation.cpp:627-635: expolygons_simplify(SCALED_EPSILON) first)
+                        // with `unscale<double>(elfoot)`, elfoot = `float(scale_(elefant_foot_compensation))`
+                        // (:2276-2279). R938 gate L0_EFC_EXPOLYGONS (faithful); =0 gives the earlier arm
+                        // (the per-ExPolygon overload, no simplify, the config value in double).
+                        let comp: crate::geometry::ExPolygons = if crate::faithful_gate("L0_EFC_EXPOLYGONS") {
+                            let elfoot = crate::scaled_f(object_config.elephant_foot_compensation) as f32;
+                            crate::elephant_foot_compensation::elephant_foot_compensation_expolygons_with_flow(
+                                &raw,
+                                &ext_flow,
+                                elfoot as f64 * crate::libslic3r::SCALING_FACTOR,
+                            )
+                        } else {
+                            raw.iter()
+                                .map(|ex| {
+                                    crate::elephant_foot_compensation::elephant_foot_compensation_with_flow(
+                                        ex,
+                                        &ext_flow,
+                                        object_config.elephant_foot_compensation,
+                                    )
+                                })
+                                .collect()
+                        };
                         let merged = crate::clipper_utils::union_ex(&comp);
                         region.slices.surfaces = merged
                             .into_iter()
