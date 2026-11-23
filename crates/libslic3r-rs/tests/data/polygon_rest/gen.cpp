@@ -81,8 +81,49 @@ static Points make_poly(int32_t range, int kind)
     return pts;
 }
 
-int main()
+// R933: `gen circles` writes tests/data/polygon_rest/circles.txt instead: Polygon::is_approx_circle
+// (Polygon.cpp:103-135) on regular n-gons with noise (n = 8..71, several radii, the centre off the origin), the
+// limits drawn around the polygon's own spread so that both branches are taken. A line is
+//   c <poly: n points> <max_deviation> <max_variance> -> <ok> [<center> <diameter>]
+static int circles()
 {
+    const double radii[5] = { 40., 2500., 150000., 1000000., 30000000. };
+    for (int icase = 0; icase < 1500; ++icase) {
+        const double r     = radii[icase % 5] * (0.5 + unit());
+        const int    n     = 8 + int(lcg() % 64);
+        const double noise = r * (icase % 3 == 0 ? 0. : (icase % 3 == 1 ? 1e-4 : 2e-2)) * unit();
+        const double cx    = double(rnd(1000000)), cy = double(rnd(1000000));
+        const double phase = 2. * M_PI * unit();
+        Points pts;
+        for (int i = 0; i < n; ++i) {
+            const double a  = phase + 2. * M_PI * double(i) / double(n);
+            const double rr = r + noise * (2. * unit() - 1.);
+            pts.emplace_back(int32_t(cx + rr * std::cos(a)), int32_t(cy + rr * std::sin(a)));
+        }
+        if (icase % 17 == 5) pts.resize(7);
+        Polygon poly(pts);
+        // The spread the pin computes, scaled by a factor around 1 so that both sides of each test occur.
+        const double dev_scale = 0.25 + 2. * unit();
+        const double max_deviation = (2. * noise + 1.5) * dev_scale;
+        const double max_variance  = (icase % 4 == 0) ? 0. : (noise * noise + 1.) * (0.05 + unit());
+        std::printf("c");
+        pps(poly.points);
+        pd(max_deviation); pd(max_variance);
+        std::printf(" ->");
+        Point  center(0, 0);
+        double diameter = 0.;
+        const bool ok = poly.is_approx_circle(max_deviation, max_variance, center, diameter);
+        std::printf(" %d", ok ? 1 : 0);
+        if (ok) { pp(center); pd(diameter); }
+        std::printf("\n");
+    }
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && std::strcmp(argv[1], "circles") == 0)
+        return circles();
     const int32_t ranges[4] = { 20, 3000, 400000, 2000000 };
     for (int icase = 0; icase < 2000; ++icase) {
         const int32_t range = ranges[icase % 4];

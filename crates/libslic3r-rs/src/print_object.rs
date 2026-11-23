@@ -5442,6 +5442,28 @@ lines={} grown_polys={} grown_verts={}",
             return Err(Error::Cancelled);
         }
 
+        // PrintObject.cpp:1251-1265: every layer runs Layer::make_ironing (Fill.cpp:983-1250, fill/fill.rs),
+        // which reads each region's own ironing_type and appends the ironing collections to that region's
+        // fills; the pin's tbb::parallel_for over the layers has no state shared between layers.
+        // Gate FILL_IRONING_LIVE_PIN (on unless =0); =0 keeps the earlier generator (gcode/ironing.rs).
+        if crate::faithful_gate("FILL_IRONING_LIVE_PIN") {
+            for layer_idx in 0..self.layers.len() {
+                // PrintObject.cpp:1258  m_print->throw_if_canceled();
+                if cancel_checks && self.canceled.load(Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                // PrintObject.cpp:1259
+                self.layers[layer_idx].make_ironing()?;
+            }
+            // PrintObject.cpp:1263  m_print->throw_if_canceled();
+            if cancel_checks && self.canceled.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            // PrintObject.cpp:1265
+            self.set_step_done(PrintObjectStep::Ironing);
+            return Ok(());
+        }
+
         // Map print_config IroningType to gcode ironing IroningType
         let ironing_type = match self.config.ironing_type {
             IroningType::NoIroning => {

@@ -31,6 +31,45 @@ use crate::triangle_mesh::{Triangle, TriangleMesh};
 ///   C++ `slicer_cli` binary accepts via `--config`).
 /// * `output` — path to write the generated G-code to.
 pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Result<()> {
+    let (print, __proc_s) = slice_stl_print(input, settings_json)?;
+    let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
+
+    // Export G-code using Print::export_gcode().
+    info!("Exporting G-code...");
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create output directory {:?}", parent))?;
+    }
+    let __t_exp = std::time::Instant::now();
+    print
+        .export_gcode(output)
+        .with_context(|| format!("Failed to export G-code to {:?}", output))?;
+    if __timing {
+        let __exp_s = __t_exp.elapsed().as_secs_f64();
+        eprintln!(
+            "--- top-level (s): process {:.3} + export_gcode {:.3} = {:.3} ---",
+            __proc_s,
+            __exp_s,
+            __proc_s + __exp_s
+        );
+    }
+
+    info!("Output written to: {:?}", output);
+    info!(
+        "Layers: {}",
+        print.objects().first().map(|o| o.layers().len()).unwrap_or(0)
+    );
+
+    Ok(())
+}
+
+/// The part of [`slice_to_gcode`] before the G-code export: load and place the STL, build the Print and run
+/// `Print::process()`. Returns the processed Print (for tests that read its objects' layers and support layers).
+pub fn slice_stl_to_print(input: &Path, settings_json: &Path) -> Result<Print> {
+    slice_stl_print(input, settings_json).map(|(print, _)| print)
+}
+
+fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
     info!("Slicing (in-process): {:?}", input);
 
     // Load mesh — only STL is wired for the library entrypoint.
@@ -124,6 +163,22 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     }
     let frame_origin = if desktop_place.is_some() { (0.0, 0.0) } else { frame_origin_legacy };
 
+    // Gate TREE_SUPPORT_ORGANIC_PIN (opt_in_gate, R933): the Model of the placed object for the support step's
+    // faithful Print (print.rs, `assemble_faithful_print`). Off: no Model is built and the live Print's stays empty.
+    let tree_pin_model = match &desktop_place {
+        // Only where print.rs's gated support block will run (a tree support type with supports or a raft): with
+        // the gate on, Benchy (no supports) ran away in R933 (>10 min, 11 GB) with the Model built; not localized.
+        Some(place)
+            if crate::opt_in_gate("TREE_SUPPORT_ORGANIC_PIN")
+                && object_config.support_type == crate::print_config::SupportType::Tree
+                && (object_config.enable_support || object_config.enforce_support_layers > 0 || object_config.raft_layers > 0) =>
+        {
+            let name = input.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            Some(live_model_from_desktop_placement(place, &settings_value, &name))
+        }
+        _ => None,
+    };
+
     // Create PrintObject — slicing happens internally during Print::process().
     info!("Creating PrintObject...");
     let mut print_object = PrintObject::with_config(mesh, object_config);
@@ -143,6 +198,10 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     // default region config; objects are added separately below.
     print.apply(print_config, region_config);
     print.raw_settings = raw_settings_json;
+    if let Some(model) = tree_pin_model {
+        // After `apply`, which clears the live Print's model (print.rs).
+        print.set_model(model);
+    }
     // FRAME_PAIR export origin (= the slice center applied above).
     print.gcode_origin = frame_origin;
     print.set_status_callback(|percent, message| {
@@ -159,40 +218,12 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     }
 
     info!("Running Print::process() pipeline...");
-    let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
     let __t_proc = std::time::Instant::now();
     print
         .process(None, false)
         .with_context(|| "Failed to process print")?;
     let __proc_s = __t_proc.elapsed().as_secs_f64();
-
-    // Export G-code using Print::export_gcode().
-    info!("Exporting G-code...");
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create output directory {:?}", parent))?;
-    }
-    let __t_exp = std::time::Instant::now();
-    print
-        .export_gcode(output)
-        .with_context(|| format!("Failed to export G-code to {:?}", output))?;
-    if __timing {
-        let __exp_s = __t_exp.elapsed().as_secs_f64();
-        eprintln!(
-            "--- top-level (s): process {:.3} + export_gcode {:.3} = {:.3} ---",
-            __proc_s,
-            __exp_s,
-            __proc_s + __exp_s
-        );
-    }
-
-    info!("Output written to: {:?}", output);
-    info!(
-        "Layers: {}",
-        print.objects().first().map(|o| o.layers().len()).unwrap_or(0)
-    );
-
-    Ok(())
+    Ok((print, __proc_s))
 }
 
 /// `slicer_cli` rewrites the placeholder `initial_no_support_filament_id` to
@@ -277,6 +308,42 @@ struct DesktopPlacement {
     /// The volume matrix's translation, then `trafo_centered()`'s.
     volume_offset: [f64; 3],
     object_translation: [f64; 3],
+}
+
+/// The Model `slicer_cli` holds for one placed model file (gate `TREE_SUPPORT_ORGANIC_PIN`, R933): what the pin's
+/// loader and `desktop_place_on_bed` leave in it (cli_model_load.cpp 280-378 on main; Model.cpp:605-621
+/// `Model::add_object(name, path, mesh)`): one ModelObject named after the file, one model-part ModelVolume whose
+/// mesh is stored minus its bounding-box centre (ModelVolume::center_geometry_after_creation, Model.cpp:3513, the
+/// f32 vertices `desktop_place_stl` computed) with the volume offset the two `center_around_origin` calls leave
+/// (Model.cpp:1870), and one ModelInstance at the bed centre lifted by `ensure_on_bed` (Model.cpp:1883). The
+/// object's config is empty, as an STL carries no per-object settings. `print_objects_from_model_object`
+/// (PrintApply.cpp) and the PrintObject constructor (PrintObject.cpp:82-114) then reach the same instance shift and
+/// `m_center_offset` as `desktop_place_stl`, so the faithful object's layers are in the live layers' frame.
+fn live_model_from_desktop_placement(place: &DesktopPlacement, settings: &serde_json::Value, name: &str) -> crate::model::Model {
+    use crate::geometry::geometry::Vec3d;
+    use crate::model::{Model, ModelMesh, ModelVolumeType};
+    use crate::normal_utils::{indexed_triangle_set, Vec3crd, Vec3f};
+    let mut its = indexed_triangle_set::default();
+    its.vertices = place.local_mesh.vertices().iter().map(|p| Vec3f::new(p.x as f32, p.y as f32, p.z as f32)).collect();
+    its.indices = (0..place.local_mesh.triangle_count())
+        .map(|i| {
+            let t = place.local_mesh.triangle_indices(i);
+            Vec3crd::new(t[0] as i32, t[1] as i32, t[2] as i32)
+        })
+        .collect();
+    let (bed_x, bed_y) = bed_box_center(settings);
+    let mut model = Model::new();
+    let o = model.add_object_new();
+    o.name = name.to_string();
+    {
+        // Model.cpp:1450-1461: already centred (center_geometry_after_creation ran in desktop_place_stl).
+        let v = o.add_volume_mesh(ModelMesh::from_its(its), ModelVolumeType::ModelPart, false);
+        v.name = name.to_string();
+        v.set_offset(&Vec3d::new(place.volume_offset[0], place.volume_offset[1], place.volume_offset[2]));
+    }
+    o.add_instance().set_offset(&Vec3d::new(bed_x, bed_y, place.object_translation[2]));
+    o.invalidate_bounding_box();
+    model
 }
 
 /// The bounding box of the `printable_area` points (cli_model_load.cpp `bed_box`;

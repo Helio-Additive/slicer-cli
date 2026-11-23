@@ -10545,6 +10545,51 @@ impl crate::support::support_common::SupportFill for EngineSupportFillConcentric
     }
 }
 
+/// FillHoneycomb.hpp:12-54 `class FillHoneycomb : public Fill` behind `SupportFill`, for a support whose base pattern
+/// is honeycomb (SupportParameters.hpp:224-237, `smpHoneycomb` -> `ipHoneycomb`). The crate's `FillHoneycomb` keeps
+/// its own copy of the base's `spacing` and its hexagon cache (FillHoneycomb.hpp:51); the filler lives as long as
+/// this object, as the pin's does, so the cache is kept across fills. Ported only (R933): no vector of the support
+/// pipeline asks for this pattern yet.
+/// How many times `EngineSupportFillHoneycomb::fill_surface` ran in this process (a counter for tests; nothing reads
+/// it on the slicing path).
+pub static ENGINE_SUPPORT_FILL_HONEYCOMB_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub struct EngineSupportFillHoneycomb {
+    pub base: crate::fill::fill_base::Fill,
+    pub filler: crate::fill::fill_honeycomb::FillHoneycomb,
+}
+
+impl crate::support::support_common::SupportFill for EngineSupportFillHoneycomb {
+    fn fill(&self) -> &crate::fill::fill_base::Fill {
+        &self.base
+    }
+    fn fill_mut(&mut self) -> &mut crate::fill::fill_base::Fill {
+        &mut self.base
+    }
+    /// FillBase.cpp:99-113 `Fill::fill_surface()`, which FillHoneycomb inherits, with its `_fill_surface_single`
+    /// (FillHoneycomb.cpp:9-84) and its `_layer_angle` (FillHoneycomb.hpp:53) in `_infill_direction`
+    /// (FillBase.cpp:205-230). FillHoneycomb does not throw.
+    fn fill_surface(&mut self, surface: &crate::surface::Surface, params: &crate::fill::FillParams) -> Result<Polylines, InfillFailedException> {
+        // FillBase.cpp:102  Slic3r::ExPolygons expp = offset_ex(surface->expolygon, float(scale_(this->overlap - 0.5 * this->spacing)));
+        let delta = ((-0.5f64).mul_add(self.base.spacing, self.base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32;
+        let expp: Vec<crate::geometry::ExPolygon> = crate::clipper_utils::offset_expolygons_clib_scaled(
+            std::slice::from_ref(&surface.expolygon),
+            delta as f64,
+            crate::clipper_utils::OffsetJoinType::Miter,
+        );
+        self.filler.spacing = self.base.spacing;
+        ENGINE_SUPPORT_FILL_HONEYCOMB_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // FillBase.cpp:104-112
+        let mut polylines_out: Polylines = Polylines::new();
+        for expoly in expp.into_iter() {
+            let filler = &self.filler;
+            let direction = self.base._infill_direction_with(surface, |idx| filler.layer_angle(idx));
+            self.filler.fill_surface_single(params, surface.thickness_layers as u32, &direction, expoly, &mut polylines_out);
+        }
+        Ok(polylines_out)
+    }
+}
+
 impl SupportFillFactory for EngineSupportFillFactory {
     fn new_from_type(&self, pattern: crate::print_config::InfillPattern) -> Box<dyn crate::support::support_common::SupportFill> {
         if let Some(filler) = EngineSupportFiller::new_from_type(pattern) {
@@ -10553,6 +10598,13 @@ impl SupportFillFactory for EngineSupportFillFactory {
         // FillBase.cpp:37  case ipConcentric: return new FillConcentric();
         if pattern == crate::print_config::InfillPattern::Concentric {
             return Box::new(EngineSupportFillConcentric { base: crate::fill::fill_base::Fill::new() });
+        }
+        // FillBase.cpp:38  case ipHoneycomb: return new FillHoneycomb();
+        if pattern == crate::print_config::InfillPattern::Honeycomb {
+            return Box::new(EngineSupportFillHoneycomb {
+                base: crate::fill::fill_base::Fill::new(),
+                filler: crate::fill::fill_honeycomb::FillHoneycomb::new(0.0),
+            });
         }
         match &self.other {
             Some(other) => other.new_from_type(pattern),

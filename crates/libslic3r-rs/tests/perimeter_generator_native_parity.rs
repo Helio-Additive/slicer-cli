@@ -965,12 +965,12 @@ fn layer_make_perimeters_groups_native_parity() {
                 text += &format!("\t{key}={value}");
             }
             let mut c = proc_cfg(&text);
-            // PrintRegionConfig::set_deserialize takes "wall_filament" with the opt-in gate
-            // REGION_CONFIG_WALL_FILAMENT=1 (R932; checked here: the regions of the 'filaments' case);
+            // PrintRegionConfig::set_deserialize takes "wall_filament" with the gate
+            // REGION_CONFIG_WALL_FILAMENT (R932 opt-in, R933 on unless =0; checked here: the regions of the 'filaments' case);
             // otherwise the field is set as the slicing path sets it on the regions it makes (print.rs,
             // `cfg.wall_filament = extruder_id`).
             if let Some(w) = c.kv.get("wall_filament").and_then(|v| v.parse::<usize>().ok()) {
-                if std::env::var("REGION_CONFIG_WALL_FILAMENT").as_deref() == Ok("1") {
+                if std::env::var("REGION_CONFIG_WALL_FILAMENT").as_deref() != Ok("0") {
                     assert_eq!(c.region.config().wall_filament, w, "line {}: wall_filament by set_deserialize", line_no + 1);
                 }
                 let mut region_config = c.region.config().clone();

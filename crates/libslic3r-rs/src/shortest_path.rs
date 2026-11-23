@@ -1722,6 +1722,14 @@ pub struct ConnectionCost {
 }
 
 impl ConnectionCost {
+    // ShortestPath.cpp:1281 `ConnectionCost(double cost, double cost_flipped)`
+    pub fn new(cost: f64, cost_flipped: f64) -> Self {
+        ConnectionCost { cost, cost_flipped }
+    }
+    // ShortestPath.cpp:1283 `void flip() { std::swap(this->cost, this->cost_flipped); }`
+    pub fn flip(&mut self) {
+        std::mem::swap(&mut self.cost, &mut self.cost_flipped);
+    }
     // ShortestPath.cpp:1282 (default)
     fn default_() -> Self {
         ConnectionCost {

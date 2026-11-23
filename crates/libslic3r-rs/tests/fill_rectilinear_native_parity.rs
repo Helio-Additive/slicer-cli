@@ -20,6 +20,7 @@ use slicer::fill::fill_rectilinear::{
     traverse_graph_generate_polylines, ExPolygonWithOffset, FillAlignedRectilinear, FillCrossZag, FillCubic, FillGrid, FillMonotonic,
     FillGlobalMonotonicLine, FillMonotonicLine, FillMonotonicLineWGapFill, FillRectilinear, FillRectilinearParams, FillStars, FillSupportBase, FillTriangles, FillZigZag, SegmentedIntersectionLine,
 };
+use slicer::fill::fill_line::FillLine;
 use slicer::fill::FillParams;
 use slicer::geometry::{BoundingBox, Point, Polyline};
 use slicer::print_config::InfillPattern;
@@ -42,7 +43,14 @@ const TYPE_NAMES: [&str; 11] =
     ["FillRectilinear", "FillMonotonic", "FillMonotonicLine", "FillAlignedRectilinear", "FillGrid", "FillTriangles", "FillStars", "FillCubic", "FillSupportBase", "FillZigZag", "FillCrossZag"];
 
 fn run_fs(r: &mut Run) {
-    while let Some(line) = r.input("in fs") {
+    run_fill_tag(r, "fs");
+}
+
+/// gen.cpp `fill_case`: the "in <tag>" / "<tag>" lines of `run_fs`, `run_dc` (the dont_connect arm of
+/// fill_surface_by_multilines, FillRectilinear.cpp:3065-3067) and `run_ln` (type 99: FillLine through
+/// Fill::fill_surface, FillBase.cpp:99-113 and FillLine.cpp:10-80).
+fn run_fill_tag(r: &mut Run, tag: &str) {
+    while let Some(line) = r.input(&format!("in {tag}")) {
         let mut t = Tok::new(&line);
         let ty = t.i();
         let layer_id = t.i() as usize;
@@ -110,6 +118,29 @@ fn run_fs(r: &mut Run) {
                 &mut $f.0.base
             };
         }
+        if ty == 99 {
+            // FillBase.cpp:99-113 `Fill::fill_surface` of a FillLine (FillLine has no fill_surface of its own).
+            params.pattern = InfillPattern::Line;
+            let mut base = Fill::new();
+            setup(&mut base);
+            let mut f = FillLine { spacing: base.spacing, ..Default::default() };
+            // FillBase.cpp:102 `offset_ex(surface->expolygon, float(scale_(this->overlap - 0.5 * this->spacing)))`
+            let delta = ((-0.5f64).mul_add(f.spacing, base.overlap) / slicer::libslic3r::SCALING_FACTOR) as f32;
+            let expp = slicer::clipper_utils::offset_ex_expolygon_clib(
+                &surface.expolygon,
+                delta as f64,
+                slicer::clipper_utils::OffsetJoinType::Miter,
+                3.0,
+            );
+            let mut result: Vec<Polyline> = Vec::new();
+            for ex in expp {
+                // FillBase.cpp:110 `_infill_direction(surface)` per region.
+                let direction = base._infill_direction(&surface);
+                f._fill_surface_single(&params, surface.thickness_layers as u32, &direction, ex, &mut result);
+            }
+            r.out(format!("{tag} {} {}", hd(f.spacing), pls_s(&result)));
+            continue;
+        }
         let (spacing_after, result) = match ty {
             0 => run!(FillRectilinear, f),
             1 => run!(FillMonotonic, f),
@@ -123,7 +154,7 @@ fn run_fs(r: &mut Run) {
             9 => run!(FillZigZag, f),
             _ => run!(FillCrossZag, f),
         };
-        r.out(format!("fs {} {}", hd(spacing_after), pls_s(&result)));
+        r.out(format!("{tag} {} {}", hd(spacing_after), pls_s(&result)));
     }
 }
 
@@ -407,6 +438,8 @@ fn fill_rectilinear_native_parity() {
     run_sgp(&mut r);
     run_wg(&mut r);
     run_sia(&mut r);
+    run_fill_tag(&mut r, "dc");
+    run_fill_tag(&mut r, "ln");
     let n = r.expected.iter().filter(|l| !l.starts_with("in ")).count();
     // "fs" by filler.
     let mut per_type = [(0usize, 0usize); 11];
@@ -423,7 +456,7 @@ fn fill_rectilinear_native_parity() {
         eprintln!("fill_rectilinear: fs {}: {ok} of {total}", TYPE_NAMES[ty]);
     }
     let mut not_equal: Vec<String> = Vec::new();
-    for tag in ["fs ", "pwo ", "bbs ", "sl ", "csi ", "tg ", "pinch ", "mr ", "chain ", "pfp ", "mfl ", "sgp ", "wg ", "sia ", "dos "] {
+    for tag in ["fs ", "pwo ", "bbs ", "sl ", "csi ", "tg ", "pinch ", "mr ", "chain ", "pfp ", "mfl ", "sgp ", "wg ", "sia ", "dos ", "dc ", "ln "] {
         let (total, ok) = r.tally(tag);
         eprintln!("fill_rectilinear: {tag}: {ok} of {total}");
         if ok != total {

@@ -5,11 +5,12 @@
 //! describes the line. Every case carries its inputs and the pin's results; the same calls run here and
 //! every result has to be the pin's (integers equal, doubles and floats bit-equal).
 //!
-//! REPORTED, not asserted (R932): `Polygon::simplify` (419 of 1,353 CCW inputs) and `polygons_simplify`
-//! (1,147 of 2,000) differ in the final ClipperLib::SimplifyPolygons step (the port's
-//! simplify_polygons_clipper / clipper_simplify_polygons_single_path keep self-intersecting outputs the pin
-//! splits); the Douglas-Peucker step before it is the verified MultiPoint one. densify and
+//! `Polygon::simplify` and `polygons_simplify` are equal under the gate `POLYGON_SIMPLIFY_CLIPPER_PIN` (R933, on:
+//! the final step is the crate's ClipperLib::SimplifyPolygons port, clipper.hpp:558-566); the 647 clockwise
+//! inputs of `Polygon::simplify` are skipped, the pin asserts a CCW polygon (Polygon.cpp:140). densify and
 //! get_extents_rotated are equal under the gate `POLYGON_REST_PIN` (R932, on).
+//! `circles.txt.gz` (`gen circles`, R933) holds `Polygon::is_approx_circle` on noisy regular n-gons, 475 of
+//! the 1,500 cases taking the true branch.
 
 use slicer::geometry::polygon::{
     area_polygons, get_extents_rotated, has_duplicate_points, make_circle, make_circle_num_segments, overlaps,
@@ -147,10 +148,10 @@ fn polygon_rest_matches_the_pin() {
         int_eq!("on_boundary", poly.on_boundary(&p, eps) as i64);
         // Polygon.cpp:140 asserts a CCW polygon (a debug_assert in the port): CW inputs are skipped.
         if poly.is_counter_clockwise() {
-            polys_eq!("simplify (ClipperLib::SimplifyPolygons differs; reported)", pts_of(&poly.simplify(tolerance)));
+            polys_eq!("simplify", pts_of(&poly.simplify(tolerance)));
         } else {
             let _ = t.polys();
-            check("simplify (CW input, the pin asserts CCW; reported)", true, String::new());
+            check("simplify (CW input skipped, the pin asserts CCW; reported)", true, String::new());
         }
         {
             let mut x = Point::new(0, 0);
@@ -196,7 +197,7 @@ fn polygon_rest_matches_the_pin() {
             int_eq!("remove_small", removed as i64);
             polys_eq!("remove_small", pts_of(&ps));
         }
-        polys_eq!("polygons_simplify (ClipperLib::SimplifyPolygons differs; reported)", pts_of(&polygons_simplify(&[poly.clone(), other.clone()], tolerance)));
+        polys_eq!("polygons_simplify", pts_of(&polygons_simplify(&[poly.clone(), other.clone()], tolerance)));
         int_eq!("polygons_match", polygons_match(&poly, &other) as i64);
         int_eq!("overlaps(Polygons, Polygons)", overlaps(&[poly.clone()], &vec![other.clone()]) as i64);
         {
@@ -227,4 +228,58 @@ fn polygon_rest_matches_the_pin() {
     }
     assert_eq!(cases, 2000);
     assert_eq!(bad, 0, "{bad} of {total} results differ from the pin");
+}
+
+/// Polygon.cpp:103-135 `Polygon::is_approx_circle` on noisy regular n-gons (`gen circles`, R933): the result and,
+/// when true, the centre and the diameter.
+#[test]
+fn polygon_is_approx_circle_matches_the_pin() {
+    let path = std::env::var("POLYGON_REST_CIRCLES")
+        .unwrap_or_else(|_| format!("{}/tests/data/polygon_rest/circles.txt.gz", env!("CARGO_MANIFEST_DIR")));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    if path.ends_with(".gz") {
+        flate2::read::GzDecoder::new(file).read_to_string(&mut text).expect("gzip");
+    } else {
+        std::io::BufReader::new(file).read_to_string(&mut text).expect("read");
+    }
+    let (mut cases, mut trues, mut bad) = (0usize, 0usize, 0usize);
+    let mut first: Vec<String> = Vec::new();
+    for (ln, line) in text.lines().enumerate() {
+        let mut t = Tok { t: line.split(' ').filter(|x| !x.is_empty()).collect(), k: 0 };
+        assert_eq!(t.s(), "c");
+        cases += 1;
+        let poly = Polygon::from_points(t.pts());
+        let max_deviation = t.d();
+        let max_variance = t.d();
+        assert_eq!(t.s(), "->");
+        let ok = t.i() != 0;
+        let want = if ok {
+            trues += 1;
+            let c = t.pt();
+            Some((c, t.d()))
+        } else {
+            None
+        };
+        let got = poly.is_approx_circle(max_deviation, max_variance);
+        let same = match (got, want) {
+            (None, None) => true,
+            (Some((gc, gd)), Some((wc, wd))) => gc == wc && gd.to_bits() == wd.to_bits(),
+            _ => false,
+        };
+        if !same {
+            bad += 1;
+            if first.len() < 8 {
+                first.push(format!("line {}: got {got:?} want {want:?}", ln + 1));
+            }
+        }
+        assert_eq!(t.k, t.t.len(), "line {}: tokens left", ln + 1);
+    }
+    println!("is_approx_circle: {cases} cases, {trues} true at the pin, {bad} mismatches");
+    for f in &first {
+        println!("{f}");
+    }
+    assert_eq!(cases, 1500);
+    assert!(trues > 300);
+    assert_eq!(bad, 0, "{bad} of {cases} is_approx_circle results differ from the pin");
 }

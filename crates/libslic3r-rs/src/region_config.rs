@@ -623,7 +623,7 @@ impl PrintRegionConfig {
         };
 
         match key {
-            // R932 REGION_CONFIG_WALL_FILAMENT (opt-in, off unless =1): PrintConfig.cpp:5329-5339
+            // R932 REGION_CONFIG_WALL_FILAMENT (R933: faithful, on unless =0): PrintConfig.cpp:5329-5339
             // `def = this->add("wall_filament", coInt)` (min 0, default 0) is a key of the pin's
             // PrintRegionConfig (PrintConfig.hpp:1227 ((ConfigOptionInt, wall_filament)));
             // ConfigOptionInt::deserialize stores the integer as read (a negative one, below the
@@ -633,8 +633,11 @@ impl PrintRegionConfig {
             // object's filament" at the pin, which Print::apply puts in through the object's and volume's
             // "extruder" (PrintApply.cpp, region_config_from_model_volume / apply_to_print_region_config);
             // the live slicing path here does not run that, and with 0 stored Majora's G-code changes
-            // (3,300,013 lines against 3,027,815).
-            "wall_filament" if crate::opt_in_gate("REGION_CONFIG_WALL_FILAMENT") => {
+            // (3,300,013 lines against 3,027,815). R933: Print::apply (print.rs) now clamps the region's
+            // filament keys as region_config_from_model_volume does (PrintObject.cpp:3803-3806,
+            // REGION_CONFIG_FILAMENT_CLAMP), so a stored 0 prints with filament 1 (Majora's object
+            // extruder is 1); the three fixtures are the same bytes with this gate on and off.
+            "wall_filament" if crate::faithful_gate("REGION_CONFIG_WALL_FILAMENT") => {
                 if let Ok(v) = value.trim().parse::<i32>() {
                     if v >= 0 {
                         self.wall_filament = v as usize;

@@ -458,6 +458,11 @@ impl Polygon {
 
         // Polygon.cpp:149-151
         let pp = vec![p];
+        // Polygon.cpp:151 — return simplify_polygons(pp); (ClipperUtils.cpp:1026-1041, preserve_collinear = false:
+        // ClipperLib::SimplifyPolygons(PolygonsProvider(pp), pftNonZero)), under the gate POLYGON_SIMPLIFY_CLIPPER_PIN.
+        if polygon_simplify_clipper_pin() {
+            return crate::clipper_utils::cpp::simplify_polygons(&pp, false);
+        }
         simplify_polygons_clipper(&pp)
     }
 
@@ -1308,6 +1313,14 @@ fn get_extents_rotated_points_pin(points: &[Point], angle: CoordF) -> BoundingBo
     bbox
 }
 
+/// Gate `POLYGON_SIMPLIFY_CLIPPER_PIN` (R933): Polygon::simplify, polygons_simplify and
+/// simplify_polygons_clipper end in the crate's ClipperLib::SimplifyPolygons port (clipper.hpp:558-566) as the
+/// pin does; off = the earlier geo-clipper union stand-in.
+fn polygon_simplify_clipper_pin() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("POLYGON_SIMPLIFY_CLIPPER_PIN"))
+}
+
 /// Gate `POLYGON_REST_PIN` (R932, faithful): densify's lrint and get_extents_rotated as the pin.
 fn polygon_rest_pin() -> bool {
     static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -1669,6 +1682,27 @@ pub fn polygons_simplify(source_polygons: &[Polygon], tolerance: CoordF) -> Poly
         // Polygon.cpp:666 — then remove the last (repeated) point.
         simplified.pop();
         // Polygon.cpp:668 — bool ccw = ClipperLib::Area(simplified) > 0.;
+        if polygon_simplify_clipper_pin() {
+            // Gate POLYGON_SIMPLIFY_CLIPPER_PIN (Polygon.cpp:668-674): ClipperLib::Area and
+            // ClipperLib::SimplifyPolygons (clipper.hpp:558-566) of the crate's ClipperLib port, on the path as
+            // SinglePathProvider hands it over (the points as they are, coord_t = cInt).
+            let path: crate::clipper::Path =
+                simplified.iter().map(|q| crate::clipper::IntPoint::new(q.x as _, q.y as _)).collect();
+            // Polygon.cpp:668 — bool ccw = ClipperLib::Area(simplified) > 0.;
+            let ccw = crate::clipper::area(&path) > 0.;
+            // Polygon.cpp:669
+            let paths = crate::clipper::simplify_polygons(&vec![path], crate::clipper::PolyFillType::pftNonZero);
+            for p in paths {
+                let mut path: Vec<Point> = p.iter().map(|q| Point::new(q.x as i64, q.y as i64)).collect();
+                // Polygon.cpp:670-672
+                if !ccw {
+                    path.reverse();
+                }
+                // Polygon.cpp:673 — out.emplace_back(std::move(path));
+                out.push(Polygon::from_points(path));
+            }
+            continue;
+        }
         let ccw = clipper_area(&simplified) > 0.0;
         // Polygon.cpp:669 — for (path : SimplifyPolygons(SinglePathProvider(simplified), pftNonZero))
         for mut path in clipper_simplify_polygons_single_path(&simplified) {
@@ -1983,6 +2017,12 @@ pub fn to_polygons_paths(paths: &[Vec<Point>]) -> Polygons {
 /// ClipperUtils.cpp:1026 — executes a NonZero union of the subject paths, cleaning
 /// self-intersections/overlaps. preserve_collinear=false (the default at the call site).
 pub fn simplify_polygons_clipper(subject: &[Polygon]) -> Polygons {
+    // Gate POLYGON_SIMPLIFY_CLIPPER_PIN: ClipperUtils.cpp:1026-1041 `simplify_polygons(subject, false)` as the
+    // pin has it, ClipperLib::SimplifyPolygons (clipper.hpp:558-566: StrictlySimple union, pftNonZero) of the
+    // crate's ClipperLib port, the output paths in Clipper's order (to_polygons).
+    if polygon_simplify_clipper_pin() {
+        return crate::clipper_utils::cpp::simplify_polygons(subject, false);
+    }
     if subject.is_empty() {
         return Vec::new();
     }

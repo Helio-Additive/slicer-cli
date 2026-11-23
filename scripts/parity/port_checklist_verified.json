@@ -4098,5 +4098,50 @@
    "total_length",
    "area"
   ]
+ },
+ {
+  "unit": "Polygon",
+  "round": 933,
+  "evidence": "tests/polygon_rest_native_parity.rs: Polygon::simplify on the 1,353 counter-clockwise inputs and polygons_simplify on 2,000, through ClipperLib::SimplifyPolygons as the pin (Polygon.cpp 137-152, 658-677), 0 mismatches (419 and 1,147 had differed; the 647 clockwise inputs the pin asserts against are skipped); Polygon::is_approx_circle on 1,500 noisy regular n-gons (n 8 to 71, radii 40 to 3e7), 475 on the true branch, 0 mismatches.",
+  "functions": [
+   "Polygon::simplify",
+   "polygons_simplify",
+   "Polygon::is_approx_circle"
+  ]
+ },
+ {
+  "unit": "MultiPoint",
+  "round": 933,
+  "evidence": "tests/multi_point_native_parity.rs: 5,000 cases, 88,000 asserted calls against the pin's MultiPoint.cpp / MultiPoint.hpp, 0 mismatches (translate, rotate, length, find_point, has_boundary_point, bounding_box, has_duplicate_points, remove_duplicate_points, remove_colinear_points, concave_hull_2d, symmetric_y, get_extents); area on 776 cases (the loop clang vectorizes as an ordered reduction 16 at a time, the remainder fused); MultiPoint3 on 2,000 cases, 12,000 calls. Not compared: visivalingam (undefined behaviour at the pin).",
+  "functions": [
+   "MultiPoint::translate",
+   "MultiPoint::rotate",
+   "MultiPoint::length",
+   "length",
+   "MultiPoint::find_point",
+   "MultiPoint::has_boundary_point",
+   "MultiPoint::bounding_box",
+   "MultiPoint::has_duplicate_points",
+   "MultiPoint::remove_duplicate_points",
+   "MultiPoint::remove_colinear_points",
+   "MultiPoint::concave_hull_2d",
+   "MultiPoint::symmetric_y",
+   "area",
+   "get_extents",
+   "MultiPoint3::append",
+   "MultiPoint3::is_valid",
+   "MultiPoint3::translate",
+   "MultiPoint3::length",
+   "MultiPoint3::bounding_box",
+   "MultiPoint3::remove_duplicate_points"
+  ]
+ },
+ {
+  "unit": "Fill/FillLine",
+  "round": 933,
+  "evidence": "tests/fill_rectilinear_native_parity.rs group ln: FillLine through Fill::fill_surface (FillBase.cpp 99-113) on 48 cases, density 1 in half (the _adjust_solid_spacing branch, FillLine.cpp 28-30), dont_adjust on and off, the connection of lines included (_can_connect with the pin's tolerance, FillLine.hpp 41): 48 of 48 equal.",
+  "functions": [
+   "FillLine::_can_connect"
+  ]
  }
 ]

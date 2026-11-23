@@ -90,7 +90,8 @@ impl FillLine {
     /// ```
     fn _can_connect(&self, dist_x: Coord, dist_y: Coord) -> bool {
         // FillLine.hpp:41
-        let tolerance: Coord = 10 * SCALED_EPSILON;
+        // `coord_t(10 * SCALED_EPSILON)`, SCALED_EPSILON = scale_(EPSILON) = 10 (libslic3r.h) under FILL_LINE_PIN.
+        let tolerance: Coord = if fill_line_pin() { 10 * crate::libslic3r::SCALED_EPSILON as Coord } else { 10 * SCALED_EPSILON };
         // FillLine.hpp:42-44
         (dist_x >= (self._line_spacing - self._line_oscillation) - tolerance)
             && (dist_x <= (self._line_spacing + self._line_oscillation) + tolerance)
@@ -383,7 +384,14 @@ fn expolygon_contains_line(expolygon: &ExPolygon, line: &Line) -> bool {
     // ExPolygon.cpp:86-87 — `!bbox1.overlap(bbox2)`. `BoundingBox::overlap`
     // (BoundingBox.hpp) is the axis-aligned overlap test, which this crate
     // exposes as `BoundingBox::intersects`.
-    if !bbox1.intersects(&bbox2) {
+    if fill_line_pin() {
+        // BoundingBox.hpp `overlap`: the four comparisons alone; the pin does not look at `defined`, which
+        // this crate's box of a horizontal or vertical segment (zero height or width) leaves false, so
+        // `intersects` refused every axis-parallel connection.
+        if bbox1.max.x < bbox2.min.x || bbox1.min.x > bbox2.max.x || bbox1.max.y < bbox2.min.y || bbox1.min.y > bbox2.max.y {
+            return false;
+        }
+    } else if !bbox1.intersects(&bbox2) {
         return false;
     }
     // ExPolygon.cpp:89 — diff_pl(polyline, *this).empty()

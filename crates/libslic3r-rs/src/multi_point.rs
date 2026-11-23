@@ -234,11 +234,12 @@ pub fn has_boundary_point(points: &[Point], point: &Point) -> bool {
 
 /// Bounding box of `points`. MultiPoint.cpp:89 `MultiPoint::bounding_box`.
 pub fn bounding_box(points: &[Point]) -> BoundingBox {
-    // MultiPoint.cpp:91 — return BoundingBox(this->points);
+    // MultiPoint.cpp:91 — return BoundingBox(this->points); the Points constructor is construct<false>
+    // (BoundingBox.hpp:28-35, 88-102): min/max of the points, defined only with a positive area (a single
+    // point, or points on one horizontal or vertical line, give an undefined box). R933: was a merge point by
+    // point that defined such boxes; nothing live calls this function.
     let mut bb = BoundingBox::new();
-    for pt in points {
-        bb.merge_point(*pt);
-    }
+    BoundingBox::construct(&mut bb, points, false);
     bb
 }
 
@@ -436,11 +437,16 @@ pub fn concave_hull_2d(pts: &[Point], tolerence: f64) -> Vec<Point> {
             while k >= 2
                 && pts[i].ccw(&hull[k - 2], &hull[k - 1]) <= 0.0
                 && {
+                    // `(pts[i] - hull[k - 1]).norm()` is Eigen's norm of an integer (coord_t = int32_t) vector:
+                    // numext::sqrt(squaredNorm()) with the squared norm in int32 and std::sqrt's double result
+                    // converted back to int32 (truncated); the quotient is then a double divided by that integer.
+                    // R933: was the double norm (concave_hull_2d_native: 9 of 3,000 hulls differed).
                     let d = hull[k - 1];
-                    let dx = (pts[i].x - d.x) as f64;
-                    let dy = (pts[i].y - d.y) as f64;
-                    let norm = (dx * dx + dy * dy).sqrt();
-                    -pts[i].ccw(&hull[k - 2], &hull[k - 1]) / norm < tolerence
+                    let dx = (pts[i].x - d.x) as i32;
+                    let dy = (pts[i].y - d.y) as i32;
+                    let sq = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
+                    let norm = (sq as f64).sqrt() as i32;
+                    -pts[i].ccw(&hull[k - 2], &hull[k - 1]) / (norm as f64) < tolerence
                 }
             {
                 k -= 1;
@@ -499,13 +505,120 @@ pub fn area(polygon: &[Point]) -> f64 {
     if polygon.is_empty() {
         return area;
     }
-    let mut j = polygon.len() - 1;
-    for i in 0..polygon.len() {
-        area += (polygon[i].x as f64 + polygon[j].x as f64)
-            * (polygon[i].y as f64 - polygon[j].y as f64);
+    // MultiPoint.hpp:147 — `area += double(polygon[i](0) + polygon[j](0)) * double(polygon[i](1) - polygon[j](1));`
+    // is one expression, so the scalar loop fuses the product into the add. At -O3 clang vectorizes the loop as
+    // an ordered reduction, 16 iterations per vector step, entered when there are at least 16 points: those
+    // iterations multiply in vector registers and add the products in order (two roundings); only the remainder
+    // runs the fused scalar loop. Measured on the pin (tests/data/multi_point/area.txt, n = 3..99: 0 of 2,328
+    // differ with this split). R933: was two roundings everywhere. Sum and difference are coord_t (int32) before
+    // the conversion.
+    let n = polygon.len();
+    let vectorized = if n >= 16 { n / 16 * 16 } else { 0 };
+    let mut j = n - 1;
+    for i in 0..n {
+        let sx = (polygon[i].x as i32).wrapping_add(polygon[j].x as i32) as f64;
+        let dy = (polygon[i].y as i32).wrapping_sub(polygon[j].y as i32) as f64;
+        if i < vectorized {
+            area += sx * dy;
+        } else {
+            area = sx.mul_add(dy, area);
+        }
         j = i;
     }
     area
+}
+
+/// MultiPoint.hpp:111-125 `class MultiPoint3`: a sequence of 3D points. The C++ class is abstract (`lines()` is
+/// pure virtual); its one concrete subclass is `Polyline3` (Polyline.hpp), whose lines are the open chain, which
+/// is what `length` walks here.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MultiPoint3 {
+    pub points: Vec<crate::geometry::Point3>,
+}
+
+impl MultiPoint3 {
+    /// MultiPoint.hpp:116 `void append(const Vec3crd& point) { this->points.push_back(point); }`
+    pub fn append(&mut self, point: crate::geometry::Point3) {
+        self.points.push(point);
+    }
+
+    /// MultiPoint.cpp:388-394 `void MultiPoint3::translate(double x, double y)`: `p(0) += coord_t(x);
+    /// p(1) += coord_t(y);` (the conversion truncates).
+    pub fn translate(&mut self, x: f64, y: f64) {
+        for p in self.points.iter_mut() {
+            p.x += x as Coord;
+            p.y += y as Coord;
+        }
+    }
+
+    /// MultiPoint.cpp:396-399 `void MultiPoint3::translate(const Point& vector)`:
+    /// `this->translate(vector(0), vector(1));`
+    pub fn translate_point(&mut self, vector: &Point) {
+        self.translate(vector.x as f64, vector.y as f64);
+    }
+
+    /// MultiPoint.cpp:401-407 `double MultiPoint3::length() const`: the sum of `Line3::length()`
+    /// (`(b - a).cast<double>().norm()`) over the open chain of `Polyline3::lines()`.
+    pub fn length(&self) -> f64 {
+        let mut len = 0.0;
+        for w in self.points.windows(2) {
+            let dx = (w[1].x - w[0].x) as f64;
+            let dy = (w[1].y - w[0].y) as f64;
+            let dz = (w[1].z - w[0].z) as f64;
+            len += (dx * dx + dy * dy + dz * dz).sqrt();
+        }
+        len
+    }
+
+    /// MultiPoint.hpp:122 `bool is_valid() const { return this->points.size() >= 2; }`
+    pub fn is_valid(&self) -> bool {
+        self.points.len() >= 2
+    }
+
+    /// MultiPoint.cpp:409-412 `BoundingBox3 MultiPoint3::bounding_box() const { return BoundingBox3(points); }`:
+    /// the Points constructor of BoundingBox3Base (BoundingBox.hpp:116-130) throws on an empty set (here a panic
+    /// with the same message), takes the coordinate-wise min and max and is defined only with a positive volume.
+    pub fn bounding_box(&self) -> crate::geometry::BoundingBox3 {
+        if self.points.is_empty() {
+            panic!("Empty point set supplied to BoundingBox3Base constructor");
+        }
+        let mut min = self.points[0];
+        let mut max = min;
+        for p in &self.points[1..] {
+            min = crate::geometry::Point3::new(min.x.min(p.x), min.y.min(p.y), min.z.min(p.z));
+            max = crate::geometry::Point3::new(max.x.max(p.x), max.y.max(p.y), max.z.max(p.z));
+        }
+        // BoundingBox.hpp:129 — defined = min < max in all three coordinates.
+        if min.x < max.x && min.y < max.y && min.z < max.z {
+            return crate::geometry::BoundingBox3::from_points_minmax(min, max);
+        }
+        let mut bb = crate::geometry::BoundingBox3::new();
+        bb.min = min;
+        bb.max = max;
+        bb
+    }
+
+    /// MultiPoint.cpp:414-433 `bool MultiPoint3::remove_duplicate_points()`: drop consecutive equal points;
+    /// true when any was dropped.
+    pub fn remove_duplicate_points(&mut self) -> bool {
+        let mut j = 0usize;
+        for i in 1..self.points.len() {
+            if self.points[j] == self.points[i] {
+                // Just increase index i.
+            } else {
+                j += 1;
+                if j < i {
+                    self.points[j] = self.points[i];
+                }
+            }
+        }
+        j += 1;
+        if j < self.points.len() {
+            self.points.truncate(j);
+            return true;
+        }
+        false
+    }
 }
 
 #[cfg(test)]

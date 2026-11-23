@@ -451,6 +451,14 @@ impl Print {
         }
     }
 
+    /// The Model of the live objects (Print.hpp:861 `Model m_model`, which `Print::apply` copies from the GUI's
+    /// model, PrintApply.cpp:1690-1956). Additive (R933): app_slice.rs hands it over after `apply` only with the gate
+    /// `TREE_SUPPORT_ORGANIC_PIN` on, for the support step's faithful Print (`assemble_faithful_print`); nothing else
+    /// of the live path reads `model`.
+    pub fn set_model(&mut self, model: Model) {
+        self.model = model;
+    }
+
     /// Add a PrintObject to the print
     /// Print.cpp:440
     pub fn add_object(&mut self, mut object: PrintObject) {
@@ -2158,6 +2166,20 @@ impl Print {
     /// This is kept as a seam so the pipeline reads `apply() → validate() → process()`.
     pub fn apply(&mut self, config: PrintConfig, region_config: crate::region_config::PrintRegionConfig) {
         *self.config_mut() = config;
+        let mut region_config = region_config;
+        // R933 REGION_CONFIG_FILAMENT_CLAMP (on unless =0): the last step of the pin's
+        // region_config_from_model_volume for the model part (PrintObject.cpp:3803-3806), with
+        // `num_extruders = m_config.filament_diameter.size()` (PrintApply.cpp:1649). A project's
+        // "wall_filament" of 0 (read with REGION_CONFIG_WALL_FILAMENT=1) becomes 1 here as at the
+        // pin. NOT ported: the copy of the object's / volume's "extruder" into the three filament
+        // keys (apply_to_print_region_config, PrintObject.cpp:3646-3654) and resolve_filament_value
+        // (:3772-3797) need the ModelObject's and ModelVolume's configs, which this seam does not get.
+        if crate::faithful_gate("REGION_CONFIG_FILAMENT_CLAMP") {
+            let num_extruders = self.config().filament_diameters.len();
+            clamp_exturder_to_default_protect0(&mut region_config.sparse_infill_filament, num_extruders);
+            clamp_exturder_to_default_protect0(&mut region_config.wall_filament, num_extruders);
+            clamp_exturder_to_default_protect0(&mut region_config.solid_infill_filament, num_extruders);
+        }
         self.set_default_region_config(region_config);
     }
 
@@ -2504,9 +2526,22 @@ impl Print {
                         tree_pin = Some(crate::support::tree_support_3d::assemble_faithful_print(&self.model, &cfg));
                     }
                 }
+                let tree_pin_probe = crate::probe_enabled("TREE_SUPPORT_ORGANIC_PIN_PROBE");
+                if tree_pin_probe {
+                    eprintln!(
+                        "TREE_SUPPORT_ORGANIC_PIN probe: faithful print {} (model objects {}, faithful objects {})",
+                        tree_pin.is_some(),
+                        self.model.objects.len(),
+                        tree_pin.as_ref().map_or(0, |p| p.m_objects.len())
+                    );
+                }
                 for obj in &mut self.objects {
                     if let Some(fp) = tree_pin.as_mut() {
                         if obj.generate_support_material_tree_pin(fp)? {
+                            if tree_pin_probe {
+                                let with_fills = obj.support_layers.iter().filter(|l| l.support_fills.as_ref().map_or(false, |f| !f.entities.is_empty())).count();
+                                eprintln!("TREE_SUPPORT_ORGANIC_PIN probe: object {} support layers {}, with toolpaths {}", obj.model_object_id, obj.support_layers.len(), with_fills);
+                            }
                             continue;
                         }
                     }
@@ -4015,6 +4050,44 @@ fn collect_entity_lines(
     }
 }
 
+/// R933 GCODE_PERIMETER_ISLAND_PLACEMENT: the point the pin places the wall `ent_idx` of
+/// `region.perimeters` by: the first point of the island collection it belongs to
+/// (`extrusions->first_point()`, the collection's first entity's first point; GCode.cpp:5469-5470,
+/// 5512-5523), from the ranges `LayerRegion::perimeter_islands` records. `None` for a wall outside
+/// every recorded range (it is placed by its own first point). `cursor` walks the ranges, which are
+/// in order; start it at 0 for each region and call with rising `ent_idx`.
+fn perimeter_island_first_point(
+    region: &crate::layer::LayerRegion,
+    ent_idx: usize,
+    cursor: &mut usize,
+) -> Option<crate::geometry::Point> {
+    while *cursor < region.perimeter_islands.len() && region.perimeter_islands[*cursor].0.end <= ent_idx {
+        *cursor += 1;
+    }
+    let (range, _) = region.perimeter_islands.get(*cursor)?;
+    if !range.contains(&ent_idx) {
+        return None;
+    }
+    region
+        .perimeters
+        .entities
+        .get(range.start)
+        .and_then(crate::gcode::exporter::get_entity_first_point)
+}
+
+/// PrintObject.cpp:3617-3625 `clamp_exturder_to_default_protect0` on the typed region config's
+/// field (print_apply.rs has the DynamicPrintConfig form): above the number of extruders, or below
+/// 1, the default extruder 1.
+fn clamp_exturder_to_default_protect0(opt: &mut usize, num_extruders: usize) {
+    if *opt > num_extruders {
+        // assign the default extruder
+        *opt = 1;
+    } else if *opt < 1 {
+        // assign the default extruder
+        *opt = 1;
+    }
+}
+
 /// The id `ModelInstance::get_labeled_id()` falls back to for a model that was
 /// not loaded with ids of its own (an STL): `id().id`, the running ObjectBase
 /// counter at the time the instance was made (Model.hpp:1474). It counts every
@@ -4209,9 +4282,24 @@ fn emit_layer_by_island(
         }
         n_slices
     };
+    // R933 GCODE_PERIMETER_ISLAND_PLACEMENT (on unless =0): the pin places each island
+    // collection of `layerm->perimeters` as one unit, in the lslice that holds the
+    // COLLECTION's first point (`extrusions->first_point()`, i.e. its first wall's first
+    // point, ExtrusionEntityCollection.hpp; GCode.cpp:5469-5470, 5512-5523 with
+    // slices_test_order and point_inside_surface, GCode.cpp:5441-5455). The walls are stored
+    // flat here; `LayerRegion::perimeter_islands` records which ranges form one collection
+    // (R932). =0 places every wall by its own first point.
+    let place_by_collection = crate::faithful_gate("GCODE_PERIMETER_ISLAND_PLACEMENT");
     for (region_id, region) in layer.regions().iter().enumerate() {
+        let mut island_cursor = 0usize;
         for (ent_idx, ent) in region.perimeters.entities.iter().enumerate() {
-            if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+            if let Some(own_fp) = crate::gcode::exporter::get_entity_first_point(ent) {
+                let mut fp = own_fp;
+                if place_by_collection {
+                    if let Some(coll_fp) = perimeter_island_first_point(region, ent_idx, &mut island_cursor) {
+                        fp = coll_fp;
+                    }
+                }
                 let node_id = region
                     .entity_cooling_nodes
                     .get(ent_idx)
@@ -10149,6 +10237,55 @@ mod tests {
         let print = Print::new();
         assert_eq!(print.objects.len(), 0);
         assert!(!print.is_canceled());
+    }
+
+    /// R933 GCODE_PERIMETER_ISLAND_PLACEMENT: every wall of a recorded island collection is placed by
+    /// the collection's first point (GCode.cpp:5469-5470, 5512-5523); a wall outside the ranges is not.
+    #[test]
+    fn test_perimeter_island_first_point_r933() {
+        use crate::extrusion_entity::{ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionPath, ExtrusionRole};
+        let mut region = crate::layer::LayerRegion::new(0, 0);
+        let pts: Vec<crate::geometry::Point> = (0..5).map(|i| crate::geometry::Point::new(100 * i, -7 * i)).collect();
+        for p in &pts {
+            let mut path = ExtrusionPath::new(ExtrusionRole::Perimeter);
+            path.polyline = crate::geometry::Polyline::from_points(vec![*p, crate::geometry::Point::new(p.x + 1, p.y)]);
+            region.perimeters.entities.push(ExtrusionEntityType::Path(path));
+        }
+        // islands: walls 0..2 and 3..5; wall 2 belongs to none
+        region.perimeter_islands.push((0..2, ExtrusionEntityCollection::new()));
+        region.perimeter_islands.push((3..5, ExtrusionEntityCollection::new()));
+        let mut cursor = 0usize;
+        let got: Vec<Option<crate::geometry::Point>> =
+            (0..5).map(|i| perimeter_island_first_point(&region, i, &mut cursor)).collect();
+        assert_eq!(got, vec![Some(pts[0]), Some(pts[0]), None, Some(pts[3]), Some(pts[3])]);
+        // no recorded island: every wall by its own first point
+        region.perimeter_islands.clear();
+        let mut cursor = 0usize;
+        assert!((0..5).all(|i| perimeter_island_first_point(&region, i, &mut cursor).is_none()));
+    }
+
+    /// R933: PrintObject.cpp:3617-3625 and the clamp of the region's three filament keys in
+    /// Print::apply (PrintObject.cpp:3803-3806, num_extruders = filament_diameter.size(),
+    /// PrintApply.cpp:1649).
+    #[test]
+    fn test_clamp_exturder_to_default_protect0_r933() {
+        for (v, n, want) in [(0usize, 4usize, 1usize), (1, 4, 1), (4, 4, 4), (5, 4, 1), (3, 0, 1), (2, 8, 2)] {
+            let mut x = v;
+            clamp_exturder_to_default_protect0(&mut x, n);
+            assert_eq!(x, want, "value {} with {} extruders", v, n);
+        }
+        if crate::faithful_gate("REGION_CONFIG_FILAMENT_CLAMP") {
+            let mut config = PrintConfig::default();
+            config.filament_diameters = vec![1.75; 3];
+            let mut region_config = crate::region_config::PrintRegionConfig::default();
+            region_config.wall_filament = 0;
+            region_config.sparse_infill_filament = 7;
+            region_config.solid_infill_filament = 3;
+            let mut print = Print::new();
+            print.apply(config, region_config);
+            let c = print.print_regions[0].config();
+            assert_eq!((c.wall_filament, c.sparse_infill_filament, c.solid_infill_filament), (1, 1, 3));
+        }
     }
 
     fn wt_layer(print_z: f64, extruders: &[u32]) -> WipeTowerLayerTools {

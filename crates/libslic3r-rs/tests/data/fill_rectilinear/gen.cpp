@@ -65,6 +65,7 @@
 #define private public
 #define protected public
 #include "libslic3r/Fill/FillRectilinear.cpp"
+#include "libslic3r/Fill/FillLine.hpp"
 #undef protected
 #undef private
 
@@ -541,6 +542,55 @@ static void run_sia()
     }
 }
 
+// Fill::fill_surface (FillBase.cpp:99-113) of the case's filler, written as "in <tag>" / "<tag>" lines.
+static void fill_case(const char *tag, Fill *f, const Case &c)
+{
+    f->layer_id        = c.layer_id;
+    f->z               = c.z;
+    f->spacing         = c.spacing;
+    f->overlap         = c.overlap;
+    f->angle           = float(Geometry::deg2rad(c.angle_deg));
+    f->link_max_length = c.link_max_length;
+    f->set_bounding_box(c.bbox);
+    Surface surface(stInternal, c.expolygon);
+    surface.bridge_angle     = c.bridge_angle;
+    surface.thickness_layers = (unsigned short) c.thickness_layers;
+    out(std::string("in ") + tag + " " + CASE(c));
+    const Polylines result = f->fill_surface(&surface, c.params);
+    out(std::string(tag) + " " + hD(f->spacing) + " " + PLS(result));
+}
+
+// The dont_connect arm of fill_surface_by_multilines (FillRectilinear.cpp:3065-3067: chain_polylines of all
+// the lines) with one to three lines per group, for Grid, Triangles, Stars and Cubic.
+static void run_dc(int n_per_type)
+{
+    static const int types[] = { T_GRID, T_TRIANGLES, T_STARS, T_CUBIC };
+    for (int type : types)
+        for (int i = 0; i < n_per_type; ++ i) {
+            Case c = rnd_case(i, type);
+            // FillBase.hpp:56 dont_connect(): anchor_length_max < 0.05f.
+            c.params.anchor_length     = float(irand(0, 3)) / 10.f;
+            c.params.anchor_length_max = float(irand(0, 4)) / 100.f;
+            c.params.multiline         = 1 + i % 3;
+            std::unique_ptr<Fill> f(make_filler(type));
+            fill_case("dc", f.get(), c);
+        }
+}
+
+// FillLine::_fill_surface_single (FillLine.cpp:10-80) through Fill::fill_surface, dense (density 1, the
+// FillLine.cpp:28-30 branch, adjusted unless dont_adjust) in half of the cases.
+static void run_ln(int n)
+{
+    for (int i = 0; i < n; ++ i) {
+        Case c = rnd_case(i, T_RECT);
+        c.type             = 99;
+        c.params.multiline = 1;
+        c.params.pattern   = ipLine;
+        std::unique_ptr<Fill> f(new FillLine());
+        fill_case("ln", f.get(), c);
+    }
+}
+
 int main(int argc, char **argv)
 {
     g_out = std::fopen(argc > 1 ? argv[1] : "vectors.txt", "w");
@@ -558,6 +608,8 @@ int main(int argc, char **argv)
     if (want("sgp")) run_sgp(24);
     if (want("wg")) run_wg(96);
     if (want("sia")) run_sia();
+    if (want("dc")) run_dc(24);
+    if (want("ln")) run_ln(48);
     std::fclose(g_out);
     return 0;
 }
