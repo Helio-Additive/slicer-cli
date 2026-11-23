@@ -269,6 +269,10 @@ fn fill_group_fills_native_parity_report() {
             cfg = Some((fields[0].to_string(), std::sync::Arc::new(print_config), std::sync::Arc::new(object_config), std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config))));
             continue;
         }
+        // The "mf" lines belong to `fill_make_fills_native_parity_report` below.
+        if line.starts_with("mf ") {
+            continue;
+        }
         let Some(rest) = line.strip_prefix("gf ") else { panic!("unknown line {}", line_no + 1) };
         let (tag, print_config, object_config, region) = cfg.as_ref().expect("gcfg");
         let (inputs, results) = rest.split_once(" => ").expect("results");
@@ -356,7 +360,7 @@ fn fill_group_fills_native_parity_report() {
         eprintln!("    patterns (pin / rust, by position): {:?}", s.pattern_names);
     }
     // A report: what is required is that the vectors were read and both versions ran on every line.
-    assert_eq!(cases, 240, "the vectors hold 20 configurations x 12 layers");
+    assert_eq!(cases, 252, "the vectors hold 21 configurations x 12 layers");
     assert_eq!(live.lines, cases);
     assert_eq!(port.lines, cases);
     // Floors, not equality: the numbers of lines equal to the pin in order when this report was written
@@ -368,3 +372,272 @@ fn fill_group_fills_native_parity_report() {
     assert_eq!(port_areas.equal_in_order, cases, "port fill/fill.rs group_fills_with_lower_internal_areas: {} of {} lines equal to the pin", port_areas.equal_in_order, cases);
     assert!(live_masked.equal_in_order >= 201, "live fill/mod.rs group_fills: {} lines equal to the pin, 201 before", live_masked.equal_in_order);
 }
+
+
+// ---------------------------------------------------------------------------------------------
+// Layer::make_fills (Fill.cpp:678-867): the `fills` of every region after the pin's make_fills on
+// the layer of each "gf" line ("mf" lines of the generator), against the LIVE
+// `Layer::make_fills_at_object_base` of this crate on the same inputs. A REPORT with floors: the
+// live assembly is NOT equal to the pin on every line; the counts below say how far it is.
+
+use slicer::extrusion_entity::{ExtrusionEntityType, ExtrusionPath};
+
+fn path_s(p: &ExtrusionPath) -> String {
+    let mut o = format!(
+        "P {} {:08x} {:08x} {} {}",
+        slicer::extrusion_entity::role_to_string(p.role).replace(' ', "_"),
+        (p.width as f32).to_bits(),
+        (p.height as f32).to_bits(),
+        hd(p.mm3_per_mm),
+        p.polyline.points.len()
+    );
+    for q in &p.polyline.points {
+        o += &format!(" {}", pt(q));
+    }
+    o
+}
+// gen.cpp `ENT`.
+fn ent_s(e: &ExtrusionEntityType) -> String {
+    match e {
+        ExtrusionEntityType::Collection(c) => {
+            let mut o = format!("C {} {}", hb(c.no_sort), c.entities.len());
+            for x in &c.entities {
+                o += &format!(" {}", ent_s(x));
+            }
+            o
+        }
+        ExtrusionEntityType::Loop(l) => {
+            let mut o = format!("L {}", l.paths.len());
+            for x in &l.paths {
+                o += &format!(" {}", path_s(x));
+            }
+            o
+        }
+        ExtrusionEntityType::MultiPath(m) => {
+            let mut o = format!("M {}", m.paths.len());
+            for x in &m.paths {
+                o += &format!(" {}", path_s(x));
+            }
+            o
+        }
+        ExtrusionEntityType::Path(p) => path_s(p),
+    }
+}
+// One entity of the pin's line, as its tokens joined; `k` moves behind it.
+fn take_entity(t: &[&str], k: &mut usize) -> String {
+    let start = *k;
+    fn walk(t: &[&str], k: &mut usize) {
+        let kind = t[*k];
+        *k += 1;
+        match kind {
+            "C" => {
+                let n: usize = t[*k + 1].parse().expect("count");
+                *k += 2;
+                for _ in 0..n {
+                    walk(t, k);
+                }
+            }
+            "L" | "M" => {
+                let n: usize = t[*k].parse().expect("count");
+                *k += 1;
+                for _ in 0..n {
+                    walk(t, k);
+                }
+            }
+            "P" => {
+                let n: usize = t[*k + 4].parse().expect("points");
+                *k += 5 + 2 * n;
+            }
+            other => panic!("entity kind {other}"),
+        }
+    }
+    walk(t, k);
+    t[start..*k].join(" ")
+}
+// The paths of an entity without their points: kind, role, width, height, mm3_per_mm (what the
+// conversion of polylines into extrusions decides), the number of points aside.
+fn headers(e: &str) -> Vec<String> {
+    let t: Vec<&str> = e.split(' ').collect();
+    let mut o = Vec::new();
+    let mut k = 0;
+    while k < t.len() {
+        match t[k] {
+            "C" => {
+                o.push(format!("C {} {}", t[k + 1], t[k + 2]));
+                k += 3;
+            }
+            "L" | "M" => {
+                o.push(format!("{} {}", t[k], t[k + 1]));
+                k += 2;
+            }
+            "P" => {
+                o.push(t[k..k + 5].join(" "));
+                let n: usize = t[k + 5].parse().expect("points");
+                k += 6 + 2 * n;
+            }
+            other => panic!("entity token {other}"),
+        }
+    }
+    o
+}
+// The role of the first path of an entity.
+fn first_role(e: &str) -> String {
+    let t: Vec<&str> = e.split(' ').collect();
+    t.iter().position(|x| *x == "P").and_then(|k| t.get(k + 1)).unwrap_or(&"-").to_string()
+}
+
+#[test]
+fn fill_make_fills_native_parity_report() {
+    let expected = read_vectors();
+    let show: usize = std::env::var("FILL_PARITY_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    let mut cfg: Option<(String, std::sync::Arc<slicer::print_config::PrintConfig>, std::sync::Arc<slicer::print_config::PrintObjectConfig>, std::sync::Arc<slicer::print_region::PrintRegion>)> = None;
+    let mut last_gf: Option<&str> = None;
+    // Per configuration, in the generator's order: lines, lines equal, entities of the pin, entities equal.
+    let mut per_cfg: Vec<(String, usize, usize, usize, usize)> = Vec::new();
+    let (mut lines, mut failed, mut same_count, mut equal_lines, mut entities, mut equal_entities, mut equal_headers) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    // By the role of an entity's first path: entities of the pin, equal here, equal points aside.
+    let mut by_role: std::collections::BTreeMap<String, (usize, usize, usize)> = std::collections::BTreeMap::new();
+    let mut shown = 0usize;
+    for (line_no, line) in expected.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix("gcfg\t") {
+            let fields: Vec<&str> = rest.split('\t').collect();
+            let mut print_config = slicer::print_config::PrintConfig::default();
+            let mut object_config = slicer::print_config::PrintObjectConfig::default();
+            let mut region_config = slicer::region_config::PrintRegionConfig::default();
+            for f in &fields[1..] {
+                let (key, value) = f.split_once('=').expect("key=value");
+                let first = if key == "nozzle_diameter" { value.split(',').next().unwrap_or(value) } else { value };
+                print_config.set_deserialize(key, first);
+                if !object_config.set_deserialize(key, first) {
+                    object_config.apply_key_value(key, first);
+                }
+                region_config.set_deserialize(key, first);
+            }
+            cfg = Some((fields[0].to_string(), std::sync::Arc::new(print_config), std::sync::Arc::new(object_config), std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config))));
+            per_cfg.push((fields[0].to_string(), 0, 0, 0, 0));
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("gf ") {
+            last_gf = Some(rest);
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("mf ") else { panic!("unknown line {}", line_no + 1) };
+        let (tag, print_config, object_config, region) = cfg.as_ref().expect("gcfg");
+        let (inputs, _) = last_gf.expect("gf before mf").split_once(" => ").expect("results");
+        lines += 1;
+        // The layer of the "gf" line, as the test above builds it.
+        let mut t = Tok::new(inputs);
+        let layer_id = t.i() as usize;
+        let height = t.d();
+        let print_z = t.d();
+        let slice_z = t.d();
+        let n = t.i();
+        let mut layer = Layer::new(layer_id, 0, height, print_z, slice_z);
+        let mut layerm = LayerRegion::new(layer_id, 0);
+        layerm.set_config_hierarchy(region.clone(), object_config.clone(), print_config.clone());
+        for _ in 0..n {
+            let ty = surface_type(t.i());
+            let thickness = t.d();
+            let bridge_angle = t.d();
+            let mut s = Surface::new(ty, t.expoly());
+            s.thickness = thickness;
+            s.bridge_angle = if bridge_angle >= 0. { Some(bridge_angle) } else { None };
+            layerm.fill_surfaces.surfaces.push(s);
+        }
+        layer.add_region(layerm);
+        layer.set_object_configs(object_config.clone(), print_config.clone());
+        let has_lower = t.b();
+        let lower_internal = t.expolys();
+
+        // The pin's line: the object's box, then per region the entities of `fills`.
+        let toks: Vec<&str> = rest.split(' ').collect();
+        let mut k = 0usize;
+        let bbox = if toks[k] == "1" {
+            let v: Vec<i64> = toks[k + 1..k + 5].iter().map(|s| s.parse().expect("box")).collect();
+            k += 5;
+            Some(slicer::geometry::BoundingBox::from_points_minmax(Point::new(v[0], v[1]), Point::new(v[2], v[3])))
+        } else {
+            k += 1;
+            None
+        };
+        layer.set_object_bounding_box(bbox);
+        let regions: usize = toks[k].parse().expect("regions");
+        k += 1;
+        let mut theirs: Vec<Vec<String>> = Vec::new();
+        for _ in 0..regions {
+            assert_eq!(toks[k], "R", "line {}", line_no + 1);
+            let count: usize = toks[k + 1].parse().expect("entities");
+            k += 2;
+            theirs.push((0..count).map(|_| take_entity(&toks, &mut k)).collect());
+        }
+        assert_eq!(k, toks.len(), "line {}: tokens left", line_no + 1);
+
+        // The live assembly: the areas of sparse infill of the layer below handed over as
+        // print_object.rs does (Fill.cpp:457-462), the object's base at 0.
+        let mine: Option<Vec<Vec<String>>> = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let areas: &[ExPolygon] = if has_lower { &lower_internal } else { &[] };
+            layer.make_fills_at_object_base(areas, &[], None, 0.).ok().map(|_| layer.regions().iter().map(|r| r.fills.entities.iter().map(ent_s).collect()).collect())
+        }))
+        .unwrap_or(None);
+        let row = per_cfg.last_mut().expect("gcfg");
+        row.1 += 1;
+        let pin_entities: usize = theirs.iter().map(|r| r.len()).sum();
+        entities += pin_entities;
+        row.3 += pin_entities;
+        let Some(mine) = mine else {
+            failed += 1;
+            for e in theirs.iter().flatten() {
+                by_role.entry(first_role(e)).or_insert((0, 0, 0)).0 += 1;
+            }
+            continue;
+        };
+        if mine.iter().map(|r| r.len()).collect::<Vec<_>>() == theirs.iter().map(|r| r.len()).collect::<Vec<_>>() {
+            same_count += 1;
+        }
+        if mine == theirs {
+            equal_lines += 1;
+            row.2 += 1;
+        }
+        let empty: Vec<String> = Vec::new();
+        for (r, region_theirs) in theirs.iter().enumerate() {
+            let region_mine = mine.get(r).unwrap_or(&empty);
+            for (i, e) in region_theirs.iter().enumerate() {
+                let slot = by_role.entry(first_role(e)).or_insert((0, 0, 0));
+                slot.0 += 1;
+                let m = region_mine.get(i);
+                if m == Some(e) {
+                    slot.1 += 1;
+                    equal_entities += 1;
+                    row.4 += 1;
+                }
+                if m.map(|m| headers(m)) == Some(headers(e)) {
+                    slot.2 += 1;
+                    equal_headers += 1;
+                }
+                if m != Some(e) && shown < show {
+                    shown += 1;
+                    eprintln!("make_fills: line {} ({tag}), region {r}, entity {i} of {} (here {}):\n    pin:  {}\n    rust: {}", line_no + 1, region_theirs.len(), region_mine.len(), &e[..e.len().min(400)], m.map(|s| &s[..s.len().min(400)]).unwrap_or("-"));
+                }
+            }
+        }
+    }
+    eprintln!("live Layer::make_fills: {lines} lines; error or panic {failed}; same number of entities per region {same_count}; lines equal to the pin {equal_lines}");
+    eprintln!("    entities of the pin {entities}; equal here by position {equal_entities}; equal in kind, role, width, height and mm3_per_mm of every path (points aside) {equal_headers}");
+    eprintln!("    by the role of the first path (entities of the pin, equal, equal points aside): {by_role:?}");
+    for (tag, n, eq, ents, eq_ents) in &per_cfg {
+        eprintln!("    {tag}: {eq} of {n} lines equal; {eq_ents} of {ents} entities");
+    }
+    assert_eq!(lines, 252, "the vectors hold 21 configurations x 12 layers");
+    // Floors, not equality (R927, when this report was written): raise them as the live assembly
+    // gets closer to the pin, and turn them into equality once it is there.
+    assert!(failed <= FLOOR_FAILED, "live make_fills: {failed} lines with an error or a panic, {FLOOR_FAILED} before");
+    assert!(equal_lines >= FLOOR_LINES, "live make_fills: {equal_lines} lines equal to the pin, {FLOOR_LINES} before");
+    assert!(equal_entities >= FLOOR_ENTITIES, "live make_fills: {equal_entities} entities equal to the pin, {FLOOR_ENTITIES} before");
+    assert!(equal_headers >= FLOOR_HEADERS, "live make_fills: {equal_headers} entities equal to the pin points aside, {FLOOR_HEADERS} before");
+}
+// The counts of the first run of the report (R927): lines with an error or a panic at most; equal
+// lines, equal entities, entities equal points aside at least.
+const FLOOR_FAILED: usize = 0;
+const FLOOR_LINES: usize = 103;
+const FLOOR_ENTITIES: usize = 512;
+const FLOOR_HEADERS: usize = 604;

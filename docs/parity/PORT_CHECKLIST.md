@@ -4259,7 +4259,7 @@ Rust file: `fill/fill.rs`. Status: **partial**. Not listed: 2 constructors, 1 de
 
 **class `Layer`**
 
-- [x] `set_outlook_range` (line 661) → `fill/fill.rs:1342`
+- [x] `set_outlook_range` (line 661) → `fill/fill.rs:1351`
 - [~] `make_fills` (line 678) → `layer.rs` — not in the paired file
 - [~] `generate_sparse_infill_polylines_for_anchoring` (line 869) → `layer.rs` — not in the paired file
 - [~] `make_ironing` (line 983) → `layer.rs` — not in the paired file
@@ -8063,57 +8063,57 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2562`
-- [x] `zs_from_layers` (line 411) → `layer.rs:5112`
-- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:5100`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2568`
+- [x] `zs_from_layers` (line 411) → `layer.rs:5128`
+- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:5116`
 - [~] `get_extents` (line 750) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `get_extents` (line 761) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 
 **class `ContinuitiousDistancer`**
 
-- [v] `distance_from_perimeter` (line 428) → `layer.rs:5059` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `to_lines` (line 446) → `layer.rs:5086`
+- [v] `distance_from_perimeter` (line 428) → `layer.rs:5075` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `to_lines` (line 446) → `layer.rs:5102`
 
 **class `Layer`**
 
-- [x] `empty` (line 25) → `layer.rs:2152`
-- [x] `add_region` (line 34) → `layer.rs:2139`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2716` — divergent
-- [x] `make_slices` (line 47) → `layer.rs:2469`
-- [~] `backup_untyped_slices` (line 84) → `layer.rs:2572` — partial
-- [~] `restore_untyped_slices` (line 104) → `layer.rs:2611` — partial
-- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2640`
-- [x] `merged` (line 150) → `layer.rs:2667`
+- [x] `empty` (line 25) → `layer.rs:2158`
+- [x] `add_region` (line 34) → `layer.rs:2145`
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2722` — divergent
+- [x] `make_slices` (line 47) → `layer.rs:2475`
+- [~] `backup_untyped_slices` (line 84) → `layer.rs:2578` — partial
+- [~] `restore_untyped_slices` (line 104) → `layer.rs:2617` — partial
+- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2646`
+- [x] `merged` (line 150) → `layer.rs:2673`
 - [x] `id` (line 158) → `layer.rs:2025`
 - [x] `set_id` (line 159) → `layer.rs:2031`
 - [~] `object` (line 160) → `g_code.rs` — not in the paired file
 - [x] `object` (line 161) → `layer.rs:2048`
-- [x] `bottom_z` (line 169) → `layer.rs:2103`
-- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:2182` — partial
-- [x] `region_count` (line 193) → `layer.rs:2109`
+- [x] `bottom_z` (line 169) → `layer.rs:2109`
+- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:2188` — partial
+- [x] `region_count` (line 193) → `layer.rs:2115`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
-- [x] `get_region` (line 195) → `layer.rs:2115`
-- [~] `make_perimeters` (line 203) → `layer.rs:2265` — divergent
-- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:5123`
-- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5133`
-- [x] `make_fills` (line 223) → `layer.rs:2990`
-- [x] `has_extrusions` (line 239) → `layer.rs:5144`
-- [x] `effective_print_height` (line 242) → `layer.rs:5155`
-- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5174`
-- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5188`
-- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5195`
-- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5209`
-- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2742` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2892`
-- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5348`
-- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5372`
-- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5379`
-- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5410`
-- [~] `simplify_support_path` (line 638) → `layer.rs:5424` — partial
-- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5436` — partial
-- [~] `simplify_support_loop` (line 670) → `layer.rs:5450` — partial
-- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5464`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2929` — partial
+- [x] `get_region` (line 195) → `layer.rs:2121`
+- [~] `make_perimeters` (line 203) → `layer.rs:2271` — divergent
+- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:5139`
+- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5149`
+- [x] `make_fills` (line 223) → `layer.rs:2996`
+- [x] `has_extrusions` (line 239) → `layer.rs:5160`
+- [x] `effective_print_height` (line 242) → `layer.rs:5171`
+- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5190`
+- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5204`
+- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5211`
+- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5225`
+- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2748` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2898`
+- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5364`
+- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5388`
+- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5395`
+- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5426`
+- [~] `simplify_support_path` (line 638) → `layer.rs:5440` — partial
+- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5452` — partial
+- [~] `simplify_support_loop` (line 670) → `layer.rs:5466` — partial
+- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5480`
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2935` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs, print.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs, print.rs` — not in the paired file
 
@@ -8130,7 +8130,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
 - [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
 - [~] `interface_id` (line 372) → `print.rs` — not in the paired file
-- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5477`
+- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5493`
 
 ### `LayerRegion` (.cpp)
 

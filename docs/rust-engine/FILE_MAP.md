@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 122 |
 | of the rest, 25 tokens or more | 356 |
 | in a C++ unit with no Rust file | 133 |
-| Rust functions with no C++ function of that name in the pair | 8459 |
+| Rust functions with no C++ function of that name in the pair | 8460 |
 
 By tier:
 
@@ -3144,7 +3144,7 @@ Rust only:
 - `group_fills_at_object_base` :520
 - `group_fills_with_lower_internal_areas` :532
 - `group_fills_lower` :542
-- `group_fills_for_consumers` :1432
+- `group_fills_for_consumers` :1441
 
 ### `Fill/Fill3DHoneycomb` (.cpp+.hpp) and `fill/fill3_d_honeycomb.rs`
 
@@ -6006,19 +6006,19 @@ Rust only:
 
 ### `Layer` (.cpp+.hpp) and `layer.rs`
 
-Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 106. Matched 43: faithful 34, partial 7, divergent 2, stub 0.
+Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust functions 107. Matched 43: faithful 34, partial 7, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2716 (11%, 0.26x)
-- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2572 (46%, 0.79x)
-- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2611 (31%, 0.44x)
-- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :2182 (50%, 0.56x)
-- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :2265 (28%, 0.6x)
-- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :5424 (50%, 0.53x)
-- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :5436 (53%, 0.59x)
-- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :5450 (53%, 0.59x)
-- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2929 (36%, 1.15x)
+- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2722 (11%, 0.26x)
+- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2578 (46%, 0.79x)
+- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2617 (31%, 0.44x)
+- partial: `Layer::has_compatible_layer_regions` :173 and `Layer::has_compatible_layer_regions` :2188 (50%, 0.56x)
+- divergent: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :2271 (28%, 0.6x)
+- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :5440 (50%, 0.53x)
+- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :5452 (53%, 0.59x)
+- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :5466 (53%, 0.59x)
+- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :2935 (36%, 1.15x)
 
 Missing in the Rust file:
 
@@ -6073,34 +6073,35 @@ Rust only:
 - `Layer::object_id` :2037 — C++ has it in `Exception`, `ObjectID`
 - `Layer::wire_config_hierarchy` :2073
 - `Layer::set_object_configs` :2092
-- `Layer::get_region_mut` :2121
-- `Layer::regions` :2127
-- `Layer::regions_mut` :2133
-- `Layer::clear_regions` :2146
-- `Layer::make_perimeters_with_lower` :2234
-- `Layer::make_perimeters_with_neighbors` :2243
-- `Layer::record_cooling_node_for_each_extrusion` :2885
-- `Layer::make_fills_at_object_base` :3004
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :4437 — C++ has it in `Fill/Fill`
-- `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base` :4444
-- `Layer::make_ironing` :4823 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :4946
-- `Layer::generate_sparse_infill` :4953
-- `Layer::new_f` :4962 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :4974
-- `Layer::height_mm` :4980
-- `Layer::set_lower_layer` :4986
-- `Layer::set_upper_layer` :4992
-- `Layer::all_slices` :4998
-- `LayerRegion::set_slices` :5007
-- `LayerRegion::set_config_hierarchy` :5014
-- `ContinuitiousDistancer::new` :5047
-- `Layer::calculate_perimeter_continuity_pin` :5245
-- `Layer::simplify_support_print_params` :5403
-- `chain_points` :5486 — C++ has it in `ShortestPath`
-- `get_extents_layer_region` :5529
-- `get_extents_layer_regions` :5552
-- `mpprobe` :5574
+- `Layer::set_object_bounding_box` :2103
+- `Layer::get_region_mut` :2127
+- `Layer::regions` :2133
+- `Layer::regions_mut` :2139
+- `Layer::clear_regions` :2152
+- `Layer::make_perimeters_with_lower` :2240
+- `Layer::make_perimeters_with_neighbors` :2249
+- `Layer::record_cooling_node_for_each_extrusion` :2891
+- `Layer::make_fills_at_object_base` :3010
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :4453 — C++ has it in `Fill/Fill`
+- `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base` :4460
+- `Layer::make_ironing` :4839 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :4962
+- `Layer::generate_sparse_infill` :4969
+- `Layer::new_f` :4978 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :4990
+- `Layer::height_mm` :4996
+- `Layer::set_lower_layer` :5002
+- `Layer::set_upper_layer` :5008
+- `Layer::all_slices` :5014
+- `LayerRegion::set_slices` :5023
+- `LayerRegion::set_config_hierarchy` :5030
+- `ContinuitiousDistancer::new` :5063
+- `Layer::calculate_perimeter_continuity_pin` :5261
+- `Layer::simplify_support_print_params` :5419
+- `chain_points` :5502 — C++ has it in `ShortestPath`
+- `get_extents_layer_region` :5545
+- `get_extents_layer_regions` :5568
+- `mpprobe` :5590
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 

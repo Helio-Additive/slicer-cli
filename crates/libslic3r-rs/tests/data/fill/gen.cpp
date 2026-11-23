@@ -10,6 +10,8 @@
 // "gcfg<TAB>tag<TAB>key=value..." holds the options as the pin's Print holds them after `Print::apply`.
 // "gf <layer> <surfaces> <lower layer> => <the SurfaceFill list>": tokens separated by one space; a
 // double is its 16 hexadecimal digits, a float its 8, an integer decimal.
+// "mf <object box> <regions> R <entities>...": what the pin's Layer::make_fills leaves in the `fills`
+// of each region of the layer of the "gf" line before it, in order.
 // The vectors were made on macOS arm64 with Apple clang and Eigen 5.0.1.
 
 #include <algorithm>
@@ -160,6 +162,29 @@ static std::string FILLS(const std::vector<SurfaceFill> &fills)
     return o;
 }
 
+// One extrusion entity of a region's `fills`, nested collections with their no_sort flag: "C" a
+// collection, "L" a loop, "M" a multi path, "P" a path (role by name, width, height, mm3_per_mm, points).
+static void ENT(const ExtrusionEntity *e, std::string &o)
+{
+    if (const ExtrusionEntityCollection *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+        o += " C " + hB(c->no_sort) + " " + hI((long long) c->entities.size());
+        for (const ExtrusionEntity *x : c->entities) ENT(x, o);
+    } else if (const ExtrusionLoop *l = dynamic_cast<const ExtrusionLoop *>(e)) {
+        o += " L " + hI((long long) l->paths.size());
+        for (const ExtrusionPath &p : l->paths) ENT(&p, o);
+    } else if (const ExtrusionMultiPath *m = dynamic_cast<const ExtrusionMultiPath *>(e)) {
+        o += " M " + hI((long long) m->paths.size());
+        for (const ExtrusionPath &p : m->paths) ENT(&p, o);
+    } else if (const ExtrusionPath *p = dynamic_cast<const ExtrusionPath *>(e)) {
+        std::string role = ExtrusionEntity::role_to_string(p->role());
+        std::replace(role.begin(), role.end(), ' ', '_');
+        o += " P " + role + " " + hF(p->width) + " " + hF(p->height) + " " + hD(p->mm3_per_mm) + " " + hI((long long) p->polyline.points.size());
+        for (const Point &pt : p->polyline.points) o += " " + PT(pt);
+    } else {
+        o += " ?";
+    }
+}
+
 static void run_group_fills()
 {
     // What the cases share: the keys of the process of the fixtures (a 0.16 mm layer, a 0.4 mm nozzle).
@@ -199,7 +224,11 @@ static void run_group_fills()
         {"overlap_30", {{"infill_wall_overlap", "30%"}}},
         {"bridge_angle_45", {{"bridge_angle", "45"}}},
         {"honeycomb", {{"sparse_infill_pattern", "honeycomb"}}},
+        // The last case (the lines of the cases before it stay as they were): sub-top surfaces, narrow
+        // and wide, for Fill.cpp:556-558 and 570.
+        {"sub_top", {}},
     };
+    static const SurfaceType types_sub_top[] = {stSubTop, stInternalSolid, stInternal, stSubTop, stTop, stSubTop, stInternalSolid};
     static const SurfaceType types[] = {stTop, stBottom, stBottomBridge, stInternal, stInternalSolid, stInternalBridge, stInternalVoid};
     Lcg g(0x9e3779b97f4a7c15ULL);
     for (const FillCase &fc : cases) {
@@ -243,7 +272,8 @@ static void run_group_fills()
             for (int i = 0; i < n; ++i) {
                 const coord_t     x0 = coord_t(i) * 2000000 + g.range(-100000, 100000), y0 = g.range(-100000, 100000);
                 const coord_t     w = g.range(0, 2) == 0 ? g.range(50000, 500000) : g.range(700000, 1500000), h = g.range(0, 2) == 0 ? g.range(50000, 500000) : g.range(700000, 1500000);
-                const SurfaceType type = c == 0 ? (i % 2 == 0 ? stBottom : stInternalSolid) : types[g.range(0, 6)];
+                const bool        sub_top = std::strcmp(fc.tag, "sub_top") == 0;
+                const SurfaceType type    = c == 0 ? (i % 2 == 0 ? stBottom : stInternalSolid) : (sub_top ? types_sub_top : types)[g.range(0, 6)];
                 Surface           s(type, ExPolygon(rect(x0, y0, x0 + w, y0 + h)));
                 if (g.range(0, 5) == 0) s.thickness = 2. * layer_height;
                 if (s.is_bridge() && g.range(0, 1) == 0) s.bridge_angle = 0.1 * double(g.range(0, 31));
@@ -267,6 +297,23 @@ static void run_group_fills()
             LockRegionParam          lock_param;
             std::vector<SurfaceFill> fills = group_fills(layer, lock_param);
             out("gf " + in + " => " + FILLS(fills));
+            // The pin's Layer::make_fills on the same layer (Fill.cpp:678-867; one thread, the real
+            // fillers), the object holding one first layer whose bottom is at 0 for
+            // `object()->get_layer(0)` (so the base of Fill.cpp:228-229 is the 0. of the line above).
+            // "mf <the object's box> <regions> { R <entities of fills> ... }".
+            {
+                Layer base(0, obj, first_layer_height, first_layer_height, 0.5 * first_layer_height);
+                obj->m_layers.emplace_back(&base);
+                layer.make_fills(nullptr, nullptr, nullptr);
+                obj->m_layers.pop_back();
+                std::string mf = BBOX(obj->bounding_box()) + " " + hI((long long) layer.m_regions.size());
+                for (const LayerRegion *lr : layer.m_regions) {
+                    mf += " R " + hI((long long) lr->fills.entities.size());
+                    for (const ExtrusionEntity *e : lr->fills.entities) ENT(e, mf);
+                }
+                out("mf " + mf);
+                std::fflush(g_out);
+            }
         }
     }
 }

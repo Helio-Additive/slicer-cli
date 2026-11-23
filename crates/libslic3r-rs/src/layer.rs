@@ -2098,6 +2098,12 @@ impl Layer {
         self.print_config = Some(print_config);
     }
 
+    /// `object()->bounding_box()` (PrintObject.hpp, read at Fill.cpp:689) for a Layer that stands
+    /// on its own (tests/fill_native_parity.rs): what print_object.rs stamps on its layers.
+    pub fn set_object_bounding_box(&mut self, bbox: Option<crate::geometry::BoundingBox>) {
+        self.object_bounding_box = bbox;
+    }
+
     /// Get bottom Z coordinate
     /// Layer.hpp:209
     pub fn bottom_z(&self) -> f64 {
@@ -4142,6 +4148,16 @@ impl Layer {
                             | InfillPattern::Monotonic
                             | InfillPattern::MonotonicLine
                     );
+                // FillBase.cpp:167-170 (and FillRectilinear.cpp, the paths with wipe) — the
+                // height of the paths is `params.flow.height()`, the flow BEFORE
+                // `with_spacing`: for a bridge `Flow::with_spacing` sets width and height to
+                // the new diameter, and the pin hands over new_flow's width beside the
+                // unadjusted height. FILL_PATH_HEIGHT_PIN=0 is the adjusted flow's height.
+                let path_height = if crate::faithful_gate("FILL_PATH_HEIGHT_PIN") {
+                    surface_fill.params.flow.height() as f32
+                } else {
+                    fill_flow_eff.height() as f32
+                };
                 if is_monotonic_line && crate::faithful_gate("TOPFILL_FAITHFUL") {
                     // Native FillMonotonicLineWGapFill emits via
                     // extrusion_entities_append_paths_with_wipe (FillRectilinear.cpp:
@@ -4160,7 +4176,7 @@ impl Layer {
                         surface_fill.params.extrusion_role,
                         mm3_per_mm,
                         fill_flow_eff.width() as f32,
-                        fill_flow_eff.height() as f32,
+                        path_height,
                         gap_comp,
                     );
                 } else {
@@ -4170,7 +4186,7 @@ impl Layer {
                         surface_fill.params.extrusion_role,
                         mm3_per_mm,
                         fill_flow_eff.width() as f32,
-                        fill_flow_eff.height() as f32,
+                        path_height,
                     );
                 }
 

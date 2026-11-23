@@ -1267,13 +1267,22 @@ fn group_fills_lower(
                     params.pattern = InfillPattern::ConcentricInternal;
                     // Fill.cpp:598-603
                     let region_id_i = surface_fills[i].region_id;
+                    // Fill.cpp:602 — `surface_fills.back().surface.surface_type =
+                    // surface_fills[i].surface.surface_type;`: the split-off narrow areas of a
+                    // stSubTop fill stay stSubTop. FILL_NARROW_SPLIT_TYPE=0 is the earlier
+                    // stInternalSolid (an older Fill.cpp, where only stInternalSolid got here).
+                    let surface_type_i = if crate::faithful_gate("FILL_NARROW_SPLIT_TYPE") {
+                        surface_fills[i].surface.surface_type
+                    } else {
+                        SurfaceType::InternalSolid
+                    };
                     let thickness_i = surface_fills[i].surface.thickness;
                     let region_id_group_i = surface_fills[i].region_id_group.clone();
                     let no_overlap_i = surface_fills[i].no_overlap_expolygons.clone();
                     surface_fills.push(SurfaceFill::new(params));
                     let back_idx = surface_fills.len() - 1;
                     surface_fills[back_idx].region_id = region_id_i;
-                    surface_fills[back_idx].surface.surface_type = SurfaceType::InternalSolid;
+                    surface_fills[back_idx].surface.surface_type = surface_type_i;
                     surface_fills[back_idx].surface.thickness = thickness_i;
                     surface_fills[back_idx].region_id_group = region_id_group_i;
                     surface_fills[back_idx].no_overlap_expolygons = no_overlap_i;
