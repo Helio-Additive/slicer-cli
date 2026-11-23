@@ -33,8 +33,8 @@ struct CliOptions {
     std::map<std::string, std::string> overrides;
     // Every print setting given as an official flag (--curr-bed-type,
     // --layer-height, ...): the official CLI's m_extra_config
-    // (BambuStudio.cpp 1563-1564 at 5873b5f; OrcaSlicer.cpp 1258-1259 at
-    // 31f6803), laid over the loaded settings like the official does.
+    // (BambuStudio.cpp 1563-1564 at 5873b5f; OrcaSlicer.cpp 1384-1385 at
+    // f92a7c0), laid over the loaded settings like the official does.
     Slic3r::DynamicPrintConfig extra_config;
     // The official flags as the official CLI holds them (m_config after
     // CLI::setup, BambuStudio.cpp 8338-8359 at 5873b5f; OrcaSlicer.cpp

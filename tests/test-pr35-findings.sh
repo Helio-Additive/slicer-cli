@@ -162,9 +162,12 @@ fx_list() {  # fx_list ENGINE NAME LIST [extra args]: an X1 Carbon project from 
 }
 fx_ftow() {
     [ -s ftow-$1.3mf ] && return 0
+    # The tower at x 25: at x 20 its brim stands within the 18 mm corner the X1 Carbon
+    # excludes, and OrcaSlicer from 2.5 refuses that before it slices ("Prime tower is too
+    # close to an exclusion area", Print.cpp 1723 at f92a7c0).
     run fxftow-$1 "$(bin_of $1)" --load-assemble-list ftow.json --slice 1 --printer-preset "$X1C" \
         --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
-        --enable-prime-tower --wipe-tower-x 20 --wipe-tower-y 20 --outputdir fxftow-$1/out --export-3mf ftow.3mf
+        --enable-prime-tower --wipe-tower-x 25 --wipe-tower-y 20 --outputdir fxftow-$1/out --export-3mf ftow.3mf
     cp fxftow-$1/out/ftow.3mf ftow-$1.3mf 2>/dev/null
 }
 # bigtow-<e>.3mf: two 160 x 100 mm plates on two filaments, laid out by the list, the

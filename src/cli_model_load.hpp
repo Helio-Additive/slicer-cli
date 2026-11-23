@@ -21,7 +21,7 @@ namespace slicer_cli {
 /// What a .3mf path is, before anything loads it. `Unreadable` is its own
 /// answer, not "geometry only": the official CLI checks that every input
 /// exists before it loads one (BambuStudio.cpp 1855-1860 at 5873b5f;
-/// OrcaSlicer.cpp 1537-1542 at 31f6803) and leaves a file it cannot open to
+/// OrcaSlicer.cpp 1755-1760 at f92a7c0) and leaves a file it cannot open to
 /// the loader, so a .3mf that cannot be read is neither a project (which
 /// carries its own settings) nor geometry only.
 enum class ThreeMfKind {

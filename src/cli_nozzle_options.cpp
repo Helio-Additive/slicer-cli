@@ -7,6 +7,9 @@
 #ifdef ENGINE_BAMBU
 #include "libslic3r/LocalesUtils.hpp"   // string_to_double_decimal_point
 #include "libslic3r/Utils.hpp"          // format_diameter_to_str
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/MultiNozzleUtils.hpp"
+#endif
 #endif
 
 namespace slicer_cli {
@@ -23,7 +26,7 @@ std::vector<int> sanitized_filament_map(std::vector<int> map) {
     return map;
 }
 
-#ifndef ENGINE_ORCA
+#ifndef ENGINE_SNAPMAKER
 namespace {
 
 std::string printer_name(const DynamicPrintConfig& config) {
@@ -38,7 +41,14 @@ std::vector<int> max_nozzle_counts(const DynamicPrintConfig& config) {
 
 bool has_nozzle_rack(const DynamicPrintConfig& config) {
     const std::vector<int> counts = max_nozzle_counts(config);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer skips an unset entry: a nullable int's nil is INT_MAX
+    // (OrcaSlicer.cpp 6840-6845 at f92a7c0).
+    return std::any_of(counts.begin(), counts.end(),
+                       [](int v) { return v > 1 && v != ConfigOptionIntsNullable::nil_value(); });
+#else
     return std::any_of(counts.begin(), counts.end(), [](int v) { return v > 1; });
+#endif
 }
 
 int extruder_count(const DynamicPrintConfig& config) {
@@ -48,6 +58,7 @@ int extruder_count(const DynamicPrintConfig& config) {
 
 } // namespace
 
+#ifdef ENGINE_BAMBU
 std::string estimate_mode_nozzle_settings(DynamicPrintConfig& extra, const DynamicPrintConfig& config) {
     const int new_extruder_count = extruder_count(config);
     const std::vector<int> extruder_max_nozzle_count = max_nozzle_counts(config);
@@ -207,6 +218,7 @@ std::string rack_group_maps(std::vector<int>& map, std::vector<int>& nozzle_map,
     map.assign(map.size(), 1);
     return {};
 }
+#endif // ENGINE_BAMBU
 
 std::string manual_mode_nozzle_maps(DynamicPrintConfig& extra, const DynamicPrintConfig& config, FilamentMapMode mode,
                                     size_t filament_count, bool one_plate) {
@@ -218,8 +230,15 @@ std::string manual_mode_nozzle_maps(DynamicPrintConfig& extra, const DynamicPrin
         return {};
     if (mode == fmmNozzleManual) {
         std::string missing;
-        for (const char* key : {"filament_map", "filament_volume_map", "filament_nozzle_map", "extruder_nozzle_count",
-                                "extruder_nozzle_volume_type"})
+#ifdef ENGINE_BAMBU
+        const std::vector<const char*> needed = {"filament_map", "filament_volume_map", "filament_nozzle_map",
+                                                 "extruder_nozzle_count", "extruder_nozzle_volume_type"};
+#else
+        // OrcaSlicer rebuilds the grouping from the three maps alone; it has no
+        // command-line rack flags (OrcaSlicer.cpp 6847-6857 at f92a7c0).
+        const std::vector<const char*> needed = {"filament_map", "filament_volume_map", "filament_nozzle_map"};
+#endif
+        for (const char* key : needed)
             if (!extra.has(key)) {
                 std::string flag = key;
                 std::replace(flag.begin(), flag.end(), '_', '-');
@@ -235,6 +254,17 @@ std::string manual_mode_nozzle_maps(DynamicPrintConfig& extra, const DynamicPrin
         std::vector<int> nozzle_volume_type;
         if (const auto* opt = dynamic_cast<const ConfigOptionEnumsGeneric*>(config.option("nozzle_volume_type")))
             nozzle_volume_type = opt->values;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer reads one flow type per nozzle: the settings' own when
+        // they hold any, else the printer's defaults; a nozzle a short list
+        // leaves out takes its first entry (nozzle_volume_types_per_nozzle,
+        // OrcaSlicer.cpp 485-498, used at 3446 and 6863 at f92a7c0).
+        if (nozzle_volume_type.empty())
+            if (const auto* opt = dynamic_cast<const ConfigOptionEnumsGeneric*>(config.option("default_nozzle_volume_type")))
+                nozzle_volume_type = opt->values;
+        if (!nozzle_volume_type.empty())
+            nozzle_volume_type.resize(std::max<size_t>(nozzle_volume_type.size(), extruder_count(config)), nozzle_volume_type.front());
+#endif
         std::vector<std::map<NozzleVolumeType, int>> stats;
         if (const auto* opt = config.option<ConfigOptionStrings>("extruder_nozzle_stats"))
             stats = get_extruder_nozzle_stats(opt->values);
@@ -242,7 +272,13 @@ std::string manual_mode_nozzle_maps(DynamicPrintConfig& extra, const DynamicPrin
         std::vector<int>& filament_volume_maps = extra.option<ConfigOptionInts>("filament_volume_map", true)->values;
         filament_volume_maps.resize(filament_count, (int)nvtStandard);
         for (size_t f_index = 0; f_index < filament_count && f_index < filament_maps.size(); f_index++) {
-            const int e = filament_maps[f_index] - 1;
+            int e = filament_maps[f_index] - 1;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // As Print::apply reads it, a nozzle outside [1, nozzle count]
+            // means nozzle 1 (OrcaSlicer.cpp 6829-6833 at f92a7c0).
+            if (e < 0 || e >= extruder_count(config))
+                e = 0;
+#endif
             if (e < 0)
                 continue;
             const bool hybrid = (size_t)e < stats.size() && stats[e].size() > 1;
@@ -258,6 +294,41 @@ std::string manual_map_extruder_refusal(const DynamicPrintConfig& config, const 
     const auto* mode = config.option<ConfigOptionEnum<FilamentMapMode>>("filament_map_mode");
     if (mode == nullptr || (mode->value != fmmManual && mode->value != fmmNozzleManual))
         return {};
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // Nozzle Manual: OrcaSlicer rebuilds its nozzle grouping from the three maps
+    // and the rack the settings describe (extruder_nozzle_stats), with this
+    // same call (ToolOrdering.cpp 1822-1838 at f92a7c0). When that fails the
+    // engine only logs it and goes on with an empty grouping, and the export
+    // then fails inside the printer's start G-code. The rack comes from a
+    // project the app saved: OrcaSlicer's command line has no flag for it.
+    if (mode->value == fmmNozzleManual) {
+        const auto* fmap  = config.option<ConfigOptionInts>("filament_map");
+        const auto* vmap  = config.option<ConfigOptionInts>("filament_volume_map");
+        const auto* nmap  = config.option<ConfigOptionInts>("filament_nozzle_map");
+        const auto* stats = config.option<ConfigOptionStrings>("extruder_nozzle_stats");
+        const auto* diam  = config.option<ConfigOptionFloats>("nozzle_diameter");
+        bool rebuilt = fmap && vmap && nmap && vmap->values.size() == fmap->values.size() &&
+                       nmap->values.size() == fmap->values.size();
+        if (rebuilt) {
+            std::vector<int> zero_based = fmap->values;
+            for (int& v : zero_based) --v;
+            std::vector<unsigned int> used;
+            for (const int fid : plate_filaments)
+                if (fid >= 1 && (size_t)fid <= zero_based.size())
+                    used.push_back((unsigned int)(fid - 1));
+            rebuilt = MultiNozzleUtils::LayeredNozzleGroupResult::create(
+                          used, zero_based, vmap->values, nmap->values,
+                          get_extruder_nozzle_stats(stats ? stats->values : std::vector<std::string>()),
+                          diam == nullptr || diam->values.empty() ? 0.4f : (float)diam->values.front()).has_value();
+        }
+        if (!rebuilt)
+            return "--filament-map-mode \"Nozzle Manual\": the nozzle rack these settings describe (extruder_nozzle_stats" +
+                   std::string(stats == nullptr || stats->values.empty() ? ", not stated" : " = " + stats->serialize()) +
+                   ") has no nozzle for every filament's place in --filament-map, --filament-volume-map and "
+                   "--filament-nozzle-map. OrcaSlicer's command line has no flag that describes the rack: slice a "
+                   "project saved by OrcaSlicer that states it, or give \"Manual\" with --filament-map.";
+    }
+#endif
     const int extruders = extruder_count(config);
     if (extruders < 2 && !has_nozzle_rack(config))
         return {};
@@ -269,7 +340,13 @@ std::string manual_map_extruder_refusal(const DynamicPrintConfig& config, const 
     for (const int fid : plate_filaments) {
         if (fid < 1 || (size_t)fid > maps->values.size() || (size_t)fid > printable->values.size())
             continue;
-        const int extruder = maps->values[fid - 1];
+        int extruder = maps->values[fid - 1];
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // As Print::apply reads it, a nozzle outside [1, nozzle count] means
+        // nozzle 1 (OrcaSlicer.cpp 6829-6833 at f92a7c0).
+        if (extruder < 1 || extruder > extruders)
+            extruder = 1;
+#endif
         if (extruder < 1 || extruder > extruders)
             continue;
         if (!((printable->values[fid - 1] >> (extruder - 1)) & 1)) {
@@ -282,7 +359,7 @@ std::string manual_map_extruder_refusal(const DynamicPrintConfig& config, const 
     }
     return {};
 }
-#endif // ENGINE_ORCA
+#endif // ENGINE_SNAPMAKER
 
 #ifdef ENGINE_BAMBU
 bool fit_project_nozzles_to_printer(Slic3r::DynamicPrintConfig& config) {

@@ -120,11 +120,15 @@ endfacet
 endsolid packaged_test
 STL
     python3 "$SCRIPT_DIR/resolve-orca-profiles.py" "$ORCA_ROOT/resources/profiles-orca/Snapmaker" "$WORKDIR/orca-config.json"
+    # The plate is named: from OrcaSlicer 2.5 the U1's default plate is
+    # Textured PEI, which "Snapmaker PLA @U1" does not print on
+    # (docs/cli-reference.md, "Known upstream behaviour").
     if ! "$ORCA_BINARY" "$WORKDIR/model.stl" \
         --config "$WORKDIR/orca-config.json" \
         --machine "$ORCA_ROOT/resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json" \
         --filament "$ORCA_ROOT/resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json" \
         --process "$ORCA_ROOT/resources/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json" \
+        --curr-bed-type "High Temp Plate" \
         -o "$WORKDIR/orca.gcode" > "$WORKDIR/orca.log" 2>&1; then
         cat "$WORKDIR/orca.log"
         exit 1

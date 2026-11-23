@@ -140,7 +140,7 @@ struct CliCallbackMgr {
         // A reader that goes away makes write() raise SIGPIPE, which would end
         // the slice; with it ignored, write() fails with EPIPE and the slice
         // goes on. The official OrcaSlicer CLI ignores SIGPIPE for every run
-        // (main, OrcaSlicer.cpp 7464-7468); the BambuStudio CLI does not.
+        // (main, OrcaSlicer.cpp 8624-8628); the BambuStudio CLI does not.
         std::signal(SIGPIPE, SIG_IGN);
         int retry_count = 0;
         m_pipe_fd = ::open(pipe_name.c_str(), O_WRONLY | O_NONBLOCK);

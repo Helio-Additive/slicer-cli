@@ -294,16 +294,19 @@ PY
         cmp "$stdout.cwd-clean" "$stdout.cwd-poison"
     fi
     if [ "$label" = orca ]; then
-        # Orca's desktop importer gives non-BBL G29 a 260-second allowance
-        # (GCodeProcessor.cpp 4859-4870 at the pin). The selected preset
-        # context decides it; omitting it would silently lose that time. The
-        # file's own printer_model would refine the context (GCodeProcessor.cpp
-        # 2632), so the probe is the real G-code without that one line.
+        # Orca's desktop importer gives non-BBL G29 a 260-second allowance,
+        # once per file (GCodeProcessor.cpp 6388-6397 at f92a7c0; for a BBL
+        # printer only a G29 inside the measured start block counts). The
+        # selected preset context decides it; omitting it would silently lose
+        # that time. The file's own printer_model would refine the context
+        # (GCodeProcessor.cpp 3897-3901), so the probe is the real G-code
+        # without that line and without its own G29 commands, plus one G29.
         python3 - "$binary" "$ORIGINAL" "$engine_dir" <<'PY_ORCA_CONTEXT'
 import json, math, pathlib, subprocess, sys
 binary, original, directory = sys.argv[1:]
 fixture = pathlib.Path(directory) / "orca-g29.gcode"
-lines = [l for l in pathlib.Path(original).read_bytes().split(b"\n") if not l.startswith(b"; printer_model")]
+lines = [l for l in pathlib.Path(original).read_bytes().split(b"\n")
+         if not l.startswith(b"; printer_model") and not l.lstrip().startswith(b"G29")]
 fixture.write_bytes(b"\n".join(lines) + b"\nG29\n")
 seconds = {}
 for bbl in ("true", "false"):

@@ -16,7 +16,8 @@ struct ProjectFacts;
 std::string mm_text(double v);
 Slic3r::BoundingBoxf3 object_world_bbox(const Slic3r::ModelObject* object);
 bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                                     PlateOutcome& outcome, bool arranged = false);
+                                     PlateOutcome& outcome, bool arranged = false,
+                                     bool arranged_without_rotations = false);
 Slic3r::Vec3d downward_plate_size(CliRunContext& context, const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                          int plate_index, bool is_sequence);
 int move_to_new_bed(CliRunContext& context, const slicer_cli::ProjectFacts& facts, bool machine_switch, Slic3r::Model& model,
@@ -41,6 +42,23 @@ struct TowerWipeParams {
 };
 
 TowerWipeParams tower_wipe_params(const Slic3r::DynamicPrintConfig& config);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+/// OrcaSlicer from 2.5 fits a plate's prime tower into the plate before every
+/// plain slice, as the app does when it loads a project (OrcaSlicer.cpp
+/// 6495-6526; PartPlate::estimate_wipe_tower_polygon, PartPlate.cpp 4057-4150
+/// at f92a7c0): a position within 5 mm of the bounds is put on the bound, a
+/// position further out is placed again with the comfort margin, on the spot
+/// clear of the objects nearest to the saved one. `model` is the plate's, in
+/// the plate's own frame (PlateScope). Returns what was done, for the notice.
+struct PlateTowerFit {
+    bool   printed = false;            // the plate has a tower to place
+    bool   moved = false;              // placed again, not only put on a bound
+    bool   overlaps_objects = false;   // no clear spot was left
+    double saved_x = 0., saved_y = 0., x = 0., y = 0.;
+};
+PlateTowerFit fit_plate_tower_before_slice(const Slic3r::Model& model, Slic3r::DynamicPrintConfig& config, int plate_index,
+                                           bool plate_prints_by_object);
+#endif
 void assemble_tower_inside_plate(CliRunContext& context, Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model,
                                         int plate_index, bool keep_existing);
 Slic3r::arrangement::ArrangePolygon estimate_tower_polygon_global(const Slic3r::Model& global_model,

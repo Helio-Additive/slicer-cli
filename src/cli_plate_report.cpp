@@ -7,7 +7,12 @@
 #include "libslic3r/Print.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/GCode/GCodeStatistics.hpp"
+#endif
 #include <boost/filesystem.hpp>
+#include <boost/nowide/fstream.hpp>
+#include <map>
 #include <iostream>
 #include <set>
 #include "cli_plate_arrange.hpp"
@@ -16,6 +21,42 @@
 namespace slicer_cli {
 
 using json = nlohmann::json;
+
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+/// OrcaSlicer from 2.5 names filaments by ids of its own ("OF..."), also the
+/// Bambu Lab ones. A Bambu printer reads the sliced file's slice_info.config
+/// and knows only Bambu's catalog ids ("GF..."), so the app and the official
+/// command line write those for a Bambu printer
+/// (BBLPrinterAgent::from_orca_filament_id, slic3r/Utils/BBLPrinterAgent.cpp
+/// 56-84 and 226-236; OrcaSlicer.cpp 7407-7447 at f92a7c0), from the engine's
+/// own table resources/printers/bambu_filament_ids.json. An id the table does
+/// not hold, or a missing table, passes through.
+static std::string bambu_catalog_filament_id(const std::string& orca_filament_id) {
+    static const std::map<std::string, std::string> to_bambu = [] {
+        std::map<std::string, std::string> m;
+        const std::string path = Slic3r::resources_dir() + "/printers/bambu_filament_ids.json";
+        try {
+            boost::nowide::ifstream file(path);
+            if (!file.is_open()) {
+                std::cerr << "warning: " << path << " is missing; filament ids are written as OrcaSlicer names them, "
+                                                    "which a Bambu Lab printer does not know\n";
+                return m;
+            }
+            json doc;
+            file >> doc;
+            for (const auto& [id, row] : doc.at("filaments").items())
+                m.emplace(id, row.at("bambu_id").get<std::string>());
+        } catch (const std::exception& e) {
+            std::cerr << "warning: " << path << " cannot be read (" << e.what() << "); filament ids are written as "
+                                                                                 "OrcaSlicer names them\n";
+            m.clear();
+        }
+        return m;
+    }();
+    const auto it = to_bambu.find(orca_filament_id);
+    return it != to_bambu.end() ? it->second : orca_filament_id;
+}
+#endif
 
 /// Per-plate figures the official CLI records after export (BambuStudio.cpp
 /// 7262-7356 at 5873b5f): print time, filament per slot in grams, and each
@@ -114,7 +155,7 @@ void record_plate_statistics(const Slic3r::Print& print, const Slic3r::Model& mo
                       {"width", box.size().x()}, {"depth", box.size().y()}, {"height", box.size().z()}}}});
     }
     // The run's summary reads the project's settings, m_print_config, not
-    // the plate's copy (BambuStudio.cpp 6905-6910; OrcaSlicer.cpp 5908-5913).
+    // the plate's copy (BambuStudio.cpp 6905-6910; OrcaSlicer.cpp 6948-6953).
     if (project.has("layer_height"))          outcome.layer_height = float(project.opt_float("layer_height"));
     if (project.has("wall_loops"))            outcome.wall_loops   = project.opt_int("wall_loops");
     if (const auto* d = project.option<Slic3r::ConfigOptionPercent>("sparse_infill_density"))
@@ -159,6 +200,35 @@ void record_plate_for_export(CliRunContext& context, const Slic3r::Print& print,
     }
     pd->is_support_used = print.is_support_used();
     pd->parse_filament_info(&result);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (PartPlateList::store_to_3mf_structure, PartPlate.cpp 8485-8523
+    // at f92a7c0): the first layer's time comes from the slice result, and the
+    // mixed filaments the plate printed with are listed (the slots the tool
+    // ordering met, not the ones only assigned).
+    pd->first_layer_time = std::to_string(result.initial_layer_time);
+    {
+        std::vector<unsigned int> used_mixed = result.used_mixed_filaments;
+        if (used_mixed.empty())
+            used_mixed = print.get_slice_used_mixed_filaments();
+        const auto& fila_types  = print.config().filament_type.values;
+        const auto& fila_colors = print.config().filament_colour.values;
+        const auto& fila_comps  = print.config().filament_mixed_components.values;
+        for (const unsigned int fid : used_mixed) {
+            Slic3r::PlateMixedFilamentInfo mixed_info;
+            mixed_info.id = (int)fid + 1;
+            if (fid < fila_types.size())  mixed_info.type       = fila_types[fid];
+            if (fid < fila_colors.size()) mixed_info.color      = fila_colors[fid];
+            if (fid < fila_comps.size())  mixed_info.components = fila_comps[fid];
+            pd->mixed_filaments_info.push_back(mixed_info);
+        }
+    }
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // --export-statistics: the same JSON goes into the exported project
+    // (PartPlate.cpp 8500-8501 and bbs_3mf.cpp 9080-9085 at f92a7c0).
+    if (context.export_statistics)
+        pd->statistics = Slic3r::gcode_statistics_json(result);
+#endif
     // What the official export adds per plate (BambuStudio.cpp 7514-7532;
     // OrcaSlicer.cpp 6323-6343): the skipped objects, the printer model id,
     // the nozzle diameters, and each used filament's type, colour and id.
@@ -192,6 +262,12 @@ void record_plate_for_export(CliRunContext& context, const Slic3r::Print& print,
                                    ? types.get_filament_type(display_type, info.id) : std::string();
             info.color       = colours && !colours->values.empty() ? colours->get_at(info.id) : "#FFFFFF";
             info.filament_id = ids && !ids->values.empty() ? ids->get_at(info.id) : "";
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // A Bambu Lab printer, told as the engine tells it (Print::is_BBL_printer: the printer_model's start).
+            if (const auto* printer_model = config.option<Slic3r::ConfigOptionString>("printer_model");
+                printer_model != nullptr && printer_model->value.compare(0, 9, "Bambu Lab") == 0)
+                info.filament_id = bambu_catalog_filament_id(info.filament_id);
+#endif
         }
     }
 #ifdef ENGINE_BAMBU
@@ -283,7 +359,7 @@ static std::string label_names(const Slic3r::Model& model, const std::set<int>& 
 /// 7297-7326 at 5873b5f): toolpath conflicts, the critical slicing warnings
 /// the official CLI refuses, the G-code check bits and unprintable filaments.
 /// Each refusal names what it found. Orca's CLI maps every G-code check bit to
-/// CLI_GCODE_PATH_IN_UNPRINTABLE_AREA (OrcaSlicer.cpp 6145-6155); both builds
+/// CLI_GCODE_PATH_IN_UNPRINTABLE_AREA (OrcaSlicer.cpp 7217-7227); both builds
 /// use the finer Bambu mapping here.
 bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& model,
                               const Slic3r::GCodeProcessorResult& result, PlateOutcome& outcome) {
@@ -295,12 +371,24 @@ bool post_slice_checks(const Slic3r::Print& print, const Slic3r::Model& model,
             mm_text(c._height) + " mm.");
         return false;
     }
-    // With --no-check the official CLI does not stop on these warnings
-    // (BambuStudio.cpp 7132-7142; OrcaSlicer.cpp 6113-6123).
-    for (const json& w : outcome.no_check ? json::array() : outcome.warnings) {
-        const std::string tag = w.value("tag", "");
-        if (w.value("level", "") == "critical" &&
-            (tag == "SlicingEmptyGcodeLayers" || tag == "SlicingGcodeOverlap")) {
+    // With --no-check the official CLI does not stop on the critical warnings
+    // (BambuStudio.cpp 7132-7142; OrcaSlicer.cpp 7185-7197 at f92a7c0). With
+    // --strict, OrcaSlicer from 2.5 stops on a non-critical one (7171-7183);
+    // the warnings are walked in the order they came, as the official loop does.
+    // Only the engine's slicing warnings count: the settings check's own notes
+    // (level "warning") are not in the official list.
+    for (const json& w : outcome.warnings) {
+        const std::string tag = w.value("tag", ""), level = w.value("level", "");
+        if (level == "non_critical") {
+            if (outcome.strict) {
+                set_outcome_failure(outcome, CLI_SLICING_ERROR, w.value("message", ""));
+                return false;
+            }
+            continue;
+        }
+        if (level != "critical")
+            continue;
+        if (!outcome.no_check && (tag == "SlicingEmptyGcodeLayers" || tag == "SlicingGcodeOverlap")) {
             set_outcome_failure(outcome, CLI_SLICING_ERROR, w.value("message", ""));
             return false;
         }

@@ -2,6 +2,8 @@
 
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "diagnostic_output.hpp"
+#include <iostream>
+#include <vector>
 // Boost.Log bridge: libslic3r raises most of its diagnostics through
 // BOOST_LOG_TRIVIAL and never through any callback. `libslic3r_core` already
 // links Boost::log and Boost::log_setup unconditionally (CMakeLists.txt — the
@@ -109,9 +111,28 @@ void emit_event(const json& payload) {
 // and have been substituted"); the CLI constructs the context, hands it to
 // load_bbs_3mf / load_from_json, and then never reads it.
 /// Emits structured events for substituted and unrecognized loaded-config values.
+std::vector<json>& recorded_config_substitutions() {
+    static std::vector<json> recorded;
+    return recorded;
+}
+
 void emit_config_substitutions(const Slic3r::ConfigSubstitutionContext& ctx,
                                const std::string& source) {
     for (const auto& sub : ctx.substitutions) {
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5 says each replaced value on stderr and lists it
+        // in result.json with a stable class (cli_report_config_substitutions,
+        // OrcaSlicer.cpp 534-546 at f92a7c0).
+        {
+            const std::string key = sub.opt_def ? sub.opt_def->opt_key : std::string{};
+            const std::string new_value = sub.new_value ? sub.new_value->serialize() : std::string{};
+            std::cerr << "warning: " << source << ": value \"" << sub.old_value << "\" for " << key
+                      << " is not valid, using \"" << new_value << "\" instead\n";
+            recorded_config_substitutions().push_back(json{{"class", "config_value_substituted"}, {"file", source},
+                                                           {"key", key}, {"old_value", sub.old_value},
+                                                           {"new_value", new_value}});
+        }
+#endif
         json e;
         e["event"]     = "config_substituted";
         e["tag"]       = "ForwardCompatibilitySubstitution";

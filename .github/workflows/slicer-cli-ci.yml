@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   linux-occt:
-    name: Provision Linux OpenCASCADE 7.6.0 (${{ matrix.arch }})
+    name: Provision Linux OpenCASCADE 7.6.0 and 8.0.1 (${{ matrix.arch }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -59,9 +59,9 @@ jobs:
       - name: Install OCCT build tools
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends build-essential cmake curl ninja-build
-          sudo mkdir -p /opt/slicer-cli/occt-7.6
-          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6
+          sudo apt-get install -y --no-install-recommends build-essential cmake curl ninja-build unzip patch
+          sudo mkdir -p /opt/slicer-cli/occt-7.6 /opt/slicer-cli/occt-8.0
+          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6 /opt/slicer-cli/occt-8.0
 
       - name: Cache OpenCASCADE 7.6.0
         id: cache-linux-occt
@@ -73,6 +73,25 @@ jobs:
       - name: Build OpenCASCADE 7.6.0
         if: steps.cache-linux-occt.outputs.cache-hit != 'true'
         run: SLICER_CLI_OCCT_ONLY=1 ./install_deps.sh
+
+      # OrcaSlicer v2.5.2 pins OpenCASCADE 8.0.1 with one patch of its own
+      # (references/OrcaSlicer/deps/OCCT at f92a7c0). The key names the archive's
+      # and the patch's SHA-256; the build jobs check the patch hash again
+      # against the file in their checkout.
+      - name: Cache OpenCASCADE 8.0.1 (OrcaSlicer)
+        id: cache-linux-occt-orca
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-8.0
+          key: linux-${{ matrix.arch }}-occt-8.0.1-static-7c033d917ee8f040-patch-652d13689016f44b-v1
+
+      - name: Fetch the OrcaSlicer source (its OpenCASCADE patch)
+        if: steps.cache-linux-occt-orca.outputs.cache-hit != 'true'
+        run: git submodule update --init --depth 1 references/OrcaSlicer
+
+      - name: Build OpenCASCADE 8.0.1 (OrcaSlicer)
+        if: steps.cache-linux-occt-orca.outputs.cache-hit != 'true'
+        run: ENGINE=orca SLICER_CLI_OCCT_ONLY=1 ./install_deps.sh
 
       - name: Build pinned libnoise prefix
         shell: bash
@@ -350,21 +369,28 @@ jobs:
       - name: Prepare Linux OpenCASCADE prefix
         if: runner.os == 'Linux'
         run: |
-          sudo mkdir -p /opt/slicer-cli/occt-7.6
-          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6
+          sudo mkdir -p /opt/slicer-cli/occt-7.6 /opt/slicer-cli/occt-8.0
+          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6 /opt/slicer-cli/occt-8.0
 
       - name: Restore OpenCASCADE 7.6.0 (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.engine != 'orca'
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/occt-7.6
           key: linux-${{ matrix.arch }}-occt-7.6.0-static-73f8f71be02c1d9a-v2
 
+      - name: Restore OpenCASCADE 8.0.1 (Linux, OrcaSlicer)
+        if: runner.os == 'Linux' && matrix.engine == 'orca'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-8.0
+          key: linux-${{ matrix.arch }}-occt-8.0.1-static-7c033d917ee8f040-patch-652d13689016f44b-v1
+
       - name: Prepare Linux pinned CGAL prefixes
         if: runner.os == 'Linux'
         run: |
-          sudo mkdir -p /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-5.6.3
-          sudo chown -R "$USER" /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-5.6.3
+          sudo mkdir -p /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-6.2.1
+          sudo chown -R "$USER" /opt/slicer-cli/cgal-5.4 /opt/slicer-cli/cgal-6.2.1
 
       - name: Restore Linux pinned CGAL (bambu)
         if: runner.os == 'Linux' && (matrix.engine == 'bambu' || matrix.engine == 'snapmaker')
@@ -377,8 +403,8 @@ jobs:
         if: runner.os == 'Linux' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
-          path: /opt/slicer-cli/cgal-5.6.3
-          key: linux-${{ matrix.arch }}-cgal-5.6.3-orca-v2
+          path: /opt/slicer-cli/cgal-6.2.1
+          key: linux-${{ matrix.arch }}-cgal-6.2.1-orca-v1
 
       - name: Prepare Linux Boost prefix
         if: runner.os == 'Linux'
@@ -411,21 +437,27 @@ jobs:
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
             libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
-          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfig.cmake
-          test -r /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          grep -qx 'version=7.6.0' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          grep -qx 'source_sha256=73f8f71be02c1d9a977e854bcc9202502184d339f1f212c19797a5f23baefabe' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          grep -qx 'library_type=static' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake
-          test -f /opt/slicer-cli/occt-7.6/lib/libTKernel.a
-          test -f /opt/slicer-cli/occt-7.6/lib/libTKBRep.a
-          test -r /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          grep -qx 'version=7.6.0' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          grep -qx 'source_sha256=73f8f71be02c1d9a977e854bcc9202502184d339f1f212c19797a5f23baefabe' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          grep -qx 'library_type=static' /opt/slicer-cli/occt-7.6/.slicer-cli-occt-7.6.0-static-complete
-          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake
-          test -f /opt/slicer-cli/occt-7.6/lib/libTKernel.a
-          test -f /opt/slicer-cli/occt-7.6/lib/libTKBRep.a
+          # Each engine's own pinned OpenCASCADE (CMakeLists.txt): OrcaSlicer 8.0.1
+          # with its patch, Bambu Studio and Snapmaker Orca 7.6.0.
+          if [[ "${{ matrix.engine }}" == orca ]]; then
+            OCCT_ROOT=/opt/slicer-cli/occt-8.0
+            OCCT_MARKER="$OCCT_ROOT/.slicer-cli-occt-8.0.1-static-complete"
+            test -r "$OCCT_MARKER"
+            grep -qx 'version=8.0.1' "$OCCT_MARKER"
+            grep -qx 'source_sha256=7c033d917ee8f040c0512d289dcc5f02c148889d5bac17c3e25639accb44f0da' "$OCCT_MARKER"
+            grep -qx "patch_sha256=$(sha256sum references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch | awk '{print $1}')" "$OCCT_MARKER"
+          else
+            OCCT_ROOT=/opt/slicer-cli/occt-7.6
+            OCCT_MARKER="$OCCT_ROOT/.slicer-cli-occt-7.6.0-static-complete"
+            test -r "$OCCT_MARKER"
+            grep -qx 'version=7.6.0' "$OCCT_MARKER"
+            grep -qx 'source_sha256=73f8f71be02c1d9a977e854bcc9202502184d339f1f212c19797a5f23baefabe' "$OCCT_MARKER"
+          fi
+          grep -qx 'library_type=static' "$OCCT_MARKER"
+          test -f "$OCCT_ROOT/lib/cmake/opencascade/OpenCASCADEConfig.cmake"
+          test -f "$OCCT_ROOT/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake"
+          test -f "$OCCT_ROOT/lib/libTKernel.a"
+          test -f "$OCCT_ROOT/lib/libTKBRep.a"
           LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix/${{ matrix.engine }}"
           LIBNOISE_MARKER="$LIBNOISE_PREFIX/.slicer-cli-libnoise-complete"
           test -r "$LIBNOISE_MARKER"
@@ -472,16 +504,16 @@ jobs:
               sudo mv "$MARKER_TMP" "$CGAL_MARKER"
             fi
           else
-            CGAL_VERSION=5.6.3
+            CGAL_VERSION=6.2.1
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-            CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
-            CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
-            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
+            CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.zip"
+            CGAL_ARCHIVE_SHA256=eebd737d9b7f0199647ba5c1f9f6c7a3d0651aacef9c2fd4dedc52da6c25edbe
+            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-6.2.1-complete"
             if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
               sudo rm -rf "$CGAL_ROOT"
-              curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
-              echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | sha256sum -c -
-              tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
+              curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.zip
+              echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.zip" | sha256sum -c -
+              unzip -q /tmp/cgal-${CGAL_VERSION}.zip -d /tmp
               cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
@@ -492,7 +524,7 @@ jobs:
               test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
               test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
               test -f "$CGAL_ROOT/include/CGAL/version.h"
-              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
+              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-6.2.1-complete.XXXXXX")"
               printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
               sudo chmod 0644 "$MARKER_TMP"
               sudo mv "$MARKER_TMP" "$CGAL_MARKER"
@@ -507,10 +539,11 @@ jobs:
           # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
           # so the previous cache (OCCT 8.0.0, which fails to compile against the
           # pinned BambuStudio source) is NOT restored — it would shadow the pin.
-          # Bambu requires the project CGAL 5.4 overlay; Orca builds against the
-          # baseline CGAL 6 port. Keep their caches disjoint.
-          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v7
-          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v7
+          # Bambu requires the project CGAL 5.4 overlay; Orca the CGAL 6.2.1
+          # overlay (ci/vcpkg-overlays-orca). Keep their caches disjoint. Bumped
+          # to -v8 so an OrcaSlicer cache holding the baseline CGAL 6.1.1 is not restored.
+          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
+          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -539,6 +572,9 @@ jobs:
           VCPKG_ARGS=()
           if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
+          else
+            # OrcaSlicer v2.5.2 pins CGAL 6.2.1; the baseline port is 6.1.1.
+            VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays-orca")
           fi
           for attempt in 1 2 3; do
             if vcpkg install "${VCPKG_ARGS[@]}" \
@@ -630,8 +666,12 @@ jobs:
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
             fi
           else
-            OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
-            [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
+            if [[ "${{ matrix.engine }}" == orca ]]; then
+              OCCT_DIR=/opt/slicer-cli/occt-8.0/lib/cmake/opencascade
+            else
+              OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
+            fi
+            [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing the pinned OpenCASCADE package for ${{ matrix.engine }}"; exit 1; }
             ENGINE_LIBNOISE_PREFIX="$RUNNER_TEMP/libnoise-prefix/${{ matrix.engine }}"
             # Boost 1.84.0 is the version both vendored engines pin
             # (references/*/deps/Boost/Boost.cmake). The prefix job installs it;
@@ -663,9 +703,9 @@ jobs:
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
             else
-              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
-              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
-              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
+              CGAL_ORCA_DIR=/opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL
+              [[ -f "$CGAL_ORCA_DIR/CGALConfig.cmake" ]] || { echo "missing the CGAL 6.2.1 package OrcaSlicer pins"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL_ORCA_DIR")
             fi
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -995,31 +1035,31 @@ jobs:
       - name: Prepare macOS pinned CGAL prefix (Orca)
         if: runner.os == 'macOS' && matrix.engine == 'orca'
         run: |
-          sudo mkdir -p /opt/slicer-cli/cgal-5.6.3
-          sudo chown -R "$USER" /opt/slicer-cli/cgal-5.6.3
+          sudo mkdir -p /opt/slicer-cli/cgal-6.2.1
+          sudo chown -R "$USER" /opt/slicer-cli/cgal-6.2.1
 
       - name: Restore macOS pinned CGAL (Orca)
         if: runner.os == 'macOS' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
-          path: /opt/slicer-cli/cgal-5.6.3
-          key: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
-          restore-keys: macos-${{ runner.arch }}-cgal-5.6.3-orca-v1
+          path: /opt/slicer-cli/cgal-6.2.1
+          key: macos-${{ runner.arch }}-cgal-6.2.1-orca-v1
+          restore-keys: macos-${{ runner.arch }}-cgal-6.2.1-orca-v1
 
       - name: Build macOS pinned CGAL (Orca)
         if: runner.os == 'macOS' && matrix.engine == 'orca'
         shell: /bin/bash -e {0}
         run: |
-          CGAL_VERSION=5.6.3
+          CGAL_VERSION=6.2.1
           CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-          CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
-          CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
-          CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
+          CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.zip"
+          CGAL_ARCHIVE_SHA256=eebd737d9b7f0199647ba5c1f9f6c7a3d0651aacef9c2fd4dedc52da6c25edbe
+          CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-6.2.1-complete"
           if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
             sudo rm -rf "$CGAL_ROOT"
-            curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
-            echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | shasum -a 256 -c -
-            tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
+            curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.zip
+            echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.zip" | shasum -a 256 -c -
+            unzip -q /tmp/cgal-${CGAL_VERSION}.zip -d /tmp
             cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
@@ -1030,7 +1070,7 @@ jobs:
             test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
             test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
             test -f "$CGAL_ROOT/include/CGAL/version.h"
-            MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
+            MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-6.2.1-complete.XXXXXX")"
             printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
             sudo chmod 0644 "$MARKER_TMP"
             sudo mv "$MARKER_TMP" "$CGAL_MARKER"
@@ -1040,15 +1080,22 @@ jobs:
       - name: Prepare Linux OpenCASCADE prefix
         if: runner.os == 'Linux'
         run: |
-          sudo mkdir -p /opt/slicer-cli/occt-7.6
-          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6
+          sudo mkdir -p /opt/slicer-cli/occt-7.6 /opt/slicer-cli/occt-8.0
+          sudo chown -R "$USER" /opt/slicer-cli/occt-7.6 /opt/slicer-cli/occt-8.0
 
       - name: Restore OpenCASCADE 7.6.0 (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.engine != 'orca'
         uses: actions/cache@v4
         with:
           path: /opt/slicer-cli/occt-7.6
           key: linux-x86_64-occt-7.6.0-static-73f8f71be02c1d9a-v2
+
+      - name: Restore OpenCASCADE 8.0.1 (Linux, OrcaSlicer)
+        if: runner.os == 'Linux' && matrix.engine == 'orca'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-8.0
+          key: linux-x86_64-occt-8.0.1-static-7c033d917ee8f040-patch-652d13689016f44b-v1
 
       - name: Restore Linux pinned CGAL (bambu)
         if: runner.os == 'Linux' && (matrix.engine == 'bambu' || matrix.engine == 'snapmaker')
@@ -1061,8 +1108,8 @@ jobs:
         if: runner.os == 'Linux' && matrix.engine == 'orca'
         uses: actions/cache@v4
         with:
-          path: /opt/slicer-cli/cgal-5.6.3
-          key: linux-x86_64-cgal-5.6.3-orca-v2
+          path: /opt/slicer-cli/cgal-6.2.1
+          key: linux-x86_64-cgal-6.2.1-orca-v1
 
       # The Linux rows below are currently commented out of the matrix; if one
       # is re-enabled, add `linux-boost` to this job's `needs:` so the pinned
@@ -1091,7 +1138,11 @@ jobs:
             libgmp-dev libmpfr-dev libopencv-dev libassimp-dev \
             libqhull-dev libcereal-dev libfreetype-dev libfontconfig-dev \
             libnlopt-dev libnlopt-cxx-dev libicu-dev libjpeg-dev
-          test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfig.cmake
+          if [[ "${{ matrix.engine }}" == orca ]]; then
+            test -f /opt/slicer-cli/occt-8.0/lib/cmake/opencascade/OpenCASCADEConfig.cmake
+          else
+            test -f /opt/slicer-cli/occt-7.6/lib/cmake/opencascade/OpenCASCADEConfig.cmake
+          fi
           # libnoise — Bambu's fork, not in apt
           if [[ "${{ matrix.engine }}" == bambu ]]; then
             LIBNOISE_REPOSITORY=https://github.com/bambulab/libnoise.git
@@ -1129,16 +1180,16 @@ jobs:
               sudo cmake --install /tmp/cgal-build
             fi
           else
-            CGAL_VERSION=5.6.3
+            CGAL_VERSION=6.2.1
             CGAL_ROOT=/opt/slicer-cli/cgal-${CGAL_VERSION}
-            CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.tar.xz"
-            CGAL_ARCHIVE_SHA256=15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111
-            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete"
+            CGAL_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_VERSION}/CGAL-${CGAL_VERSION}.zip"
+            CGAL_ARCHIVE_SHA256=eebd737d9b7f0199647ba5c1f9f6c7a3d0651aacef9c2fd4dedc52da6c25edbe
+            CGAL_MARKER="$CGAL_ROOT/.slicer-cli-cgal-6.2.1-complete"
             if ! { test -r "$CGAL_MARKER" && grep -qx "version=$CGAL_VERSION" "$CGAL_MARKER" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake" && test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake" && test -f "$CGAL_ROOT/include/CGAL/version.h"; }; then
               sudo rm -rf "$CGAL_ROOT"
-              curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.tar.xz
-              echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.tar.xz" | sha256sum -c -
-              tar -xJf /tmp/cgal-${CGAL_VERSION}.tar.xz -C /tmp
+              curl -fsSL "$CGAL_ARCHIVE_URL" -o /tmp/cgal-${CGAL_VERSION}.zip
+              echo "$CGAL_ARCHIVE_SHA256  /tmp/cgal-${CGAL_VERSION}.zip" | sha256sum -c -
+              unzip -q /tmp/cgal-${CGAL_VERSION}.zip -d /tmp
               cmake -S /tmp/CGAL-${CGAL_VERSION} -B /tmp/cgal-build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX="$CGAL_ROOT" \
@@ -1149,7 +1200,7 @@ jobs:
               test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfig.cmake"
               test -f "$CGAL_ROOT/lib/cmake/CGAL/CGALConfigVersion.cmake"
               test -f "$CGAL_ROOT/include/CGAL/version.h"
-              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-5.6.3-complete.XXXXXX")"
+              MARKER_TMP="$(sudo mktemp "$CGAL_ROOT/.slicer-cli-cgal-6.2.1-complete.XXXXXX")"
               printf 'version=%s\n' "$CGAL_VERSION" | sudo tee "$MARKER_TMP" >/dev/null
               sudo chmod 0644 "$MARKER_TMP"
               sudo mv "$MARKER_TMP" "$CGAL_MARKER"
@@ -1164,10 +1215,11 @@ jobs:
           # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
           # so the previous cache (OCCT 8.0.0, which fails to compile against the
           # pinned BambuStudio source) is NOT restored — it would shadow the pin.
-          # Bambu requires the project CGAL 5.4 overlay; Orca builds against the
-          # baseline CGAL 6 port. Keep their caches disjoint.
-          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v7
-          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v7
+          # Bambu requires the project CGAL 5.4 overlay; Orca the CGAL 6.2.1
+          # overlay (ci/vcpkg-overlays-orca). Keep their caches disjoint. Bumped
+          # to -v8 so an OrcaSlicer cache holding the baseline CGAL 6.1.1 is not restored.
+          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
+          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -1196,6 +1248,9 @@ jobs:
           VCPKG_ARGS=()
           if [[ "${{ matrix.engine }}" == "bambu" || "${{ matrix.engine }}" == "snapmaker" ]]; then
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
+          else
+            # OrcaSlicer v2.5.2 pins CGAL 6.2.1; the baseline port is 6.1.1.
+            VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays-orca")
           fi
           for attempt in 1 2 3; do
             if vcpkg install "${VCPKG_ARGS[@]}" \
@@ -1286,13 +1341,17 @@ jobs:
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
             else
-              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
-              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
-              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
+              CGAL_ORCA_DIR=/opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL
+              [[ -f "$CGAL_ORCA_DIR/CGALConfig.cmake" ]] || { echo "missing the CGAL 6.2.1 package OrcaSlicer pins"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL_ORCA_DIR")
             fi
           else
-            OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
-            [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing pinned OpenCASCADE 7.6.0 package"; exit 1; }
+            if [[ "${{ matrix.engine }}" == orca ]]; then
+              OCCT_DIR=/opt/slicer-cli/occt-8.0/lib/cmake/opencascade
+            else
+              OCCT_DIR=/opt/slicer-cli/occt-7.6/lib/cmake/opencascade
+            fi
+            [[ -f "$OCCT_DIR/OpenCASCADEConfig.cmake" ]] || { echo "missing the pinned OpenCASCADE package for ${{ matrix.engine }}"; exit 1; }
             BOOST_PREFIX=/opt/slicer-cli/boost-1.84.0
             BOOST_MARKER="$BOOST_PREFIX/.slicer-cli-boost-1.84.0-complete"
             # The marker must match this checkout's Boost inputs, not only the
@@ -1316,9 +1375,9 @@ jobs:
               [[ -f "$CGAL5_DIR/CGALConfig.cmake" ]] || { echo "missing Bambu-patched CGAL 5.4 package"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL5_DIR")
             else
-              CGAL63_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
-              [[ -f "$CGAL63_DIR/CGALConfig.cmake" ]] || { echo "missing Orca-pinned CGAL 5.6.3 package"; exit 1; }
-              EXTRA+=(-DCGAL_DIR="$CGAL63_DIR")
+              CGAL_ORCA_DIR=/opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL
+              [[ -f "$CGAL_ORCA_DIR/CGALConfig.cmake" ]] || { echo "missing the CGAL 6.2.1 package OrcaSlicer pins"; exit 1; }
+              EXTRA+=(-DCGAL_DIR="$CGAL_ORCA_DIR")
             fi
           fi
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -1677,6 +1736,12 @@ jobs:
           mkdir -p "$P/resources/orca"
           cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
           cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
+          # OrcaSlicer from 2.5: the colour recipes of mixed filaments, and the table
+          # that gives a Bambu Lab printer Bambu's filament ids in the sliced file
+          # (src/cli_plate_report.cpp bambu_catalog_filament_id()).
+          cp -R references/OrcaSlicer/resources/filament_mixing "$P/resources/orca/filament_mixing"
+          mkdir -p "$P/resources/orca/printers"
+          cp references/OrcaSlicer/resources/printers/bambu_filament_ids.json "$P/resources/orca/printers/"
           cp LICENSE NOTICE README.md "$P/"
           # The JSON Schemas for the documents a caller reads (docs/cli-reference.md,
           # "Output schemas"), so a caller can check them against this exact build.
@@ -1733,6 +1798,8 @@ jobs:
           test -f dist/verify/slicer-cli/resources/orca/info/nozzle_info.json
           test -f dist/verify/slicer-cli/resources/orca/info/nozzle_incompatibles.json
           test -f dist/verify/slicer-cli/resources/orca/flush/flush_data_standard.txt
+          test -f dist/verify/slicer-cli/resources/orca/filament_mixing/standard_color_recipes.json
+          test -f dist/verify/slicer-cli/resources/orca/printers/bambu_filament_ids.json
           test -f dist/verify/slicer-cli/resources/profiles/BBL.json
           dist/verify/slicer-cli/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/slicer_cli-orcaslicer --help >/dev/null
@@ -1851,6 +1918,12 @@ jobs:
           New-Item -ItemType Directory -Force "$P\resources\orca" | Out-Null
           Copy-Item -Recurse references\OrcaSlicer\resources\info "$P\resources\orca\info"
           Copy-Item -Recurse references\OrcaSlicer\resources\flush "$P\resources\orca\flush"
+          # OrcaSlicer from 2.5: the colour recipes of mixed filaments, and the table
+          # that gives a Bambu Lab printer Bambu's filament ids in the sliced file
+          # (src/cli_plate_report.cpp bambu_catalog_filament_id()).
+          Copy-Item -Recurse references\OrcaSlicer\resources\filament_mixing "$P\resources\orca\filament_mixing"
+          New-Item -ItemType Directory -Force "$P\resources\orca\printers" | Out-Null
+          Copy-Item references\OrcaSlicer\resources\printers\bambu_filament_ids.json "$P\resources\orca\printers\"
           Copy-Item LICENSE, NOTICE, README.md "$P\"
           # The JSON Schemas for the documents a caller reads (docs/cli-reference.md,
           # "Output schemas"), so a caller can check them against this exact build.
@@ -1899,6 +1972,8 @@ jobs:
           if (-not (Test-Path dist\verify\slicer-cli\resources\orca\info\nozzle_info.json)) { throw "missing orca nozzle_info.json" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\orca\info\nozzle_incompatibles.json)) { throw "missing orca nozzle_incompatibles.json" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\orca\flush\flush_data_standard.txt)) { throw "missing orca flush_data_standard.txt" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\orca\filament_mixing\standard_color_recipes.json)) { throw "missing orca standard_color_recipes.json" }
+          if (-not (Test-Path dist\verify\slicer-cli\resources\orca\printers\bambu_filament_ids.json)) { throw "missing orca bambu_filament_ids.json" }
           if (-not (Test-Path dist\verify\slicer-cli\resources\profiles\BBL.json)) { throw "missing BBL.json vendor index" }
           & dist\verify\slicer-cli\slicer_cli.exe --help
           & dist\verify\slicer-cli\slicer_cli-orcaslicer.exe --help
@@ -2016,6 +2091,12 @@ jobs:
           mkdir -p "$P/resources/orca"
           cp -R references/OrcaSlicer/resources/info "$P/resources/orca/info"
           cp -R references/OrcaSlicer/resources/flush "$P/resources/orca/flush"
+          # OrcaSlicer from 2.5: the colour recipes of mixed filaments, and the table
+          # that gives a Bambu Lab printer Bambu's filament ids in the sliced file
+          # (src/cli_plate_report.cpp bambu_catalog_filament_id()).
+          cp -R references/OrcaSlicer/resources/filament_mixing "$P/resources/orca/filament_mixing"
+          mkdir -p "$P/resources/orca/printers"
+          cp references/OrcaSlicer/resources/printers/bambu_filament_ids.json "$P/resources/orca/printers/"
           cp -R references/OrcaSlicer/resources/profiles "$P/resources/profiles-orca"
           # The Snapmaker engine's own tree (src/cli_snapmaker.cpp snapmaker_profiles_dir /
           # engine_resources_root, ENGINE_SNAPMAKER): its presets, defaults and
@@ -2116,6 +2197,8 @@ jobs:
           test -f dist/verify/slicer-cli/resources/orca/info/nozzle_info.json
           test -f dist/verify/slicer-cli/resources/orca/info/nozzle_incompatibles.json
           test -f dist/verify/slicer-cli/resources/orca/flush/flush_data_standard.txt
+          test -f dist/verify/slicer-cli/resources/orca/filament_mixing/standard_color_recipes.json
+          test -f dist/verify/slicer-cli/resources/orca/printers/bambu_filament_ids.json
           test -n "$(find dist/verify/slicer-cli/THIRD_PARTY_LICENSES -type f -print -quit)"
           dist/verify/slicer-cli/bin/slicer_cli --help >/dev/null
           dist/verify/slicer-cli/bin/slicer_cli-orcaslicer --help >/dev/null

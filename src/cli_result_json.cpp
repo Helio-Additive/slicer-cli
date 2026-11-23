@@ -1,4 +1,5 @@
 #include "cli_result_json.hpp"
+#include "cli_engine_events.hpp"
 
 #include "cli_run_context.hpp"
 #include "cli_load_settings.hpp"
@@ -52,7 +53,13 @@ std::string cli_error_sentence(int code) {
         {CLI_INVALID_VALUES_IN_3MF, "Invalid parameter value(s) included in the 3mf file."},
         {CLI_OBJECT_ARRANGE_FAILED, "An error occurred when auto-arranging object(s)."},
         {CLI_FILE_VERSION_NOT_SUPPORTED, "Unsupported 3MF version. Please make sure the 3MF file was created with the official version of Bambu Studio, not a beta version."},
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer reworded it in 2.5 and added the statistics code (OrcaSlicer.cpp 219-220 at f92a7c0).
+        {CLI_EXPORT_STATISTICS_ERROR, "Failed exporting the G-code statistics."},
+        {CLI_NO_SUITABLE_OBJECTS, "The plate has nothing to slice: it is empty, or no object on it is both printable and fully inside the print volume."},
+#else
         {CLI_NO_SUITABLE_OBJECTS, "One of the plate is empty or has no object fully inside it. Please check that the 3mf contains no empty plate in " SLICER_APP " before uploading."},
+#endif
         {CLI_VALIDATE_ERROR, "There are some incorrect slicing parameters in the 3mf. Please verify the slicing of all plates in " SLICER_APP " before uploading."},
         {CLI_OBJECTS_PARTLY_INSIDE, "Some objects are located over the boundary of the heated bed."},
         {CLI_FILAMENT_NOT_MATCH_BED_TYPE, "Filaments are not compatible with the plate type. Please verify the slicing of all plates in " SLICER_APP " before uploading."},
@@ -100,8 +107,13 @@ std::string cli_error_sentence(int code) {
         // bac6fd5): its CLI has neither code.
         {CLI_FILAMENT_CAN_NOT_MAP, "Some filaments cannot be mapped to correct extruders for multi-extruder Printer."},
         {CLI_ONLY_ONE_TPU_SUPPORTED, "Not support printing 2 or more TPU filaments."},
-#ifdef ENGINE_BAMBU
+        // Bambu Studio 2.9.1, and OrcaSlicer from 2.5 (OrcaSlicer.cpp 238 at f92a7c0).
         {CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, "Some filaments cannot be printed on the extruder mapped to."},
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5 (OrcaSlicer.cpp 239 at f92a7c0).
+        {CLI_MIXED_FILAMENT_INVALID, "A mixed filament is invalid: its components are different filament types, or it has no filament of its own."},
+#endif
+#ifdef ENGINE_BAMBU
         // Bambu Studio 2.9.1 (Utils.hpp 77 at v02.09.01.70): mixed nozzle diameters.
         {CLI_MULTI_NOZZLE_DIAMETER_INVALID, "Multi-nozzle diameter mode is enabled, but one or more plates use only a single nozzle diameter. Please turn off multi-diameter mode, or use more than one nozzle diameter on every plate, in Bambu Studio before uploading."},
 #endif
@@ -258,6 +270,29 @@ bool write_result_json(CliRunContext& context, const std::string& outputdir, int
     j["engine"] = "orcaslicer";
 #else
     j["engine"] = "bambustudio";
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5: whether --strict was on, and every non-critical
+    // slicing warning with a stable class (OrcaSlicer.cpp 528-534, 588-589,
+    // 7176-7177 at f92a7c0). A warning here does not by itself mean the run
+    // failed; under --strict it ends the run. OrcaSlicer writes its result.json
+    // on Linux only; slicer-cli writes it on every system.
+    {
+        bool strict = false;
+        json classes = json::array();
+        for (const json& w : recorded_config_substitutions())
+            classes.push_back(w);
+        for (const PlateOutcome& p : outcomes) {
+            strict = strict || p.strict;
+            for (const json& w : p.warnings)
+                if (w.value("level", "") == "non_critical")
+                    classes.push_back(json{{"class", "slicing_warning_non_critical"},
+                                           {"plate_id", p.plate_id},
+                                           {"text", w.value("message", "")}});
+        }
+        j["strict_mode"] = strict;
+        j["warnings"]    = classes;
+    }
 #endif
     const PlateOutcome* summary = outcomes.empty() ? nullptr : &outcomes.front();
     j["layer_height"]          = summary ? summary->layer_height : 0.f;

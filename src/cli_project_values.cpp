@@ -15,7 +15,7 @@ using json = nlohmann::json;
 /// with more than one filament (counted from filament_colour, as it counts
 /// them) it copies entry i of every vector filament option into filament i's
 /// preset with set_at, which throws on a vector with no entries
-/// (PresetBundle.cpp 4456-4479, Config.hpp 439-440 at 31f6803). A BambuStudio
+/// (PresetBundle.cpp 6365-6388, Config.hpp 465-466 at f92a7c0). A BambuStudio
 /// project reaches that with filament_notes, a single string there (coString)
 /// and a per-filament list here (coStrings): the file's "" deserializes to no
 /// entries. Each key is paired with whether the file states it as a single
@@ -97,7 +97,7 @@ bool bambu_value_actions(CliRunContext& context, const RawValues& raw, const std
     // top_one_wall_type "not apply": off in BambuStudio (BambuStudio
     // PrintConfig.cpp 256-260 and 1375-1382 at 5873b5f). This engine's own
     // legacy rule turns only_one_wall_top on for every value but "none"
-    // (OrcaSlicer PrintConfig.cpp 8011-8013; main 9315-9317 has the same rule).
+    // (OrcaSlicer PrintConfig.cpp 9929-9931; main 9315-9317 has the same rule).
     if (raw_value("top_one_wall_type") == "not apply")
         conversions.push_back({"only_one_wall_top", "0", "not apply"});
     // ensure_vertical_shell_thickness words (BambuStudio PrintConfig.cpp

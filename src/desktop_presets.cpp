@@ -25,7 +25,7 @@ namespace {
 
 /// The printer model of the selected printer, or of its parent:
 /// Plater::get_curr_printer_model (BambuStudio Plater.cpp 7731-7747 at
-/// 5873b5f; OrcaSlicer Plater.cpp 5514-5531 at 31f6803).
+/// 5873b5f; OrcaSlicer Plater.cpp 8482-8499 at f92a7c0).
 const Slic3r::VendorProfile::PrinterModel* curr_printer_model(Slic3r::PresetBundle& bundle) {
     const Slic3r::Preset& curr = bundle.printers.get_selected_preset();
     const Slic3r::VendorProfile::PrinterModel* pm = Slic3r::PresetUtils::system_printer_model(curr);
@@ -161,7 +161,7 @@ bool load_flat_preset(const boost::filesystem::path& folder, const std::string& 
 /// folder (load_vendor_configs_from_json, OrcaSlicer PresetBundle.cpp
 /// 4606-4632 and 4805-4812 at 31f6803). The collection holds them sorted by
 /// name -- load_vendor_configs_from_json calls sort_presets (Preset.hpp
-/// 827-832) over Preset::operator< (Preset.hpp 348) -- so the order here is by
+/// 1036-1041) over Preset::operator< (Preset.hpp 410) -- so the order here is by
 /// preset name, not by the vendor list, and a pick that ties takes the first
 /// name. A tree without that list falls back to the folder's own files.
 std::vector<boost::filesystem::path>
@@ -290,7 +290,7 @@ bool find_preset_in_vendor(const boost::filesystem::path& profiles_dir, const st
 /// are read in name order, the order the desktop loads them, where the first
 /// bundle that lists the name owns it (load_vendor_configs_from_json refuses a
 /// second copy: "has already been loaded from another Config Bundle",
-/// OrcaSlicer PresetBundle.cpp 4855 at 31f6803).
+/// OrcaSlicer PresetBundle.cpp 8462 at f92a7c0).
 bool find_system_preset(const std::string& profiles_dir, const char* list_key, const std::string& name,
                         Slic3r::DynamicPrintConfig& out, std::map<std::string, std::string>& meta,
                         const std::string& vendor = {}) {
@@ -441,18 +441,21 @@ DesktopBedType desktop_bed_type(Slic3r::PresetBundle& bundle) {
     const Slic3r::BedType first = list.empty() ? Slic3r::btPC : list.front();
 #ifdef ENGINE_ORCA
     // OrcaSlicer, a printer picked with no remembered plate for it
-    // (Sidebar::update_all_preset_comboboxes, Plater.cpp 2527-2563 at
-    // 31f6803, both sides of its `is_bbl_vendor || support_multi_bed_types`
+    // (Sidebar::update_all_preset_comboboxes, Plater.cpp 3880-3910 at
+    // f92a7c0, both sides of its `is_bbl_vendor || support_multi_bed_types`
     // test: with the list rebuilt or without it, the plate comes from
-    // get_default_bed_type). Preset::get_default_bed_type (Preset.cpp 931-958
-    // at 31f6803) — the printer's default_bed_type when it reads as a number
-    // greater than 0 (atoi; a stated NAME, such as the Snapmaker U1's
-    // "Textured PEI Plate", reads as 0, is logged as invalid and gives btPEI),
-    // else by printer model id (BL-P001/BL-P002/C13 Cool Plate, C11 and every
-    // other id btPEI) — then set_bed_type_accord_combox (2798-2806), which
+    // get_default_bed_type), then set_bed_type_accord_combox (4233), which
     // takes the list's first entry when the printer does not offer that plate.
-    // So the U1 slices on btPEI, the High Temp Plate, whatever plate the
-    // desktop's own printer files name.
+    // Preset::get_default_bed_type is the engine's own, so the rule follows
+    // the pin:
+    //   * OrcaSlicer f92a7c0 (Preset.cpp 1140-1171): the printer's
+    //     default_bed_type read as a plate NAME first, then as a number;
+    //     else by printer model id (BL-P001/BL-P002/C13 Cool Plate, every
+    //     other id btPEI). The Snapmaker U1 names "Textured PEI Plate", so
+    //     it starts on that plate.
+    //   * Snapmaker Orca bac6fd5 (Preset.cpp 892-917): the value is read as a
+    //     number only (atoi), so a stated name reads as 0, is logged as
+    //     invalid and gives btPEI, the High Temp Plate.
     Slic3r::Preset& printer = bundle.printers.get_edited_preset();
     const Slic3r::BedType wanted = printer.get_default_bed_type(&bundle);
     if (offered(list, wanted)) {
@@ -574,7 +577,7 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
     namespace fs = boost::filesystem;
     DesktopProcessSwitch out;
     // PresetBundle::update_compatible(select_other_print_if_incompatible)
-    // (OrcaSlicer PresetBundle.cpp 5295-5330 at 31f6803) is called
+    // (OrcaSlicer PresetBundle.cpp 8826-8861 at f92a7c0) is called
     // SelectCompatibleType::Always when the printer was picked on another page
     // (Tab::select_preset, Tab.cpp 6130-6140), so the current process is
     // dropped when the new printer is not among the printers it says it suits
@@ -608,8 +611,8 @@ DesktopProcessSwitch desktop_printer_switch_process(const std::string& profiles_
 
     // first_compatible_idx over the compatible, visible presets, scored by
     // PreferedPrintProfileMatch(current preset, the printer's
-    // default_print_profile) (Preset.hpp 686-709, PresetBundle.cpp 5215-5247
-    // at 31f6803). A preset whose alias is the current preset's alias wins
+    // default_print_profile) (Preset.hpp 834-857, PresetBundle.cpp 8746-8778
+    // at f92a7c0). A preset whose alias is the current preset's alias wins
     // outright (PreferedProfileMatch returns INT_MAX for it, PresetBundle.cpp
     // 5196-5207: "Matching an alias, always take this preset with priority",
     // and first_compatible_idx stops there). The alias of a system preset is

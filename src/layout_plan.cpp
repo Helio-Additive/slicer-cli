@@ -145,7 +145,7 @@ static std::string* g_printer_model_sink = nullptr;
 // A JSON array value as the string set_deserialize reads, joined the way both
 // engines' ConfigBase::load_from_json joins it (parse_str_arr; BambuStudio
 // Config.cpp 863 and 1018-1037 at 02.08.02.61, OrcaSlicer Config.cpp
-// 831 and 975-994 at 2.4.2): the separator follows the option type, so a points group
+// 886 and 1033-1052 at 2.5.2): the separator follows the option type, so a points group
 // (extruder_printable_area: one zone per nozzle) keeps its zones apart with '#',
 // and a strings option takes ';' with each value quoted.
 static std::string join_profile_array(const std::string& key, const json& v) {

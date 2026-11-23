@@ -63,7 +63,7 @@ static int refuse_run(CliRunContext& context, const CliOptions& o, int code, con
 std::optional<int> run_timing_or_initialize_logging(int argc, char** argv) {
     // Timing needs the same UTF-8 paths and the engine's resources root as the
     // other modes (an Orca-derived import reads info/nozzle_info.json through
-    // Print::get_hrc_by_nozzle_type, Print.cpp 3084 at the Orca pin), but
+    // Print::get_hrc_by_nozzle_type, Print.cpp 4630 at the Orca pin), but
     // returns before logging or any slicing path.  Quiet: its stdout and
     // stderr are the one JSON document and nothing.
     if (slicer_cli::gcode_timing_requested(argc, argv)) {
@@ -179,7 +179,7 @@ std::optional<int> parse_startup_options(CliRunContext& context, int argc, char*
             // --slice always leaves result.json, also when its own value is
             // the one refused (--slice foo, --slice=-1): the official exits
             // with CLI_INVALID_PARAMS for a bad command line ("setup params
-            // error", BambuStudio.cpp 1553-1558; OrcaSlicer.cpp 1249-1252),
+            // error", BambuStudio.cpp 1553-1558; OrcaSlicer.cpp 1361-1364),
             // and records an early exit's reason (BambuStudio.cpp 1697).
             if (o.slice_mode || o.slice_given) {
                 const std::string dir = o.outputdir.empty() ? "." : o.outputdir;
@@ -207,7 +207,7 @@ std::optional<int> parse_startup_options(CliRunContext& context, int argc, char*
 void configure_command_logging(CliOptions& o) {
     if (o.verbose)
         Slic3r::set_logging_level(5);
-    // --debug N: the engine's log level (BambuStudio.cpp 1661-1667; OrcaSlicer.cpp 1352-1359).
+    // --debug N: the engine's log level (BambuStudio.cpp 1661-1667; OrcaSlicer.cpp 1555-1562).
     if (o.given_flag("debug"))
         Slic3r::set_logging_level(o.cli.opt_int("debug"));
 }
@@ -220,6 +220,9 @@ void read_arrange_switches(CliRunContext& context, const CliOptions& o) {
         context.g_arrange_switches.allow_rotations             = flag("allow_rotations", false);
         context.g_arrange_switches.allow_multicolor_oneplate   = flag("allow_multicolor_oneplate", true);
         context.g_arrange_switches.avoid_extrusion_cali_region = flag("avoid_extrusion_cali_region", false);
+        if (o.given_flag("align_to_y_axis"))
+            context.g_arrange_switches.align_to_y_axis = o.cli.opt_bool("align_to_y_axis");
+        context.export_statistics = flag("export_statistics", false);
 #ifdef ENGINE_BAMBU
         context.g_skip_useless_pick = flag("skip_useless_pick", false);
 #endif
@@ -293,10 +296,10 @@ std::optional<int> run_information_commands(CliRunContext& context, const CliOpt
 std::optional<int> check_assemble_input(CliRunContext& context, CliOptions& o) {
     // --load-assemble-list builds the plates itself: no model files with it
     // (BambuStudio.cpp 1848-1853), and on OrcaSlicer no transforms either
-    // (OrcaSlicer.cpp 1530-1535). It is the official plate loop's input, so
+    // (OrcaSlicer.cpp 1748-1753). It is the official plate loop's input, so
     // it runs with --slice; and as for any input that is not a Bambu-made
     // 3MF, every plate is sliced (plate_to_slice reset to 0,
-    // BambuStudio.cpp 2192-2196; OrcaSlicer.cpp 1839-1843).
+    // BambuStudio.cpp 2192-2196; OrcaSlicer.cpp 2067-2071).
     if (!assemble_list_file(o).empty()) {
 #ifdef ENGINE_ORCA
         if (!o.input_files.empty() || !o.transforms.empty())
@@ -321,10 +324,10 @@ std::optional<int> check_assemble_input(CliRunContext& context, CliOptions& o) {
     }
     // A project 3MF with model files after it (ProjectPlan): is_bbl_3mf ends
     // false, so the official slices every plate (plate_to_slice reset to 0,
-    // BambuStudio.cpp 2192-2196; OrcaSlicer.cpp 1839-1843), after arranging
+    // BambuStudio.cpp 2192-2196; OrcaSlicer.cpp 2067-2071), after arranging
     // everything across the plates. --repetitions is then refused by its own
     // step, as for any --slice 0 (BambuStudio.cpp 4960-4964; OrcaSlicer.cpp
-    // 4221-4225).
+    // 4966-4970).
     if (assemble_list_file(o).empty() && trailing_models_port(o)) {
         if (o.slice_mode && o.slice_plate > 0) {
             emit_event({{"event","config_normalized"}, {"tag","ProjectWithModelsSlicesEveryPlate"},
@@ -346,7 +349,7 @@ std::optional<int> prepare_input_presets(CliRunContext& context, CliOptions& o) 
     // read (missing, or not an archive) is its own state, never a project:
     // upstream checks every input's existence before it loads one, and a
     // failed load is the loader's to report (BambuStudio.cpp 1855-1860 at
-    // 5873b5f; OrcaSlicer.cpp 1537-1542 at 31f6803). Calling it a project
+    // 5873b5f; OrcaSlicer.cpp 1755-1760 at f92a7c0). Calling it a project
     // here would refuse a named preset as CLI_INVALID_PARAMS ("a 3MF carries
     // its own settings") before the run could report CLI_FILE_NOTFOUND or
     // CLI_DATA_FILE_ERROR, as the same call does without a preset.

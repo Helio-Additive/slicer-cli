@@ -17,6 +17,9 @@
 #include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/FilamentMixer.hpp"
+#endif
 #include "libslic3r/CustomGCode.hpp"
 #include "libslic3r/FlushVolCalc.hpp"
 #include "libslic3r/LocalesUtils.hpp"
@@ -520,6 +523,23 @@ std::vector<int> get_min_flush_volumes(const DynamicPrintConfig& full_config, si
     return extra_flush_volumes;
 }
 
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+/// One flow type per nozzle (OrcaSlicer.cpp 485-498 at f92a7c0): the settings'
+/// own types when they hold any, else the printer's defaults, as the app seeds
+/// a project. A nozzle a short list leaves out takes its first entry, and
+/// extra entries are dropped.
+static std::vector<NozzleVolumeType> nozzle_volume_types_per_nozzle(const DynamicPrintConfig& config, int nozzle_count) {
+    const auto* types = config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
+    if (types == nullptr || types->values.empty())
+        types = config.option<ConfigOptionEnumsGeneric>("default_nozzle_volume_type");
+    std::vector<NozzleVolumeType> result(std::max(0, nozzle_count), nvtStandard);
+    if (types != nullptr && !types->values.empty())
+        for (int index = 0; index < nozzle_count; index++)
+            result[index] = static_cast<NozzleVolumeType>(types->get_at(index));
+    return result;
+}
+#endif
+
 StepResult fail(int code, const std::string& message) {
     StepResult r;
     r.code    = code;
@@ -553,6 +573,15 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
     const auto* opt_nozzle_volume_type  = dynamic_cast<const ConfigOptionEnumsGeneric*>(config.option("nozzle_volume_type"));
     if (opt_nozzle_volume_type)
         f.current_nozzle_volume_type = opt_nozzle_volume_type->values;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5: one type per nozzle, by the rule the new types
+    // follow, so types the project keeps compare equal (OrcaSlicer.cpp
+    // 1862-1863 at f92a7c0).
+    {
+        const std::vector<NozzleVolumeType> types = nozzle_volume_types_per_nozzle(config, f.current_extruder_count);
+        f.current_nozzle_volume_type.assign(types.begin(), types.end());
+    }
+#endif
     f.current_extruder_variants.assign(f.current_extruder_count, "");
 #ifndef ENGINE_SNAPMAKER
     for (int e = 0; e < f.current_extruder_count; e++) {
@@ -571,11 +600,26 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
         const size_t size = f.current_inherits_group.size();
         f.current_printer_system_name = f.current_inherits_group[size - 1].empty() ? f.current_printer_name : f.current_inherits_group[size - 1];
         f.current_process_system_name = f.current_inherits_group[0].empty() ? f.current_process_name : f.current_inherits_group[0];
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5 (OrcaSlicer.cpp 1876-1909 at f92a7c0): one entry
+        // for the process, one per filament and one for the printer. A group
+        // of another length still has the process first and the printer
+        // last, and a filament without an entry of its own counts as a
+        // system preset; the official says so on stderr.
+        if (size != f.current_filaments_name.size() + 2)
+            std::cerr << "Warning: inherits_group has " << size << " entries, expected " << f.current_filaments_name.size() + 2
+                      << " for " << f.current_filaments_name.size() << " filaments\n";
+        f.current_filaments_system_name = f.current_filaments_name;
+        for (size_t index = 1; index < size - 1 && index <= f.current_filaments_name.size(); index++)
+            if (!f.current_inherits_group[index].empty())
+                f.current_filaments_system_name[index - 1] = f.current_inherits_group[index];
+#else
         f.current_filaments_system_name.resize(size - 2);
         for (size_t index = 1; index < size - 1; index++)
             f.current_filaments_system_name[index - 1] =
                 f.current_inherits_group[index].empty() && index - 1 < f.current_filaments_name.size()
                     ? f.current_filaments_name[index - 1] : f.current_inherits_group[index];
+#endif
     } else {
         f.current_printer_system_name   = f.current_printer_name;
         f.current_process_system_name   = f.current_process_name;
@@ -601,8 +645,8 @@ void read_project_facts(const DynamicPrintConfig& config, ProjectFacts& f) {
         f.old_exclude_area = exclude->values;
     }
     if (const auto* area = config.option<ConfigOptionPoints>("printable_area"); area && area->values.size() >= 4) {
-        f.old_printable_width = (int)(area->values[2].x() - area->values[0].x());
-        f.old_printable_depth = (int)(area->values[2].y() - area->values[0].y());
+        f.old_printable_width = printable_area_width(area->values);
+        f.old_printable_depth = printable_area_depth(area->values);
     }
     if (config.has("printable_height"))
         f.old_printable_height = (int)config.opt_float("printable_height");
@@ -637,7 +681,7 @@ bool wants_settings_merge(const CliOptions& o) {
 /// system presets the step reads. The official step takes the project's own
 /// machine, process and filament presets from machine_full/, process_full/ and
 /// filament_full/ (BambuStudio.cpp 2723-2786 at 5873b5f; OrcaSlicer.cpp
-/// 2350-2420 at 31f6803) and, when a file is not there, leaves those settings
+/// 2706-2776 at f92a7c0) and, when a file is not there, leaves those settings
 /// alone: exit 0, nothing updated. Saying so beats letting a run believe the
 /// project was brought up to date, and the flags that do the same thing by
 /// hand are named.
@@ -649,7 +693,42 @@ static std::string uptodate_system_presets_missing() {
            " --load-settings/--load-filaments.";
 }
 
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+/// OrcaSlicer from 2.5 (cli_different_settings, OrcaSlicer.cpp 2194-2228 at
+/// f92a7c0): the keys a user preset changes against its system parent, for the
+/// exported project's different_settings_to_system. With an empty column the
+/// app shows changes nobody made when it opens the export, and can put
+/// inherited values back to the system preset's. The parent is the shipped
+/// preset over the kind's defaults, as the app's preset list holds it. ""
+/// when the parent is not a shipped preset, as before.
+static std::string different_settings_to_parent(const std::string& profiles_dir, const char* type,
+                                                const DynamicPrintConfig& resolved, const std::string& parent_name) {
+    if (parent_name.empty())
+        return {};
+    DynamicPrintConfig chain;
+    if (!load_bundled_system_preset(profiles_dir, type, parent_name, chain, {}))
+        return {};
+    const std::string kind = type;
+    DynamicPrintConfig parent;
+    parent.apply_only(FullPrintConfig::defaults(),
+                      kind == "machine" ? Preset::printer_options()
+                      : kind == "process" ? Preset::print_options() : Preset::filament_options(),
+                      /*ignore_nonexistent=*/true);
+    parent.apply(chain, /*ignore_nonexistent=*/true);
+    std::vector<std::string> keys = resolved.diff(parent);
+    // Preset bookkeeping, not settings; the compatible_* keys have columns of their own.
+    keys.erase(std::remove_if(keys.begin(), keys.end(), [](const std::string& k) {
+                   return k == "inherits" || k == "compatible_printers" || k == "compatible_prints" ||
+                          k == "compatible_printers_condition" || k == "compatible_prints_condition" ||
+                          k == "print_settings_id" || k == "filament_settings_id" || k == "printer_settings_id";
+               }),
+               keys.end());
+    return escape_strings_cstyle(keys);
+}
+#endif
+
 struct LoadedSettingsPresets {
+    std::string profiles_dir;   // where the parents of a user preset are read from
     std::string new_printer_name, new_printer_system_name, new_process_name, new_process_system_name, printer_model,
         printer_model_id, new_default_process_name, different_process_setting;
     bool new_printer_config_is_system = true, new_process_config_is_system = true;
@@ -659,6 +738,7 @@ struct LoadedSettingsPresets {
 
 struct LoadedFilamentSettings {
     int load_filament_count;
+    std::string profiles_dir;   // where the parents of a user preset are read from
     std::vector<int> load_filaments_index;
     std::set<std::string> load_filaments_set;
     bool disable_wipe_tower_after_mapping = false;
@@ -681,6 +761,9 @@ struct PrinterCompatibility {
     std::vector<std::string> upward_compatible_printers, current_print_compatible_printers;
     bool fetch_compatible_values = false, fetch_upward_values = false;
     bool machine_upwards = false, machine_switch = false;
+    // The project's own system printer and process, in full, when the shipped
+    // profiles hold them: OrcaSlicer checks the compatibility condition on them.
+    DynamicPrintConfig current_process_full_config, current_printer_full_config;
 };
 
 // The filaments the run has when the project names none: the ones the
@@ -1014,8 +1097,8 @@ static StepResult update_project_presets(LoadedSettingsPresets& presets, LoadedF
                         int orig_w = 0, orig_d = 0, orig_h = 0;
                         const Pointfs orig_area = config.option<ConfigOptionPoints>("printable_area", true)->values;
                         if (orig_area.size() >= 4) {
-                            orig_w = (int)(orig_area[2].x() - orig_area[0].x());
-                            orig_d = (int)(orig_area[2].y() - orig_area[0].y());
+                            orig_w = printable_area_width(orig_area);
+                            orig_d = printable_area_depth(orig_area);
                         }
                         orig_h = config.has("printable_height") ? (int)config.opt_float("printable_height") : 0;
                         if (orig_w > 0 && orig_d > 0 && orig_h > 0 &&
@@ -1163,6 +1246,8 @@ static StepResult read_preset_compatibility(PrinterCompatibility& compatibility,
             if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             compatibility.upward_compatible_printers = config.option<ConfigOptionStrings>("upward_compatible_machine", true)->values;
+            // Kept for the compatibility condition (OrcaSlicer.cpp 2863-2864 at f92a7c0).
+            compatibility.current_printer_full_config = std::move(config);
         }
     }
     if (compatibility.fetch_compatible_values && !facts.current_process_system_name.empty()) {
@@ -1173,6 +1258,7 @@ static StepResult read_preset_compatibility(PrinterCompatibility& compatibility,
             if (int ret = load_settings_file(profiles_dir, path, config, config_type, config_name, filament_id, config_from, why); ret)
                 return fail(ret, why);
             compatibility.current_print_compatible_printers = config.option<ConfigOptionStrings>("compatible_printers", true)->values;
+            compatibility.current_process_full_config = std::move(config);   // OrcaSlicer.cpp 2887-2888 at f92a7c0
         }
     }
     return {};
@@ -1183,8 +1269,58 @@ static bool contains(const std::vector<std::string>& list, const std::string& na
 }
 
 static StepResult check_process_compatibility(const LoadedSettingsPresets& presets,
-        PrinterCompatibility& compatibility, const ProjectFacts& facts) {
+        PrinterCompatibility& compatibility, const ProjectFacts& facts, const DynamicPrintConfig& m_print_config) {
     bool process_compatible = false;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 2905-2994 at f92a7c0): the check the
+    // app makes, is_compatible_with_printer, which reads the process's
+    // compatible_printers_condition as well as its list. A process that states
+    // its printers by condition only was refused (-17) by the name match.
+    const auto check_compat = [](const DynamicPrintConfig& process_cfg, const DynamicPrintConfig& printer_cfg,
+                                 const std::string& printer_name) {
+        return is_compatible_with_printer(process_cfg, Preset::TYPE_PRINT, printer_cfg, printer_name);
+    };
+    // A project's settings hold the two keys under other names
+    // (print_compatible_printers; the first entry of
+    // compatible_machine_expression_group is the process's condition). The
+    // keys' own values win when they hold something.
+    const auto process_compat_config = [](const DynamicPrintConfig& project_cfg) {
+        DynamicPrintConfig cfg = project_cfg;
+        const auto* raw_list = project_cfg.option<ConfigOptionStrings>("compatible_printers");
+        const auto* list     = project_cfg.option<ConfigOptionStrings>("print_compatible_printers");
+        if ((raw_list == nullptr || raw_list->values.empty()) && list != nullptr && !list->values.empty())
+            cfg.set_key_value("compatible_printers", new ConfigOptionStrings(list->values));
+        const auto* raw_cond = project_cfg.option<ConfigOptionString>("compatible_printers_condition");
+        const auto* group    = project_cfg.option<ConfigOptionStrings>("compatible_machine_expression_group");
+        if ((raw_cond == nullptr || raw_cond->value.empty()) && group != nullptr && !group->values.empty() &&
+            !group->values.front().empty())
+            cfg.set_key_value("compatible_printers_condition", new ConfigOptionString(group->values.front()));
+        return cfg;
+    };
+    if (!presets.new_printer_name.empty()) {
+        if (!presets.new_process_name.empty())
+            process_compatible = check_compat(presets.load_process_config, presets.load_machine_config, presets.new_printer_system_name);
+        else
+            process_compatible = check_compat(compatibility.current_process_full_config.empty()
+                                                  ? process_compat_config(m_print_config)
+                                                  : compatibility.current_process_full_config,
+                                              presets.load_machine_config, presets.new_printer_system_name);
+    } else if (!presets.new_process_name.empty()) {
+        process_compatible = check_compat(presets.load_process_config,
+                                          compatibility.current_printer_full_config.empty() ? m_print_config
+                                                                                            : compatibility.current_printer_full_config,
+                                          facts.current_printer_system_name);
+    } else {
+        if (!compatibility.current_process_full_config.empty() && !compatibility.current_printer_full_config.empty())
+            process_compatible = check_compat(compatibility.current_process_full_config, compatibility.current_printer_full_config,
+                                              facts.current_printer_system_name);
+        else
+            process_compatible = contains(compatibility.current_print_compatible_printers, facts.current_printer_system_name);
+        if (!process_compatible && compatibility.current_print_compatible_printers.empty())
+            process_compatible = true;   // an old 3MF lists no compatible printers
+    }
+#else
+    (void)m_print_config;
     if (!presets.new_printer_name.empty()) {
         process_compatible = !presets.new_process_name.empty() ? contains(presets.new_print_compatible_printers, presets.new_printer_system_name)
                                                        : contains(compatibility.current_print_compatible_printers, presets.new_printer_system_name);
@@ -1195,6 +1331,7 @@ static StepResult check_process_compatibility(const LoadedSettingsPresets& prese
         if (!process_compatible && compatibility.current_print_compatible_printers.empty())
             process_compatible = true;   // an old 3MF lists no compatible printers
     }
+#endif
     if (!process_compatible && !presets.new_printer_name.empty() && !facts.current_printer_name.empty() &&
         presets.new_printer_name != facts.current_printer_name) {
         if (presets.new_process_name.empty())
@@ -1356,6 +1493,11 @@ static StepResult merge_machine_preset_values(LoadedSettingsPresets& presets, Pr
                 unescape_strings_cstyle(different_settings[inherits_count + 1], different_keys);
         } else {
             different_settings[inherits_count + 1] = "";
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            if (!presets.new_printer_config_is_system)   // OrcaSlicer.cpp 3249-3252 at f92a7c0
+                different_settings[inherits_count + 1] = different_settings_to_parent(
+                    presets.profiles_dir, "machine", presets.load_machine_config, presets.new_printer_system_name);
+#endif
             inherits_group[inherits_count + 1] = presets.new_printer_config_is_system ? "" : presets.new_printer_system_name;
         }
         std::set<std::string> different_keys_set(different_keys.begin(), different_keys.end());
@@ -1448,8 +1590,18 @@ static StepResult merge_process_preset_values(LoadedSettingsPresets& presets,
             }
             print_compatible_printers = compatibility.current_print_compatible_printers;
         } else {
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
             different_settings[0] = "";
+#elif defined(ENGINE_ORCA)
+            // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3394-3401 at f92a7c0): the
+            // value the loaded file states, else the keys it changes against
+            // its system parent.
+            if (!presets.different_process_setting.empty())
+                different_settings[0] = presets.different_process_setting;
+            else
+                different_settings[0] = presets.new_process_config_is_system ? std::string()
+                    : different_settings_to_parent(presets.profiles_dir, "process", presets.load_process_config,
+                                                   presets.new_process_system_name);
 #else
             different_settings[0] = presets.different_process_setting;
 #endif
@@ -1486,6 +1638,25 @@ static void read_nozzle_volume_types(MergedExtruders& merged_extruders,
         const PrinterCompatibility& compatibility, const ProjectFacts& facts,
         DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
         std::vector<NozzleVolumeType>& new_nozzle_volume_type) {
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3442-3453 at f92a7c0): a value on the
+    // command line wins, else the project's types or the printer's defaults.
+    // The project then carries one type per nozzle, as the app writes it, so
+    // an export opens again with the types it was sliced with; the command
+    // line's value is laid over the project later, so it is sized as well.
+    {
+        (void)compatibility; (void)facts;
+        auto* cli_nozzle_volume_type = m_extra_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type");
+        const bool cli_has = cli_nozzle_volume_type != nullptr && !cli_nozzle_volume_type->values.empty();
+        new_nozzle_volume_type =
+            nozzle_volume_types_per_nozzle(cli_has ? m_extra_config : m_print_config, merged_extruders.new_extruder_count);
+        std::vector<int>& project_types = m_print_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type", true)->values;
+        project_types.assign(new_nozzle_volume_type.begin(), new_nozzle_volume_type.end());
+        if (cli_nozzle_volume_type != nullptr)
+            cli_nozzle_volume_type->values = project_types;
+        return;
+    }
+#endif
 #ifndef ENGINE_ORCA
     sync_nozzle_volume_type_to_extruder_count(m_print_config, m_extra_config.has("nozzle_volume_type"));
     const bool different_extruder = m_print_config.support_different_extruders(merged_extruders.new_extruder_count);
@@ -1571,8 +1742,8 @@ static StepResult switch_process_extruder_variants(LoadedSettingsPresets& preset
         // from the presets its package does ship: PresetBundle::update_compatible
         // keeps the current process while the new printer is one it suits and
         // otherwise selects the best compatible system preset, the printer's
-        // default_print_profile first (PresetBundle.cpp 5295-5330, Preset.hpp
-        // 686-709, Tab.cpp 6130-6140 at 31f6803), whose settings then are the
+        // default_print_profile first (PresetBundle.cpp 8826-8861, Preset.hpp
+        // 834-857, Tab.cpp 7748-7758 at f92a7c0), whose settings then are the
         // process's (PresetBundle::full_config, PresetBundle.cpp 3858-3862).
         // Both engines run that rule; the process_full file is read only where
         // the desktop pick found nothing and the extruder count changed, which
@@ -1664,12 +1835,32 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
         std::vector<std::string>& different_settings, std::vector<std::string>& inherits_group,
         std::vector<int>& old_variant_counts, std::vector<int>& old_start_indice,
         std::vector<int>& new_variant_counts) {
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3585-3592 at f92a7c0): the
+    // per-variant options are laid out one value per variant of the current
+    // filaments before each loaded filament replaces its own variants,
+    // including an option only a loaded filament defines, which otherwise
+    // starts as one default value and never reaches the others.
+    for (const DynamicPrintConfig& loaded : filaments.load_filaments_config)
+        for (const std::string& opt_key : filament_options_with_variant)
+            if (opt_key != "filament_extruder_variant" && loaded.has(opt_key))
+                m_print_config.option(opt_key, true);
+    normalize_filament_values_to_variants(m_print_config);
+#endif
     for (size_t index = 0; index < filaments.load_filaments_config.size(); index++) {
         DynamicPrintConfig& config = filaments.load_filaments_config[index];
         const int filament_index = filaments.load_filaments_index[index];
         if (filament_index < 1 || filament_index > filament_count)
             continue;
         std::vector<std::string> different_keys;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // Before load_default_gcodes_to_config, which creates G-code keys the
+        // file does not state and would list them as changed (OrcaSlicer.cpp
+        // 3602-3610 at f92a7c0).
+        const std::string filament_different_settings = filaments.load_filament_count > 0
+            ? different_settings_to_parent(filaments.profiles_dir, "filament", config, filaments.load_filaments_inherit[index])
+            : std::string();
+#endif
         load_default_gcodes_to_config(config, Preset::TYPE_FILAMENT);
         if (filaments.load_filament_count > 0) {
             auto* opt_filament_settings = static_cast<ConfigOptionStrings*>(m_print_config.option("filament_settings_id", true));
@@ -1678,8 +1869,10 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
                 opt_filament_settings->resize(filament_count, &filament_name_setting);
             opt_filament_settings->set_at(&filament_name_setting, filament_index - 1, 0);
             config.erase("filament_settings_id");
-#ifdef ENGINE_ORCA
-            different_settings[filament_index] = "";   // O 3082-3083
+#ifdef ENGINE_SNAPMAKER
+            different_settings[filament_index] = "";   // Snapmaker_Orca.cpp at bac6fd5
+#elif defined(ENGINE_ORCA)
+            different_settings[filament_index] = filament_different_settings;   // OrcaSlicer.cpp 3626-3630 at f92a7c0
 #else
             if (config.option("different_settings_to_system")) {
                 const std::vector<std::string> fds = config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
@@ -1711,6 +1904,12 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
             curr_variant_opt = m_print_config.option<ConfigOptionStrings>("filament_extruder_variant", true);
             curr_variant_opt->values.resize(filament_count, get_extruder_variant_string(etDirectDrive, nvtStandard));
         }
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // One variant per filament for the filaments the project did not know
+        // about (OrcaSlicer.cpp 3651-3654 at f92a7c0).
+        if ((int)curr_variant_opt->values.size() < filament_count)
+            curr_variant_opt->values.resize(filament_count, get_extruder_variant_string(etDirectDrive, nvtStandard));
+#endif
         const auto* new_variant_opt = dynamic_cast<const ConfigOptionStrings*>(config.option("filament_extruder_variant", true));
         const int new_variant_count = int(new_variant_opt->size());
         const int old_variant_count = old_variant_counts[filament_index - 1];
@@ -1749,8 +1948,21 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
                                 return fail(CLI_CONFIG_FILE_ERROR, "The project has no value for " + opt_key + ".");
                             auto* opt_vec_dst = static_cast<ConfigOptionVectorBase*>(opt);
                             auto* opt_vec_src = static_cast<const ConfigOptionVectorBase*>(source_opt);
-#ifdef ENGINE_ORCA
-                            opt_vec_dst->set_with_restore_2(opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+                            // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3717-3729 at
+                            // f92a7c0): a project with fewer filaments than are
+                            // loaded gets the destination grown to the
+                            // filament's slot first, and a value that cannot be
+                            // applied ends the run with a sentence, not an abort.
+                            try {
+                                if (opt_vec_src->size() > 0 &&
+                                    opt_vec_dst->size() < size_t(old_start_indice[filament_index - 1] + old_variant_count))
+                                    opt_vec_dst->resize(size_t(old_start_indice[filament_index - 1] + old_variant_count), opt_vec_src);
+                                opt_vec_dst->set_with_restore_2(opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
+                            } catch (const std::exception& ex) {
+                                return fail(CLI_CONFIG_FILE_ERROR, "filament " + std::to_string(filament_index) + ": option " +
+                                                                   opt_key + " could not be applied: " + ex.what());
+                            }
 #else
                             opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, new_variant_indice, old_start_indice[filament_index - 1], old_variant_count);
 #endif
@@ -1779,6 +1991,11 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
             if (opt_key == "compatible_prints" || opt_key == "compatible_printers" || opt_key == "model_id" ||
                 opt_key == "dev_model_name" || opt_key == "filament_settings_id")
                 continue;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // Rebuilt from every filament after this loop (OrcaSlicer.cpp 3762-3764 at f92a7c0).
+            if (filament_dev_options.find(opt_key) != filament_dev_options.end())
+                continue;
+#endif
             ConfigOption* opt = m_print_config.option(opt_key, true);
             if (opt == nullptr)
                 return fail(CLI_CONFIG_FILE_ERROR, "Cannot take " + opt_key + " from filament " + std::to_string(filament_index) + ".");
@@ -1789,8 +2006,17 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
             // copied straight to the filament's own slot, as below.
             if (filament_options_with_variant.count(opt_key)) {
                 std::vector<int> temp_variant_indice(new_variant_count, -1);
-#ifdef ENGINE_ORCA
-                opt_vec_dst->set_with_restore_2(opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+                // As above (OrcaSlicer.cpp 3778-3787 at f92a7c0).
+                try {
+                    if (opt_vec_src->size() > 0 &&
+                        opt_vec_dst->size() < size_t(old_start_indice[filament_index - 1] + old_variant_count))
+                        opt_vec_dst->resize(size_t(old_start_indice[filament_index - 1] + old_variant_count), opt_vec_src);
+                    opt_vec_dst->set_with_restore_2(opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
+                } catch (const std::exception& ex) {
+                    return fail(CLI_CONFIG_FILE_ERROR, "filament " + std::to_string(filament_index) + ": option " + opt_key +
+                                                       " could not be applied: " + ex.what());
+                }
 #else
                 opt_vec_dst->set_with_restore_2(opt_key, opt_vec_src, temp_variant_indice, old_start_indice[filament_index - 1], old_variant_count, true);
 #endif
@@ -1809,6 +2035,30 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
         merge_flow_variant_group(m_print_config, config, size_t(filament_index - 1), size_t(filament_count),
                                  flow_variant_copy);
 #endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3798-3814 at f92a7c0): a
+        // per-variant option the loaded filament does not define keeps the
+        // values of the variants the filament already had, and a variant new
+        // to it takes its first one's.
+        {
+            const int old_start = old_start_indice[filament_index - 1];
+            std::vector<int> kept_variant_indice = new_variant_indice;
+            for (int& i : kept_variant_indice)
+                if (i < 0)
+                    i = old_start;
+            for (const std::string& opt_key : filament_options_with_variant) {
+                if (config.has(opt_key))
+                    continue;
+                auto* opt_vec_dst = dynamic_cast<ConfigOptionVectorBase*>(m_print_config.option(opt_key));
+                if (opt_vec_dst == nullptr || opt_vec_dst->size() < size_t(old_start + old_variant_count))
+                    continue;
+                // set_with_restore_2() pads its source in place
+                std::unique_ptr<ConfigOption> old_values(opt_vec_dst->clone());
+                opt_vec_dst->set_with_restore_2(static_cast<ConfigOptionVectorBase*>(old_values.get()), kept_variant_indice,
+                                                old_start, old_variant_count, true);
+            }
+        }
+#endif
         if (old_variant_count != new_variant_count)
             for (int i = int(index) + 1; i < filament_count; i++)
                 old_start_indice[i] += new_variant_count - old_variant_count;
@@ -1816,6 +2066,22 @@ static StepResult merge_filament_slot_values(LoadedFilamentSettings& filaments,
             different_settings[filament_index] =
                 escape_strings_cstyle(std::vector<std::string>(different_keys_set.begin(), different_keys_set.end()));
     }
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3837-3848 at f92a7c0): an option of
+    // filament_dev_options holds several values per filament, so one
+    // filament's values cannot be replaced in place. The stored values cannot
+    // be told apart per filament either, so they are kept as they are unless
+    // every slot has a loaded config; then each option is built again from
+    // the filaments, one after another.
+    if (!filaments.load_filaments_config.empty()) {
+        std::vector<const DynamicPrintConfig*> filament_configs(std::max(filament_count, 0), nullptr);
+        for (size_t index = 0; index < filaments.load_filaments_config.size(); index++)
+            if (filaments.load_filaments_index[index] >= 1 && filaments.load_filaments_index[index] <= filament_count)
+                filament_configs[filaments.load_filaments_index[index] - 1] = &filaments.load_filaments_config[index];
+        if (std::find(filament_configs.begin(), filament_configs.end(), nullptr) == filament_configs.end())
+            set_filament_dev_options(m_print_config, filament_configs);
+    }
+#endif
     return {};
 }
 
@@ -1835,6 +2101,24 @@ static StepResult merge_filament_preset_values(LoadedFilamentSettings& filaments
             old_self_indice[i] = i + 1;
 #else
         ConfigOptionInts* filament_self_index_opt = m_print_config.option<ConfigOptionInts>("filament_self_index");
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3533-3554 at f92a7c0): a
+        // filament_self_index carried over from a stale project can disagree
+        // with the filament count; the tables below are sized to that count
+        // and walked with these indices. An index above the count, one below
+        // 1, or a list that covers fewer filaments than are loaded now makes
+        // the list be built again.
+        if (filament_self_index_opt) {
+            int max_self_index = 0, min_self_index = 1;
+            for (int v : filament_self_index_opt->values) {
+                max_self_index = std::max(max_self_index, v);
+                min_self_index = std::min(min_self_index, v);
+            }
+            if (max_self_index > filament_count || min_self_index < 1 || max_self_index < filament_count ||
+                (int)filament_self_index_opt->values.size() < filament_count)
+                filament_self_index_opt = nullptr;
+        }
+#endif
         if (!filament_self_index_opt) {
             filament_self_index_opt = m_print_config.option<ConfigOptionInts>("filament_self_index", true);
             std::vector<int>& indice = filament_self_index_opt->values;
@@ -1881,6 +2165,29 @@ static StepResult calculate_filament_flush_matrix(const MergedExtruders& merged_
         DynamicPrintConfig& m_print_config, DynamicPrintConfig& m_extra_config,
         const std::vector<std::string>& project_colors, size_t project_filament_count) {
     ConfigOptionBools* filament_is_support = m_print_config.option<ConfigOptionBools>("filament_is_support", true);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3947-3954 at f92a7c0): a filament
+    // preset loaded on its own may leave these out; a missing diameter
+    // follows the first filament, a missing support flag is off.
+    {
+        auto* filament_diameter = static_cast<ConfigOptionVectorBase*>(m_print_config.option("filament_diameter", true));
+        if (filament_diameter->size() < project_filament_count)
+            filament_diameter->resize(project_filament_count);
+        if (filament_is_support->size() < project_filament_count)
+            filament_is_support->values.resize(project_filament_count, false);
+    }
+    // A mixed slot never reaches a nozzle, so its row and column stay empty,
+    // as in the app. The flags are not merged into the settings yet, so they
+    // win here (4003-4010, 4021).
+    const ConfigOptionBools* is_mixed_opt = m_extra_config.option<ConfigOptionBools>("filament_is_mixed");
+    if (!is_mixed_opt)
+        is_mixed_opt = m_print_config.option<ConfigOptionBools>("filament_is_mixed");
+    const auto is_mixed_slot = [is_mixed_opt](size_t idx) {
+        return is_mixed_opt && idx < is_mixed_opt->values.size() && is_mixed_opt->values[idx];
+    };
+#else
+    const auto is_mixed_slot = [](size_t) { return false; };
+#endif
     const std::vector<int> min_flush_volumes = get_min_flush_volumes(m_print_config, 0, project_filament_count);
     if (filament_is_support->size() != project_filament_count)
         return fail(CLI_CONFIG_FILE_ERROR, "filament_is_support has " + std::to_string(filament_is_support->size()) +
@@ -1968,7 +2275,7 @@ static StepResult calculate_filament_flush_matrix(const MergedExtruders& merged_
             const bool is_from_support = filament_is_support->get_at(from_idx);
             for (size_t to_idx = 0; to_idx < project_filament_count; to_idx++) {
                 const bool is_to_support = filament_is_support->get_at(to_idx);
-                if (from_idx == to_idx) {
+                if (from_idx == to_idx || is_mixed_slot(from_idx) || is_mixed_slot(to_idx)) {
                     flush_vol_mtx[project_filament_count * from_idx + to_idx] = 0.f;
                     continue;
                 }
@@ -2008,6 +2315,41 @@ static StepResult merge_filament_colours_and_flush_volumes(LoadedSettingsPresets
     // The project's colours are the loaded settings' own only: the engine
     // default this command line seeds first is not one the official
     // m_print_config holds here (see SettingsMerge::project_has_filament_colour).
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 3874-3886 at f92a7c0): filament
+    // presets carry no colour, so loading filaments can leave the list
+    // shorter than the filament count, or leave no list at all, and the tool
+    // ordering sizes its tables from it (2.4 went on with one colour for
+    // several filaments and crashed in automatic grouping). The list is
+    // grown with white, and the flush matrix is then built again. A list
+    // that holds only this command line's seed counts as no list: the
+    // official one starts empty, so every entry is white.
+    const bool colours_loaded = out.project_has_filament_colour;
+    ConfigOptionStrings* project_colors_option =
+        colours_loaded ? m_print_config.option<ConfigOptionStrings>("filament_colour") : nullptr;
+    if ((!project_colors_option || project_colors_option->values.empty()) && selected_colors_option) {
+        project_colors_option = m_print_config.option<ConfigOptionStrings>("filament_colour", true);
+        project_colors_option->values.assign(filament_count, "#FFFFFF");
+    }
+    // Our own limit, not the official's: the count is the one the settings
+    // state now (filament_settings_id). A settings file that carries a
+    // filament list of its own has replaced the project's, and a colour list
+    // longer than that list would give the slice more filaments than the
+    // settings name (the official pads to the project's count there).
+    const auto* stated_filaments = m_print_config.option<ConfigOptionStrings>("filament_settings_id");
+    const size_t colour_count = stated_filaments != nullptr && !stated_filaments->values.empty()
+                                    ? std::min<size_t>(stated_filaments->values.size(), size_t(std::max(filament_count, 0)))
+                                    : size_t(std::max(filament_count, 0));
+    const bool filament_colors_grown =
+        colour_count > 0 && (!project_colors_option || project_colors_option->values.size() < colour_count);
+    if (filament_colors_grown) {
+        const bool seed_only = project_colors_option == nullptr;
+        project_colors_option = m_print_config.option<ConfigOptionStrings>("filament_colour", true);
+        if (seed_only)
+            project_colors_option->values.clear();
+        project_colors_option->values.resize(colour_count, "#FFFFFF");
+    }
+#else
     // Deliberate difference: with more than one filament and no colours from
     // anywhere (neither loaded nor given with --filament-colour), the
     // official CLI goes on with one colour for several filaments and crashes
@@ -2024,6 +2366,8 @@ static StepResult merge_filament_colours_and_flush_volumes(LoadedSettingsPresets
         // Created empty, then sized (B 3765-3767; O 3272-3274).
         project_colors_option->values.assign(filament_count, "#FFFFFF");
     }
+    const bool filament_colors_grown = false;
+#endif
 
 #ifdef ENGINE_SNAPMAKER
     // Switching to a Snapmaker U1 keeps the project's own flush matrix and
@@ -2060,7 +2404,7 @@ static StepResult merge_filament_colours_and_flush_volumes(LoadedSettingsPresets
         kept_flush_matrix.size() == project_filaments_now * project_filaments_now;
 #endif
     if (project_colors_option &&
-        (selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix") ||
+        (filament_colors_grown || selected_colors_option || !m_print_config.option<ConfigOptionFloats>("flush_volumes_matrix") ||
          facts.current_extruder_count != merged_extruders.new_extruder_count || new_nozzle_volume_type != current_nozzle_volume_type)) {
         std::vector<std::string> selected_colors;
         if (selected_colors_option) {
@@ -2157,6 +2501,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
     std::string why;
 
     LoadedSettingsPresets presets;
+    presets.profiles_dir = profiles_dir;
     PrinterCompatibility compatibility{facts.upward_compatible_printers, facts.current_print_compatible_printers};
     int filament_count = facts.filament_count;
 
@@ -2170,6 +2515,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 
     // --load-filaments (B 2446-2571; O 2024-2111).
     LoadedFilamentSettings filaments{int(load_filaments.size())};
+    filaments.profiles_dir = profiles_dir;
     if (auto step = read_filament_settings_files(presets, filaments, o, facts,
             profiles_dir, m_print_config, m_extra_config, load_filaments,
             use_first_fila_as_default, why); step.code)
@@ -2194,7 +2540,7 @@ StepResult merge_loaded_settings(const CliOptions& o, const ProjectFacts& facts_
 
     // The process must suit the printer (B 2916-3010; O 2488-2584).
 
-    if (auto step = check_process_compatibility(presets, compatibility, facts); step.code)
+    if (auto step = check_process_compatibility(presets, compatibility, facts, m_print_config); step.code)
         return step;
     if (auto step = check_mixed_nozzle_diameters(filaments, facts, m_print_config,
             m_extra_config, filament_count); step.code)
@@ -2298,6 +2644,15 @@ bool disable_tower_after_mapping(const CliOptions& o, const SettingsMerge& merge
         return false;
     const bool enable_timelapse = o.given_flag("enable_timelapse") && o.cli.opt_bool("enable_timelapse");
     const ConfigOption* timelapse_type_opt = view.option("timelapse_type");
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5: a mixed filament changes between its components
+    // every layer, so it needs the tower also when every loaded preset is the
+    // same (OrcaSlicer.cpp 4328-4336 at f92a7c0; the official reads the
+    // project's settings there, before the flags are laid over).
+    if (const auto* is_mixed_opt = print_config.option<ConfigOptionBools>("filament_is_mixed");
+        is_mixed_opt && has_any_mixed_filament(is_mixed_opt->values))
+        return false;
+#endif
     if (enable_timelapse && timelapse_type_opt && timelapse_type_opt->getInt() == TimelapseType::tlSmooth)
         return false;
     print_config.option<ConfigOptionBool>("enable_prime_tower", true)->value = false;
@@ -2430,7 +2785,7 @@ bool shared_extruder_box(const DynamicPrintConfig& config, int width, int depth,
 }
 
 // load_downward_settings_list_from_config (BambuStudio.cpp 1440-1488;
-// OrcaSlicer.cpp 1137-1185): the printer's list in cli_config.json.
+// OrcaSlicer.cpp 1119-1167): the printer's list in cli_config.json.
 std::vector<std::string> downward_list_from_cli_config(const std::string& printer_name, const std::string& printer_model) {
     std::vector<std::string> list;
     const std::string file = resources_dir() + "/profiles/BBL/cli_config.json";
@@ -2546,8 +2901,8 @@ std::vector<std::string> downward_failures(const std::vector<DownwardPrinter>& p
     const double distance_to_rod   = opt_or_zero("extruder_clearance_dist_to_rod");
     int current_width = 0, current_depth = 0;
     if (const auto* area = config.option<ConfigOptionPoints>("printable_area"); area && area->values.size() >= 4) {
-        current_width = (int)(area->values[2].x() - area->values[0].x());
-        current_depth = (int)(area->values[2].y() - area->values[0].y());
+        current_width = printable_area_width(area->values);
+        current_depth = printable_area_depth(area->values);
     }
     double shared_printable_width = 0., unused_depth = 0., unused_height = 0.;
     shared_extruder_box(config, current_width, current_depth, opt_or_zero("printable_height"),

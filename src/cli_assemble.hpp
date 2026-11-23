@@ -80,7 +80,7 @@ struct AssembleList {
 StepResult load_assemble_plate_list(const std::string& file, std::vector<AssemblePlate>& plates);
 
 /// construct_assemble_list (BambuStudio.cpp 907-1345; OrcaSlicer.cpp
-/// 765-1160): reads each object's STL or OBJ, sets its filament, settings,
+/// 747-1142): reads each object's STL or OBJ, sets its filament, settings,
 /// height ranges and position, makes its copies, and merges the parts that
 /// share an assemble_index into one "assemble_<n>" object. Each object's path
 /// is appended to `sources` in the branch whose loader reads it, so a list

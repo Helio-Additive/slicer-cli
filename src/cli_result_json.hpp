@@ -98,6 +98,9 @@ struct PlateOutcome {
     bool                                        multi_nozzle_diameters = false;
     std::vector<int>                            skipped_objects;
     bool                                        no_check = false;
+    // --strict (OrcaSlicer from 2.5): a non-critical slicing warning ends the
+    // plate (OrcaSlicer.cpp 7171-7183 at f92a7c0).
+    bool                                        strict = false;
     bool                                        actions_only = false;
     bool                                        run_step_failed = false;  // a model action failed: reported as plate 0
     // --slice 0 on several plates: the check pass, which stops before the

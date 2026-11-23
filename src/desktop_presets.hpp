@@ -75,7 +75,7 @@ std::string desktop_printer_vendor(const std::string& profiles_dir, const std::s
 /// with the current preset's alias, or the printer's `default_print_profile`,
 /// is taken from the engine's shipped ones (PresetBundle::update_compatible and
 /// PresetCollection::first_compatible_idx with PreferedPrintProfileMatch,
-/// OrcaSlicer PresetBundle.cpp 5295-5330, Preset.hpp 686-709 at 31f6803).
+/// OrcaSlicer PresetBundle.cpp 8826-8861, Preset.hpp 834-857 at f92a7c0).
 struct DesktopProcessSwitch {
     bool        replaced = false;   ///< the desktop drops the project's process
     std::string name;               ///< the system preset it takes instead
@@ -157,7 +157,7 @@ Slic3r::DynamicPrintConfig load_project_embedded_presets(Slic3r::PresetBundle& b
 /// project: each preset's values against the system preset it stands on
 /// (PresetBundle::full_fff_config -> dirty_options_without_option_list;
 /// BambuStudio PresetBundle.cpp 4810-4817, 4857-4863, 5007-5013 at
-/// v02.09.01.70; OrcaSlicer PresetBundle.cpp 3923-3931 at 8500fcd). Every app
+/// v02.09.01.70; OrcaSlicer PresetBundle.cpp 5585-5593 at f92a7c0). Every app
 /// keeps only the listed settings when it opens the project, and so does this
 /// command line; the official command lines list only what a settings file
 /// stated (BambuStudio.cpp 3594-3599), so a value a flag gave was lost when

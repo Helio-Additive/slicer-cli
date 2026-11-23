@@ -1,5 +1,8 @@
 #include "cli_filament_map.hpp"
 #include "cli_nozzle_options.hpp"
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/FilamentMixer.hpp"
+#endif
 
 #include <algorithm>
 #include <iterator>
@@ -22,8 +25,8 @@ std::string filament_map_flag_refusal(const std::vector<int>& map,
     // This engine groups filaments on a Bambu Lab printer with two extruders
     // only; on any other printer with several extruders filament N prints
     // with extruder N whatever the map says
-    // (ToolOrdering::get_recommended_filament_maps, ToolOrdering.cpp 1154 and
-    // 1208-1210 at 8500fcd; the G-code's tool is the filament's own). cli_slice_plate.cpp
+    // (ToolOrdering.cpp 1845-1851 and 3167 at f92a7c0; 1154 and 1208-1210 at
+    // Snapmaker Orca bac6fd5; the G-code's tool is the filament's own). cli_slice_plate.cpp
     // tells the engine a Bambu Lab printer by the same printer_model rule.
     if (const auto* model = config.option<Slic3r::ConfigOptionString>("printer_model");
         extruders >= 2 && (model == nullptr || model->value.rfind("Bambu Lab", 0) != 0))
@@ -78,12 +81,11 @@ FilamentMapFlagStep filament_map_flag_step(Slic3r::DynamicPrintConfig& extra, Sl
     if (cli_mode == nullptr && cli_map == nullptr)
         return step;
     const FilamentMapMode mode = cli_mode ? cli_mode->value : FilamentMapMode::fmmManual;
-#ifdef ENGINE_BAMBU
+    // Manual and Nozzle Manual are the manual modes; every mode before Manual
+    // is automatic (BambuStudio.cpp 7254; OrcaSlicer.cpp 6751 at f92a7c0).
     step.manual = mode == FilamentMapMode::fmmManual || mode == FilamentMapMode::fmmNozzleManual;
+#ifdef ENGINE_BAMBU
     bool rack_groups = false;
-#else
-    step.manual = mode == FilamentMapMode::fmmManual;
-    (void)one_plate;
 #endif
     const auto refuse = [&](const std::string& why) {
         step.kind    = FilamentMapFlagStep::Kind::Refused;
@@ -118,18 +120,17 @@ FilamentMapFlagStep filament_map_flag_step(Slic3r::DynamicPrintConfig& extra, Sl
         if (!why.empty())
             return refuse(why);
     }
-#ifdef ENGINE_BAMBU
     if (step.manual) {
         const std::string why =
             manual_mode_nozzle_maps(extra, config, mode, std::max<size_t>(1, project_filaments), one_plate);
         if (!why.empty())
             return refuse(why);
-        // The maps this step wrote, over the plate's (BambuStudio.cpp 7332-7339).
+        // The maps this step wrote, over the plate's (BambuStudio.cpp 7332-7339;
+        // OrcaSlicer.cpp 6887-6892 at f92a7c0).
         for (const char* key : {"filament_volume_map", "filament_nozzle_map"})
             if (const Slic3r::ConfigOption* opt = extra.option(key))
                 config.set_key_value(key, opt->clone());
     }
-#endif
     step.mode_name = Slic3r::ConfigOptionEnum<FilamentMapMode>(mode).serialize();
     Slic3r::ConfigSubstitutionContext subst(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
     config.set_deserialize("filament_map_mode", step.mode_name, subst);
@@ -157,10 +158,10 @@ FilamentMapFlagStep filament_map_flag_step(Slic3r::DynamicPrintConfig& extra, Sl
 /// Nozzles that each reach only part of the bed: a one-filament object in
 /// an area some extruders do not reach makes its filament unprintable on
 /// those (BambuStudio.cpp 7026-7052 at v02.09.01.70; OrcaSlicer.cpp
-/// 5795-5806 at 8500fcd). In an automatic mode a filament no extruder can
+/// 6739-6743 at f92a7c0). In an automatic mode a filament no extruder can
 /// print ends the run, in a manual mode a filament whose map names an
 /// extruder that cannot reach it (7254-7281, 7347-7355; OrcaSlicer.cpp
-/// 5937), both CLI_FILAMENT_CAN_NOT_MAP, before the slice.
+/// 6751-6782, 6901-6910), both CLI_FILAMENT_CAN_NOT_MAP, before the slice.
 std::string extruder_reach_refusal(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                    const Slic3r::BuildVolume& build_volume, size_t extruder_count, int& blocked) {
     blocked = 0;
@@ -196,7 +197,12 @@ std::string extruder_reach_refusal(const Slic3r::Model& model, const Slic3r::Dyn
                 if (build_volume.check_volume_bbox_state_with_extruder_areas(bbox, inside_extruders) !=
                     Slic3r::BuildVolume::ObjectState::Limited)
                     continue;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+                // A mixed filament prints with its component filaments (OrcaSlicer.cpp 6668-6669 at f92a7c0).
+                const std::vector<int> filaments = Slic3r::expand_mixed_filament_ids(volume_filaments(vol), config);
+#else
                 const std::vector<int> filaments = volume_filaments(vol);
+#endif
                 for (size_t j = 0; j < inside_extruders.size() && j < unprintable.size(); ++j)
                     if (!inside_extruders[j])
                         unprintable[j].insert(filaments.begin(), filaments.end());
@@ -206,10 +212,7 @@ std::string extruder_reach_refusal(const Slic3r::Model& model, const Slic3r::Dyn
     Slic3r::FilamentMapMode mode = Slic3r::FilamentMapMode::fmmAutoForFlush;
     if (const auto* mode_opt = config.option<Slic3r::ConfigOptionEnum<Slic3r::FilamentMapMode>>("filament_map_mode"))
         mode = mode_opt->value;
-    bool manual = mode == Slic3r::FilamentMapMode::fmmManual;
-#ifndef ENGINE_ORCA
-    manual = manual || mode == Slic3r::FilamentMapMode::fmmNozzleManual;
-#endif
+    const bool manual = mode == Slic3r::FilamentMapMode::fmmManual || mode == Slic3r::FilamentMapMode::fmmNozzleManual;
     int blocked_extruder = 0;
     if (manual) {
         if (const auto* maps = config.option<Slic3r::ConfigOptionInts>("filament_map"))

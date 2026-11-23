@@ -32,7 +32,7 @@
 namespace slicer_cli {
 namespace {
 
-// MAX_CLONEABLE_SIZE (BambuStudio.cpp 105 at 5873b5f; OrcaSlicer.cpp 109 at 31f6803).
+// MAX_CLONEABLE_SIZE (BambuStudio.cpp 105 at 5873b5f; OrcaSlicer.cpp 185 at f92a7c0).
 constexpr int kMaxCloneableSize = 512;
 
 struct Kind {
@@ -125,7 +125,7 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
     // presets --filament-preset names (the named-preset path selects one
     // filament per preset, resolve_named_presets -> set_num_filaments). The
     // official CLI counts m_load_filaments alone (BambuStudio.cpp 2078-2130 at
-    // 5873b5f; OrcaSlicer.cpp 1725-1777 at 31f6803): it has no preset path, and
+    // 5873b5f; OrcaSlicer.cpp 1952-2004 at f92a7c0): it has no preset path, and
     // on this command line the presets are filaments 1..N just as the files are.
     const size_t load_filaments     = o.cli.option<Slic3r::ConfigOptionStrings>("load_filaments")->values.size() +
                                       o.filament_presets.size();
@@ -176,7 +176,7 @@ ModelLoadResult load_geometry_files(const CliOptions& o, const std::vector<std::
                     delete p;
                 // A project 3MF goes first: one later in the list is refused
                 // (CLI_FILELIST_INVALID_ORDER, BambuStudio.cpp 1890-1897;
-                // OrcaSlicer.cpp 1572-1579), whatever came before it.
+                // OrcaSlicer.cpp 1790-1797), whatever came before it.
                 if (is_bbl_3mf && input_index > 0) {
                     r.code    = CLI_FILELIST_INVALID_ORDER;
                     r.message = file_name(file) + " is a project 3MF; give it as the first file.";

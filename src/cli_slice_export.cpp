@@ -37,6 +37,11 @@ static void copy_sliced_plate_results(CliRunContext& context, const std::vector<
         pd->is_sliced_valid          = true;
         pd->gcode_prediction         = sliced.gcode_prediction;
         pd->gcode_weight             = sliced.gcode_weight;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        pd->statistics               = sliced.statistics;   // --export-statistics
+        pd->first_layer_time         = sliced.first_layer_time;       // from the slice result (2.5)
+        pd->mixed_filaments_info     = sliced.mixed_filaments_info;   // the mixed filaments the plate printed with
+#endif
         pd->toolpath_outside         = sliced.toolpath_outside;
         pd->timelapse_warning_code   = sliced.timelapse_warning_code;
         pd->is_label_object_enabled  = sliced.is_label_object_enabled;
@@ -344,7 +349,7 @@ static void collect_run_outputs(const CliOptions& o, const boost::filesystem::pa
 /// --outputdir (--slice), the G-code of -o (the single-plate call),
 /// --export-3mf (joined onto --outputdir, as the official joins it:
 /// export_3mf_file = outfile_dir + "/" + export_3mf_file, BambuStudio.cpp
-/// 7508-7510 at 5873b5f; OrcaSlicer.cpp 6302-6304 at 31f6803), the
+/// 7508-7510 at 5873b5f; OrcaSlicer.cpp 7390-7392 at f92a7c0), the
 /// --export-settings file, the object STL files of --export-stl /
 /// --export-stls (each object's own name, object_stl_file, read from the
 /// loaded `model`) and the plate folders under --export-slicedata.

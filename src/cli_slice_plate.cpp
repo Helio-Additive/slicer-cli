@@ -348,7 +348,14 @@ static int arrange_plate_instances(CliRunContext& context, const CliOptions& o, 
             };
             const bool has_wipe_tower_position =
                 states_tower(settings_merge.load_process_config) || states_tower(o.extra_config);
-            if (!is_seq_print && plate.filaments_count > 1 && !has_wipe_tower_position)
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // OrcaSlicer from 2.5: a belt printer never gets the tower (OrcaSlicer.cpp 5598 at f92a7c0).
+            const auto* belt_opt = config_k.option<Slic3r::ConfigOptionBool>("belt_printer");
+            const bool is_belt_printer = belt_opt != nullptr && belt_opt->value;
+#else
+            const bool is_belt_printer = false;
+#endif
+            if (!is_belt_printer && !is_seq_print && plate.filaments_count > 1 && !has_wipe_tower_position)
                 assemble_tower_inside_plate(context, config_k, model, arrange_plate_index, /*keep_existing=*/false);
         }
         // The plate's tower entry goes into the run's settings.
@@ -443,7 +450,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
         // A printer change that changes the extruder clearances re-arranges
         // a plate printed by object (BambuStudio.cpp 5275-5288: only on a
         // change of printer, the distance to the rod counted; OrcaSlicer.cpp
-        // 4538-4549: any change of the clearances), unless the bed changed
+        // 5352-5363: any change of the clearances), unless the bed changed
         // (shrink_to_new_bed) or the plate is arranged anyway.
         bool clearance_arrange = false;
         {
@@ -553,7 +560,7 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
 
 static int check_slice_plate_objects(const CliOptions& o, RunPlatePlan& plate_plan,
             RunPipeProgress& pipe_progress, PlateOutcome& outcome, bool calib_self_geometry, bool first_call,
-            int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model) {
+            int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, bool arranged_without_rotations) {
     // --slice: the official per-plate gate before apply (BambuStudio.cpp
     // 6527-6567 at 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803). An
     // object partly over the bed edge is refused, and a plate with no
@@ -577,11 +584,11 @@ static int check_slice_plate_objects(const CliOptions& o, RunPlatePlan& plate_pl
             PlateScope scope(model, run_plate);
             if (!plate_object_steps(o, model, step_plate, outcome))
                 return 1;
-#ifdef ENGINE_BAMBU
+#ifndef ENGINE_SNAPMAKER
             if (!manual_map_extruders_fit(config, model, step_plate, outcome))
                 return 1;
 #endif
-            if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced())) {
+            if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), arranged_without_rotations)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
@@ -647,7 +654,7 @@ static PlateLoadInputs classify_plate_inputs(const CliOptions& o, const CliRunCo
     // --load-assemble-list: the plates' objects from the list built
     // before the plate loop, and every plate's own settings (plate_params)
     // as its PlateData config, where the official keeps them
-    // (BambuStudio.cpp 1066-1078; OrcaSlicer.cpp 877-889).
+    // (BambuStudio.cpp 1066-1078; OrcaSlicer.cpp 859-871).
     const bool assemble_input = context.g_assemble != nullptr;
     return {geometry_input, geometry_only_3mf, trailing_port, assemble_input, calib_self_geometry};
 }
@@ -740,7 +747,7 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
         }
 
         if (check_slice_plate_objects(o, rs.layout, rs.progress, outcome,
-                calib_self_geometry, first_call, plate_id, config, model) != 0)
+                calib_self_geometry, first_call, plate_id, config, model, context.arranged_without_rotations) != 0)
             return 1;
 
         if (const auto result = finish_model_actions(o, rs.outputs, outcome,
@@ -751,8 +758,8 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
     } catch (const std::bad_alloc&) {
         // Out of memory before or around the slicing steps (the load of a large
         // project, the arrange, the plate cleanup). The official outcome is
-        // CLI_OUT_OF_MEMORY with its sentence (Utils.hpp:39, OrcaSlicer.cpp 126
-        // at 31f6803), never CLI_SLICING_ERROR (-100): this is the run that must
+        // CLI_OUT_OF_MEMORY with its sentence (Utils.hpp:39, OrcaSlicer.cpp 208
+        // at f92a7c0), never CLI_SLICING_ERROR (-100): this is the run that must
         // tell the user to lower the geometry resolution, not report a slicing
         // failure.
         emit_event({{"event","slicing_error"},{"phase","load_or_prepare"},{"kind","bad_alloc"},

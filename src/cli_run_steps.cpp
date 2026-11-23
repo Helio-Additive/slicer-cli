@@ -13,6 +13,11 @@
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Orient.hpp"
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/LayOnFace.hpp"
+#include "libslic3r/MeshRepair.hpp"
+#include <functional>
+#endif
 #include "libslic3r/Utils.hpp"
 #include "libslic3r_version.h"
 
@@ -132,6 +137,14 @@ StepResult apply_transforms(const CliOptions& o, Slic3r::Model& model,
                 r.message = "--assemble and --clone-objects cannot be used together; give one of them, not both";
                 return r;
             }
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // OrcaSlicer.cpp 4938-4942 at f92a7c0.
+            if (model.objects.empty()) {
+                r.code    = CLI_INVALID_PARAMS;
+                r.message = "--assemble needs at least one input model.";
+                return r;
+            }
+#endif
             Slic3r::Model m;
             Slic3r::ModelObject* new_object = m.add_object();
             new_object->name = "Assembly";
@@ -202,6 +215,113 @@ StepResult apply_transforms(const CliOptions& o, Slic3r::Model& model,
             }
             for (Slic3r::ModelObject* obj : model.objects)
                 obj->scale(ratio);
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        } else if (opt_key == "repair") {
+            // OrcaSlicer from 2.5 (OrcaSlicer.cpp 5267-5280 at f92a7c0): every
+            // volume's mesh is repaired as the app's Fix Model does; a mesh
+            // that cannot be made solid is left as it is.
+            if (cfg.opt_bool(opt_key))
+                for (Slic3r::ModelObject* obj : model.objects) {
+                    for (Slic3r::ModelVolume* volume : obj->volumes) {
+                        Slic3r::MeshRepairStats stats;
+                        std::string error;
+                        if (!volume->repair(true, &stats, &error))
+                            emit({{"event", "config_normalized"}, {"tag", "MeshRepairFailed"}, {"object", obj->name},
+                                  {"volume", volume->name},
+                                  {"message", "--repair: '" + obj->name + "' / '" + volume->name +
+                                                  "' could not be repaired and is left as it is: " + error}});
+                        else if (stats.modified)
+                            emit({{"event", "model_loaded"}, {"tag", "MeshRepaired"}, {"object", obj->name},
+                                  {"volume", volume->name},
+                                  {"welded_vertices", stats.welded_vertices}, {"removed_triangles", stats.removed_triangles},
+                                  {"reversed_shells", stats.reversed_shells}, {"filled_holes", stats.filled_holes},
+                                  {"removed_shells", stats.removed_shells}, {"self_intersections", stats.self_intersections},
+                                  {"message", "--repair: '" + obj->name + "' / '" + volume->name + "' was repaired"}});
+                    }
+                    obj->invalidate_bounding_box();
+                }
+        } else if (opt_key == "ground_largest_face" || opt_key == "ground_face_normal" || opt_key == "ground_face_point") {
+            // OrcaSlicer from 2.5 (OrcaSlicer.cpp 5105-5160 at f92a7c0): each
+            // instance is laid on one of its lay-on-face planes, the faces the
+            // desktop's "Lay on Face" tool offers. The planes follow the part
+            // transformations as they are now, so rotations given before this
+            // flag count. A direction or a point is in object coordinates, so
+            // it names the same face for every instance of an object.
+            const std::string flag = "--" + std::string(opt_key == "ground_largest_face" ? "ground-largest-face"
+                                            : opt_key == "ground_face_normal" ? "ground-face-normal" : "ground-face-point");
+            std::function<int(const std::vector<Slic3r::LayOnFacePlane>&, const Slic3r::Transform3d&)> pick;
+            if (opt_key == "ground_largest_face") {
+                if (cfg.opt_bool(opt_key))
+                    pick = [](const std::vector<Slic3r::LayOnFacePlane>& planes, const Slic3r::Transform3d&) {
+                        return Slic3r::find_largest_plane(planes);
+                    };
+            } else {
+                const std::string& value = cfg.opt_string(opt_key);
+                Slic3r::Vec3d v;
+                int consumed = 0;
+                if (sscanf(value.c_str(), "%lf,%lf,%lf%n", &v.x(), &v.y(), &v.z(), &consumed) != 3 ||
+                    consumed != int(value.size()) || !v.allFinite() ||
+                    (opt_key == "ground_face_normal" && v.norm() < EPSILON)) {
+                    r.code    = CLI_INVALID_PARAMS;
+                    r.message = flag + " expects three comma-separated numbers, got \"" + value + "\"";
+                    return r;
+                }
+                if (opt_key == "ground_face_normal")
+                    pick = [v](const std::vector<Slic3r::LayOnFacePlane>& planes, const Slic3r::Transform3d&) {
+                        return Slic3r::find_plane_by_normal(planes, v);
+                    };
+                else
+                    pick = [v](const std::vector<Slic3r::LayOnFacePlane>& planes, const Slic3r::Transform3d& inst_matrix) {
+                        return Slic3r::find_plane_at_point(planes, inst_matrix, v, 0.01);
+                    };
+            }
+            if (pick) {
+                size_t laid = 0, missed = 0;
+                // The official loads model files with their default instance and
+                // turns that. Here a model file gets its instance from the desktop
+                // placement after the transforms (see the orient step below), so an
+                // object without one is turned itself, by the same rotation an
+                // identity instance would get; the placement then puts it on the bed.
+                for (Slic3r::ModelObject* obj : model.objects) {
+                    const bool no_instance = obj->instances.empty();
+                    for (size_t i = 0; i < (no_instance ? size_t(1) : obj->instances.size()); ++i) {
+                        const Slic3r::Transform3d inst_matrix =
+                            no_instance ? Slic3r::Transform3d::Identity() : obj->instances[i]->get_matrix_no_offset();
+                        const std::vector<Slic3r::LayOnFacePlane> planes = Slic3r::lay_on_face_planes(*obj, inst_matrix);
+                        if (planes.empty()) {
+                            // A small or smooth part (a sphere) has no face to rest on; the tool offers none either.
+                            emit({{"event", "config_normalized"}, {"tag", "NoFaceToLayOn"}, {"object", obj->name},
+                                  {"message", flag + ": '" + obj->name + "' has no face large enough to lay on; it is left as it is"}});
+                            continue;
+                        }
+                        const int idx = pick(planes, inst_matrix);
+                        if (idx < 0) {
+                            // Only a point can miss: with several objects it usually belongs to one of them.
+                            emit({{"event", "config_normalized"}, {"tag", "NoFaceAtPoint"}, {"object", obj->name},
+                                  {"message", flag + ": no face of '" + obj->name + "' contains the point; it is left as it is"}});
+                            ++missed;
+                            continue;
+                        }
+                        if (no_instance) {
+                            const Eigen::AngleAxisd turn(Slic3r::lay_on_face_rotation(planes[idx].normal, inst_matrix).linear());
+                            obj->rotate(turn.angle(), turn.axis());
+                        } else {
+                            Slic3r::lay_on_face(*obj, i, planes[idx].normal);
+                        }
+                        emit({{"event", "model_loaded"}, {"tag", "ObjectLaidOnFace"}, {"object", obj->name},
+                              {"instance", int(i)}, {"face_area_mm2", planes[idx].area},
+                              {"message", flag + ": '" + obj->name + "' is laid on a face of " +
+                                              std::to_string(int(planes[idx].area + 0.5f)) + " mm2"}});
+                        ++laid;
+                    }
+                }
+                if (laid == 0 && missed > 0) {
+                    r.code    = CLI_INVALID_PARAMS;
+                    r.message = flag + ": no face of any object contains the point";
+                    return r;
+                }
+            }
+#endif
         } else {
             // BambuStudio.cpp 5203-5207.
             r.code    = CLI_UNSUPPORTED_OPERATION;
@@ -304,6 +424,17 @@ StepResult run_model_actions(const CliOptions& o, Slic3r::Model& plate_model, co
         if (opt_key == "export_settings") {
             // BambuStudio.cpp 6366-6370; OrcaSlicer.cpp 5499-5503.
             const std::string file = o.cli.opt_string("export_settings");
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // OrcaSlicer from 2.5 writes the settings to stdout for "-"
+            // (OrcaSlicer.cpp 1485 and 6346 at f92a7c0). This binary prints
+            // its events and progress on stdout, so it asks for a file.
+            if (file == "-") {
+                r.code    = CLI_INVALID_PARAMS;
+                r.message = "--export-settings - writes the settings to stdout in OrcaSlicer's own command line. This "
+                            "binary prints its events on stdout: give a file name, and read the file.";
+                return r;
+            }
+#endif
             config.save_to_json(file, "project_settings", "project", engine_version());
             emit({{"event", "export"}, {"tag", "SettingsExported"}, {"path", file},
                   {"message", "Exported the settings as " + file}});
@@ -332,6 +463,7 @@ PlateLoopSwitches plate_loop_switches(const CliOptions& o) {
     if (o.given_flag("mtcpp"))  s.max_triangle_count = cfg.opt_int("mtcpp");
     if (o.given_flag("mstpp"))  s.max_slicing_time_s = cfg.opt_int("mstpp");
     if (o.given_flag("no_check")) s.no_check = cfg.opt_bool("no_check");
+    if (o.given_flag("strict")) s.strict = cfg.opt_bool("strict");
     if (o.given_flag("allow_mix_temp")) s.allow_mix_temp = cfg.opt_bool("allow_mix_temp");
 #ifdef ENGINE_SNAPMAKER
     // This engine has no allow_mix_temp setting, so the switch is our own flag.
@@ -347,7 +479,7 @@ StepResult normative_check(const CliOptions& o, const Slic3r::DynamicPrintConfig
     if (!plate_loop_switches(o).normative_check)
         return r;
     // Any post_process entry (values.size() > 0, BambuStudio.cpp 1951-1956;
-    // OrcaSlicer.cpp 1610-1617).
+    // OrcaSlicer.cpp 1832-1839).
     if (const auto* scripts = file_config.option<Slic3r::ConfigOptionStrings>("post_process");
         scripts && !scripts->values.empty()) {
         r.code    = CLI_POSTPROCESS_NOT_SUPPORTED;

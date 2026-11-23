@@ -29,7 +29,7 @@ using json = nlohmann::json;
 /// One plate's objects, loaded alone from the project 3MF, for
 /// --downward-check: the official sizes every plate of the project
 /// (check_plate_wipe_tower per plate, BambuStudio.cpp 4645-4658; OrcaSlicer.cpp
-/// 3986-3996), whichever plate is sliced. Plate 0 is the whole project;
+/// 4724-4734), whichever plate is sliced. Plate 0 is the whole project;
 /// `plate_members`, when given, receives each plate's (object, instance)
 /// pairs in the loaded model (PlateData::objects_and_instances), and
 /// `file_config` the project's settings as the file holds them.
@@ -259,7 +259,7 @@ int check_downward_printers(CliRunContext& context, const CliOptions& o, RunPlat
                     // The plate at its own origin, as the sliced plate is:
                     // the official adds the plate's origin to its tower
                     // position instead (plate->get_origin(), BambuStudio.cpp
-                    // 4486-4489; OrcaSlicer.cpp 3875-3878).
+                    // 4486-4489; OrcaSlicer.cpp 4613-4616).
                     const Slic3r::Vec2d origin = plate_origins[index];
                     for (Slic3r::ModelObject* object : plate.loaded->objects)
                         for (Slic3r::ModelInstance* inst : object->instances) {

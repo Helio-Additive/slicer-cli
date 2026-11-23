@@ -270,7 +270,7 @@ static std::string first_compatible_name(const Slic3r::PresetCollection& collect
 /// gives the first compatible process.
 ///
 /// With no compatible process at all, first_compatible_idx returns index 0,
-/// the built-in default process (Preset.hpp 686-709 at 31f6803: "No
+/// the built-in default process (Preset.hpp 834-857 at f92a7c0: "No
 /// compatible preset found, return the default preset"; the same at
 /// 5873b5f), and the desktop slices with that.
 
@@ -286,8 +286,8 @@ static std::string desktop_default_process(const Slic3r::PresetCollection& print
 }
 
 /// The filament the desktop selects for a printer picked on a fresh install
-/// (PresetBundle::load_selections, PresetBundle.cpp 2740-2753 and 2850-2857
-/// at 31f6803): the printer's first default filament when it is a visible,
+/// (PresetBundle::load_selections, PresetBundle.cpp 4069-4082 and 4186-4193
+/// at f92a7c0): the printer's first default filament when it is a visible,
 /// compatible preset, else the placeholder, which the last step replaces with
 /// filaments.first_compatible() in every slot. With no installed-filaments
 /// section every system filament is visible (Preset::set_visible_from_appconfig,
@@ -509,10 +509,14 @@ static bool apply_named_preset_selection(CliRunContext& context, const CliOption
     // matrix in ToolOrdering::reorder_extruders_for_minimum_flush_volume.
     bundle.update_multi_material_filament_presets();
 #ifdef ENGINE_ORCA
-    // OrcaSlicer's update_multi_material_filament_presets gives a printer with
-    // more extruders than filaments one filament per extruder (PresetBundle.cpp
-    // 5120-5131), single_extruder_multi_material or not, and leaves the colour
-    // lists as they were. The desktop never keeps them apart: it sizes
+    // OrcaSlicer's update_multi_material_filament_presets gives a printer that
+    // runs with more filaments than were named the rest of them, as copies of
+    // the last one: one per extruder, or one in all when the printer is
+    // single_extruder_multi_material (min_filament_count, PresetBundle.cpp
+    // 5419-5424 and 8603-8619 at f92a7c0; up to 2.4 it was one per extruder
+    // whatever that setting, so a Bambu Lab H2D with no filament named now
+    // starts with one filament where it had two).
+    // It leaves the colour lists as they were. The desktop never keeps them apart: it sizes
     // filament_colour, filament_multi_colour and filament_colour_type to the
     // filament count when it loads the printer (PresetBundle::load_selections
     // 2780-2795, update_selections 2636-2651, new slots "#26A69A" and type

@@ -7,10 +7,14 @@ contract must retain that engine's upstream version and provenance.
 ## Aligned dependencies
 
 - BambuStudio uses CGAL 5.4 plus its upstream Clang 19 patch.
-- OrcaSlicer uses CGAL 5.6.3 on Linux and in macOS CI builds.
+- OrcaSlicer uses CGAL 6.2.1 on Linux and in macOS CI builds (the archive and
+  hash of deps/CGAL/CGAL.cmake at `f92a7c0`).
 - Snapmaker Orca uses the CGAL 5.4 archive and the `0001-clang19.patch` that
   BambuStudio pins (deps/CGAL at `bac6fd5`), and its own bundled Eigen 3.3.7.
-- Linux uses static OpenCASCADE 7.6.0, matching all three pinned engine recipes.
+- Linux uses a static OpenCASCADE per engine, each matching its pinned recipe:
+  7.6.0 for BambuStudio and Snapmaker Orca, and 8.0.1 with the
+  `0001-BRepMesh-seam-pcurve-selection.patch` OrcaSlicer applies (deps/OCCT at
+  `f92a7c0`; its second patch is for MSVC on ARM64 only).
 - Each engine uses its own pinned libnoise source: BambuStudio v1.0.0 commit
   `7e7c98c06a67d5203dd780b45e9a25d3ec930fd8`; OrcaSlicer and Snapmaker Orca
   commit `f25d5331570ae109f0e645cb729ecab155612714` (tag 1.0 of
@@ -20,13 +24,16 @@ contract must retain that engine's upstream version and provenance.
 
 The CLI does not yet reproduce each upstream project's complete private
 dependency prefix. Ubuntu, Homebrew, and the pinned Windows vcpkg baseline
-provide non-core dependencies. Windows currently uses vcpkg CGAL 6.1.1 and
-OpenCASCADE 7.9.3 rather than Orca CGAL 5.6.3 and upstream OpenCASCADE 7.6.0.
+provide non-core dependencies. Windows uses vcpkg OpenCASCADE 7.9.3 rather
+than upstream OpenCASCADE 7.6.0 (BambuStudio, Snapmaker Orca) or 8.0.1
+(OrcaSlicer); its OrcaSlicer CGAL is the pinned 6.2.1, through the overlay
+port `ci/vcpkg-overlays-orca/cgal`. macOS takes Homebrew's OpenCASCADE for
+every engine.
 Those combinations are compatibility-tested by CI but are not upstream parity.
 
 Local macOS Orca setup (`ENGINE=orca ./install_deps.sh`) installs Homebrew's
 current CGAL. The Apple Orca CMake path uses `find_package(CGAL REQUIRED)`;
-macOS CI explicitly supplies `CGAL_DIR` for its pinned 5.6.3 prefix. The local
+macOS CI explicitly supplies `CGAL_DIR` for its pinned 6.2.1 prefix. The local
 Homebrew setup therefore does not reproduce that CI pin by default.
 
 Removing these exceptions requires per-engine dependency prefixes built from

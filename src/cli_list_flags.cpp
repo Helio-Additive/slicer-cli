@@ -119,7 +119,7 @@ int run_list_flags(const std::string& engine, const std::string& engine_version)
             if (!seen) flags.push_back(std::move(entry));
         }
     }
-    // Flags only the Bambu Studio build defines, named from the other builds
+    // Flags only one engine's build defines, named from the other builds
     // so a caller sees the whole package's contract from any one binary.
     for (const std::string& name : other_engine_only_flags()) {
         json entry;
@@ -130,7 +130,7 @@ int run_list_flags(const std::string& engine, const std::string& engine_version)
         entry["key"]         = key;
         entry["takes_value"] = false;
         entry["help"]        = "";
-        entry["works_in"]    = "slicer_cli only (Bambu Studio engine)";
+        entry["works_in"]    = works_in(key);
         entry["supported"]   = false;
         entry["refusal"]     = foreign_flag_refusal(name);
         flags.push_back(std::move(entry));

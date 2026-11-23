@@ -79,6 +79,7 @@ struct PlateLoopSwitches {
     int  max_triangle_count = 0;   // --mtcpp
     int  max_slicing_time_s = 0;   // --mstpp
     bool no_check           = false;
+    bool strict             = false;   // --strict, a flag of OrcaSlicer from 2.5
     bool allow_mix_temp     = false;
     bool normative_check    = true;
     bool min_save           = false;

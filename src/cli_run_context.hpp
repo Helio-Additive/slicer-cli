@@ -3,6 +3,7 @@
 #include "cli_staging_folders.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,9 @@ struct ArrangeSwitches {
     bool allow_rotations             = false;   // --allow-rotations (see below)
     bool allow_multicolor_oneplate   = true;    // --allow-multicolor-oneplate
     bool avoid_extrusion_cali_region = false;   // --avoid-extrusion-cali-region
+    /// --align-to-y-axis, a flag of OrcaSlicer from 2.5: only when given does it
+    /// replace the printer-structure default (OrcaSlicer.cpp 1631-1634 at f92a7c0).
+    std::optional<bool> align_to_y_axis;
 };
 
 /// --downward-check's result: the official checks every plate once per run
@@ -71,6 +75,15 @@ struct CliRunContext {
     bool g_command_line_parsed = false;   // the whole command line was read
 
     ArrangeSwitches g_arrange_switches;
+
+    /// --export-statistics, a flag of OrcaSlicer from 2.5: each sliced plate's
+
+    /// statistics as JSON, next to its G-code and inside an exported project.
+
+    bool export_statistics = false;
+    /// An arrange of this run ran without rotations (OrcaSlicer.cpp 5556, 6028
+    /// at f92a7c0): the refusal of a plate with nothing inside names --allow-rotations.
+    bool arranged_without_rotations = false;
 
     DownwardRun g_downward_run;
 

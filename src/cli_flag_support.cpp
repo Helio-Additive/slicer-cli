@@ -27,6 +27,15 @@ const std::set<std::string>& bambu_only_keys() {
     return keys;
 }
 
+// Flags only OrcaSlicer's command line defines, all new in OrcaSlicer 2.5
+// (PrintConfig.cpp CLI definitions at f92a7c0).
+const std::set<std::string>& orca_only_keys() {
+    static const std::set<std::string> keys = {"strict", "export_statistics", "align_to_y_axis", "ground_largest_face",
+                                               "ground_face_normal", "ground_face_point", "repair", "inspect_mesh",
+                                               "inspect_paint"};
+    return keys;
+}
+
 // Official flags this binary has but slicer-cli does not run, with the reason.
 const std::map<std::string, std::string>& not_supported() {
     static const std::map<std::string, std::string> why = {
@@ -34,6 +43,13 @@ const std::map<std::string, std::string>& not_supported() {
         // slicer-cli makes no pictures.
         {"export_png",  "slicer-cli makes no pictures (the official CLI draws them with its GUI renderer)"},
         {"camera_view", "slicer-cli makes no pictures (the official CLI draws them with its GUI renderer)"},
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer 2.5 makes these two reports with app code
+        // (slic3r/Utils/MeshInspect.hpp and PaintCLI.hpp at f92a7c0), which
+        // slicer-cli does not build.
+        {"inspect_mesh",  "the report is made with app code that slicer-cli does not build"},
+        {"inspect_paint", "the report is made with app code that slicer-cli does not build"},
+#endif
 #if !defined(__linux__) && !defined(__LINUX__)
         // The official pipe works on Linux only (BambuStudio.cpp 244-437,
         // OrcaSlicer.cpp 220-410; cli_pipe.cpp ports it there). Elsewhere
@@ -62,7 +78,10 @@ const std::set<std::string>& commented_out_names() {
     static const std::set<std::string> names = {
         "export-obj", "export-svg", "export-sla", "sla", "export-amf", "export-gcode", "gcode", "g",
         "help-fff", "help-sla", "align-xy", "cut", "cut-grid", "cut-x", "cut-y", "center", "copy",
-        "duplicate-grid", "repair", "split", "scale-to-fit", "ignore-nonexistent-config",
+        "duplicate-grid", "split", "scale-to-fit", "ignore-nonexistent-config",
+#if !defined(ENGINE_ORCA) || defined(ENGINE_SNAPMAKER)
+        "repair",   // a flag of OrcaSlicer from 2.5 (orca_only_keys)
+#endif
         "config-compatibility", "load", "autosave", "gcodeviewer", "sw-renderer",
     };
     return names;
@@ -87,7 +106,8 @@ std::string official_flag_refusal(const std::string& key) {
            it->second;
 #else
     return "--" + dashed(key) + " is a flag of " +
-           (bambu_only_keys().count(key) ? std::string("Bambu Studio's") : std::string("Bambu Studio's and OrcaSlicer's")) +
+           (bambu_only_keys().count(key) ? std::string("Bambu Studio's")
+            : orca_only_keys().count(key) ? std::string("OrcaSlicer's") : std::string("Bambu Studio's and OrcaSlicer's")) +
            " own command line that slicer-cli does not support: " + it->second;
 #endif
 }
@@ -99,6 +119,8 @@ std::string all_binaries_label() {
 std::string works_in(const std::string& key) {
     if (bambu_only_keys().count(key))
         return "slicer_cli only (Bambu Studio engine)";
+    if (orca_only_keys().count(key))
+        return "slicer_cli-orcaslicer only (OrcaSlicer engine)";
     // The Snapmaker build refuses --downward-check: its engine defines
     // downward_check as a list of machine files, not the on/off switch.
     if (key == "downward_check" || key == "downward_settings")
@@ -124,6 +146,16 @@ std::string foreign_flag_refusal(const std::string& cli_name) {
                    "slicer_cli-orcaslicer runs the OrcaSlicer engine, which has no such flag.";
 #endif
 #endif
+#if !defined(ENGINE_ORCA) || defined(ENGINE_SNAPMAKER)
+    for (const std::string& key : orca_only_keys())
+        if (dashed(key) == cli_name)
+            return "--" + cli_name + " works only in slicer_cli-orcaslicer (the OrcaSlicer engine); "
+#ifdef ENGINE_SNAPMAKER
+                   "slicer_cli-snapmaker runs the Snapmaker Orca engine, which has no such flag.";
+#else
+                   "slicer_cli runs the Bambu Studio engine, which has no such flag.";
+#endif
+#endif
     if (commented_out_names().count(cli_name))
 #ifdef ENGINE_SNAPMAKER
         // Commented out in Snapmaker's CLI defs as well (block comments in
@@ -144,6 +176,10 @@ std::vector<std::string> other_engine_only_flags() {
     for (const std::string& key : bambu_only_keys())
         out.push_back(dashed(key));
 #endif
+#if !defined(ENGINE_ORCA) || defined(ENGINE_SNAPMAKER)
+    for (const std::string& key : orca_only_keys())
+        out.push_back(dashed(key));
+#endif
     return out;
 }
 
@@ -162,16 +198,20 @@ std::string setting_flag_refusal(const std::string& key) {
     // mode, cli_filament_map.cpp and cli_slice_plate.cpp's apply_filament_map_flag).
     // slicer_cli takes every one of them as the official CLI does
     // (cli_nozzle_options.cpp, cli_filament_map.cpp, cli_load_settings.cpp).
-    // slicer_cli-orcaslicer takes the three its official CLI reads; the rack
-    // keys are refused there: OrcaSlicer.cpp reads none of them at 8500fcd.
+    // slicer_cli-orcaslicer takes the ones its official CLI reads: from
+    // OrcaSlicer 2.5 that includes filament_volume_map and filament_nozzle_map
+    // (OrcaSlicer.cpp 6846-6892 at f92a7c0). The rack keys are refused there:
+    // OrcaSlicer.cpp reads none of them at f92a7c0.
     // slicer_cli-snapmaker takes nozzle_volume_type, the desktop's nozzle flow
     // types, with filament_volume_type as its grouping dialog's answer
     // (cli_snapmaker.cpp sync_filament_volume_types). Its engine has no
     // filament map flag (foreign_flag_refusal names the programs that do).
     static const std::map<std::string, const char*> special = {
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
         {"filament_volume_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
         {"filament_nozzle_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
         {"extruder_nozzle_count",       "the official CLI re-derives the nozzle setup from it"},
         {"extruder_nozzle_volume_type", "the official CLI re-derives the nozzle setup from it"},
         {"extruder_nozzle_diameter",    "the official CLI re-derives the nozzle setup from it"},

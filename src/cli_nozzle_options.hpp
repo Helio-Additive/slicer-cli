@@ -8,18 +8,18 @@
 #include <vector>
 
 #include "libslic3r/PrintConfig.hpp"
-#ifndef ENGINE_ORCA
+#ifdef ENGINE_BAMBU
 #include "libslic3r/PresetBundle.hpp"   // ExtruderNozzleStat
 #endif
 
 namespace slicer_cli {
 
 /// --filament-map values of -1 take the first value given, else 1
-/// (BambuStudio.cpp 7208-7249 at v02.09.01.70; OrcaSlicer.cpp 5889-5927 at
-/// 8500fcd).
+/// (BambuStudio.cpp 7208-7249 at v02.09.01.70; OrcaSlicer.cpp 6784-6822 at
+/// f92a7c0).
 std::vector<int> sanitized_filament_map(std::vector<int> map);
 
-#ifndef ENGINE_ORCA
+#ifdef ENGINE_BAMBU
 /// --estimate-mode on a printer with several extruders or nozzles
 /// (BambuStudio.cpp 4441-4474): a mode other than Auto For Flush is refused
 /// (the sentence is returned), and the run slices with Auto For Flush, the
@@ -54,18 +54,22 @@ std::string quality_mode_refusal(const Slic3r::DynamicPrintConfig& config);
 /// (ToolOrdering.cpp 2537-2551). Returns a refusal sentence, or empty.
 std::string rack_group_maps(std::vector<int>& map, std::vector<int>& nozzle_map,
                             const Slic3r::DynamicPrintConfig& config, size_t project_filaments);
+#endif
 
-/// A manual mode from the command line (BambuStudio.cpp 7284-7345): Nozzle
-/// Manual needs a nozzle rack and all five of its settings, and Manual on a
-/// rack printer takes each filament's flow type from its extruder unless the
-/// extruder mixes types. Writes filament_volume_map into `extra`. Returns a
-/// refusal sentence, or empty.
+#ifndef ENGINE_SNAPMAKER
+/// A manual mode from the command line (BambuStudio.cpp 7284-7345; OrcaSlicer.cpp
+/// 6840-6899 at f92a7c0): Nozzle Manual needs a nozzle rack and its settings
+/// (five in Bambu Studio; the three maps in OrcaSlicer, which has no
+/// command-line rack flags), and Manual on a rack printer takes each
+/// filament's flow type from its extruder unless the extruder mixes types.
+/// Writes filament_volume_map into `extra`. Returns a refusal sentence, or
+/// empty.
 std::string manual_mode_nozzle_maps(Slic3r::DynamicPrintConfig& extra, const Slic3r::DynamicPrintConfig& config,
                                     Slic3r::FilamentMapMode mode, size_t filament_count, bool one_plate);
 
 /// A manual mode on a printer with several extruders or nozzles: a filament
 /// the plate uses whose filament_printable does not allow the extruder its
-/// map names (BambuStudio.cpp 7357-7400; the official CLI ends
+/// map names (BambuStudio.cpp 7357-7400; OrcaSlicer.cpp 6912-6933 at f92a7c0; the official CLI ends
 /// CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER). `plate_filaments` are the
 /// 1-based filaments the plate's objects use. Returns a refusal sentence, or
 /// empty.

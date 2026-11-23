@@ -90,7 +90,7 @@ AssembleHeightRange read_range(const json& j) {
     return range;
 }
 
-// merge_or_add_object (BambuStudio.cpp 907-937; OrcaSlicer.cpp 765-793).
+// merge_or_add_object (BambuStudio.cpp 907-937; OrcaSlicer.cpp 747-775).
 void merge_or_add_object(AssemblePlate& plate, Model& model, int assemble_index,
                          std::map<int, ModelObject*>& merged_objects, ModelObject* ori_object,
                          ModelVolumeType type) {
@@ -129,7 +129,7 @@ void merge_or_add_object(AssemblePlate& plate, Model& model, int assemble_index,
 }
 
 // convert_obj_cluster_colors (BambuStudio.cpp 941-1038; OrcaSlicer.cpp
-// 795-849): the OBJ's colours clustered into filaments, a colour seen before
+// 777-831): the OBJ's colours clustered into filaments, a colour seen before
 // keeping its filament (BambuStudio only), and past the filament limit the
 // nearest filament colour.
 bool convert_obj_cluster_colors(std::vector<RGBA>& input_colors, std::vector<RGBA>& all_colours,
@@ -298,6 +298,15 @@ StepResult load_assemble_plate_list(const std::string& file, std::vector<Assembl
                 object.filaments = object_json.at("filaments").get<std::vector<int>>();
                 if (!per_copy_ok(object.filaments, object.count))
                     return list_refusal("filaments", object.filaments.size());
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+                // OrcaSlicer from 2.5 (libslic3r/Format/AssembleList.cpp 99-116 at
+                // f92a7c0): an empty list and a negative id are refused when the
+                // list is read. 0 keeps the default filament.
+                if (object.filaments.empty())
+                    return fail(CLI_CONFIG_FILE_ERROR, "The assemble list gives " + what + " no filament; give a filament for it");
+                if (std::any_of(object.filaments.begin(), object.filaments.end(), [](int id) { return id < 0; }))
+                    return fail(CLI_CONFIG_FILE_ERROR, "The assemble list's " + what + " has a negative filament id; use 1 or more, or 0 for the default filament.");
+#endif
                 if (object_json.contains("assemble_index")) {
                     object.assemble_index = object_json["assemble_index"].get<std::vector<int>>();
                     if (!per_copy_ok(object.assemble_index, object.count))

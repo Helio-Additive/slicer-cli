@@ -1,4 +1,7 @@
 #include "cli_arrange_geometry.hpp"
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/ExclusionVolumeGeometry.hpp"
+#endif
 
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Print.hpp"
@@ -42,7 +45,7 @@ const Slic3r::ConfigOption* arrange_opt(const Slic3r::DynamicPrintConfig& config
 
 /// The printer's bed exclusion boxes, as PartPlate::calc_bounding_boxes makes
 /// them from bed_exclude_area: every 4 points are one box (Bambu
-/// slic3r/GUI/PartPlate.cpp 375-392; Orca PartPlate.cpp 418-435). Plate 0's
+/// slic3r/GUI/PartPlate.cpp 375-392; Orca PartPlate.cpp 627-644). Plate 0's
 /// position is (0, 0) (PartPlate::set_shape adds it, Bambu PartPlate.cpp
 /// 3185-3189), so the boxes are plate-local bed coordinates.
 std::vector<Slic3r::BoundingBoxf> arrange_exclude_boxes(const Slic3r::DynamicPrintConfig& config) {
@@ -94,6 +97,42 @@ void arrange_add_exclude_areas(Slic3r::arrangement::ArrangePolygons& out,
             }
         }
     }
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5: the collision volumes the settings state for the
+    // bed, one fixed item per region and bed, beside the legacy area below
+    // (PartPlateList::preprocess_exclude_areas, PartPlate.cpp 7720-7757 at
+    // f92a7c0). No shipped printer states any at this pin.
+    if (has_bed_exclude_volumes(config)) {
+        const BedExcludeVolumeMode mode = active_bed_exclude_volume_mode(config);
+        const std::vector<std::vector<BedExcludeRegion>> regions_by_extruder = get_bed_excluded_regions_by_extruder(config);
+        const size_t extruder_count = mode == BedExcludeVolumeMode::Shared ? std::min<size_t>(1, regions_by_extruder.size())
+                                                                           : regions_by_extruder.size();
+        for (size_t extruder_id = 0; extruder_id < extruder_count; ++extruder_id)
+            for (size_t region_id = 0; region_id < regions_by_extruder[extruder_id].size(); ++region_id) {
+                const BedExcludeRegion& region = regions_by_extruder[extruder_id][region_id];
+                if (!region.is_collision_volume() || region.polygon.points.size() < 3 ||
+                    (region.has_z_range && region.z_max <= region.z_min + EPSILON))
+                    continue;
+                for (int plate_idx = 0; plate_idx < num_beds; ++plate_idx) {
+                    arrangement::ArrangePolygon blocker;
+                    blocker.poly.contour   = bed_exclusion_arrange_polygon(region.polygon);
+                    blocker.translation    = Vec2crd::Zero();
+                    blocker.rotation       = 0.0;
+                    blocker.is_virt_object = true;
+                    blocker.is_bed_exclusion = true;
+                    blocker.bed_exclusion_extruder_id = mode == BedExcludeVolumeMode::Shared ? -1 : int(extruder_id);
+                    blocker.bed_idx     = plate_idx;
+                    blocker.height      = std::max(0.0, region.z_max - region.z_min);
+                    blocker.z_min       = region.z_min;
+                    blocker.z_max       = region.z_max;
+                    blocker.has_z_range = region.has_z_range;
+                    blocker.name        = "BedExclusionVolume" + std::to_string(extruder_id) + "_" + std::to_string(region_id);
+                    blocker.inflation   = inflation;
+                    out.emplace_back(std::move(blocker));
+                }
+            }
+    }
+#endif
     const std::vector<BoundingBoxf> boxes = arrange_exclude_boxes(config);
     for (size_t index = 0; index < boxes.size(); ++index) {
         const BoundingBoxf& box = boxes[index];
@@ -139,20 +178,20 @@ static void collect_object_extruders(const Slic3r::Model& model,
     const int glb_solid_infill_extr  = arrange_opt(full_config, "solid_infill_filament")->getInt();
 #endif
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
-    // OrcaSlicer v2.4.2 renamed the feature-filament keys to `*_id`, where 0
-    // means "Default" (PrintConfig.cpp handle_legacy, 8038-8058), and adds the
-    // surface and inner-wall keys (PartPlate.cpp 1671-1681). The wall pair
-    // falls back to each other, and top/bottom surface to internal solid.
+    // OrcaSlicer names the feature-filament keys `*_id`, where 0 means
+    // "Default", with surface and inner-wall keys of their own
+    // (PartPlate::get_extruders_under_cli, PartPlate.cpp 3252-3261 at
+    // f92a7c0). The wall pair falls back to each other. From 2.5 a top or
+    // bottom surface filament left at "Default" no longer takes the internal
+    // solid filament here.
     int glb_outer_wall_extr = arrange_opt(full_config, "outer_wall_filament_id")->getInt();
     int glb_inner_wall_extr = arrange_opt(full_config, "inner_wall_filament_id")->getInt();
     if (glb_outer_wall_extr == 0) glb_outer_wall_extr = glb_inner_wall_extr;
     if (glb_inner_wall_extr == 0) glb_inner_wall_extr = glb_outer_wall_extr;
     const int glb_sparse_infill_extr  = arrange_opt(full_config, "sparse_infill_filament_id")->getInt();
     const int glb_internal_solid_extr = arrange_opt(full_config, "internal_solid_filament_id")->getInt();
-    int glb_top_surface_extr    = arrange_opt(full_config, "top_surface_filament_id")->getInt();
-    int glb_bottom_surface_extr = arrange_opt(full_config, "bottom_surface_filament_id")->getInt();
-    if (glb_top_surface_extr == 0)    glb_top_surface_extr    = glb_internal_solid_extr;
-    if (glb_bottom_surface_extr == 0) glb_bottom_surface_extr = glb_internal_solid_extr;
+    const int glb_top_surface_extr    = arrange_opt(full_config, "top_surface_filament_id")->getInt();
+    const int glb_bottom_surface_extr = arrange_opt(full_config, "bottom_surface_filament_id")->getInt();
 #endif
 #ifdef ENGINE_ORCA
     bool glb_support = arrange_opt(full_config, "enable_support")->getBool();
@@ -228,14 +267,11 @@ static void collect_object_extruders(const Slic3r::Model& model,
                                                            glb_solid_infill_extr, plate_extruders);
 #endif
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
-            // Orca also lists wall / infill / surface filaments, with or
-            // without support: the desktop's PartPlate::get_extruders, which
-            // decides the plate's wipe tower (GLCanvas3D.cpp 2880), lists them
-            // after its `if (obj_support)` block (PartPlate.cpp 1563-1640,
-            // v2.4.2). The official CLI's get_extruders_under_cli puts them
-            // behind `if (!obj_support) continue;` (1723-1801), so an object
-            // without support would count one filament for the tower and the
-            // arrange. Every key is `*_id` and 0 is "Default".
+            // OrcaSlicer also lists wall / infill / surface filaments, with
+            // or without support, after its `if (obj_support)` block
+            // (PartPlate::get_extruders_under_cli, PartPlate.cpp 3324-3377 at
+            // f92a7c0; the app's get_extruders lists the same). Every key is
+            // `*_id` and 0 is "Default".
             int obj_outer_wall_extr = 0;
             if (const ConfigOption* opt = object->config.option("outer_wall_filament_id"))
                 obj_outer_wall_extr = opt->getInt();
@@ -277,8 +313,6 @@ static void collect_object_extruders(const Slic3r::Model& model,
             int obj_top_surface_extr = 0;
             if (const ConfigOption* opt = object->config.option("top_surface_filament_id"))
                 obj_top_surface_extr = opt->getInt();
-            if (obj_top_surface_extr == 0)
-                obj_top_surface_extr = obj_internal_solid_extr;
             if (obj_top_surface_extr != 0)
                 plate_extruders.push_back(obj_top_surface_extr);
             else if (glb_top_surface_extr != 0)
@@ -287,8 +321,6 @@ static void collect_object_extruders(const Slic3r::Model& model,
             int obj_bottom_surface_extr = 0;
             if (const ConfigOption* opt = object->config.option("bottom_surface_filament_id"))
                 obj_bottom_surface_extr = opt->getInt();
-            if (obj_bottom_surface_extr == 0)
-                obj_bottom_surface_extr = obj_internal_solid_extr;
             if (obj_bottom_surface_extr != 0)
                 plate_extruders.push_back(obj_bottom_surface_extr);
             else if (glb_bottom_surface_extr != 0)
@@ -320,8 +352,8 @@ static void collect_plate_tool_changes(const Slic3r::Model& model,
 }
 
 /// The filaments this plate's objects use, as PartPlate::get_extruders_under_cli
-/// (true, config) lists them (Bambu PartPlate.cpp 1275-1428; Orca PartPlate.cpp
-/// 1625-1739): each printable instance's volumes, its layer ranges, its support
+/// (true, config) lists them (Bambu PartPlate.cpp 1275-1428; OrcaSlicer PartPlate.cpp
+/// 3247-3410 at f92a7c0): each printable instance's volumes, its layer ranges, its support
 /// filaments when it has support, the plate's tool-change G-codes, sorted and
 /// unique. The model holds only this plate's objects (load_bbs_3mf with the
 /// plate id), so every instance is the plate's. Bambu (v02.09.01.70): the
@@ -329,7 +361,8 @@ static void collect_plate_tool_changes(const Slic3r::Model& model,
 /// volume (GlobalFeatureFilaments::from_full_config, Model.cpp 3409-3413;
 /// PartPlate.cpp 1321, 1336) and a layer range may name them too (1343).
 std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
-                                                const Slic3r::DynamicPrintConfig& full_config, int plate_index) {
+                                                const Slic3r::DynamicPrintConfig& full_config, int plate_index,
+                                                bool expand_mixed_slots) {
     using namespace Slic3r;
     std::vector<int> plate_extruders;
     collect_object_extruders(model, full_config, plate_extruders);
@@ -340,9 +373,10 @@ std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
     auto it_end = std::unique(plate_extruders.begin(), plate_extruders.end());
     plate_extruders.resize(std::distance(plate_extruders.begin(), it_end));
 
-#ifdef ENGINE_BAMBU
-    // Mixed filament slots count as their physical parts (PartPlate.cpp 1414-1426).
-    if (auto* is_mixed_opt = full_config.option<ConfigOptionBools>("filament_is_mixed")) {
+#ifndef ENGINE_SNAPMAKER
+    // Mixed filament slots count as their physical parts (Bambu PartPlate.cpp
+    // 1414-1426; OrcaSlicer PartPlate.cpp 3399-3413 at f92a7c0).
+    if (auto* is_mixed_opt = expand_mixed_slots ? full_config.option<ConfigOptionBools>("filament_is_mixed") : nullptr) {
         if (auto* comp_strs_opt = full_config.option<ConfigOptionStrings>("filament_mixed_components")) {
             if (has_any_mixed_filament(is_mixed_opt->values)) {
                 std::vector<unsigned int> ext_0based;
@@ -355,6 +389,8 @@ std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
             }
         }
     }
+#else
+    (void)expand_mixed_slots;
 #endif
     return plate_extruders;
 }
@@ -365,11 +401,11 @@ std::vector<int> arrange_plate_extruders(const Slic3r::Model& model,
 /// Orca PartPlate.cpp 2529+). The official tests the instance's convex hull
 /// against each exclusion box; this uses the hull's bounding box.
 static bool arrange_instance_totally_inside(const Slic3r::ModelObject* object, const Slic3r::BoundingBoxf3& plate_box_in,
-                                            const std::vector<Slic3r::BoundingBoxf>& exclude_boxes) {
+                                            const std::vector<Slic3r::BoundingBoxf>& exclude_boxes, size_t instance = 0) {
     using namespace Slic3r;
-    if (object->instances.empty())
+    if (instance >= object->instances.size())
         return false;
-    const BoundingBoxf3 instance_box = object->instance_convex_hull_bounding_box(size_t(0));
+    const BoundingBoxf3 instance_box = object->instance_convex_hull_bounding_box(instance);
     BoundingBoxf3 plate_box = plate_box_in;
     if (instance_box.max.z() > plate_box.min.z())
         plate_box.min.z() += instance_box.min.z(); // not considering outsize if sinking
@@ -519,5 +555,61 @@ Slic3r::Vec3d arrange_estimate_wipe_tower_size(const Slic3r::Model& model, const
     return wipe_tower_size;
 #endif // ENGINE_SNAPMAKER
 }
+
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+Slic3r::WipeTowerFootprint plate_tower_footprint(const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                                                 std::vector<int> plate_extruders, int plate_extruder_size,
+                                                 const Slic3r::BoundingBoxf3& plate_box,
+                                                 const std::vector<Slic3r::BoundingBoxf>& exclude_boxes,
+                                                 const Slic3r::Model* global_model) {
+    using namespace Slic3r;
+    // An explicit count is a floor: the lowest ids not already on the plate (3979-3982).
+    for (int id = 1; int(plate_extruders.size()) < plate_extruder_size; ++id)
+        if (std::find(plate_extruders.begin(), plate_extruders.end(), id) == plate_extruders.end())
+            plate_extruders.push_back(id);
+    // The wipe tower filament joins the tool ordering even when unused, but
+    // only where there is a tower to join (3983-3991).
+    const ConfigOption* wipe_tower_filament_opt = config.option("wipe_tower_filament");
+    const ConfigOption* enable_prime_tower_opt  = config.option("enable_prime_tower");
+    const int wipe_tower_filament = wipe_tower_filament_opt != nullptr ? wipe_tower_filament_opt->getInt() : 0;
+    if (enable_prime_tower_opt != nullptr && enable_prime_tower_opt->getBool() && plate_extruders.size() > 1 &&
+        wipe_tower_filament > 0 &&
+        std::find(plate_extruders.begin(), plate_extruders.end(), wipe_tower_filament) == plate_extruders.end())
+        plate_extruders.push_back(wipe_tower_filament);
+    if (plate_extruders.empty())
+        return WipeTowerFootprint();
+
+    // The tallest object on this plate and the thinnest layer it is sliced at,
+    // each object's own value before the preset's (3996-4019).
+    const ConfigOption* layer_height_opt = config.option("layer_height");
+    const double global_layer_height = layer_height_opt != nullptr ? layer_height_opt->getFloat() : 0.08;
+    double max_height = 0.;
+    double layer_height = std::numeric_limits<double>::max();
+    for (const ModelObject* object : (global_model ? global_model->objects : model.objects)) {
+        // An object counts when any of its instances lies wholly on the plate,
+        // and each such instance gives its own height (contain_any_instance_totally,
+        // PartPlate.cpp 4003-4014 and 4502-4513 at f92a7c0).
+        bool any_inside = global_model != nullptr;
+        for (size_t inst_idx = 0; inst_idx < object->instances.size(); ++inst_idx) {
+            if (!global_model && !arrange_instance_totally_inside(object, plate_box, exclude_boxes, inst_idx))
+                continue;
+            any_inside = true;
+            max_height = std::max(max_height, object->instance_convex_hull_bounding_box(inst_idx, true).size().z());
+        }
+        if (!any_inside)
+            continue;
+        const ConfigOption* object_layer_height = object->config.option("layer_height");
+        layer_height = std::min(layer_height, object_layer_height != nullptr ? object_layer_height->getFloat() : global_layer_height);
+    }
+    if (layer_height == std::numeric_limits<double>::max())
+        layer_height = global_layer_height;
+
+    std::vector<unsigned int> filament_ids;
+    for (int id : plate_extruders)
+        if (id > 0)
+            filament_ids.push_back(static_cast<unsigned int>(id - 1));
+    return Slic3r::estimate_wipe_tower_footprint(config, resolve_wipe_tower_type(config), filament_ids, layer_height, max_height);
+}
+#endif
 
 } // namespace slicer_cli

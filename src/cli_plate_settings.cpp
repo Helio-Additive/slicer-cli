@@ -10,6 +10,9 @@
 #include "cli_nozzle_diameter.hpp"
 #include "cli_load_settings.hpp"
 #include "cli_run_steps.hpp"
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/FilamentMixer.hpp"
+#endif
 #include "cli_options.hpp"
 #include "cli_result_json.hpp"
 #include "cli_setting_overrides.hpp"
@@ -31,7 +34,7 @@ using json = nlohmann::json;
 /// --filament-map-mode and --filament-map: the command line's mode and map win
 /// over the plate's and the project's, as in the official CLIs: the mode from
 /// the command line before the plate's (BambuStudio.cpp 7095-7099 at
-/// v02.09.01.70; OrcaSlicer.cpp 5851-5854 at 8500fcd), the map set on the plate
+/// v02.09.01.70; OrcaSlicer.cpp 6746-6749 at f92a7c0), the map set on the plate
 /// (7208-7249; 5889-5929) and laid over the print config (7434; 5989). In
 /// Manual each engine prints a filament with the extruder its map names (Bambu
 /// ToolOrdering.cpp 2653-2680; Orca ToolOrdering.cpp 1288-1305, which regroups
@@ -108,18 +111,71 @@ static FilamentMapFlag apply_filament_map_flag(const CliOptions& o, Slic3r::Dyna
 }
 #endif // ENGINE_SNAPMAKER
 
-#ifdef ENGINE_BAMBU
+#ifndef ENGINE_SNAPMAKER
 /// The official check of a manual map against filament_printable
 /// (cli_nozzle_options.cpp), on the objects the model holds now: the caller
 /// scopes it to the plate and runs it after the object exclusions.
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+/// OrcaSlicer from 2.5, mixed filaments (OrcaSlicer.cpp 4244-4259 and 6706-6735
+/// at f92a7c0): a mixed slot is virtual but needs a filament entry of its own,
+/// and a plate may not use a mixed slot whose components are different
+/// filament types (the app's Sidebar::has_broken_mixed_filament). Missing or
+/// out-of-range components are the engine's own validation. `plate_slots` are
+/// the plate's filaments with mixed slots not expanded.
+static std::string mixed_filament_refusal(const Slic3r::DynamicPrintConfig& config, const std::vector<int>& plate_slots) {
+    using namespace Slic3r;
+    const auto* is_mixed_opt   = config.option<ConfigOptionBools>("filament_is_mixed");
+    const auto* components_opt = config.option<ConfigOptionStrings>("filament_mixed_components");
+    if (is_mixed_opt == nullptr || !has_any_mixed_filament(is_mixed_opt->values))
+        return {};
+    const auto& is_mixed = is_mixed_opt->values;
+    const auto* presets = config.option<ConfigOptionStrings>("filament_settings_id");
+    const size_t filament_count = presets != nullptr ? presets->values.size() : 0;
+    for (size_t slot = filament_count; slot < is_mixed.size(); ++slot)
+        if (is_mixed[slot])
+            return "Mixed filament slot " + std::to_string(slot + 1) + " has no filament of its own: only " +
+                   std::to_string(filament_count) + " filament(s) are loaded. Load one filament per slot, including each mixed one.";
+    if (components_opt == nullptr)
+        return {};
+    const size_t mixed_count = static_cast<size_t>(std::count(is_mixed.begin(), is_mixed.end(), true));
+    const size_t num_physical = filament_count > mixed_count ? filament_count - mixed_count : 0;
+    std::vector<std::string> physical_types(num_physical);
+    for (size_t f_index = 0; f_index < num_physical; ++f_index) {
+        std::string displayed_type;
+        // get_filament_type only reads the settings.
+        physical_types[f_index] = const_cast<DynamicPrintConfig&>(config).get_filament_type(displayed_type, static_cast<int>(f_index));
+        if (physical_types[f_index].empty())
+            physical_types[f_index] = "PLA";
+    }
+    for (const size_t slot : check_mixed_filament_type_consistency(is_mixed, components_opt->values, physical_types))
+        if (std::find(plate_slots.begin(), plate_slots.end(), static_cast<int>(slot) + 1) != plate_slots.end())
+            return "Mixed filament " + std::to_string(slot + 1) + " mixes components of different filament types. "
+                   "Give it components of one type (filament_mixed_components), or do not use it on this plate.";
+    return {};
+}
+#endif
+
 bool manual_map_extruders_fit(const Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model, int plate_id,
                                      PlateOutcome& outcome) {
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    if (const std::string mixed = mixed_filament_refusal(
+            config, arrange_plate_extruders(model, config, std::max(0, plate_id - 1), /*expand_mixed_slots=*/false));
+        !mixed.empty()) {
+        std::cerr << "Error: " << mixed << "\n";
+        set_outcome_failure(outcome, CLI_MIXED_FILAMENT_INVALID, mixed);
+        return false;
+    }
+#endif
     const std::string why =
         slicer_cli::manual_map_extruder_refusal(config, arrange_plate_extruders(model, config, std::max(0, plate_id - 1)));
     if (why.empty())
         return true;
     std::cerr << "Error: " << why << "\n";
-    set_outcome_failure(outcome, CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, why);
+    // A Nozzle Manual request the rack cannot hold is a wrong input (-2), as
+    // the official's own Nozzle Manual refusals are (OrcaSlicer.cpp 6850-6857,
+    // 6893-6898 at f92a7c0); a filament its extruder cannot print is -65.
+    set_outcome_failure(outcome, why.rfind("--filament-map-mode", 0) == 0 ? CLI_INVALID_PARAMS
+                                                                         : CLI_FILAMENTS_NOT_SUPPORTED_BY_EXTRUDER, why);
     return false;
 }
 #endif
@@ -358,7 +414,7 @@ static int apply_plate_overrides(const CliOptions& o, RunSettings& run_settings,
     // command line over both: the official CLI slices each plate with
     // new_print_config = m_print_config; apply(*part_plate->config());
     // apply(m_extra_config) (BambuStudio.cpp 6902-6904 at 5873b5f;
-    // OrcaSlicer.cpp 5905-5907 at 31f6803). A plate states bed type,
+    // OrcaSlicer.cpp 6945-6947 at f92a7c0). A plate states bed type,
     // print sequence, first/other layer order, spiral mode and the
     // filament-switcher flags (bbs_3mf.cpp 4563-4728 / Orca 4419-4563).
     // The filament-map keys are not taken here: on the Bambu build the
@@ -439,22 +495,23 @@ static int apply_plate_overrides(const CliOptions& o, RunSettings& run_settings,
         config.apply(extra, true);
     // Apply command-line overrides
     apply_command_line_overrides(config, overrides, /*report_rejections=*/true);
-#ifdef ENGINE_BAMBU
+#ifndef ENGINE_SNAPMAKER
     // A manual map, the command line's or the plate's, that puts a filament
-    // on an extruder it cannot print with (BambuStudio.cpp 7357-7400).
+    // on an extruder it cannot print with (BambuStudio.cpp 7357-7400;
+    // OrcaSlicer.cpp 6912-6933 at f92a7c0).
     // A --slice run checks it after the plate's object exclusions
     // (--skip-objects), with the bed checks below.
     if (!o.slice_mode && !manual_map_extruders_fit(config, model, plate_id, outcome))
         return 1;
 #endif
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
     // A Bambu Studio project's own start G-code can carry the maker's
-    // placeholders, and this engine binds no value for two of them: its
-    // PlaceholderParser sets initial_extruder and reads nozzle_diameter
+    // placeholders, and Snapmaker Orca 2.4.1 binds no value for two of them:
+    // its PlaceholderParser sets initial_extruder and reads nozzle_diameter
     // from the config, while BambuStudio also sets
-    // nozzle_diameter_at_nozzle_id and initial_nozzle_id (BambuStudio
-    // GCode.cpp 2656-2660 at 5873b5f; upstream main binds them with its
-    // multi-nozzle engine, GCode.cpp 3334-3335 on main). Unbound, the
+    // nozzle_diameter_at_nozzle_id and initial_nozzle_id (GCode.cpp 2924-2928
+    // at 56a57d0), and so does OrcaSlicer from 2.5 (GCode.cpp 3785-3786 at
+    // f92a7c0), which therefore needs no refusal. Unbound, the
     // parser throws at export, after the whole run has sliced
     // ("Not a variable name"): refused here, before slicing, naming the
     // placeholder and the value to use instead. The settings are the ones
@@ -468,7 +525,7 @@ static int apply_plate_overrides(const CliOptions& o, RunSettings& run_settings,
                                             : "{nozzle_diameter[initial_extruder]}";
             const std::string sentence =
                 "The project's " + placeholder_key + " uses {" + placeholder +
-                "}, which this engine has no value for; use " + instead + " instead (OrcaSlicer binds "
+                "}, which this engine has no value for; use " + instead + " instead (Snapmaker Orca binds "
                 "the initial extruder as {initial_extruder} and the nozzle diameters as {nozzle_diameter}).";
             emit_event({{"event","config_refused"},
                         {"tag","BambuOnlyGcodePlaceholder"},

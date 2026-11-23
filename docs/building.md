@@ -26,7 +26,7 @@ The engines are git submodules, pinned to one commit each:
 | Engine | Submodule | Pin | Version |
 |-|-|-|-|
 | Bambu Studio | `references/BambuStudio` | `56a57d0` | 02.09.01.70 |
-| OrcaSlicer | `references/OrcaSlicer` | `8500fcd` | 2.4.2 |
+| OrcaSlicer | `references/OrcaSlicer` | `f92a7c0` | 2.5.2 |
 | Snapmaker Orca | `references/SnapmakerOrca` | `bac6fd5` | 2.4.1 |
 
 The Snapmaker Orca engine is a Snapmaker fork of OrcaSlicer. It builds with the
@@ -38,7 +38,7 @@ packaged and released by the same workflow: `slicer_cli-snapmaker` ships beside
 
 The submodules point at the upstream projects' official repositories and are
 pinned to the commit of the release tag: `bambulab/BambuStudio` tag
-`v02.09.01.70` and `OrcaSlicer/OrcaSlicer` tag `v2.4.2`, and
+`v02.09.01.70` and `OrcaSlicer/OrcaSlicer` tag `v2.5.2`, and
 `Snapmaker/OrcaSlicer` commit `bac6fd5` (version 2.4.1). The engine source is
 used as it is (see "The override layer" below); no Helio commit lives inside
 `references/`.
@@ -50,18 +50,19 @@ platform allows it:
 
 | Dependency | Bambu Studio engine | OrcaSlicer engine | Snapmaker Orca engine |
 |-|-|-|-|
-| CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 5.6.3 on Linux and in macOS CI; Homebrew's CGAL on a local macOS build; vcpkg CGAL 6 on Windows | as Bambu Studio |
-| OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | the same | the same |
+| CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 6.2.1 on Linux and in macOS CI (the archive OrcaSlicer 2.5.2 pins); Homebrew's CGAL on a local macOS build (6.2 or newer); 6.2.1 from the overlay port `ci/vcpkg-overlays-orca/cgal` on Windows | as Bambu Studio |
+| OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | 8.0.1 static on Linux, with OrcaSlicer's `0001-BRepMesh-seam-pcurve-selection.patch`; vcpkg 7.9.3 on Windows | as Bambu Studio |
 | libnoise | bambulab/libnoise `7e7c98c0` | SoftFever/Orca-deps-libnoise `f25d5331` | as OrcaSlicer |
 | Boost | 1.84.0 static on Linux, with Bambu's process patch | the same | the same |
 | Assimp | required (model import) | not used | not used |
 
 The CGAL 5.4 headers need one Boost MPL include that newer Boost no longer
 pulls in; `libslic3r/bambustudio/cgal_54_compat.hpp` adds it without changing
-the engine source. The Windows OrcaSlicer build applies
-`ci/patches/orca-cgal6-extract-boundary-cycles.patch` for the CGAL 6 API, and
-the Windows Bambu build takes CGAL 5.4 from the overlay port in
-`ci/vcpkg-overlays/cgal`.
+the engine source. The Windows Bambu build takes CGAL 5.4 from the overlay
+port in `ci/vcpkg-overlays/cgal`. OrcaSlicer 2.5 needs CGAL 6.2
+(`MeshBoolean.cpp` includes `CGAL/boost/graph/border.h`); the pinned vcpkg
+baseline has 6.1.1, so the Windows OrcaSlicer build takes 6.2.1 from the
+overlay port in `ci/vcpkg-overlays-orca/cgal`, the same archive upstream pins.
 
 ### Linux (Ubuntu 22.04) and macOS
 
@@ -74,17 +75,20 @@ ENGINE=orca ./install_deps.sh
 ```
 
 On Linux it builds the engine's own pinned CGAL either way — 5.4 (Bambu, with
-its Clang 19 patch) into `/opt/slicer-cli/cgal-5.4`, or 5.6.3 into
-`/opt/slicer-cli/cgal-5.6.3` — and that prefix is what `-DCGAL_DIR` takes in the
-configure command below.
+its Clang 19 patch) into `/opt/slicer-cli/cgal-5.4`, or 6.2.1 into
+`/opt/slicer-cli/cgal-6.2.1` — and that prefix is what `-DCGAL_DIR` takes in the
+configure command below. It also builds the engine's own OpenCASCADE: 7.6.0
+into `/opt/slicer-cli/occt-7.6`, or for `ENGINE=orca` 8.0.1 with OrcaSlicer's
+patch into `/opt/slicer-cli/occt-8.0`; the configure step finds the one for
+`-DENGINE` by itself.
 
 On macOS it builds the pinned 5.4 keg for the Bambu engine only: a local
-OrcaSlicer build takes the CGAL Homebrew installs, which is not the 5.6.3 the
+OrcaSlicer build takes the CGAL Homebrew installs, which is not the 6.2.1 the
 Linux build and the macOS CI build use (docs/engine-dependency-contract.md,
-"Compatibility exceptions"). The macOS CI build holds Orca at 5.6.3 — its step
-`Build macOS pinned CGAL (Orca)` builds that prefix from the CGAL 5.6.3 release
+"Compatibility exceptions"). The macOS CI build holds Orca at 6.2.1 — its step
+`Build macOS pinned CGAL (Orca)` builds that prefix from the CGAL 6.2.1 release
 archive, and the configure step passes
-`-DCGAL_DIR=/opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL`. Build the same prefix
+`-DCGAL_DIR=/opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL`. Build the same prefix
 locally when the engines' CGAL has to match.
 
 On Linux the release build also links a static Boost 1.84.0; the
@@ -100,7 +104,11 @@ Dependencies come from vcpkg at the commit the workflow pins
 vcpkg install tbb eigen3 boost cgal "opencv[core]" assimp opencascade qhull cereal nlopt `
   openssl libpng zlib expat freetype libjpeg-turbo --triplet x64-windows
 # Bambu Studio and Snapmaker Orca engines: add --overlay-ports=ci/vcpkg-overlays for CGAL 5.4
+# OrcaSlicer engine: add --overlay-ports=ci/vcpkg-overlays-orca for CGAL 6.2.1
 ```
+
+The OrcaSlicer engine needs Visual Studio 2019 16.8 or newer: its build sets
+`/Zc:lambda`, as OrcaSlicer's own build does.
 
 libnoise is not in vcpkg, so build it before configuring, from the engine's own
 pinned fork — `bambulab/libnoise` `7e7c98c` for the Bambu Studio engine,
@@ -128,7 +136,7 @@ cmake -S . -B build-bambu -G Ninja -DCMAKE_BUILD_TYPE=Release -DENGINE=bambu \
 cmake --build build-bambu --target slicer_cli
 
 cmake -S . -B build-orca -G Ninja -DCMAKE_BUILD_TYPE=Release -DENGINE=orca \
-  -DCGAL_DIR=<the CGAL 5.6.3 prefix>/lib/cmake/CGAL
+  -DCGAL_DIR=<the CGAL 6.2.1 prefix>/lib/cmake/CGAL
 cmake --build build-orca --target slicer_cli
 ```
 
@@ -195,7 +203,7 @@ that file are lost.
 | File | What it changes | In the current pin? | Can it move to the front end? |
 |-|-|-|-|
 | `libslic3r/bambustudio/libslic3r/Fill/FillFloatingConcentric.cpp` | Five crash/UB fixes: `is_floating` is kept the same length as `points` in both `rebase_at` (write the closure flag in place, never append); the floating-vertical-shell flag is read from the surviving line rather than one just erased; the extracted line's float flags are captured before `erase`/`insert` invalidate it; `prev`/`next` fall back to `curr` at the path ends instead of reading `path[-1]`/`path[size]`; the grid point buffer is owned by a vector that outlives the `EdgeGrid::Grid` query. Plus the engine's local `"../X.hpp"` includes rewritten as `<libslic3r/X.hpp>`. | Regenerated at v02.09.01.70: upstream changed the file once since v02.08.02.61 (the Arachne thresholds follow the nozzle that prints the fill, not the smallest one, and `wall_transition_length` is one nozzle diameter), and the override is that copy with the five fixes re-applied. | No. All five are inside the fill path, and there is no front-end call site: the corrupting reads happen while a contour is resampled. The motivating input is `LV_nano_bag_rel_multipart.3mf` plates 2 and 3 (PR #25), where Windows PageHeap reported heap failure `0xC0000374`; the two use-after-frees were measured on a build whose only difference from the pin was elsewhere in the front end. |
-| `libslic3r/bambustudio/libslic3r/Thread.cpp`, `libslic3r/orcaslicer/libslic3r/Thread.cpp`, `libslic3r/snapmaker/libslic3r/Thread.cpp` | In `name_tbb_thread_pool_threads_set_locale()`, the wait for every TBB worker to reach the naming barrier (`cv.wait` at line 246 of the engine's `Thread.cpp`) gets one deadline, 1 s after the barrier starts, shared by every task (`cv.wait_until`). TBB does not promise to run all `max_concurrency` tasks at once, and a worker that is never woken held every other thread in that wait for ever: a macOS CI slice hung 21 min there. After the deadline a thread goes on, and tasks TBB runs in later waves do not wait again; a task that runs later still counts and wakes the rest. A task that stops waiting at the deadline still names its thread. Only a worker that never gets one of these tasks stays unnamed and keeps the process locale, which the command line never changes from "C". | No. `Thread.cpp` is byte-identical at all three pins (BambuStudio 926a719, OrcaSlicer 8500fcd, Snapmaker Orca bac6fd5), and the wait has no limit in any of them. | No. `Print::process` calls it (BambuStudio `Print.cpp:1946`, OrcaSlicer `Print.cpp:2181`, Snapmaker Orca `Print.cpp:2411`), once per process, and the wait is local to it; the front end cannot reach it. |
+| `libslic3r/bambustudio/libslic3r/Thread.cpp`, `libslic3r/orcaslicer/libslic3r/Thread.cpp`, `libslic3r/snapmaker/libslic3r/Thread.cpp` | In `name_tbb_thread_pool_threads_set_locale()`, the wait for every TBB worker to reach the naming barrier (`cv.wait` at line 246 of the engine's `Thread.cpp`; line 259 in OrcaSlicer 2.5.2) gets one deadline, 1 s after the barrier starts, shared by every task (`cv.wait_until`). TBB does not promise to run all `max_concurrency` tasks at once, and a worker that is never woken held every other thread in that wait for ever: a macOS CI slice hung 21 min there. After the deadline a thread goes on, and tasks TBB runs in later waves do not wait again; a task that runs later still counts and wakes the rest. A task that stops waiting at the deadline still names its thread. Only a worker that never gets one of these tasks stays unnamed and keeps the process locale, which the command line never changes from "C". | No. The wait has no limit at any of the three pins. `Thread.cpp` is byte-identical in BambuStudio 926a719 and Snapmaker Orca bac6fd5; OrcaSlicer changed other parts of the file by v2.5.2 (`f92a7c0`), so its override is that release's file with the same change. | No. `Print::process` calls it (BambuStudio `Print.cpp:1946`, OrcaSlicer `Print.cpp:3311`, Snapmaker Orca `Print.cpp:2411`), once per process, and the wait is local to it; the front end cannot reach it. |
 | `libslic3r/snapmaker/libslic3r/Fill/FillConcentric.cpp`, `libslic3r/snapmaker/libslic3r/Fill/FillConcentricInternal.cpp` | Each builds an `Arachne::WallToolPathsParams` and sets six of its eight members (`FillConcentric.cpp:86-91`, `FillConcentricInternal.cpp:30-35` at `bac6fd5`). `Arachne::WallToolPaths::removeSmallLines` reads the other two, `min_length_factor` and `is_top_or_bottom_layer` (`Arachne/WallToolPaths.cpp:682`), so leftover stack bytes decided which short odd lines of a concentric solid fill were dropped, and the same input could give different G-code from run to run. The overrides set the two members to 0.5 and false, the defaults OrcaSlicer gave them in `Arachne/WallToolPaths.hpp` (OrcaSlicer `e2fd46f82`). Plus the engine's local includes rewritten as `<libslic3r/X.hpp>`. | No. Snapmaker Orca 2.4.1 and its main branch (checked 23 Nov 2026) leave the two members unset. OrcaSlicer has the fix from 2.5.0, so that engine needs no override. | No: the struct is built inside the engine's fill code. |
 
 The rest of the layer is dependency compatibility, not engine logic:
@@ -211,14 +219,15 @@ Both engines' `Print.cpp` used to be shadowed for one hunk in
 `Print::get_physical_unprintable_filaments`, which reads
 `m_config.filament_printable.values[filament_idx]` with no bounds check
 (OrcaSlicer v2.4.2 `Print.cpp:3229`, BambuStudio v02.08.02.61 `Print.cpp:3091`)
-while walking every used filament. The vector is short or empty only on this
+while walking every used filament. OrcaSlicer reads it with `get_at`, which
+clamps, from v2.5 on (`Print.cpp:4973` at v2.5.2). The vector is short or empty only on this
 build's flat-config path; the desktop sizes it before slicing.
 
-`filament_printable` is a filament option (`Preset.cpp:1310` at v2.4.2,
+`filament_printable` is a filament option (`Preset.cpp:1525` at v2.5.2,
 `Preset.cpp:1088` at v02.08.02.61), so the desktop's own rule reaches it:
 `Preset::normalize()` sizes every filament vector to the filament count,
 filling a slot it has to add with that option's definition default
-(`Preset.cpp:444-486` at v2.4.2, `442-487` at v02.08.02.61), and
+(`Preset.cpp:555-602` at v2.5.2, `442-487` at v02.08.02.61), and
 `PresetBundle::full_fff_config` then assembles the slicing config out of the
 normalized presets. No vector the engine slices with is ever shorter than the
 roster.

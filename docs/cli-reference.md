@@ -220,7 +220,7 @@ every other value from the preset it has today (`load_config_model`,
 the presets saved inside the project and the file's own nozzle rack are kept
 (`Plater.cpp` 11953-11958, 12160). OrcaSlicer and Snapmaker Orca load a
 project the same way, their own projects too (OrcaSlicer `Plater.cpp`
-6063-6110, 6415 and `Preset.cpp` 2516-2535 at 8500fcd; Snapmaker Orca
+9250-9440, 9626 and `Preset.cpp` 3028-3070 at f92a7c0; Snapmaker Orca
 `Plater.cpp` 12103 and `Preset.cpp` 2121-2148 at bac6fd5). All three programs
 do the same with the presets the package ships, and say so (event
 `config_normalized` / `ProjectRebasedOnSystemPresets`). So a project saved by an older version
@@ -229,7 +229,12 @@ printer or process preset the package does not ship keeps its saved values
 (`ProjectPresetRebaseSkipped`).
 
 `--project-settings-as-saved` turns this off: the run slices the values in
-the file, which is what the official command lines do.
+the file. That is what Bambu Studio's command line does. OrcaSlicer's own
+command line, from 2.5, also takes today's preset values for a project that
+lists changed settings (or with `--uptodate`), and only adds missing settings
+to a project that lists none (`OrcaSlicer.cpp` 2800-2843 and 3189-3225 at
+f92a7c0); `slicer_cli-orcaslicer` keeps the two readings above: the app's by
+default, the file's own with this flag.
 
 Bambu Studio also puts each plate's saved prime tower position back inside
 the plate when it opens a project, by the size the tower has for that plate's
@@ -241,7 +246,10 @@ no tower position for takes the first plate's in all three apps (Bambu Studio
 fills the list at load, `PartPlate.cpp` 5146-5148; OrcaSlicer and Snapmaker
 Orca read a missing entry as the first one, `ConfigOptionVector::get_at`), and
 in all three binaries. With `--project-settings-as-saved` such a plate keeps
-the official command line's reading, the option's default corner.
+the official command line's reading: the option's default corner in Bambu
+Studio, the first plate's position in OrcaSlicer from 2.5 (its command line
+fits every plate's tower before it slices, `OrcaSlicer.cpp` 6495-6526 at
+f92a7c0).
 
 The app can also download newer presets than the ones its installer ships,
 and slices with those. slicer-cli has the presets of its pinned engine
@@ -468,6 +476,7 @@ These older shortcuts set one setting each and keep working:
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | all binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
+| `--strict` | | End the run (-100) when the slice gives a warning the engine otherwise only notes, for example an object that needs support while support is off. `result.json` lists these warnings (`warnings`). Not together with `--no-check` (-2) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
 | `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate. `slicer_cli` accepts it and does nothing with it: Bambu Studio 2.9.1 dropped the plate-level temperature-mix check, so there is nothing to lift; the `slicer_cli` run says so once with a `warning` / `AllowMixTempIgnored` event. `slicer_cli-snapmaker` applies it to its own pre-slice temperature check | all binaries |
 | `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19). On by default with `--slice` | all binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | all binaries |
@@ -505,9 +514,14 @@ Transforms run in the order given, before the objects are placed.
 | `--assemble` | | Merge the model files into one object | all binaries |
 | `--convert-unit` | | Convert a model saved in meters or inches to mm | all binaries |
 | `--ensure-on-bed` | | Lift an object that is partly below the bed | all binaries |
+| `--ground-largest-face` | | Lay each object on the largest face of its convex hull. `--orient 1` runs after all transforms and replaces this | slicer_cli-orcaslicer only (OrcaSlicer engine) |
+| `--ground-face-normal` | "NX,NY,NZ" | Lay each object on the hull face whose outward normal is closest to this direction (`1,0,0` stands it on its +X side) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
+| `--ground-face-point` | "X,Y,Z" | Lay each object on the hull face that holds this point (object coordinates); the run ends (-2) when no object has such a face | slicer_cli-orcaslicer only (OrcaSlicer engine) |
+| `--repair` | | Repair each model's mesh as the app's Fix Model does: close holes, turn faces outward, remove self-intersections (events `MeshRepaired`, `MeshRepairFailed`) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
 | `--repetitions` | count | Print the plate's objects this many times in all (count - 1 copies), as many as fit; needs `--slice N` | all binaries |
 | `--arrange` | 0, 1 or other | 0: keep the positions (a model file keeps its own coordinates); 1: arrange the plate (needs `--slice`); other or not given: with `--slice`, model files with more than one object are arranged | all binaries |
 | `--allow-rotations` | | Let the arrange turn objects (off by default) | all binaries |
+| `--align-to-y-axis` | | Let the arrange turn each object so its long side runs along Y. Not given: on for bed-slinger (i3) printers, off for the others, as in the app | slicer_cli-orcaslicer only (OrcaSlicer engine) |
 | `--allow-multicolor-oneplate` | | Let the arrange put several colours on one plate (on by default) | all binaries |
 | `--avoid-extrusion-cali-region` | | Keep the arrange off the extrusion calibration area | all binaries |
 | `--simplify` | `extra-high`, `high`, `medium`, `low` or `extra-low` | Reduce every part's triangles like the desktop Simplify tool, at that detail level (`medium` is the tool's default) | all binaries |
@@ -546,6 +560,7 @@ run goes on.
 | `--metadata-value` | "v1;v2" | Metadata values for the 3MF | all binaries |
 | `--makerlab-name` | name | MakerLab name in the 3MF | all binaries |
 | `--makerlab-version` | version | MakerLab version in the 3MF | all binaries |
+| `--export-statistics` | | With `--slice`: each plate's statistics as `plate_N.statistics.json` next to its G-code in `--outputdir`, and inside the 3MF of `--export-3mf` (time, filament and feature totals, also per layer and per object) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
 | `--skip-useless-pick` | `=0` or `=1` | Leave pick pictures out of the 3MF | slicer_cli only (Bambu Studio engine) |
 | `--export-settings` | file | Write the project's settings as JSON (not a plate's own) and stop; with `--slice` the slice goes on | all binaries |
 | `--export-stl` | | Write the objects as one STL and stop | all binaries |
@@ -655,11 +670,15 @@ thumbnail block.
 | Flag | Works in | Why |
 |-|-|-|
 | `--export-png`, `--camera-view` | slicer_cli only (Bambu Studio engine) | slicer-cli makes no pictures |
+| `--inspect-mesh`, `--inspect-paint` | slicer_cli-orcaslicer only (OrcaSlicer engine) | OrcaSlicer 2.5 makes these reports with app code that slicer-cli does not build |
+| `--export-settings -` | slicer_cli-orcaslicer only (OrcaSlicer engine) | OrcaSlicer 2.5 writes the settings to stdout for `-`; this binary's stdout carries its event lines, so give a file name |
 | `--pipe` on macOS and Windows | all binaries | the official pipe exists on Linux only; progress goes to stdout as events on every system (`--progress`) |
 
 Names that both official command lines only mention in comments (such as
-`--cut`, `--export-obj`, `--center`, `--repair`) are refused as not being flags
-of either.
+`--cut`, `--export-obj`, `--center`) are refused as not being flags of either.
+A flag only one engine's command line has (the OrcaSlicer 2.5 flags above, or
+`--estimate-mode` of Bambu Studio) is refused by the other binaries with the
+name of the binary that runs it.
 
 ### Other flags
 
@@ -803,6 +822,8 @@ A run of `slicer_cli cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 
 | `printer_preset`, `process_preset`, `filament_presets` | Optional catalog-validated names of the printer, process, and filament presets a model-file run with `--printer-preset` used. A process or filament not named is the printer's default, and every name is the preset's current one (an old name from its `renamed_from` is reported as the current name). They are captured before raw `--machine`/`--process`/`--filament` settings files can supply arbitrary ids, once the model reaches per-plate slicing; they are absent for 3MF projects, settings-file-only runs, project printer switches, and failures before that capture point. |
 | `layer_height`, `wall_loops`, `sparse_infill_density` | The first sliced plate's values |
 | `unknown_settings` | Settings in the file this engine does not have |
+| `strict_mode` | `slicer_cli-orcaslicer`: whether `--strict` was given |
+| `warnings` | `slicer_cli-orcaslicer`: one entry per warning with a fixed `class`: `config_value_substituted` (`file`, `key`, `old_value`, `new_value`: a value the engine did not know and replaced) and `slicing_warning_non_critical` (`plate_id`, `text`). The list is there with and without `--strict` |
 | `settings_replaced_by_presets` | Settings the project file states and that printed with the preset's value instead: the file does not list them as changed by its maker (`different_settings_to_system`), and the desktop app drops such a value the same way. Only settings the app shows (a labelled setting outside its developer mode), not set by a flag, whose printed value differs from the file's; a printer's per-nozzle-variant lists are compared after the print narrows them to the plate's own variant. Also on each sliced plate. The `ProjectRebasedOnSystemPresets` event's `replaced_settings` is the load's own list, before that narrowing, and can name more. A caller that edits a project file lists its edits there, gives them as setting flags, or slices with `--project-settings-as-saved` |
 | `sliced_plates[]` | One entry per sliced plate |
 | `sliced_plates[].id` | The plate number |
@@ -885,7 +906,7 @@ for -2):
 | -19 | The project names post-processing scripts |
 | -21 | Arrange failed |
 | -24 | The 3MF is from a newer app version |
-| -25 | Unsupported feature in the 3MF (the official code; no slicer-cli check gives it since Bambu Studio 2.9.1 slices a mixed filament) |
+| -25 | Bambu Studio: unsupported feature in the 3MF (the official code; no slicer-cli check gives it since Bambu Studio 2.9.1 slices a mixed filament). OrcaSlicer from 2.5: the statistics of `--export-statistics` could not be written |
 | -50 | A plate is empty, or an object is larger than the bed |
 | -51 | Invalid slicing settings |
 | -52 | An object is partly outside the bed |
@@ -896,6 +917,8 @@ for -2):
 | -61 | Filaments do not suit the plate type |
 | -62 | Filament temperatures too far apart |
 | -63, -64 | Objects collide (by object, by layer) |
+| -68 | A filament cannot print on the extruder its map names |
+| -69 | A mixed filament is not valid: its components are different material types, or its slot has no filament of its own (`slicer_cli-orcaslicer`) |
 | -100 | Slicing failed |
 | -101 | G-code path conflicts |
 | -102 | G-code in an area a multi-extruder printer cannot reach |
@@ -914,49 +937,101 @@ them as they are.
 
 - **`--load-slicedata` returns -57 and the plate is sliced normally.**
   OrcaSlicer's `Print.cpp` writes each extrusion path's polyline as a
-  `Polyline3` (`[[x, y, z]]`, line 3861; `ExtrusionEntity.hpp` 153) and reads it
-  back as a 2D `Polyline` (lines 4116 and 4137), so the read stops with a JSON
-  type error 305 and the load returns -57 (lines 4902-4904). The official
-  OrcaSlicer alpha gives the same -57. slicer_cli-orcaslicer then slices the
-  plate normally and reports `SliceDataNotLoaded`. Bambu Studio's paths hold a
-  plain `Polyline` (`ExtrusionEntity.hpp` 215), so slicer_cli round-trips.
-- **`--arrange 1` cannot place even a small part on some printers.** The
-  official OrcaSlicer v2.4.0-alpha CLI, given the printer's own shipped
-  profiles, fails the same way (its arrange leaves the part off the plate and the run ends with
-  -50, "nothing to be sliced"; slicer_cli-orcaslicer stops at the arrange with
-  -21). Without `--arrange 1` these printers slice. Three causes:
-  - A skirt with a first-layer line width given as a percentage (Construct 1,
-    iQ TiQ8; any printer with `skirt_loops` above 0 and, for example,
-    `initial_layer_line_width = 120%`): `get_real_skirt_dist` reads the
-    percentage as mm (`PrintConfig.cpp` 11314-11338), and `update_arrange_params`
-    shrinks the bed by that much on each side (`Arrange.cpp` 87-92). Avoid it
-    with `--initial-layer-line-width` in mm (for example 0.48) or `--skirt-loops 0`.
-  - Anycubic Kobra 3 (all nozzles): its `bed_exclude_area` lists the whole bed
-    square and then an inner square; the engine makes one exclusion box from
-    every 4 points (`PartPlate.cpp` 418-435), so the first box covers the
-    whole bed. Avoid it with `--bed-exclude-area 0x0`.
-  - Folgertech i3 0.6: its `printable_area` is not a rectangle
-    (0x0, 20x0, 200x200, 0x200). No flag avoids it; without `--arrange 1` the
-    part is refused as over the bed edge (-52).
+  `Polyline3` (`[[x, y, z]]`, line 6133; `ExtrusionEntity.hpp` 177) and reads it
+  back as a 2D `Polyline` (line 6409), so the read stops with a JSON
+  type error and the load returns -57 (lines 7174-7177; all at `f92a7c0`). The
+  official OrcaSlicer v2.4.0-alpha gave the same -57. slicer_cli-orcaslicer
+  then slices the plate normally and reports `SliceDataNotLoaded`. Bambu
+  Studio's paths hold a plain `Polyline` (`ExtrusionEntity.hpp` 215), so
+  slicer_cli round-trips.
+- **`--arrange 1` cannot place a part on the Anycubic Kobra 3.** Its
+  `bed_exclude_area` (all four nozzle sizes) lists the whole bed square and
+  then an inner square; the engine makes one exclusion box from every 4 points
+  (`PartPlate.cpp` 627-644 at `f92a7c0`), so the first box covers the whole
+  bed. slicer_cli-orcaslicer stops at the arrange with -21; the official
+  OrcaSlicer v2.4.0-alpha CLI left the part off the plate and ended with -50,
+  "nothing to be sliced". Without `--arrange 1` the printer slices. Avoid it
+  with `--bed-exclude-area 0x0`. The two other printers this note named for
+  OrcaSlicer 2.4 (Construct 1, Folgertech i3 0.6) arrange and slice on 2.5.2.
 - **The prime volume of a Bambu project is kept as the file has it.** The
   official Bambu Studio command line sets `filament_prime_volume` to 45 for
   every filament of a Bambu project it slices without `--load-filaments`
   (`BambuStudio.cpp` 7422-7431 at v02.09.01.70); the desktop app slices with
   the file's value, and so does slicer-cli. For the official command line's
   G-code, pass `--filament-prime-volume` with 45 for each filament.
-- **A deep prime tower can be refused -104 at the desktop's own tower spot.**
-  On a plate with a fixed layout (`--load-assemble-list` with
-  `need_arrange: false`) and two or more filaments, slicer_cli-orcaslicer puts
-  the prime tower where the desktop puts it for a new plate
-  (`set_default_wipe_tower_pos_for_plate`, `PartPlate.cpp` 4115-4190). That
-  spot comes from an estimate of the tower's size. Some filament pairs make a
-  deeper tower, for example Bambu PLA Basic with Bambu PETG HF on the X1 Carbon:
-  the tower then runs past the back of the bed by a few mm. The engine's
-  G-code check after slicing allows only 2 mm (`GCodeProcessor.cpp` 1861-1883),
-  and the official OrcaSlicer CLI runs the same check, so the plate is refused
-  -104 and the error names the prime tower. Move the tower with
-  `--wipe-tower-x` and `--wipe-tower-y`, or turn it off with
-  `--enable-prime-tower=0`.
+- **Preset names change between OrcaSlicer releases.** From 2.4.2 to 2.5.2,
+  789 filament names, 22 process names and one printer name no longer exist.
+  The profiles state a successor for most (`renamed_from`), and a name with a
+  successor still works: `--filament-preset "Prusa Generic PLA @MK4"` slices
+  and reports `Generic PLA @Prusa MK4`. 41 filament names and one process
+  name have no successor and are refused with the close names. Read the
+  current names with `--list-presets --printer NAME`.
+- **A printer's default filament may not be its own.** In OrcaSlicer's
+  shipped profiles some printers name a default filament that does not list
+  them as compatible. `--printer-preset` with no `--filament-preset` then
+  takes the first compatible filament, the app's own rule for a newly picked
+  printer (`PresetBundle::load_selections`), and says so
+  (`presets_resolved`, `defaults_replaced`). At 2.5.2 the Creality K2 Plus
+  0.4 gets `Generic ABS @K2 Plus-all` this way; at 2.4.2 it got a PLA. A read
+  of the profile files finds this on 191 printer presets at 2.5.2 (172 at
+  2.4.2). Name the filament with `--filament-preset`.
+- **A Bambu Lab H2D with no filament named starts with one filament.**
+  OrcaSlicer 2.5 gives a printer one filament when it is
+  `single_extruder_multi_material`, else one per extruder
+  (`PresetBundle::min_filament_count`, `PresetBundle.cpp` 5419-5424 at
+  `f92a7c0`); 2.4.2 gave one per extruder. Give `--filament-preset` once per
+  filament the plate uses.
+- **A STEP file with a tilted cone seam slices only on the Linux build.**
+  OrcaSlicer 2.5.2 builds OpenCASCADE 8.0.1 with a patch of its own
+  (`deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch` at `f92a7c0`). The
+  Linux build of slicer_cli-orcaslicer has both. The Windows build takes
+  OpenCASCADE 7.9.3 from vcpkg and the macOS build takes Homebrew's, without
+  the patch, as before 2.5. Upstream's test file
+  `cone_tilted_seam_pcurve.step` slices on Linux and is refused on Windows
+  (-100, measured); macOS is not measured. Other STEP files tested give the
+  same result on both.
+- **OrcaSlicer 2.5 names filaments with ids of its own.** The filament
+  presets OrcaSlicer ships, the Bambu Lab ones too, carry ids such as
+  `OFoiVqVM` where 2.4 had Bambu's `GFA00`. A Bambu Lab printer knows only
+  Bambu's ids, so the app and the official command line write those into the
+  sliced file's `slice_info.config` for a Bambu Lab printer, from the engine's
+  table `resources/printers/bambu_filament_ids.json`
+  (`BBLPrinterAgent.cpp` 56-84, `OrcaSlicer.cpp` 7407-7447 at f92a7c0), and so
+  does slicer_cli-orcaslicer. The project's settings (`filament_ids`),
+  `--export-settings` and `result.json` keep OrcaSlicer's ids, and another
+  maker's printer gets them unchanged.
+- **The Snapmaker U1 refuses 42 of its 93 filaments on its default plate.**
+  OrcaSlicer 2.5.2's U1 profile turns on plate types
+  (`support_multi_bed_types`) and names "Textured PEI Plate" as the default
+  (`fdm_U1.json`), and the app now reads that name
+  (`Preset::get_default_bed_type`, `Preset.cpp` 1140-1171 at f92a7c0). 42
+  filaments of the U1, "Snapmaker PLA @U1" among them, state no temperature
+  for that plate, so the engine refuses the plate (-61) before it slices;
+  2.4.2 sliced them. The refusal names the flag that slices:
+  `--curr-bed-type "High Temp Plate"`.
+- **A setting value the engine does not know.** OrcaSlicer 2.5's own command
+  line replaces the value, says so on stderr and in `result.json`
+  (`warnings`, class `config_value_substituted`), and slices on.
+  slicer_cli-orcaslicer reports it the same way and then refuses the project
+  (-18) as before; `--allow-substitution` slices it.
+- **Filament files without colours on a model file.** OrcaSlicer 2.5's command
+  line gives every filament loaded with `--load-filaments` the colour white
+  and builds the flush volumes for them (`OrcaSlicer.cpp` 3874-3886 and
+  3973-4047 at f92a7c0); 2.4 kept the option's default table for one filament
+  and failed for two. slicer_cli-orcaslicer does the same as 2.5. Give
+  `--filament-colour` for the real colours: the flush volumes follow them.
+- **"Nozzle Manual" needs the nozzle rack from a project.** OrcaSlicer rebuilds
+  its nozzle grouping from `--filament-map`, `--filament-volume-map`,
+  `--filament-nozzle-map` and the rack the settings describe
+  (`extruder_nozzle_stats`, `ToolOrdering.cpp` 1822-1838 at f92a7c0). Its
+  command line has no flag for the rack, so it comes from a project the app
+  saved after a device sync. Without it slicer_cli-orcaslicer refuses the run
+  (-2) and says so; the official command line goes on and fails at export.
+- **Mixed filaments.** A list flag takes its value with `=`:
+  `--filament-is-mixed=0,0,1 --filament-mixed-components=";;1,2"`. A mixed
+  filament whose components are different material types, or a mixed slot
+  with no filament of its own, is refused (-69) as in the official command
+  line.
 
 In both engines on Windows, an STL or OBJ object is named from the text after
 the last `\` of its path only (`DIR_SEPARATOR` in `Format/STL.cpp` lines 10-12

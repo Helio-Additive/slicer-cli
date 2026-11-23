@@ -246,7 +246,7 @@ void name_tbb_thread_pool_threads_set_locale()
         	} else {
         		// Wait for the last thread to wake the others.
 			    // slicer-cli override (the only change from the reference file,
-			    // identical at BambuStudio 926a719, OrcaSlicer 8500fcd and
+			    // identical at BambuStudio 926a719, OrcaSlicer f92a7c0 and
 			    // Snapmaker Orca bac6fd5, with the deadline above and the calling
 			    // thread's assert below): the reference
 			    // waits with no limit, and TBB does not promise to run all

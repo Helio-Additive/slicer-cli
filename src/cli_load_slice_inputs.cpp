@@ -194,7 +194,7 @@ static int finish_loaded_geometry(const CliOptions& o, LoadedProject& loaded_pro
     // OrcaSlicer and Snapmaker Orca keep a project's saved tower position
     // when they open it (cli_project_load.hpp), and their slice reads a
     // plate the list holds no position for as the first plate's
-    // (get_at, Config.hpp 627 at 8500fcd; 438 at bac6fd5).
+    // (get_at, Config.hpp 679 at f92a7c0; 438 at bac6fd5).
     if (loaded_project.project_loaded_like_desktop && !o.arrange_forced())
         slicer_cli::project_load_tower_positions_per_plate(config, (int)plate_plan.plates.size());
 #endif
@@ -380,15 +380,17 @@ static int merge_slice_settings(CliRunContext& context, const CliOptions& o, Pla
 
 static int apply_slice_setting_flags(const CliOptions& o, PlateOutcome& outcome,
             Slic3r::DynamicPrintConfig& config, Slic3r::DynamicPrintConfig& extra) {
-#ifdef ENGINE_BAMBU
+#ifndef ENGINE_SNAPMAKER
     // The filament switcher and the smart filament assignment that needs
     // it are off unless a flag states them, whatever the project or its
     // plate saved: the official CLI's rule (BambuStudio.cpp 4436-4439 at
-    // v02.09.01.70). They describe hardware fitted to the maker's
-    // printer, which a headless run cannot see.
+    // v02.09.01.70; OrcaSlicer.cpp 1374-1380 at f92a7c0). They describe
+    // hardware fitted to the maker's printer, which a headless run cannot see.
     for (const char* key : {"enable_filament_dynamic_map", "has_filament_switcher"})
         if (!extra.has(key))
             extra.set_key_value(key, new Slic3r::ConfigOptionBool(false));
+#endif
+#ifdef ENGINE_BAMBU
     // --estimate-mode slices with the automatic grouping and a full
     // Standard rack (BambuStudio.cpp 4441-4474 at v02.09.01.70).
     if (o.given_flag("estimate_mode") && o.cli.opt_bool("estimate_mode")) {
@@ -433,7 +435,7 @@ static int select_nozzle_and_plate(CliRunContext& context, const CliOptions& o, 
         // The plate type the desktop app sets when a printer is picked
         // (Sidebar::update_all_preset_comboboxes -> set_bed_type_accord_combox,
         // BambuStudio Plater.cpp 3340-3414 and 3703-3715 at 5873b5f;
-        // OrcaSlicer Plater.cpp 2527-2556 and 2798-2806 at 31f6803), for a
+        // OrcaSlicer Plater.cpp 3880-3909 and 4233-4241 at f92a7c0), for a
         // run whose printer comes from settings files: those state no plate
         // type, so the printer preset's own is taken. Without this the
         // engine's own default is used (curr_bed_type's ConfigDef default,
@@ -469,8 +471,8 @@ static int select_nozzle_and_plate(CliRunContext& context, const CliOptions& o, 
             // variant and the process, the line widths and the start G-code
             // come from the chosen preset
             // (Sidebar::update_all_preset_comboboxes, BambuStudio Plater.cpp
-            // 3340-3414 at 5873b5f; OrcaSlicer Plater.cpp 2527-2556 at
-            // 31f6803). Editing nozzle_diameter alone leaves the 0.4 line
+            // 3340-3414 at 5873b5f; OrcaSlicer Plater.cpp 3880-3909 at
+            // f92a7c0). Editing nozzle_diameter alone leaves the 0.4 line
             // widths and the 0.4 process in place, so a value the printer
             // preset is not built for is refused, naming the preset to
             // choose instead; a value it already has is what it already is.
@@ -525,12 +527,12 @@ static int select_nozzle_and_plate(CliRunContext& context, const CliOptions& o, 
             // run whose printer comes from settings files cannot land on a
             // different plate than --printer-preset does. The rule it
             // ports: the desktop sets the plate when a printer is picked
-            // (OrcaSlicer Plater.cpp 2527-2563 at 31f6803, both sides of
+            // (OrcaSlicer Plater.cpp 3880-3910 at f92a7c0, both sides of
             // its is_bbl_vendor || support_multi_bed_types test, through
-            // Preset::get_default_bed_type, Preset.cpp 931-958 at 31f6803
-            // — for the Snapmaker U1 the file's stated NAME "Textured PEI
-            // Plate" reads as no number, which gives btPEI, the High Temp
-            // Plate — and BambuStudio Plater.cpp 3340-3414, 3703-3715 at
+            // Preset::get_default_bed_type, which reads a stated plate NAME
+            // from OrcaSlicer 2.5 on and a number only in Snapmaker Orca;
+            // desktop_presets.cpp desktop_bed_type has both rules — and
+            // BambuStudio Plater.cpp 3340-3414, 3703-3715 at
             // 5873b5f). Without this the engine's own default is used
             // (curr_bed_type's ConfigDef default, btPC "Cool Plate":
             // BambuStudio PrintConfig.cpp 1162 at 5873b5f), which is no
@@ -564,7 +566,7 @@ static int validate_loaded_plate_settings(PlateWarnings& plate_warnings, PlateOu
     const auto& unknown_values = settings.unknown_values;
     const auto& unknown_items = settings.unknown_items;
 
-    // The official value check (OrcaSlicer.cpp 3574-3581 at 31f6803,
+    // The official value check (OrcaSlicer.cpp 4298-4305 at f92a7c0,
     // BambuStudio.cpp 4134-4141 at 5873b5f): DynamicPrintConfig::validate(true)
     // over the settings as the file and profiles state them, before this
     // driver pads any vector. Out-of-range values are named with the
@@ -1176,7 +1178,7 @@ int load_slice_inputs(CliRunContext& context, const CliOptions& o, LoadedProject
         return 1;
     // Every setting given as a flag, over the loaded settings: the
     // official m_print_config.apply(m_extra_config, true)
-    // (BambuStudio.cpp 4091 at 5873b5f; OrcaSlicer.cpp 3542 at 31f6803).
+    // (BambuStudio.cpp 4091 at 5873b5f; OrcaSlicer.cpp 4189 at f92a7c0).
     // The settings before any flag: the settings check's desktop baseline.
     const Slic3r::DynamicPrintConfig settings_before_flags = config;
     if (apply_slice_setting_flags(o, outcome, config, extra) != 0)

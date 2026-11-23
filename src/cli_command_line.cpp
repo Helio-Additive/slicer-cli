@@ -737,7 +737,7 @@ static bool finish_parsed_options(CliOptions& o, ModeArgs& m, ParseRefusal& refu
             cfg.option(optdef.first, true);
 
     // m_extra_config: every print setting given (BambuStudio.cpp 1563-1564,
-    // OrcaSlicer.cpp 1258-1259).
+    // OrcaSlicer.cpp 1384-1385).
     o.extra_config.apply(cfg, true);
 #ifdef ENGINE_SNAPMAKER
     // Snapmaker's normalize_fdm reads nozzle_diameter whenever

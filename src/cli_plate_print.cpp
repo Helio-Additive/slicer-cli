@@ -1,4 +1,7 @@
 #include "cli_plate_print.hpp"
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+#include "libslic3r/GCode/GCodeStatistics.hpp"
+#endif
 
 #include "calib_args.hpp"
 #include "cli_arrange_geometry.hpp"
@@ -195,11 +198,11 @@ static int normalize_plate_before_apply(CliRunContext& context, const CliOptions
     // from the printer it is connected to, else from the project it opened,
     // and builds no AMS slots without a printer (BambuStudio PresetBundle.cpp
     // 3826-3831 and 3547, Plater.cpp 10810-10826 at 02.08.02.61; OrcaSlicer
-    // PresetBundle.cpp 4375-4379 and 4162 at 2.4.2). Headless there is no
+    // PresetBundle.cpp 6272-6276 and 5842 at 2.5.2). Headless there is no
     // printer, so the input's own count stands, and input without one groups
     // as the desktop does with an empty count. The official CLIs instead
     // give every nozzle an estimated 4-slot AMS (BambuStudio.cpp 6911-6950,
-    // OrcaSlicer.cpp 5914-5951), which regroups a project the maker sliced
+    // OrcaSlicer.cpp 6954-6991), which regroups a project the maker sliced
     // with another count.
 
     std::cout << "Applying configuration...\n";
@@ -212,6 +215,16 @@ static int normalize_plate_before_apply(CliRunContext& context, const CliOptions
     // (align_per_filament_config_vectors above) already ran on its path.
     if (size_t grown = normalize_filament_config_vectors(config); grown > 0 && verbose)
         std::cout << "Filament vectors: " << grown << " array(s) sized to the roster\n";
+#ifndef ENGINE_SNAPMAKER
+    // OrcaSlicer from 2.5: the mixed-filament lists hold one entry per loaded
+    // filament (OrcaSlicer.cpp 4260-4261 at f92a7c0). A mixed slot past the
+    // loaded filaments is refused with the plate's other filament checks.
+    if (const auto* presets = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id");
+        presets != nullptr && !presets->values.empty())
+        if (const auto* is_mixed = config.option<Slic3r::ConfigOptionBools>("filament_is_mixed");
+            is_mixed == nullptr || is_mixed->values.size() <= presets->values.size())
+            Slic3r::resize_mixed_filament_metadata(config, presets->values.size(), presets->values.size());
+#endif
 #endif
 #ifdef ENGINE_SNAPMAKER
     // The plate's default tower corner for a run from a model file
@@ -225,6 +238,39 @@ static int normalize_plate_before_apply(CliRunContext& context, const CliOptions
         // corner and its margin live in one place.
         assemble_tower_default_corner(context, config, std::max(0, plate_id - 1),
                                       WIPE_TOWER_MARGIN + arrange_opt(config, "prime_tower_width")->getFloat());
+    }
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5: the stored (or default) tower position may not fit
+    // the tower this plate needs, so the official command line fits every
+    // plate's tower into the plate before it slices (OrcaSlicer.cpp 6495-6526
+    // at f92a7c0), also a position a flag gave. The engine then refuses a
+    // tower outside the area every extruder reaches (Print.cpp 1734-1750).
+    {
+        // The plate's own print sequence, else the project's (get_print_sequence).
+        bool by_object = false;
+        if (const auto* seq = config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence"))
+            by_object = seq->value == Slic3r::PrintSequence::ByObject;
+        const int index = std::max(0, plate_id - 1);
+        if (index < (int)loaded_project.plate_data.size() && loaded_project.plate_data[index] != nullptr)
+            if (const auto* own = loaded_project.plate_data[index]->config.option<Slic3r::ConfigOptionEnum<Slic3r::PrintSequence>>("print_sequence");
+                own && own->value != Slic3r::PrintSequence::ByDefault)
+                by_object = own->value == Slic3r::PrintSequence::ByObject;
+        PlateTowerFit fit;
+        {
+            PlateScope scope(model, plate_plan.plate(plate_id));
+            fit = fit_plate_tower_before_slice(model, config, index, by_object);
+        }
+        if (fit.moved) {
+            std::ostringstream msg;
+            msg << "Plate " << (index + 1) << ": the prime tower no longer fits at its position (" << fit.saved_x << ", "
+                << fit.saved_y << ") and was moved to (" << fit.x << ", " << fit.y << "), "
+                << (fit.overlaps_objects ? "onto an object, as no free space is left" : "to free space")
+                << ". Give --wipe-tower-x and --wipe-tower-y for another place.";
+            emit_event({{"event", "config_normalized"}, {"tag", "PrimeTowerMoved"}, {"plate_id", index + 1},
+                        {"from", {fit.saved_x, fit.saved_y}}, {"to", {fit.x, fit.y}},
+                        {"overlaps_objects", fit.overlaps_objects}, {"message", msg.str()}});
+        }
     }
 #endif
 #ifdef ENGINE_SNAPMAKER
@@ -444,12 +490,15 @@ static void install_plate_progress(const CliOptions& o, RunPipeProgress& pipe_pr
         slicer_cli::pipe_set_plate_info(std::max(1, outcome.plate_id), std::max(1, outcome.plate_count));
         slicer_cli::pipe_update(4, "Slicing begins");
     }
-    if (o.progress || piped) {
-        print.set_status_callback([&outcome, &o, piped](const Slic3r::PrintBase::SlicingStatus& status) {
+    // --strict acts on the warnings this callback keeps, so it is installed
+    // for it also when no progress was asked for.
+    const bool strict = slicer_cli::plate_loop_switches(o).strict;
+    if (o.progress || piped || strict) {
+        print.set_status_callback([&outcome, &o, piped, strict](const Slic3r::PrintBase::SlicingStatus& status) {
             if (piped)
                 slicer_cli::pipe_update(status.percent, status.text, status.warning_step);
             emit_status_warning(status);
-            if (!o.progress)
+            if (!o.progress && !strict)
                 return;
             using FB = Slic3r::PrintBase::SlicingStatus::FlagBits;
             const bool is_warning =
@@ -466,7 +515,7 @@ static void install_plate_progress(const CliOptions& o, RunPipeProgress& pipe_pr
                 }
                 return;
             }
-            if (status.percent >= 0)
+            if (o.progress && status.percent >= 0)
                 emit_progress(outcome, status.percent, status.text);
         });
     } else {
@@ -478,6 +527,15 @@ static int configure_plate_checks(const CliOptions& o, RunPlatePlan& plate_plan,
             int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, Slic3r::Print& print,
             const PlateLoopSwitches& switches) {
     outcome.no_check = switches.no_check;
+    outcome.strict   = switches.strict;
+    // --no-check skips the check behind the only non-critical warning --strict
+    // acts on, so OrcaSlicer refuses the pair (OrcaSlicer.cpp 1422-1429 at f92a7c0).
+    if (switches.strict && switches.no_check) {
+        const std::string why = "--strict cannot be combined with --no-check";
+        std::cerr << "Error: " << why << "\n";
+        set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+        return 1;
+    }
     if (o.given_flag("no_check"))
         print.set_no_check_flag(switches.no_check);
 #ifdef ENGINE_SNAPMAKER
@@ -588,8 +646,8 @@ static int report_plate_validation_error(PlateOutcome& outcome, Slic3r::DynamicP
         // to layer_gcode"). When the run has no layer change G-code at
         // all, the cause is that one: the settings files state none, so
         // the merge wrote the key empty (load_default_gcodes_to_config,
-        // BambuStudio.cpp 685-745 at 5873b5f / OrcaSlicer.cpp 548-604 at
-        // 31f6803 makes every G-code key the file leaves out an empty
+        // BambuStudio.cpp 685-745 at 5873b5f / OrcaSlicer.cpp 686-742 at
+        // f92a7c0 makes every G-code key the file leaves out an empty
         // string). Name it, so the refusal says what to give instead of
         // what to edit in a file the user does not have.
         std::string message = validation_result.string;
@@ -601,11 +659,24 @@ static int report_plate_validation_error(PlateOutcome& outcome, Slic3r::DynamicP
                            " file that states its layer_change_gcode, or the printer preset"
                            " (--printer-preset).";
         }
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5 checks the prime tower before it slices: partly
+        // outside the printable area, on an exclusion area or on the clumping
+        // detection area (Print.cpp 1723-1745 at f92a7c0). The sentence says
+        // what is wrong; add the flags that move the tower or turn it off,
+        // as the refusal after the slice does (cli_plate_report.cpp).
+        if (message.rfind("Prime tower is", 0) == 0) {
+            while (!message.empty() && (message.back() == '\n' || message.back() == ' '))
+                message.pop_back();
+            message += " Move the prime tower with --wipe-tower-x and --wipe-tower-y, or turn it off with"
+                       " --enable-prime-tower=0.";
+        }
+#endif
         // The engine's own sentence names the plate and the filament
         // and stops there ("Plate 1: Cool Plate does not support
         // filament 2"). Its check reads the plate's own bed temperature
         // key with get_at and reads 0 as "not this filament's plate", for every
-        // filament the run prints with (Print.cpp 1700-1726 at 31f6803;
+        // filament the run prints with (Print.cpp 2814-2840 at f92a7c0;
         // Print.cpp 1650-1672 at 5873b5f; the filament list is
         // Print::extruders(), Print.cpp 1265 / 1307; get_bed_temp_key,
         // OrcaSlicer PrintConfig.hpp 466-490 / BambuStudio
@@ -618,7 +689,7 @@ static int report_plate_validation_error(PlateOutcome& outcome, Slic3r::DynamicP
             std::vector<std::string>          plates;
             if (!used.empty() && bed_def != nullptr && bed_def->enum_keys_map != nullptr) {
                 // enum_values is the plate list in the definition's own
-                // order (PrintConfig.cpp 1049-1053 at 31f6803,
+                // order (PrintConfig.cpp 1455-1459 at f92a7c0,
                 // 1150-1154 at 5873b5f), so the list is stable.
                 for (const std::string& plate : bed_def->enum_values) {
                     const auto named = bed_def->enum_keys_map->find(plate);
@@ -682,9 +753,11 @@ static int validate_plate_print(PlateOutcome& outcome, Slic3r::DynamicPrintConfi
     // one happened.
     Slic3r::Polygons collision_polygons;
     std::vector<std::pair<Slic3r::Polygon, float>> height_polygons;
-#ifdef ENGINE_BAMBU
-    // Bambu 2.9.1 validate() returns every warning (Print.hpp 948 at
-    // v02.09.01.70); the official CLI joins them with newlines (BambuStudio.cpp 7531-7536).
+#ifndef ENGINE_SNAPMAKER
+    // Bambu 2.9.1 and OrcaSlicer 2.5.2 validate() return every warning (Print.hpp 948
+    // at v02.09.01.70, Print.hpp 1116 at v2.5.2); the official CLIs join them with
+    // newlines (BambuStudio.cpp 7531-7536, OrcaSlicer.cpp 7086-7092). Snapmaker Orca
+    // 2.4.1 returns one.
     std::vector<Slic3r::StringObjectException> validation_warnings;
     Slic3r::StringObjectException validation_result =
         print.validate(&validation_warnings, &collision_polygons, &height_polygons);
@@ -835,6 +908,20 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, const
             }
             if (!post_slice_checks(print, model, gcode_result, outcome))
                 return 1;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+            // --export-statistics (OrcaSlicer from 2.5; OrcaSlicer.cpp 7228-7237 at
+            // f92a7c0): the plate's statistics as JSON next to its G-code. Without
+            // an output directory the G-code is a temporary file, kept only in an
+            // exported 3MF.
+            if (o.given_flag("export_statistics") && o.cli.opt_bool("export_statistics") && !o.outputdir.empty()) {
+                try {
+                    Slic3r::export_gcode_statistics(gcode_result, Slic3r::gcode_statistics_path(output_file));
+                } catch (const std::exception& ex) {
+                    set_outcome_failure(outcome, CLI_EXPORT_STATISTICS_ERROR, ex.what());
+                    return 1;
+                }
+            }
+#endif
             outcome.exported = true;
             if (!o.export_3mf.empty())
                 record_plate_for_export(context, print, model, config, gcode_result, output_file, outcome,
@@ -886,7 +973,7 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, const
         // Out of memory while slicing or exporting. The official CLI has
         // this outcome of its own -- CLI_OUT_OF_MEMORY (-14, Utils.hpp:39
         // at 31f6803) with the sentence that says what to do
-        // (OrcaSlicer.cpp 126, BambuStudio.cpp 132) -- and it is not a
+        // (OrcaSlicer.cpp 208, BambuStudio.cpp 132) -- and it is not a
         // slicing failure: a run that ran out of memory must never
         // report CLI_SLICING_ERROR (-100).
         emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","bad_alloc"},
@@ -894,6 +981,17 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, const
         std::cerr << "\nOut of memory during slicing.\n";
         set_outcome_failure(outcome, CLI_OUT_OF_MEMORY);
         return 1;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    } catch (const Slic3r::SlicingErrors& exs) {
+        // OrcaSlicer from 2.5 collects the errors of several objects; the
+        // engine words them, one line per object (OrcaSlicer.cpp 7295-7300,
+        // Print.cpp 1964-1978 at f92a7c0).
+        const std::string message = print.slicing_errors_message(exs);
+        emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","SlicingErrors"},{"message",message}});
+        slicer_cli::add_engine_reason(outcome.error_reason, message.c_str());
+        std::cerr << "\n" << message << "\n";
+        return 1;
+#endif
     } catch (const Slic3r::RuntimeError& e) {
         emit_event({{"event","slicing_error"},{"phase","export_gcode"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
         slicer_cli::add_engine_reason(outcome.error_reason, e.what());
@@ -987,7 +1085,7 @@ static void set_brim_tables(Slic3r::DynamicPrintConfig& config, Slic3r::Print& p
     // (Brim.cpp, through Model::extruderParamsMap and
     // printSpeedMap): both official CLIs fill them between apply()
     // and process() (BambuStudio.cpp 7074-7075 at 5873b5f;
-    // OrcaSlicer.cpp 6065-6066 at 31f6803). Left empty, the brim
+    // OrcaSlicer.cpp 7112-7113 at f92a7c0). Left empty, the brim
     // takes no account of the filament (TPU narrower, PETG/PCTG
     // wider) or of the print speed.
     {
@@ -1082,6 +1180,15 @@ int PreparedPlate::print_plate(Slic3r::Calib_Params& calib_params, int plate_id,
         std::cerr << "\nOut of memory during slicing.\n";
         set_outcome_failure(outcome, CLI_OUT_OF_MEMORY);
         return 1;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    } catch (const Slic3r::SlicingErrors& exs) {
+        // See export_plate_gcode.
+        const std::string message = print.slicing_errors_message(exs);
+        emit_event({{"event","slicing_error"},{"phase","process"},{"kind","SlicingErrors"},{"message",message}});
+        slicer_cli::add_engine_reason(outcome.error_reason, message.c_str());
+        std::cerr << message << "\n";
+        return 1;
+#endif
     } catch (const Slic3r::RuntimeError& e) {
         emit_event({{"event","slicing_error"},{"phase","process"},{"kind","RuntimeError"},{"message",std::string(e.what())}});
         slicer_cli::add_engine_reason(outcome.error_reason, e.what());

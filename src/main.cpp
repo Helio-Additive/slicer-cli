@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     static CliRunContext context;
     // Name the main thread and save its id first, as the official command
     // lines start (BambuStudio.cpp:1490-1493 at 926a719, OrcaSlicer.cpp
-    // 1189-1192 at 8500fcd, Snapmaker_Orca.cpp:1045-1048 at bac6fd5). On
+    // 1216-1219 at f92a7c0, Snapmaker_Orca.cpp:1045-1048 at bac6fd5). On
     // Windows the first name sets up the thread-naming API with no lock
     // (Thread.cpp WindowsGetSetThreadNameAPIInitialize: "name the main thread
     // before spawning worker threads"), so it must happen before the worker
@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
     // arguments come from the wide command line as UTF-8 (BambuStudio.cpp
     // 8636-8660, the wide entry of BambuStudio_app_msvc.cpp; the same in
     // OrcaSlicer), and boost::filesystem paths take UTF-8 strings
-    // (nowide_filesystem, BambuStudio.cpp 1510-1523; OrcaSlicer.cpp 1233-1246).
+    // (nowide_filesystem, BambuStudio.cpp 1510-1523; OrcaSlicer.cpp 1345-1358).
     // Elsewhere both are no-ops.
     boost::nowide::args utf8_args(argc, argv);
     if (auto result = slicer_cli::run_timing_or_initialize_logging(argc, argv))

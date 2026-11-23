@@ -16,7 +16,7 @@ int prepare_plate_configuration(const CliOptions& o, LoadedProject& loaded_proje
                                        int plate_id, Slic3r::DynamicPrintConfig& config,
                                        std::optional<Slic3r::DynamicPrintConfig>& project_settings);
 
-#ifdef ENGINE_BAMBU
+#ifndef ENGINE_SNAPMAKER
 bool manual_map_extruders_fit(const Slic3r::DynamicPrintConfig& config, const Slic3r::Model& model, int plate_id,
                                      PlateOutcome& outcome);
 #endif

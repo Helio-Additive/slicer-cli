@@ -291,6 +291,18 @@ static void load_desktop_project_presets(const CliOptions& o, LoadedProject& loa
                     rebased.set_key_value("wipe_tower_x", new Slic3r::ConfigOptionFloats(file_wipe_tower_x));
                 if (has_wipe_tower_y)
                     rebased.set_key_value("wipe_tower_y", new Slic3r::ConfigOptionFloats(file_wipe_tower_y));
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+                // The nozzle rack the project's printer had (extruder_nozzle_stats).
+                // It is no preset setting: the app writes it into the printer
+                // it has open after a device sync (MultiNozzleSync.cpp 234 at
+                // f92a7c0), and OrcaSlicer's command line reads it from the
+                // project for "Nozzle Manual" (OrcaSlicer.cpp 6865;
+                // ToolOrdering.cpp 1822-1838). No system preset states it, so
+                // the file's value is kept across this load.
+                if (const auto* stats = config.option<Slic3r::ConfigOptionStrings>("extruder_nozzle_stats");
+                    stats != nullptr && !stats->values.empty())
+                    rebased.set_key_value("extruder_nozzle_stats", stats->clone());
+#endif
                 }
             }
         } catch (const std::exception& e) {
@@ -619,7 +631,7 @@ static int check_project_version(const CliOptions& o, PlateOutcome& outcome,
         }
     }
     // The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
-    // OrcaSlicer.cpp 1588-1592 at 31f6803): a file saved by a newer
+    // OrcaSlicer.cpp 1806-1810 at f92a7c0): a file saved by a newer
     // major.minor than this engine is refused unless --allow-newer-file.
     // On the Orca build the maker decides which number the file's
     // version is in (G2, see below): a Bambu Studio project is only
@@ -1032,7 +1044,7 @@ int load_project_archive(CliRunContext& context, const CliOptions& o, LoadedProj
             RunPlatePlan& plate_plan, PlateOutcome& outcome, int plate_id, PlateLoadSettings& settings,
             const PlateLoadInputs& inputs) {
     // The plate filter of the one load (Model::read_from_file(...,
-    // plate_to_slice), BambuStudio.cpp 1889; OrcaSlicer.cpp 1571): the
+    // plate_to_slice), BambuStudio.cpp 1889; OrcaSlicer.cpp 1789): the
     // plate the run slices, or 0 for every plate.
     const int load_plate_id = plate_id;
     auto& config = settings.config;
@@ -1093,6 +1105,28 @@ int load_project_archive(CliRunContext& context, const CliOptions& o, LoadedProj
     // were kept: the rebase below (Orca build) replaces `config` with
     // the preset-rebased settings, and the steps that describe the FILE
     // read these instead (read_project_facts).
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 4244-4259 at f92a7c0): a mixed
+    // filament slot is virtual but needs a filament entry of its own. Checked
+    // on the file's own lists, before the load below sizes them to the
+    // filament count: without the slot's entry, the objects that name it
+    // would be put on the first filament and print in one colour, with no
+    // word about it.
+    if (const auto* is_mixed = config.option<Slic3r::ConfigOptionBools>("filament_is_mixed")) {
+        const auto*  file_filaments = config.option<Slic3r::ConfigOptionStrings>("filament_settings_id");
+        const size_t filament_count = file_filaments != nullptr ? file_filaments->values.size() : 0;
+        for (size_t slot = filament_count; filament_count > 0 && slot < is_mixed->values.size(); ++slot)
+            if (is_mixed->values[slot]) {
+                const std::string refusal = "Mixed filament slot " + std::to_string(slot + 1) +
+                                            " has no filament of its own: the project states " + std::to_string(filament_count) +
+                                            " filament(s). Save the project with one filament per slot, including each mixed one.";
+                emit_event({{"event", "config_refused"}, {"tag", "MixedFilamentWithoutSlot"}, {"message", refusal}});
+                std::cerr << "Error: " << refusal << "\n";
+                set_outcome_failure(outcome, CLI_MIXED_FILAMENT_INVALID, refusal);
+                return 1;
+            }
+    }
+#endif
     Slic3r::DynamicPrintConfig project_file_config;
     bool                       project_file_config_kept = false;
 #ifdef ENGINE_ORCA

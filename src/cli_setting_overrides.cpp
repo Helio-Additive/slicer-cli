@@ -75,7 +75,7 @@ void apply_command_line_overrides(Slic3r::DynamicPrintConfig& config,
                 // G-code's {bed_temperature} and {bed_temperature_initial_layer}
                 // placeholders are overwritten with the same two keys before
                 // they are expanded (GCode.cpp 2789-2793 at 5873b5f,
-                // GCode.cpp 2384-2388 at 31f6803). So the flag sets the plate
+                // GCode.cpp 3347-3351 at f92a7c0). So the flag sets the plate
                 // type the printer is on, both phases, exactly as the
                 // desktop's bed temperature setting for that plate type does.
                 const auto* bed = config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type");

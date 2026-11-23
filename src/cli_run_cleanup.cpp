@@ -186,7 +186,7 @@ void set_run_backup_path(CliRunContext& context, Slic3r::Model& model) {
 /// The loader writes an archive entry to <backup>/<its own archive path>
 /// (_extract_file_from_archive): the BambuStudio build creates that path's
 /// parents first (bbs_3mf.cpp 2914-2919 at 5873b5f), the OrcaSlicer build does
-/// not (bbs_3mf.cpp 2798-2818 at 31f6803), so on OrcaSlicer an entry nested
+/// not (bbs_3mf.cpp 2967-2987 at f92a7c0), so on OrcaSlicer an entry nested
 /// below Metadata/ or 3D/Objects/ — a project's Metadata/helio/... files, say —
 /// fails with "Error while extract file to temp directory" (2816). Measured on
 /// the same corpus 40fd25289c325186, --slice 1, per-run folder: 18 of them on

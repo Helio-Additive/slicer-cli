@@ -8,8 +8,8 @@ namespace slicer_cli {
 
 /// The input's kind by its final extension, any case, as both official
 /// CLIs and their loaders tell files apart (boost::algorithm::iends_with:
-/// BambuStudio.cpp 1873 and Model.cpp 326 at 5873b5f; OrcaSlicer.cpp 1555
-/// and Model.cpp 278 at 31f6803). A folder named "x.stl" or a file named
+/// BambuStudio.cpp 1873 and Model.cpp 326 at 5873b5f; OrcaSlicer.cpp 1773
+/// and Model.cpp 353 at f92a7c0). A folder named "x.stl" or a file named
 /// "a.3mf.bak" no longer counts.
 bool input_is_stl(const std::string& path) {
     return boost::algorithm::iends_with(path, ".stl");
@@ -117,8 +117,8 @@ std::map<std::string, std::string> model_metadata(const std::string& model_xml) 
 
 /// The file version this engine's 3MF loader reads: OrcaSlicer takes the
 /// OrcaSlicer tag when present, else the Application version after
-/// "BambuStudio-" or "OrcaSlicer-" (bbs_3mf.cpp 1422-1430, 3945-3961 at
-/// 31f6803); BambuStudio reads only "BambuStudio-" (bbs_3mf.cpp 1481 at
+/// "BambuStudio-" or "OrcaSlicer-" (bbs_3mf.cpp 1541-1549, 4172-4188 at
+/// f92a7c0); BambuStudio reads only "BambuStudio-" (bbs_3mf.cpp 1481 at
 /// 5873b5f).
 boost::optional<Slic3r::Semver> engine_file_version(const std::map<std::string, std::string>& meta) {
     const auto app = meta.find("Application");
@@ -153,7 +153,7 @@ std::string engine_version_text() {
 }
 
 /// The official version gate (BambuStudio.cpp 1906-1911 at 5873b5f,
-/// OrcaSlicer.cpp 1588-1592 at 31f6803): a file whose major.minor is newer
+/// OrcaSlicer.cpp 1806-1810 at f92a7c0): a file whose major.minor is newer
 /// than the version it is compared against.
 static bool file_newer_than_version(const Slic3r::Semver& file_version, const std::string& version) {
     const auto engine = Slic3r::Semver::parse(version);

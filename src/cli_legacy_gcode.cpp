@@ -9,14 +9,17 @@ using json = nlohmann::json;
 // ─────────────────────────────────────────────────────────────────────────────
 // Driver-side normalization for the unbound placeholder `initial_no_support_filament_id`.
 //
-// OrcaSlicer does not bind `initial_no_support_filament_id` in the
+// Snapmaker Orca (like OrcaSlicer before 2.5) does not bind
+// `initial_no_support_filament_id` in the
 // PlaceholderParser: it binds `initial_no_support_extruder` /
 // `initial_no_support_hotend`, and the first is the SAME int as BambuStudio's
 // `initial_no_support_filament_id` (BambuStudio binds it in GCode.cpp 2657 at
 // 5873b5f, from the same `initial_non_support_extruder_id`, GCode.cpp
 // 2458-2460). Because the `_extruder` and `_filament` names are aliases of the
 // same filament index, the BambuStudio token is semantically identical to
-// OrcaSlicer's `initial_no_support_extruder`.
+// OrcaSlicer's `initial_no_support_extruder`. OrcaSlicer from 2.5 binds both
+// names to that int (GCode.cpp 3771 and 3784 at f92a7c0), so there the rewrite
+// changes no output, as on Bambu Studio.
 //
 // The token is not produced by any stock profile in this repo or upstream master
 // start-gcode; it only arrives via a hand-edited / third-party custom gcode embedded
@@ -129,15 +132,14 @@ int normalize_legacy_gcode_tokens(Slic3r::DynamicPrintConfig& config, bool repor
     return total_rewrites;
 }
 
-#ifdef ENGINE_ORCA
+#ifdef ENGINE_SNAPMAKER
 /// The Bambu Studio placeholder this engine has no value for, empty when there
-/// is none: either of the two names goes unbound in OrcaSlicer -- its
+/// is none: either of the two names goes unbound in Snapmaker Orca 2.4.1 -- its
 /// PlaceholderParser sets initial_extruder and reads nozzle_diameter from the
-/// config, and neither binds BambuStudio's nozzle_diameter_at_nozzle_id or
-/// initial_nozzle_id (BambuStudio binds both in GCode.cpp 2656-2660 at
-/// 5873b5f). Upstream main binds them with its multi-nozzle engine (GCode.cpp
-/// 3334-3335 on main), too large to backport. `key_out` names the custom-gcode
-/// key the placeholder was found in.
+/// config, and neither binds nozzle_diameter_at_nozzle_id or initial_nozzle_id.
+/// BambuStudio binds both (GCode.cpp 2924-2928 at 56a57d0) and so does
+/// OrcaSlicer from 2.5, with its multi-nozzle engine (GCode.cpp 3785-3786 at
+/// f92a7c0). `key_out` names the custom-gcode key the placeholder was found in.
 std::string bambu_only_gcode_placeholder(const Slic3r::DynamicPrintConfig& config,
                                                 std::string&                       key_out) {
     static const std::vector<std::string> kPlaceholders = {"nozzle_diameter_at_nozzle_id",

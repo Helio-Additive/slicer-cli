@@ -118,7 +118,7 @@ int run_info(const std::string& argv0, const std::string& path, const std::strin
         maker["application"] = app != meta.end() ? json(app->second) : json(nullptr);
         maker["orcaslicer"]  = orca != meta.end() ? json(orca->second) : json(nullptr);
         // OrcaSlicer writes "BambuStudio-<its Bambu base>" as Application and
-        // its own version in the OrcaSlicer tag (bbs_3mf.cpp 6837 at 31f6803).
+        // its own version in the OrcaSlicer tag (bbs_3mf.cpp 7284 at f92a7c0).
 #ifdef ENGINE_SNAPMAKER
         // Snapmaker Orca writes "Snapmaker_Orca-<version>" as Application
         // (Format/bbs_3mf.cpp:6645-6646 at bac6fd5); its app is this engine's,

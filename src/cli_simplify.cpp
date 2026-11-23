@@ -56,8 +56,8 @@ uint32_t wanted_count_by_ratio(size_t triangle_count, double decimate_ratio) {
 
 // What the desktop asks about before it keeps paint across the new mesh
 // (GLGizmoSimplify.cpp 64-67 at 56a57d0). Spelled on the layers themselves:
-// the Orca engines have no is_fuzzy_skin_facets_painted (Model.hpp 1012-1014
-// at 8500fcd), only the layer.
+// the Orca engines have no is_fuzzy_skin_facets_painted (Model.hpp 1153-1155
+// at f92a7c0), only the layer.
 bool has_any_painting(const Slic3r::ModelVolume& mv) {
     return !mv.mmu_segmentation_facets.empty() || !mv.supported_facets.empty() || !mv.seam_facets.empty() ||
            !mv.fuzzy_skin_facets.empty();
@@ -79,7 +79,7 @@ int modes_given(const CliOptions::Simplify& s) {
 std::string simplify_keep_paint_refusal() {
 #ifdef ENGINE_SNAPMAKER
     // Snapmaker Orca's engine has neither Orca's save_painting/restore_painting
-    // (Model.hpp 884-887 at 8500fcd) nor Bambu's reproject_paint_keep (Model.hpp
+    // (Model.hpp 1004-1007 at f92a7c0) nor Bambu's reproject_paint_keep (Model.hpp
     // 1057 at 56a57d0); its Simplify clears the paint (GLGizmoSimplify.cpp 538
     // at bac6fd5, clear_before_change_mesh).
     return "--simplify-keep-paint is not available in slicer_cli-snapmaker: its engine has no way to carry "
@@ -195,7 +195,7 @@ StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model, const std:
                 return r;
 #elif defined(ENGINE_ORCA)
                 // Orca's Simplify with keep_painting on: save, swap, restore
-                // (GLGizmoSimplify.cpp 538-551 at 8500fcd).
+                // (GLGizmoSimplify.cpp 562-575 at f92a7c0).
                 const auto saved = vol->save_painting();
                 vol->set_mesh(std::move(its));
                 vol->restore_painting(saved);
@@ -216,8 +216,8 @@ StepResult simplify_meshes(const CliOptions& o, Slic3r::Model& model, const std:
 #endif
             } else {
                 // Paint made for the old triangles means nothing on the new ones
-                // (GLGizmoSimplify.cpp 688-692 at 56a57d0; Plater.cpp 17145-17150
-                // at 8500fcd).
+                // (GLGizmoSimplify.cpp 688-692 at 56a57d0; Plater.cpp 22279-22284
+                // at f92a7c0).
                 vol->supported_facets.reset();
                 vol->seam_facets.reset();
                 vol->mmu_segmentation_facets.reset();

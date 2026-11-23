@@ -84,6 +84,23 @@
       },
       "description": "Settings the file states that this engine has no definition for; the engine ignores them."
     },
+    "strict_mode": {
+      "type": "boolean",
+      "description": "slicer_cli-orcaslicer only (OrcaSlicer from 2.5): whether --strict was on. Under --strict a non-critical slicing warning ends the run with return_code -100."
+    },
+    "warnings": {
+      "type": "array",
+      "description": "slicer_cli-orcaslicer only (OrcaSlicer from 2.5): the non-critical slicing warnings of the run, each with a stable class. An entry here does not by itself mean the run failed. The per-plate lists are in sliced_plates[].warnings.",
+      "items": {
+        "type": "object",
+        "required": ["class"],
+        "properties": {
+          "class": {"type": "string", "description": "slicing_warning_non_critical: the engine raised a warning it only logs, such as a model that needs support while support is off."},
+          "plate_id": {"type": "integer"},
+          "text": {"type": "string"}
+        }
+      }
+    },
     "settings_replaced_by_presets": {
       "type": "array",
       "items": {

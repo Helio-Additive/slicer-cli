@@ -31,10 +31,12 @@ CGAL5_COMMIT='c58ac97e93c838ebfb1e8adaf23ff4fd185dc8e4'
 CGAL5_REPOSITORY='https://github.com/CGAL/cgal.git'
 CGAL5_PATCH="$SCRIPT_DIR/references/BambuStudio/deps/CGAL/0001-clang19.patch"
 CGAL5_PREFIX=''
-CGAL63_VERSION='5.6.3'
-CGAL63_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL63_VERSION}/CGAL-${CGAL63_VERSION}.tar.xz"
-CGAL63_ARCHIVE_SHA256='15c743cb395d1a0855b9062525f3ae0cd40486489acfe7ce1457c3710ab34111'
-CGAL63_PREFIX=''
+# The CGAL release OrcaSlicer v2.5.2 pins: the same archive and hash as
+# references/OrcaSlicer/deps/CGAL/CGAL.cmake at f92a7c0.
+CGAL_ORCA_VERSION='6.2.1'
+CGAL_ORCA_ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${CGAL_ORCA_VERSION}/CGAL-${CGAL_ORCA_VERSION}.zip"
+CGAL_ORCA_ARCHIVE_SHA256='eebd737d9b7f0199647ba5c1f9f6c7a3d0651aacef9c2fd4dedc52da6c25edbe'
+CGAL_ORCA_PREFIX=''
 if [ "${ENGINE:-bambu}" != 'bambu' ]; then
     LIBNOISE_REPOSITORY='https://github.com/SoftFever/Orca-deps-libnoise.git'
     LIBNOISE_COMMIT='f25d5331570ae109f0e645cb729ecab155612714'
@@ -127,21 +129,21 @@ install_cgal5() {
     rm -rf "$workdir"
 }
 
-install_cgal63() {
+install_cgal_orca() {
     local prefix="$1"
     local use_sudo="$2"
-    local marker="$prefix/.slicer-cli-cgal-5.6.3-complete"
+    local marker="$prefix/.slicer-cli-cgal-${CGAL_ORCA_VERSION}-complete"
 
     if [ -r "$marker" ] \
-       && grep -qx "version=${CGAL63_VERSION}" "$marker" \
+       && grep -qx "version=${CGAL_ORCA_VERSION}" "$marker" \
        && [ -f "$prefix/lib/cmake/CGAL/CGALConfig.cmake" ] \
        && [ -f "$prefix/lib/cmake/CGAL/CGALConfigVersion.cmake" ] \
        && [ -f "$prefix/include/CGAL/version.h" ]; then
-        echo "  ✓ CGAL ${CGAL63_VERSION} ($prefix)"
+        echo "  ✓ CGAL ${CGAL_ORCA_VERSION} ($prefix)"
         return
     fi
 
-    echo "  Installing CGAL ${CGAL63_VERSION} from pinned upstream release..."
+    echo "  Installing CGAL ${CGAL_ORCA_VERSION} from pinned upstream release..."
     if [ -e "$prefix" ]; then
         if [ "$use_sudo" = 'yes' ]; then
             run_as_root rm -rf "$prefix"
@@ -151,11 +153,11 @@ install_cgal63() {
     fi
     local workdir
     workdir=$(mktemp -d)
-    local archive="$workdir/cgal-${CGAL63_VERSION}.tar.xz"
-    local source_dir="$workdir/CGAL-${CGAL63_VERSION}"
-    curl -fsSL "$CGAL63_ARCHIVE_URL" -o "$archive"
-    echo "$CGAL63_ARCHIVE_SHA256  $archive" | sha256sum -c -
-    tar -xJf "$archive" -C "$workdir"
+    local archive="$workdir/cgal-${CGAL_ORCA_VERSION}.zip"
+    local source_dir="$workdir/CGAL-${CGAL_ORCA_VERSION}"
+    curl -fsSL "$CGAL_ORCA_ARCHIVE_URL" -o "$archive"
+    echo "$CGAL_ORCA_ARCHIVE_SHA256  $archive" | sha256sum -c -
+    unzip -q "$archive" -d "$workdir"
     cmake -S "$source_dir" -B "$workdir/build" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$prefix" \
@@ -170,18 +172,18 @@ install_cgal63() {
     if ! [ -f "$prefix/lib/cmake/CGAL/CGALConfig.cmake" ] \
        || ! [ -f "$prefix/lib/cmake/CGAL/CGALConfigVersion.cmake" ] \
        || ! [ -f "$prefix/include/CGAL/version.h" ]; then
-        echo -e "${RED}CGAL ${CGAL63_VERSION} installation is incomplete${NC}"
+        echo -e "${RED}CGAL ${CGAL_ORCA_VERSION} installation is incomplete${NC}"
         exit 1
     fi
-    local marker_tmp="$workdir/.slicer-cli-cgal-5.6.3-complete.XXXXXX"
+    local marker_tmp="$workdir/.slicer-cli-cgal-${CGAL_ORCA_VERSION}-complete.XXXXXX"
     if [ "$use_sudo" = 'yes' ]; then
-        marker_tmp=$(run_as_root mktemp "$prefix/.slicer-cli-cgal-5.6.3-complete.XXXXXX")
-        printf 'version=%s\n' "$CGAL63_VERSION" | run_as_root tee "$marker_tmp" >/dev/null
+        marker_tmp=$(run_as_root mktemp "$prefix/.slicer-cli-cgal-${CGAL_ORCA_VERSION}-complete.XXXXXX")
+        printf 'version=%s\n' "$CGAL_ORCA_VERSION" | run_as_root tee "$marker_tmp" >/dev/null
         run_as_root chmod 0644 "$marker_tmp"
         run_as_root mv "$marker_tmp" "$marker"
     else
         marker_tmp=$(mktemp "$marker_tmp")
-        printf 'version=%s\n' "$CGAL63_VERSION" > "$marker_tmp"
+        printf 'version=%s\n' "$CGAL_ORCA_VERSION" > "$marker_tmp"
         mv "$marker_tmp" "$marker"
     fi
     rm -rf "$workdir"
@@ -377,6 +379,87 @@ elif [[ -f /etc/debian_version ]]; then
         rm -rf "$workdir"
     }
 
+    # OrcaSlicer v2.5.2 pins OpenCASCADE 8.0.1 with one patch of its own
+    # (references/OrcaSlicer/deps/OCCT/OCCT.cmake at f92a7c0: the archive, its
+    # hash, 0001-BRepMesh-seam-pcurve-selection.patch and the module switches;
+    # its second patch is for MSVC on ARM64 only). Static, as on Linux there.
+    OCCT_ORCA_VERSION='8.0.1'
+    OCCT_ORCA_ARCHIVE_URL='https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V8_0_1.zip'
+    OCCT_ORCA_ARCHIVE_SHA256='7c033d917ee8f040c0512d289dcc5f02c148889d5bac17c3e25639accb44f0da'
+    OCCT_ORCA_PATCH="$SCRIPT_DIR/references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch"
+    OCCT_ORCA_PREFIX='/opt/slicer-cli/occt-8.0'
+
+    install_occt_orca() {
+        local marker="$OCCT_ORCA_PREFIX/.slicer-cli-occt-${OCCT_ORCA_VERSION}-static-complete"
+        local patch_sha256
+        patch_sha256="$(sha256sum "$OCCT_ORCA_PATCH" | awk '{print $1}')"
+        if [ -r "$marker" ] \
+           && grep -qx "version=${OCCT_ORCA_VERSION}" "$marker" \
+           && grep -qx "source_sha256=${OCCT_ORCA_ARCHIVE_SHA256}" "$marker" \
+           && grep -qx "patch_sha256=${patch_sha256}" "$marker" \
+           && grep -qx 'library_type=static' "$marker" \
+           && [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfig.cmake" ] \
+           && [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake" ] \
+           && [ -f "$OCCT_ORCA_PREFIX/lib/libTKernel.a" ] \
+           && [ -f "$OCCT_ORCA_PREFIX/lib/libTKBRep.a" ]; then
+            echo "  ✓ OpenCASCADE ${OCCT_ORCA_VERSION} ($OCCT_ORCA_PREFIX)"
+            return
+        fi
+
+        echo "  Installing OpenCASCADE ${OCCT_ORCA_VERSION} from the pinned source archive..."
+        if [ -e "$OCCT_ORCA_PREFIX" ]; then
+            run_as_root rm -rf "$OCCT_ORCA_PREFIX"
+        fi
+        local workdir
+        workdir=$(mktemp -d)
+        local archive="$workdir/occt-${OCCT_ORCA_VERSION}.zip"
+        curl -fsSL "$OCCT_ORCA_ARCHIVE_URL" -o "$archive"
+        echo "$OCCT_ORCA_ARCHIVE_SHA256  $archive" | sha256sum -c -
+        unzip -q "$archive" -d "$workdir"
+        patch -d "$workdir/OCCT-8_0_1" -p1 < "$OCCT_ORCA_PATCH"
+        cmake -S "$workdir/OCCT-8_0_1" -B "$workdir/build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$OCCT_ORCA_PREFIX" \
+            -DCMAKE_PREFIX_PATH="$OCCT_ORCA_PREFIX" \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_CXX_STANDARD=17 \
+            -DBUILD_LIBRARY_TYPE=Static \
+            -DUSE_TK=OFF \
+            -DUSE_TBB=OFF \
+            -DUSE_FREETYPE=OFF \
+            -DUSE_FFMPEG=OFF \
+            -DUSE_VTK=OFF \
+            -DUSE_FREEIMAGE=OFF \
+            -DUSE_OPENGL=OFF \
+            -DUSE_GLES2=OFF \
+            -DUSE_XLIB=OFF \
+            -DBUILD_DOC_Overview=OFF \
+            -DBUILD_MODULE_ApplicationFramework=OFF \
+            -DBUILD_MODULE_Draw=OFF \
+            -DBUILD_MODULE_Visualization=OFF \
+            -DBUILD_MODULE_ModelingAlgorithms=OFF
+        cmake --build "$workdir/build" --parallel
+        run_as_root cmake --install "$workdir/build"
+        if ! [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfig.cmake" ] \
+           || ! [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake" ] \
+           || ! [ -f "$OCCT_ORCA_PREFIX/lib/libTKernel.a" ] \
+           || ! [ -f "$OCCT_ORCA_PREFIX/lib/libTKBRep.a" ]; then
+            echo -e "${RED}OpenCASCADE ${OCCT_ORCA_VERSION} installation is incomplete${NC}"
+            exit 1
+        fi
+        local marker_tmp
+        marker_tmp=$(run_as_root mktemp "$OCCT_ORCA_PREFIX/.slicer-cli-occt-${OCCT_ORCA_VERSION}-static-complete.XXXXXX")
+        {
+            printf 'version=%s\n' "$OCCT_ORCA_VERSION"
+            printf 'source_sha256=%s\n' "$OCCT_ORCA_ARCHIVE_SHA256"
+            printf 'patch_sha256=%s\n' "$patch_sha256"
+            printf 'library_type=static\n'
+        } | run_as_root tee "$marker_tmp" >/dev/null
+        run_as_root chmod 0644 "$marker_tmp"
+        run_as_root mv "$marker_tmp" "$marker"
+        rm -rf "$workdir"
+    }
+
     install_occt_prereqs() {
         local packages=(
             build-essential
@@ -386,6 +469,8 @@ elif [[ -f /etc/debian_version ]]; then
             curl
             ca-certificates
             libfreetype6-dev
+            unzip          # the OpenCASCADE 8.0.1 archive is a zip
+            patch          # OrcaSlicer's OpenCASCADE patch
         )
 
         echo "  Installing OCCT-only prerequisites..."
@@ -400,9 +485,18 @@ elif [[ -f /etc/debian_version ]]; then
         done
     }
 
+    # Each engine builds with the OpenCASCADE its own source pins.
+    install_engine_occt() {
+        if [ "${ENGINE:-bambu}" = 'orca' ]; then
+            install_occt_orca
+        else
+            install_occt76
+        fi
+    }
+
     if [ "${SLICER_CLI_OCCT_ONLY:-0}" = '1' ]; then
         install_occt_prereqs
-        install_occt76
+        install_engine_occt
         exit 0
     fi
 
@@ -449,11 +543,11 @@ elif [[ -f /etc/debian_version ]]; then
         CGAL5_PREFIX="/opt/slicer-cli/cgal-$CGAL5_VERSION"
         install_cgal5 "$CGAL5_PREFIX" yes
     elif [ "${ENGINE:-bambu}" = 'orca' ]; then
-        CGAL63_PREFIX="/opt/slicer-cli/cgal-$CGAL63_VERSION"
-        install_cgal63 "$CGAL63_PREFIX" yes
+        CGAL_ORCA_PREFIX="/opt/slicer-cli/cgal-$CGAL_ORCA_VERSION"
+        install_cgal_orca "$CGAL_ORCA_PREFIX" yes
     fi
 
-    install_occt76
+    install_engine_occt
 
     # libnoise (Bambu fork) — not in apt for Linux CI or local Ubuntu installs.
     LIBNOISE_PREFIX=/usr/local
@@ -531,8 +625,8 @@ echo -e "${GREEN}✓ All dependencies installed.${NC}"
 if [ -n "$CGAL5_PREFIX" ]; then
     echo "Bambu CGAL 5.4: $CGAL5_PREFIX/lib/cmake/CGAL (auto-discovered by CMake)"
 fi
-if [ -n "$CGAL63_PREFIX" ]; then
-    echo "Orca CGAL 5.6.3: $CGAL63_PREFIX/lib/cmake/CGAL (auto-discovered by CMake)"
+if [ -n "$CGAL_ORCA_PREFIX" ]; then
+    echo "Orca CGAL $CGAL_ORCA_VERSION: $CGAL_ORCA_PREFIX/lib/cmake/CGAL (auto-discovered by CMake)"
 fi
 echo ""
 echo "Next steps:"

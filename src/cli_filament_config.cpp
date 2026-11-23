@@ -20,7 +20,7 @@ namespace slicer_cli {
 // It sizes the per-filament alignment below on the Bambu build, the 3MF
 // filament-index reset (PresetBundle.cpp 4127-4136, N = filament_presets.size())
 // on the Orca build, and the Orca filament-vector normalization
-// (normalize_filament_config_vectors, Preset.cpp 444-486), so it is not gated:
+// (normalize_filament_config_vectors, Preset.cpp 566-600 at f92a7c0), so it is not gated:
 // one definition is what keeps those passes agreeing on what the roster is.
 size_t project_filament_count(Slic3r::DynamicPrintConfig& config) {
     size_t count = 0;
@@ -1053,6 +1053,14 @@ size_t normalize_filament_config_vectors(Slic3r::DynamicPrintConfig& config) {
         // has none (no filament_options_with_variant at bac6fd5).
 #ifndef ENGINE_SNAPMAKER
         if (Slic3r::filament_options_with_variant.count(key) > 0)
+            continue;
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer from 2.5: an option of filament_dev_options holds several
+        // values per filament, as many as each preset states, so it is not
+        // sized to the filament count (Preset::normalize, Preset.cpp 578-585
+        // at f92a7c0).
+        if (Slic3r::filament_dev_options.count(key) > 0)
             continue;
 #endif
         const Slic3r::ConfigOption* fill = defaults.option(key);

@@ -31,6 +31,26 @@
 
 namespace slicer_cli {
 
+/// A bed's width and depth in whole mm, as the official command line reads
+/// them from printable_area. OrcaSlicer from 2.5 takes the size of the area's
+/// bounding box, which is also right for a round bed (OrcaSlicer.cpp
+/// 1925-1929, 2608-2610, 4392-4396 at f92a7c0); Bambu Studio and Snapmaker
+/// Orca take the distance between corners 0 and 2.
+inline int printable_area_width(const Slic3r::Pointfs& area) {
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    return static_cast<int>(Slic3r::BoundingBoxf(area).size().x());
+#else
+    return (int)(area[2].x() - area[0].x());
+#endif
+}
+inline int printable_area_depth(const Slic3r::Pointfs& area) {
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    return static_cast<int>(Slic3r::BoundingBoxf(area).size().y());
+#else
+    return (int)(area[2].y() - area[0].y());
+#endif
+}
+
 /// What the official CLI reads from a Bambu-made 3MF's settings when it loads
 /// it (BambuStudio.cpp 1973-2073; OrcaSlicer.cpp 1627-1720).
 struct ProjectFacts {

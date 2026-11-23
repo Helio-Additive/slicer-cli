@@ -202,7 +202,8 @@ static bool record_project_plate_members(Slic3r::Model& model, Slic3r::DynamicPr
 static void arrange_project_polygons(CliRunContext& context, Slic3r::Model& model,
         Slic3r::DynamicPrintConfig& config, int filament_count, int file_plates,
         Slic3r::arrangement::ArrangePolygons& selected, Slic3r::arrangement::ArrangePolygons& unselected,
-        Slic3r::arrangement::ArrangePolygons& unprintable, const Slic3r::Vec2d& plate_size) {
+        Slic3r::arrangement::ArrangePolygons& unprintable, const Slic3r::Vec2d& plate_size,
+        const std::vector<int>& project_plate_filaments) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
     ArrangeParams params;
@@ -218,7 +219,79 @@ static void arrange_project_polygons(CliRunContext& context, Slic3r::Model& mode
     // used filaments: on Bambu the project's and --load-filament-ids'
     // (BambuStudio.cpp 2041-2046, 2083-2088); on Orca only
     // --load-filament-ids' (OrcaSlicer.cpp 1734).
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    // OrcaSlicer from 2.5 (OrcaSlicer.cpp 5747-5836 at f92a7c0): filament ids
+    // given on the command line size the tower for model files. A project
+    // records its filament use per plate, so its plates are counted one by
+    // one and keep their tower positions; a project plate gets a tower only
+    // when the slice will print one.
+    {
+        const bool from_project = filament_count == 0;
+        std::vector<int> plate_filament_counts(file_plates, filament_count);
+        if (from_project)
+            for (int k = 0; k < file_plates && k < (int)project_plate_filaments.size(); ++k)
+                plate_filament_counts[k] = project_plate_filaments[k];
+        const auto* timelapse_type_opt = config.option("timelapse_type");
+        const bool is_smooth_timelapse = context.g_arrange_switches.enable_timelapse && timelapse_type_opt &&
+                                         timelapse_type_opt->getInt() == TimelapseType::tlSmooth;
+        const bool project_tower_allowed = config.option<ConfigOptionBool>("enable_prime_tower", true)->value &&
+                                           (is_smooth_timelapse || !params.is_seq_print);
+        const auto plate_needs_wipe_tower = [from_project, project_tower_allowed, is_smooth_timelapse](int count) {
+            if (!from_project)
+                return count > 0;
+            return project_tower_allowed && (count > 1 || (count > 0 && is_smooth_timelapse));
+        };
+        const int max_filament_count =
+            file_plates > 0 ? *std::max_element(plate_filament_counts.begin(), plate_filament_counts.end()) : 0;
+        const auto* belt_opt = config.option<ConfigOptionBool>("belt_printer");
+        if (!(belt_opt != nullptr && belt_opt->value) && plate_needs_wipe_tower(max_filament_count)) {
+            // This margin only moves the default corner off the near edges;
+            // an automatic brim counts as 8 mm, its cap.
+            float tower_brim_width = (float)arrange_opt(config, "prime_tower_brim_width")->getFloat();
+            if (tower_brim_width < 0.f) tower_brim_width = 8.f;
+            const float tower_margin = WIPE_TOWER_MARGIN + tower_brim_width;
+            float x = 165.f, y = 250.f;   // WIPE_TOWER_DEFAULT_X_POS / _Y_POS
+            if (const auto* structure = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure");
+                structure && structure->value == PrinterStructure::psI3) {
+                x = 0.f;     // I3_WIPE_TOWER_DEFAULT_X_POS
+                y = 250.f;   // I3_WIPE_TOWER_DEFAULT_Y_POS
+            }
+            if (x < tower_margin) x = tower_margin;
+            if (y < tower_margin) y = tower_margin;
+            ConfigOptionFloat wt_x_opt(x), wt_y_opt(y);
+            auto* wipe_x_option = config.option<ConfigOptionFloats>("wipe_tower_x", true);
+            auto* wipe_y_option = config.option<ConfigOptionFloats>("wipe_tower_y", true);
+            for (int bedid = 0; bedid < 36; bedid++) {   // MAX_PLATE_COUNT
+                const int plate_index_valid = std::min(bedid, file_plates - 1);
+                // Overflow beds may receive objects from any plate, so they are sized for the busiest one.
+                const int extruder_size = bedid < file_plates ? plate_filament_counts[bedid] : max_filament_count;
+                if (!plate_needs_wipe_tower(extruder_size))
+                    continue;
+                if (bedid < file_plates && !from_project) {
+                    // As the official: the first plate starts at the default corner, each
+                    // later one at the position the plate before it was given.
+                    wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
+                    wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
+                }
+                Vec2d pos;
+                ArrangePolygon wipe_tower_ap = estimate_tower_polygon_global(
+                    model, config, plate_index_valid, extruder_size, (int)plate_size.x(), (int)plate_size.y(), pos);
+                if (bedid < file_plates) {
+                    wt_x_opt.value = pos.x();
+                    wt_y_opt.value = pos.y();
+                    wipe_x_option->set_at(&wt_x_opt, plate_index_valid, 0);
+                    wipe_y_option->set_at(&wt_y_opt, plate_index_valid, 0);
+                }
+                wipe_tower_ap.bed_idx = bedid;
+                unselected.emplace_back(std::move(wipe_tower_ap));
+            }
+        }
+    }
+    if (false) {
+#else
+    (void)project_plate_filaments;
     if (filament_count > 0) {
+#endif
 #ifdef ENGINE_SNAPMAKER
         // The one corner function, so this path and the assemble ones cannot
         // drift apart (Snapmaker's x = 13 / y = depth/2, Snapmaker_Orca.cpp:
@@ -267,6 +340,7 @@ static void arrange_project_polygons(CliRunContext& context, Slic3r::Model& mode
     // Step 2 (BambuStudio.cpp 5886-5915; OrcaSlicer.cpp 5142-5172): the
     // same settings as the one-plate arrange (arrange_on_bed).
     params.allow_rotations                     = context.g_arrange_switches.allow_rotations;
+    context.arranged_without_rotations         = context.arranged_without_rotations || !params.allow_rotations;
     params.allow_multi_materials_on_same_plate = context.g_arrange_switches.allow_multicolor_oneplate;
     params.avoid_extrusion_cali_region         = context.g_arrange_switches.avoid_extrusion_cali_region;
     params.clearance_height_to_rod             = arrange_opt(config, "extruder_clearance_height_to_rod")->getFloat();
@@ -282,7 +356,11 @@ static void arrange_project_polygons(CliRunContext& context, Slic3r::Model& mode
         params.bed_shrink_x = BED_SHRINK_SEQ_PRINT;
         params.bed_shrink_y = BED_SHRINK_SEQ_PRINT;
     }
-    if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
+    // An explicit --align-to-y-axis wins over the printer structure
+    // (OrcaSlicer.cpp 5524-5528 and 5996-6000 at f92a7c0).
+    if (context.g_arrange_switches.align_to_y_axis)
+        params.align_to_y_axis = *context.g_arrange_switches.align_to_y_axis;
+    else if (auto printer_structure_opt = config.option<ConfigOptionEnum<PrinterStructure>>("printer_structure"))
         params.align_to_y_axis = (printer_structure_opt->value == PrinterStructure::psI3);
 #ifdef ENGINE_ORCA
     update_arrange_params(params, &config, selected);
@@ -308,7 +386,7 @@ static void apply_project_arrangement(Slic3r::Model& model, Slic3r::arrangement:
         const Slic3r::Vec2d& plate_size, std::vector<bool>& locked, int& plate_count, ProjectPlan& plan) {
     using namespace Slic3r;
     using namespace Slic3r::arrangement;
-    // Step 4 (BambuStudio.cpp 5946-6006; OrcaSlicer.cpp 5189-5262): each
+    // Step 4 (BambuStudio.cpp 5946-6006; OrcaSlicer.cpp 6031-6104): each
     // selected item's bed past the locked plates, adding plates while the
     // bed is past the last one (postprocess_bed_index_for_selected and
     // create_plate, at most MAX_PLATE_COUNT, Bambu PartPlate.cpp 6009-6051,
@@ -472,8 +550,24 @@ bool plan_project_plates(CliRunContext& context, Slic3r::Model& model, Slic3r::D
                 }
             }
         }
+        // OrcaSlicer from 2.5 counts a project's filaments plate by plate
+        // (get_extruders_under_cli of each plate, OrcaSlicer.cpp 5752-5754 at f92a7c0).
+        std::vector<int> project_plate_filaments;
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        if (filament_count == 0)
+            for (int k = 0; k < file_plates; ++k) {
+                Model plate_model;
+                for (size_t oi = 0; oi < model.objects.size(); ++oi)
+                    for (size_t ii = 0; ii < model.objects[oi]->instances.size(); ++ii)
+                        if (const auto it = on_plate.find({int(oi), int(ii)}); it != on_plate.end() && it->second == k) {
+                            plate_model.add_object(*model.objects[oi]);
+                            break;
+                        }
+                project_plate_filaments.push_back((int)arrange_plate_extruders(plate_model, config, k).size());
+            }
+#endif
         arrange_project_polygons(context, model, config, filament_count, file_plates, selected, unselected,
-                unprintable, plate_size);
+                unprintable, plate_size, project_plate_filaments);
 
         apply_project_arrangement(model, selected, unprintable, locked_aps, plate_size, locked, plate_count, plan);
     }

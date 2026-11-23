@@ -117,6 +117,7 @@ if ! /package/bin/slicer_cli-orcaslicer /tmp/model.stl \
     --machine '/package/resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json' \
     --filament '/package/resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json' \
     --process '/package/resources/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json' \
+    --curr-bed-type 'High Temp Plate' \
     -o /tmp/orca.gcode > /tmp/orca.log 2>&1; then
     cat /tmp/orca.log
     exit 1

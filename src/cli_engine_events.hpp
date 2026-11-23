@@ -10,6 +10,9 @@ namespace slicer_cli {
 
 const char* slicing_notification_tag(int t);
 const char* warning_level_tag(Slic3r::PrintStateBase::WarningLevel l);
+/// The replaced values of this run in the shape OrcaSlicer from 2.5 lists them
+/// in result.json (class config_value_substituted); filled on that build only.
+std::vector<nlohmann::json>& recorded_config_substitutions();
 void emit_config_substitutions(const Slic3r::ConfigSubstitutionContext& ctx,
                                const std::string& source);
 void emit_gcode_result_diagnostics(const Slic3r::GCodeProcessorResult& r);
