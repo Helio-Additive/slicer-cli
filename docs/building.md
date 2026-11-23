@@ -108,7 +108,7 @@ vcpkg install tbb eigen3 boost cgal "opencv[core]" assimp opencascade qhull cere
 ```
 
 The OrcaSlicer engine needs Visual Studio 2019 16.8 or newer: its build sets
-`/Zc:lambda`, as OrcaSlicer's own build does.
+`/Zc:lambda` and `/bigobj`, as OrcaSlicer's own build does.
 
 libnoise is not in vcpkg, so build it before configuring, from the engine's own
 pinned fork — `bambulab/libnoise` `7e7c98c` for the Bambu Studio engine,

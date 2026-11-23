@@ -117,6 +117,12 @@ if(ENGINE STREQUAL "orca")
     endif()
     add_compile_options(/Zc:lambda)
   endif()
+  # MeshRepair.cpp, new in OrcaSlicer 2.5, has more sections than the default
+  # object format holds (C1128 with the Ninja generator). OrcaSlicer's own
+  # CMakeLists.txt sets /bigobj for every target (406-407 at f92a7c0).
+  if(MSVC)
+    add_compile_options(/bigobj)
+  endif()
   message(STATUS "ENGINE = orca (OrcaSlicer)")
 elseif(ENGINE STREQUAL "bambu")
   get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio"  ABSOLUTE)

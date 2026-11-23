@@ -118,7 +118,8 @@ OrcaSlicer's own `CMakeLists.txt` does (391-405 at `f92a7c0`). 2.5 reads
 constexpr constants inside lambdas that do not capture them
 (`FillRectilinear.cpp` 2416, `GCodeProcessor.cpp` 7548); MSVC under C++17
 refuses that without the option (error C3493). It needs Visual Studio 2019
-16.8 or newer.
+16.8 or newer. It also sets `/bigobj` (the same file, 406-407): `MeshRepair.cpp`, new in
+2.5, has more sections than the default object format holds (C1128).
 
 On the Linux box the same OrcaSlicer front end was built against both
 kernels and given upstream's own STEP test files (`tests/data`):
