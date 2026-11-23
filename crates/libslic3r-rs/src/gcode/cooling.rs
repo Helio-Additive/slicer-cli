@@ -1443,6 +1443,44 @@ fn calc_arc_length(start: (f32, f32), end: (f32, f32), center: (f32, f32), is_cc
     radius * angle_swept
 }
 
+/// R936 gate COOLING_LENGTH_PIN (faithful): the length of a move as the pin's
+/// G-code editor computes it (fused squares, GCodeEditor.cpp:251-253; arcs by
+/// ArcSegment::calc_arc_length, Circle.cpp:479-514).
+fn cooling_length_pin() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("COOLING_LENGTH_PIN"))
+}
+
+/// Circle.cpp:511-514 `ArcSegment::calc_arc_length` on the editor's Vec3f points with
+/// z = 0 (GCodeEditor.cpp:244-248): `calc_arc_radius(start, center) *
+/// calc_arc_radian(start, end, center, is_ccw)`. Eigen's `norm()` / `dot()` of a
+/// Vec3f are reductions of separately rounded products (no fusion across the
+/// reduction functor); the cross product is in double (Circle.cpp:493).
+fn arc_segment_calc_arc_length(start: (f32, f32), end: (f32, f32), center: (f32, f32), is_ccw: bool) -> f32 {
+    // Circle.cpp:479-501 calc_arc_radian
+    let d1 = (center.0 - start.0, center.1 - start.1);
+    let d2 = (center.0 - end.0, center.1 - end.1);
+    let dd = (d1.0 - d2.0, d1.1 - d2.1);
+    let dd_norm = ((dd.0 * dd.0 + dd.1 * dd.1) + 0.0f32 * 0.0f32).sqrt();
+    let radian: f32 = if dd_norm < 1e-6 {
+        (2.0 * std::f64::consts::PI) as f32
+    } else {
+        let dot = ((d1.0 * d2.0 + d1.1 * d2.1) + 0.0f32 * 0.0f32) as f64;
+        let cross = (d1.0 as f64).mul_add(d2.1 as f64, -((d1.1 as f64) * (d2.0 as f64)));
+        let r = cross.atan2(dot) as f32;
+        if is_ccw {
+            if r < 0.0 { (2.0 * std::f64::consts::PI + r as f64) as f32 } else { r }
+        } else if r < 0.0 {
+            r.abs()
+        } else {
+            (2.0 * std::f64::consts::PI - r as f64) as f32
+        }
+    };
+    // Circle.cpp:503-508 calc_arc_radius
+    let radius = ((d1.0 * d1.0 + d1.1 * d1.1) + 0.0f32 * 0.0f32).sqrt();
+    radius * radian
+}
+
 /// Per-extruder data for the G-code post-processor.
 /// Full version matching C++ PerExtruderAdjustments (GCodeEditor.hpp:137-414)
 pub struct PostProcAdjustments {
@@ -1548,6 +1586,38 @@ impl PostProcAdjustments {
     }
 
     fn sort_lines_by_decreasing_feedrate(&mut self) {
+        // GCodeEditor.hpp:216-225: `std::sort` (libc++, not stable) with
+        // `(adj1 == adj2) ? l1.feedrate > l2.feedrate : adj1`. The order of lines
+        // with equal keys decides the float summation order of every later sum
+        // over the lines (time_non_adjustable, the time stretch, the layer time).
+        // The permutation is computed on indices: libc++'s algorithm only
+        // compares and moves, so sorting indices gives the same permutation.
+        if cooling_layer_time_pin() {
+            let mut order: Vec<usize> = (0..self.lines.len()).collect();
+            {
+                let lines = &self.lines;
+                crate::clipper::libcxx_sort(&mut order, |&a, &b| {
+                    let l1 = &lines[a];
+                    let l2 = &lines[b];
+                    let adj1 = l1.adjustable();
+                    let adj2 = l2.adjustable();
+                    if adj1 == adj2 {
+                        l1.feedrate > l2.feedrate
+                    } else {
+                        adj1
+                    }
+                });
+            }
+            let mut old: Vec<Option<CoolingLine>> = std::mem::take(&mut self.lines).into_iter().map(Some).collect();
+            self.lines = order.iter().map(|&i| old[i].take().unwrap()).collect();
+            self.n_lines_adjustable = self.lines.iter().take_while(|l| l.adjustable()).count();
+            let mut t = 0.0f32;
+            for l in &self.lines[self.n_lines_adjustable..] {
+                t += l.time;
+            }
+            self.time_non_adjustable = t;
+            return;
+        }
         self.lines.sort_by(|a, b| {
             let adj_a = a.adjustable();
             let adj_b = b.adjustable();
@@ -1573,7 +1643,13 @@ impl PostProcAdjustments {
         for i in 0..self.n_lines_adjustable {
             let line = &self.lines[i];
             if line.feedrate > min_feedrate {
-                stretch += line.time * (line.feedrate / min_feedrate - 1.0);
+                // GCodeEditor.hpp:236: `time_stretch += line.time * (line.feedrate /
+                // min_feedrate - 1.f)` is one expression: clang fuses it (fmaf).
+                if cooling_layer_time_pin() {
+                    stretch = line.time.mul_add(line.feedrate / min_feedrate - 1.0, stretch);
+                } else {
+                    stretch += line.time * (line.feedrate / min_feedrate - 1.0);
+                }
             }
         }
         stretch
@@ -1588,7 +1664,14 @@ impl PostProcAdjustments {
         for i in 0..self.n_lines_adjustable {
             let line = &self.lines[i];
             if line.adjustable_for_features(additional) && line.feedrate > min_feedrate {
-                stretch += line.adjustable_time * (line.feedrate / min_feedrate - 1.0);
+                // GCodeEditor.hpp:277: fused as above.
+                if cooling_layer_time_pin() {
+                    stretch = line
+                        .adjustable_time
+                        .mul_add(line.feedrate / min_feedrate - 1.0, stretch);
+                } else {
+                    stretch += line.adjustable_time * (line.feedrate / min_feedrate - 1.0);
+                }
             }
         }
         stretch
@@ -1667,6 +1750,62 @@ impl PostProcAdjustments {
             }
         }
     }
+}
+
+/// R936 gate COOLING_LAYER_TIME_PIN (faithful): the layer-time solver of the
+/// cooling buffer as the pin computes it (libc++ `std::sort` of the lines,
+/// GCodeEditor.hpp:216-225; the fused time-stretch sums, GCodeEditor.hpp:236, 277).
+pub(super) fn cooling_layer_time_pin() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("COOLING_LAYER_TIME_PIN"))
+}
+
+/// `atof` of the C library on a G-code word: leading white space, then the longest
+/// prefix of the form `[+-]digits[.digits][(e|E)[+-]digits]`; 0 when there is none.
+fn c_atof(s: &str) -> f64 {
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() && (b[i] == b' ' || b[i] == b'\t' || b[i] == b'\n' || b[i] == b'\r' || b[i] == 0x0b || b[i] == 0x0c) {
+        i += 1;
+    }
+    let start = i;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        i += 1;
+    }
+    let digits0 = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    let mut ndig = i - digits0;
+    if i < b.len() && b[i] == b'.' {
+        i += 1;
+        let f0 = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        ndig += i - f0;
+    }
+    if ndig == 0 {
+        return 0.0;
+    }
+    let mut end = i;
+    if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+        let mut j = i + 1;
+        if j < b.len() && (b[j] == b'+' || b[j] == b'-') {
+            j += 1;
+        }
+        let e0 = j;
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j > e0 {
+            end = j;
+        }
+    }
+    let t = &s[start..end];
+    let t = t.strip_prefix('+').unwrap_or(t);
+    let t = if t.starts_with('.') { format!("0{t}") } else if t.starts_with("-.") { format!("-0{}", &t[1..]) } else { t.to_string() };
+    t.trim_end_matches('.').parse::<f64>().unwrap_or(0.0)
 }
 
 /// Parse a G-code axis value: given "X123.456 Y..." and axis 'X', returns 123.456
@@ -1884,6 +2023,15 @@ impl GCodeEditorState {
         spiral_vase: bool,
     ) -> ParsedLayer {
         let full_gcode = gcode.to_string();
+        // COOLPROBE_TEXT=<layer_id> (diagnostics only): the layer's G-code as the
+        // cooling buffer reads it, before the slow-down, to stderr.
+        if crate::probe_enabled("COOLPROBE_TEXT") {
+            if crate::env_f64("COOLPROBE_TEXT").map(|v| v as usize) == Some(layer_id as usize) {
+                for l in full_gcode.lines() {
+                    eprintln!("CPTEXT {}", l);
+                }
+            }
+        }
         let (per_extruder_adjustments, not_set_additional_fan) = self.parse_layer_gcode(
             &full_gcode,
             extruder_configs,
@@ -2120,13 +2268,26 @@ impl GCodeEditorState {
                         let end = (new_pos[0], new_pos[1]);
                         let center = (new_pos[5], new_pos[6]);
                         let is_ccw = (cl.line_type & CoolingLine::TYPE_G3) != 0;
-                        let arc_len = calc_arc_length(start, end, center, is_ccw);
+                        let arc_len = if cooling_length_pin() {
+                            arc_segment_calc_arc_length(start, end, center, is_ccw)
+                        } else {
+                            calc_arc_length(start, end, center, is_ccw)
+                        };
                         arc_len * arc_len
+                    } else if cooling_length_pin() {
+                        // GCodeEditor.cpp:251 `dif[0] * dif[0] + dif[1] * dif[1]`: one
+                        // expression, the left product fused into the add.
+                        dif[0].mul_add(dif[0], dif[1] * dif[1])
                     } else {
                         dif[0] * dif[0] + dif[1] * dif[1]
                     };
 
-                    let dxyz2 = dxy2 + dif[2] * dif[2];
+                    // GCodeEditor.cpp:253 `dxy2 + dif[2] * dif[2]`, fused likewise.
+                    let dxyz2 = if cooling_length_pin() {
+                        dif[2].mul_add(dif[2], dxy2)
+                    } else {
+                        dxy2 + dif[2] * dif[2]
+                    };
 
                     if dxyz2 > 0.0 {
                         cl.length = dxyz2.sqrt();
@@ -2207,7 +2368,19 @@ impl GCodeEditorState {
                 cl.line_type = CoolingLine::TYPE_OVERHANG_FAN_END;
             } else if sline.starts_with("G4 ") {
                 cl.line_type = CoolingLine::TYPE_G4;
-                if let Some(s) = parse_axis(sline, 'S') {
+                if cooling_layer_time_pin() {
+                    // GCodeEditor.cpp:330-337: `pos_S = sline.find('S', 3)`, and
+                    // `(pos_S > 0) ? atof(sline.c_str() + pos_S + 1) : ...` is true
+                    // for npos too, where `npos + 1` wraps to the start of the line:
+                    // atof("G4 ...") is 0. So the P branch is never taken and a G4
+                    // without an S waits 0 s. float(atof(..)) of the rest of the line.
+                    let t = match sline.get(3..).and_then(|r| r.find('S')) {
+                        Some(k) => c_atof(&sline[3 + k + 1..]) as f32,
+                        None => c_atof(sline) as f32,
+                    };
+                    cl.time = t;
+                    cl.time_max = t;
+                } else if let Some(s) = parse_axis(sline, 'S') {
                     cl.time = s;
                     cl.time_max = s;
                 } else if let Some(p) = parse_axis(sline, 'P') {
@@ -2937,6 +3110,21 @@ fn remove_f_param(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `atof` as the G4 parse of GCodeEditor.cpp:330-337 uses it: a prefix of the
+    /// string, 0 for a string that does not start with a number ("G4 P500").
+    #[test]
+    fn c_atof_reads_a_prefix_as_the_c_library() {
+        assert_eq!(c_atof("0"), 0.0);
+        assert_eq!(c_atof("1.5 ;x"), 1.5);
+        assert_eq!(c_atof(" .25"), 0.25);
+        assert_eq!(c_atof("-.5"), -0.5);
+        assert_eq!(c_atof("+2e1X"), 20.0);
+        assert_eq!(c_atof("3.e"), 3.0);
+        assert_eq!(c_atof("G4 P500"), 0.0);
+        assert_eq!(c_atof(""), 0.0);
+        assert_eq!(c_atof("."), 0.0);
+    }
 
     #[test]
     fn test_cooling_config_default() {

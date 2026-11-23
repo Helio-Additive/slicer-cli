@@ -4858,6 +4858,15 @@ impl Layer {
                     for ent in &collection.entities {
                         if let crate::extrusion_entity::ExtrusionEntityType::Path(path) = ent {
                             path.polygons_covered_by_spacing(&mut mono_covered, 10.0);
+                        } else if let crate::extrusion_entity::ExtrusionEntityType::MultiPath(mp) =
+                            ent
+                        {
+                            // ExtrusionEntity.hpp ExtrusionMultiPath::polygons_covered_by_spacing:
+                            // every path in order (the multipaths of
+                            // extrusion_entities_append_paths_with_wipe, EXTRUSION_PATHS_WITH_WIPE_PIN).
+                            for path in &mp.paths {
+                                path.polygons_covered_by_spacing(&mut mono_covered, 10.0);
+                            }
                         }
                     }
                 }

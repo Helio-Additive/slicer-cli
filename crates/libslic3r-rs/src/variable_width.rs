@@ -346,7 +346,7 @@ fn polyline_append(polyline: &mut crate::geometry::Polyline, point: Point) {
 /// VariableWidth.cpp:100-101
 /// BBS: new function to filter width to avoid too fragmented segments
 /// C++: static ExtrusionPaths thick_polyline_to_extrusion_paths_2(const ThickPolyline& thick_polyline, ExtrusionRole role, const Flow& flow, const float tolerance)
-fn thick_polyline_to_extrusion_paths_2(
+pub fn thick_polyline_to_extrusion_paths_2(
     thick_polyline: &ThickPolyline,
     role: ExtrusionRole,
     flow: &Flow,

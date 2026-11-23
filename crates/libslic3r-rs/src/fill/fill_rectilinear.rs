@@ -7570,3 +7570,601 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// FillRectilinear.cpp:3247-3590 — the route of `FillMonotonicLineWGapFill::fill_surface_extrusion`
+// (3735-3746): where each gap fill goes between the monotonic lines, the order of the gaps placed
+// at one position and their direction. Nothing live calls it yet: the live assembly of the top
+// surface's lines and gap fills is in layer.rs make_fills (see the R936 notes).
+// ---------------------------------------------------------------------------------------------
+
+/// FillRectilinear.cpp:3247-3251 `struct MonotonicRoute`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MonotonicRoute {
+    /// `gaps_at[i]`: the gaps (indices into `gaps`) printed between line i-1 and line i.
+    pub gaps_at: Vec<Vec<usize>>,
+    /// The gaps that could not be inserted into the order of the lines.
+    pub leftover: Vec<usize>,
+}
+
+/// `(a - b).cast<double>().squaredNorm()` of two Points: Eigen evaluates the Vec2d as one packet
+/// (multiply, then the horizontal add), so the two products are rounded before the add.
+#[inline]
+fn route_squared_norm(a: &Point, b: &Point) -> f64 {
+    let dx = (a.x - b.x) as f64;
+    let dy = (a.y - b.y) as f64;
+    dx * dx + dy * dy
+}
+
+/// `Point::rotated(double cos_a, double sin_a)` (Point.hpp:226-231, 235) with clang's contraction
+/// of `cos_a * cur_x - sin_a * cur_y` and `cos_a * cur_y + sin_a * cur_x`.
+#[inline]
+fn route_rotated(p: &Point, cos_a: f64, sin_a: f64) -> Point {
+    let cur_x = p.x as f64;
+    let cur_y = p.y as f64;
+    Point::new(
+        cos_a.mul_add(cur_x, -(sin_a * cur_y)).round() as Coord,
+        cos_a.mul_add(cur_y, sin_a * cur_x).round() as Coord,
+    )
+}
+
+/// FillRectilinear.cpp:3501-3511 `struct OrientationScore` and its `operator<`.
+#[derive(Debug, Clone, Copy)]
+struct OrientationScore {
+    fold_count: i32,
+    total_link_length: f64,
+}
+
+impl OrientationScore {
+    fn lt(&self, other: &OrientationScore) -> bool {
+        if self.fold_count != other.fold_count {
+            return self.fold_count < other.fold_count;
+        }
+        self.total_link_length < other.total_link_length
+    }
+}
+
+/// FillRectilinear.cpp:3263-3266 the lambda `link`.
+#[inline]
+fn route_link(from: Option<&Point>, to: &Point) -> f64 {
+    match from {
+        Some(f) => route_squared_norm(to, f).sqrt(),
+        None => 0.0,
+    }
+}
+
+/// FillRectilinear.cpp:3267-3270 the lambda `folds_back`.
+#[inline]
+fn route_folds_back(from: Option<&Point>, at: &Point, to: Option<&Point>) -> bool {
+    match (from, to) {
+        (Some(f), Some(t)) => {
+            let ax = (at.x - f.x) as f64;
+            let ay = (at.y - f.y) as f64;
+            let bx = (t.x - at.x) as f64;
+            let by = (t.y - at.y) as f64;
+            ax * bx + ay * by < 0.0
+        }
+        _ => false,
+    }
+}
+
+/// FillRectilinear.cpp:3254-3590 `static MonotonicRoute plan_monotonic_route(const Polylines &lines,
+/// ThickPolylines &gaps, double link_max, float scan_angle, const std::vector<size_t> &island_end)`.
+/// Keeps the order of the monotonic lines; decides where each gap is inserted, the order of the gaps
+/// at one position and the direction of each gap (the open ones are reversed in `gaps`).
+pub fn plan_monotonic_route(
+    lines: &[Polyline],
+    gaps: &mut [crate::geometry::ThickPolyline],
+    link_max: f64,
+    scan_angle: f32,
+    island_end: &[usize],
+) -> MonotonicRoute {
+    // FillRectilinear.cpp:3257-3261
+    let n_lines = lines.len();
+    let mut route = MonotonicRoute { gaps_at: vec![Vec::new(); n_lines + 1], leftover: Vec::new() };
+    if gaps.is_empty() {
+        return route;
+    }
+
+    // FillRectilinear.cpp:3274-3276 the scan frame (-scan_angle).
+    let scan_cos = (-(scan_angle as f64)).cos();
+    let scan_sin = (-(scan_angle as f64)).sin();
+    let to_scan = |p: &Point| route_rotated(p, scan_cos, scan_sin);
+
+    // FillRectilinear.cpp:3280-3292
+    #[derive(Clone, Copy)]
+    struct LineEndpoint {
+        scan_pos: Point,
+        line_idx: usize,
+        island_idx: usize,
+        is_start: bool,
+    }
+    #[derive(Clone, Copy)]
+    struct ColumnSpan {
+        min_x: Coord,
+        max_x: Coord,
+    }
+    // FillRectilinear.cpp:3293-3295
+    let mut island_spans =
+        vec![ColumnSpan { min_x: Coord::MAX, max_x: Coord::MIN }; island_end.len().max(1)];
+    // FillRectilinear.cpp:3296-3309
+    let mut endpoints: Vec<LineEndpoint> = Vec::with_capacity(2 * n_lines);
+    let mut isl = 0usize;
+    for i in 0..n_lines {
+        while isl + 1 < island_end.len() && i >= island_end[isl] {
+            isl += 1;
+        }
+        let first = to_scan(&lines[i].first_point());
+        let last = to_scan(&lines[i].last_point());
+        endpoints.push(LineEndpoint { scan_pos: first, line_idx: i, island_idx: isl, is_start: true });
+        endpoints.push(LineEndpoint { scan_pos: last, line_idx: i, island_idx: isl, is_start: false });
+        island_spans[isl].min_x = island_spans[isl].min_x.min(first.x).min(last.x);
+        island_spans[isl].max_x = island_spans[isl].max_x.max(first.x).max(last.x);
+    }
+
+    // FillRectilinear.cpp:3311-3313 std::sort by the scan x (libc++ order on equal keys).
+    crate::clipper::libcxx_sort(&mut endpoints, |a, b| a.scan_pos.x < b.scan_pos.x);
+
+    // FillRectilinear.cpp:3316-3333 the lambda `nearest_endpoint`.
+    let nearest_endpoint = |q: &Point| -> (usize, f64) {
+        let mut hi = endpoints.partition_point(|p| p.scan_pos.x < q.x);
+        let mut lo = hi;
+        let mut out = endpoints.len();
+        let mut out_d2 = f64::MAX;
+        let qx = q.x as f64;
+        let inf = f64::INFINITY;
+        while lo > 0 || hi < endpoints.len() {
+            let dl = if lo > 0 { qx - endpoints[lo - 1].scan_pos.x as f64 } else { inf };
+            let dr = if hi < endpoints.len() { endpoints[hi].scan_pos.x as f64 - qx } else { inf };
+            // std::min(dl, dr)
+            let dx = if dr < dl { dr } else { dl };
+            if !(dx * dx < out_d2) {
+                break;
+            }
+            let i = if dl <= dr {
+                lo -= 1;
+                lo
+            } else {
+                let t = hi;
+                hi += 1;
+                t
+            };
+            let d2 = route_squared_norm(&endpoints[i].scan_pos, q);
+            if d2 < out_d2 {
+                out_d2 = d2;
+                out = i;
+            }
+        }
+        (out, out_d2)
+    };
+
+    // FillRectilinear.cpp:3335-3341
+    #[derive(Clone, Copy, Default)]
+    struct GapAttach {
+        at_line_start: bool,
+        distance_squared: f64,
+    }
+    let mut attachments: Vec<GapAttach> = vec![GapAttach::default(); gaps.len()];
+
+    // FillRectilinear.cpp:3343-3421
+    for igap in 0..gaps.len() {
+        if gaps[igap].points.len() < 2 {
+            continue;
+        }
+        if n_lines == 0 {
+            route.leftover.push(igap);
+            continue;
+        }
+        // FillRectilinear.cpp:3353-3362 the probes: every point but the last of a closed gap, the
+        // two ends of an open one.
+        let probes: Vec<Point> = {
+            let gap_line = &gaps[igap];
+            if gap_line.is_closed() {
+                gap_line.points[..gap_line.points.len() - 1].to_vec()
+            } else {
+                vec![gap_line.points[0], gap_line.points[gap_line.points.len() - 1]]
+            }
+        };
+        // FillRectilinear.cpp:3364-3380
+        let mut nearest_endpoint_idx = endpoints.len();
+        let mut nearest_distance_squared = f64::MAX;
+        let mut gap_min_x = Coord::MAX;
+        let mut gap_max_x = Coord::MIN;
+        for probe_point in &probes {
+            let probe_scan_pos = to_scan(probe_point);
+            gap_min_x = gap_min_x.min(probe_scan_pos.x);
+            gap_max_x = gap_max_x.max(probe_scan_pos.x);
+            let (endpoint_idx, distance_squared) = nearest_endpoint(&probe_scan_pos);
+            if endpoint_idx < endpoints.len() && distance_squared < nearest_distance_squared {
+                nearest_distance_squared = distance_squared;
+                nearest_endpoint_idx = endpoint_idx;
+            }
+        }
+
+        // FillRectilinear.cpp:3382-3389
+        let endpoint = endpoints[nearest_endpoint_idx];
+        let line_idx = endpoint.line_idx;
+        let mut attach_at_line_start = endpoint.is_start;
+        let island_span = island_spans[endpoint.island_idx];
+        let endpoint_x = endpoint.scan_pos.x;
+        let gap_center_is_right_of_endpoint = ((gap_min_x as i64 + gap_max_x as i64) / 2) as Coord > endpoint_x;
+
+        // FillRectilinear.cpp:3391-3395
+        let is_boundary_gap = if gap_center_is_right_of_endpoint {
+            island_span.max_x <= gap_max_x
+        } else {
+            island_span.min_x >= gap_min_x
+        };
+
+        // FillRectilinear.cpp:3397-3417
+        if is_boundary_gap {
+            let position_has_line_link = |insertion_idx: usize| -> bool {
+                insertion_idx > 0
+                    && insertion_idx < n_lines
+                    && route_squared_norm(&lines[insertion_idx].first_point(), &lines[insertion_idx - 1].last_point())
+                        .sqrt()
+                        <= link_max
+            };
+            let current_insertion_idx = if attach_at_line_start { line_idx } else { line_idx + 1 };
+            let alternate_insertion_idx = if attach_at_line_start { line_idx + 1 } else { line_idx };
+            if position_has_line_link(current_insertion_idx) && !position_has_line_link(alternate_insertion_idx) {
+                attach_at_line_start = !attach_at_line_start;
+                let new_endpoint =
+                    if attach_at_line_start { lines[line_idx].first_point() } else { lines[line_idx].last_point() };
+                nearest_distance_squared = f64::MAX;
+                for probe in &probes {
+                    let d = route_squared_norm(probe, &new_endpoint);
+                    // std::min(nearest_distance_squared, d)
+                    if d < nearest_distance_squared {
+                        nearest_distance_squared = d;
+                    }
+                }
+            }
+        }
+
+        // FillRectilinear.cpp:3419-3421
+        let insertion_idx = if attach_at_line_start { line_idx } else { line_idx + 1 };
+        attachments[igap] = GapAttach { at_line_start: attach_at_line_start, distance_squared: nearest_distance_squared };
+        route.gaps_at[insertion_idx].push(igap);
+    }
+
+    // FillRectilinear.cpp:3424-3443 std::stable_sort of the gaps at one position.
+    for ii in 0..=n_lines {
+        let placed = &mut route.gaps_at[ii];
+        if placed.len() < 2 {
+            continue;
+        }
+        let less = |a: usize, b: usize| -> bool {
+            let attach_a = attachments[a];
+            let attach_b = attachments[b];
+            if attach_a.at_line_start != attach_b.at_line_start {
+                return !attach_a.at_line_start;
+            }
+            if attach_a.at_line_start {
+                return attach_a.distance_squared > attach_b.distance_squared;
+            }
+            attach_a.distance_squared < attach_b.distance_squared
+        };
+        placed.sort_by(|&a, &b| {
+            if less(a, b) {
+                std::cmp::Ordering::Less
+            } else if less(b, a) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+    }
+
+    // FillRectilinear.cpp:3445-3483 the leftover gaps by nearest neighbour.
+    if !route.leftover.is_empty() {
+        let mut route_end_point = Point::new(0, 0);
+        let mut has_route_end = false;
+        let mut remaining_gap_indices = std::mem::take(&mut route.leftover);
+        while !remaining_gap_indices.is_empty() {
+            let mut nearest_pool_pos = 0usize;
+            let mut should_reverse = false;
+            let mut nearest_distance = f64::MAX;
+            for pool_pos in 0..remaining_gap_indices.len() {
+                let candidate_gap = &gaps[remaining_gap_indices[pool_pos]];
+                for reverse in 0..2 {
+                    let entry_point = if reverse != 0 {
+                        candidate_gap.points[candidate_gap.points.len() - 1]
+                    } else {
+                        candidate_gap.points[0]
+                    };
+                    let distance =
+                        if has_route_end { route_squared_norm(&entry_point, &route_end_point).sqrt() } else { 0.0 };
+                    if distance < nearest_distance {
+                        nearest_distance = distance;
+                        nearest_pool_pos = pool_pos;
+                        should_reverse = reverse != 0;
+                    }
+                }
+            }
+            let selected_gap_idx = remaining_gap_indices.remove(nearest_pool_pos);
+            let selected_gap = &mut gaps[selected_gap_idx];
+            if should_reverse && !selected_gap.is_closed() {
+                selected_gap.reverse();
+            }
+            route_end_point = selected_gap.points[selected_gap.points.len() - 1];
+            has_route_end = true;
+            route.leftover.push(selected_gap_idx);
+        }
+    }
+
+    // FillRectilinear.cpp:3486-3497 the route flattened.
+    #[derive(Clone, Copy)]
+    struct RouteItem {
+        geometry_idx: usize,
+        is_gap_fill: bool,
+    }
+    let mut route_items: Vec<RouteItem> = Vec::with_capacity(lines.len() + gaps.len());
+    for insertion_idx in 0..=n_lines {
+        for &gap_idx in &route.gaps_at[insertion_idx] {
+            route_items.push(RouteItem { geometry_idx: gap_idx, is_gap_fill: true });
+        }
+        if insertion_idx < n_lines {
+            route_items.push(RouteItem { geometry_idx: insertion_idx, is_gap_fill: false });
+        }
+    }
+    for &gap_idx in &route.leftover {
+        route_items.push(RouteItem { geometry_idx: gap_idx, is_gap_fill: true });
+    }
+
+    // FillRectilinear.cpp:3513-3516 (the pointers are the Options).
+    let mut previous_exit: Option<Point> = None;
+    let mut next_entry: Option<Point>;
+    let mut can_link_from_previous = false;
+    let mut can_link_to_next: bool;
+
+    // FillRectilinear.cpp:3518-3534 the lambda `score_orientation`.
+    let score_orientation = |previous_exit: Option<&Point>,
+                             next_entry: Option<&Point>,
+                             can_link_from_previous: bool,
+                             can_link_to_next: bool,
+                             entry_point: &Point,
+                             point_after_entry: &Point,
+                             point_before_exit: &Point,
+                             exit_point: &Point|
+     -> OrientationScore {
+        let entry_link_length = route_link(previous_exit, entry_point);
+        let exit_link_length = route_link(next_entry, exit_point);
+        let entry_folds_back = if can_link_from_previous && entry_link_length <= link_max {
+            route_folds_back(previous_exit, entry_point, Some(point_after_entry)) as i32
+        } else {
+            0
+        };
+        let exit_folds_back = if can_link_to_next && exit_link_length <= link_max {
+            route_folds_back(Some(point_before_exit), exit_point, next_entry) as i32
+        } else {
+            0
+        };
+        OrientationScore {
+            fold_count: entry_folds_back + exit_folds_back,
+            total_link_length: entry_link_length + exit_link_length,
+        }
+    };
+
+    // FillRectilinear.cpp:3536-3587
+    for item_pos in 0..route_items.len() {
+        let item = route_items[item_pos];
+        if !item.is_gap_fill {
+            previous_exit = Some(lines[item.geometry_idx].last_point());
+            can_link_from_previous = true;
+            continue;
+        }
+        // FillRectilinear.cpp:3545-3563
+        next_entry = None;
+        can_link_to_next = false;
+        if item_pos + 1 < route_items.len() {
+            let next_item = route_items[item_pos + 1];
+            let next_entry_point = if !next_item.is_gap_fill {
+                lines[next_item.geometry_idx].first_point()
+            } else {
+                let gap_line = &gaps[item.geometry_idx];
+                let next_gap_line = &gaps[next_item.geometry_idx];
+                let g_first = gap_line.points[0];
+                let g_last = gap_line.points[gap_line.points.len() - 1];
+                let distance_to_current_gap = |point: &Point| -> f64 {
+                    let a = route_squared_norm(point, &g_first);
+                    let b = route_squared_norm(point, &g_last);
+                    // std::min(a, b)
+                    if b < a { b } else { a }
+                };
+                let n_first = next_gap_line.points[0];
+                let n_last = next_gap_line.points[next_gap_line.points.len() - 1];
+                if distance_to_current_gap(&n_first) <= distance_to_current_gap(&n_last) {
+                    n_first
+                } else {
+                    n_last
+                }
+            };
+            next_entry = Some(next_entry_point);
+            can_link_to_next = !(next_item.is_gap_fill && gaps[next_item.geometry_idx].is_closed());
+        }
+
+        // FillRectilinear.cpp:3565-3583
+        let gap_line = &mut gaps[item.geometry_idx];
+        let resolved_exit_point = if gap_line.is_closed() {
+            let seam_reference = if previous_exit.is_some() { previous_exit } else { next_entry };
+            match seam_reference {
+                Some(r) => crate::geometry::foot_pt(&gap_line.points, &r).1,
+                None => gap_line.points[gap_line.points.len() - 1],
+            }
+        } else {
+            let point_count = gap_line.points.len();
+            let p = &gap_line.points;
+            let forward_score = score_orientation(
+                previous_exit.as_ref(),
+                next_entry.as_ref(),
+                can_link_from_previous,
+                can_link_to_next,
+                &p[0],
+                &p[1],
+                &p[point_count - 2],
+                &p[point_count - 1],
+            );
+            let reverse_score = score_orientation(
+                previous_exit.as_ref(),
+                next_entry.as_ref(),
+                can_link_from_previous,
+                can_link_to_next,
+                &p[point_count - 1],
+                &p[point_count - 2],
+                &p[1],
+                &p[0],
+            );
+            if reverse_score.lt(&forward_score) {
+                gap_line.reverse();
+            }
+            gap_line.points[gap_line.points.len() - 1]
+        };
+        // FillRectilinear.cpp:3584-3586
+        previous_exit = Some(resolved_exit_point);
+        can_link_from_previous = !gap_line.is_closed();
+    }
+
+    route
+}
+
+/// FillRectilinear.cpp:3592-3639 `static void append_monotonic_route(ExtrusionEntitiesPtr &dst,
+/// const MonotonicRoute &route, Polylines &lines, const ThickPolylines &gaps, ExtrusionRole line_role,
+/// double line_mm3_per_mm, float line_width, float line_height, ExtrusionRole gap_role,
+/// const Flow &gap_flow, float overlap_gap_compensation_ratio)`: the lines and gap fills in the order
+/// of `plan_monotonic_route`, into `dst` (the no-sort collection). The runs of lines between two gaps
+/// go through `extrusion_entities_append_paths_with_wipe` (the crate's version takes no nozzle
+/// diameter; the pin hands `gap_flow.nozzle_diameter()`). Ported, not compared yet.
+#[allow(clippy::too_many_arguments)]
+pub fn append_monotonic_route(
+    dst: &mut Vec<crate::extrusion_entity::ExtrusionEntityType>,
+    route: &MonotonicRoute,
+    lines: &mut [Polyline],
+    gaps: &[crate::geometry::ThickPolyline],
+    line_role: crate::extrusion_entity::ExtrusionRole,
+    line_mm3_per_mm: f64,
+    line_width: f32,
+    line_height: f32,
+    gap_role: crate::extrusion_entity::ExtrusionRole,
+    gap_flow: &crate::flow::Flow,
+    overlap_gap_compensation_ratio: f32,
+) {
+    use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole};
+    // FillRectilinear.cpp:3598-3600
+    let width_tolerance = (0.05 / crate::SCALING_FACTOR) as f32;
+    dst.reserve(lines.len() + gaps.len());
+    let mut pending_lines: Vec<Polyline> = Vec::new();
+
+    // FillRectilinear.cpp:3602-3617 the lambda `add_gap`.
+    let add_gap = |dst: &mut Vec<ExtrusionEntityType>, pending_lines: &mut Vec<Polyline>, igap: usize| {
+        let paths = crate::variable_width::thick_polyline_to_extrusion_paths_2(
+            &gaps[igap],
+            gap_role,
+            gap_flow,
+            width_tolerance,
+        );
+        if paths.is_empty() {
+            return;
+        }
+        crate::extrusion_entity::extrusion_entities_append_paths_with_wipe(
+            dst,
+            std::mem::take(pending_lines),
+            line_role,
+            line_mm3_per_mm,
+            line_width,
+            line_height,
+            overlap_gap_compensation_ratio,
+        );
+        if paths.first().unwrap().first_point() == paths.last().unwrap().last_point() {
+            dst.push(ExtrusionEntityType::Loop(ExtrusionLoop::new(paths, ExtrusionLoopRole::DEFAULT)));
+        } else {
+            for path in paths {
+                dst.push(ExtrusionEntityType::Path(path));
+            }
+        }
+    };
+
+    // FillRectilinear.cpp:3619-3625
+    for i in 0..lines.len() {
+        for &igap in &route.gaps_at[i] {
+            add_gap(dst, &mut pending_lines, igap);
+        }
+        if lines[i].is_valid() {
+            pending_lines.push(std::mem::take(&mut lines[i]));
+        }
+    }
+    // FillRectilinear.cpp:3626-3628
+    for &igap in route.gaps_at.last().unwrap() {
+        add_gap(dst, &mut pending_lines, igap);
+    }
+    // FillRectilinear.cpp:3629-3631
+    for &igap in &route.leftover {
+        add_gap(dst, &mut pending_lines, igap);
+    }
+    // FillRectilinear.cpp:3633-3637
+    crate::extrusion_entity::extrusion_entities_append_paths_with_wipe(
+        dst,
+        pending_lines,
+        line_role,
+        line_mm3_per_mm,
+        line_width,
+        line_height,
+        overlap_gap_compensation_ratio,
+    );
+    dst.shrink_to_fit();
+}
+
+/// FillRectilinear.hpp:177-200 — `class FillLockedZag : public FillRectilinear`: the filler object with
+/// its three members (`lock_param`, `skin_pattern`, `skeleton_pattern`, both patterns
+/// `InfillPattern(0)` = ipConcentric by default). Its fill (`fill_surface_extrusion`,
+/// `fill_surface_locked_zag`, the skin / skeleton helpers) is the free functions above
+/// (FillRectilinear.cpp:3969-4004 and following), which take these members as arguments.
+#[derive(Debug, Clone)]
+pub struct FillLockedZag {
+    pub base: FillRectilinear,
+    /// FillRectilinear.hpp:182 `LockRegionParam lock_param;`
+    pub lock_param: super::LockRegionParam,
+    /// FillRectilinear.hpp:183 `InfillPattern skin_pattern = InfillPattern(0);`
+    pub skin_pattern: crate::print_config::InfillPattern,
+    /// FillRectilinear.hpp:184 `InfillPattern skeleton_pattern = InfillPattern(0);`
+    pub skeleton_pattern: crate::print_config::InfillPattern,
+}
+
+impl Default for FillLockedZag {
+    fn default() -> Self {
+        Self {
+            base: FillRectilinear::with_class(FillRectilinearClass::LockedZag),
+            lock_param: super::LockRegionParam::default(),
+            skin_pattern: crate::print_config::InfillPattern::Concentric,
+            skeleton_pattern: crate::print_config::InfillPattern::Concentric,
+        }
+    }
+}
+
+impl FillLockedZag {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// FillRectilinear.hpp:180 `Fill *clone() const override { return new FillLockedZag(*this); }`
+    pub fn clone(&self) -> Self {
+        Clone::clone(self)
+    }
+    /// FillRectilinear.hpp:187 `bool has_consistent_pattern() const override { return true; }`
+    pub fn has_consistent_pattern(&self) -> bool {
+        true
+    }
+    /// FillRectilinear.hpp:188 `void set_lock_region_param(const LockRegionParam &lock_param) override`
+    pub fn set_lock_region_param(&mut self, lock_param: &super::LockRegionParam) {
+        self.lock_param = lock_param.clone();
+    }
+    /// FillRectilinear.hpp:196-199 `void set_skin_and_skeleton_pattern(const InfillPattern &skin_pattern,
+    /// const InfillPattern &skeleton_pattern)`
+    pub fn set_skin_and_skeleton_pattern(
+        &mut self,
+        skin_pattern: &crate::print_config::InfillPattern,
+        skeleton_pattern: &crate::print_config::InfillPattern,
+    ) {
+        self.skin_pattern = *skin_pattern;
+        self.skeleton_pattern = *skeleton_pattern;
+    }
+}

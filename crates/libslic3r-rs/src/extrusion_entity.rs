@@ -2414,8 +2414,36 @@ pub fn extrusion_entities_append_paths_with_wipe(
     gap_compensation_ratio: f32,
 ) {
     const EPSILON: f32 = 1e-4;
+    // EXTRUSION_PATHS_WITH_WIPE_PIN (on unless =0): the pin collects every run of lines
+    // joined by connectors into ONE ExtrusionMultiPath (ExtrusionEntity.hpp:671-724), which
+    // the exporter prints through extrude_multi_path (GCode.cpp:6884-6909): the wipe goes
+    // back along the whole multipath, connectors included. =0 pushes the paths flat.
+    let multi = crate::faithful_gate("EXTRUSION_PATHS_WITH_WIPE_PIN");
+    // ExtrusionEntity.hpp:674-675: empty input returns at once.
+    if multi && polylines.is_empty() {
+        return;
+    }
+    // ExtrusionEntity.hpp:683 `ExtrusionMultiPath* multi_path = new ExtrusionMultiPath();`
+    let mut multi_path = ExtrusionMultiPath::new();
     dst.reserve(dst.len() + polylines.len());
-    let hop_max = 3.0 * scale(width as CoordF) as f64;
+    // PATHS_WITH_WIPE_SCALED_PIN (on unless =0): `scaled(width)` is `coord_t(width / float(SCALING_FACTOR))`
+    // (Point.hpp:536-541: Tin = float, a float division truncated), and the norms are Eigen's
+    // `sqrt(x*x + y*y)` (`norm()`, `normalized()`); =0 rounds a double product and uses hypot.
+    let scaled_pin = crate::faithful_gate("PATHS_WITH_WIPE_SCALED_PIN");
+    let scaled_f = |v: f32| -> i64 { (v / (crate::libslic3r::SCALING_FACTOR as f32)) as i64 };
+    let norm2 = |x: f64, y: f64| -> f64 {
+        if scaled_pin {
+            (x * x + y * y).sqrt()
+        } else {
+            x.hypot(y)
+        }
+    };
+    let hop_max = if scaled_pin {
+        // ExtrusionEntity.hpp:687 `3 * scaled(width)`: an integer product.
+        (3 * scaled_f(width)) as f64
+    } else {
+        3.0 * scale(width as CoordF) as f64
+    };
     let mut last_end: Option<crate::geometry::Point> = None;
     let mut last_direction = (0.0_f64, 0.0_f64);
     for polyline in polylines {
@@ -2424,7 +2452,7 @@ pub fn extrusion_entities_append_paths_with_wipe(
         }
         let first = polyline.points()[0];
         if let Some(le) = last_end {
-            let hop = ((first.x - le.x) as f64).hypot((first.y - le.y) as f64);
+            let hop = norm2((first.x - le.x) as f64, (first.y - le.y) as f64);
             if hop <= hop_max {
                 // ExtrusionEntity.hpp:685-706: connector wipe path (no_extrusion).
                 let mut conn = ExtrusionPath::with_params(
@@ -2443,9 +2471,14 @@ pub fn extrusion_entities_append_paths_with_wipe(
                     let curr_last = *polyline.points().last().unwrap();
                     let cd_x = (first.x - curr_last.x) as f64;
                     let cd_y = (first.y - curr_last.y) as f64;
-                    let cn = cd_x.hypot(cd_y);
+                    let cn = norm2(cd_x, cd_y);
                     let (cdx, cdy) = if cn > 0.0 { (cd_x / cn, cd_y / cn) } else { (0.0, 0.0) };
-                    let off = scale((width * gap_compensation_ratio) as CoordF) as f64;
+                    let off = if scaled_pin {
+                        // hpp:691 `scaled(width * overlap_gap_compensation_ratio)`: float product.
+                        scaled_f(width * gap_compensation_ratio) as f64
+                    } else {
+                        scale((width * gap_compensation_ratio) as CoordF) as f64
+                    };
                     let overlap_last = crate::geometry::Point::new(
                         le.x + (last_direction.0 * off) as i64,
                         le.y + (last_direction.1 * off) as i64,
@@ -2459,10 +2492,19 @@ pub fn extrusion_entities_append_paths_with_wipe(
                 } else {
                     conn.polyline = Polyline::from_points(vec![le, first]);
                 }
-                dst.push(ExtrusionEntityType::Path(conn));
+                if multi {
+                    multi_path.paths.push(conn);
+                } else {
+                    dst.push(ExtrusionEntityType::Path(conn));
+                }
+            } else if multi {
+                // ExtrusionEntity.hpp:708-711: push the finished multipath, start a new one.
+                dst.push(ExtrusionEntityType::MultiPath(std::mem::replace(
+                    &mut multi_path,
+                    ExtrusionMultiPath::new(),
+                )));
             }
-            // else: multipath boundary — native pushes the finished multipath and
-            // starts a new one; as flat consecutive paths the exporter travels.
+            // else (flat): the exporter travels between the consecutive paths.
         }
         let end = *polyline.points().last().unwrap();
         let mut path = ExtrusionPath::with_params(
@@ -2475,11 +2517,20 @@ pub fn extrusion_entities_append_paths_with_wipe(
         // hpp:717: last_direction = (last_end - first_point).normalized().
         let ld_x = (end.x - polyline.points()[0].x) as f64;
         let ld_y = (end.y - polyline.points()[0].y) as f64;
-        let ln = ld_x.hypot(ld_y);
+        let ln = norm2(ld_x, ld_y);
         last_direction = if ln > 0.0 { (ld_x / ln, ld_y / ln) } else { (0.0, 0.0) };
         path.polyline = polyline;
-        dst.push(ExtrusionEntityType::Path(path));
+        if multi {
+            // ExtrusionEntity.hpp:714-715
+            multi_path.paths.push(path);
+        } else {
+            dst.push(ExtrusionEntityType::Path(path));
+        }
         last_end = Some(end);
+    }
+    // ExtrusionEntity.hpp:719-722: push the last multipath unless it is empty.
+    if multi && !multi_path.paths.is_empty() {
+        dst.push(ExtrusionEntityType::MultiPath(multi_path));
     }
 }
 
@@ -2557,4 +2608,73 @@ pub fn extrusion_entities_append_loops_and_paths(
         }
     }
     // ExtrusionEntity.hpp:762 `polylines.clear();` (the vector is consumed)
+}
+
+#[cfg(test)]
+mod extrusion_paths_with_wipe_pin_tests {
+    //! EXTRUSION_PATHS_WITH_WIPE_PIN (default on): extrusion_entities_append_paths_with_wipe
+    //! (ExtrusionEntity.hpp:671-724) collects every run of lines joined by connectors into one
+    //! ExtrusionMultiPath; a hop longer than 3 * scaled(width) starts the next multipath.
+    use super::*;
+    use crate::geometry::Point;
+
+    fn line(x0: i64, y0: i64, x1: i64, y1: i64) -> Polyline {
+        Polyline::from_points(vec![Point::new(x0, y0), Point::new(x1, y1)])
+    }
+
+    #[test]
+    fn runs_joined_by_connectors_become_one_multipath_each() {
+        // width 0.42 mm: hop limit 3 * 42000 = 126000.
+        let polylines = vec![
+            line(0, 0, 1_000_000, 0),
+            line(1_000_000, 100_000, 0, 100_000), // hop 100000: joined
+            line(0, 500_000, 1_000_000, 500_000), // hop 400000: new multipath
+        ];
+        let mut dst = Vec::new();
+        extrusion_entities_append_paths_with_wipe(
+            &mut dst,
+            polylines,
+            ExtrusionRole::TopSolidInfill,
+            0.02,
+            0.42,
+            0.2,
+            0.0,
+        );
+        assert_eq!(dst.len(), 2);
+        match &dst[0] {
+            ExtrusionEntityType::MultiPath(mp) => {
+                assert_eq!(mp.paths.len(), 3);
+                assert!(!mp.paths[0].no_extrusion);
+                // ExtrusionEntity.hpp:685, :704: the connector is a non-extruding path from the
+                // last end to the next first point.
+                assert!(mp.paths[1].no_extrusion);
+                assert_eq!(
+                    mp.paths[1].polyline.points().to_vec(),
+                    vec![Point::new(1_000_000, 0), Point::new(1_000_000, 100_000)]
+                );
+                assert!(!mp.paths[2].no_extrusion);
+            }
+            _ => panic!("expected a multipath"),
+        }
+        match &dst[1] {
+            ExtrusionEntityType::MultiPath(mp) => assert_eq!(mp.paths.len(), 1),
+            _ => panic!("expected a multipath"),
+        }
+    }
+
+    #[test]
+    fn empty_input_adds_nothing() {
+        // ExtrusionEntity.hpp:674-675
+        let mut dst = Vec::new();
+        extrusion_entities_append_paths_with_wipe(
+            &mut dst,
+            Vec::new(),
+            ExtrusionRole::TopSolidInfill,
+            0.02,
+            0.42,
+            0.2,
+            0.45,
+        );
+        assert!(dst.is_empty());
+    }
 }

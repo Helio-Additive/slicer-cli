@@ -766,3 +766,36 @@ mod tests {
         assert!(FillPlanePath::new(PlanPathPattern::OctagramSpiral).centered());
     }
 }
+
+/// FillPlanePath.cpp:73-77 `static inline double radius_sq(const Point &p)`: the squared distance to
+/// the pattern origin (clang contracts `x*x + y*y` into one fused multiply-add).
+#[inline]
+pub fn radius_sq(p: &Point) -> f64 {
+    let x = p.x as f64;
+    let y = p.y as f64;
+    x.mul_add(x, y * y)
+}
+
+/// FillPlanePath.cpp:79-92 `static Polylines spiral_center_out_skip_holes(Polylines &&pieces)`: every
+/// clipped piece of the Archimedean ironing spiral turned outward, then the pieces in increasing
+/// start radius (std::sort: libc++'s order on equal radii, reproduced by sorting the indices with
+/// the same comparisons). Ported; the `archimedean_ironing` arm of `_fill_surface_single` that calls
+/// it (FillPlanePath.cpp:213-214) is not in the Rust filler yet.
+pub fn spiral_center_out_skip_holes(mut pieces: Vec<Polyline>) -> Vec<Polyline> {
+    // FillPlanePath.cpp:84-86
+    for pl in pieces.iter_mut() {
+        if radius_sq(&pl.first_point()) > radius_sq(&pl.last_point()) {
+            pl.reverse();
+        }
+    }
+    // FillPlanePath.cpp:87-90
+    if pieces.len() > 1 {
+        let keys: Vec<f64> = pieces.iter().map(|pl| radius_sq(&pl.first_point())).collect();
+        let mut order: Vec<usize> = (0..pieces.len()).collect();
+        crate::clipper::libcxx_sort(&mut order, |&a, &b| keys[a] < keys[b]);
+        let mut slots: Vec<Option<Polyline>> = pieces.into_iter().map(Some).collect();
+        pieces = order.into_iter().map(|i| slots[i].take().unwrap()).collect();
+    }
+    // FillPlanePath.cpp:91
+    pieces
+}

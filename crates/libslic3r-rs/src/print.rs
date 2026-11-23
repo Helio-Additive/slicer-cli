@@ -1318,14 +1318,38 @@ impl Print {
                     Some(sl) => sl.support_fills.as_ref(),
                     None => ltp.layer.support_fills.as_ref(),
                 };
+                // The live support layer that carries the fills keeps its `SupportLayer::support_islands`
+                // in `lslices` (tree_support_3d.rs live_support_layers_from_faithful; print_object.rs
+                // generate_support_material). GCODE_SUPPORT_ISLANDS_PIN (on unless =0): the pin's
+                // process_layer sets `m_layer` to the support layer before its extrusions, so a support
+                // travel inside one of its islands is not retracted (GCode.cpp:8453-8462); =0 prints
+                // them without islands as before.
+                let support_islands_of = match ltp.support_layer {
+                    Some(sl) => Some(&sl.lslices),
+                    None if ltp.layer.support_fills.is_some() => Some(&ltp.layer.lslices),
+                    None => None,
+                };
                 if let Some(support_fills) = support_fills_of {
                     if !support_fills.entities.is_empty() {
-                        exporter::extrude_support(
-                            support_fills,
-                            &mut writer,
-                            &object.config,
-                            is_first_layer,
-                        );
+                        match support_islands_of {
+                            Some(islands) if crate::faithful_gate("GCODE_SUPPORT_ISLANDS_PIN") => {
+                                exporter::extrude_support_layer(
+                                    support_fills,
+                                    islands,
+                                    &mut writer,
+                                    &object.config,
+                                    is_first_layer,
+                                );
+                            }
+                            _ => {
+                                exporter::extrude_support(
+                                    support_fills,
+                                    &mut writer,
+                                    &object.config,
+                                    is_first_layer,
+                                );
+                            }
+                        }
                     }
                 }
 

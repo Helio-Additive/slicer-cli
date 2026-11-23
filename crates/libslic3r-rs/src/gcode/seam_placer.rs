@@ -99,6 +99,30 @@ pub type Vec3f = Vector3<f32>;
 pub type Vec2f = Vector2<f32>;
 /// Eigen `Vec3d = Matrix<double,3,1>`. Point.hpp
 pub type Vec3d = Vector3<f64>;
+
+/// Eigen `MatrixBase::normalized()` (Eigen/src/Core/Dot.h:
+/// `RealScalar z = n.squaredNorm(); if (z > RealScalar(0)) return n / numext::sqrt(z); else return n;`):
+/// a zero vector comes back unchanged, where nalgebra's `normalize()` divides by
+/// zero and gives NaN. SEAM_EIGEN_NORMALIZED (faithful, on unless =0); =0 is
+/// the plain `normalize()` of the earlier arm. The nonzero case is
+/// `normalize()` in both arms.
+pub fn eigen_normalized_2f(v: Vec2f) -> Vec2f {
+    if crate::faithful_gate("SEAM_EIGEN_NORMALIZED") && !(v.norm_squared() > 0.0) {
+        v
+    } else {
+        v.normalize()
+    }
+}
+
+/// `eigen_normalized_2f` for `Vec3f` (SeamPlacer.cpp:881 `edge.normalized()`:
+/// a zero-length edge picked by pick_random_seam_point adds zero, not NaN).
+pub fn eigen_normalized_3f(v: Vec3f) -> Vec3f {
+    if crate::faithful_gate("SEAM_EIGEN_NORMALIZED") && !(v.norm_squared() > 0.0) {
+        v
+    } else {
+        v.normalize()
+    }
+}
 /// Eigen `Vec2d = Matrix<double,2,1>`. Point.hpp
 pub type Vec2d = Vector2<f64>;
 /// Eigen `Vec3i = Matrix<int,3,1>`. Point.hpp
@@ -2189,7 +2213,7 @@ pub fn pick_random_seam_point(
     perimeters[perim_idx].final_seam_position = perimeter_points
         [perimeters[perim_idx].seam_index]
         .position
-        + viables[point_idx].edge.normalize() * picked_len;
+        + eigen_normalized_3f(viables[point_idx].edge) * picked_len;
     perimeters[perim_idx].finalized = true;
 }
 
@@ -3594,13 +3618,15 @@ impl SeamPlacer {
                 } else {
                     seam_index + 1
                 };
-                // SeamPlacer.cpp:1508-1510
-                let to_prev = (perimeter_point.position - layer.points[index_of_prev].position)
-                    .xy()
-                    .normalize();
-                let to_next = (perimeter_point.position - layer.points[index_of_next].position)
-                    .xy()
-                    .normalize();
+                // SeamPlacer.cpp:1608-1610 — `.normalized()` is Eigen's: a zero vector
+                // (a neighbour candidate at the same position) stays zero instead of
+                // NaN (eigen_normalized_2f).
+                let to_prev = eigen_normalized_2f(
+                    (perimeter_point.position - layer.points[index_of_prev].position).xy(),
+                );
+                let to_next = eigen_normalized_2f(
+                    (perimeter_point.position - layer.points[index_of_next].position).xy(),
+                );
                 let dir_to_middle = (to_prev + to_next) * 0.5;
                 // SeamPlacer.cpp:1512-1514 — depth of the perpendicular foot.
                 let projected = loop_ref.get_closest_path_and_point(&seam_point, true);
@@ -3616,6 +3642,18 @@ impl SeamPlacer {
                     1.4142 * depth / angle_factor
                 };
                 let final_pos = perimeter_point.position.xy() + dir_to_middle * factor;
+                if crate::probe_enabled("SEAMCORNER") {
+                    eprintln!(
+                        "SEAMCORNER layer={} frame=({},{}) seam_pos=({:.4},{:.4}) idx={} cand=({:.4},{:.4}) prev=({:.4},{:.4}) next=({:.4},{:.4}) ang={:.5} foot=({},{}) seam_pt=({},{}) depth={:.5} factor={:.5} final=({:.4},{:.4})",
+                        layer_idx, self.frame_offset_xy.0, self.frame_offset_xy.1,
+                        seam_position.x, seam_position.y, seam_index,
+                        perimeter_point.position.x, perimeter_point.position.y,
+                        layer.points[index_of_prev].position.x, layer.points[index_of_prev].position.y,
+                        layer.points[index_of_next].position.x, layer.points[index_of_next].position.y,
+                        perimeter_point.local_ccw_angle, projected.foot_pt.x, projected.foot_pt.y,
+                        seam_point.x, seam_point.y, depth, factor, final_pos.x, final_pos.y
+                    );
+                }
                 // SeamPlacer.cpp:1518
                 seam_point = Point::new(
                     new_scale(final_pos.x) + self.frame_offset_xy.0,
@@ -3902,5 +3940,29 @@ mod tests {
         let stats = placer.stats();
         assert_eq!(stats.layer_count, 2);
         assert_eq!(stats.total_perimeters, 2);
+    }
+
+    /// R936: Eigen's `normalized()` (Eigen/src/Core/Dot.h) returns a zero
+    /// vector unchanged; place_seam's concave block (SeamPlacer.cpp:1608-1610)
+    /// meets one when a neighbour candidate sits at the seam candidate's
+    /// position (Benchy layer 145). nalgebra's normalize() gave NaN there.
+    #[test]
+    fn eigen_normalized_2f_zero_stays_zero() {
+        let z = eigen_normalized_2f(Vec2f::new(0.0, 0.0));
+        if crate::faithful_gate("SEAM_EIGEN_NORMALIZED") {
+            assert_eq!((z.x.to_bits(), z.y.to_bits()), (0.0f32.to_bits(), 0.0f32.to_bits()));
+        } else {
+            assert!(z.x.is_nan() && z.y.is_nan());
+        }
+        let v = Vec2f::new(-1.5806, -0.0877);
+        let n = eigen_normalized_2f(v);
+        let m = v.normalize();
+        assert_eq!((n.x.to_bits(), n.y.to_bits()), (m.x.to_bits(), m.y.to_bits()));
+        let z3 = eigen_normalized_3f(Vec3f::new(0.0, 0.0, 0.0));
+        if crate::faithful_gate("SEAM_EIGEN_NORMALIZED") {
+            assert_eq!(z3, Vec3f::new(0.0, 0.0, 0.0));
+        } else {
+            assert!(z3.x.is_nan());
+        }
     }
 }

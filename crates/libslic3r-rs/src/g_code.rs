@@ -4063,6 +4063,10 @@ pub fn extrude_entity(
                     writer.set_wipe_path_points(pts);
                 }
             }
+            // GCode.cpp:6904-6909: one acceleration reset after the whole multipath
+            // (none on the first layer). The writer emits it lazily, so it only
+            // restates what the last path's own reset left pending.
+            writer.reset_acceleration_default(is_first_layer);
         }
 
         /// Dispatch to collection handler (recursive)
@@ -4535,9 +4539,9 @@ thread_local! {
 /// `GCode::extrude_support` with `m_layer` the support layer (GCode.cpp process_layer
 /// sets it before the support extrusions), so a travel of a support extrusion inside
 /// one of the layer's `support_islands` is not retracted (GCode.cpp:8453-8462).
-/// Under GCODE_EXTRUDE_SUPPORT_PIN only; the live export still calls
-/// [`extrude_support`], which knows no islands (the live layers do not carry the
-/// support layer's islands yet).
+/// Under GCODE_EXTRUDE_SUPPORT_PIN only. The live export (print.rs) calls it with the
+/// live support layer's `lslices` (= `SupportLayer::support_islands`) under
+/// GCODE_SUPPORT_ISLANDS_PIN; with that gate at 0 it calls [`extrude_support`].
 pub fn extrude_support_layer(
     support_fills: &ExtrusionEntityCollection,
     support_islands: &[crate::geometry::ExPolygon],

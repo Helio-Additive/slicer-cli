@@ -4293,5 +4293,21 @@
   "functions": [
    "Layer::generate_sparse_infill_polylines_for_anchoring"
   ]
+ },
+ {
+  "unit": "ExtrusionEntity",
+  "round": 936,
+  "evidence": "tests/extrusion_paths_with_wipe_native_parity.rs: the pin's extrusion_entities_append_paths_with_wipe (ExtrusionEntity.hpp 671-724) on 400 LCG cases (1,554 multipaths), 0 mismatches; 395 of 400 differ with EXTRUSION_PATHS_WITH_WIPE_PIN=0.",
+  "functions": [
+   "extrusion_entities_append_paths_with_wipe"
+  ]
+ },
+ {
+  "unit": "Fill/FillRectilinear",
+  "round": 936,
+  "evidence": "tests/monotonic_route_native_parity.rs: the pin's plan_monotonic_route (FillRectilinear.cpp 3247-3590) on 200 cases, 713 gaps (231 reversed, 76 positions holding several gaps), 200 of 200 equal.",
+  "functions": [
+   "plan_monotonic_route"
+  ]
  }
 ]

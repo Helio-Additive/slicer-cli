@@ -6420,6 +6420,24 @@ pub fn traverse_extrusions(
             // the loop centerline and original lower slices is >= half nozzle diameter
             // detect if the overhang perimeter is bridge
             let path_overhang: ZPaths = clip_extrusion(&subject_path, &clip_paths, ClipType::Difference);
+            // R936 probe ARACHOVH=<layer_id> (diagnostic only): the junction bbox, the clipped
+            // lower polygons and the overhang pieces of each wall line of that layer.
+            if crate::probe_enabled("ARACHOVH")
+                && std::env::var("ARACHOVH").ok().and_then(|v| v.parse::<i64>().ok()) == Some(perimeter_generator.layer_id as i64)
+            {
+                let ov: Vec<(usize, (i64, i64), (i64, i64))> = path_overhang
+                    .iter()
+                    .filter(|z| !z.is_empty())
+                    .map(|z| (z.len(), (z[0].0, z[0].1), (z[z.len() - 1].0, z[z.len() - 1].1)))
+                    .collect();
+                eprintln!(
+                    "ARACHOVH lid={} inset={} closed={} n={} first=({},{}) bbox=({},{})-({},{}) clip_polys={} clip_pts={:?} overhang={:?}",
+                    perimeter_generator.layer_id, extrusion.inset_idx, extrusion.is_closed, subject_path.len(),
+                    subject_path.first().map(|p| p.0).unwrap_or(0), subject_path.first().map(|p| p.1).unwrap_or(0),
+                    extrusion_path_bbox.min.x, extrusion_path_bbox.min.y, extrusion_path_bbox.max.x, extrusion_path_bbox.max.y,
+                    clip_paths.len(), clip_paths.iter().map(|c| c.len()).collect::<Vec<_>>(), ov
+                );
+            }
             // Zero-gap support must not force normal wall role/flow: unsupported walls still need
             // erOverhangPerimeter + overhang_flow. See GitHub #11462.
             detect_brigde_wall_arachne(&mut paths, &path_overhang, ExtrusionRole::OverhangPerimeter, &perimeter_generator.overhang_flow);
