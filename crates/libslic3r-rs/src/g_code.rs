@@ -5889,7 +5889,10 @@ mod exporter_tests {
         // E is filament length, not volume: GCode.cpp `_extrude` takes
         // e_per_mm = extruder()->e_per_mm3() * path.mm3_per_mm, so the 10 mm
         // segment extrudes 10 * 0.1 / (pi * 1.75^2 / 4) = 0.41575 mm.
-        let expected_delta = 10.0 * 0.1 * default_e_per_mm3();
+        // The segment's length is that of its points: Point::new_scale truncates as the pin does
+        // (Point.hpp:183-187), so 10.0 mm is 999999 units = 9.99999 mm.
+        let segment_mm = crate::unscale(Point::new_scale(10.0, 0.0).x);
+        let expected_delta = segment_mm * 0.1 * default_e_per_mm3();
         let actual_delta = final_e - initial_e;
         assert!(
             (actual_delta - expected_delta).abs() < 1e-9,

@@ -4103,27 +4103,27 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :632 (17%, 0.7x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :503 (25%, 0.89x)
-- divergent: `WipeTowerIntegration::prime` :1477 and `WipeTowerIntegration::prime` :13567 (0%, 0.14x)
-- stub: `WipeTowerIntegration::finalize` :1554 and `WipeTowerIntegration::finalize` :13613 (0%, 0.11x)
-- partial: `validate_custom_gcode` :1895 and `validate_custom_gcode` :13884 (40%, 1.04x)
-- partial: `GCode::first_layer_projection` :1965 and `GCode::first_layer_projection` :14365 (82%, 2.88x)
-- partial: `sort_object_instances_by_max_z` :2406 and `sort_object_instances_by_max_z` :14286 (62%, 0.93x)
-- partial: `sort_object_instances_by_model_order` :2421 and `sort_object_instances_by_model_order` :14305 (68%, 1.31x)
+- divergent: `WipeTowerIntegration::prime` :1477 and `WipeTowerIntegration::prime` :13570 (0%, 0.14x)
+- stub: `WipeTowerIntegration::finalize` :1554 and `WipeTowerIntegration::finalize` :13616 (0%, 0.11x)
+- partial: `validate_custom_gcode` :1895 and `validate_custom_gcode` :13887 (40%, 1.04x)
+- partial: `GCode::first_layer_projection` :1965 and `GCode::first_layer_projection` :14368 (82%, 2.88x)
+- partial: `sort_object_instances_by_max_z` :2406 and `sort_object_instances_by_max_z` :14289 (62%, 0.93x)
+- partial: `sort_object_instances_by_model_order` :2421 and `sort_object_instances_by_model_order` :14308 (68%, 1.31x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1461 (8%, 1.33x)
-- divergent: `GCode::print_machine_envelope` :4132 and `GCode::print_machine_envelope` :12856 (26%, 1.13x)
-- partial: `get_instance_name` :4568 and `get_instance_name` :12033 (44%, 0.59x)
+- divergent: `GCode::print_machine_envelope` :4132 and `GCode::print_machine_envelope` :12859 (26%, 1.13x)
+- partial: `get_instance_name` :4568 and `get_instance_name` :12036 (44%, 0.59x)
 - partial: `GCode::change_layer` :6473 and `change_layer` :5410 (39%, 1.11x)
-- partial: `GCode::is_enable_overhang_speed` :6601 and `GCode::is_enable_overhang_speed` :13038 (55%, 1.77x)
-- partial: `GCode::get_path_speed` :6615 and `GCode::get_path_speed` :13055 (43%, 1.35x)
+- partial: `GCode::is_enable_overhang_speed` :6601 and `GCode::is_enable_overhang_speed` :13041 (55%, 1.77x)
+- partial: `GCode::get_path_speed` :6615 and `GCode::get_path_speed` :13058 (43%, 1.35x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :2016 (18%, 1.94x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3246 (5%, 0.05x)
 - divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :4006 (28%, 1.68x)
 - partial: `GCode::extrude_support` :7011 and `extrude_support` :4414 (33%, 1.62x)
-- divergent: `GCode::GCodeOutputStream::write_format` :7125 and `GCodeOutputStream::write_format` :12452 (24%, 0.17x)
-- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :11403 (50%, 1.06x)
-- partial: `encodeBase64` :8091 and `encode_base64` :11987 (50%, 0.56x)
+- divergent: `GCode::GCodeOutputStream::write_format` :7125 and `GCodeOutputStream::write_format` :12455 (24%, 0.17x)
+- partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :11406 (50%, 1.06x)
+- partial: `encodeBase64` :8091 and `encode_base64` :11990 (50%, 0.56x)
 - divergent: `GCode::travel_to` :8198 and `travel_to` :4574 (11%, 0.21x)
-- partial: `GCode::update_placeholder_parser_with_variant_params` :8551 and `GCodePlaceholders::update_placeholder_parser_with_variant_params` :9182 (42%, 1.12x)
+- partial: `GCode::update_placeholder_parser_with_variant_params` :8551 and `GCodePlaceholders::update_placeholder_parser_with_variant_params` :9185 (42%, 1.12x)
 - divergent: `GCode::set_extruder` :8617 and `set_extruder` :4963 (6%, 0.1x)
 
 Missing in the Rust file:
@@ -4210,125 +4210,125 @@ Rust only:
 - `emit_object_start_label` :5592
 - `emit_object_end_label` :5621
 - `emit_layer_object_labels` :5647
-- `set_loop_wipe_path` :6956
-- `first_extrusion_path` :6972
-- `width_tag_before_speed` :6984
-- `set_speed_before_path` :7007
-- `GCode::new` :7041
-- `GCode::from_content_and_stats` :7049
-- `GCode::from_string` :7054 — C++ has it in `Config`
-- `GCode::from_string_with_stats` :7062
-- `GCode::content` :7067
-- `GCode::as_bytes` :7072
-- `GCode::len` :7077
-- `GCode::is_empty` :7082 — C++ has it in `PresetBundle`
-- `GCode::split_off` :7088
-- `GCode::append_line` :7092
-- `GCode::append` :7098 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `GCode::append_comment` :7103
-- `GCode::write_to_file` :7110
-- `GCode::read_from_file` :7121 — C++ has it in `Model`
-- `GCode::line_count` :7127
-- `GCode::lines` :7132 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
-- `GCode::clear` :7137 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `GCode::fmt` :7144
-- `GCode::fmt` :7155
-- `GCode::from` :7161 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `String::from` :7167 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `GCodeStats::new` :7213
-- `GCodeStats::calculate_filament_stats` :7229
-- `GCodeStats::print_time_formatted` :7242
-- `GCodeStats::filament_used_meters` :7251
-- `GCodeStats::fmt` :7257
-- `GCodeHeader::new` :7301
-- `GCodeHeader::with_raw_settings` :7305
-- `GCodeHeader::with_estimated_time` :7318
-- `GCodeHeader::with_estimated_times` :7348
-- `GCodeHeader::generate_header_block` :7365
-- `GCodeHeader::generate_config_block` :7427
-- `GCodeHeader::generate_minimal_config_block` :7514
-- `GCodeHeader::generate_executable_block_start` :7573
-- `GCodeHeader::generate_executable_block_content` :7580
-- `GCodeHeader::generate_complete_header` :7800
-- `is_config_key_skipped` :7962
-- `format_config_value` :8022
-- `nozzle_id_for_gcode` :8243
-- `nozzle_diameter_for_filament` :8310 — C++ has it in `PrintConfig`
-- `pp_get_at` :8375
-- `pp_floats` :8384
-- `pp_ints` :8401
-- `pp_strings` :8418
-- `pp_float` :8428
-- `pp_int` :8434
-- `pp_bool` :8440
-- `pp_string` :8446
-- `parse_str_arr` :8457
-- `full_print_config_from_settings` :8527
-- `ExportPlaceholderInputs::new` :8681
-- `GCodePlaceholders::new` :8741
-- `GCodePlaceholders::update_object_placeholders` :8780 — C++ has it in `PrintBase`
-- `GCodePlaceholders::curr_bed_type` :8849
-- `GCodePlaceholders::init_export_placeholders` :8855
-- `GCodePlaceholders::set_current_filament` :9254
-- `hash_json_value` :9387
-- `reset_export_placeholders` :9432
-- `injected_number` :9441
-- `ExportPlaceholderInputs::from_settings` :9464
-- `export_placeholders_key` :9515
-- `new_export_placeholder_slot` :9533
-- `export_placeholder_parser_process` :9557
-- `export_placeholder_parser_process_at` :9568
-- `export_template_override` :9603
-- `template_name_and_filament` :9648
-- `install_export_placeholders` :9668
-- `with_export_placeholders` :9674
-- `context_number` :9679
-- `change_filament_override` :9724
-- `filament_template_override` :9932
-- `config_string_value` :9954
-- `writeln_to` :9968
-- `process_gcode_template` :9986
-- `eval_condition` :10545
-- `eval_expr` :10732
-- `resolve_all_vars_in_expr` :10870
-- `eval_math` :10920
-- `scale_` :11094 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale_` :11099 — C++ has it in `Point`, `libslic3r`
-- `point_mul_f64` :11105
-- `path_from` :11112
-- `poly_len` :11145
-- `scale_` :11648 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale` :11654 — C++ has it in `Point`, `libslic3r`
-- `point_from_f64` :11661
-- `pp_points` :11671
-- `strtol10` :11866
-- `base64_encode` :11998
-- `OozePrevention::new` :12054
-- `Wipe::new` :12130
-- `ColorPrintColors::get` :12262 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `LayerToPrint::new` :12284
-- `LayerResult::new` :12345
-- `GCodeOutputStream::new` :12377
-- `GCode::default` :12555
-- `GCode::new` :12562
-- `GCode::origin` :12631
-- `GCode::last_pos` :12645
-- `GCode::last_scarf_seam_flag` :12650
-- `GCode::scarf_seam_start_flag` :12655
-- `GCode::current_extruder_id` :12660
-- `GCode::config` :12685 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `GCode::print_config` :12690 — C++ has it in `SLA/Rotfinder`
-- `GCode::layer_id` :12700
-- `GCode::writer` :12705
-- `GCode::writer_mut` :12710
-- `GCode::filament_config_index` :12826
-- `GCode::nozzle_config_index` :12832
-- `GCode::current_filament_id` :12837
-- `GCode::bed_temperature` :12909
-- `WipeTowerIntegration::new` :13513
-- `Island::by_region_per_copy` :13746
-- `object_by_extruder` :13831
-- `object_islands_by_extruder` :13848
+- `set_loop_wipe_path` :6959
+- `first_extrusion_path` :6975
+- `width_tag_before_speed` :6987
+- `set_speed_before_path` :7010
+- `GCode::new` :7044
+- `GCode::from_content_and_stats` :7052
+- `GCode::from_string` :7057 — C++ has it in `Config`
+- `GCode::from_string_with_stats` :7065
+- `GCode::content` :7070
+- `GCode::as_bytes` :7075
+- `GCode::len` :7080
+- `GCode::is_empty` :7085 — C++ has it in `PresetBundle`
+- `GCode::split_off` :7091
+- `GCode::append_line` :7095
+- `GCode::append` :7101 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `GCode::append_comment` :7106
+- `GCode::write_to_file` :7113
+- `GCode::read_from_file` :7124 — C++ has it in `Model`
+- `GCode::line_count` :7130
+- `GCode::lines` :7135 — C++ has it in `ExPolygon`, `ExPolygonCollection`, `Polygon`
+- `GCode::clear` :7140 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `GCode::fmt` :7147
+- `GCode::fmt` :7158
+- `GCode::from` :7164 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `String::from` :7170 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `GCodeStats::new` :7216
+- `GCodeStats::calculate_filament_stats` :7232
+- `GCodeStats::print_time_formatted` :7245
+- `GCodeStats::filament_used_meters` :7254
+- `GCodeStats::fmt` :7260
+- `GCodeHeader::new` :7304
+- `GCodeHeader::with_raw_settings` :7308
+- `GCodeHeader::with_estimated_time` :7321
+- `GCodeHeader::with_estimated_times` :7351
+- `GCodeHeader::generate_header_block` :7368
+- `GCodeHeader::generate_config_block` :7430
+- `GCodeHeader::generate_minimal_config_block` :7517
+- `GCodeHeader::generate_executable_block_start` :7576
+- `GCodeHeader::generate_executable_block_content` :7583
+- `GCodeHeader::generate_complete_header` :7803
+- `is_config_key_skipped` :7965
+- `format_config_value` :8025
+- `nozzle_id_for_gcode` :8246
+- `nozzle_diameter_for_filament` :8313 — C++ has it in `PrintConfig`
+- `pp_get_at` :8378
+- `pp_floats` :8387
+- `pp_ints` :8404
+- `pp_strings` :8421
+- `pp_float` :8431
+- `pp_int` :8437
+- `pp_bool` :8443
+- `pp_string` :8449
+- `parse_str_arr` :8460
+- `full_print_config_from_settings` :8530
+- `ExportPlaceholderInputs::new` :8684
+- `GCodePlaceholders::new` :8744
+- `GCodePlaceholders::update_object_placeholders` :8783 — C++ has it in `PrintBase`
+- `GCodePlaceholders::curr_bed_type` :8852
+- `GCodePlaceholders::init_export_placeholders` :8858
+- `GCodePlaceholders::set_current_filament` :9257
+- `hash_json_value` :9390
+- `reset_export_placeholders` :9435
+- `injected_number` :9444
+- `ExportPlaceholderInputs::from_settings` :9467
+- `export_placeholders_key` :9518
+- `new_export_placeholder_slot` :9536
+- `export_placeholder_parser_process` :9560
+- `export_placeholder_parser_process_at` :9571
+- `export_template_override` :9606
+- `template_name_and_filament` :9651
+- `install_export_placeholders` :9671
+- `with_export_placeholders` :9677
+- `context_number` :9682
+- `change_filament_override` :9727
+- `filament_template_override` :9935
+- `config_string_value` :9957
+- `writeln_to` :9971
+- `process_gcode_template` :9989
+- `eval_condition` :10548
+- `eval_expr` :10735
+- `resolve_all_vars_in_expr` :10873
+- `eval_math` :10923
+- `scale_` :11097 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale_` :11102 — C++ has it in `Point`, `libslic3r`
+- `point_mul_f64` :11108
+- `path_from` :11115
+- `poly_len` :11148
+- `scale_` :11651 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale` :11657 — C++ has it in `Point`, `libslic3r`
+- `point_from_f64` :11664
+- `pp_points` :11674
+- `strtol10` :11869
+- `base64_encode` :12001
+- `OozePrevention::new` :12057
+- `Wipe::new` :12133
+- `ColorPrintColors::get` :12265 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `LayerToPrint::new` :12287
+- `LayerResult::new` :12348
+- `GCodeOutputStream::new` :12380
+- `GCode::default` :12558
+- `GCode::new` :12565
+- `GCode::origin` :12634
+- `GCode::last_pos` :12648
+- `GCode::last_scarf_seam_flag` :12653
+- `GCode::scarf_seam_start_flag` :12658
+- `GCode::current_extruder_id` :12663
+- `GCode::config` :12688 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `GCode::print_config` :12693 — C++ has it in `SLA/Rotfinder`
+- `GCode::layer_id` :12703
+- `GCode::writer` :12708
+- `GCode::writer_mut` :12713
+- `GCode::filament_config_index` :12829
+- `GCode::nozzle_config_index` :12835
+- `GCode::current_filament_id` :12840
+- `GCode::bed_temperature` :12912
+- `WipeTowerIntegration::new` :13516
+- `Island::by_region_per_copy` :13749
+- `object_by_extruder` :13834
+- `object_islands_by_extruder` :13851
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
@@ -7346,18 +7346,18 @@ Tier 1. C++ functions 103 (plus 8 constructors, 0 destructors, 7 operators), Rus
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `transform` :29 and `transform` :1511 (28%, 0.42x)
-- partial: `Point::nearest_point_index` :69 and `Point::nearest_point_index` :362 (71%, 1.11x)
-- divergent: `perp` :99 and `PointF::perp` :939 (0%, 0.56x)
-- partial: `Point::ccw` :118 and `Point::ccw` :315 (40%, 1.79x)
-- divergent: `to_2d` :120 and `Point3F::to_2d` :1322 (0%, 0.52x)
-- divergent: `Point::projection_onto` :157 and `Point::projection_onto` :498 (17%, 0.06x)
-- divergent: `Point::new_scale` :187 and `Point::new_scale` :72 (25%, 2.07x)
-- partial: `Point::rotate` :226 and `PointF::rotate` :926 (40%, 0.77x)
-- partial: `orient` :289 and `orient` :1989 (100%, 1.1x)
-- partial: `cross` :296 and `cross` :2007 (100%, 1.22x)
-- partial: `lerp` :298 and `lerp` :1652 (67%, 1.46x)
-- partial: `shorter_then` :349 and `shorter_then` :1665 (33%, 0.79x)
+- divergent: `transform` :29 and `transform` :1512 (28%, 0.42x)
+- partial: `Point::nearest_point_index` :69 and `Point::nearest_point_index` :363 (71%, 1.11x)
+- divergent: `perp` :99 and `PointF::perp` :940 (0%, 0.56x)
+- partial: `Point::ccw` :118 and `Point::ccw` :316 (40%, 1.79x)
+- divergent: `to_2d` :120 and `Point3F::to_2d` :1323 (0%, 0.52x)
+- divergent: `Point::projection_onto` :157 and `Point::projection_onto` :499 (17%, 0.06x)
+- divergent: `Point::new_scale` :187 and `Point::new_scale` :73 (25%, 2.07x)
+- partial: `Point::rotate` :226 and `PointF::rotate` :927 (40%, 0.77x)
+- partial: `orient` :289 and `orient` :1990 (100%, 1.1x)
+- partial: `cross` :296 and `cross` :2008 (100%, 1.22x)
+- partial: `lerp` :298 and `lerp` :1653 (67%, 1.46x)
+- partial: `shorter_then` :349 and `shorter_then` :1666 (33%, 0.79x)
 
 Missing in the Rust file:
 
@@ -7435,115 +7435,115 @@ Rust only:
 
 - `point_new_scale_pin` :44
 - `Point::new` :54
-- `Point::zero` :90 — C++ has it in `Semver`
-- `Point::x` :98 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Point::y` :106 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Point::to_f64` :114
-- `Point::distance_squared` :126
-- `Point::distance` :136 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
-- `Point::distance_to` :142 — C++ has it in `Arrange`, `Line`, `MultiPoint`
-- `Point::distance_to_f64` :148
-- `Point::length_squared` :156
-- `Point::length` :164 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `Point::rotate_by_cos_sin` :182
-- `Point::rotate_around` :195
-- `Point::any_comp_val` :244
-- `Point::rotate_90_ccw` :260
-- `Point::rotate_90_cw` :282
-- `Point::cross` :294 — C++ has it in `ExtrusionSimulator`
-- `Point::dot` :302 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
-- `Point::ccw_line` :333
-- `Point::project_onto_segment` :423
-- `Point::projection_onto_multipoint` :468
-- `Point::projection_onto_multi_point_overload` :507
-- `Point::rotated_cos_sin_overload` :537
-- `Point::rotated_center_overload` :545
-- `Point::coincides_with` :623
-- `Point::coincides_with_exact` :631
-- `Point::partial_cmp` :642
-- `Point::cmp` :649
-- `Point::fmt` :661
-- `Point::fmt` :670
-- `Point::add` :682 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `Point::add_assign` :695
-- `Point::sub` :708 — C++ has it in `CutUtils`
-- `Point::sub_assign` :721
-- `Point::neg` :734
-- `Point::mul` :749
-- `Point::mul` :769
-- `Point::div` :784
-- `Point::from` :797 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `(Coord, Coord)::from` :807 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Point::from` :817 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `PointF::new` :836
-- `PointF::zero` :844 — C++ has it in `Semver`
-- `PointF::x` :852 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `PointF::y` :860 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `PointF::to_scaled` :868
-- `PointF::distance_squared` :876
-- `PointF::distance` :886 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
-- `PointF::length_squared` :894
-- `PointF::length` :902 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `PointF::normalize` :910 — C++ has it in `Preset`, `TextureToColor/ColorUtils`
-- `PointF::dot` :950 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
-- `PointF::cross` :958 — C++ has it in `ExtrusionSimulator`
-- `PointF::approx_eq` :966
-- `PointF::fmt` :975
-- `PointF::fmt` :984
-- `PointF::add` :996 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `PointF::sub` :1011 — C++ has it in `CutUtils`
-- `PointF::neg` :1026
-- `PointF::mul` :1041
-- `PointF::div` :1056
-- `PointF::from` :1069 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `PointF::from` :1079 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Point3::new` :1099
-- `Point3::zero` :1119 — C++ has it in `Semver`
-- `Point3::to_f64` :1127
-- `Point3::to_2d` :1139
-- `Point3::distance_squared` :1150
-- `Point3::distance` :1161 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
-- `Point3::length_squared` :1167
-- `Point3::length` :1175 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `Point3::dot` :1181 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
-- `Point3::cross` :1189 — C++ has it in `ExtrusionSimulator`
-- `Point3::fmt` :1202
-- `Point3::fmt` :1208
-- `Point3::add` :1223 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `Point3::sub` :1236 — C++ has it in `CutUtils`
-- `Point3::neg` :1249
-- `Point3::from` :1260 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Point3F::new` :1276
-- `Point3F::x` :1284 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Point3F::y` :1292 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Point3F::z` :1300 — C++ has it in `Color`, `GCodeReader`
-- `Point3F::zero` :1306 — C++ has it in `Semver`
-- `Point3F::to_scaled` :1316
-- `Point3F::distance_squared` :1331
-- `Point3F::distance` :1340 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
-- `Point3F::length_squared` :1346
-- `Point3F::length` :1352 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
-- `Point3F::normalize` :1358 — C++ has it in `Preset`, `TextureToColor/ColorUtils`
-- `Point3F::dot` :1373 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
-- `Point3F::cross` :1379 — C++ has it in `ExtrusionSimulator`
-- `Point3F::approx_eq` :1389
-- `Point3F::fmt` :1397
-- `Point3F::fmt` :1403
-- `Point3F::add` :1412 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `Point3F::sub` :1425 — C++ has it in `CutUtils`
-- `Point3F::neg` :1438
-- `Point3F::mul` :1451
-- `Point3F::div` :1464
-- `Point3F::from` :1475 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Point3F::from` :1482 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `get_extents_vec_of_points` :1541
-- `get_extents_vec2d` :1556
-- `align_to_grid_point` :1698
-- `align_to_grid_base` :1707
-- `align_to_grid_point_base` :1713
-- `apply_opt` :1747
-- `point_hash` :1764
-- `ClosestPointInRadiusLookup::new` :1802
+- `Point::zero` :91 — C++ has it in `Semver`
+- `Point::x` :99 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Point::y` :107 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Point::to_f64` :115
+- `Point::distance_squared` :127
+- `Point::distance` :137 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
+- `Point::distance_to` :143 — C++ has it in `Arrange`, `Line`, `MultiPoint`
+- `Point::distance_to_f64` :149
+- `Point::length_squared` :157
+- `Point::length` :165 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `Point::rotate_by_cos_sin` :183
+- `Point::rotate_around` :196
+- `Point::any_comp_val` :245
+- `Point::rotate_90_ccw` :261
+- `Point::rotate_90_cw` :283
+- `Point::cross` :295 — C++ has it in `ExtrusionSimulator`
+- `Point::dot` :303 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
+- `Point::ccw_line` :334
+- `Point::project_onto_segment` :424
+- `Point::projection_onto_multipoint` :469
+- `Point::projection_onto_multi_point_overload` :508
+- `Point::rotated_cos_sin_overload` :538
+- `Point::rotated_center_overload` :546
+- `Point::coincides_with` :624
+- `Point::coincides_with_exact` :632
+- `Point::partial_cmp` :643
+- `Point::cmp` :650
+- `Point::fmt` :662
+- `Point::fmt` :671
+- `Point::add` :683 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `Point::add_assign` :696
+- `Point::sub` :709 — C++ has it in `CutUtils`
+- `Point::sub_assign` :722
+- `Point::neg` :735
+- `Point::mul` :750
+- `Point::mul` :770
+- `Point::div` :785
+- `Point::from` :798 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `(Coord, Coord)::from` :808 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Point::from` :818 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `PointF::new` :837
+- `PointF::zero` :845 — C++ has it in `Semver`
+- `PointF::x` :853 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `PointF::y` :861 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `PointF::to_scaled` :869
+- `PointF::distance_squared` :877
+- `PointF::distance` :887 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
+- `PointF::length_squared` :895
+- `PointF::length` :903 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `PointF::normalize` :911 — C++ has it in `Preset`, `TextureToColor/ColorUtils`
+- `PointF::dot` :951 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
+- `PointF::cross` :959 — C++ has it in `ExtrusionSimulator`
+- `PointF::approx_eq` :967
+- `PointF::fmt` :976
+- `PointF::fmt` :985
+- `PointF::add` :997 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `PointF::sub` :1012 — C++ has it in `CutUtils`
+- `PointF::neg` :1027
+- `PointF::mul` :1042
+- `PointF::div` :1057
+- `PointF::from` :1070 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `PointF::from` :1080 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Point3::new` :1100
+- `Point3::zero` :1120 — C++ has it in `Semver`
+- `Point3::to_f64` :1128
+- `Point3::to_2d` :1140
+- `Point3::distance_squared` :1151
+- `Point3::distance` :1162 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
+- `Point3::length_squared` :1168
+- `Point3::length` :1176 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `Point3::dot` :1182 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
+- `Point3::cross` :1190 — C++ has it in `ExtrusionSimulator`
+- `Point3::fmt` :1203
+- `Point3::fmt` :1209
+- `Point3::add` :1224 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `Point3::sub` :1237 — C++ has it in `CutUtils`
+- `Point3::neg` :1250
+- `Point3::from` :1261 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Point3F::new` :1277
+- `Point3F::x` :1285 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Point3F::y` :1293 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Point3F::z` :1301 — C++ has it in `Color`, `GCodeReader`
+- `Point3F::zero` :1307 — C++ has it in `Semver`
+- `Point3F::to_scaled` :1317
+- `Point3F::distance_squared` :1332
+- `Point3F::distance` :1341 — C++ has it in `AABBMesh`, `AStar`, `Frustum`
+- `Point3F::length_squared` :1347
+- `Point3F::length` :1353 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Line`
+- `Point3F::normalize` :1359 — C++ has it in `Preset`, `TextureToColor/ColorUtils`
+- `Point3F::dot` :1374 — C++ has it in `ExtrusionSimulator`, `GCode/SpiralVase`, `Geometry/ConvexHull`
+- `Point3F::cross` :1380 — C++ has it in `ExtrusionSimulator`
+- `Point3F::approx_eq` :1390
+- `Point3F::fmt` :1398
+- `Point3F::fmt` :1404
+- `Point3F::add` :1413 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `Point3F::sub` :1426 — C++ has it in `CutUtils`
+- `Point3F::neg` :1439
+- `Point3F::mul` :1452
+- `Point3F::div` :1465
+- `Point3F::from` :1476 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Point3F::from` :1483 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `get_extents_vec_of_points` :1542
+- `get_extents_vec2d` :1557
+- `align_to_grid_point` :1699
+- `align_to_grid_base` :1708
+- `align_to_grid_point_base` :1714
+- `apply_opt` :1748
+- `point_hash` :1765
+- `ClosestPointInRadiusLookup::new` :1803
 
 ### `Polygon` (.cpp+.hpp) and `geometry/polygon.rs`
 

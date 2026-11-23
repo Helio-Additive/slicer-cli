@@ -363,9 +363,9 @@ impl BoundingBox {
     pub fn scale(&mut self, factor: CoordF) {
         // BoundingBox.cpp:63-69 `this->min *= factor; this->max *= factor;`, defined or not, and
         // `Point::operator*=(const double&)` truncates (Point.hpp:199, `coord_t(this->x() * rhs)`), where
-        // the arm below rounds and leaves an undefined box alone. Opt-in: `BOUNDING_BOX_SCALE_PIN=1`.
+        // the arm below rounds and leaves an undefined box alone. On unless `BOUNDING_BOX_SCALE_PIN=0` (R930).
         static PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *PIN.get_or_init(|| crate::opt_in_gate("BOUNDING_BOX_SCALE_PIN")) {
+        if *PIN.get_or_init(|| crate::faithful_gate("BOUNDING_BOX_SCALE_PIN")) {
             self.min = Point::new((self.min.x as CoordF * factor) as Coord, (self.min.y as CoordF * factor) as Coord);
             self.max = Point::new((self.max.x as CoordF * factor) as Coord, (self.max.y as CoordF * factor) as Coord);
             return;

@@ -43,7 +43,7 @@ pub struct Point {
 #[inline]
 fn point_new_scale_pin() -> bool {
     static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *GATE.get_or_init(|| crate::opt_in_gate("POINT_NEW_SCALE_PIN"))
+    *GATE.get_or_init(|| crate::faithful_gate("POINT_NEW_SCALE_PIN"))
 }
 
 impl Point {
@@ -63,8 +63,9 @@ impl Point {
     /// primitive rounds. This is the shared crate scaling posture (cross-cutting); it
     /// is left delegating to `scale()` rather than diverging this one call site.
     ///
-    /// Gate `POINT_NEW_SCALE_PIN` (R924, an `opt_in_gate`: off unless `POINT_NEW_SCALE_PIN=1`, because tests
-    /// of other units assert values built with the rounding arm): on, the pin's own conversion, `Point(coord_t(scale_(x)),
+    /// Gate `POINT_NEW_SCALE_PIN` (R924; a `faithful_gate` since R930, on unless `POINT_NEW_SCALE_PIN=0`: all
+    /// seven live call sites call `Point::new_scale` at the pin too and no fixture byte moves with it): on,
+    /// the pin's own conversion, `Point(coord_t(scale_(x)),
     /// coord_t(scale_(y)))` with `scale_(v)` = `v / SCALING_FACTOR` (libslic3r.h) and `coord_t` =
     /// `int32_t`, which truncates toward zero; off, the earlier rounding through `scale()`.
     /// tests/point_native_parity.rs compares the on arm with the pin.
@@ -2032,8 +2033,16 @@ mod tests {
     #[test]
     fn test_point_new_scale() {
         let p = Point::new_scale(1.0, 2.0);
-        assert_eq!(p.x, SCALING_FACTOR as Coord);
-        assert_eq!(p.y, 2 * SCALING_FACTOR as Coord);
+        if crate::faithful_gate("POINT_NEW_SCALE_PIN") {
+            // Point.hpp:183-187 `Point(coord_t(scale_(x)), coord_t(scale_(y)))`: `scale_(v)` is
+            // `v / SCALING_FACTOR` (libslic3r.h), 1.0 / 0.00001 = 99999.99999999999 and
+            // 2.0 / 0.00001 = 199999.99999999997, and the conversion to `coord_t` truncates.
+            assert_eq!(p.x, 99999);
+            assert_eq!(p.y, 199999);
+        } else {
+            assert_eq!(p.x, SCALING_FACTOR as Coord);
+            assert_eq!(p.y, 2 * SCALING_FACTOR as Coord);
+        }
     }
 
     #[test]

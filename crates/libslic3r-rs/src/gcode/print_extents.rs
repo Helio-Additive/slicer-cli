@@ -329,15 +329,15 @@ mod tests {
 
     #[test]
     fn test_extrusionentity_extents_path() {
-        let path = make_path(
-            vec![Point::new_scale(0.0, 0.0), Point::new_scale(10.0, 5.0)],
-            0.4,
-        );
+        // Point::new_scale truncates as the pin does (Point.hpp:183-187): 10.0 mm is 999999 units,
+        // not 1000000, so the extents are taken from the point itself.
+        let end = Point::new_scale(10.0, 5.0);
+        let path = make_path(vec![Point::new_scale(0.0, 0.0), end], 0.4);
         let bboxf = extrusionentity_extents_path(&path);
         assert!(bboxf.is_defined());
         // The path width contributes 0.5 * 0.4 = 0.2 mm of radius.
         assert!((bboxf.min.x - (0.0 - 0.2)).abs() < 1e-6);
-        assert!((bboxf.max.x - (10.0 + 0.2)).abs() < 1e-6);
+        assert!((bboxf.max.x - (crate::unscale(end.x) + 0.2)).abs() < 1e-6);
     }
 
     #[test]

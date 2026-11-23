@@ -5939,92 +5939,92 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **free functions**
 
-- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:11686` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:8253`
-- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:8273`
-- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:11725`
+- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:11689` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:8256`
+- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:8276`
+- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:11728`
 - [v] `check_add_eol` (line 298) → `g_code.rs:49` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `custom_gcode_changes_tool` (line 306) → `g_code.rs:58` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `transform_gcode` (line 378) → `g_code.rs:133` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `get_wipe_avoid_pos_x` (line 428) → `g_code.rs:224` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:11856`
-- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:8330`
-- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:11893` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:14191`
-- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:13884` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:11859`
+- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:8333`
+- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:11896` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:14194`
+- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:13887` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
 - [ ] `init_gcode_processor` (line 2193) → `g_code.rs`
 - [ ] `autospeed_volumetric_limit` (line 2207) → `g_code.rs`
 - [ ] `init_ooze_prevention` (line 2266) → `g_code.rs`
 - [ ] `export_thumbnails_to_file` (line 2301) → `g_code.rs`
-- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:14243`
-- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:14286` — partial
-- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:14305` — partial
+- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:14246`
+- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:14289` — partial
+- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:14308` — partial
 - [~] `to_bambu_bed_type` (line 2461) → `g_code.rs:1461` — divergent
-- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:14121`
-- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:13970`
-- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:13996`
-- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:14059`
-- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:14085`
-- [x] `get_instance_name` (line 4568) → `g_code.rs:12033` — read against the C++ in R915 (the estimate says partial)
+- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:14124`
+- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:13973`
+- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:13999`
+- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:14062`
+- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:14088`
+- [x] `get_instance_name` (line 4568) → `g_code.rs:12036` — read against the C++ in R915 (the estimate says partial)
 - [~] `get_instance_name` (line 4576) → `g_code.rs` — another overload of the name is ported
 - [ ] `calculate_layer_edge_grid` (line 6543) → `g_code.rs`
-- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:13864` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `need_smooth_speed` (line 7205) → `g_code.rs:11138`
-- [v] `encodeBase64` (line 8091) → `g_code.rs:11987` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
-- [x] `polygon_to_string` (line 8993) → `g_code.rs:14348`
+- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:13867` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `need_smooth_speed` (line 7205) → `g_code.rs:11141`
+- [v] `encodeBase64` (line 8091) → `g_code.rs:11990` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `polygon_to_string` (line 8993) → `g_code.rs:14351`
 
 **class `GCode`**
 
-- [x] `set_gcode_offset` (line 211) → `g_code.rs:12625`
-- [v] `set_origin` (line 216) → `g_code.rs:13467` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `layer` (line 223) → `g_code.rs:12695`
-- [x] `enable_cooling_markers` (line 231) → `g_code.rs:12715`
-- [x] `layer_count` (line 234) → `g_code.rs:12720`
-- [x] `set_layer_count` (line 235) → `g_code.rs:12725`
-- [x] `set_smooth_coff` (line 252) → `g_code.rs:12769`
-- [x] `set_last_pos` (line 420) → `g_code.rs:12774`
-- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:12780`
-- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:12785`
-- [x] `last_pos_defined` (line 423) → `g_code.rs:12790`
-- [x] `on_first_layer` (line 713) → `g_code.rs:13432`
-- [x] `path_touches_bed` (line 716) → `g_code.rs:13441`
-- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:13449`
-- [x] `object_layer_over_raft` (line 725) → `g_code.rs:13460`
+- [x] `set_gcode_offset` (line 211) → `g_code.rs:12628`
+- [v] `set_origin` (line 216) → `g_code.rs:13470` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `layer` (line 223) → `g_code.rs:12698`
+- [x] `enable_cooling_markers` (line 231) → `g_code.rs:12718`
+- [x] `layer_count` (line 234) → `g_code.rs:12723`
+- [x] `set_layer_count` (line 235) → `g_code.rs:12728`
+- [x] `set_smooth_coff` (line 252) → `g_code.rs:12772`
+- [x] `set_last_pos` (line 420) → `g_code.rs:12777`
+- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:12783`
+- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:12788`
+- [x] `last_pos_defined` (line 423) → `g_code.rs:12793`
+- [x] `on_first_layer` (line 713) → `g_code.rs:13435`
+- [x] `path_touches_bed` (line 716) → `g_code.rs:13444`
+- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:13452`
+- [x] `object_layer_over_raft` (line 725) → `g_code.rs:13463`
 - [ ] `collect_layers_to_print` (line 1576) → `g_code.rs`
 - [ ] `collect_layers_to_print` (line 1769) → `g_code.rs`
-- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:12761`
-- [x] `unretract` (line 1959) → `g_code.rs:12755`
-- [v] `first_layer_projection` (line 1965) → `g_code.rs:14365` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
+- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:12764`
+- [x] `unretract` (line 1959) → `g_code.rs:12758`
+- [v] `first_layer_projection` (line 1965) → `g_code.rs:14368` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
 - [ ] `do_export` (line 1986) → `g_code.rs`
 - [ ] `_do_export` (line 2478) → `g_code.rs`
 - [ ] `export_layer_filaments` (line 3670) → `g_code.rs`
-- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:9309`
-- [x] `get_extruder_id` (line 3793) → `g_code.rs:8806`
-- [x] `get_filament_config_index` (line 3802) → `g_code.rs:8819`
-- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:8825`
-- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:12842`
+- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:9312`
+- [x] `get_extruder_id` (line 3793) → `g_code.rs:8809`
+- [x] `get_filament_config_index` (line 3802) → `g_code.rs:8822`
+- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:8828`
+- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:12845`
 - [ ] `process_layers` (line 3830) → `g_code.rs`
 - [ ] `process_layers` (line 3973) → `g_code.rs`
-- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:9276`
-- [v] `print_machine_envelope` (line 4132) → `g_code.rs:12856` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
-- [x] `get_bed_temperature` (line 4173) → `g_code.rs:8831`
-- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:8839`
-- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:12919`
-- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:12960`
+- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:9279`
+- [v] `print_machine_envelope` (line 4132) → `g_code.rs:12859` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `get_bed_temperature` (line 4173) → `g_code.rs:8834`
+- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:8842`
+- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:12922`
+- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:12963`
 - [ ] `sort_print_object_instances` (line 4284) → `g_code.rs`
 - [ ] `compute_farthest_point` (line 4582) → `g_code.rs`
 - [ ] `generate_timelapse_gcode` (line 4735) → `g_code.rs`
 - [ ] `filament_in_first_layer_phase` (line 4844) → `g_code.rs`
 - [~] `process_layer` (line 4919) → `gcode/cooling.rs, gcode/spiral_vase.rs` — not in the paired file
-- [x] `apply_print_config` (line 6403) → `g_code.rs:14417`
-- [v] `append_full_config` (line 6410) → `g_code.rs:12732` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `set_extruders` (line 6433) → `g_code.rs:12796`
-- [v] `set_origin` (line 6446) → `g_code.rs:12636` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `preamble` (line 6458) → `g_code.rs:12811`
+- [x] `apply_print_config` (line 6403) → `g_code.rs:14420`
+- [v] `append_full_config` (line 6410) → `g_code.rs:12735` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `set_extruders` (line 6433) → `g_code.rs:12799`
+- [v] `set_origin` (line 6446) → `g_code.rs:12639` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `preamble` (line 6458) → `g_code.rs:12814`
 - [~] `change_layer` (line 6473) → `g_code.rs:5410` — partial
-- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:13006` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:13038` — read against the C++ in R915 (the estimate says partial)
-- [x] `get_path_speed` (line 6615) → `g_code.rs:13055` — read against the C++ in R915 (the estimate says partial)
+- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:13009` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:13041` — read against the C++ in R915 (the estimate says partial)
+- [x] `get_path_speed` (line 6615) → `g_code.rs:13058` — read against the C++ in R915 (the estimate says partial)
 - [~] `extrude_loop` (line 6664) → `g_code.rs:2016` — divergent
 - [ ] `extrude_multi_path` (line 6884) → `g_code.rs`
 - [x] `extrude_entity` (line 6914) → `g_code.rs:3777`
@@ -6032,86 +6032,86 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [~] `extrude_perimeters` (line 6959) → `g_code.rs:4006` — divergent
 - [x] `extrude_infill` (line 6983) → `g_code.rs:4070`
 - [~] `extrude_support` (line 7011) → `g_code.rs:4414` — partial
-- [x] `mapping_speed` (line 7158) → `g_code.rs:11120`
-- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:11130`
-- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:13107`
-- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:11157`
-- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:11403` — partial
-- [x] `set_speed_transition` (line 7403) → `g_code.rs:11453`
-- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:11616`
-- [x] `slowDownByHeight` (line 7513) → `g_code.rs:13182`
-- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:13253` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `mapping_speed` (line 7158) → `g_code.rs:11123`
+- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:11133`
+- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:13110`
+- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:11160`
+- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:11406` — partial
+- [x] `set_speed_transition` (line 7403) → `g_code.rs:11456`
+- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:11619`
+- [x] `slowDownByHeight` (line 7513) → `g_code.rs:13185`
+- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:13256` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [~] `_extrude` (line 7587) → `extruder.rs, gcode/extruder.rs, gcode/wipe_tower.rs` — not in the paired file
-- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:13284` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:13304`
-- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:13309` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:13318` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:13337`
-- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:13367` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:13375`
+- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:13287` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:13307`
+- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:13312` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:13321` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:13340`
+- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:13370` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:13378`
 - [~] `travel_to` (line 8198) → `g_code.rs:4574` — divergent
-- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:13387`
+- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:13390`
 - [x] `to_lift_type` (line 8348) → `g_code.rs:5375`
 - [ ] `needs_retraction` (line 8363) → `g_code.rs`
-- [x] `retract` (line 8498) → `g_code.rs:13393`
-- [x] `update_layer_related_config` (line 8531) → `g_code.rs:14430`
-- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:9182` — partial
+- [x] `retract` (line 8498) → `g_code.rs:13396`
+- [x] `update_layer_related_config` (line 8531) → `g_code.rs:14433`
+- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:9185` — partial
 - [~] `set_extruder` (line 8617) → `g_code.rs:4963` — divergent
-- [x] `set_object_info` (line 9007) → `g_code.rs:14459`
-- [x] `point_to_gcode` (line 9029) → `g_code.rs:12666`
-- [x] `gcode_to_point` (line 9036) → `g_code.rs:12676`
+- [x] `set_object_info` (line 9007) → `g_code.rs:14462`
+- [x] `point_to_gcode` (line 9029) → `g_code.rs:12669`
+- [x] `gcode_to_point` (line 9036) → `g_code.rs:12679`
 
 **class `GCode::GCodeOutputStream`**
 
-- [x] `is_open` (line 300) → `g_code.rs:12382`
-- [x] `write` (line 311) → `g_code.rs:12421`
-- [x] `is_error` (line 7082) → `g_code.rs:12387`
-- [x] `get_last_error` (line 7087) → `g_code.rs:12392`
-- [x] `flush` (line 7092) → `g_code.rs:12401`
-- [x] `close` (line 7098) → `g_code.rs:12414`
+- [x] `is_open` (line 300) → `g_code.rs:12385`
+- [x] `write` (line 311) → `g_code.rs:12424`
+- [x] `is_error` (line 7082) → `g_code.rs:12390`
+- [x] `get_last_error` (line 7087) → `g_code.rs:12395`
+- [x] `flush` (line 7092) → `g_code.rs:12404`
+- [x] `close` (line 7098) → `g_code.rs:12417`
 - [~] `write` (line 7106) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
-- [x] `writeln` (line 7119) → `g_code.rs:12439`
-- [v] `write_format` (line 7125) → `g_code.rs:12452` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `writeln` (line 7119) → `g_code.rs:12442`
+- [v] `write_format` (line 7125) → `g_code.rs:12455` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
 
 **class `GCode::LayerToPrint`**
 
-- [x] `layer` (line 261) → `g_code.rs:12289`
-- [x] `object` (line 272) → `g_code.rs:12303`
-- [x] `print_z` (line 276) → `g_code.rs:12308`
+- [x] `layer` (line 261) → `g_code.rs:12292`
+- [x] `object` (line 272) → `g_code.rs:12306`
+- [x] `print_z` (line 276) → `g_code.rs:12311`
 
 **class `GCode::ObjectByExtruder::Island::Region`**
 
-- [x] `append` (line 9106) → `g_code.rs:13701`
+- [x] `append` (line 9106) → `g_code.rs:13704`
 
 **class `OozePrevention`**
 
-- [x] `pre_toolchange` (line 332) → `g_code.rs:12059`
-- [x] `post_toolchange` (line 362) → `g_code.rs:12093`
-- [x] `_get_temp` (line 369) → `g_code.rs:12104`
+- [x] `pre_toolchange` (line 332) → `g_code.rs:12062`
+- [x] `post_toolchange` (line 362) → `g_code.rs:12096`
+- [x] `_get_temp` (line 369) → `g_code.rs:12107`
 
 **class `Wipe`**
 
-- [x] `has_path` (line 63) → `g_code.rs:12135`
-- [x] `reset_path` (line 64) → `g_code.rs:12140`
-- [x] `wipe` (line 440) → `g_code.rs:12147`
+- [x] `has_path` (line 63) → `g_code.rs:12138`
+- [x] `reset_path` (line 64) → `g_code.rs:12143`
+- [x] `wipe` (line 440) → `g_code.rs:12150`
 
 **class `WipeTowerIntegration`**
 
-- [x] `next_layer` (line 106) → `g_code.rs:13572`
-- [x] `is_first_print` (line 112) → `g_code.rs:13631`
-- [x] `set_is_first_print` (line 113) → `g_code.rs:13636`
-- [x] `enable_timelapse_print` (line 115) → `g_code.rs:13641`
-- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:13646`
-- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:13651`
-- [x] `set_rib_offset` (line 118) → `g_code.rs:13656`
+- [x] `next_layer` (line 106) → `g_code.rs:13575`
+- [x] `is_first_print` (line 112) → `g_code.rs:13634`
+- [x] `set_is_first_print` (line 113) → `g_code.rs:13639`
+- [x] `enable_timelapse_print` (line 115) → `g_code.rs:13644`
+- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:13649`
+- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:13654`
+- [x] `set_rib_offset` (line 118) → `g_code.rs:13659`
 - [x] `generate_path_to_wipe_tower` (line 623) → `g_code.rs:258`
 - [~] `append_tcr` (line 741) → `g_code.rs:632` — divergent
 - [~] `post_process_wipe_tower_moves` (line 1383) → `g_code.rs:503` — divergent
-- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:13619`
-- [x] `prime` (line 1477) → `g_code.rs:13567` — read against the C++ in R915 (the estimate says divergent)
+- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:13622`
+- [x] `prime` (line 1477) → `g_code.rs:13570` — read against the C++ in R915 (the estimate says divergent)
 - [~] `tool_change` (line 1489) → `g_code_writer.rs, gcode/tool_ordering.rs, gcode/wipe_tower.rs` — not in the paired file
-- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:13579`
-- [~] `finalize` (line 1554) → `g_code.rs:13613` — stub
+- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:13582`
+- [~] `finalize` (line 1554) → `g_code.rs:13616` — stub
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp)
 
@@ -10162,14 +10162,14 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 **free functions**
 
 - [~] `transform` (line 10) → `brim_ears_point.rs, geometry/polygon.rs, model.rs` — not in the paired file
-- [~] `transform` (line 29) → `geometry/point.rs:1511` — divergent
+- [~] `transform` (line 29) → `geometry/point.rs:1512` — divergent
 - [~] `identity` (line 76) → `geometry/geometry.rs, geometry/transform.rs` — not in the paired file
 - [~] `cross2` (line 86) → `fill/fill_gyroid.rs, gcode/avoid_crossing_perimeters.rs, gcode/wipe_tower.rs` — not in the paired file
 - [~] `cross2` (line 92) → `fill/fill_gyroid.rs, gcode/avoid_crossing_perimeters.rs, gcode/wipe_tower.rs` — not in the paired file
-- [~] `perp` (line 99) → `geometry/point.rs:939` — divergent
+- [~] `perp` (line 99) → `geometry/point.rs:940` — divergent
 - [~] `perp` (line 103) → `arrange.rs, geometry/mod.rs, min_area_bounding_box.rs` — not in the paired file
 - [~] `angle` (line 111) → `extrusion_entity.rs, gcode/seam_placer.rs, geometry/line.rs` — not in the paired file
-- [~] `to_2d` (line 120) → `geometry/point.rs:1322` — divergent
+- [~] `to_2d` (line 120) → `geometry/point.rs:1323` — divergent
 - [ ] `to_3d` (line 126) → `geometry/point.rs`
 - [~] `unscale` (line 131) → `arrange.rs, g_code.rs, gcode/timelapse_pos_picker.rs` — not in the paired file
 - [~] `unscale` (line 132) → `arrange.rs, g_code.rs, gcode/timelapse_pos_picker.rs` — not in the paired file
@@ -10190,35 +10190,35 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [ ] `get_x_base` (line 165) → `geometry/point.rs`
 - [ ] `get_y_base` (line 166) → `geometry/point.rs`
 - [ ] `get_z_base` (line 167) → `geometry/point.rs`
-- [v] `has_duplicate_points` (line 225) → `geometry/point.rs:1570` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
-- [v] `collect_duplicates` (line 234) → `geometry/point.rs:1585` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
-- [x] `get_extents` (line 252) → `geometry/point.rs:1531`
+- [v] `has_duplicate_points` (line 225) → `geometry/point.rs:1571` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [v] `collect_duplicates` (line 234) → `geometry/point.rs:1586` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [x] `get_extents` (line 252) → `geometry/point.rs:1532`
 - [~] `get_extents` (line 264) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `is_approx` (line 266) → `extrusion_entity.rs, geometry/geometry.rs, geometry/transform.rs` — not in the paired file
-- [x] `turn90_ccw` (line 272) → `geometry/point.rs:1646`
+- [x] `turn90_ccw` (line 272) → `geometry/point.rs:1647`
 - [~] `get_extents` (line 274) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `is_approx` (line 274) → `extrusion_entity.rs, geometry/geometry.rs, geometry/transform.rs` — not in the paired file
-- [x] `is_approx` (line 280) → `geometry/point.rs:1637`
+- [x] `is_approx` (line 280) → `geometry/point.rs:1638`
 - [~] `is_approx` (line 286) → `extrusion_entity.rs, geometry/geometry.rs, geometry/transform.rs` — not in the paired file
-- [~] `orient` (line 289) → `geometry/point.rs:1989` — partial
+- [~] `orient` (line 289) → `geometry/point.rs:1990` — partial
 - [~] `is_approx` (line 292) → `extrusion_entity.rs, geometry/geometry.rs, geometry/transform.rs` — not in the paired file
-- [~] `cross` (line 296) → `geometry/point.rs:2007` — partial
-- [~] `lerp` (line 298) → `geometry/point.rs:1652` — partial
+- [~] `cross` (line 296) → `geometry/point.rs:2008` — partial
+- [~] `lerp` (line 298) → `geometry/point.rs:1653` — partial
 - [~] `has_duplicate_points` (line 323) → `clipper_utils.rs, ex_polygon.rs, geometry/polygon.rs` — not in the paired file
-- [x] `has_duplicate_successive_points` (line 331) → `geometry/point.rs:1616`
-- [x] `has_duplicate_successive_points_closed` (line 341) → `geometry/point.rs:1630`
-- [~] `shorter_then` (line 349) → `geometry/point.rs:1665` — partial
+- [x] `has_duplicate_successive_points` (line 331) → `geometry/point.rs:1617`
+- [x] `has_duplicate_successive_points_closed` (line 341) → `geometry/point.rs:1631`
+- [~] `shorter_then` (line 349) → `geometry/point.rs:1666` — partial
 - [~] `scaled` (line 527) → `bounding_box.rs, fill/fill_adaptive.rs, fill/fill_plane_path.rs` — not in the paired file
 - [~] `scaled` (line 537) → `bounding_box.rs, fill/fill_adaptive.rs, fill/fill_plane_path.rs` — not in the paired file
 - [~] `scaled` (line 549) → `bounding_box.rs, fill/fill_adaptive.rs, fill/fill_plane_path.rs` — not in the paired file
 - [~] `unscaled` (line 560) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
 - [~] `unscaled` (line 573) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
-- [x] `align_to_grid` (line 581) → `geometry/point.rs:1682`
+- [x] `align_to_grid` (line 581) → `geometry/point.rs:1683`
 - [~] `align_to_grid` (line 591) → `bounding_box.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `align_to_grid` (line 593) → `bounding_box.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `align_to_grid` (line 595) → `bounding_box.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `apply` (line 603) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
-- [x] `apply` (line 608) → `geometry/point.rs:1730`
+- [x] `apply` (line 608) → `geometry/point.rs:1731`
 - [~] `serialize` (line 683) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `serialize` (line 684) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `serialize` (line 687) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
@@ -10237,36 +10237,36 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 **class `ClosestPointInRadiusLookup`**
 
 - [~] `insert` (line 413) → `arachne/utils/extrusion_line.rs, arachne/utils/sparse_line_grid.rs, arachne/utils/sparse_point_grid.rs` — not in the paired file
-- [x] `insert` (line 419) → `geometry/point.rs:1854`
-- [x] `erase` (line 427) → `geometry/point.rs:1867`
-- [x] `find` (line 444) → `geometry/point.rs:1891`
-- [x] `find_all` (line 476) → `geometry/point.rs:1941`
+- [x] `insert` (line 419) → `geometry/point.rs:1855`
+- [x] `erase` (line 427) → `geometry/point.rs:1868`
+- [x] `find` (line 444) → `geometry/point.rs:1892`
+- [x] `find_all` (line 476) → `geometry/point.rs:1942`
 
 **class `Point`**
 
 - [~] `rotate` (line 48) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `nearest_point_index` (line 60) → `geometry/point.rs` — another overload of the name is ported
-- [v] `nearest_point_index` (line 69) → `geometry/point.rs:362` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.) (the body reads as partial to the estimate)
+- [v] `nearest_point_index` (line 69) → `geometry/point.rs:363` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.) (the body reads as partial to the estimate)
 - [~] `nearest_point_index` (line 94) → `geometry/point.rs` — another overload of the name is ported
-- [v] `nearest_point` (line 103) → `geometry/point.rs:407` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
-- [v] `ccw` (line 118) → `geometry/point.rs:315` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.) (the body reads as partial to the estimate)
+- [v] `nearest_point` (line 103) → `geometry/point.rs:408` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [v] `ccw` (line 118) → `geometry/point.rs:316` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.) (the body reads as partial to the estimate)
 - [~] `ccw` (line 125) → `geometry/line.rs` — not in the paired file
-- [v] `ccw_angle` (line 132) → `geometry/point.rs:342` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [v] `ccw_angle` (line 132) → `geometry/point.rs:343` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
 - [~] `projection_onto` (line 141) → `ex_polygon.rs, support/tree_support.rs` — not in the paired file
-- [v] `projection_onto` (line 157) → `geometry/point.rs:498` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.) (the body reads as divergent to the estimate)
-- [v] `is_in_lines` (line 183) → `geometry/point.rs:550` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
-- [x] `new_scale` (line 185) → `geometry/point.rs:1107`
+- [v] `projection_onto` (line 157) → `geometry/point.rs:499` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.) (the body reads as divergent to the estimate)
+- [v] `is_in_lines` (line 183) → `geometry/point.rs:551` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [x] `new_scale` (line 185) → `geometry/point.rs:1108`
 - [~] `new_scale` (line 186) → `geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [~] `new_scale` (line 187) → `geometry/point.rs:72` — divergent
-- [v] `both_comp` (line 201) → `geometry/point.rs:214` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
-- [v] `any_comp` (line 208) → `geometry/point.rs:229` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [~] `new_scale` (line 187) → `geometry/point.rs:73` — divergent
+- [v] `both_comp` (line 201) → `geometry/point.rs:215` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [v] `any_comp` (line 208) → `geometry/point.rs:230` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
 - [~] `any_comp` (line 216) → `geometry/point.rs` — another overload of the name is ported
-- [x] `rotate` (line 225) → `geometry/point.rs:172`
-- [~] `rotate` (line 226) → `geometry/point.rs:926` — partial
-- [v] `rotated` (line 234) → `geometry/point.rs:529` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [x] `rotate` (line 225) → `geometry/point.rs:173`
+- [~] `rotate` (line 226) → `geometry/point.rs:927` — partial
+- [v] `rotated` (line 234) → `geometry/point.rs:530` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
 - [~] `rotated` (line 235) → `bounding_box.rs, geometry/bounding_box.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `rotated` (line 236) → `bounding_box.rs, geometry/bounding_box.rs, geometry/expolygon.rs` — not in the paired file
-- [v] `rotate_90_degree_ccw` (line 237) → `geometry/point.rs:271` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
+- [v] `rotate_90_degree_ccw` (line 237) → `geometry/point.rs:272` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
 
 **class `point_mutable_traits<Slic3r::Point>`**
 
