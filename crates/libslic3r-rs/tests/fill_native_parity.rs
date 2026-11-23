@@ -634,10 +634,21 @@ fn fill_make_fills_native_parity_report() {
     assert!(equal_lines >= FLOOR_LINES, "live make_fills: {equal_lines} lines equal to the pin, {FLOOR_LINES} before");
     assert!(equal_entities >= FLOOR_ENTITIES, "live make_fills: {equal_entities} entities equal to the pin, {FLOOR_ENTITIES} before");
     assert!(equal_headers >= FLOOR_HEADERS, "live make_fills: {equal_headers} entities equal to the pin points aside, {FLOOR_HEADERS} before");
+    // The configurations whose 12 lines are all equal to the pin (R928, with FILL_MULTILINES_PIN:
+    // FillCubic where the live assembly laid a grid, and FILL_MULTILINES_ONE_LINE: one line alone
+    // gets no anchors) are REQUIRED to stay equal.
+    for (tag, n, eq, _, _) in &per_cfg {
+        if EQUAL_CONFIGURATIONS.contains(&tag.as_str()) {
+            assert_eq!(eq, n, "live make_fills, configuration {tag}: {eq} of {n} lines equal to the pin, all of them before");
+        }
+    }
 }
-// The counts of the first run of the report (R927): lines with an error or a panic at most; equal
-// lines, equal entities, entities equal points aside at least.
+const EQUAL_CONFIGURATIONS: [&str; 14] =
+    ["base", "grid", "dense_100", "no_infill", "solid_rectilinear", "direction_30", "no_narrow", "thick_bridges", "bridge_flow_09", "layer_02", "widths", "overlap_30", "bridge_angle_45", "sub_top"];
+// The counts of the report (first run R927: 103 / 512 / 604; R928 with FILL_PATH_HEIGHT_PIN and
+// FILL_MULTILINES_PIN: 217 / 700 / 715; with FILL_MULTILINES_ONE_LINE: 223 / 706 / 715): lines with an error or a panic at most; equal lines, equal
+// entities, entities equal points aside at least.
 const FLOOR_FAILED: usize = 0;
-const FLOOR_LINES: usize = 103;
-const FLOOR_ENTITIES: usize = 512;
-const FLOOR_HEADERS: usize = 604;
+const FLOOR_LINES: usize = 223;
+const FLOOR_ENTITIES: usize = 706;
+const FLOOR_HEADERS: usize = 715;

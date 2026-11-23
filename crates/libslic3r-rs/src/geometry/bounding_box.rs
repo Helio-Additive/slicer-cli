@@ -275,8 +275,101 @@ impl BoundingBox {
         result
     }
 
+    /// `BoundingBoxBase<Point>::radius() const`: half the diagonal.
+    ///
+    /// BoundingBox.cpp:191-197
+    pub fn radius(&self) -> f64 {
+        // `double x = this->max(0) - this->min(0)`: the difference in coord_t, then widened.
+        let x = (self.max.x - self.min.x) as f64;
+        let y = (self.max.y - self.min.y) as f64;
+        // `x*x+y*y` is one expression: the left product is fused into the sum.
+        0.5 * x.mul_add(x, y * y).sqrt()
+    }
+
+    /// `BoundingBoxBase<Point>::offset(coordf_t delta)`: `PointClass v(delta, delta)` is
+    /// `Point(double, double)`, which rounds with lrint (Point.hpp:179); defined or not.
+    ///
+    /// BoundingBox.cpp:211-217
+    pub fn offset(&mut self, delta: CoordF) {
+        let v = delta.round_ties_even() as Coord;
+        self.min.x -= v;
+        self.min.y -= v;
+        self.max.x += v;
+        self.max.y += v;
+    }
+
+    /// `BoundingBox::inflated(coordf_t delta) const`.
+    ///
+    /// BoundingBox.hpp:214
+    pub fn inflated(&self, delta: CoordF) -> Self {
+        let mut out = *self;
+        out.offset(delta);
+        out
+    }
+
+    /// `BoundingBox::rotated(double angle) const`: the box of the four rotated corners.
+    ///
+    /// BoundingBox.cpp:36-44
+    pub fn rotated(&self, angle: CoordF) -> Self {
+        let mut out = Self::new();
+        out.merge_point(self.min.rotated(angle));
+        out.merge_point(self.max.rotated(angle));
+        out.merge_point(Point::new(self.min.x, self.max.y).rotated(angle));
+        out.merge_point(Point::new(self.max.x, self.min.y).rotated(angle));
+        out
+    }
+
+    /// `BoundingBox::rotated(double angle, const Point &center) const`.
+    ///
+    /// BoundingBox.cpp:46-54
+    pub fn rotated_center_overload(&self, angle: CoordF, center: &Point) -> Self {
+        let mut out = Self::new();
+        out.merge_point(self.min.rotated_center_overload(angle, center));
+        out.merge_point(self.max.rotated_center_overload(angle, center));
+        out.merge_point(Point::new(self.min.x, self.max.y).rotated_center_overload(angle, center));
+        out.merge_point(Point::new(self.max.x, self.min.y).rotated_center_overload(angle, center));
+        out
+    }
+
+    /// `BoundingBox::rotate(double angle)`.
+    ///
+    /// BoundingBox.hpp:203
+    pub fn rotate(&mut self, angle: CoordF) {
+        *self = self.rotated(angle);
+    }
+
+    /// `BoundingBox::align_to_grid(const coord_t cell_size)`: the min corner moved down to the grid.
+    ///
+    /// BoundingBox.cpp:256-262
+    pub fn align_to_grid(&mut self, cell_size: Coord) {
+        if self.defined {
+            self.min.x = super::point::align_to_grid(self.min.x, cell_size);
+            self.min.y = super::point::align_to_grid(self.min.y, cell_size);
+        }
+    }
+
+    /// `BoundingBoxBase::overlap(const BoundingBoxBase &other) const`: on the stored corners, defined or
+    /// not (`intersects` above also asks for both boxes to be defined).
+    ///
+    /// BoundingBox.hpp:56-59
+    pub fn overlap(&self, other: &BoundingBox) -> bool {
+        !(self.max.x < other.min.x
+            || self.min.x > other.max.x
+            || self.max.y < other.min.y
+            || self.min.y > other.max.y)
+    }
+
     /// Scale the bounding box about the origin.
     pub fn scale(&mut self, factor: CoordF) {
+        // BoundingBox.cpp:63-69 `this->min *= factor; this->max *= factor;`, defined or not, and
+        // `Point::operator*=(const double&)` truncates (Point.hpp:199, `coord_t(this->x() * rhs)`), where
+        // the arm below rounds and leaves an undefined box alone. Opt-in: `BOUNDING_BOX_SCALE_PIN=1`.
+        static PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *PIN.get_or_init(|| crate::opt_in_gate("BOUNDING_BOX_SCALE_PIN")) {
+            self.min = Point::new((self.min.x as CoordF * factor) as Coord, (self.min.y as CoordF * factor) as Coord);
+            self.max = Point::new((self.max.x as CoordF * factor) as Coord, (self.max.y as CoordF * factor) as Coord);
+            return;
+        }
         if self.defined {
             self.min = self.min * factor;
             self.max = self.max * factor;

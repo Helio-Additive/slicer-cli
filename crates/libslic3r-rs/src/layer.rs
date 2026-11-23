@@ -2202,36 +2202,41 @@ impl Layer {
             && config.external_perimeter_speed == other_config.external_perimeter_speed
             // Layer.cpp:180
             && config.gap_fill_speed == other_config.gap_fill_speed
-            // Layer.cpp:181
-            && config.overhangs == other_config.overhangs
+            // Layer.cpp:181 `bridge_speed.get_at(get_process_config_idx(wall_filament))`: regions with
+            // different bridge speeds are not merged (gate LAYER_COMPATIBLE_BRIDGE_SPEED; off = R927).
+            && (!crate::faithful_gate("LAYER_COMPATIBLE_BRIDGE_SPEED") || config.bridge_speed == other_config.bridge_speed)
             // Layer.cpp:182
-            && config.filter_out_gap_fill == other_config.filter_out_gap_fill
+            && config.overhangs == other_config.overhangs
             // Layer.cpp:183
-            && config.inner_wall_line_width == other_config.inner_wall_line_width
+            && config.filter_out_gap_fill == other_config.filter_out_gap_fill
             // Layer.cpp:184
-            && config.outer_wall_line_width == other_config.outer_wall_line_width
+            && config.inner_wall_line_width == other_config.inner_wall_line_width
             // Layer.cpp:185
-            && config.thin_walls == other_config.thin_walls
+            && config.outer_wall_line_width == other_config.outer_wall_line_width
             // Layer.cpp:186
-            && config.infill_overlap == other_config.infill_overlap
+            && config.thin_walls == other_config.thin_walls
             // Layer.cpp:187
-            && config.override_filament_scarf_seam_setting == other_config.override_filament_scarf_seam_setting
+            && config.infill_overlap == other_config.infill_overlap
             // Layer.cpp:188
-            && config.seam_slope_type == other_config.seam_slope_type
+            && config.override_filament_scarf_seam_setting == other_config.override_filament_scarf_seam_setting
             // Layer.cpp:189
-            && config.seam_slope_start_height == other_config.seam_slope_start_height
+            && config.seam_slope_type == other_config.seam_slope_type
             // Layer.cpp:190
-            && config.seam_slope_gap == other_config.seam_slope_gap
+            && config.seam_slope_start_height == other_config.seam_slope_start_height
             // Layer.cpp:191
-            && config.seam_slope_min_length == other_config.seam_slope_min_length
+            && config.seam_slope_gap == other_config.seam_slope_gap
             // Layer.cpp:192
-            && config.seam_slope_conditional == other_config.seam_slope_conditional
+            && config.seam_slope_min_length == other_config.seam_slope_min_length
             // Layer.cpp:193
-            && config.seam_slope_entire_loop == other_config.seam_slope_entire_loop
+            && config.seam_slope_conditional == other_config.seam_slope_conditional
             // Layer.cpp:194
-            && config.seam_slope_steps == other_config.seam_slope_steps
+            && config.seam_slope_entire_loop == other_config.seam_slope_entire_loop
             // Layer.cpp:195
+            && config.seam_slope_steps == other_config.seam_slope_steps
+            // Layer.cpp:196
             && config.seam_slope_inner_walls == other_config.seam_slope_inner_walls
+        // Layer.cpp:198 `(this->id() != 0 || config.initial_layer_flow_ratio == other_config.initial_layer_flow_ratio)`
+        // is not compared: this crate's PrintRegionConfig carries no initial_layer_flow_ratio.
     }
 
     /// Generate perimeters for all regions
@@ -2668,9 +2673,62 @@ impl Layer {
         }
     }
 
-    // Layer.cpp:150
+    // Layer.cpp:150-170
     // C++: ExPolygons Layer::merged(float offset_scaled) const
+    // The pin's function with its float argument: `offset(const Surfaces &, float)` gives Polygons
+    // (ClipperUtils.cpp:563), `union_ex` of those, then `offset_ex(ExPolygons, float)` back when no
+    // offset was asked for. EPSILON is rounded to a float both ways (Layer.cpp:156-157).
+    pub fn merged_f32(&self, offset_scaled: f32) -> ExPolygons {
+        use crate::support::support_common::cu;
+        // Layer.cpp:152
+        debug_assert!(offset_scaled >= 0.0);
+        // Layer.cpp:153-158
+        // If no offset is set, apply EPSILON offset before union, and revert it afterwards.
+        let mut offset_scaled = offset_scaled;
+        let mut offset_scaled2: f32 = 0.0;
+        if offset_scaled == 0.0 {
+            offset_scaled = crate::libslic3r::EPSILON as f32;
+            offset_scaled2 = (-crate::libslic3r::EPSILON) as f32;
+        }
+        // Layer.cpp:159-165
+        let mut polygons: Polygons = Polygons::new();
+        for layerm in &self.regions {
+            let config = layerm.region().config();
+            // Our users learned to bend Slic3r to produce empty volumes to act as subtracters. Only add the region if it is non-empty.
+            if config.bottom_solid_layers > 0
+                || config.top_solid_layers > 0
+                || config.fill_density > 0.0
+                || config.perimeters > 0
+            {
+                let surf_ex = crate::surface::to_expolygons(&layerm.slices.surfaces);
+                polygons.extend(cu::offset_expolygons(
+                    &surf_ex,
+                    offset_scaled,
+                    cu::DEFAULT_JOIN_TYPE,
+                    cu::DEFAULT_MITER_LIMIT,
+                ));
+            }
+        }
+        // Layer.cpp:166
+        let mut out = cu::union_ex(&polygons);
+        // Layer.cpp:167-168
+        if offset_scaled2 != 0.0 {
+            out = cu::offset_ex_expolygons(&out, offset_scaled2, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT);
+        }
+        // Layer.cpp:169
+        out
+    }
+
+    // Layer.cpp:150-170
+    // C++: ExPolygons Layer::merged(float offset_scaled) const
+    // The argument is a float at the pin; a double given here is rounded to one as a C++ caller's is.
     pub fn merged(&self, offset_scaled: f64) -> ExPolygons {
+        self.merged_f32(offset_scaled as f32)
+    }
+
+    // The body `merged` had before R928 (double EPSILON, an offset per region into ExPolygons); nothing
+    // calls it. Kept for comparison; `merged` above is the pin's function.
+    pub fn merged_legacy(&self, offset_scaled: f64) -> ExPolygons {
         // Layer.cpp:152
         debug_assert!(offset_scaled >= 0.0);
         // Layer.cpp:153-158
@@ -3600,6 +3658,20 @@ impl Layer {
                 // fill_surface_by_multilines. Only the GRID 2-direction path uses
                 // this; single-direction rectilinear keeps fill_surface_by_lines.
                 let emitter_pair_grid = is_grid;
+                // FILL_MULTILINES_PIN (on unless =0): a region whose sparse pattern is ipTriangles,
+                // ipStars or ipCubic is filled by FillTriangles / FillStars / FillCubic
+                // (FillBase.cpp:46-48; FillRectilinear.cpp:3133-3165: three sweeps 60 degrees
+                // apart, FillCubic's shifted by sqrt(0.5) * z). =0 lays the two sweeps of
+                // FillGrid, which fill/mod.rs maps the three patterns to.
+                let multilines_pattern: Option<crate::print_config::InfillPattern> =
+                    match surface_fill.params.sparse_pattern {
+                        Some(
+                            p @ (crate::print_config::InfillPattern::Triangles
+                            | crate::print_config::InfillPattern::Stars
+                            | crate::print_config::InfillPattern::Cubic),
+                        ) if is_grid && crate::faithful_gate("FILL_MULTILINES_PIN") => Some(p),
+                        _ => None,
+                    };
                 let mut pair_boundary: Vec<crate::geometry::Polygon> = Vec::new();
 
                 // R791 (gate GYROID_FSS) — the faithful FillGyroid::
@@ -3696,12 +3768,22 @@ impl Layer {
                         out.into_iter().map(InfillPath::Line).collect()
                     }
                     _ if emitter_pair_grid => {
-                        let (raw, boundary) =
-                            crate::fill::fill_rectilinear::generate_grid_raw_lines(
+                        let (raw, boundary) = match multilines_pattern.and_then(|p| {
+                            crate::fill::fill_rectilinear::generate_multilines_raw_lines(
                                 &expoly,
                                 &infill_config,
                                 self.id as usize,
-                            );
+                                p,
+                                self.print_z,
+                            )
+                        }) {
+                            Some(lines_and_boundary) => lines_and_boundary,
+                            None => crate::fill::fill_rectilinear::generate_grid_raw_lines(
+                                &expoly,
+                                &infill_config,
+                                self.id as usize,
+                            ),
+                        };
                         pair_boundary = boundary;
                         raw.into_iter().map(InfillPath::Line).collect()
                     }
@@ -4017,20 +4099,29 @@ impl Layer {
                     fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
                     fp.dont_sort = false;
                     let bbox = crate::geometry::BoundingBox::from_points(&boundary_contour.points);
-                    let mut connected = Vec::new();
-                    crate::fill::fill_base::connect_infill_polygons(
-                        polylines,
-                        &pair_boundary,
-                        &bbox,
-                        &mut connected,
-                        infill_config.line_spacing,
-                        &fp,
-                    );
-                    polylines = connected;
+                    // FillRectilinear.cpp:3064-3069 — `if (params.dont_connect() || fill_lines.size() <= 1)`
+                    // the lines are appended as they are: one line alone gets no anchors.
+                    // FILL_MULTILINES_ONE_LINE=0 hands it to connect_infill as well.
+                    // FIDELITY-NOTE: the `params.dont_connect()` arm with several lines
+                    // (chain_polylines, FillRectilinear.cpp:3065-3066) is not taken here.
+                    if !(polylines.len() <= 1 && crate::faithful_gate("FILL_MULTILINES_ONE_LINE")) {
+                        let mut connected = Vec::new();
+                        crate::fill::fill_base::connect_infill_polygons(
+                            polylines,
+                            &pair_boundary,
+                            &bbox,
+                            &mut connected,
+                            infill_config.line_spacing,
+                            &fp,
+                        );
+                        polylines = connected;
+                    }
                     // R814 GRID_ODD_REVERSE (faithful ON): FillGrid::fill_surface
                     // reverses every polyline on odd layers
                     // (FillRectilinear.cpp:3127-3129).
-                    if (self.id as usize) % 2 == 1 && crate::faithful_gate("GRID_ODD_REVERSE") {
+                    // (FillGrid only: FillTriangles, FillStars and FillCubic return the lines
+                    // as connected, FillRectilinear.cpp:3133-3165.)
+                    if (self.id as usize) % 2 == 1 && multilines_pattern.is_none() && crate::faithful_gate("GRID_ODD_REVERSE") {
                         for pl in polylines.iter_mut() {
                             pl.points.reverse();
                         }
@@ -5540,7 +5631,31 @@ fn chain_points(points: &[Point]) -> Vec<usize> {
     result
 }
 
-// Layer.cpp:635
+/// Layer.cpp:750-770: what the two overloads of `get_extents` take (a LayerRegion, the regions of a layer).
+pub trait LayerGetExtents {
+    fn layer_get_extents(&self) -> BoundingBox;
+}
+impl LayerGetExtents for LayerRegion {
+    // Layer.cpp:750-759
+    fn layer_get_extents(&self) -> BoundingBox {
+        get_extents_layer_region(self)
+    }
+}
+impl LayerGetExtents for [LayerRegion] {
+    // Layer.cpp:761-770
+    fn layer_get_extents(&self) -> BoundingBox {
+        get_extents_layer_regions(self)
+    }
+}
+
+// Layer.cpp:750-770
+// C++: BoundingBox get_extents(const LayerRegion &layer_region)
+// C++: BoundingBox get_extents(const LayerRegionPtrs &layer_regions)
+pub fn get_extents<T: LayerGetExtents + ?Sized>(what: &T) -> BoundingBox {
+    what.layer_get_extents()
+}
+
+// Layer.cpp:750-759
 // C++: BoundingBox get_extents(const LayerRegion &layer_region)
 pub fn get_extents_layer_region(layer_region: &LayerRegion) -> BoundingBox {
     use crate::geometry::get_extents_expoly;
@@ -5563,7 +5678,7 @@ pub fn get_extents_layer_region(layer_region: &LayerRegion) -> BoundingBox {
     bbox
 }
 
-// Layer.cpp:646
+// Layer.cpp:761-770
 // C++: BoundingBox get_extents(const LayerRegionPtrs &layer_regions)
 pub fn get_extents_layer_regions(layer_regions: &[LayerRegion]) -> BoundingBox {
     // Layer.cpp:648

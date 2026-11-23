@@ -3035,6 +3035,67 @@ pub fn fill_surface_locked_zag(
     Some(multi_width_polyline)
 }
 
+/// The lines of FillTriangles, FillStars and FillCubic for the pair entry of the slicing path, as
+/// `generate_grid_raw_lines` gives those of FillGrid: the three sweeps of
+/// `FillTriangles::fill_surface` (FillRectilinear.cpp:3133-3142), `FillStars::fill_surface`
+/// (FillRectilinear.cpp:3144-3153) and `FillCubic::fill_surface` (FillRectilinear.cpp:3155-3165) laid by
+/// `FillRectilinear::fill_surface_by_multilines` (FillRectilinear.cpp:3037-3063) before its
+/// `connect_infill`, and the outer polygons of the offset base the caller connects them along.
+/// `z` is `f->z` (Fill.cpp:702, the layer's print_z). None for another pattern.
+pub fn generate_multilines_raw_lines(
+    expoly: &ExPolygon,
+    config: &InfillConfig,
+    layer_index: usize,
+    pattern: crate::print_config::InfillPattern,
+    z: f64,
+) -> Option<(Vec<Polyline>, Vec<Polygon>)> {
+    use crate::print_config::InfillPattern as P;
+    let class = match pattern {
+        P::Triangles => FillRectilinearClass::Triangles,
+        P::Stars => FillRectilinearClass::Stars,
+        P::Cubic => FillRectilinearClass::Cubic,
+        _ => return None,
+    };
+    let mut f = FillRectilinear::with_class(class);
+    live_fill_members(&mut f.base, config, layer_index);
+    f.base.z = z;
+    let surface = live_surface(expoly, config);
+    let mut params = live_fill_params(config, false);
+    let third = (std::f64::consts::PI / 3.) as f32;
+    let sweeps = match class {
+        // FillRectilinear.cpp:3139
+        FillRectilinearClass::Triangles => [
+            SweepParams { angle_base: 0., pattern_shift: 0. },
+            SweepParams { angle_base: third, pattern_shift: 0. },
+            SweepParams { angle_base: (2. * std::f64::consts::PI / 3.) as f32, pattern_shift: 0. },
+        ],
+        // FillRectilinear.cpp:3150 — float((3./2.) * this->spacing * params.multiline / params.density)
+        FillRectilinearClass::Stars => {
+            let shift = ((3. / 2.) * f.base.spacing * params.multiline as f64 / ((params.density as f32) as f64)) as f32;
+            [
+                SweepParams { angle_base: 0., pattern_shift: 0. },
+                SweepParams { angle_base: third, pattern_shift: 0. },
+                SweepParams { angle_base: (2. * std::f64::consts::PI / 3.) as f32, pattern_shift: shift },
+            ]
+        }
+        // FillRectilinear.cpp:3158-3161 — coordf_t dx = sqrt(0.5) * z;
+        _ => {
+            let dx: f64 = 0.5f64.sqrt() * f.base.z;
+            [
+                SweepParams { angle_base: 0., pattern_shift: dx as f32 },
+                SweepParams { angle_base: third, pattern_shift: -(dx as f32) },
+                SweepParams { angle_base: (std::f64::consts::PI * 2. / 3.) as f32, pattern_shift: dx as f32 },
+            ]
+        }
+    };
+    // FillRectilinear.cpp:3041 — params.density /= double(sweep_params.size());
+    params.density = (((params.density as f32) as f64 / 3.0) as f32) as f64;
+    Some(match f.fill_lines_of_sweeps(&surface, &params, &sweeps) {
+        Some((poly_with_offset_base, fill_lines)) => (fill_lines, poly_with_offset_base.polygons_outer),
+        None => (Vec::new(), Vec::new()),
+    })
+}
+
 /// Faithful FillGrid raster for the emitter-pair path: emit BOTH sweep
 /// directions' RAW vertical-line segments (C++ `make_fill_lines`,
 /// FillRectilinear.cpp:2993-3030) into one set + return the shared offset

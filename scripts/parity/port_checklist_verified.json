@@ -3837,5 +3837,89 @@
   "functions": [
    "organic_lightning_infill"
   ]
+ },
+ {
+  "unit": "Line",
+  "round": 928,
+  "evidence": "tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.",
+  "functions": [
+   "distance_to_squared",
+   "distance_to",
+   "distance_to_infinite_squared",
+   "distance_to_infinite",
+   "get_extents",
+   "Line::intersection_infinite",
+   "Line::perp_distance_to",
+   "Line::orientation",
+   "Line::parallel_to",
+   "Line::overlap",
+   "Line::perpendicular_to",
+   "Line::intersection",
+   "Line::clip_with_bbox",
+   "Line::extend",
+   "Line::length",
+   "Line::midpoint",
+   "Line::distance_to_squared",
+   "Line::distance_to",
+   "Line::distance_to_infinite_squared",
+   "Line::distance_to_infinite",
+   "Line::atan2_",
+   "Line::vector",
+   "Line::normal"
+  ]
+ },
+ {
+  "unit": "BoundingBox",
+  "round": 928,
+  "evidence": "tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).",
+  "functions": [
+   "BoundingBox::polygon",
+   "BoundingBox::rotated",
+   "BoundingBox::inflated",
+   "BoundingBox::align_to_grid",
+   "BoundingBoxBase::area",
+   "BoundingBoxBase::overlap",
+   "BoundingBoxBase::merge",
+   "BoundingBoxBase::radius",
+   "BoundingBoxBase::offset",
+   "BoundingBoxBase::center",
+   "BoundingBoxBase::inflated"
+  ]
+ },
+ {
+  "unit": "Polygon",
+  "round": 928,
+  "evidence": "tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.",
+  "functions": [
+   "Polygon::length",
+   "Polygon::lines",
+   "Polygon::area",
+   "Polygon::is_counter_clockwise",
+   "Polygon::is_clockwise",
+   "Polygon::centroid",
+   "Polygon::first_intersection",
+   "Polygon::intersections",
+   "Polygon::convex_points",
+   "Polygon::concave_points",
+   "Polygon::point_projection",
+   "Polygon::triangulate_convex",
+   "Polygon::douglas_peucker",
+   "Polygon::make_counter_clockwise",
+   "Polygon::make_clockwise",
+   "Polygon::equally_spaced_points"
+  ]
+ },
+ {
+  "unit": "Layer",
+  "round": 928,
+  "evidence": "tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.",
+  "functions": [
+   "get_extents",
+   "Layer::make_slices",
+   "Layer::backup_untyped_slices",
+   "Layer::restore_untyped_slices",
+   "Layer::restore_untyped_slices_no_extra_perimeters",
+   "Layer::merged"
+  ]
  }
 ]

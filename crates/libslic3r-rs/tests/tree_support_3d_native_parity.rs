@@ -340,7 +340,7 @@ fn dump_generator_layers(c: &mut Ctx, tag: &str, storage: &SupportGeneratorLayer
     }
 }
 
-fn run_scenario(c: &mut Ctx, scenario: usize) {
+fn run_scenario(c: &mut Ctx, scenario: usize, final_only: bool) {
     let s = format!("s{scenario}");
     let line = c.r.input(&format!("in {s} model")).expect("model");
     let mut t = Tok::new(&line);
@@ -381,6 +381,67 @@ fn run_scenario(c: &mut Ctx, scenario: usize) {
         }
         obj.m_layers.push(layer);
         layer_id += 1;
+    }
+
+    // The second pass over the scenarios: the 'final' stage only, on the fresh object (gen.cpp `final_only`).
+    if final_only {
+        SOLUBLE.store(false, std::sync::atomic::Ordering::Relaxed);
+        // The 'final' stage: generate_tree_support_3D() (TreeSupport3D.cpp:6054-6069) with a tree support of the
+        // object, which is the whole of generate_support_areas() (:4794-5147): the support layers it leaves in
+        // the object, per layer print_z and height ('final z'), the islands ('final islands') and the number of
+        // extrusion entities ('final nfills'); the fills themselves are not compared here (gen.cpp says why).
+        // The generator gives the number of layers, so that as many lines are written whatever this side finds;
+        // a failure is a line too.
+        {
+            let line = c.r.input(&format!("in {s} final_bed")).expect("final_bed");
+            let bed = Tok::new(&line).poly();
+            let line = c.r.input(&format!("in {s} final_n")).expect("final_n");
+            let n_expected = Tok::new(&line).i() as usize;
+            // The number of threads the pin saw in this run (the size of the first buckets of
+            // merge_influence_areas(), as in the 'pathing' stage).
+            let threads: usize = c.r.input(&format!("in {s} final_threads")).expect("final_threads").trim().parse().expect("final_threads");
+            MERGE_INFLUENCE_AREAS_NUM_THREADS.store(threads, std::sync::atomic::Ordering::Relaxed);
+            let mut po = print.m_objects.remove(0);
+            let log: Log = Rc::new(RefCell::new(Vec::new()));
+            let factory = RecFactory { log: log.clone() };
+            let sp = po.slicing_parameters().clone();
+            let params = SupportParameters::new(&po, &print).expect("SupportParameters");
+            let status = {
+                let mut ts = slicer::support::tree_support::TreeSupport::new(&mut po, &print, &sp, params, &bed);
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| generate_tree_support_3d(0, &mut ts, &factory, &|| {})));
+                match res {
+                    Ok(Ok(())) => "ok".to_string(),
+                    Ok(Err(e)) => format!("err {e:?}"),
+                    Err(_) => "panic".to_string(),
+                }
+            };
+            c.r.out(format!("{s} final {status} {}", po.support_layers().len()));
+            for i in 0..n_expected {
+                match po.support_layers().get(i) {
+                    Some(sl) => {
+                        c.r.out(format!("{s} final z {i} {} {}", hd(sl.layer.print_z), hd(sl.layer.height)));
+                        c.outb(format!("{s} final islands {i}"), expolys_s(&sl.support_islands));
+                        c.r.out(format!("{s} final nfills {i} {}", sl.support_fills.entities.len()));
+                    }
+                    None => {
+                        c.r.out(format!("{s} final z {i} <none>"));
+                        c.r.out(format!("{s} final islands {i} <none>"));
+                        c.r.out(format!("{s} final nfills {i} <none>"));
+                    }
+                }
+            }
+            // What detect_overhangs() of the tree support left on the object's layers (:4833-4846 reads it).
+            for (li, layer) in po.layers().iter().enumerate() {
+                let mut body = String::new();
+                for ot in &layer.loverhangs_with_type {
+                    body += &format!(" {} {}", ot.1, expoly_s(&ot.0));
+                }
+                c.outb(format!("{s} final overhangs {li} {}", layer.loverhangs_with_type.len()), body);
+            }
+            log.borrow_mut().clear();
+            print.m_objects.insert(0, po);
+        }
+        return;
     }
 
     // group_meshes()
@@ -1033,6 +1094,11 @@ fn run_helpers(c: &mut Ctx) {
 /// gen.cpp `NUM_SCENARIOS`
 const NUM_SCENARIOS: usize = 18;
 
+/// The one kind of the 'final' stage that is counted and printed, not asserted: the number of extrusion entities
+/// of a support layer. The pin's generate_support_toolpaths() (SupportCommon.cpp, in the library the generator
+/// links) runs the engine's fillers, this test hands generate_tree_support_3d() the recording factory.
+const FINAL_KIND_REPORTED: &str = "final nfills";
+
 #[test]
 fn tree_support_3d_native_parity() {
     let run = match std::env::var("TREE_SUPPORT_3D_PARITY_VECTORS") {
@@ -1048,11 +1114,17 @@ fn tree_support_3d_native_parity() {
     // A diagnostic: one scenario only, of a file the generator wrote for that scenario.
     let only: Option<usize> = std::env::var("TREE_SUPPORT_3D_PARITY_ONLY").ok().and_then(|v| v.parse().ok());
     match only {
-        Some(scenario) => run_scenario(&mut c, scenario),
+        Some(scenario) => {
+            run_scenario(&mut c, scenario, false);
+            run_scenario(&mut c, scenario, true);
+        }
         None => {
             run_helpers(&mut c);
             for scenario in 0..NUM_SCENARIOS {
-                run_scenario(&mut c, scenario);
+                run_scenario(&mut c, scenario, false);
+            }
+            for scenario in 0..NUM_SCENARIOS {
+                run_scenario(&mut c, scenario, true);
             }
         }
     }
@@ -1069,7 +1141,7 @@ fn tree_support_3d_native_parity() {
         let is_scenario = toks[0].len() > 1 && toks[0].starts_with('s') && toks[0][1..].bytes().all(|b| b.is_ascii_digit());
         let kind = if is_scenario {
             let stage = toks.get(1).copied().unwrap_or("");
-            if matches!(stage, "initial" | "pathing" | "nodes" | "branch" | "smooth" | "draw" | "organic_smooth" | "slice_branches" | "organic" | "lightning") {
+            if matches!(stage, "initial" | "pathing" | "nodes" | "branch" | "smooth" | "draw" | "organic_smooth" | "slice_branches" | "organic" | "lightning" | "final") {
                 format!("{stage} {}", toks.get(2).copied().unwrap_or(""))
             } else {
                 stage.to_string()
@@ -1097,7 +1169,18 @@ fn tree_support_3d_native_parity() {
             reported_bad += bad;
         }
     }
+    // The 'final' stage (the support layers after generate_tree_support_3D()): print_z and height, the islands
+    // and the overhangs of every layer are required; the number of extrusion entities is reported.
+    let (mut final_n, mut final_bad) = (0usize, 0usize);
+    for (kind, (n, bad)) in &by_kind {
+        if kind.starts_with("final ") {
+            final_n += n;
+            final_bad += bad;
+        }
+    }
+    let nfills_bad = by_kind.get(FINAL_KIND_REPORTED).map(|v| v.1).unwrap_or(0);
+    eprintln!("final stage (generate_tree_support_3D): {final_n} lines, {final_bad} differ, {nfills_bad} of them '{FINAL_KIND_REPORTED}' (reported, not required)");
     let bad = c.r.finish();
     eprintln!("{} lines, {} mismatches, {} of them in the reported kinds", c.r.expected.len(), bad, reported_bad);
-    assert_eq!(bad, 0, "lines of the vectors that differ");
+    assert_eq!(bad - nfills_bad, 0, "lines of the vectors that differ, '{FINAL_KIND_REPORTED}' apart");
 }

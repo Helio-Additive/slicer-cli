@@ -564,7 +564,7 @@ static void flush_fills(const std::string &tag)
     g_fills.clear();
 }
 
-static void run_scenario(int scenario)
+static void run_scenario(int scenario, bool final_only = false)
 {
     const std::string S  = "s" + hI(scenario);
     const Scenario    sc = make_scenario(scenario);
@@ -599,6 +599,50 @@ static void run_scenario(int scenario)
         }
         obj->m_layers.emplace_back(layer);
         out("in " + S + " layer " + hD(l.print_z) + " " + hD(l.height) + " " + hD(layer->slice_z) + " " + EXPOLYS(l.lslices) + " " + POLYS(l.overhangs));
+    }
+
+    // The second pass over the scenarios (main()): the 'final' stage only, on the fresh object, so that what it
+    // leaves behind does not reach the stages of the scenarios after it.
+    if (final_only) {
+        TreeSupportSettings::soluble = false;
+        // The 'final' stage: generate_tree_support_3D() (TreeSupport3D.cpp:6054-6069) with a tree support of the
+        // object, which is the whole of generate_support_areas() (:4794-5147), on one thread: the support layers
+        // it leaves in the object. Compared per layer: print_z and height ('final z'), the islands ('final
+        // islands') and the number of extrusion entities ('final nfills'). The fills themselves are not compared
+        // here: only TreeSupport3D.cpp is compiled with the recording filler, generate_support_toolpaths()
+        // (SupportCommon.cpp, in the library) uses the engine's fillers. The number of layers is an input, so
+        // that the test writes as many lines whatever it finds.
+        {
+            TreeSupport ts(*obj, obj->slicing_parameters());
+            g_fills.clear();
+            std::string status = "ok";
+            try {
+                generate_tree_support_3D(*obj, &ts, [] {});
+            } catch (const std::exception &) {
+                status = "threw";
+            }
+            out("in " + S + " final_bed " + POLY(get_bed_shape_with_excluded_area(print.config())));
+            out("in " + S + " final_n " + hI((long long) obj->support_layers().size()));
+            // merge_influence_areas() sizes its first buckets by this (see the 'pathing' stage); here the run is
+            // outside the arenas of that stage.
+            out("in " + S + " final_threads " + hI(tbb::this_task_arena::max_concurrency()));
+            out(S + " final " + status + " " + hI((long long) obj->support_layers().size()));
+            size_t i = 0;
+            for (const SupportLayer *sl : obj->support_layers()) {
+                out(S + " final z " + hI((long long) i) + " " + hD(sl->print_z) + " " + hD(sl->height));
+                outb(S + " final islands " + hI((long long) i), EXPOLYS(sl->support_islands));
+                out(S + " final nfills " + hI((long long) i) + " " + hI((long long) sl->support_fills.entities.size()));
+                ++i;
+            }
+            // What detect_overhangs() of the tree support left on the object's layers (:4833-4846 reads it).
+            for (size_t li = 0; li < obj->layer_count(); ++li) {
+                std::string body;
+                for (const auto &ot : obj->get_layer(int(li))->loverhangs_with_type) body += " " + hI((long long) ot.second) + " " + EXPOLY(ot.first);
+                outb(S + " final overhangs " + hI((long long) li) + " " + hI((long long) obj->get_layer(int(li))->loverhangs_with_type.size()), body);
+            }
+            g_fills.clear();
+        }
+        return;
     }
 
     // group_meshes()
@@ -1146,11 +1190,13 @@ int main(int argc, char **argv)
     const int only = argc > 3 ? std::atoi(argv[3]) : -1;
     tbb::global_control gc(tbb::global_control::max_allowed_parallelism, 1);
     out(std::string("in mode ") + (g_full ? "full" : "hash"));
-    if (only >= 0)
+    if (only >= 0) {
         run_scenario(only);
-    else {
+        run_scenario(only, true);
+    } else {
         run_helpers();
         for (int scenario = 0; scenario < NUM_SCENARIOS; ++scenario) run_scenario(scenario);
+        for (int scenario = 0; scenario < NUM_SCENARIOS; ++scenario) run_scenario(scenario, true);
     }
     std::fclose(g_out);
     return 0;

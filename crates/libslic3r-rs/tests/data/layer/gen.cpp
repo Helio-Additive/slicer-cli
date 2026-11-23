@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -251,6 +252,156 @@ static void run_continuity()
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Layer::make_slices, get_extents, backup_untyped_slices / restore_untyped_slices*
+// ---------------------------------------------------------------------------------------------
+static std::string EX(const ExPolygon &ex)
+{
+    std::string s = hI((long long) ex.contour.points.size());
+    for (const Point &p : ex.contour.points) s += " " + PT(p);
+    s += " " + hI((long long) ex.holes.size());
+    for (const Polygon &h : ex.holes) {
+        s += " " + hI((long long) h.points.size());
+        for (const Point &p : h.points) s += " " + PT(p);
+    }
+    return s;
+}
+
+static std::string BB(const BoundingBox &bb) { return hB(bb.defined) + " " + PT(bb.min) + " " + PT(bb.max); }
+
+static std::string SLICES(const Layer &layer)
+{
+    std::string s;
+    for (const LayerRegion *layerm : layer.m_regions) {
+        s += " " + hI((long long) layerm->slices.surfaces.size());
+        for (const Surface &surface : layerm->slices.surfaces) s += " " + hB(surface.surface_type == stInternal) + " " + EX(surface.expolygon);
+    }
+    return s;
+}
+
+// The regions of a layer on a grid of cells of 4 mm: whole cells (neighbours of different regions
+// share an edge, as the parts of a modifier do), cells with a margin, octagons, some with a hole.
+static void run_slices()
+{
+    Lcg g(0x51CE5ULL);
+    const coord_t cell = 400000;
+    for (int c = 0; c < 400; ++c) {
+        Layer layer(1, nullptr, 0.2, 0.4, 0.3);
+        const int nreg = c % 4 == 0 ? 1 : (int) g.range(2, 4);
+        std::string in = hI(nreg);
+        for (int r = 0; r < nreg; ++r) {
+            LayerRegion *layerm = layer.add_region(nullptr);
+            const int nsurf = (int) g.range(r == 0 ? 1 : 0, 4);
+            in += " " + hI(nsurf);
+            for (int k = 0; k < nsurf; ++k) {
+                const coord_t x0 = g.range(0, 5) * cell, y0 = g.range(0, 5) * cell;
+                const int kind = (int) g.range(0, 3);
+                ExPolygon ex;
+                if (kind == 0) {
+                    ex.contour.points = {Point(x0, y0), Point(x0 + cell, y0), Point(x0 + cell, y0 + cell), Point(x0, y0 + cell)};
+                } else if (kind == 1) {
+                    const coord_t mx = g.range(1, cell / 3), my = g.range(1, cell / 3);
+                    ex.contour.points = {Point(x0 + mx, y0 + my), Point(x0 + cell - mx, y0 + my), Point(x0 + cell - mx, y0 + cell - my), Point(x0 + mx, y0 + cell - my)};
+                } else {
+                    Points pts = wall(g, x0 + cell / 2, y0 + cell / 2, g.range(cell / 4, cell / 2 + cell / 8), g.range(cell / 4, cell / 2 + cell / 8), true);
+                    pts.pop_back();
+                    ex.contour.points = pts;
+                }
+                if (g.range(0, 3) == 0) {
+                    const coord_t hx = x0 + cell / 2, hy = y0 + cell / 2, hr = g.range(cell / 40, cell / 10);
+                    Polygon hole;
+                    hole.points = {Point(hx - hr, hy - hr), Point(hx - hr, hy + hr), Point(hx + hr, hy + hr), Point(hx + hr, hy - hr)};
+                    ex.holes.push_back(hole);
+                }
+                in += " " + EX(ex);
+                layerm->slices.surfaces.emplace_back(stInternal, ex);
+            }
+        }
+        // Layer.cpp:47-75
+        layer.make_slices();
+        std::string res = hI((long long) layer.lslices.size());
+        for (const ExPolygon &ex : layer.lslices) res += " " + EX(ex);
+        // Layer.cpp:750-770
+        for (const LayerRegion *layerm : layer.m_regions) res += " " + BB(get_extents(*layerm));
+        res += " " + BB(get_extents(layer.m_regions));
+        // Layer.cpp:84-148: the slices get a type and lose a surface between the backup and the restore.
+        layer.backup_untyped_slices();
+        for (LayerRegion *layerm : layer.m_regions) {
+            for (Surface &surface : layerm->slices.surfaces) surface.surface_type = stTop;
+            if (layerm->slices.surfaces.size() > 1) layerm->slices.surfaces.pop_back();
+        }
+        layer.restore_untyped_slices();
+        res += SLICES(layer);
+        for (LayerRegion *layerm : layer.m_regions) {
+            for (Surface &surface : layerm->slices.surfaces) surface.surface_type = stBottom;
+            if (!layerm->slices.surfaces.empty()) layerm->slices.surfaces.erase(layerm->slices.surfaces.begin());
+        }
+        layer.restore_untyped_slices_no_extra_perimeters();
+        res += SLICES(layer);
+        out("slices " + in + " => " + res);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Layer::merged
+// ---------------------------------------------------------------------------------------------
+// The regions of run_slices with a region config each: a region without shells, infill and walls is
+// left out of the union (Layer.cpp:163).
+static void run_merged()
+{
+    Lcg g(0x3E26EDULL);
+    const coord_t cell = 400000;
+    const float offsets[4] = {0.f, 1000.f, 20000.f, 45000.f};
+    for (int c = 0; c < 200; ++c) {
+        Layer layer(1, nullptr, 0.2, 0.4, 0.3);
+        std::vector<std::unique_ptr<PrintRegion>> print_regions;
+        const float offset_scaled = offsets[c % 4];
+        const int nreg = (int) g.range(1, 4);
+        std::string in = hF(offset_scaled) + " " + hI(nreg);
+        for (int r = 0; r < nreg; ++r) {
+            PrintRegionConfig cfg;
+            const bool empty = g.range(0, 4) == 0;
+            cfg.bottom_shell_layers.value   = empty ? 0 : (int) g.range(0, 3);
+            cfg.top_shell_layers.value      = empty ? 0 : (int) g.range(0, 3);
+            cfg.sparse_infill_density.value = empty ? 0. : double(g.range(0, 1) * 15);
+            cfg.wall_loops.value            = empty ? 0 : (int) g.range(0, 2);
+            in += " " + hI(cfg.bottom_shell_layers.value) + " " + hI(cfg.top_shell_layers.value) + " " + hI((long long) cfg.sparse_infill_density.value) + " " + hI(cfg.wall_loops.value);
+            print_regions.emplace_back(new PrintRegion(cfg));
+            LayerRegion *layerm = layer.add_region(print_regions.back().get());
+            const int nsurf = (int) g.range(r == 0 ? 1 : 0, 4);
+            in += " " + hI(nsurf);
+            for (int k = 0; k < nsurf; ++k) {
+                const coord_t x0 = g.range(0, 5) * cell, y0 = g.range(0, 5) * cell;
+                const int kind = (int) g.range(0, 3);
+                ExPolygon ex;
+                if (kind == 0) {
+                    ex.contour.points = {Point(x0, y0), Point(x0 + cell, y0), Point(x0 + cell, y0 + cell), Point(x0, y0 + cell)};
+                } else if (kind == 1) {
+                    const coord_t mx = g.range(1, cell / 3), my = g.range(1, cell / 3);
+                    ex.contour.points = {Point(x0 + mx, y0 + my), Point(x0 + cell - mx, y0 + my), Point(x0 + cell - mx, y0 + cell - my), Point(x0 + mx, y0 + cell - my)};
+                } else {
+                    Points pts = wall(g, x0 + cell / 2, y0 + cell / 2, g.range(cell / 4, cell / 2 + cell / 8), g.range(cell / 4, cell / 2 + cell / 8), true);
+                    pts.pop_back();
+                    ex.contour.points = pts;
+                }
+                if (g.range(0, 3) == 0) {
+                    const coord_t hx = x0 + cell / 2, hy = y0 + cell / 2, hr = g.range(cell / 40, cell / 10);
+                    Polygon hole;
+                    hole.points = {Point(hx - hr, hy - hr), Point(hx - hr, hy + hr), Point(hx + hr, hy + hr), Point(hx + hr, hy - hr)};
+                    ex.holes.push_back(hole);
+                }
+                in += " " + EX(ex);
+                layerm->slices.surfaces.emplace_back(stInternal, ex);
+            }
+        }
+        // Layer.cpp:150-170
+        const ExPolygons merged = layer.merged(offset_scaled);
+        std::string res = hI((long long) merged.size());
+        for (const ExPolygon &ex : merged) res += " " + EX(ex);
+        out("merged " + in + " => " + res);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -262,6 +413,8 @@ int main(int argc, char **argv)
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
     run_distancer();
     run_continuity();
+    run_slices();
+    run_merged();
     std::fclose(g_out);
     return 0;
 }

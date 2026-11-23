@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**72.3% of the named C++ functions are ported or verified (6921 of 9574); 70.8% by size of body.**
+**72.3% of the named C++ functions are ported or verified (6925 of 9574); 70.9% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 525 | 5.5% | 8.0% |
-| partial `[~]` | 2128 | 22.2% | 21.1% |
-| ported `[x]` | 3898 | 40.7% | 26.1% |
-| verified `[v]` | 3023 | 31.6% | 44.7% |
+| partial `[~]` | 2124 | 22.2% | 21.1% |
+| ported `[x]` | 3853 | 40.2% | 25.9% |
+| verified `[v]` | 3072 | 32.1% | 45.0% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -93,7 +93,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Arrange` | 1 | `arrange.rs` | partial | 44 | 7 | 12 | 0 | 25 |
 | `AStar` | 3 | `a_star.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `BlacklistedLibraryCheck` | 1 | `blacklisted_library_check.rs` | partial | 5 | 0 | 1 | 4 | 0 |
-| `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 26 | 28 | 1 |
+| `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 26 | 17 | 12 |
 | `BridgeDetector` | 1 | `bridge_detector.rs` | partial | 11 | 0 | 3 | 0 | 8 |
 | `Brim` | 2 | `brim.rs` | ported | 32 | 0 | 0 | 5 | 27 |
 | `BrimEarsPoint` | 2 | `brim_ears_point.rs` | partial | 3 | 0 | 1 | 2 | 0 |
@@ -237,10 +237,10 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `IntersectionPoints` | 1 | `intersection_points.rs` | ported | 6 | 0 | 0 | 1 | 5 |
 | `JumpPointSearch` | 3 | `jump_point_search.rs` | partial | 14 | 0 | 4 | 10 | 0 |
 | `KDTreeIndirect` | 1 | `kd_tree_indirect.rs` | partial | 15 | 0 | 7 | 8 | 0 |
-| `Layer` | 1 | `layer.rs` | partial | 56 | 0 | 22 | 32 | 2 |
+| `Layer` | 1 | `layer.rs` | partial | 56 | 0 | 19 | 29 | 8 |
 | `LayerRegion` | 1 | `layer_region.rs` | partial | 29 | 5 | 23 | 1 | 0 |
 | `libslic3r` | 1 | `libslic3r.rs` | partial | 28 | 12 | 15 | 1 | 0 |
-| `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 26 | 24 | 0 |
+| `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 25 | 9 | 16 |
 | `LocalesUtils` | 1 | `locales_utils.rs` | partial | 3 | 0 | 3 | 0 | 0 |
 | `Log` | 3 | `log.rs` | verified | 21 | 0 | 0 | 0 | 21 |
 | `LogKeys` | 3 | `log_keys.rs` | ported | 0 | 0 | 0 | 0 | 0 |
@@ -285,7 +285,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 0 | 13 | 11 | 0 |
 | `Point` | 1 | `geometry/point.rs` | partial | 103 | 9 | 69 | 13 | 12 |
-| `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 4 | 28 | 54 | 0 |
+| `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 4 | 28 | 38 | 16 |
 | `PolygonTrimmer` | 1 | `polygon_trimmer.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Polyline` | 1 | `geometry/polyline.rs` | partial | 52 | 2 | 21 | 29 | 0 |
 | `Preset` | 1 | `preset.rs` | partial | 108 | 0 | 16 | 15 | 77 |
@@ -1207,15 +1207,15 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 
 **class `BoundingBox`**
 
-- [x] `polygon` (line 15) → `bounding_box.rs:1402`
-- [x] `polygon` (line 29) → `bounding_box.rs:403`
-- [x] `rotated` (line 36) → `bounding_box.rs:420`
-- [~] `rotated` (line 46) → `geometry/expolygon.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
+- [v] `polygon` (line 15) → `bounding_box.rs:1402` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
+- [v] `polygon` (line 29) → `bounding_box.rs:403` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
+- [v] `rotated` (line 36) → `bounding_box.rs:420` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
+- [~] `rotated` (line 46) → `geometry/bounding_box.rs, geometry/expolygon.rs, geometry/point.rs` — not in the paired file
 - [x] `scaled` (line 56) → `bounding_box.rs:487`
 - [x] `rotate` (line 205) → `bounding_box.rs:452`
 - [~] `rotate` (line 206) → `arrange.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
-- [x] `inflated` (line 215) → `bounding_box.rs:1341`
-- [x] `align_to_grid` (line 257) → `bounding_box.rs:472`
+- [v] `inflated` (line 215) → `bounding_box.rs:1341` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
+- [v] `align_to_grid` (line 257) → `bounding_box.rs:472` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 
 **class `BoundingBox3Base`**
 
@@ -1239,22 +1239,22 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 **class `BoundingBoxBase`**
 
 - [x] `reset` (line 37) → `bounding_box.rs:992`
-- [x] `area` (line 44) → `bounding_box.rs:246`
+- [v] `area` (line 44) → `bounding_box.rs:246` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 - [x] `translate` (line 45) → `bounding_box.rs:1307`
 - [~] `translate` (line 46) → `bounding_box.rs:730` — partial
-- [x] `inflated` (line 48) → `bounding_box.rs:776`
+- [v] `inflated` (line 48) → `bounding_box.rs:776` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 - [~] `contains` (line 50) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [~] `contains` (line 54) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
-- [x] `overlap` (line 57) → `bounding_box.rs:1131`
+- [v] `overlap` (line 57) → `bounding_box.rs:1131` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 - [x] `scale` (line 63) → `bounding_box.rs:1041`
 - [~] `merge` (line 73) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `construct` (line 89) → `boost_polygon_voronoi.rs, fill/fill_adaptive.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `merge` (line 89) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `merge` (line 97) → `clipper_utils.rs, format/bbs_3mf.rs, geometry/bounding_box.rs` — not in the paired file
 - [x] `size` (line 176) → `bounding_box.rs:1050`
-- [x] `radius` (line 193) → `bounding_box.rs:1056`
-- [x] `offset` (line 212) → `bounding_box.rs:286`
-- [x] `center` (line 231) → `bounding_box.rs:1107`
+- [v] `radius` (line 193) → `bounding_box.rs:1056` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
+- [v] `offset` (line 212) → `bounding_box.rs:286` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
+- [v] `center` (line 231) → `bounding_box.rs:1107` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 
 **class `BoundingBoxf3`**
 
@@ -4782,7 +4782,7 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 - [x] `polygon_segment_append` (line 84) → `fill/fill_rectilinear.rs:1143`
 - [x] `polygon_segment_append_reversed` (line 103) → `fill/fill_rectilinear.rs:1157`
 - [x] `adjust_sort_for_segment_intersections` (line 370) → `fill/fill_rectilinear.rs:1413`
-- [x] `phony_outer_intersection` (line 430) → `fill/fill_rectilinear.rs:3541`
+- [x] `phony_outer_intersection` (line 430) → `fill/fill_rectilinear.rs:3602`
 - [v] `distance_of_segmens` (line 555) → `fill/fill_rectilinear.rs:1090` — R923: tests/fill_rectilinear_native_parity.rs, group sia: the accessors of SegmentIntersection on 720 intersections (5 types x 16 link types x 9 qualities, 34 values each) and distance_of_segmens on 64 cases against the pin's FillRectilinear.cpp, none differ (2,136 lines in all). (the body reads as partial to the estimate)
 - [~] `intersection_on_prev_next_vertical_line_valid` (line 566) → `fill/fill_rectilinear.rs:1877` — partial
 - [x] `intersection_on_prev_vertical_line_valid` (line 609) → `fill/fill_rectilinear.rs:1858`
@@ -4794,7 +4794,7 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 - [v] `slice_region_by_vertical_lines` (line 822) → `fill/fill_rectilinear.rs:1187` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [x] `validate_segment_intersection_connectivity` (line 1066) → `fill/fill_rectilinear.rs:1036`
 - [v] `connect_segment_intersections_by_contours` (line 1122) → `fill/fill_rectilinear.rs:1530` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
-- [v] `pinch_contours_insert_phony_outer_intersections` (line 1288) → `fill/fill_rectilinear.rs:3565` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `pinch_contours_insert_phony_outer_intersections` (line 1288) → `fill/fill_rectilinear.rs:3626` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [v] `traverse_graph_generate_polylines` (line 1426) → `fill/fill_rectilinear.rs:2065` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96. (the body reads as divergent to the estimate)
 
 **class `ExPolygonWithOffset`**
@@ -4804,91 +4804,91 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 - [x] `is_contour_ccw` (line 525) → `fill/fill_rectilinear.rs:816`
 - [v] `bounding_box_src` (line 527) → `fill/fill_rectilinear.rs:832` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [x] `bounding_box_outer` (line 529) → `fill/fill_rectilinear.rs:824`
-- [v] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs:5670` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs:5731` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [~] `export_to_svg` (line 535) → `surface.rs, surface_collection.rs` — not in the paired file
 
 **class `Fill2DLattice`**
 
 - [~] `clone` (line 205) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `_layer_angle` (line 211) → `fill/fill_rectilinear.rs:6255`
+- [x] `_layer_angle` (line 211) → `fill/fill_rectilinear.rs:6316`
 
 **class `FillAlignedRectilinear`**
 
 - [~] `clone` (line 39) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [v] `_layer_angle` (line 44) → `fill/fill_rectilinear.rs:5795` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `_layer_angle` (line 44) → `fill/fill_rectilinear.rs:5856` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillCrossZag`**
 
 - [~] `clone` (line 171) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs:6294`
+- [x] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs:6355`
 
 **class `FillCubic`**
 
 - [~] `clone` (line 107) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 110) → `fill/fill_rectilinear.rs:6228`
-- [v] `_layer_angle` (line 114) → `fill/fill_rectilinear.rs:6204` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 110) → `fill/fill_rectilinear.rs:6289`
+- [v] `_layer_angle` (line 114) → `fill/fill_rectilinear.rs:6265` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillGlobalMonotonicLine`**
 
 - [~] `clone` (line 152) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [v] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs:6372` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs:6433` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillGrid`**
 
 - [~] `clone` (line 68) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 71) → `fill/fill_rectilinear.rs:6146`
-- [v] `_layer_angle` (line 75) → `fill/fill_rectilinear.rs:6104` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 71) → `fill/fill_rectilinear.rs:6207`
+- [v] `_layer_angle` (line 75) → `fill/fill_rectilinear.rs:6165` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillLockedZag`**
 
 - [~] `clone` (line 180) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs:6305`
+- [x] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs:6366`
 - [ ] `set_lock_region_param` (line 188) → `fill/fill_rectilinear.rs`
 - [ ] `set_skin_and_skeleton_pattern` (line 196) → `fill/fill_rectilinear.rs`
 
 **class `FillMonotonic`**
 
 - [~] `clone` (line 50) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `no_sort` (line 53) → `fill/fill_rectilinear.rs:6115`
+- [x] `no_sort` (line 53) → `fill/fill_rectilinear.rs:6176`
 
 **class `FillMonotonicLine`**
 
 - [~] `clone` (line 59) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `no_sort` (line 62) → `fill/fill_rectilinear.rs:6130`
+- [x] `no_sort` (line 62) → `fill/fill_rectilinear.rs:6191`
 
 **class `FillMonotonicLineWGapFill`**
 
-- [x] `is_self_crossing` (line 134) → `fill/fill_rectilinear.rs:6361`
+- [x] `is_self_crossing` (line 134) → `fill/fill_rectilinear.rs:6422`
 - [~] `clone` (line 139) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `no_sort` (line 140) → `fill/fill_rectilinear.rs:6366`
-- [v] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs:6350` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `no_sort` (line 140) → `fill/fill_rectilinear.rs:6427`
+- [v] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs:6411` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillRectilinear`**
 
 - [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 18) → `fill/fill_rectilinear.rs:5788`
+- [x] `is_self_crossing` (line 18) → `fill/fill_rectilinear.rs:5849`
 
 **class `FillStars`**
 
 - [~] `clone` (line 94) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 97) → `fill/fill_rectilinear.rs:6200`
-- [v] `_layer_angle` (line 101) → `fill/fill_rectilinear.rs:6178` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 97) → `fill/fill_rectilinear.rs:6261`
+- [v] `_layer_angle` (line 101) → `fill/fill_rectilinear.rs:6239` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillSupportBase`**
 
 - [~] `clone` (line 120) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [v] `_layer_angle` (line 126) → `fill/fill_rectilinear.rs:6232` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `_layer_angle` (line 126) → `fill/fill_rectilinear.rs:6293` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillTriangles`**
 
 - [~] `clone` (line 81) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 84) → `fill/fill_rectilinear.rs:6174`
-- [v] `_layer_angle` (line 88) → `fill/fill_rectilinear.rs:6150` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 84) → `fill/fill_rectilinear.rs:6235`
+- [v] `_layer_angle` (line 88) → `fill/fill_rectilinear.rs:6211` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillZigZag`**
 
 - [~] `clone` (line 162) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs:5804`
+- [x] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs:5865`
 
 **class `SegmentIntersection`**
 
@@ -8063,27 +8063,27 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2568`
-- [x] `zs_from_layers` (line 411) → `layer.rs:5128`
-- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:5116`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2573`
+- [x] `zs_from_layers` (line 411) → `layer.rs:5219`
+- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:5207`
 - [~] `get_extents` (line 750) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `get_extents` (line 761) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
+- [v] `get_extents` (line 761) → `layer.rs:5654` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as stub to the estimate)
 
 **class `ContinuitiousDistancer`**
 
-- [v] `distance_from_perimeter` (line 428) → `layer.rs:5075` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `to_lines` (line 446) → `layer.rs:5102`
+- [v] `distance_from_perimeter` (line 428) → `layer.rs:5166` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `to_lines` (line 446) → `layer.rs:5193`
 
 **class `Layer`**
 
 - [x] `empty` (line 25) → `layer.rs:2158`
 - [x] `add_region` (line 34) → `layer.rs:2145`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2722` — divergent
-- [x] `make_slices` (line 47) → `layer.rs:2475`
-- [~] `backup_untyped_slices` (line 84) → `layer.rs:2578` — partial
-- [~] `restore_untyped_slices` (line 104) → `layer.rs:2617` — partial
-- [x] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2646`
-- [x] `merged` (line 150) → `layer.rs:2673`
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2780` — divergent
+- [v] `make_slices` (line 47) → `layer.rs:2480` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.
+- [v] `backup_untyped_slices` (line 84) → `layer.rs:2583` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as partial to the estimate)
+- [v] `restore_untyped_slices` (line 104) → `layer.rs:2622` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as partial to the estimate)
+- [v] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2651` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.
+- [v] `merged` (line 150) → `layer.rs:2725` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as divergent to the estimate)
 - [x] `id` (line 158) → `layer.rs:2025`
 - [x] `set_id` (line 159) → `layer.rs:2031`
 - [~] `object` (line 160) → `g_code.rs` — not in the paired file
@@ -8093,27 +8093,27 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [x] `region_count` (line 193) → `layer.rs:2115`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
 - [x] `get_region` (line 195) → `layer.rs:2121`
-- [~] `make_perimeters` (line 203) → `layer.rs:2271` — divergent
-- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:5139`
-- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5149`
-- [x] `make_fills` (line 223) → `layer.rs:2996`
-- [x] `has_extrusions` (line 239) → `layer.rs:5160`
-- [x] `effective_print_height` (line 242) → `layer.rs:5171`
-- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5190`
-- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5204`
-- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5211`
-- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5225`
-- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2748` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2898`
-- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5364`
-- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5388`
-- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5395`
-- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5426`
-- [~] `simplify_support_path` (line 638) → `layer.rs:5440` — partial
-- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5452` — partial
-- [~] `simplify_support_loop` (line 670) → `layer.rs:5466` — partial
-- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5480`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2935` — partial
+- [~] `make_perimeters` (line 203) → `layer.rs:2276` — divergent
+- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:5230`
+- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5240`
+- [x] `make_fills` (line 223) → `layer.rs:3054`
+- [x] `has_extrusions` (line 239) → `layer.rs:5251`
+- [x] `effective_print_height` (line 242) → `layer.rs:5262`
+- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5281`
+- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5295`
+- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5302`
+- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5316`
+- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2806` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2956`
+- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5455`
+- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5479`
+- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5486`
+- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5517`
+- [~] `simplify_support_path` (line 638) → `layer.rs:5531` — partial
+- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5543` — partial
+- [~] `simplify_support_loop` (line 670) → `layer.rs:5557` — partial
+- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5571`
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2993` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs, print.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs, print.rs` — not in the paired file
 
@@ -8130,7 +8130,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
 - [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
 - [~] `interface_id` (line 372) → `print.rs` — not in the paired file
-- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5493`
+- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5584`
 
 ### `LayerRegion` (.cpp)
 
@@ -8218,47 +8218,47 @@ Rust file: `geometry/line.rs`. Status: **partial**. Not listed: 14 constructors,
 - [~] `transform` (line 10) → `brim_ears_point.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
 - [ ] `get_a` (line 38) → `geometry/line.rs`
 - [~] `get_b` (line 39) → `gcode_sender.rs` — not in the paired file
-- [~] `distance_to_squared` (line 43) → `geometry/line.rs:260` — divergent
+- [v] `distance_to_squared` (line 43) → `geometry/line.rs:260` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as divergent to the estimate)
 - [~] `distance_to_squared` (line 73) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
 - [~] `distance_to` (line 80) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
-- [x] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:293` — read against the C++ in R871 (the estimate says divergent)
+- [v] `distance_to_infinite_squared` (line 88) → `geometry/line.rs:293` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as divergent to the estimate)
 - [~] `distance_to_infinite_squared` (line 109) → `geometry/line.rs` — another overload of the name is ported
 - [~] `distance_to_infinite` (line 118) → `geometry/line.rs` — another overload of the name is ported
 - [x] `intersection` (line 123) → `geometry/line.rs:220` — read against the C++ in R872 (the estimate says partial)
-- [x] `get_extents` (line 135) → `geometry/line.rs:676`
+- [v] `get_extents` (line 135) → `geometry/line.rs:676` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 
 **class `Line`**
 
-- [x] `intersection_infinite` (line 22) → `geometry/line.rs:317` — read against the C++ in R872 (the estimate says partial)
-- [x] `perp_distance_to` (line 43) → `geometry/line.rs:428` — read against the C++ in R872 (the estimate says divergent)
-- [x] `orientation` (line 53) → `geometry/line.rs:441`
+- [v] `intersection_infinite` (line 22) → `geometry/line.rs:317` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as partial to the estimate)
+- [v] `perp_distance_to` (line 43) → `geometry/line.rs:428` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as divergent to the estimate)
+- [v] `orientation` (line 53) → `geometry/line.rs:441` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 - [~] `direction` (line 60) → `geometry/line.rs:594` — divergent
 - [~] `parallel_to` (line 68) → `geometry/line.rs` — another overload of the name is ported
-- [x] `parallel_to` (line 73) → `geometry/line.rs:452` — read against the C++ in R872 (the estimate says divergent)
-- [x] `overlap` (line 79) → `geometry/line.rs:477`
+- [v] `parallel_to` (line 73) → `geometry/line.rs:452` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as divergent to the estimate)
+- [v] `overlap` (line 79) → `geometry/line.rs:477` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 - [~] `perpendicular_to` (line 93) → `geometry/line.rs` — another overload of the name is ported
-- [x] `perpendicular_to` (line 98) → `geometry/line.rs:464` — read against the C++ in R872 (the estimate says partial)
+- [v] `perpendicular_to` (line 98) → `geometry/line.rs:464` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as partial to the estimate)
 - [~] `intersection` (line 105) → `aabb_tree_lines.rs, arrange.rs, clipper_utils.rs` — not in the paired file
-- [x] `clip_with_bbox` (line 110) → `geometry/line.rs:528` — read against the C++ in R872 (the estimate says partial)
-- [x] `extend` (line 121) → `geometry/line.rs:501` — read against the C++ in R872 (the estimate says divergent)
+- [v] `clip_with_bbox` (line 110) → `geometry/line.rs:528` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as partial to the estimate)
+- [v] `extend` (line 121) → `geometry/line.rs:501` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as divergent to the estimate)
 - [~] `scale` (line 158) → `arrange.rs, bounding_box.rs, brim.rs` — not in the paired file
 - [x] `translate` (line 159) → `geometry/line.rs:377`
 - [~] `translate` (line 160) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
 - [x] `rotate` (line 161) → `geometry/line.rs:395`
 - [x] `reverse` (line 162) → `geometry/line.rs:121`
 - [~] `length` (line 163) → `clipper2/clipper_h.rs, extrusion_entity.rs, fill/fill_floating_concentric.rs` — not in the paired file
-- [x] `midpoint` (line 164) → `geometry/line.rs:600`
+- [v] `midpoint` (line 164) → `geometry/line.rs:600` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 - [~] `distance_to_squared` (line 167) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
 - [~] `distance_to_squared` (line 168) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
 - [~] `distance_to` (line 169) → `arrange.rs, geometry/medial_axis.rs, geometry/point.rs` — not in the paired file
 - [~] `distance_to_infinite_squared` (line 170) → `geometry/line.rs` — another overload of the name is ported
-- [x] `atan2_` (line 176) → `geometry/line.rs:59`
+- [v] `atan2_` (line 176) → `geometry/line.rs:59` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 - [~] `vector` (line 179) → `texture_to_color/cgal_utils.rs` — not in the paired file
-- [x] `normal` (line 180) → `geometry/line.rs:136` — read against the C++ in R872 (the estimate says divergent)
+- [v] `normal` (line 180) → `geometry/line.rs:136` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed. (the body reads as divergent to the estimate)
 - [~] `distance_to_squared` (line 187) → `aabb_tree_lines.rs, cut_surface.rs` — not in the paired file
-- [x] `distance_to` (line 188) → `geometry/line.rs:254`
+- [v] `distance_to` (line 188) → `geometry/line.rs:254` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 - [~] `distance_to_infinite_squared` (line 192) → `geometry/line.rs` — another overload of the name is ported
-- [x] `distance_to_infinite` (line 193) → `geometry/line.rs:312`
+- [v] `distance_to_infinite` (line 193) → `geometry/line.rs:312` — R928: tests/line_native_parity.rs: 4,000 generated cases, 128,000 results against the pin's Line.cpp / Line.hpp, none differ: length, midpoint, atan2_, orientation, vector, normal, the squared and plain distances to a point (segment and infinite line, member and static), perp_distance_to, parallel_to and perpendicular_to a line, intersection (467 found), intersection_infinite (1,995), overlap (1,080), clip_with_bbox (585), extend, get_extents of lines. direction() and the angle overloads of parallel_to / perpendicular_to are equal too but live under other Rust names and are not listed.
 
 **class `Line3`**
 
@@ -10214,9 +10214,9 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `unscaled` (line 560) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
 - [~] `unscaled` (line 573) → `arrange.rs, fill/fill_conformal.rs, fill/fill_conformal_chart.rs` — not in the paired file
 - [x] `align_to_grid` (line 581) → `geometry/point.rs:1682`
-- [~] `align_to_grid` (line 591) → `bounding_box.rs` — not in the paired file
-- [~] `align_to_grid` (line 593) → `bounding_box.rs` — not in the paired file
-- [~] `align_to_grid` (line 595) → `bounding_box.rs` — not in the paired file
+- [~] `align_to_grid` (line 591) → `bounding_box.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `align_to_grid` (line 593) → `bounding_box.rs, geometry/bounding_box.rs` — not in the paired file
+- [~] `align_to_grid` (line 595) → `bounding_box.rs, geometry/bounding_box.rs` — not in the paired file
 - [~] `apply` (line 603) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
 - [x] `apply` (line 608) → `geometry/point.rs:1730`
 - [~] `serialize` (line 683) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
@@ -10264,8 +10264,8 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [x] `rotate` (line 225) → `geometry/point.rs:172`
 - [~] `rotate` (line 226) → `geometry/point.rs:926` — partial
 - [v] `rotated` (line 234) → `geometry/point.rs:529` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
-- [~] `rotated` (line 235) → `bounding_box.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [~] `rotated` (line 236) → `bounding_box.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
+- [~] `rotated` (line 235) → `bounding_box.rs, geometry/bounding_box.rs, geometry/expolygon.rs` — not in the paired file
+- [~] `rotated` (line 236) → `bounding_box.rs, geometry/bounding_box.rs, geometry/expolygon.rs` — not in the paired file
 - [v] `rotate_90_degree_ccw` (line 237) → `geometry/point.rs:271` — R924: tests/point_native_parity.rs: 4,000 generated cases, 104,000 results against the pin's Point.cpp / Point.hpp, none differ: the three rotated overloads and rotate_90_degree_ccw, nearest_point_index and nearest_point, ccw (both) and ccw_angle, projection_onto a Line and onto a MultiPoint (a Polyline and a Polygon with its closing edge), is_in_lines (gate POINT_IS_IN_LINES_PIN), both_comp and any_comp, has_duplicate_points and collect_duplicates. (new_scale is in the vectors too and equal only with the opt-in gate POINT_NEW_SCALE_PIN; it is not listed here.)
 
 **class `point_mutable_traits<Slic3r::Point>`**
@@ -10332,34 +10332,34 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 
 **class `Polygon`**
 
-- [x] `length` (line 11) → `geometry/polygon.rs:200`
-- [x] `lines` (line 22) → `geometry/polygon.rs:217`
+- [v] `length` (line 11) → `geometry/polygon.rs:200` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `lines` (line 22) → `geometry/polygon.rs:217` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [x] `split_at_vertex` (line 27) → `geometry/polygon.rs:223`
 - [x] `new_scale` (line 30) → `geometry/polygon.rs:50`
 - [x] `split_at_index` (line 38) → `geometry/polygon.rs:256`
 - [~] `area` (line 49) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [x] `split_at_first_point` (line 52) → `geometry/polygon.rs:276`
-- [x] `equally_spaced_points` (line 53) → `geometry/polygon.rs:282`
+- [v] `equally_spaced_points` (line 53) → `geometry/polygon.rs:282` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [x] `is_valid` (line 61) → `geometry/polygon.rs:822`
-- [x] `area` (line 63) → `geometry/polygon.rs:310`
-- [x] `is_counter_clockwise` (line 68) → `geometry/polygon.rs:323`
+- [v] `area` (line 63) → `geometry/polygon.rs:310` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `is_counter_clockwise` (line 68) → `geometry/polygon.rs:323` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [x] `contains` (line 69) → `geometry/polygon.rs:426`
 - [x] `on_boundary` (line 71) → `geometry/polygon.rs:439`
-- [x] `is_clockwise` (line 73) → `geometry/polygon.rs:331`
-- [x] `make_counter_clockwise` (line 78) → `geometry/polygon.rs:337`
-- [x] `make_clockwise` (line 87) → `geometry/polygon.rs:348`
-- [x] `douglas_peucker` (line 96) → `geometry/polygon.rs:359`
+- [v] `is_clockwise` (line 73) → `geometry/polygon.rs:331` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `make_counter_clockwise` (line 78) → `geometry/polygon.rs:337` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `make_clockwise` (line 87) → `geometry/polygon.rs:348` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `douglas_peucker` (line 96) → `geometry/polygon.rs:359` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [x] `is_approx_circle` (line 104) → `geometry/polygon.rs:372`
 - [x] `simplify` (line 137) → `geometry/polygon.rs:447`
-- [x] `triangulate_convex` (line 155) → `geometry/polygon.rs:466`
-- [x] `centroid` (line 171) → `geometry/polygon.rs:486`
+- [v] `triangulate_convex` (line 155) → `geometry/polygon.rs:466` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `centroid` (line 171) → `geometry/polygon.rs:486` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [x] `intersection` (line 188) → `geometry/polygon.rs:539`
-- [x] `first_intersection` (line 200) → `geometry/polygon.rs:561`
-- [x] `intersections` (line 229) → `geometry/polygon.rs:600`
+- [v] `first_intersection` (line 200) → `geometry/polygon.rs:561` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `intersections` (line 229) → `geometry/polygon.rs:600` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [~] `overlaps` (line 245) → `geometry/polygon.rs:626` — partial
-- [x] `convex_points` (line 299) → `geometry/polygon.rs:649`
-- [x] `concave_points` (line 304) → `geometry/polygon.rs:659`
-- [x] `point_projection` (line 310) → `geometry/polygon.rs:668`
+- [v] `convex_points` (line 299) → `geometry/polygon.rs:649` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `concave_points` (line 304) → `geometry/polygon.rs:659` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
+- [v] `point_projection` (line 310) → `geometry/polygon.rs:668` — R928: tests/polygon_native_parity.rs: 3,000 generated cases, 60,000 results against the pin's Polygon.cpp / Polygon.hpp, none differ: length, area, is_counter_clockwise, is_clockwise, centroid, lines, first_intersection (2,030 found), intersections, convex_points, concave_points, point_projection, triangulate_convex, douglas_peucker, make_counter_clockwise, make_clockwise, equally_spaced_points.
 - [x] `parameter_by_length` (line 347) → `geometry/polygon.rs:726`
 - [x] `densify` (line 357) → `geometry/polygon.rs:748`
 - [~] `transform` (line 385) → `geometry/polygon.rs:795` — partial

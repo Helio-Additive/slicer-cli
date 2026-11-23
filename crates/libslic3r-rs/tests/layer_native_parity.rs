@@ -1,12 +1,16 @@
-//! Native parity of `ContinuitiousDistancer` and `Layer::calculate_perimeter_continuity`
+//! Native parity of `ContinuitiousDistancer`, `Layer::calculate_perimeter_continuity`, `Layer::make_slices`,
+//! `get_extents`, `Layer::backup_untyped_slices` / `restore_untyped_slices*` and `Layer::merged`
 //! (`slicer::layer`) against vectors made by the C++ at the pin (tests/data/layer/gen.cpp).
 //!
 //! Every line of the vectors is "<what> <inputs> => <results>": this test reads the inputs back, calls
 //! the port and has to print the same results. `LAYER_PARITY_VECTORS` names a file of the generator to
 //! read instead of the committed one.
 
-use slicer::geometry::{BoundingBox, Point};
-use slicer::layer::{ContinuitiousDistancer, Layer, LoopNode, NodeContour};
+use slicer::geometry::{BoundingBox, ExPolygon, Point, Polygon};
+use slicer::layer::{
+    get_extents, get_extents_layer_region, get_extents_layer_regions, ContinuitiousDistancer, Layer, LayerRegion, LoopNode, NodeContour,
+};
+use slicer::surface::{Surface, SurfaceType};
 use std::io::Read;
 
 /// The tokens of the inputs of a line.
@@ -33,6 +37,18 @@ impl<'a> Tok<'a> {
         let x = self.i();
         let y = self.i();
         Point::new(x, y)
+    }
+    /// gen.cpp `EX(ex)`
+    fn expolygon(&mut self) -> ExPolygon {
+        let n = self.i();
+        let contour = Polygon { points: (0..n).map(|_| self.point()).collect() };
+        let nh = self.i();
+        let mut holes = Vec::new();
+        for _ in 0..nh {
+            let n = self.i();
+            holes.push(Polygon { points: (0..n).map(|_| self.point()).collect() });
+        }
+        ExPolygon { contour, holes }
     }
     /// gen.cpp `NODE(n)`
     fn node(&mut self) -> LoopNode {
@@ -62,10 +78,44 @@ fn read_vectors() -> Vec<String> {
     text.lines().map(|l| l.to_string()).collect()
 }
 
+/// gen.cpp `EX(ex)`
+fn ex_str(ex: &ExPolygon) -> String {
+    let mut o: Vec<String> = vec![ex.contour.points.len().to_string()];
+    o.extend(ex.contour.points.iter().map(|p| format!("{} {}", p.x, p.y)));
+    o.push(ex.holes.len().to_string());
+    for h in &ex.holes {
+        o.push(h.points.len().to_string());
+        o.extend(h.points.iter().map(|p| format!("{} {}", p.x, p.y)));
+    }
+    o.join(" ")
+}
+
+/// gen.cpp `BB(bb)`: a box that is not defined has both corners at the origin at the pin (BoundingBox.hpp).
+fn bb_str(bb: &BoundingBox) -> String {
+    if bb.is_defined() {
+        format!("1 {} {} {} {}", bb.min.x, bb.min.y, bb.max.x, bb.max.y)
+    } else {
+        "0 0 0 0 0".to_string()
+    }
+}
+
+/// gen.cpp `SLICES(layer)`
+fn slices_str(layer: &Layer, o: &mut Vec<String>) {
+    for layerm in layer.regions() {
+        o.push(layerm.slices.surfaces.len().to_string());
+        for surface in &layerm.slices.surfaces {
+            o.push(if surface.surface_type == SurfaceType::Internal { "1" } else { "0" }.to_string());
+            o.push(ex_str(&surface.expolygon));
+        }
+    }
+}
+
 #[test]
 fn layer_native_parity() {
     let expected = read_vectors();
     let mut mismatches = 0usize;
+    // Lines on which the body `Layer::merged` had before R928 gives another result than the pin (reported).
+    let mut legacy_merged_differs = 0usize;
     let mut by_kind: std::collections::BTreeMap<String, (usize, usize)> = std::collections::BTreeMap::new();
     for (k, line) in expected.iter().enumerate() {
         let (head, want) = line.split_once(" => ").unwrap_or_else(|| panic!("no result in {line}"));
@@ -106,6 +156,85 @@ fn layer_native_parity() {
                 }
                 o.join(" ")
             }
+            // Layer.cpp:47-148, 750-770
+            "slices" => {
+                let nreg = t.i();
+                let mut layer = Layer::new(1, 0, 0.2, 0.4, 0.3);
+                for r in 0..nreg {
+                    let mut layerm = LayerRegion::new(1, r as usize);
+                    let nsurf = t.i();
+                    for _ in 0..nsurf {
+                        let ex = t.expolygon();
+                        layerm.slices.surfaces.push(Surface::new(SurfaceType::Internal, ex));
+                    }
+                    layer.add_region(layerm);
+                }
+                layer.make_slices();
+                let mut o: Vec<String> = vec![layer.lslices.len().to_string()];
+                o.extend(layer.lslices.iter().map(ex_str));
+                for layerm in layer.regions() {
+                    o.push(bb_str(&get_extents(layerm)));
+                    assert_eq!(bb_str(&get_extents_layer_region(layerm)), bb_str(&get_extents(layerm)));
+                }
+                o.push(bb_str(&get_extents(layer.regions())));
+                assert_eq!(bb_str(&get_extents_layer_regions(layer.regions())), bb_str(&get_extents(layer.regions())));
+                layer.backup_untyped_slices();
+                for layerm in layer.regions_mut() {
+                    for surface in layerm.slices.surfaces.iter_mut() {
+                        surface.surface_type = SurfaceType::Top;
+                    }
+                    if layerm.slices.surfaces.len() > 1 {
+                        layerm.slices.surfaces.pop();
+                    }
+                }
+                layer.restore_untyped_slices();
+                slices_str(&layer, &mut o);
+                for layerm in layer.regions_mut() {
+                    for surface in layerm.slices.surfaces.iter_mut() {
+                        surface.surface_type = SurfaceType::Bottom;
+                    }
+                    if !layerm.slices.surfaces.is_empty() {
+                        layerm.slices.surfaces.remove(0);
+                    }
+                }
+                layer.restore_untyped_slices_no_extra_perimeters();
+                slices_str(&layer, &mut o);
+                o.join(" ")
+            }
+            // Layer.cpp:150-170
+            "merged" => {
+                let offset_scaled = t.f();
+                let nreg = t.i();
+                let mut layer = Layer::new(1, 0, 0.2, 0.4, 0.3);
+                for r in 0..nreg {
+                    let mut cfg = slicer::region_config::PrintRegionConfig::default();
+                    cfg.bottom_solid_layers = t.i() as u32;
+                    cfg.top_solid_layers = t.i() as u32;
+                    cfg.fill_density = t.i() as f64;
+                    cfg.perimeters = t.i() as u32;
+                    let mut layerm = LayerRegion::new(1, r as usize);
+                    layerm.set_config_hierarchy(
+                        std::sync::Arc::new(slicer::print_region::PrintRegion::new(cfg)),
+                        std::sync::Arc::new(slicer::print_config::PrintObjectConfig::default()),
+                        std::sync::Arc::new(slicer::print_config::PrintConfig::default()),
+                    );
+                    let nsurf = t.i();
+                    for _ in 0..nsurf {
+                        let ex = t.expolygon();
+                        layerm.slices.surfaces.push(Surface::new(SurfaceType::Internal, ex));
+                    }
+                    layer.add_region(layerm);
+                }
+                let merged = layer.merged_f32(offset_scaled);
+                // `merged` is the same function behind the double argument older callers pass.
+                assert_eq!(layer.merged(offset_scaled as f64), merged);
+                if layer.merged_legacy(offset_scaled as f64) != merged {
+                    legacy_merged_differs += 1;
+                }
+                let mut o: Vec<String> = vec![merged.len().to_string()];
+                o.extend(merged.iter().map(ex_str));
+                o.join(" ")
+            }
             other => panic!("unknown line {other}"),
         };
         let entry = by_kind.entry(what.to_string()).or_insert((0, 0));
@@ -122,6 +251,7 @@ fn layer_native_parity() {
     for (kind, (n, bad)) in &by_kind {
         eprintln!("{kind}: {n} lines, {bad} differ");
     }
+    eprintln!("merged_legacy (not the pin's function, reported only): {legacy_merged_differs} lines differ");
     eprintln!("layer parity: {} lines, {} mismatches", expected.len(), mismatches);
     assert_eq!(mismatches, 0, "{mismatches} of {} lines differ from the pin", expected.len());
 }
