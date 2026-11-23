@@ -9893,6 +9893,12 @@ pub fn organic_lightning_infill(
     }
 }
 
+/// A marker for the native test, read by nothing in the crate: set while generate_support_areas() is inside
+/// generate_support_toolpaths() (TreeSupport3D.cpp:5110-5112). The pin has one `Fill::new_from_type()` for the
+/// fillers TreeSupport3D.cpp asks for itself and for those SupportCommon.cpp asks for; the test's generator
+/// compiles only TreeSupport3D.cpp with its recording filler, so the test's factory has to tell the two apart.
+pub static GENERATE_SUPPORT_AREAS_IN_TOOLPATHS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// TreeSupport3D.cpp:4794-5147 `static void generate_support_areas(Print &print, TreeSupport* tree_support, const
 /// BuildVolume &build_volume, const std::vector<size_t> &print_object_ids, std::function<void()> throw_on_cancel)`.
 ///
@@ -10325,7 +10331,8 @@ pub fn generate_support_areas(
         // :5104-5109
         let support_toolpath_begin_time = std::time::Instant::now();
         let object_config = object.config().clone();
-        generate_support_toolpaths(
+        GENERATE_SUPPORT_AREAS_IN_TOOLPATHS.store(true, std::sync::atomic::Ordering::Relaxed);
+        let toolpaths_result = generate_support_toolpaths(
             &mut object.m_support_layers,
             &object_config,
             &support_params,
@@ -10341,8 +10348,9 @@ pub fn generate_support_areas(
             Some(&|| throw_on_cancel()),
             &mut layer_storage,
             fill_factory,
-        )
-        .map_err(flow_err)?;
+        );
+        GENERATE_SUPPORT_AREAS_IN_TOOLPATHS.store(false, std::sync::atomic::Ordering::Relaxed);
+        toolpaths_result.map_err(flow_err)?;
         object.m_support_stage_times.toolpath_generate += support_toolpath_begin_time.elapsed().as_millis() as i64;
     }
 

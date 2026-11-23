@@ -402,6 +402,206 @@ static void run_merged()
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Layer::has_compatible_layer_regions
+// ---------------------------------------------------------------------------------------------
+// One option of the second region's config differs from the first's (key 0: none; keys 24 and 25
+// are options the function does not read), on the first layer and above it, in both orders of the
+// arguments. The layer belongs to an object of a real Print: Layer.cpp:178-181 ask the Print for the
+// process index of the wall filament.
+static void set_compat_key(PrintRegionConfig &cfg, int key)
+{
+    switch (key) {
+    case 1: cfg.wall_filament.value = 2; break;
+    case 2: cfg.wall_loops.value = 3; break;
+    case 3: cfg.wall_sequence.value = WallSequence::OuterInner; break;
+    case 4: cfg.inner_wall_speed.values = {55.}; break;
+    case 5: cfg.outer_wall_speed.values = {35.}; break;
+    case 6: cfg.gap_infill_speed.values = {45.}; break;
+    case 7: cfg.bridge_speed.values = {20.}; break;
+    case 8: cfg.detect_overhang_wall.value = false; break;
+    case 9: cfg.filter_out_gap_fill.value = 0.5; break;
+    case 10: cfg.inner_wall_line_width.value = 0.5; break;
+    case 11: cfg.outer_wall_line_width.value = 0.45; break;
+    case 12: cfg.detect_thin_wall.value = true; break;
+    case 13: cfg.infill_wall_overlap.value = 25.; break;
+    case 14: cfg.override_filament_scarf_seam_setting.value = true; break;
+    case 15: cfg.seam_slope_type.value = SeamScarfType::External; break;
+    case 16: cfg.seam_slope_start_height.value = 20.; break;
+    case 17: cfg.seam_slope_gap.value = 0.1; break;
+    case 18: cfg.seam_slope_min_length.value = 20.; break;
+    case 19: cfg.seam_slope_conditional.value = true; break;
+    case 20: cfg.seam_slope_entire_loop.value = true; break;
+    case 21: cfg.seam_slope_steps.value = 12; break;
+    case 22: cfg.seam_slope_inner_walls.value = true; break;
+    case 23: cfg.initial_layer_flow_ratio.value = 0.9; break;
+    case 24: cfg.sparse_infill_density.value = 30.; break;
+    case 25: cfg.top_shell_layers.value = 7; break;
+    case 26: cfg.seam_slope_start_height.percent = true; break;
+    default: break;
+    }
+}
+
+static void run_compat()
+{
+    Model        model;
+    ModelObject *o = model.add_object();
+    o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+    o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    Print print;
+    print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+    print.apply(model, config);
+    PrintObject *obj = print.m_objects.front();
+
+    PrintRegionConfig base;
+    base.wall_filament.value                        = 1;
+    base.wall_loops.value                           = 2;
+    base.wall_sequence.value                        = WallSequence::InnerOuter;
+    base.inner_wall_speed.values                    = {60.};
+    base.outer_wall_speed.values                    = {30.};
+    base.gap_infill_speed.values                    = {50.};
+    base.bridge_speed.values                        = {25.};
+    base.detect_overhang_wall.value                 = true;
+    base.filter_out_gap_fill.value                  = 0.;
+    base.inner_wall_line_width.value                = 0.45;
+    base.outer_wall_line_width.value                = 0.42;
+    base.detect_thin_wall.value                     = false;
+    base.infill_wall_overlap.value                  = 15.;
+    base.override_filament_scarf_seam_setting.value = false;
+    base.seam_slope_type.value                      = SeamScarfType::None;
+    base.seam_slope_start_height.value              = 10.;
+    base.seam_slope_start_height.percent            = false;
+    base.seam_slope_gap.value                       = 0.;
+    base.seam_slope_gap.percent                     = false;
+    base.seam_slope_min_length.value                = 10.;
+    base.seam_slope_conditional.value               = false;
+    base.seam_slope_entire_loop.value               = false;
+    base.seam_slope_steps.value                     = 10;
+    base.seam_slope_inner_walls.value               = false;
+    base.initial_layer_flow_ratio.value             = 1.;
+    base.sparse_infill_density.value                = 15.;
+    base.top_shell_layers.value                     = 3;
+
+    const int layer_ids[3] = {0, 1, 7};
+    for (int layer_id : layer_ids) {
+        Layer layer(size_t(layer_id), obj, 0.2, 0.2 * (layer_id + 1), 0.2 * layer_id + 0.1);
+        for (int key = 0; key <= 26; ++key)
+            for (int order = 0; order < 2; ++order) {
+                PrintRegionConfig other = base;
+                set_compat_key(other, key);
+                // Layer.cpp:173-198
+                const bool res = order == 0 ? layer.has_compatible_layer_regions(base, other) : layer.has_compatible_layer_regions(other, base);
+                out("compat " + hI(layer_id) + " " + hI(key) + " " + hI(order) + " => " + hB(res));
+            }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The merge of the slices of compatible regions in Layer::make_perimeters
+// ---------------------------------------------------------------------------------------------
+// Layer.cpp:379-380 merge the surfaces of one number of extra perimeters with
+// offset_ex(Surfaces, ClipperSafetyOffset). The surfaces are those of run_slices.
+static void run_group()
+{
+    Lcg g(0x6E0F5ULL);
+    const coord_t cell = 400000;
+    for (int c = 0; c < 200; ++c) {
+        Surfaces  surfaces;
+        const int nsurf = (int) g.range(1, 6);
+        std::string in = hI(nsurf);
+        for (int k = 0; k < nsurf; ++k) {
+            const coord_t x0 = g.range(0, 5) * cell, y0 = g.range(0, 5) * cell;
+            const int kind = (int) g.range(0, 3);
+            ExPolygon ex;
+            if (kind == 0) {
+                ex.contour.points = {Point(x0, y0), Point(x0 + cell, y0), Point(x0 + cell, y0 + cell), Point(x0, y0 + cell)};
+            } else if (kind == 1) {
+                const coord_t mx = g.range(1, cell / 3), my = g.range(1, cell / 3);
+                ex.contour.points = {Point(x0 + mx, y0 + my), Point(x0 + cell - mx, y0 + my), Point(x0 + cell - mx, y0 + cell - my), Point(x0 + mx, y0 + cell - my)};
+            } else {
+                Points pts = wall(g, x0 + cell / 2, y0 + cell / 2, g.range(cell / 4, cell / 2 + cell / 8), g.range(cell / 4, cell / 2 + cell / 8), true);
+                pts.pop_back();
+                ex.contour.points = pts;
+            }
+            if (g.range(0, 3) == 0) {
+                const coord_t hx = x0 + cell / 2, hy = y0 + cell / 2, hr = g.range(cell / 40, cell / 10);
+                Polygon hole;
+                hole.points = {Point(hx - hr, hy - hr), Point(hx - hr, hy + hr), Point(hx + hr, hy + hr), Point(hx + hr, hy - hr)};
+                ex.holes.push_back(hole);
+            }
+            in += " " + EX(ex);
+            surfaces.emplace_back(stInternal, ex);
+        }
+        // Layer.cpp:380
+        const ExPolygons merged = offset_ex(surfaces, ClipperSafetyOffset);
+        std::string res = hI((long long) merged.size());
+        for (const ExPolygon &ex : merged) res += " " + EX(ex);
+        out("group " + in + " => " + res);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The fill surfaces of a shared perimeter pass split back among the regions
+// ---------------------------------------------------------------------------------------------
+// Layer.cpp:395-403: intersection_ex(fill surfaces, a region's slices) and
+// intersection_ex(a region's slices, fill_no_overlap). The fill area is the merged slices
+// (Layer.cpp:380) shrunk by the walls, fill_no_overlap the same shrunk a little more.
+static void run_split()
+{
+    Lcg g(0x5B117ULL);
+    const coord_t cell = 400000;
+    for (int c = 0; c < 200; ++c) {
+        const int nreg = (int) g.range(2, 4);
+        std::vector<Surfaces> region_slices(nreg);
+        Surfaces all;
+        std::string in = hI(nreg);
+        for (int r = 0; r < nreg; ++r) {
+            const int nsurf = (int) g.range(1, 3);
+            in += " " + hI(nsurf);
+            for (int k = 0; k < nsurf; ++k) {
+                const coord_t x0 = g.range(0, 5) * cell, y0 = g.range(0, 5) * cell;
+                const int kind = (int) g.range(0, 3);
+                ExPolygon ex;
+                if (kind == 0) {
+                    ex.contour.points = {Point(x0, y0), Point(x0 + cell, y0), Point(x0 + cell, y0 + cell), Point(x0, y0 + cell)};
+                } else if (kind == 1) {
+                    const coord_t mx = g.range(1, cell / 3), my = g.range(1, cell / 3);
+                    ex.contour.points = {Point(x0 + mx, y0 + my), Point(x0 + cell - mx, y0 + my), Point(x0 + cell - mx, y0 + cell - my), Point(x0 + mx, y0 + cell - my)};
+                } else {
+                    Points pts = wall(g, x0 + cell / 2, y0 + cell / 2, g.range(cell / 4, cell / 2 + cell / 8), g.range(cell / 4, cell / 2 + cell / 8), true);
+                    pts.pop_back();
+                    ex.contour.points = pts;
+                }
+                in += " " + EX(ex);
+                region_slices[r].emplace_back(stInternal, ex);
+                all.emplace_back(stInternal, ex);
+            }
+        }
+        const coord_t walls = g.range(20000, 90000);
+        const ExPolygons fill_area       = offset_ex(offset_ex(all, ClipperSafetyOffset), -float(walls));
+        const ExPolygons fill_no_overlap = offset_ex(fill_area, -float(walls / 4));
+        Surfaces fill_surfaces;
+        for (const ExPolygon &ex : fill_area) fill_surfaces.emplace_back(stInternal, ex);
+        in += " " + hI((long long) fill_area.size());
+        for (const ExPolygon &ex : fill_area) in += " " + EX(ex);
+        in += " " + hI((long long) fill_no_overlap.size());
+        for (const ExPolygon &ex : fill_no_overlap) in += " " + EX(ex);
+        std::string res;
+        for (int r = 0; r < nreg; ++r) {
+            // Layer.cpp:398
+            const ExPolygons expp = intersection_ex(fill_surfaces, region_slices[r]);
+            // Layer.cpp:402
+            const ExPolygons no_overlap = intersection_ex(region_slices[r], fill_no_overlap);
+            res += (res.empty() ? "" : " ") + hI((long long) expp.size());
+            for (const ExPolygon &ex : expp) res += " " + EX(ex);
+            res += " " + hI((long long) no_overlap.size());
+            for (const ExPolygon &ex : no_overlap) res += " " + EX(ex);
+        }
+        out("split " + in + " => " + res);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -415,6 +615,9 @@ int main(int argc, char **argv)
     run_continuity();
     run_slices();
     run_merged();
+    run_compat();
+    run_group();
+    run_split();
     std::fclose(g_out);
     return 0;
 }

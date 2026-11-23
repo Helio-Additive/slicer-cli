@@ -619,6 +619,13 @@ fn fill_make_fills_native_parity_report() {
                     eprintln!("make_fills: line {} ({tag}), region {r}, entity {i} of {} (here {}):\n    pin:  {}\n    rust: {}", line_no + 1, region_theirs.len(), region_mine.len(), &e[..e.len().min(400)], m.map(|s| &s[..s.len().min(400)]).unwrap_or("-"));
                 }
             }
+            // The entities the live assembly lays beyond the pin's (R929: top_monotonicline).
+            for (i, m) in region_mine.iter().enumerate().skip(region_theirs.len()) {
+                if shown < show {
+                    shown += 1;
+                    eprintln!("make_fills: line {} ({tag}), region {r}, entity {i} here, none of the pin ({} entities):\n    rust: {}", line_no + 1, region_theirs.len(), &m[..m.len().min(400)]);
+                }
+            }
         }
     }
     eprintln!("live Layer::make_fills: {lines} lines; error or panic {failed}; same number of entities per region {same_count}; lines equal to the pin {equal_lines}");
@@ -636,19 +643,22 @@ fn fill_make_fills_native_parity_report() {
     assert!(equal_headers >= FLOOR_HEADERS, "live make_fills: {equal_headers} entities equal to the pin points aside, {FLOOR_HEADERS} before");
     // The configurations whose 12 lines are all equal to the pin (R928, with FILL_MULTILINES_PIN:
     // FillCubic where the live assembly laid a grid, and FILL_MULTILINES_ONE_LINE: one line alone
-    // gets no anchors) are REQUIRED to stay equal.
+    // gets no anchors; R929, with FILL_CONCENTRIC_PIN: FillConcentric through
+    // Fill::fill_surface_extrusion for a configured ipConcentric, and FILL_MONOLINE_NO_OVERLAP:
+    // no monotonic line where the filler has no no_overlap_expolygons) are REQUIRED to stay equal.
     for (tag, n, eq, _, _) in &per_cfg {
         if EQUAL_CONFIGURATIONS.contains(&tag.as_str()) {
             assert_eq!(eq, n, "live make_fills, configuration {tag}: {eq} of {n} lines equal to the pin, all of them before");
         }
     }
 }
-const EQUAL_CONFIGURATIONS: [&str; 14] =
-    ["base", "grid", "dense_100", "no_infill", "solid_rectilinear", "direction_30", "no_narrow", "thick_bridges", "bridge_flow_09", "layer_02", "widths", "overlap_30", "bridge_angle_45", "sub_top"];
+const EQUAL_CONFIGURATIONS: [&str; 18] =
+    ["base", "grid", "dense_100", "no_infill", "top_concentric", "top_monotonicline", "bottom_concentric", "solid_concentric", "solid_rectilinear", "direction_30", "no_narrow", "thick_bridges", "bridge_flow_09", "layer_02", "widths", "overlap_30", "bridge_angle_45", "sub_top"];
 // The counts of the report (first run R927: 103 / 512 / 604; R928 with FILL_PATH_HEIGHT_PIN and
-// FILL_MULTILINES_PIN: 217 / 700 / 715; with FILL_MULTILINES_ONE_LINE: 223 / 706 / 715): lines with an error or a panic at most; equal lines, equal
+// FILL_MULTILINES_PIN: 217 / 700 / 715; with FILL_MULTILINES_ONE_LINE: 223 / 706 / 715;
+// R929 with FILL_CONCENTRIC_PIN: 235 / 746 / 755; with FILL_MONOLINE_NO_OVERLAP: 241 / 746 / 755): lines with an error or a panic at most; equal lines, equal
 // entities, entities equal points aside at least.
 const FLOOR_FAILED: usize = 0;
-const FLOOR_LINES: usize = 223;
-const FLOOR_ENTITIES: usize = 706;
-const FLOOR_HEADERS: usize = 715;
+const FLOOR_LINES: usize = 241;
+const FLOOR_ENTITIES: usize = 746;
+const FLOOR_HEADERS: usize = 755;

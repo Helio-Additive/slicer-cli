@@ -19,7 +19,8 @@
 //! `MUTABLE_POLYGON_PIN` has to be on, the default).
 //!
 //! The fillers are the generator's `RecFill`, which this test has as well: everything around the fillers
-//! is compared, not the fillers of the engine. The lines of the vectors that start with "in" are the
+//! is compared, not the fillers of the engine (but for the 'final' stage, whose support toolpaths come from
+//! the engine's fillers on both sides: `EngineFactory`). The lines of the vectors that start with "in" are the
 //! inputs, which this test reads back; every other line it has to reproduce, bit for bit. The long lines
 //! are compared by their FNV-1a hash; `TREE_SUPPORT_3D_PARITY_VECTORS` names a file of the generator with
 //! every line in full (`gen <file> full`), for finding the first token that differs.
@@ -28,6 +29,7 @@ mod support_shared;
 
 use slicer::build_volume::BuildVolume;
 use slicer::config::{ConfigOptionInts, ConfigOptionStrings};
+use slicer::extrusion_entity::{ExtrusionEntityType, ExtrusionPath};
 use slicer::fill::fill_base::Fill;
 use slicer::fill::FillParams;
 use slicer::geometry::{Point, Polygon, Polygons, Polyline, Polylines};
@@ -111,6 +113,55 @@ fn tok_pls(t: &mut Tok) -> Polylines {
     (0..n).map(|_| Polyline::from_points(tok_pts(t))).collect()
 }
 
+/// gen.cpp `PATH(p)`
+fn path_s(p: &ExtrusionPath) -> String {
+    format!(
+        "P {} {} {} {} {} {} {}",
+        p.role as i32,
+        hd(p.mm3_per_mm),
+        hf(p.width as f32),
+        hf(p.height as f32),
+        hb(p.can_reverse),
+        hd(p.overhang_degree),
+        pts_s(&p.polyline.points)
+    )
+}
+/// gen.cpp `ENT(e)`
+fn ent_s(e: &ExtrusionEntityType) -> String {
+    match e {
+        ExtrusionEntityType::Collection(c) => {
+            let mut o = format!("C {} {}", hb(c.no_sort), c.entities.len());
+            for ee in &c.entities {
+                o += &format!(" {}", ent_s(ee));
+            }
+            o
+        }
+        ExtrusionEntityType::MultiPath(m) => {
+            let mut o = format!("M {} {}", hb(m.can_reverse), m.paths.len());
+            for q in &m.paths {
+                o += &format!(" {}", path_s(q));
+            }
+            o
+        }
+        ExtrusionEntityType::Loop(l) => {
+            let mut o = format!("L {}", l.paths.len());
+            for q in &l.paths {
+                o += &format!(" {}", path_s(q));
+            }
+            o
+        }
+        ExtrusionEntityType::Path(q) => path_s(q),
+    }
+}
+/// gen.cpp `ENTS(v)`
+fn ents_s(v: &[ExtrusionEntityType]) -> String {
+    let mut o = format!("{}", v.len());
+    for e in v {
+        o += &format!(" {}", ent_s(e));
+    }
+    o
+}
+
 type Log = Rc<RefCell<Vec<String>>>;
 
 /// gen.cpp `RecFill`
@@ -171,6 +222,138 @@ struct RecFactory {
 impl SupportFillFactory for RecFactory {
     fn new_from_type(&self, pattern: InfillPattern) -> Box<dyn SupportFill> {
         Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() })
+    }
+}
+
+/// What the 'final' stage asked of `EngineFactory`, per scenario (printed, not compared).
+#[derive(Default)]
+struct EngineStats {
+    /// `Fill::new_from_type(pattern)` calls of TreeSupport3D.cpp itself by pattern (the recording filler, as in
+    /// the generator).
+    tree: std::collections::BTreeMap<i32, usize>,
+    /// `Fill::new_from_type(pattern)` calls of generate_support_toolpaths() by pattern (the enumerator's number).
+    asked: std::collections::BTreeMap<i32, usize>,
+    /// Those of them that got the recording filler: the crate has no filler of that pattern behind `SupportFill`.
+    fallback: std::collections::BTreeMap<i32, usize>,
+    /// `fill_surface()` calls of an engine filler that panicked (taken as a failed infill).
+    panics: usize,
+}
+
+/// The fillers of the FillRectilinear family (FillRectilinear.hpp), the crate's `fill::fill_rectilinear`.
+enum EngineFiller {
+    Rectilinear(slicer::fill::fill_rectilinear::FillRectilinear),
+    AlignedRectilinear(slicer::fill::fill_rectilinear::FillAlignedRectilinear),
+    Monotonic(slicer::fill::fill_rectilinear::FillMonotonic),
+    MonotonicLine(slicer::fill::fill_rectilinear::FillMonotonicLine),
+    Grid(slicer::fill::fill_rectilinear::FillGrid),
+    Triangles(slicer::fill::fill_rectilinear::FillTriangles),
+    Stars(slicer::fill::fill_rectilinear::FillStars),
+    Cubic(slicer::fill::fill_rectilinear::FillCubic),
+    SupportBase(slicer::fill::fill_rectilinear::FillSupportBase),
+}
+impl EngineFiller {
+    fn base(&self) -> &Fill {
+        use EngineFiller::*;
+        match self {
+            Rectilinear(f) => &f.base,
+            AlignedRectilinear(f) => &f.0.base,
+            Monotonic(f) => &f.0.base,
+            MonotonicLine(f) => &f.0.base,
+            Grid(f) => &f.0.base,
+            Triangles(f) => &f.0.base,
+            Stars(f) => &f.0.base,
+            Cubic(f) => &f.0.base,
+            SupportBase(f) => &f.0.base,
+        }
+    }
+    fn base_mut(&mut self) -> &mut Fill {
+        use EngineFiller::*;
+        match self {
+            Rectilinear(f) => &mut f.base,
+            AlignedRectilinear(f) => &mut f.0.base,
+            Monotonic(f) => &mut f.0.base,
+            MonotonicLine(f) => &mut f.0.base,
+            Grid(f) => &mut f.0.base,
+            Triangles(f) => &mut f.0.base,
+            Stars(f) => &mut f.0.base,
+            Cubic(f) => &mut f.0.base,
+            SupportBase(f) => &mut f.0.base,
+        }
+    }
+    fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Polylines {
+        use EngineFiller::*;
+        match self {
+            Rectilinear(f) => f.fill_surface(surface, params),
+            AlignedRectilinear(f) => f.fill_surface(surface, params),
+            Monotonic(f) => f.fill_surface(surface, params),
+            MonotonicLine(f) => f.fill_surface(surface, params),
+            Grid(f) => f.fill_surface(surface, params),
+            Triangles(f) => f.fill_surface(surface, params),
+            Stars(f) => f.fill_surface(surface, params),
+            Cubic(f) => f.fill_surface(surface, params),
+            SupportBase(f) => f.fill_surface(surface, params),
+        }
+    }
+}
+struct EngineFill {
+    f: EngineFiller,
+    stats: Rc<RefCell<EngineStats>>,
+}
+impl SupportFill for EngineFill {
+    fn fill(&self) -> &Fill {
+        self.f.base()
+    }
+    fn fill_mut(&mut self) -> &mut Fill {
+        self.f.base_mut()
+    }
+    fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Result<Polylines, InfillFailedException> {
+        let f = &mut self.f;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f.fill_surface(surface, params))) {
+            Ok(polylines) => Ok(polylines),
+            Err(_) => {
+                self.stats.borrow_mut().panics += 1;
+                Err(InfillFailedException)
+            }
+        }
+    }
+}
+
+/// `Fill::new_from_type()` (FillBase.cpp:33-67) over the engine's fillers, for the 'final' stage: the pin's
+/// generate_support_toolpaths() (SupportCommon.cpp, in the library the generator links) runs the engine's
+/// fillers. The FillRectilinear family is the crate's; the crate has no filler of the other patterns behind
+/// `SupportFill`, so those get the recording filler and are counted in `EngineStats::fallback`.
+/// What TreeSupport3D.cpp asks for itself gets the recording filler, which the generator compiles that file with
+/// (`GENERATE_SUPPORT_AREAS_IN_TOOLPATHS` of tree_support_3d.rs tells the two apart).
+struct EngineFactory {
+    log: Log,
+    stats: Rc<RefCell<EngineStats>>,
+}
+impl SupportFillFactory for EngineFactory {
+    fn new_from_type(&self, pattern: InfillPattern) -> Box<dyn SupportFill> {
+        use slicer::fill::fill_rectilinear as fr;
+        // The generator compiles TreeSupport3D.cpp with the recording filler; only what SupportCommon.cpp asks
+        // for (generate_support_toolpaths(), in the library) is a filler of the engine.
+        if !GENERATE_SUPPORT_AREAS_IN_TOOLPATHS.load(std::sync::atomic::Ordering::Relaxed) {
+            *self.stats.borrow_mut().tree.entry(pattern as i32).or_insert(0) += 1;
+            return Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() });
+        }
+        *self.stats.borrow_mut().asked.entry(pattern as i32).or_insert(0) += 1;
+        let f = match pattern {
+            InfillPattern::Rectilinear => EngineFiller::Rectilinear(fr::FillRectilinear::new()),
+            InfillPattern::AlignedRectilinear => EngineFiller::AlignedRectilinear(fr::FillAlignedRectilinear::new()),
+            InfillPattern::Monotonic => EngineFiller::Monotonic(fr::FillMonotonic::new()),
+            InfillPattern::MonotonicLine => EngineFiller::MonotonicLine(fr::FillMonotonicLine::new()),
+            InfillPattern::Grid => EngineFiller::Grid(fr::FillGrid::new()),
+            InfillPattern::Triangles => EngineFiller::Triangles(fr::FillTriangles::new()),
+            InfillPattern::Stars => EngineFiller::Stars(fr::FillStars::new()),
+            InfillPattern::Cubic => EngineFiller::Cubic(fr::FillCubic::new()),
+            InfillPattern::SupportBase => EngineFiller::SupportBase(fr::FillSupportBase::new()),
+            _ => {
+                *self.stats.borrow_mut().fallback.entry(pattern as i32).or_insert(0) += 1;
+                return Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() });
+            }
+        };
+        Box::new(EngineFill { f, stats: self.stats.clone() })
     }
 }
 
@@ -389,7 +572,8 @@ fn run_scenario(c: &mut Ctx, scenario: usize, final_only: bool) {
         // The 'final' stage: generate_tree_support_3D() (TreeSupport3D.cpp:6054-6069) with a tree support of the
         // object, which is the whole of generate_support_areas() (:4794-5147): the support layers it leaves in
         // the object, per layer print_z and height ('final z'), the islands ('final islands') and the number of
-        // extrusion entities ('final nfills'); the fills themselves are not compared here (gen.cpp says why).
+        // extrusion entities ('final nfills') and the entities themselves ('final fills'), with the engine's
+        // fillers for what generate_support_toolpaths() asks for (`EngineFactory`; gen.cpp says why).
         // The generator gives the number of layers, so that as many lines are written whatever this side finds;
         // a failure is a line too.
         {
@@ -403,7 +587,9 @@ fn run_scenario(c: &mut Ctx, scenario: usize, final_only: bool) {
             MERGE_INFLUENCE_AREAS_NUM_THREADS.store(threads, std::sync::atomic::Ordering::Relaxed);
             let mut po = print.m_objects.remove(0);
             let log: Log = Rc::new(RefCell::new(Vec::new()));
-            let factory = RecFactory { log: log.clone() };
+            // The engine's fillers, as the pin's generate_support_toolpaths() has them (see `EngineFactory`).
+            let stats: Rc<RefCell<EngineStats>> = Rc::new(RefCell::new(EngineStats::default()));
+            let factory = EngineFactory { log: log.clone(), stats: stats.clone() };
             let sp = po.slicing_parameters().clone();
             let params = SupportParameters::new(&po, &print).expect("SupportParameters");
             let status = {
@@ -416,19 +602,34 @@ fn run_scenario(c: &mut Ctx, scenario: usize, final_only: bool) {
                 }
             };
             c.r.out(format!("{s} final {status} {}", po.support_layers().len()));
+            let (mut nfills_n, mut nfills_eq) = (0usize, 0usize);
             for i in 0..n_expected {
                 match po.support_layers().get(i) {
                     Some(sl) => {
                         c.r.out(format!("{s} final z {i} {} {}", hd(sl.layer.print_z), hd(sl.layer.height)));
                         c.outb(format!("{s} final islands {i}"), expolys_s(&sl.support_islands));
-                        c.r.out(format!("{s} final nfills {i} {}", sl.support_fills.entities.len()));
+                        let line = format!("{s} final nfills {i} {}", sl.support_fills.entities.len());
+                        nfills_n += 1;
+                        if c.r.expected.iter().any(|l| *l == line) {
+                            nfills_eq += 1;
+                        }
+                        c.r.out(line);
+                        c.outb(format!("{s} final fills {i}"), ents_s(&sl.support_fills.entities));
                     }
                     None => {
                         c.r.out(format!("{s} final z {i} <none>"));
                         c.r.out(format!("{s} final islands {i} <none>"));
                         c.r.out(format!("{s} final nfills {i} <none>"));
+                        c.r.out(format!("{s} final fills {i} <none>"));
                     }
                 }
+            }
+            {
+                let st = stats.borrow();
+                eprintln!(
+                    "{s} final nfills with the engine's fillers: {nfills_eq} of {nfills_n} layers equal; toolpath fillers asked by pattern {:?}, of them through the recording filler {:?}, filler panics {}; fillers TreeSupport3D asked {:?}",
+                    st.asked, st.fallback, st.panics, st.tree
+                );
             }
             // What detect_overhangs() of the tree support left on the object's layers (:4833-4846 reads it).
             for (li, layer) in po.layers().iter().enumerate() {
@@ -1094,10 +1295,12 @@ fn run_helpers(c: &mut Ctx) {
 /// gen.cpp `NUM_SCENARIOS`
 const NUM_SCENARIOS: usize = 18;
 
-/// The one kind of the 'final' stage that is counted and printed, not asserted: the number of extrusion entities
-/// of a support layer. The pin's generate_support_toolpaths() (SupportCommon.cpp, in the library the generator
-/// links) runs the engine's fillers, this test hands generate_tree_support_3d() the recording factory.
-const FINAL_KIND_REPORTED: &str = "final nfills";
+/// The kind of the 'final' stage with the extrusion entities of a support layer (role, mm3_per_mm, width, height,
+/// the points of every path), counted apart in the printed summary. The pin's generate_support_toolpaths()
+/// (SupportCommon.cpp, in the library the generator links) runs the engine's fillers; this test hands
+/// generate_tree_support_3d() `EngineFactory` (the crate's FillRectilinear family for what that function asks
+/// for). Required like every other line since R929, and so is the number of entities ('final nfills').
+const FINAL_KIND_REPORTED: &str = "final fills";
 
 #[test]
 fn tree_support_3d_native_parity() {
@@ -1169,8 +1372,8 @@ fn tree_support_3d_native_parity() {
             reported_bad += bad;
         }
     }
-    // The 'final' stage (the support layers after generate_tree_support_3D()): print_z and height, the islands
-    // and the overhangs of every layer are required; the number of extrusion entities is reported.
+    // The 'final' stage (the support layers after generate_tree_support_3D()): print_z and height, the islands,
+    // the overhangs, the number of extrusion entities and the entities themselves of every layer are required.
     let (mut final_n, mut final_bad) = (0usize, 0usize);
     for (kind, (n, bad)) in &by_kind {
         if kind.starts_with("final ") {
@@ -1179,8 +1382,8 @@ fn tree_support_3d_native_parity() {
         }
     }
     let nfills_bad = by_kind.get(FINAL_KIND_REPORTED).map(|v| v.1).unwrap_or(0);
-    eprintln!("final stage (generate_tree_support_3D): {final_n} lines, {final_bad} differ, {nfills_bad} of them '{FINAL_KIND_REPORTED}' (reported, not required)");
+    eprintln!("final stage (generate_tree_support_3D): {final_n} lines, {final_bad} differ, {nfills_bad} of them '{FINAL_KIND_REPORTED}'");
     let bad = c.r.finish();
     eprintln!("{} lines, {} mismatches, {} of them in the reported kinds", c.r.expected.len(), bad, reported_bad);
-    assert_eq!(bad - nfills_bad, 0, "lines of the vectors that differ, '{FINAL_KIND_REPORTED}' apart");
+    assert_eq!(bad, 0, "lines of the vectors that differ");
 }

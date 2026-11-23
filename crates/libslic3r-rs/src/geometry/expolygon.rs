@@ -1466,6 +1466,78 @@ pub fn keep_largest_contour_only(polygons: &mut Vec<ExPolygon>) {
     }
 }
 
+// ----------------------------------------------------------------------------------------------------
+// R929: `simplify_p` / `simplify` of ExPolygon.cpp at the pin in the pin's shape and unit, beside the
+// older Rust-shaped ones above (additive: nothing on the slicing path calls them). The other members of
+// ExPolygon.cpp under their C++ names are in `crate::ex_polygon`. Compared with the pin by
+// tests/ex_polygon_native_parity.rs.
+// ----------------------------------------------------------------------------------------------------
+impl ExPolygon {
+    /// `Polygons ExPolygon::simplify_p(double tolerance) const` with the tolerance in the pin's unit
+    /// (scaled coordinates, handed to `MultiPoint::_douglas_peucker` as it is); `simplify_p` above takes
+    /// millimetres and another clipper.
+    ///
+    /// ExPolygon.cpp:231-251
+    pub fn simplify_p_scaled_tolerance(&self, tolerance: f64) -> Vec<Polygon> {
+        let mut pp: Vec<Polygon> = Vec::with_capacity(self.holes.len() + 1);
+        // contour: push_back(front), _douglas_peucker, pop_back (Polygon::douglas_peucker is that).
+        {
+            let mut p = self.contour.clone();
+            p.douglas_peucker(tolerance);
+            pp.push(p);
+        }
+        // holes
+        for hole in &self.holes {
+            let mut p = hole.clone();
+            p.douglas_peucker(tolerance);
+            pp.push(p);
+        }
+        crate::clipper_utils::cpp::simplify_polygons(&pp, false)
+    }
+
+    /// `ExPolygons ExPolygon::simplify(double tolerance) const` (the name `simplify` is the in-place Rust
+    /// function above; `simplified` is its copy and neither is this one).
+    ///
+    /// ExPolygon.cpp:253-256
+    pub fn simplify_scaled_tolerance(&self, tolerance: f64) -> Vec<ExPolygon> {
+        use crate::clipper_utils::cpp::UnionEx;
+        // ClipperUtils.hpp: `union_ex(const Polygons &subject, PolyFillType fill_type = pftNonZero)`.
+        UnionEx::union_ex(self.simplify_p_scaled_tolerance(tolerance).as_slice(), crate::clipper::PolyFillType::pftNonZero)
+    }
+
+    /// `void ExPolygon::simplify(double tolerance, ExPolygons* expolygons) const`.
+    ///
+    /// ExPolygon.cpp:258-261
+    pub fn simplify_scaled_tolerance_into(&self, tolerance: f64, expolygons: &mut Vec<ExPolygon>) {
+        expolygons.extend(self.simplify_scaled_tolerance(tolerance));
+    }
+}
+
+/// `ExPolygons expolygons_simplify(const ExPolygons &expolys, double tolerance)` with the tolerance in
+/// the pin's unit (see `ExPolygon::simplify_scaled_tolerance`).
+///
+/// ExPolygon.hpp:451-458
+pub fn expolygons_simplify_scaled_tolerance(expolys: &[ExPolygon], tolerance: f64) -> Vec<ExPolygon> {
+    let mut out: Vec<ExPolygon> = Vec::with_capacity(expolys.len());
+    for exp in expolys {
+        exp.simplify_scaled_tolerance_into(tolerance, &mut out);
+    }
+    out
+}
+
+/// `bool expolygons_contain(ExPolygons &expolys, const Point &pt, bool border_result)` over
+/// `ExPolygon::contains(point, border_result)` of `crate::ex_polygon`.
+///
+/// ExPolygon.hpp:443-449
+pub fn expolygons_contain_border_result(expolys: &[ExPolygon], pt: &Point, border_result: bool) -> bool {
+    for expoly in expolys {
+        if expoly.contains(pt, border_result) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

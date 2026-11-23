@@ -368,6 +368,13 @@ pub struct SurfaceFillParams {
     /// ipZigZag, ipCrossZag and ipLockedZag from ipRectilinear.
     pub sparse_pattern: Option<crate::print_config::InfillPattern>,
 
+    /// Fill.cpp:28 — the pattern itself as the pin's `group_fills` left it (the configured
+    /// pattern of the surface, Fill.cpp:239 and 264-282, or what the narrow block made of it,
+    /// Fill.cpp:589/597). `pattern` above folds ipConcentric and ipConcentricInternal into one
+    /// variant; `Layer::make_fills` picks the filler by this one (FILL_CONCENTRIC_PIN). `None`
+    /// from the earlier grouping of this file (`FILL_GROUP_PIN=0`). Not part of the ordering.
+    pub pin_pattern: Option<crate::print_config::InfillPattern>,
+
     /// Fill.cpp:35
     /// C++: coordf_t spacing
     pub spacing: f64,
@@ -1047,6 +1054,7 @@ pub fn group_fills(
                 } else {
                     Some(region_config.fill_pattern)
                 },
+                pin_pattern: None,
                 skin_pattern: region_config.top_fill_pattern.into(),
                 skeleton_pattern: region_config.solid_fill_pattern.into(),
                 spacing,

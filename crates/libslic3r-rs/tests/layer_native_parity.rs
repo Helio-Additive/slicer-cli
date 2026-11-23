@@ -235,6 +235,111 @@ fn layer_native_parity() {
                 o.extend(merged.iter().map(ex_str));
                 o.join(" ")
             }
+            // Layer.cpp:173-198: one option of the second config differs from the first's.
+            "compat" => {
+                use slicer::print_config::{ScarfSeamType, WallSequence};
+                let layer_id = t.i();
+                let key = t.i();
+                let order = t.i();
+                let layer = Layer::new(layer_id as usize, 0, 0.2, 0.2 * (layer_id + 1) as f64, 0.2 * layer_id as f64 + 0.1);
+                let mut base = slicer::region_config::PrintRegionConfig::default();
+                base.wall_filament = 1;
+                base.perimeters = 2;
+                base.wall_sequence = WallSequence::InnerOuter;
+                base.perimeter_speed = 60.;
+                base.external_perimeter_speed = 30.;
+                base.gap_fill_speed = 50.;
+                base.bridge_speed = 25.;
+                base.overhangs = true;
+                base.filter_out_gap_fill = 0.;
+                base.inner_wall_line_width = 0.45;
+                base.outer_wall_line_width = 0.42;
+                base.thin_walls = false;
+                base.infill_overlap = 15.;
+                base.override_filament_scarf_seam_setting = false;
+                base.seam_slope_type = ScarfSeamType::None;
+                base.seam_slope_start_height.value = 10.;
+                base.seam_slope_start_height.percent = false;
+                base.seam_slope_gap.value = 0.;
+                base.seam_slope_gap.percent = false;
+                base.seam_slope_min_length = 10.;
+                base.seam_slope_conditional = false;
+                base.seam_slope_entire_loop = false;
+                base.seam_slope_steps = 10;
+                base.seam_slope_inner_walls = false;
+                base.initial_layer_flow_ratio = 1.;
+                base.fill_density = 15.;
+                base.top_solid_layers = 3;
+                let mut other = base.clone();
+                match key {
+                    0 => {}
+                    1 => other.wall_filament = 2,
+                    2 => other.perimeters = 3,
+                    3 => other.wall_sequence = WallSequence::OuterInner,
+                    4 => other.perimeter_speed = 55.,
+                    5 => other.external_perimeter_speed = 35.,
+                    6 => other.gap_fill_speed = 45.,
+                    7 => other.bridge_speed = 20.,
+                    8 => other.overhangs = false,
+                    9 => other.filter_out_gap_fill = 0.5,
+                    10 => other.inner_wall_line_width = 0.5,
+                    11 => other.outer_wall_line_width = 0.45,
+                    12 => other.thin_walls = true,
+                    13 => other.infill_overlap = 25.,
+                    14 => other.override_filament_scarf_seam_setting = true,
+                    15 => other.seam_slope_type = ScarfSeamType::External,
+                    16 => other.seam_slope_start_height.value = 20.,
+                    17 => other.seam_slope_gap.value = 0.1,
+                    18 => other.seam_slope_min_length = 20.,
+                    19 => other.seam_slope_conditional = true,
+                    20 => other.seam_slope_entire_loop = true,
+                    21 => other.seam_slope_steps = 12,
+                    22 => other.seam_slope_inner_walls = true,
+                    23 => other.initial_layer_flow_ratio = 0.9,
+                    24 => other.fill_density = 30.,
+                    25 => other.top_solid_layers = 7,
+                    26 => other.seam_slope_start_height.percent = true,
+                    k => panic!("unknown compat key {k}"),
+                }
+                let res = if order == 0 { layer.has_compatible_layer_regions(&base, &other) } else { layer.has_compatible_layer_regions(&other, &base) };
+                (res as u8).to_string()
+            }
+            // Layer.cpp:379-380: the merge of one group of slices, as the live Layer::make_perimeters does it
+            // (union_safety_offset_ex of the surfaces' polygons; the pin: offset_ex(Surfaces, ClipperSafetyOffset)).
+            "group" => {
+                let nsurf = t.i();
+                let group: Vec<Surface> = (0..nsurf).map(|_| Surface::new(SurfaceType::Internal, t.expolygon())).collect();
+                let group_polys = slicer::surface::to_polygons(&group);
+                let merged = slicer::clipper_utils::union_safety_offset_ex(&group_polys);
+                let mut o: Vec<String> = vec![merged.len().to_string()];
+                o.extend(merged.iter().map(ex_str));
+                o.join(" ")
+            }
+            // Layer.cpp:395-403: the fill surfaces of a shared pass split back among the regions, with the
+            // calls the live Layer::make_perimeters makes.
+            "split" => {
+                let nreg = t.i();
+                let mut region_slices: Vec<Vec<Surface>> = Vec::new();
+                for _ in 0..nreg {
+                    let nsurf = t.i();
+                    region_slices.push((0..nsurf).map(|_| Surface::new(SurfaceType::Internal, t.expolygon())).collect());
+                }
+                let nfill = t.i();
+                let fill_surfaces: Vec<Surface> = (0..nfill).map(|_| Surface::new(SurfaceType::Internal, t.expolygon())).collect();
+                let nno = t.i();
+                let fill_no_overlap: Vec<ExPolygon> = (0..nno).map(|_| t.expolygon()).collect();
+                let mut o: Vec<String> = Vec::new();
+                for slices in &region_slices {
+                    let slice_expp = slicer::surface::to_expolygons(slices);
+                    let expp = slicer::clipper_utils::intersection_ex(&fill_surfaces, &slice_expp);
+                    let no_overlap = slicer::clipper_utils::intersection_ex(slices, &fill_no_overlap);
+                    o.push(expp.len().to_string());
+                    o.extend(expp.iter().map(ex_str));
+                    o.push(no_overlap.len().to_string());
+                    o.extend(no_overlap.iter().map(ex_str));
+                }
+                o.join(" ")
+            }
             other => panic!("unknown line {other}"),
         };
         let entry = by_kind.entry(what.to_string()).or_insert((0, 0));

@@ -1469,6 +1469,9 @@ pub fn group_fills_for_consumers(
             skin_pattern: p.skin_pattern.into(),
             skeleton_pattern: p.skeleton_pattern.into(),
             sparse_pattern: if is_solid { None } else { Some(p.pattern) },
+            // Fill.cpp:28: the pattern as it stands after the narrow block (ipConcentric and
+            // ipConcentricInternal are one variant of the consumers' enum).
+            pin_pattern: Some(p.pattern),
             spacing: p.spacing,
             overlap: region_config.map_or(p.overlap, |c| c.infill_overlap),
             angle: match region_config {

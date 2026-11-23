@@ -178,6 +178,38 @@ static std::string PLS(const Polylines &ps)
     for (const Polyline &p : ps) o += " " + PTS(p.points);
     return o;
 }
+// The extrusion entities of a support layer (the 'final fills' lines), as tests/data/tree_support/gen.cpp has them.
+static std::string PATH(const ExtrusionPath &p)
+{
+    return "P " + hI(int(p.role())) + " " + hD(p.mm3_per_mm) + " " + hF(p.width) + " " + hF(p.height) + " " + hB(p.can_reverse()) + " " + hD(p.overhang_degree) + " " +
+           PTS(p.polyline.points);
+}
+static std::string ENT(const ExtrusionEntity *e)
+{
+    if (const auto *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+        std::string o = "C " + hB(c->no_sort) + " " + hI((long long) c->entities.size());
+        for (const ExtrusionEntity *ee : c->entities) o += " " + ENT(ee);
+        return o;
+    }
+    if (const auto *m = dynamic_cast<const ExtrusionMultiPath *>(e)) {
+        std::string o = "M " + hB(m->can_reverse()) + " " + hI((long long) m->paths.size());
+        for (const ExtrusionPath &p : m->paths) o += " " + PATH(p);
+        return o;
+    }
+    if (const auto *l = dynamic_cast<const ExtrusionLoop *>(e)) {
+        std::string o = "L " + hI((long long) l->paths.size());
+        for (const ExtrusionPath &p : l->paths) o += " " + PATH(p);
+        return o;
+    }
+    if (const auto *p = dynamic_cast<const ExtrusionPath *>(e)) return PATH(*p);
+    return "X";
+}
+static std::string ENTS(const ExtrusionEntitiesPtr &v)
+{
+    std::string o = hI((long long) v.size());
+    for (const ExtrusionEntity *e : v) o += " " + ENT(e);
+    return o;
+}
 static std::string EXPOLY(const ExPolygon &e)
 {
     std::string o = POLY(e.contour) + " " + hI((long long) e.holes.size());
@@ -608,10 +640,11 @@ static void run_scenario(int scenario, bool final_only = false)
         // The 'final' stage: generate_tree_support_3D() (TreeSupport3D.cpp:6054-6069) with a tree support of the
         // object, which is the whole of generate_support_areas() (:4794-5147), on one thread: the support layers
         // it leaves in the object. Compared per layer: print_z and height ('final z'), the islands ('final
-        // islands') and the number of extrusion entities ('final nfills'). The fills themselves are not compared
-        // here: only TreeSupport3D.cpp is compiled with the recording filler, generate_support_toolpaths()
-        // (SupportCommon.cpp, in the library) uses the engine's fillers. The number of layers is an input, so
-        // that the test writes as many lines whatever it finds.
+        // islands'), the number of extrusion entities ('final nfills') and the entities themselves ('final fills').
+        // Only TreeSupport3D.cpp is compiled with the recording filler; generate_support_toolpaths()
+        // (SupportCommon.cpp, in the library) uses the engine's fillers, and so does the test for what that
+        // function asks for. The number of layers is an input, so that the test writes as many lines whatever
+        // it finds.
         {
             TreeSupport ts(*obj, obj->slicing_parameters());
             g_fills.clear();
@@ -632,6 +665,8 @@ static void run_scenario(int scenario, bool final_only = false)
                 out(S + " final z " + hI((long long) i) + " " + hD(sl->print_z) + " " + hD(sl->height));
                 outb(S + " final islands " + hI((long long) i), EXPOLYS(sl->support_islands));
                 out(S + " final nfills " + hI((long long) i) + " " + hI((long long) sl->support_fills.entities.size()));
+                // The extrusion entities themselves: role, mm3_per_mm, width, height and the points of every path.
+                outb(S + " final fills " + hI((long long) i), ENTS(sl->support_fills.entities));
                 ++i;
             }
             // What detect_overhangs() of the tree support left on the object's layers (:4833-4846 reads it).

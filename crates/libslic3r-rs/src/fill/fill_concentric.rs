@@ -184,6 +184,143 @@ impl<'a> FillConcentric<'a> {
         // We want the loops to be split inside the G-code generator to get optimum path planning.
     }
 
+    /// FillBase.cpp:99-113
+    /// Polylines Fill::fill_surface(const Surface *surface, const FillParams &params)
+    ///
+    /// The base's method as this filler inherits it. `overlap` is `Fill::overlap`
+    /// (FillBase.hpp: 0 unless the caller sets it; `Layer::make_fills` leaves it).
+    pub fn fill_surface(
+        &mut self,
+        surface: &crate::surface::Surface,
+        params: &FillParams,
+        overlap: f64,
+    ) -> Polylines {
+        // FillBase.cpp:102  Slic3r::ExPolygons expp = offset_ex(surface->expolygon, float(scale_(this->overlap - 0.5 * this->spacing)));
+        let delta = ((-0.5f64).mul_add(self.spacing, overlap) / crate::libslic3r::SCALING_FACTOR) as f32;
+        let expp: ExPolygons = crate::clipper_utils::offset_expolygons_clib_scaled(
+            std::slice::from_ref(&surface.expolygon),
+            delta as f64,
+            crate::clipper_utils::OffsetJoinType::Miter,
+        );
+        // FillBase.cpp:104-112. `_infill_direction(surface)` (FillBase.cpp:205-230): this filler
+        // reads neither the angle nor the reference point ("no rotation is supported").
+        let direction: (f32, Point) = (0.0, Point::new(0, 0));
+        let mut polylines_out: Polylines = Polylines::new();
+        for expoly in expp.into_iter() {
+            self._fill_surface_single(
+                params,
+                surface.thickness_layers as u32,
+                &direction,
+                expoly,
+                &mut polylines_out,
+            );
+        }
+        polylines_out
+    }
+
+    /// FillBase.cpp:115-124
+    /// ThickPolylines Fill::fill_surface_arachne(const Surface* surface, const FillParams& params)
+    pub fn fill_surface_arachne(
+        &mut self,
+        surface: &crate::surface::Surface,
+        params: &FillParams,
+        overlap: f64,
+    ) -> ThickPolylines {
+        // FillBase.cpp:118  Slic3r::ExPolygons expp = offset_ex(surface->expolygon, float(scale_(this->overlap - 0.5 * this->spacing)));
+        let delta = ((-0.5f64).mul_add(self.spacing, overlap) / crate::libslic3r::SCALING_FACTOR) as f32;
+        let expp: ExPolygons = crate::clipper_utils::offset_expolygons_clib_scaled(
+            std::slice::from_ref(&surface.expolygon),
+            delta as f64,
+            crate::clipper_utils::OffsetJoinType::Miter,
+        );
+        // FillBase.cpp:120-123
+        let direction: (f32, Point) = (0.0, Point::new(0, 0));
+        let mut thick_polylines_out: ThickPolylines = ThickPolylines::new();
+        for expoly in expp.into_iter() {
+            self._fill_surface_single_thick(
+                params,
+                surface.thickness_layers as u32,
+                &direction,
+                expoly,
+                &mut thick_polylines_out,
+            );
+        }
+        thick_polylines_out
+    }
+
+    /// FillBase.cpp:127-176
+    /// void Fill::fill_surface_extrusion(const Surface* surface, const FillParams& params, ExtrusionEntitiesPtr& out)
+    pub fn fill_surface_extrusion(
+        &mut self,
+        surface: &crate::surface::Surface,
+        params: &FillParams,
+        overlap: f64,
+        out: &mut Vec<crate::extrusion_entity::ExtrusionEntityType>,
+    ) {
+        // FillBase.cpp:129-138 (no InfillFailedException is thrown by this filler)
+        let mut polylines: Polylines = Polylines::new();
+        let mut thick_polylines: ThickPolylines = ThickPolylines::new();
+        if params.use_arachne {
+            thick_polylines = self.fill_surface_arachne(surface, params, overlap);
+        } else {
+            polylines = self.fill_surface(surface, params, overlap);
+        }
+
+        // FillBase.cpp:140
+        if !polylines.is_empty() || !thick_polylines.is_empty() {
+            // FillBase.cpp:141-154: the flow from the spacing the pattern may have adjusted
+            let mut flow_mm3_per_mm: f64 = params.flow.mm3_per_mm().unwrap_or(0.0);
+            let mut flow_width: f64 = params.flow.width();
+            if params.using_internal_flow {
+                // not a solid infill: the slight variation of the spacing is ignored
+            } else {
+                let new_flow = params.flow.with_spacing(self.spacing).expect("with_spacing");
+                flow_mm3_per_mm = new_flow.mm3_per_mm().unwrap_or(0.0);
+                flow_width = new_flow.width();
+            }
+            // FillBase.cpp:155-160: "Only concentric fills are not sorted."
+            let mut eec = crate::extrusion_entity::ExtrusionEntityCollection::new();
+            eec.no_sort = self.no_sort();
+            let idx: usize = eec.entities.len();
+            // FillBase.cpp:161-171
+            if params.use_arachne {
+                let new_flow = params
+                    .flow
+                    .with_spacing(self.spacing as f32 as f64)
+                    .expect("with_spacing");
+                crate::variable_width::variable_width(
+                    &thick_polylines,
+                    params.extrusion_role,
+                    &new_flow,
+                    &mut eec.entities,
+                );
+                thick_polylines.clear();
+            } else {
+                crate::extrusion_entity::extrusion_entities_append_paths(
+                    &mut eec.entities,
+                    polylines,
+                    params.extrusion_role,
+                    flow_mm3_per_mm,
+                    flow_width as f32,
+                    params.flow.height() as f32,
+                );
+            }
+            // FillBase.cpp:172-175
+            if !params.can_reverse {
+                for i in idx..eec.entities.len() {
+                    match &mut eec.entities[i] {
+                        crate::extrusion_entity::ExtrusionEntityType::Path(e) => e.set_reverse(),
+                        crate::extrusion_entity::ExtrusionEntityType::MultiPath(e) => e.set_reverse(),
+                        crate::extrusion_entity::ExtrusionEntityType::Collection(e) => e.set_reverse(),
+                        _ => {}
+                    }
+                }
+            }
+            // FillBase.cpp:157  out.push_back(eec = new ExtrusionEntityCollection());
+            out.push(crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(eec)));
+        }
+    }
+
     /// FillConcentric.cpp:67-145
     /// void FillConcentric::_fill_surface_single(const FillParams& params,
     ///     unsigned int thickness_layers, const std::pair<float, Point>& direction,
@@ -215,10 +352,16 @@ impl<'a> FillConcentric<'a> {
             // FillConcentric.cpp:81  coord_t loops_count = std::max(bbox_size.x(), bbox_size.y()) / min_spacing + 1;
             let loops_count: Coord = std::cmp::max(bbox_size.x(), bbox_size.y()) / min_spacing + 1;
             // FillConcentric.cpp:82  Polygons polygons = offset(expolygon, float(min_spacing) / 2.f);
-            let polygons: Polygons = expolygons_to_polygons(&offset_ex_2(
-                &vec![expolygon.clone()],
-                (min_spacing as f32 / 2.0) as f64,
-            ));
+            // ClipperUtils.cpp:559-560: the ClipperLib offset of an ExPolygon with DefaultJoinType
+            // (jtMiter) and DefaultMiterLimit, the raw paths as polygons. (Until R929 this was the
+            // Clipper2 offset with round joins of Clipper2Utils; nothing live reached it then: the
+            // only caller is Layer::make_fills behind FILL_CONCENTRIC_PIN.)
+            let polygons: Polygons = crate::clipper_utils::cpp::Offset::offset(
+                &expolygon,
+                min_spacing as f32 / 2.0,
+                crate::clipper_utils::cpp::DEFAULT_JOIN_TYPE,
+                crate::clipper_utils::cpp::DEFAULT_MITER_LIMIT,
+            );
 
             // FillConcentric.cpp:84  double min_nozzle_diameter = *std::min_element(nozzle_diameter.values...);
             // The Rust PrintConfig holds a single nozzle diameter, so the min over the

@@ -2235,8 +2235,12 @@ impl Layer {
             && config.seam_slope_steps == other_config.seam_slope_steps
             // Layer.cpp:196
             && config.seam_slope_inner_walls == other_config.seam_slope_inner_walls
-        // Layer.cpp:198 `(this->id() != 0 || config.initial_layer_flow_ratio == other_config.initial_layer_flow_ratio)`
-        // is not compared: this crate's PrintRegionConfig carries no initial_layer_flow_ratio.
+            // Layer.cpp:197 `(this->id() != 0 || config.initial_layer_flow_ratio == other_config.initial_layer_flow_ratio)`:
+            // on the first layer regions with different flow ratios are not merged
+            // (gate LAYER_COMPATIBLE_INITIAL_FLOW_RATIO; off = R928, where the option was not compared).
+            && (!crate::faithful_gate("LAYER_COMPATIBLE_INITIAL_FLOW_RATIO")
+                || self.id() != 0
+                || config.initial_layer_flow_ratio == other_config.initial_layer_flow_ratio)
     }
 
     /// Generate perimeters for all regions
@@ -2284,6 +2288,35 @@ impl Layer {
         // Layer.cpp:205
         // C++: std::vector<unsigned char> done(m_regions.size(), false);
         let mut done = vec![false; self.regions.len()];
+
+        // Layer.cpp:208-230
+        // C++: auto same_merge_patches = [](const LayerRegion *lhs, const LayerRegion *rhs) { ... };
+        let same_merge_patches = |lhs: &LayerRegion, rhs: &LayerRegion| -> bool {
+            let lhs_merged = !lhs.adaptive_merge_patches.is_empty();
+            let rhs_merged = !rhs.adaptive_merge_patches.is_empty();
+            if lhs_merged != rhs_merged {
+                return false;
+            }
+            if !lhs_merged {
+                return true;
+            }
+            // Layer.cpp:215-220: a layer may carry both markers of a slab above and a local group top of
+            // its own; any extruding group top forbids a shared pass.
+            let has_extruding_group_top = |layerm: &LayerRegion| -> bool {
+                layerm.adaptive_merge_patches.iter().any(|patch| patch.group_top && !patch.area().is_empty())
+            };
+            if has_extruding_group_top(lhs) || has_extruding_group_top(rhs) {
+                return false;
+            }
+            // Layer.cpp:223-226
+            let a = &lhs.adaptive_merge_patches[0];
+            let b = &rhs.adaptive_merge_patches[0];
+            if a.bottom_idx != b.bottom_idx || a.top_idx != b.top_idx || a.group_top != b.group_top {
+                return false;
+            }
+            // Layer.cpp:227-229
+            !a.group_top
+        };
 
         // Layer.cpp:207-208
         // C++: for (LayerRegionPtrs::iterator layerm = m_regions.begin(); layerm != m_regions.end(); ++ layerm)
@@ -2335,6 +2368,15 @@ impl Layer {
                     // Layer.cpp:231-233
                     let other_config = self.regions[it].region().config().clone();
                     if !self.has_compatible_layer_regions(&config, &other_config) {
+                        continue;
+                    }
+                    // Layer.cpp:264 (the gradient_volume_id comparison) is not ported: the PrintRegion a
+                    // LayerRegion holds in this crate carries no gradient volume id.
+                    // Layer.cpp:266-268: a shared perimeter pass can only honor the merge plan of its front
+                    // region (gate LAYER_PERIMETERS_SAME_MERGE_PATCHES; off = R928, no such condition).
+                    if crate::faithful_gate("LAYER_PERIMETERS_SAME_MERGE_PATCHES")
+                        && !same_merge_patches(&self.regions[region_idx], &self.regions[it])
+                    {
                         continue;
                     }
                     // Layer.cpp:235-237
@@ -3229,6 +3271,67 @@ impl Layer {
 
             let fill_pattern = surface_fill.params.pattern;
 
+            // FILL_CONCENTRIC_PIN (on unless =0): ipConcentric as group_fills left it, that is
+            // the CONFIGURED pattern of a surface (Fill.cpp:239, 264-282), is filled by
+            // FillConcentric through Fill::fill_surface_extrusion with params.use_arachne
+            // (Fill.cpp:717-721, 797, 836-846; FillBase.cpp:127-176; FillConcentric.cpp:67-146):
+            // one no-sort collection of variable-width paths per expolygon. The block below hands
+            // it to FillConcentricInternal as it does ipConcentricInternal; that filler iterates
+            // no_overlap_expolygons, which only the narrow block fills (Fill.cpp:599), and emits
+            // nothing here.
+            if fill_pattern == InfillPattern::Concentric
+                && surface_fill.params.pin_pattern
+                    == Some(crate::print_config::InfillPattern::Concentric)
+                && crate::faithful_gate("FILL_CONCENTRIC_PIN")
+            {
+                let region_id = surface_fill.region_id;
+                // Fill.cpp:787  f->loop_clipping = coord_t(scale_(nozzle_diameter) * LOOP_CLIPPING_LENGTH_OVER_NOZZLE_DIAMETER)
+                let loop_clipping = ((surface_fill.params.flow.nozzle_diameter()
+                    / crate::libslic3r::SCALING_FACTOR)
+                    * 0.15) as crate::Coord;
+                // Fill.cpp:789-803
+                let mut fp = crate::fill::FillParams::new();
+                fp.density = fill_params_density(surface_fill.params.density);
+                fp.multiline = surface_fill.params.multiline;
+                fp.dont_adjust = false;
+                fp.anchor_length = surface_fill.params.anchor_length as f64;
+                fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
+                fp.use_arachne = true; // Fill.cpp:797
+                fp.layer_height = self.height;
+                fp.flow = surface_fill.params.flow.clone();
+                fp.extrusion_role = surface_fill.params.extrusion_role;
+                fp.using_internal_flow =
+                    !surface_fill.surface.is_solid() && !surface_fill.params.bridge;
+                let print_config = self
+                    .print_config
+                    .as_deref()
+                    .expect("config hierarchy not wired — call wire_layer_hierarchy");
+                let print_object_config = self
+                    .object_config
+                    .as_deref()
+                    .expect("config hierarchy not wired — call wire_layer_hierarchy");
+                let mut out_entities: Vec<crate::extrusion_entity::ExtrusionEntityType> =
+                    Vec::new();
+                // Fill.cpp:835-847
+                for expoly in &surface_fill.expolygons {
+                    let mut filler = crate::fill::fill_concentric::FillConcentric {
+                        // Fill.cpp:844: the spacing is reset for each expolygon
+                        spacing: surface_fill.params.spacing,
+                        loop_clipping,
+                        print_config: Some(print_config),
+                        print_object_config: Some(print_object_config),
+                    };
+                    let mut surface = surface_fill.surface.clone();
+                    surface.expolygon = expoly.clone();
+                    // Fill::overlap stays 0 here (FillBase.hpp; only make_ironing sets it)
+                    filler.fill_surface_extrusion(&surface, &fp, 0.0, &mut out_entities);
+                }
+                for ent in out_entities {
+                    self.regions[region_id].fills.entities.push(ent);
+                }
+                continue;
+            }
+
             // ---------------------------------------------------------------
             // Concentric (Arachne) fillers — dedicated variable-width path.
             //
@@ -3837,6 +3940,18 @@ impl Layer {
                                     &mono_no_overlap,
                                     &[expoly.clone()],
                                 )
+                            } else if fill_pattern == InfillPattern::MonotonicLine
+                                && mono_no_overlap.is_empty()
+                                && crate::faithful_gate("TOPFILL_FAITHFUL")
+                                && crate::faithful_gate("FILL_MONOLINE_NO_OVERLAP")
+                            {
+                                // FILL_MONOLINE_NO_OVERLAP (on unless =0):
+                                // FillMonotonicLineWGapFill::fill_surface_extrusion iterates
+                                // no_overlap_expolygons and nothing else
+                                // (FillRectilinear.cpp:3657-3668): with none it lays no line
+                                // (and no gap fill, 3693). The arm below rasters the surface's
+                                // expolygon instead.
+                                Vec::new()
                             } else {
                                 vec![expoly.clone()]
                             };

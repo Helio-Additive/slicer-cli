@@ -452,6 +452,11 @@ pub struct PrintRegionConfig {
     /// PrintConfig.hpp:1122 ((ConfigOptionFloat, filter_out_gap_fill))
     pub filter_out_gap_fill: CoordF,
 
+    /// Flow ratio of the first layer; regions that differ in it are not merged on layer 0
+    /// (Layer.cpp:197).
+    /// PrintConfig.hpp:1272 ((ConfigOptionFloat, initial_layer_flow_ratio))
+    pub initial_layer_flow_ratio: CoordF,
+
     /// Embed wall into infill (used by InterlockingGenerator::generate_embedding_wall).
     /// PrintConfig.hpp:1136 ((ConfigOptionBool, embedding_wall_into_infill))
     pub embedding_wall_into_infill: bool,
@@ -967,6 +972,15 @@ impl PrintRegionConfig {
                 }
                 true
             }
+            // PrintConfig.hpp:1272: a PrintRegionConfig option at the pin. Read here only with the
+            // gate of its one reader in this crate (Layer::has_compatible_layer_regions) on; off,
+            // the key falls through to `_ => false` as before R929.
+            "initial_layer_flow_ratio" if crate::faithful_gate("LAYER_COMPATIBLE_INITIAL_FLOW_RATIO") => {
+                if let Some(v) = parse_f64(value) {
+                    self.initial_layer_flow_ratio = v;
+                }
+                true
+            }
 
             // === Multi-material top/bottom color penetration ===
             "top_color_penetration_layers" => {
@@ -1307,6 +1321,8 @@ impl Default for PrintRegionConfig {
 
             // C++ default: PrintConfig.cpp:3187 (ConfigOptionFloat(0))
             filter_out_gap_fill: 0.0,
+            // C++ default: PrintConfig.cpp:2073 (ConfigOptionFloat(1))
+            initial_layer_flow_ratio: 1.0,
             // C++ default: PrintConfig.cpp:4218 (ConfigOptionBool(false))
             embedding_wall_into_infill: false,
         }

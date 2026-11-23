@@ -21,7 +21,7 @@
 #![allow(clippy::needless_range_loop)]
 
 use crate::clipper_utils::{
-    diff_pl, intersection, intersection_pl, offset_expolygons, OffsetJoinType,
+    intersection, intersection_pl, offset_expolygons, OffsetJoinType,
 };
 use crate::geometry::{
     has_duplicate_points as points_have_duplicates, polygons_match,
@@ -41,12 +41,23 @@ impl ExPolygon {
     // NOTE: the canonical `ExPolygon::scale(&mut self, factor: CoordF)` already
     // implements this in geometry/expolygon.rs; `scale_factor` is provided as a
     // C++-named alias for documentation/parity bookkeeping.
+    //
+    // R929: `MultiPoint::scale(double factor)` is `pt *= factor` (MultiPoint.cpp:6-10) and
+    // `Point::operator*=(const double&)` truncates (Point.hpp:199, `coord_t(this->x() * rhs)`), where
+    // `Polygon::scale` of the crate rounds; this member truncates as the pin does (nothing calls it but
+    // tests/ex_polygon_native_parity.rs; `ExPolygon::scale` is left as it was).
     pub fn scale_factor(&mut self, factor: f64) {
         // ExPolygon.cpp:19
-        self.contour.scale(factor);
+        for pt in &mut self.contour.points {
+            pt.x = (pt.x as f64 * factor) as Coord;
+            pt.y = (pt.y as f64 * factor) as Coord;
+        }
         // ExPolygon.cpp:20-21
         for hole in &mut self.holes {
-            hole.scale(factor);
+            for pt in &mut hole.points {
+                pt.x = (pt.x as f64 * factor) as Coord;
+                pt.y = (pt.y as f64 * factor) as Coord;
+            }
         }
     }
 
@@ -142,7 +153,9 @@ impl ExPolygon {
         let bbox1 = get_extents_expoly(self);
         // ExPolygon.cpp:84
         // BoundingBox bbox2 = get_extents(polyline);
-        let bbox2 = polyline.bounding_box();
+        // `get_extents(const Polyline&)` is `BoundingBox(polyline.points)` (R929).
+        let mut bbox2 = BoundingBox::new();
+        BoundingBox::construct(&mut bbox2, &polyline.points, false);
         // ExPolygon.cpp:85
         // bbox2.inflated(1);
         // NOTE: `BoundingBoxBase::inflated(coordf_t)` is a CONST method returning
@@ -151,12 +164,16 @@ impl ExPolygon {
         // ExPolygon.cpp:86-87
         // if (!bbox1.overlap(bbox2))
         //     return false;
-        if !bbox1.intersects(&bbox2) {
+        // R929: `overlap` compares the stored corners, defined or not (BoundingBox.hpp:56-59); the box of a
+        // horizontal or vertical polyline is not defined and `intersects` refused it.
+        if !bbox1.overlap(&bbox2) {
             return false;
         }
         // ExPolygon.cpp:89
         // return diff_pl(polyline, *this).empty();
-        diff_pl(std::slice::from_ref(polyline), std::slice::from_ref(self)).is_empty()
+        // R929: the pin's own `diff_pl(const Polyline&, const ExPolygon&)` (ClipperUtils.cpp:913-914) of
+        // module `cpp`, verified against the pin; the older `diff_pl` gave 578 of 3,000 other answers.
+        crate::clipper_utils::cpp::DiffPl::diff_pl(polyline, self).is_empty()
     }
 
     // ExPolygon.cpp:92-107
@@ -164,7 +181,8 @@ impl ExPolygon {
     pub fn contains_polylines(&self, polylines: &[Polyline]) -> bool {
         // ExPolygon.cpp:102
         // Polylines pl_out = diff_pl(polylines, *this);
-        let pl_out = diff_pl(polylines, std::slice::from_ref(self));
+        // R929: `diff_pl(const Polylines&, const ExPolygon&)` (ClipperUtils.cpp:917-918) of module `cpp`.
+        let pl_out = crate::clipper_utils::cpp::DiffPl::diff_pl(polylines, self);
         // ExPolygon.cpp:106
         // return pl_out.empty();
         pl_out.is_empty()

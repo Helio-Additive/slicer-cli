@@ -57,6 +57,7 @@ pub use convex_hull::{
 };
 pub use expolygon::{
     area_expolygons, count_points, count_points_expoly, expolygons_append, expolygons_contain,
+    expolygons_contain_border_result, expolygons_simplify_scaled_tolerance,
     expolygons_rotate, expolygons_simplify, get_extents, get_extents_expoly, get_extents_vector,
     keep_largest_contour_only, number_polygons, overlaps_expoly, overlaps_expolygons,
     polygons_append, polygons_append_expoly, remove_same_neighbor, to_expolygons_simple, to_lines,

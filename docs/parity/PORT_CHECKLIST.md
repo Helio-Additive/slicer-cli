@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**72.3% of the named C++ functions are ported or verified (6925 of 9574); 70.9% by size of body.**
+**72.4% of the named C++ functions are ported or verified (6928 of 9574); 71.5% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 525 | 5.5% | 8.0% |
-| partial `[~]` | 2124 | 22.2% | 21.1% |
-| ported `[x]` | 3853 | 40.2% | 25.9% |
-| verified `[v]` | 3072 | 32.1% | 45.0% |
+| not started `[ ]` | 524 | 5.5% | 8.0% |
+| partial `[~]` | 2122 | 22.2% | 20.5% |
+| ported `[x]` | 3839 | 40.1% | 25.8% |
+| verified `[v]` | 3089 | 32.3% | 45.7% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -141,7 +141,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Execution/Execution` | 3 | `execution/execution.rs` | partial | 6 | 0 | 3 | 3 | 0 |
 | `Execution/ExecutionSeq` | 3 | `execution/execution_seq.rs` | partial | 7 | 2 | 0 | 5 | 0 |
 | `Execution/ExecutionTBB` | 3 | `execution/execution_tbb.rs` | partial | 5 | 2 | 2 | 1 | 0 |
-| `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 10 | 66 | 17 | 0 |
+| `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 10 | 65 | 4 | 14 |
 | `ExPolygonCollection` | 1 | `ex_polygon_collection.rs` | partial | 11 | 0 | 2 | 9 | 0 |
 | `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `ExPolygonsIndex` | 1 | `ex_polygons_index.rs` | partial | 7 | 0 | 1 | 6 | 0 |
@@ -158,7 +158,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Fill/Fill` | 1 | `fill/fill.rs` | partial | 7 | 1 | 3 | 2 | 1 |
 | `Fill/Fill3DHoneycomb` | 1 | `fill/fill3_d_honeycomb.rs` | partial | 13 | 0 | 3 | 10 | 0 |
 | `Fill/FillAdaptive` | 1 | `fill/fill_adaptive.rs` | partial | 32 | 8 | 8 | 16 | 0 |
-| `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 5 | 13 | 39 | 11 |
+| `Fill/FillBase` | 1 | `fill/fill_base.rs` | partial | 68 | 4 | 14 | 39 | 11 |
 | `Fill/FillConcentric` | 1 | `fill/fill_concentric.rs` | partial | 5 | 0 | 3 | 2 | 0 |
 | `Fill/FillConcentricInternal` | 1 | `fill/fill_concentric_internal.rs` | partial | 4 | 0 | 1 | 3 | 0 |
 | `Fill/FillConformal` | 1 | `fill/fill_conformal.rs` | partial | 29 | 0 | 2 | 27 | 0 |
@@ -237,7 +237,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `IntersectionPoints` | 1 | `intersection_points.rs` | ported | 6 | 0 | 0 | 1 | 5 |
 | `JumpPointSearch` | 3 | `jump_point_search.rs` | partial | 14 | 0 | 4 | 10 | 0 |
 | `KDTreeIndirect` | 1 | `kd_tree_indirect.rs` | partial | 15 | 0 | 7 | 8 | 0 |
-| `Layer` | 1 | `layer.rs` | partial | 56 | 0 | 19 | 29 | 8 |
+| `Layer` | 1 | `layer.rs` | partial | 56 | 0 | 18 | 29 | 9 |
 | `LayerRegion` | 1 | `layer_region.rs` | partial | 29 | 5 | 23 | 1 | 0 |
 | `libslic3r` | 1 | `libslic3r.rs` | partial | 28 | 12 | 15 | 1 | 0 |
 | `Line` | 1 | `geometry/line.rs` | partial | 56 | 6 | 25 | 9 | 16 |
@@ -337,7 +337,7 @@ Entries of `port_checklist_verified.json` that match no function now: `AsPath` i
 | `Support/SupportParameters` | 2 | `support/support_parameters.rs` | verified | 13 | 0 | 0 | 0 | 13 |
 | `Support/TreeModelVolumes` | 2 | `support/tree_model_volumes.rs` | partial | 34 | 0 | 10 | 10 | 14 |
 | `Support/TreeSupport` | 2 | `support/tree_support.rs` | partial | 72 | 4 | 4 | 25 | 39 |
-| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 0 | 7 | 17 | 52 |
+| `Support/TreeSupport3D` | 2 | `support/tree_support_3d.rs` | partial | 76 | 0 | 6 | 16 | 54 |
 | `Support/TreeSupportCommon` | 2 | `support/tree_support_common.rs` | partial | 15 | 0 | 1 | 0 | 14 |
 | `SupportMergePlan` | 3 | `support_merge_plan.rs` | verified | 14 | 0 | 0 | 0 | 14 |
 | `SupportRecommendedParams` | 3 | `support_recommended_params.rs` | verified | 9 | 0 | 0 | 0 | 9 |
@@ -3650,7 +3650,7 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `overlaps` (line 186) → `geometry/polygon.rs, print_object_slice.rs, sla/agg/basics.rs` — not in the paired file
 - [~] `overlaps` (line 197) → `geometry/polygon.rs, print_object_slice.rs, sla/agg/basics.rs` — not in the paired file
 - [~] `to_points` (line 201) → `ex_polygon_collection.rs, geometry/expolygon.rs, geometry/polygon.rs` — not in the paired file
-- [x] `projection_onto` (line 206) → `ex_polygon.rs:526`
+- [x] `projection_onto` (line 206) → `ex_polygon.rs:544`
 - [~] `to_polylines` (line 214) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 231) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 250) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
@@ -3674,21 +3674,21 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `expolygons_rotate` (line 437) → `geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_contain` (line 443) → `bridge_detector.rs, geometry/expolygon.rs` — not in the paired file
 - [~] `expolygons_simplify` (line 451) → `geometry/expolygon.rs, print_object_slice.rs, support/tree_support.rs` — not in the paired file
-- [x] `get_expolygons_area` (line 455) → `ex_polygon.rs:563`
-- [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:572` — partial
-- [x] `expolygons_match` (line 480) → `ex_polygon.rs:612`
+- [v] `get_expolygons_area` (line 455) → `ex_polygon.rs:581` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:590` — partial
+- [x] `expolygons_match` (line 480) → `ex_polygon.rs:630`
 - [~] `area` (line 487) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `area` (line 488) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `get_extents` (line 490) → `emboss.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
-- [x] `get_extents` (line 495) → `ex_polygon.rs:642`
+- [v] `get_extents` (line 495) → `ex_polygon.rs:660` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `get_extents_rotated` (line 506) → `bridge_detector.rs, geometry/polygon.rs, internal_bridge_detector.rs` — not in the paired file
-- [x] `get_extents_rotated` (line 511) → `ex_polygon.rs:667`
-- [x] `get_extents_vector` (line 522) → `ex_polygon.rs:685`
+- [x] `get_extents_rotated` (line 511) → `ex_polygon.rs:685`
+- [v] `get_extents_vector` (line 522) → `ex_polygon.rs:703` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `has_duplicate_points` (line 531) → `clipper_utils.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [x] `has_duplicate_points` (line 555) → `ex_polygon.rs:721`
+- [v] `has_duplicate_points` (line 555) → `ex_polygon.rs:739` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `remove_same_neighbor` (line 582) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `remove_sticks` (line 597) → `geometry/polygon.rs` — not in the paired file
-- [x] `remove_small_and_small_holes` (line 602) → `ex_polygon.rs:772`
+- [v] `remove_small_and_small_holes` (line 602) → `ex_polygon.rs:790` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `keep_largest_contour_only` (line 623) → `geometry/expolygon.rs` — not in the paired file
 
 **class `ExPolygon`**
@@ -3703,27 +3703,27 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [~] `empty` (line 46) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `area` (line 52) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `is_valid` (line 60) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
-- [x] `douglas_peucker` (line 69) → `ex_polygon.rs:117`
+- [v] `douglas_peucker` (line 69) → `ex_polygon.rs:128` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `medial_axis` (line 75) → `geometry/expolygon.rs` — not in the paired file
 - [~] `contains` (line 76) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [~] `contains` (line 81) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
 - [~] `num_contours` (line 82) → `geometry/expolygon.rs` — not in the paired file
 - [~] `contains` (line 92) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, adaptive_layer_merge.rs` — not in the paired file
-- [x] `contains` (line 109) → `ex_polygon.rs:175`
-- [x] `on_boundary` (line 121) → `ex_polygon.rs:200`
-- [x] `point_projection` (line 132) → `ex_polygon.rs:223`
-- [x] `symmetric_y` (line 151) → `ex_polygon.rs:266`
-- [~] `overlaps` (line 158) → `ex_polygon.rs:277` — partial
+- [v] `contains` (line 109) → `ex_polygon.rs:193` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `on_boundary` (line 121) → `ex_polygon.rs:218` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `point_projection` (line 132) → `ex_polygon.rs:241` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `symmetric_y` (line 151) → `ex_polygon.rs:284` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `overlaps` (line 158) → `ex_polygon.rs:295` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000). (the body reads as partial to the estimate)
 - [~] `simplify_p` (line 225) → `geometry/expolygon.rs, perimeter_generator.rs` — not in the paired file
 - [~] `simplify_p` (line 231) → `geometry/expolygon.rs, perimeter_generator.rs` — not in the paired file
 - [~] `simplify` (line 253) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `simplify` (line 258) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `medial_axis` (line 263) → `geometry/expolygon.rs` — not in the paired file
 - [~] `medial_axis` (line 373) → `geometry/expolygon.rs` — not in the paired file
-- [x] `split_expoly_with_holes` (line 382) → `ex_polygon.rs:302`
-- [x] `map_moment_to_expansion` (line 416) → `ex_polygon.rs:392`
-- [x] `lines` (line 433) → `ex_polygon.rs:444`
-- [x] `remove_colinear_points` (line 443) → `ex_polygon.rs:464`
+- [v] `split_expoly_with_holes` (line 382) → `ex_polygon.rs:320` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [x] `map_moment_to_expansion` (line 416) → `ex_polygon.rs:410`
+- [v] `lines` (line 433) → `ex_polygon.rs:462` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `remove_colinear_points` (line 443) → `ex_polygon.rs:482` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 
 **class `polygon_set_mutable_traits<Slic3r::ExPolygons>`**
 
@@ -4399,9 +4399,9 @@ Rust file: `fill/fill_base.rs`. Status: **partial**. Not listed: 3 constructors,
 - [ ] `new_from_type` (line 34) → `fill/fill_base.rs`
 - [ ] `new_from_type` (line 74) → `fill/fill_base.rs`
 - [~] `use_bridge_flow` (line 85) → `fill/fill.rs, fill/fill3_d_honeycomb.rs, fill/fill_gyroid.rs` — not in the paired file
-- [~] `fill_surface` (line 99) → `fill/fill_conformal.rs, fill/fill_rectilinear.rs` — not in the paired file
-- [ ] `fill_surface_arachne` (line 115) → `fill/fill_base.rs`
-- [~] `fill_surface_extrusion` (line 127) → `fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs, fill/mod.rs` — not in the paired file
+- [~] `fill_surface` (line 99) → `fill/fill_concentric.rs, fill/fill_conformal.rs, fill/fill_rectilinear.rs` — not in the paired file
+- [~] `fill_surface_arachne` (line 115) → `fill/fill_concentric.rs` — not in the paired file
+- [~] `fill_surface_extrusion` (line 127) → `fill/fill_concentric.rs, fill/fill_concentric_internal.rs, fill/fill_floating_concentric.rs` — not in the paired file
 - [v] `set_bounding_box` (line 155) → `fill/fill_base.rs:3306` — R921: tests/fill_base_native_parity.rs: Fill::_adjust_solid_spacing (240), _infill_direction with _layer_angle and the extended bounding box (96), multiline_fill (48), connect_infill over an expolygon (160) and over polygons with a box (48), connect_base_support (96), against the pin's FillBase.cpp compiled into the generator: 688 lines, none differ, with the gate FILL_BASE_PIN (scale as a division, libc++ order of equal arcs, closed contours in the marking grid, perp of the doubles, one fused product).
 - [x] `use_bridge_flow` (line 158) → `fill/fill_base.rs:3317`
 - [x] `no_sort` (line 161) → `fill/fill_base.rs:3323`
@@ -8063,57 +8063,57 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 
 **free functions**
 
-- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2573`
-- [x] `zs_from_layers` (line 411) → `layer.rs:5219`
-- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:5207`
+- [x] `layer_needs_raw_backup` (line 77) → `layer.rs:2615`
+- [x] `zs_from_layers` (line 411) → `layer.rs:5334`
+- [x] `get_node_continuity_rang_limit` (line 458) → `layer.rs:5322`
 - [~] `get_extents` (line 750) → `emboss.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
-- [v] `get_extents` (line 761) → `layer.rs:5654` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as stub to the estimate)
+- [v] `get_extents` (line 761) → `layer.rs:5769` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as stub to the estimate)
 
 **class `ContinuitiousDistancer`**
 
-- [v] `distance_from_perimeter` (line 428) → `layer.rs:5166` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `to_lines` (line 446) → `layer.rs:5193`
+- [v] `distance_from_perimeter` (line 428) → `layer.rs:5281` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `to_lines` (line 446) → `layer.rs:5308`
 
 **class `Layer`**
 
 - [x] `empty` (line 25) → `layer.rs:2158`
 - [x] `add_region` (line 34) → `layer.rs:2145`
-- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2780` — divergent
-- [v] `make_slices` (line 47) → `layer.rs:2480` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.
-- [v] `backup_untyped_slices` (line 84) → `layer.rs:2583` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as partial to the estimate)
-- [v] `restore_untyped_slices` (line 104) → `layer.rs:2622` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as partial to the estimate)
-- [v] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2651` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.
-- [v] `merged` (line 150) → `layer.rs:2725` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as divergent to the estimate)
+- [~] `apply_auto_circle_compensation` (line 39) → `layer.rs:2822` — divergent
+- [v] `make_slices` (line 47) → `layer.rs:2522` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.
+- [v] `backup_untyped_slices` (line 84) → `layer.rs:2625` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as partial to the estimate)
+- [v] `restore_untyped_slices` (line 104) → `layer.rs:2664` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as partial to the estimate)
+- [v] `restore_untyped_slices_no_extra_perimeters` (line 134) → `layer.rs:2693` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets.
+- [v] `merged` (line 150) → `layer.rs:2767` — R928: tests/layer_native_parity.rs: 1,200 lines, none differ. New: Layer::make_slices on 400 layers of one to four regions (the union with the safety offset, 1 to 11 islands in the order of chain_points), get_extents of a region and of the regions, backup_untyped_slices with restore_untyped_slices and restore_untyped_slices_no_extra_perimeters on the same layers, and Layer::merged on 200 layers with four offsets. (the body reads as divergent to the estimate)
 - [x] `id` (line 158) → `layer.rs:2025`
 - [x] `set_id` (line 159) → `layer.rs:2031`
 - [~] `object` (line 160) → `g_code.rs` — not in the paired file
 - [x] `object` (line 161) → `layer.rs:2048`
 - [x] `bottom_z` (line 169) → `layer.rs:2109`
-- [~] `has_compatible_layer_regions` (line 173) → `layer.rs:2188` — partial
+- [v] `has_compatible_layer_regions` (line 173) → `layer.rs:2188` — R929: tests/layer_native_parity.rs: Layer::has_compatible_layer_regions (Layer.cpp 173-198) on a layer of a real Print's object: one of 26 options of the second region changed, layers 0, 1 and 7, both argument orders, 162 lines, none differ (with LAYER_COMPATIBLE_BRIDGE_SPEED=0 six lines differ, with LAYER_COMPATIBLE_INITIAL_FLOW_RATIO=0 two). 1,762 lines in all.
 - [x] `region_count` (line 193) → `layer.rs:2115`
 - [~] `get_region` (line 194) → `app_config.rs` — not in the paired file
 - [x] `get_region` (line 195) → `layer.rs:2121`
-- [~] `make_perimeters` (line 203) → `layer.rs:2276` — divergent
-- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:5230`
-- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5240`
-- [x] `make_fills` (line 223) → `layer.rs:3054`
-- [x] `has_extrusions` (line 239) → `layer.rs:5251`
-- [x] `effective_print_height` (line 242) → `layer.rs:5262`
-- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5281`
-- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5295`
-- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5302`
-- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5316`
-- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2806` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
-- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2956`
-- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5455`
-- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5479`
-- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5486`
-- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5517`
-- [~] `simplify_support_path` (line 638) → `layer.rs:5531` — partial
-- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5543` — partial
-- [~] `simplify_support_loop` (line 670) → `layer.rs:5557` — partial
-- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5571`
-- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:2993` — partial
+- [~] `make_perimeters` (line 203) → `layer.rs:2280` — partial
+- [x] `any_internal_region_slice_contains` (line 210) → `layer.rs:5345`
+- [x] `any_bottom_region_slice_contains` (line 214) → `layer.rs:5355`
+- [x] `make_fills` (line 223) → `layer.rs:3096`
+- [x] `has_extrusions` (line 239) → `layer.rs:5366`
+- [x] `effective_print_height` (line 242) → `layer.rs:5377`
+- [x] `is_adaptive_merged_out` (line 256) → `layer.rs:5396`
+- [x] `simplify_wall_extrusion_path` (line 266) → `layer.rs:5410`
+- [x] `simplify_infill_extrusion_path` (line 267) → `layer.rs:5417`
+- [x] `idx_higher_or_equal` (line 278) → `layer.rs:5431`
+- [v] `calculate_perimeter_continuity` (line 469) → `layer.rs:2848` — R920: tests/layer_native_parity.rs: ContinuitiousDistancer::distance_from_perimeter on 300 sets of perimeter lines x 12 queries and Layer::calculate_perimeter_continuity on 300 layers (258 of them link, 693 links), against the pin's Layer.cpp compiled into the generator: 600 lines, none differ.
+- [x] `recrod_cooling_node_for_each_extrusion` (line 550) → `layer.rs:2998`
+- [x] `export_region_slices_to_svg` (line 576) → `layer.rs:5570`
+- [x] `export_region_slices_to_svg_debug` (line 596) → `layer.rs:5594`
+- [x] `export_region_fill_surfaces_to_svg` (line 602) → `layer.rs:5601`
+- [x] `simplify_support_entity_collection` (line 622) → `layer.rs:5632`
+- [~] `simplify_support_path` (line 638) → `layer.rs:5646` — partial
+- [~] `simplify_support_multi_path` (line 653) → `layer.rs:5658` — partial
+- [~] `simplify_support_loop` (line 670) → `layer.rs:5672` — partial
+- [x] `export_region_fill_surfaces_to_svg_debug` (line 688) → `layer.rs:5686`
+- [~] `get_sparse_infill_max_void_area` (line 694) → `layer.rs:3035` — partial
 - [~] `get_filament_config_idx` (line 739) → `extruder.rs, print.rs` — not in the paired file
 - [~] `get_process_config_idx` (line 744) → `extruder.rs, print.rs` — not in the paired file
 
@@ -8130,7 +8130,7 @@ Rust file: `layer.rs`. Status: **partial**. Not listed: 5 constructors, 2 destru
 - [~] `has_extrusions` (line 366) → `print.rs` — not in the paired file
 - [~] `effective_print_height` (line 367) → `print.rs` — not in the paired file
 - [~] `interface_id` (line 372) → `print.rs` — not in the paired file
-- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5584`
+- [x] `simplify_support_extrusion_path` (line 374) → `layer.rs:5699`
 
 ### `LayerRegion` (.cpp)
 
@@ -12907,8 +12907,8 @@ Rust file: `support/tree_support_3d.rs`. Status: **partial**. Not listed: 5 cons
 - [v] `draw_branches` (line 4168) → `support/tree_support_3d.rs:8354` — R922: tests/tree_support_3d_native_parity.rs: 11,494 lines, every required line equal. New: organic_smooth_branches_avoid_collisions (the elements after the smoothing, 417 layers), draw_branches (the meshes of 18 scenarios) and organic_draw_branches with its helpers (elements 417, cooldown 361, bottom contacts 18, top contacts 48, intermediate layers 443 lines). Reported, not required: slice_branches' intermediate layers (2 of 433 lines, from the closing in make_expolygons of triangle_mesh_slicer.rs). (the body reads as partial to the estimate)
 - [x] `slice_branches` (line 4288) → `support/tree_support_3d.rs:8477`
 - [v] `organic_lightning_infill` (line 4388) → `support/tree_support_3d.rs:9572` — R926: tests/tree_support_3d_native_parity.rs: organic_lightning_infill (TreeSupport3D.cpp 4388-4792) on the 18 scenarios: the chained lightning polylines of every layer, 63 lines (seven scenarios produce lines, the others take the early return), none differ; 12,211 lines in all.
-- [~] `generate_support_areas` (line 4794) → `support/tree_support_3d.rs:9904` — divergent
-- [x] `generate_tree_support_3D` (line 6054) → `support/tree_support_3d.rs:10358`
+- [v] `generate_support_areas` (line 4794) → `support/tree_support_3d.rs:9910` — R929: tests/tree_support_3d_native_parity.rs: the support layers after the pin's generate_tree_support_3D on 18 scenarios, every line asserted: print_z and height, the islands, the number of fill entities and the entities themselves (role, mm3_per_mm, width, height, points; 4,899 entities) of all 442 support layers, and the overhang types of 593 object layers. As in the pin's generator, the tree's own filler calls use the recording filler and generate_support_toolpaths the engine's rectilinear fillers. 15,404 lines in all, none differ. (the body reads as divergent to the estimate)
+- [v] `generate_tree_support_3D` (line 6054) → `support/tree_support_3d.rs:10366` — R929: tests/tree_support_3d_native_parity.rs: the support layers after the pin's generate_tree_support_3D on 18 scenarios, every line asserted: print_z and height, the islands, the number of fill entities and the entities themselves (role, mm3_per_mm, width, height, points; 4,899 entities) of all 442 support layers, and the overhang types of 593 object layers. As in the pin's generator, the tree's own filler calls use the recording filler and generate_support_toolpaths the engine's rectilinear fillers. 15,404 lines in all, none differ.
 
 **class `RichInterfacePlacer`**
 

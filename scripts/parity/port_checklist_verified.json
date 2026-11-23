@@ -3921,5 +3921,58 @@
    "Layer::restore_untyped_slices_no_extra_perimeters",
    "Layer::merged"
   ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 929,
+  "evidence": "tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).",
+  "functions": [
+   "count_points",
+   "number_polygons",
+   "to_lines",
+   "to_points",
+   "to_polygons",
+   "overlaps",
+   "expolygons_contain",
+   "expolygons_simplify",
+   "get_expolygons_area",
+   "area",
+   "get_extents",
+   "get_extents_vector",
+   "has_duplicate_points",
+   "remove_small_and_small_holes",
+   "keep_largest_contour_only",
+   "ExPolygon::translate",
+   "ExPolygon::area",
+   "ExPolygon::is_valid",
+   "ExPolygon::douglas_peucker",
+   "ExPolygon::contains",
+   "ExPolygon::on_boundary",
+   "ExPolygon::point_projection",
+   "ExPolygon::symmetric_y",
+   "ExPolygon::overlaps",
+   "ExPolygon::simplify_p",
+   "ExPolygon::simplify",
+   "ExPolygon::split_expoly_with_holes",
+   "ExPolygon::lines",
+   "ExPolygon::remove_colinear_points"
+  ]
+ },
+ {
+  "unit": "Layer",
+  "round": 929,
+  "evidence": "tests/layer_native_parity.rs: Layer::has_compatible_layer_regions (Layer.cpp 173-198) on a layer of a real Print's object: one of 26 options of the second region changed, layers 0, 1 and 7, both argument orders, 162 lines, none differ (with LAYER_COMPATIBLE_BRIDGE_SPEED=0 six lines differ, with LAYER_COMPATIBLE_INITIAL_FLOW_RATIO=0 two). 1,762 lines in all.",
+  "functions": [
+   "Layer::has_compatible_layer_regions"
+  ]
+ },
+ {
+  "unit": "Support/TreeSupport3D",
+  "round": 929,
+  "evidence": "tests/tree_support_3d_native_parity.rs: the support layers after the pin's generate_tree_support_3D on 18 scenarios, every line asserted: print_z and height, the islands, the number of fill entities and the entities themselves (role, mm3_per_mm, width, height, points; 4,899 entities) of all 442 support layers, and the overhang types of 593 object layers. As in the pin's generator, the tree's own filler calls use the recording filler and generate_support_toolpaths the engine's rectilinear fillers. 15,404 lines in all, none differ.",
+  "functions": [
+   "generate_support_areas",
+   "generate_tree_support_3D"
+  ]
  }
 ]
