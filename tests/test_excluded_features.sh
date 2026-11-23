@@ -688,16 +688,20 @@ fi
 # it only logs. Without --strict the run slices and result.json lists the
 # warning with a class; with --strict the same warning ends the run (-100);
 # with --no-check as well the pair is refused (-2), as the official command
-# line does (OrcaSlicer.cpp 1422-1429, 7171-7183 at f92a7c0).
+# line does (OrcaSlicer.cpp 1422-1429, 7171-7183 at f92a7c0). The single-file
+# call (-o) stops on the same warning with --strict and slices without it.
 if [ "$ENGINE" = orca ]; then
     set +e
     "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --outputdir "$PART_DIR/s0" > "$PART_DIR/s0.out" 2>&1; STRICT_OFF=$?
     "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --strict --outputdir "$PART_DIR/s1" > "$PART_DIR/s1.out" 2>&1; STRICT_ON=$?
     "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --strict --no-check --outputdir "$PART_DIR/s2" > "$PART_DIR/s2.out" 2>&1; STRICT_PAIR=$?
+    # The model is named as in the s0 run: the warning names the object as it was given.
+    "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" -o "$PART_DIR/s3.gcode" > "$PART_DIR/s3.out" 2>&1; STRICT_FILE_OFF=$?
+    "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --strict -o "$PART_DIR/s4.gcode" > "$PART_DIR/s4.out" 2>&1; STRICT_FILE_ON=$?
     set -e
-    if STRICT_DETAIL=$(python3 - "$PART_DIR" "$STRICT_OFF" "$STRICT_ON" "$STRICT_PAIR" <<'PY' 2>&1
-import json, sys
-d, off, on, pair = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+    if STRICT_DETAIL=$(python3 - "$PART_DIR" "$STRICT_OFF" "$STRICT_ON" "$STRICT_PAIR" "$STRICT_FILE_OFF" "$STRICT_FILE_ON" <<'PY' 2>&1
+import json, os, sys
+d, off, on, pair, file_off, file_on = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])
 r0 = json.load(open(d + "/s0/result.json")); r1 = json.load(open(d + "/s1/result.json")); r2 = json.load(open(d + "/s2/result.json"))
 assert off == 0 and r0["return_code"] == 0 and r0["strict_mode"] is False, (off, r0["return_code"], r0.get("strict_mode"))
 w = [x for x in r0["warnings"] if x["class"] == "slicing_warning_non_critical"]
@@ -705,11 +709,15 @@ assert w and w[0]["plate_id"] == 1 and w[0]["text"], r0["warnings"]
 assert on != 0 and r1["return_code"] == -100 and r1["strict_mode"] is True, (on, r1["return_code"], r1.get("strict_mode"))
 assert [x for x in r1["warnings"] if x["class"] == "slicing_warning_non_critical"], r1["warnings"]
 assert pair != 0 and r2["return_code"] == -2 and "--strict cannot be combined with --no-check" in json.dumps(r2), (pair, r2["return_code"])
+assert file_off == 0 and os.path.getsize(d + "/s3.gcode") > 0, ("-o without --strict", file_off)
+assert file_on != 0, "-o with --strict sliced a model that warns"
+said = [line for line in open(d + "/s4.out", encoding="utf-8", errors="replace").read().splitlines() if line.startswith("Error: ")]
+assert said and w[0]["text"] in said[-1], "-o with --strict does not end with the warning %r: %r" % (w[0]["text"], said[-1:])
 PY
     ); then
         record "strict-ends-the-run-on-a-non-critical-warning" 1
     else
-        record "strict-ends-the-run-on-a-non-critical-warning" 0 "exits $STRICT_OFF/$STRICT_ON/$STRICT_PAIR: $(tail -n 1 <<<"$STRICT_DETAIL")"
+        record "strict-ends-the-run-on-a-non-critical-warning" 0 "exits $STRICT_OFF/$STRICT_ON/$STRICT_PAIR/$STRICT_FILE_OFF/$STRICT_FILE_ON: $(tail -n 1 <<<"$STRICT_DETAIL")"
     fi
 
     # --export-statistics (OrcaSlicer from 2.5): the plate's statistics as

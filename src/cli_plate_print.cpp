@@ -490,37 +490,31 @@ static void install_plate_progress(const CliOptions& o, RunPipeProgress& pipe_pr
         slicer_cli::pipe_set_plate_info(std::max(1, outcome.plate_id), std::max(1, outcome.plate_count));
         slicer_cli::pipe_update(4, "Slicing begins");
     }
-    // --strict acts on the warnings this callback keeps, so it is installed
-    // for it also when no progress was asked for.
-    const bool strict = slicer_cli::plate_loop_switches(o).strict;
-    if (o.progress || piped || strict) {
-        print.set_status_callback([&outcome, &o, piped, strict](const Slic3r::PrintBase::SlicingStatus& status) {
-            if (piped)
-                slicer_cli::pipe_update(status.percent, status.text, status.warning_step);
-            emit_status_warning(status);
-            if (!o.progress && !strict)
-                return;
-            using FB = Slic3r::PrintBase::SlicingStatus::FlagBits;
-            const bool is_warning =
-                (status.flags & (FB::UPDATE_PRINT_STEP_WARNINGS | FB::UPDATE_PRINT_OBJECT_STEP_WARNINGS)) != 0;
-            if (status.warning_step != -1 || is_warning) {
-                // The official CLI keeps every warning (g_slicing_warnings,
-                // cli_status_callback) and reports the last one per plate.
-                if (!status.text.empty() &&
-                    status.message_type != Slic3r::PrintStateBase::SlicingDefaultNotification) {
-                    outcome.warning_message = status.text;
-                    outcome.warnings.push_back(json{{"message", status.text},
-                                                    {"level", warning_level_tag(status.warning_level)},
-                                                    {"tag", slicing_notification_tag(static_cast<int>(status.message_type))}});
-                }
-                return;
+    // Every run keeps the slicing warnings (result.json lists them, and --strict
+    // and the post-slice checks act on them); only the progress events depend
+    // on --progress, which --slice turns on.
+    print.set_status_callback([&outcome, &o, piped](const Slic3r::PrintBase::SlicingStatus& status) {
+        if (piped)
+            slicer_cli::pipe_update(status.percent, status.text, status.warning_step);
+        emit_status_warning(status);
+        using FB = Slic3r::PrintBase::SlicingStatus::FlagBits;
+        const bool is_warning =
+            (status.flags & (FB::UPDATE_PRINT_STEP_WARNINGS | FB::UPDATE_PRINT_OBJECT_STEP_WARNINGS)) != 0;
+        if (status.warning_step != -1 || is_warning) {
+            // The official CLI keeps every warning (g_slicing_warnings,
+            // cli_status_callback) and reports the last one per plate.
+            if (!status.text.empty() &&
+                status.message_type != Slic3r::PrintStateBase::SlicingDefaultNotification) {
+                outcome.warning_message = status.text;
+                outcome.warnings.push_back(json{{"message", status.text},
+                                                {"level", warning_level_tag(status.warning_level)},
+                                                {"tag", slicing_notification_tag(static_cast<int>(status.message_type))}});
             }
-            if (o.progress && status.percent >= 0)
-                emit_progress(outcome, status.percent, status.text);
-        });
-    } else {
-        print.set_status_callback(emit_status_warning);
-    }
+            return;
+        }
+        if (o.progress && status.percent >= 0)
+            emit_progress(outcome, status.percent, status.text);
+    });
 }
 
 static int configure_plate_checks(const CliOptions& o, RunPlatePlan& plate_plan, PlateOutcome& outcome,
@@ -932,6 +926,16 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, const
             if (o.progress)
                 emit_progress(outcome, 100, "Slicing finished");
             slicer_cli::pipe_update(100, "Slicing finished");   // BambuStudio.cpp 7242-7245
+        } else if (outcome.strict) {
+            // --strict on the single-file call (-o): the same stop on a warning
+            // the engine only notes (OrcaSlicer.cpp 7171-7183 at f92a7c0). The
+            // other post-slice checks are --slice's, as before.
+            for (const json& w : outcome.warnings)
+                if (w.value("level", "") == "non_critical") {
+                    set_outcome_failure(outcome, CLI_SLICING_ERROR, w.value("message", ""));
+                    std::cerr << "Error: " << outcome.error_string << "\n";
+                    return 1;
+                }
         }
         {
             // --export-slicedata (BambuStudio.cpp 7247-7262; OrcaSlicer.cpp 6183-6199).
