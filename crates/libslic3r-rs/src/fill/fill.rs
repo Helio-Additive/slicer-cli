@@ -1382,6 +1382,365 @@ impl Layer {
     }
 }
 
+// Fill.cpp:983-1250 — `void Layer::make_ironing()`.
+//
+// The ironing parameters of one region (Fill.cpp:990-1054). `layerm` is the index of the region in
+// `m_regions`.
+#[derive(Debug, Clone, Copy)]
+struct IroningParams {
+    pattern: InfillPattern,
+    extruder: i32,
+    just_infill: bool,
+    // Spacing of the ironing lines, also to calculate the extrusion flow from.
+    line_spacing: f64,
+    // Height of the extrusion, to calculate the extrusion flow from.
+    height: f64,
+    speed: f64,
+    angle: f64,
+    inset: f64,
+    layerm: usize,
+}
+
+impl IroningParams {
+    // Fill.cpp:1002-1032 `bool operator<(const IroningParams &rhs) const` (the pattern is not compared).
+    fn less(&self, rhs: &IroningParams) -> bool {
+        if self.extruder < rhs.extruder {
+            return true;
+        }
+        if self.extruder > rhs.extruder {
+            return false;
+        }
+        if (self.just_infill as i32) < (rhs.just_infill as i32) {
+            return true;
+        }
+        if (self.just_infill as i32) > (rhs.just_infill as i32) {
+            return false;
+        }
+        if self.line_spacing < rhs.line_spacing {
+            return true;
+        }
+        if self.line_spacing > rhs.line_spacing {
+            return false;
+        }
+        if self.height < rhs.height {
+            return true;
+        }
+        if self.height > rhs.height {
+            return false;
+        }
+        if self.speed < rhs.speed {
+            return true;
+        }
+        if self.speed > rhs.speed {
+            return false;
+        }
+        if self.angle < rhs.angle {
+            return true;
+        }
+        if self.angle > rhs.angle {
+            return false;
+        }
+        if self.inset < rhs.inset {
+            return true;
+        }
+        if self.inset > rhs.inset {
+            return false;
+        }
+        false
+    }
+    // Fill.cpp:1034-1037 `bool operator==(const IroningParams &rhs) const`
+    fn equal(&self, rhs: &IroningParams) -> bool {
+        self.extruder == rhs.extruder
+            && self.just_infill == rhs.just_infill
+            && self.line_spacing == rhs.line_spacing
+            && self.height == rhs.height
+            && self.speed == rhs.speed
+            && self.angle == rhs.angle
+            && self.pattern == rhs.pattern
+            && self.inset == rhs.inset
+    }
+}
+
+/// The filler of Fill.cpp:1104-1124: `Fill::new_from_type(ironing_params.pattern)`. The pin's ironing
+/// patterns are ipRectilinear ("zig-zag") and ipConcentric (PrintConfig.cpp:4832-4843); any other value
+/// runs the rectilinear filler, whose `fill_surface` the pin's types other than those share.
+enum IroningFiller<'a> {
+    Rectilinear(crate::fill::fill_rectilinear::FillRectilinear),
+    Concentric(crate::fill::fill_concentric::FillConcentric<'a>, crate::fill::fill_base::Fill),
+}
+
+impl<'a> IroningFiller<'a> {
+    // Fill.cpp:1104-1109, 1116-1123: new_from_type, set_bounding_box, layer_id, z, overlap = 0.
+    fn new(pattern: InfillPattern, bbox: &crate::geometry::BoundingBox, layer_id: usize, z: f64) -> Self {
+        let mut base = crate::fill::fill_base::Fill::new();
+        base.set_bounding_box(bbox);
+        base.layer_id = layer_id;
+        base.z = z;
+        base.overlap = 0.;
+        if pattern == InfillPattern::Concentric {
+            let c = crate::fill::fill_concentric::FillConcentric { spacing: base.spacing, loop_clipping: base.loop_clipping, print_config: None, print_object_config: None };
+            IroningFiller::Concentric(c, base)
+        } else {
+            let mut r = crate::fill::fill_rectilinear::FillRectilinear::new();
+            r.base = base;
+            IroningFiller::Rectilinear(r)
+        }
+    }
+    fn base_mut(&mut self) -> &mut crate::fill::fill_base::Fill {
+        match self {
+            IroningFiller::Rectilinear(r) => &mut r.base,
+            IroningFiller::Concentric(_, b) => b,
+        }
+    }
+    // `f->fill_surface(&surface_fill, fill_params)`: FillRectilinear::fill_surface (FillRectilinear.cpp:3075-3095)
+    // or Fill::fill_surface of FillConcentric (FillBase.cpp:99-113).
+    fn fill_surface(&mut self, surface: &crate::surface::Surface, params: &crate::fill::FillParams) -> Vec<crate::geometry::Polyline> {
+        match self {
+            IroningFiller::Rectilinear(r) => r.fill_surface(surface, params),
+            IroningFiller::Concentric(c, b) => {
+                c.spacing = b.spacing;
+                c.loop_clipping = b.loop_clipping;
+                c.fill_surface(surface, params, b.overlap)
+            }
+        }
+    }
+}
+
+/// `config.ironing_type` of the pin (PrintConfig.hpp:1216, IroningType with NoIroning): this crate's
+/// PrintRegionConfig parses "no ironing" into `ironing == false` and keeps an IroningType of three values.
+fn region_ironing_type(config: &crate::region_config::PrintRegionConfig) -> crate::print_config::IroningType {
+    use crate::print_config::IroningType as T;
+    use crate::region_config::IroningType as R;
+    if !config.ironing {
+        return T::NoIroning;
+    }
+    match config.ironing_type {
+        R::TopSurfaces => T::TopSurfaces,
+        R::TopmostOnly => T::TopmostOnly,
+        R::AllSolid => T::AllSolid,
+    }
+}
+
+impl Layer {
+    /// Fill.cpp:983-1250 — `void Layer::make_ironing()`.
+    ///
+    /// The multi-nozzle arm (Fill.cpp:1077-1081) reads the print's full config, which a Layer of this crate
+    /// does not hold: [`Layer::make_ironing_with_full_config`] takes it; this one runs as a print without
+    /// `multi_nozzle_diameter_mode`. `nozzle_diameter.get_at(extruder - 1)` (Fill.cpp:1131) is the
+    /// PrintConfig's `nozzle_diameter`, the first extruder's: this crate's PrintConfig holds one.
+    pub fn make_ironing(&mut self) -> crate::Result<()> {
+        self.make_ironing_with_full_config(None);
+        Ok(())
+    }
+
+    /// Fill.cpp:983-1250, the print's full config handed in for Fill.cpp:1077-1081.
+    pub fn make_ironing_with_full_config(&mut self, full_print_config: Option<&crate::print_config::config_def::DynamicPrintConfig>) {
+        use crate::clipper_utils::cpp::{DiffEx, IntersectionEx, Offset, UnionEx, UnionSafetyOffset, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT};
+        use crate::clipper_utils::ApplySafetyOffset;
+        use crate::geometry::{ExPolygon, ExPolygons, Polygon};
+        use crate::print_config::IroningType;
+        use crate::surface::Surface;
+
+        let Some(object_config) = self.object_config.clone() else { return };
+        let Some(print_config) = self.print_config.clone() else { return };
+        // Fill.cpp:1056-1057
+        let mut by_extruder: Vec<IroningParams> = Vec::new();
+        let default_layer_height = object_config.layer_height;
+
+        // Fill.cpp:1059-1093
+        let has_upper = self.upper_layer_id.is_some();
+        for (idx, layerm) in self.regions().iter().enumerate() {
+            if layerm.slices.surfaces.is_empty() {
+                continue;
+            }
+            let config = layerm.region().config();
+            // This crate's config parses "no ironing" into `ironing == false` (region_config.rs).
+            let ironing_type = region_ironing_type(config);
+            let mut extruder: i32 = -1;
+            if ironing_type != IroningType::NoIroning
+                && (ironing_type == IroningType::AllSolid
+                    || (config.top_solid_layers > 0 && (ironing_type == IroningType::TopSurfaces || (ironing_type == IroningType::TopmostOnly && !has_upper))))
+            {
+                if config.wall_filament == config.solid_infill_filament || config.perimeters == 0 {
+                    // Iron the whole face.
+                    extruder = config.solid_infill_filament as i32;
+                } else {
+                    // Iron just the infill.
+                    extruder = config.solid_infill_filament as i32;
+                }
+            }
+            if extruder != -1 {
+                // Fill.cpp:1073-1076
+                let mut inset = config.ironing_inset;
+                // Fill.cpp:1077-1081
+                if let Some(full) = full_print_config {
+                    if crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(full) {
+                        let nozzle_diameter = crate::print::faithful::nozzle_diameter_for_filament(full, config.solid_infill_filament as u32) as f64;
+                        inset = crate::print_config::config_def::multi_nozzle_ironing_inset(nozzle_diameter, inset);
+                    }
+                }
+                by_extruder.push(IroningParams {
+                    pattern: config.ironing_pattern,
+                    extruder,
+                    //TODO just_infill is currently not used.
+                    just_infill: false,
+                    line_spacing: config.ironing_spacing,
+                    inset,
+                    // Fill.cpp:1082 default_layer_height * 0.01 * config.ironing_flow
+                    height: default_layer_height * 0.01 * config.ironing_flow,
+                    speed: config.ironing_speed,
+                    // Fill.cpp:1084 (int(ironing_direction + infill_direction) % 180) * M_PI / 180.
+                    angle: (((config.ironing_direction + config.fill_angle) as i32) % 180) as f64 * std::f64::consts::PI / 180.,
+                    layerm: idx,
+                });
+            }
+        }
+        // Fill.cpp:1094 std::sort(by_extruder.begin(), by_extruder.end());
+        crate::clipper::libcxx_sort(&mut by_extruder, |a, b| a.less(b));
+
+        // Fill.cpp:1096-1109
+        let mut fill_params = crate::fill::FillParams::default();
+        fill_params.density = 1.;
+        fill_params.monotonic = true;
+        fill_params.extrusion_role = ExtrusionRole::Ironing;
+        let bbox = self.object_bounding_box.clone().unwrap_or_default();
+        let layer_id = self.id();
+        let print_z = self.print_z;
+        let mut f_pattern = InfillPattern::Rectilinear;
+        let mut f = IroningFiller::new(f_pattern, &bbox, layer_id, print_z);
+        let mut i = 0usize;
+        while i < by_extruder.len() {
+            // Find span of regions equivalent to the ironing operation.
+            let ironing_params = by_extruder[i];
+            // Fill.cpp:1114-1124 Create the filler object.
+            if f_pattern != ironing_params.pattern {
+                f_pattern = ironing_params.pattern;
+                f = IroningFiller::new(f_pattern, &bbox, layer_id, print_z);
+            }
+            // Fill.cpp:1126-1127
+            let mut j = i + 1;
+            while j < by_extruder.len() && ironing_params.equal(&by_extruder[j]) {
+                j += 1;
+            }
+
+            // Fill.cpp:1130-1191 Create the ironing extrusions for regions <i, j)
+            let mut ironing_areas: ExPolygons = ExPolygons::new();
+            let nozzle_dmr = print_config.nozzle_diameter;
+            if ironing_params.just_infill {
+                //TODO just_infill is currently not used.
+            } else {
+                // Infill and perimeter.
+                // Merge top surfaces with the same ironing parameters.
+                let mut polys: Vec<Polygon> = Vec::new();
+                let mut infills: Vec<Polygon> = Vec::new();
+                let mut void_fill_areas: Vec<Polygon> = Vec::new();
+                for k in i..j {
+                    let layerm = &self.regions()[by_extruder[k].layerm];
+                    let region_config = layerm.region().config();
+                    let region_ironing_type = region_ironing_type(region_config);
+                    // Fill.cpp:1145-1149
+                    for surface in &layerm.fill_surfaces.surfaces {
+                        if surface.surface_type == SurfaceType::InternalVoid {
+                            void_fill_areas.extend(surface.expolygon.to_polygons());
+                        }
+                    }
+                    // Fill.cpp:1150-1162
+                    let iron_everything = region_ironing_type == IroningType::AllSolid;
+                    let mut iron_completely = iron_everything;
+                    if iron_everything {
+                        // Check whether there is any non-solid hole in the regions.
+                        let internal_infill_solid = region_config.fill_density > 0.95;
+                        for surface in &layerm.fill_surfaces.surfaces {
+                            if (!internal_infill_solid && surface.surface_type == SurfaceType::Internal)
+                                || surface.surface_type == SurfaceType::InternalBridge
+                                || surface.surface_type == SurfaceType::InternalVoid
+                            {
+                                // Some fill region is not quite solid. Don't iron over the whole surface.
+                                iron_completely = false;
+                                break;
+                            }
+                        }
+                    }
+                    // Fill.cpp:1163-1173
+                    if iron_completely {
+                        // Iron everything. This is likely only good for solid transparent objects.
+                        for surface in &layerm.slices.surfaces {
+                            polys.extend(surface.expolygon.to_polygons());
+                        }
+                    } else {
+                        for surface in &layerm.slices.surfaces {
+                            if (surface.surface_type == SurfaceType::Top && region_config.top_solid_layers > 0)
+                                || (iron_everything && surface.surface_type == SurfaceType::Bottom && region_config.bottom_solid_layers > 0)
+                            {
+                                // stBottomBridge is not being ironed on purpose, as it would likely destroy the bridges.
+                                polys.extend(surface.expolygon.to_polygons());
+                            }
+                        }
+                    }
+                    // Fill.cpp:1174-1180
+                    if iron_everything && !iron_completely {
+                        // Add solid fill surfaces.
+                        for surface in &layerm.fill_surfaces.surfaces {
+                            if surface.surface_type == SurfaceType::InternalSolid || surface.surface_type == SurfaceType::SubTop {
+                                infills.extend(surface.expolygon.to_polygons());
+                            }
+                        }
+                    }
+                }
+                // Fill.cpp:1183-1190
+                if !infills.is_empty() || j > i + 1 {
+                    // Ironing over more than a single region or over solid internal infill.
+                    if !infills.is_empty() {
+                        polys.append(&mut infills);
+                    }
+                    polys = UnionSafetyOffset::union_safety_offset(polys.as_slice());
+                }
+                // Fill.cpp:1191-1196 Trim the top surfaces with half the nozzle diameter.
+                let ironing_areas_offset: f64 = if ironing_params.inset == 0. {
+                    ((0.5 * nozzle_dmr) / crate::libslic3r::SCALING_FACTOR) as f32 as f64
+                } else {
+                    ironing_params.inset / crate::libslic3r::SCALING_FACTOR
+                };
+                let trimmed: Vec<Polygon> = Offset::offset(self.lslices.as_slice(), (-ironing_areas_offset) as f32, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT);
+                ironing_areas = IntersectionEx::intersection_ex(polys.as_slice(), trimmed.as_slice(), ApplySafetyOffset::No);
+                if !void_fill_areas.is_empty() {
+                    let voids: ExPolygons = UnionEx::union_ex(void_fill_areas.as_slice(), crate::clipper::PolyFillType::pftNonZero);
+                    ironing_areas = DiffEx::diff_ex(ironing_areas.as_slice(), voids.as_slice(), ApplySafetyOffset::No);
+                }
+            }
+
+            // Fill.cpp:1199-1206 Create the filler object.
+            {
+                let b = f.base_mut();
+                b.spacing = ironing_params.line_spacing;
+                b.angle = ironing_params.angle as f32;
+                b.link_max_length = ((3. * b.spacing) / crate::libslic3r::SCALING_FACTOR) as Coord;
+            }
+            let spacing = ironing_params.line_spacing;
+            let extrusion_height = ironing_params.height * spacing / nozzle_dmr;
+            let extrusion_width = Flow::rounded_rectangle_extrusion_width_from_spacing(nozzle_dmr as f32 as f64, extrusion_height as f32 as f64) as f32;
+            let flow_mm3_per_mm = nozzle_dmr * extrusion_height;
+            // Fill.cpp:1207-1229
+            let mut surface_fill = Surface::new(SurfaceType::Top, ExPolygon::default());
+            for expoly in ironing_areas.into_iter() {
+                surface_fill.expolygon = expoly;
+                let polylines = f.fill_surface(&surface_fill, &fill_params);
+                if !polylines.is_empty() {
+                    // Save into layer.
+                    let mut eec = crate::extrusion_entity::ExtrusionEntityCollection::new();
+                    // Don't sort the ironing infill lines as they are monotonicly ordered.
+                    eec.no_sort = true;
+                    crate::extrusion_entity::extrusion_entities_append_paths(&mut eec.entities, polylines, ExtrusionRole::Ironing, flow_mm3_per_mm, extrusion_width, extrusion_height as f32);
+                    let layerm = ironing_params.layerm;
+                    self.regions_mut()[layerm].fills.entities.push(crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(eec)));
+                }
+            }
+            // Regions up to j were processed.
+            i = j;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // BLOCKED symbols (not ported here)
 // ---------------------------------------------------------------------------

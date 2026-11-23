@@ -433,6 +433,15 @@ pub struct LayerRegion {
     /// Layer::loop_nodes with a rebase (z-direction speed continuity).
     pub loop_nodes_out: Vec<LoopNode>,
 
+    /// R932 LAYER_REGION_PERIMETER_ISLANDS: the pin keeps the walls of each island of a
+    /// `make_perimeters` call as ONE collection in `perimeters` (PerimeterGenerator.cpp:1340-1342
+    /// `this->loops->append(entities)`, :1837-1838 `this->loops->append(extrusion_coll)`); the live
+    /// consumers here read `perimeters.entities` flat (layer.rs, "The islands of `loops` one after the
+    /// other"). Each entry is the range of `perimeters.entities` one island collection of the pin holds,
+    /// and that collection with its entities moved out (its flags and `loop_node_range`, rebased onto
+    /// Layer::loop_nodes as the pin's is). `perimeter_island_collections` rebuilds the pin's structure.
+    pub perimeter_islands: Vec<(std::ops::Range<usize>, ExtrusionEntityCollection)>,
+
     /// Per-entity cooling-node ids for `perimeters.entities` (aligned by
     /// index; -1 = none). Native stores this on the ExtrusionEntity base
     /// (set_cooling_node, ExtrusionEntity.hpp:144); the Rust port keeps a
@@ -476,6 +485,7 @@ impl LayerRegion {
             raw_holes_circle_compensation: Polygons::new(),
             thin_fills: ExtrusionEntityCollection::new(),
             loop_nodes_out: Vec::new(),
+            perimeter_islands: Vec::new(),
             entity_cooling_nodes: Vec::new(),
             fill_expolygons: ExPolygons::new(),
             fill_surfaces: SurfaceCollection::new(),
@@ -490,6 +500,36 @@ impl LayerRegion {
             object_config: None,
             print_config: None,
         }
+    }
+
+    /// R932: `perimeters` as the pin's LayerRegion holds it: one collection per island of the last
+    /// `make_perimeters` call (PerimeterGenerator.cpp:1340-1342, 1837-1838), the walls that belong to no
+    /// recorded island at the top level where they are. With no island recorded (the gate
+    /// LAYER_REGION_PERIMETER_ISLANDS off, or the walls of the body PG_CLASSIC_PIN / PG_ARACHNE_PIN
+    /// replace) this is `perimeters` as stored.
+    pub fn perimeter_island_collections(&self) -> ExtrusionEntityCollection {
+        let mut out = ExtrusionEntityCollection::new();
+        out.no_sort = self.perimeters.no_sort;
+        out.is_reverse = self.perimeters.is_reverse;
+        out.loop_node_range = self.perimeters.loop_node_range;
+        let mut islands = self.perimeter_islands.iter().peekable();
+        let mut i = 0usize;
+        while i < self.perimeters.entities.len() {
+            match islands.peek() {
+                Some((range, _)) if range.start == i => {
+                    let (range, shell) = islands.next().unwrap();
+                    let mut coll = shell.clone();
+                    coll.entities = self.perimeters.entities[range.clone()].to_vec();
+                    out.entities.push(crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(coll)));
+                    i = range.end.max(i + 1);
+                }
+                _ => {
+                    out.entities.push(self.perimeters.entities[i].clone());
+                    i += 1;
+                }
+            }
+        }
+        out
     }
 
     /// Get layer ID
@@ -766,6 +806,7 @@ impl LayerRegion {
         // C++: this->perimeters.clear();
         // C++: this->thin_fills.clear();
         self.perimeters.entities.clear();
+        self.perimeter_islands.clear();
         self.thin_fills.entities.clear();
 
         // LayerRegion.cpp:136-138
@@ -1046,14 +1087,23 @@ impl LayerRegion {
             // The islands of `loops` one after the other, as the body this replaces stores them: the
             // loop of a node is then the index among the walls of all islands.
             let mut nodes = result.loop_nodes;
+            // R932 LAYER_REGION_PERIMETER_ISLANDS (on unless =0): record which walls form one island
+            // collection of the pin (PerimeterGenerator.cpp:1340-1342, 1837-1838); nothing the export
+            // reads changes.
+            let record_islands = crate::faithful_gate("LAYER_REGION_PERIMETER_ISLANDS");
             for island in result.entities.entities {
                 let base = self.perimeters.entities.len();
                 match island {
-                    crate::extrusion_entity::ExtrusionEntityType::Collection(coll) => {
+                    crate::extrusion_entity::ExtrusionEntityType::Collection(mut coll) => {
                         for n in nodes[coll.loop_node_range.0..coll.loop_node_range.1].iter_mut() {
                             n.loop_id += base;
                         }
-                        self.perimeters.entities.extend(coll.entities);
+                        let island_entities = std::mem::take(&mut coll.entities);
+                        let end = base + island_entities.len();
+                        self.perimeters.entities.extend(island_entities);
+                        if record_islands {
+                            self.perimeter_islands.push((base..end, *coll));
+                        }
                     }
                     other => self.perimeters.entities.push(other),
                 }
@@ -2328,6 +2378,7 @@ impl Layer {
                 //      (*layerm)->fills.clear();
                 //      (*layerm)->thin_fills.clear();
                 self.regions[region_idx].perimeters.entities.clear();
+                self.regions[region_idx].perimeter_islands.clear();
                 self.regions[region_idx].fills.entities.clear();
                 self.regions[region_idx].thin_fills.entities.clear();
             } else {
@@ -2389,6 +2440,7 @@ impl Layer {
                     }
                     // Layer.cpp:235-237
                     self.regions[it].perimeters.entities.clear();
+                    self.regions[it].perimeter_islands.clear();
                     self.regions[it].fills.entities.clear();
                     self.regions[it].thin_fills.entities.clear();
                     // Layer.cpp:239-240
@@ -2419,6 +2471,10 @@ impl Layer {
                         let (s0, e0) = self.regions[region_idx].perimeters.loop_node_range;
                         self.regions[region_idx].perimeters.loop_node_range =
                             (s0 + base, e0 + base);
+                        // R932: the island collections' ranges likewise (PerimeterGenerator.cpp:1336).
+                        for (_, coll) in self.regions[region_idx].perimeter_islands.iter_mut() {
+                            coll.loop_node_range = (coll.loop_node_range.0 + base, coll.loop_node_range.1 + base);
+                        }
                         self.loop_nodes.extend(nodes);
                     }
                     // Layer.cpp:254
@@ -2484,6 +2540,10 @@ impl Layer {
                         let (s0, e0) = self.regions[region_idx].perimeters.loop_node_range;
                         self.regions[region_idx].perimeters.loop_node_range =
                             (s0 + base, e0 + base);
+                        // R932: the island collections' ranges likewise (PerimeterGenerator.cpp:1336).
+                        for (_, coll) in self.regions[region_idx].perimeter_islands.iter_mut() {
+                            coll.loop_node_range = (coll.loop_node_range.0 + base, coll.loop_node_range.1 + base);
+                        }
                         self.loop_nodes.extend(nodes);
                     }
                     let fill_surfaces = self.regions[region_idx].fill_surfaces.clone();
@@ -3681,7 +3741,14 @@ impl Layer {
             let surface_expolygons = if fill_pattern == InfillPattern::Gyroid
                 && crate::faithful_gate("GYROID_FILL_SHRINK")
             {
-                let delta = -0.5 * gyroid_spacing * crate::SCALING_FACTOR;
+                // FillBase.cpp:102 float(scale_(this->overlap - 0.5 * this->spacing)), overlap 0 (Fill.cpp
+                // never sets f->overlap): the division by 0.00001 and the float, behind faithful_gate
+                // FILL_SCALE_DIV_PIN; off: the multiplication by 1e5 in double.
+                let delta = if crate::faithful_gate("FILL_SCALE_DIV_PIN") {
+                    (((-0.5f64).mul_add(gyroid_spacing, 0.0) / crate::libslic3r::SCALING_FACTOR) as f32) as f64
+                } else {
+                    -0.5 * gyroid_spacing * crate::SCALING_FACTOR
+                };
                 crate::clipper_utils::offset_expolygons_clib_scaled(
                     &surface_fill.expolygons,
                     delta,
@@ -5094,128 +5161,7 @@ impl Layer {
         Ok(sparse_infill_polylines)
     }
 
-    /// Generate ironing paths
-    /// Layer.cpp:667-1250
-    pub fn make_ironing(&mut self) -> Result<()> {
-        // Layer.cpp:672-1245
-        // Ironing parameters
-        // Layer.cpp:678-695
-        #[derive(Debug, Clone, PartialEq)]
-        struct IroningParams {
-            pattern: InfillPattern,
-            extruder: u32,
-            just_infill: bool,
-            line_spacing: f64,
-            height: f64,
-            speed: f64,
-            angle: f64,
-            inset: f64,
-            layerm_idx: usize,
-        }
-
-        impl IroningParams {
-            fn new(
-                pattern: InfillPattern,
-                extruder: u32,
-                just_infill: bool,
-                line_spacing: f64,
-                height: f64,
-                speed: f64,
-                angle: f64,
-                inset: f64,
-                layerm_idx: usize,
-            ) -> Self {
-                Self {
-                    pattern,
-                    extruder,
-                    just_infill,
-                    line_spacing,
-                    height,
-                    speed,
-                    angle,
-                    inset,
-                    layerm_idx,
-                }
-            }
-        }
-
-        impl PartialOrd for IroningParams {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-
-        impl Eq for IroningParams {}
-
-        impl Ord for IroningParams {
-            // Layer.cpp:710-755
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                use std::cmp::Ordering;
-
-                // Compare extruder
-                if self.extruder != other.extruder {
-                    return self.extruder.cmp(&other.extruder);
-                }
-
-                // Compare pattern
-                if self.pattern != other.pattern {
-                    return (self.pattern as u32).cmp(&(other.pattern as u32));
-                }
-
-                // Compare other fields
-                if self.just_infill != other.just_infill {
-                    return self.just_infill.cmp(&other.just_infill);
-                }
-
-                // Compare floats carefully
-                if (self.line_spacing - other.line_spacing).abs() > 1e-9 {
-                    return if self.line_spacing < other.line_spacing {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    };
-                }
-
-                if (self.height - other.height).abs() > 1e-9 {
-                    return if self.height < other.height {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    };
-                }
-
-                if (self.speed - other.speed).abs() > 1e-9 {
-                    return if self.speed < other.speed {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    };
-                }
-
-                if (self.angle - other.angle).abs() > 1e-9 {
-                    return if self.angle < other.angle {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    };
-                }
-
-                if (self.inset - other.inset).abs() > 1e-9 {
-                    return if self.inset < other.inset {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    };
-                }
-
-                self.layerm_idx.cmp(&other.layerm_idx)
-            }
-        }
-
-        // TODO: Implement full ironing generation
-        // Layer.cpp:757-1240
-        Ok(())
-    }
+    // Layer::make_ironing (Fill.cpp:983-1250) is in fill/fill.rs, the file paired with Fill.cpp.
 
     /// Generate solid infill for a surface (helper)
     /// Layer.cpp:1252-1260

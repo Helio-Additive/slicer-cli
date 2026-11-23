@@ -664,3 +664,135 @@ const FLOOR_FAILED: usize = 0;
 const FLOOR_LINES: usize = 252;
 const FLOOR_ENTITIES: usize = 758;
 const FLOOR_HEADERS: usize = 758;
+
+// Layer::make_ironing (Fill.cpp:983-1250): what the pin's make_ironing appends to the empty `fills` of
+// each region of a layer whose slices, fill surfaces, lslices and upper layer are set by hand ("il"
+// lines of tests/data/fill/vectors_ironing.txt.gz, 11 configurations x 8 layers: ironing_type top /
+// topmost / solid, dense sparse infill, spacing and flow, inset, direction, the concentric pattern,
+// no ironing, no top or bottom shells), against `Layer::make_ironing` of fill/fill.rs on the same inputs.
+// `FILL_IRONING_VECTORS` names a file of the generator to read instead of the committed one.
+fn read_ironing_vectors() -> Vec<String> {
+    if let Ok(path) = std::env::var("FILL_IRONING_VECTORS") {
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        return text.lines().map(|l| l.to_string()).collect();
+    }
+    let path = format!("{}/tests/data/fill/vectors_ironing.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).unwrap_or_else(|e| panic!("{path}: {e}"));
+    text.lines().map(|l| l.to_string()).collect()
+}
+
+#[test]
+fn fill_make_ironing_native_parity() {
+    let expected = read_ironing_vectors();
+    let show: usize = std::env::var("FILL_PARITY_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    let mut cfg: Option<(String, std::sync::Arc<slicer::print_config::PrintConfig>, std::sync::Arc<slicer::print_config::PrintObjectConfig>, std::sync::Arc<slicer::print_region::PrintRegion>)> = None;
+    let (mut lines, mut equal_lines, mut entities, mut equal_entities, mut nonempty) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut per_cfg: Vec<(String, usize, usize)> = Vec::new();
+    let mut shown = 0usize;
+    for (line_no, line) in expected.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix("ic\t") {
+            let fields: Vec<&str> = rest.split('\t').collect();
+            let mut print_config = slicer::print_config::PrintConfig::default();
+            let mut object_config = slicer::print_config::PrintObjectConfig::default();
+            let mut region_config = slicer::region_config::PrintRegionConfig::default();
+            for f in &fields[1..] {
+                let (key, value) = f.split_once('=').expect("key=value");
+                let first = if key == "nozzle_diameter" { value.split(',').next().unwrap_or(value) } else { value };
+                print_config.set_deserialize(key, first);
+                if !object_config.set_deserialize(key, first) {
+                    object_config.apply_key_value(key, first);
+                }
+                region_config.set_deserialize(key, first);
+            }
+            cfg = Some((fields[0].to_string(), std::sync::Arc::new(print_config), std::sync::Arc::new(object_config), std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config))));
+            per_cfg.push((fields[0].to_string(), 0, 0));
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("il ") else { panic!("unknown line {}", line_no + 1) };
+        let (tag, print_config, object_config, region) = cfg.as_ref().expect("ic");
+        let (inputs, result) = rest.split_once(" => ").expect("results");
+        lines += 1;
+        let mut t = Tok::new(inputs);
+        let layer_id = t.i() as usize;
+        let height = t.d();
+        let print_z = t.d();
+        let slice_z = t.d();
+        let has_upper = t.b();
+        let mut layer = Layer::new(layer_id, 0, height, print_z, slice_z);
+        let mut layerm = LayerRegion::new(layer_id, 0);
+        layerm.set_config_hierarchy(region.clone(), object_config.clone(), print_config.clone());
+        let n = t.i();
+        for _ in 0..n {
+            let ty = surface_type(t.i());
+            layerm.slices.surfaces.push(Surface::new(ty, t.expoly()));
+        }
+        let m = t.i();
+        for _ in 0..m {
+            let ty = surface_type(t.i());
+            layerm.fill_surfaces.surfaces.push(Surface::new(ty, t.expoly()));
+        }
+        layer.lslices = t.expolys();
+        layer.add_region(layerm);
+        layer.set_object_configs(object_config.clone(), print_config.clone());
+        if has_upper {
+            layer.set_upper_layer(Some(layer_id + 1));
+        }
+        let toks: Vec<&str> = result.split(' ').collect();
+        let mut k = 0usize;
+        let bbox = if toks[k] == "1" {
+            let v: Vec<i64> = toks[k + 1..k + 5].iter().map(|s| s.parse().expect("box")).collect();
+            k += 5;
+            Some(slicer::geometry::BoundingBox::from_points_minmax(Point::new(v[0], v[1]), Point::new(v[2], v[3])))
+        } else {
+            k += 1;
+            None
+        };
+        layer.set_object_bounding_box(bbox);
+        let regions: usize = toks[k].parse().expect("regions");
+        k += 1;
+        let mut theirs: Vec<Vec<String>> = Vec::new();
+        for _ in 0..regions {
+            assert_eq!(toks[k], "R", "line {}", line_no + 1);
+            let count: usize = toks[k + 1].parse().expect("entities");
+            k += 2;
+            theirs.push((0..count).map(|_| take_entity(&toks, &mut k)).collect());
+        }
+        assert_eq!(k, toks.len(), "line {}: tokens left", line_no + 1);
+        layer.make_ironing().expect("make_ironing");
+        let mine: Vec<Vec<String>> = layer.regions().iter().map(|r| r.fills.entities.iter().map(ent_s).collect()).collect();
+        let pin_entities: usize = theirs.iter().map(|r| r.len()).sum();
+        entities += pin_entities;
+        if pin_entities > 0 {
+            nonempty += 1;
+        }
+        let row = per_cfg.last_mut().expect("ic");
+        row.1 += 1;
+        for (r, region_theirs) in theirs.iter().enumerate() {
+            let region_mine = mine.get(r).cloned().unwrap_or_default();
+            for (i, e) in region_theirs.iter().enumerate() {
+                if region_mine.get(i) == Some(e) {
+                    equal_entities += 1;
+                } else if shown < show {
+                    shown += 1;
+                    let m = region_mine.get(i);
+                    eprintln!("make_ironing: line {} ({tag}), region {r}, entity {i} of {} (here {}):\n    pin:  {}\n    rust: {}", line_no + 1, region_theirs.len(), region_mine.len(), &e[..e.len().min(600)], m.map(|s| &s[..s.len().min(600)]).unwrap_or("-"));
+                }
+            }
+        }
+        if mine == theirs {
+            equal_lines += 1;
+            row.2 += 1;
+        } else if shown < show && mine.iter().map(|r| r.len()).sum::<usize>() != pin_entities {
+            shown += 1;
+            eprintln!("make_ironing: line {} ({tag}): pin {} entities, here {}", line_no + 1, pin_entities, mine.iter().map(|r| r.len()).sum::<usize>());
+        }
+    }
+    eprintln!("Layer::make_ironing (fill/fill.rs): {lines} lines ({nonempty} with ironing), {equal_lines} equal to the pin; entities {equal_entities} of {entities} equal");
+    for (tag, n, eq) in &per_cfg {
+        eprintln!("    {tag}: {eq} of {n} lines equal");
+    }
+    assert_eq!(lines, 88, "lines of the vectors");
+    assert_eq!(equal_lines, lines, "make_ironing: {equal_lines} of {lines} lines equal to the pin");
+}

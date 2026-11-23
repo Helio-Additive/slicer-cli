@@ -5387,6 +5387,43 @@ lines={} grown_polys={} grown_verts={}",
         Ok(())
     }
 
+    /// Gate `TREE_SUPPORT_ORGANIC_PIN` (opt_in_gate, R932; print.rs calls this before `generate_support_material`
+    /// only with the gate on): the tree support types go through the pin's support step instead of the mapping to
+    /// Normal in `generate_support_material`: PrintObject.cpp:891 (the same `do_generate` test), :5926-5930
+    /// (`TreeSupport tree_support(*this, m_slicing_params); tree_support.generate();`) on the faithful PrintObject of
+    /// this object's ModelObject in `print` (`support::tree_support_3d::assemble_faithful_print`, PrintApply.cpp),
+    /// with this object's layers handed over and the support layers handed back
+    /// (`support::tree_support_3d::generate_live_tree_support`), configs wired as `generate_support_material` does.
+    /// Returns false (nothing done) for a non-tree support type, when there is nothing to generate or when `print`
+    /// holds no object of this ModelObject, so the caller runs `generate_support_material`.
+    pub fn generate_support_material_tree_pin(&mut self, print: &mut crate::print::faithful::Print) -> Result<bool> {
+        if self.is_step_done(PrintObjectStep::SupportMaterial) {
+            return Ok(false);
+        }
+        if self.config.support_type != crate::print_config::SupportType::Tree {
+            return Ok(false);
+        }
+        // PrintObject.cpp:891
+        let do_generate = (self.has_support() && self.layers.len() > 1)
+            || (self.config.raft_layers > 0 && !self.layers.is_empty());
+        if !do_generate {
+            return Ok(false);
+        }
+        let Some(res) = crate::support::tree_support_3d::generate_live_tree_support(print, self.model_object_id, &self.layers) else {
+            return Ok(false);
+        };
+        // PrintObject.cpp:858 `this->clear_support_layers();`
+        self.clear_support_layers();
+        self.support_layers = res?;
+        let object_config = Arc::new(self.config.clone());
+        let print_config = self.print_config.clone();
+        for layer in &mut self.support_layers {
+            layer.wire_config_hierarchy(&object_config, &print_config, &[]);
+        }
+        self.set_step_done(PrintObjectStep::SupportMaterial);
+        Ok(true)
+    }
+
     /// Generate ironing paths for top surfaces on each layer.
     /// PrintObject.cpp:840-855 (Layer::make_ironing)
     pub fn ironing(&mut self) -> Result<()> {

@@ -787,9 +787,17 @@ impl Polygon {
                 // Polygon.cpp:376 — float r = (min_length/diff_len);
                 let r = min_length / diff_len;
                 // Polygon.cpp:377 — Point new_pt = points[j-1] + Point(r*diff[0], r*diff[1]);
-                // Point(float,float) -> coord_t cast (truncation toward zero).
-                let new_pt = self.points[j - 1]
-                    + Point::new((r * diff.x as f32) as Coord, (r * diff.y as f32) as Coord);
+                // `r*diff[0]` is a float; Point(double, double) rounds with lrint (Point.hpp:178), to
+                // nearest even: gate `POLYGON_REST_PIN` (R932, on); the off arm truncates.
+                let new_pt = if polygon_rest_pin() {
+                    self.points[j - 1]
+                        + Point::new(
+                            ((r * diff.x as f32) as f64).round_ties_even() as Coord,
+                            ((r * diff.y as f32) as f64).round_ties_even() as Coord,
+                        )
+                } else {
+                    self.points[j - 1] + Point::new((r * diff.x as f32) as Coord, (r * diff.y as f32) as Coord)
+                };
                 // Polygon.cpp:378
                 self.points.insert(j, new_pt);
                 // Polygon.cpp:379
@@ -1249,6 +1257,9 @@ pub fn get_extents_rotated_polygons(polygons: &[Polygon], angle: CoordF) -> Boun
 /// BoundingBox of points rotated by `angle` about the origin.
 /// `get_extents_rotated(const Points &points, double angle)` (Point.cpp helper).
 fn get_extents_rotated_points(points: &[Point], angle: CoordF) -> BoundingBox {
+    if polygon_rest_pin() {
+        return get_extents_rotated_points_pin(points, angle);
+    }
     let mut bb = BoundingBox::new();
     if !points.is_empty() {
         let cos_angle = angle.cos();
@@ -1267,6 +1278,40 @@ fn get_extents_rotated_points(points: &[Point], angle: CoordF) -> BoundingBox {
         }
     }
     bb
+}
+
+/// MultiPoint.cpp:441-465 `get_extents_rotated(const Points &points, double angle)` as the pin computes it
+/// (gate `POLYGON_REST_PIN`, R932, on): the first point defines the box (`defined = true`; the off arm's
+/// `from_points_minmax(first, first)` is not defined under BOUNDING_BOX_FROM_POINTS_PIN and the next merge
+/// dropped the first point), `c * x - s * y` and `c * y + s * x` each one expression (clang fuses the left
+/// product: fma(c, x, -(s*y)), fma(c, y, s*x)), coordinates by std::min / std::max.
+fn get_extents_rotated_points_pin(points: &[Point], angle: CoordF) -> BoundingBox {
+    let mut bbox = BoundingBox::new();
+    if !points.is_empty() {
+        let s = angle.sin();
+        let c = angle.cos();
+        let rot = |p: &Point| -> Point {
+            let cur_x = p.x as f64;
+            let cur_y = p.y as f64;
+            Point::new(
+                c.mul_add(cur_x, -(s * cur_y)).round() as Coord,
+                c.mul_add(cur_y, s * cur_x).round() as Coord,
+            )
+        };
+        // MultiPoint.cpp:448-452 (merge_point on the undefined box sets min = max = the point, defined)
+        bbox.merge_point(rot(&points[0]));
+        // MultiPoint.cpp:453-462
+        for p in &points[1..] {
+            bbox.merge_point(rot(p));
+        }
+    }
+    bbox
+}
+
+/// Gate `POLYGON_REST_PIN` (R932, faithful): densify's lrint and get_extents_rotated as the pin.
+fn polygon_rest_pin() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("POLYGON_REST_PIN"))
 }
 
 /// Polygon.cpp:443 — `std::vector<BoundingBox> get_extents_vector(const Polygons &polygons)`

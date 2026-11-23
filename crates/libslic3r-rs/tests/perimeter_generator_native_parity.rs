@@ -637,6 +637,24 @@ fn leaves_s(coll: &ExtrusionEntityCollection) -> String {
     format!("{n}{o}")
 }
 
+/// gen.cpp `ISLANDS(coll)`: per top-level entity of the walls the number of its leaves and its
+/// loop-node range (an island collection), or "1 0 0" (a wall at the top level).
+fn islands_s(coll: &ExtrusionEntityCollection) -> String {
+    let mut o = coll.entities.len().to_string();
+    for e in &coll.entities {
+        match e {
+            ExtrusionEntityType::Collection(c) => {
+                let mut t = String::new();
+                let mut n = 0usize;
+                leaves(c, &mut t, &mut n);
+                o += &format!(" {n} {} {}", c.loop_node_range.0, c.loop_node_range.1);
+            }
+            _ => o += " 1 0 0",
+        }
+    }
+    o
+}
+
 /// gen.cpp `PNODES(nodes)`
 fn pnodes_s(nodes: &[LoopNode]) -> String {
     let mut o = nodes.len().to_string();
@@ -723,16 +741,18 @@ fn perimeter_generator_process_native_parity() {
     let show: usize = std::env::var("PG_PROC_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     let only_case: Option<usize> = std::env::var("PG_PROC_CASE").ok().and_then(|v| v.parse().ok());
     let no_counterbore = std::env::var("PG_PROC_NO_COUNTERBORE").is_ok();
-    const PARTS: [&str; 6] = ["flows", "loops", "gap_fill", "fill_surfaces", "fill_no_overlap", "loop_nodes"];
+    // "islands": the collection per island of the walls (PerimeterGenerator.cpp:1340-1342, 1837-1838),
+    // as LayerRegion::perimeter_island_collections rebuilds it (gate LAYER_REGION_PERIMETER_ISLANDS).
+    const PARTS: [&str; 7] = ["flows", "loops", "gap_fill", "fill_surfaces", "fill_no_overlap", "loop_nodes", "islands"];
     // Per tag: the cases and, per part, those that differ.
-    let mut stats: Vec<(String, usize, [usize; 6])> = Vec::new();
+    let mut stats: Vec<(String, usize, [usize; 7])> = Vec::new();
     let mut cfg: Option<ProcCfg> = None;
     let mut shown = 0usize;
     let mut case_in_tag = 0usize;
     for (line_no, line) in expected.iter().enumerate() {
         if let Some(rest) = line.strip_prefix("pcfg\t") {
             let c = proc_cfg(rest);
-            stats.push((c.tag.clone(), 0, [0; 6]));
+            stats.push((c.tag.clone(), 0, [0; 7]));
             cfg = Some(c);
             case_in_tag = 0;
             continue;
@@ -822,9 +842,10 @@ fn perimeter_generator_process_native_parity() {
             expolys_s(&fill),
             expolys_s(&layerm.fill_no_overlap_expolygons),
             pnodes_s(&layerm.loop_nodes_out),
+            islands_s(&layerm.perimeter_island_collections()),
         ];
         let theirs: Vec<&str> = results.split(" | ").collect();
-        assert!(theirs.len() >= 6, "line {}: {} results", line_no + 1, theirs.len());
+        assert!(theirs.len() >= 7, "line {}: {} results", line_no + 1, theirs.len());
         let entry = stats.last_mut().unwrap();
         entry.1 += 1;
         let mut header_printed = false;
@@ -848,7 +869,7 @@ fn perimeter_generator_process_native_parity() {
             shown += 1;
         }
     }
-    let mut total = [0usize; 6];
+    let mut total = [0usize; 7];
     let mut cases = 0usize;
     eprintln!("{:<36} {:>5}  {}", "tag", "cases", PARTS.join(" "));
     for (tag, n, bad) in &stats {
@@ -856,7 +877,7 @@ fn perimeter_generator_process_native_parity() {
             continue;
         }
         cases += n;
-        for k in 0..6 {
+        for k in 0..7 {
             total[k] += bad[k];
         }
         eprintln!("{tag:<36} {n:>5}  {}", bad.iter().map(|b| format!("{b:>3}")).collect::<Vec<_>>().join(" "));
@@ -866,13 +887,15 @@ fn perimeter_generator_process_native_parity() {
     // (`PerimeterGenerator::process_arachne`, gate PG_ARACHNE_PIN; `scaled<coord_t>(float)` of the wall
     // parameters, gate ARACHNE_SCALED_FLOAT) are equal to the pin in every case, with the counterbore hole
     // bridging of `process_no_bridge` among them.
+    // "islands" with the gate LAYER_REGION_PERIMETER_ISLANDS on (R932).
+    let n_asserted = if std::env::var("LAYER_REGION_PERIMETER_ISLANDS").as_deref() == Ok("0") { 6 } else { 7 };
     for (gate, prefix) in [("PG_CLASSIC_PIN", "classic"), ("PG_ARACHNE_PIN", "arachne")] {
         if std::env::var(gate).as_deref() == Ok("0") || (prefix == "arachne" && std::env::var("ARACHNE_SCALED_FLOAT").as_deref() == Ok("0")) {
             continue;
         }
         let differing: Vec<String> = stats
             .iter()
-            .filter(|(tag, n, bad)| tag.starts_with(prefix) && !(no_counterbore && tag.contains("counterbore")) && *n > 0 && bad.iter().sum::<usize>() > 0)
+            .filter(|(tag, n, bad)| tag.starts_with(prefix) && !(no_counterbore && tag.contains("counterbore")) && *n > 0 && bad.iter().take(n_asserted).sum::<usize>() > 0)
             .map(|(tag, _, bad)| format!("{tag} {bad:?}"))
             .collect();
         assert!(differing.is_empty(), "{prefix} cases differ from the pin: {}", differing.join("; "));
@@ -916,7 +939,8 @@ fn layer_make_perimeters_groups_native_parity() {
     // slices); "islands": the number of top-level entities of perimeters and thin_fills. The live
     // LayerRegion::make_perimeters stores the walls of the islands one after the other (layer.rs, "The
     // islands of `loops` one after the other") where the pin keeps a collection per island
-    // (PerimeterGenerator.cpp:1342, 1838): "islands" is reported, not asserted.
+    // (PerimeterGenerator.cpp:1342, 1838); LayerRegion::perimeter_island_collections rebuilds the pin's
+    // collections from what the gate LAYER_REGION_PERIMETER_ISLANDS records (R932).
     const PARTS: [&str; 6] = ["pass", "perimeters", "thin_fills", "fill_expolygons", "fill_no_overlap", "islands"];
     let mut merged_regions = 0usize;
     let mut cfgs: Vec<ProcCfg> = Vec::new();
@@ -941,9 +965,14 @@ fn layer_make_perimeters_groups_native_parity() {
                 text += &format!("\t{key}={value}");
             }
             let mut c = proc_cfg(&text);
-            // PrintRegionConfig::set_deserialize of this crate takes no "wall_filament": the slicing path
-            // sets the field on the regions it makes (print.rs, `cfg.wall_filament = extruder_id`).
+            // PrintRegionConfig::set_deserialize takes "wall_filament" with the opt-in gate
+            // REGION_CONFIG_WALL_FILAMENT=1 (R932; checked here: the regions of the 'filaments' case);
+            // otherwise the field is set as the slicing path sets it on the regions it makes (print.rs,
+            // `cfg.wall_filament = extruder_id`).
             if let Some(w) = c.kv.get("wall_filament").and_then(|v| v.parse::<usize>().ok()) {
+                if std::env::var("REGION_CONFIG_WALL_FILAMENT").as_deref() == Ok("1") {
+                    assert_eq!(c.region.config().wall_filament, w, "line {}: wall_filament by set_deserialize", line_no + 1);
+                }
                 let mut region_config = c.region.config().clone();
                 region_config.wall_filament = w;
                 c.region = std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config));
@@ -1005,7 +1034,7 @@ fn layer_make_perimeters_groups_native_parity() {
                 leaves_s(&layerm.thin_fills),
                 expolys_s(&layerm.fill_expolygons),
                 expolys_s(&layerm.fill_no_overlap_expolygons),
-                format!("{} {}", layerm.perimeters.entities.len(), layerm.thin_fills.entities.len()),
+                format!("{} {}", layerm.perimeter_island_collections().entities.len(), layerm.thin_fills.entities.len()),
             ];
             let pin_pass_s = (pin_pass as i32).to_string();
             entry.2 += 1;
@@ -1054,4 +1083,8 @@ fn layer_make_perimeters_groups_native_parity() {
     // back among the regions (Layer.cpp:393-404) are equal to the pin in every region.
     assert!(cases > 0 && merged_regions > 0, "no layer merged regions");
     assert_eq!(total[..5], [0usize; 5], "Layer::make_perimeters differs from the pin");
+    // R932: the walls' collection per island (gate LAYER_REGION_PERIMETER_ISLANDS).
+    if std::env::var("LAYER_REGION_PERIMETER_ISLANDS").as_deref() != Ok("0") {
+        assert_eq!(total[5], 0, "the island collections of the walls differ from the pin");
+    }
 }

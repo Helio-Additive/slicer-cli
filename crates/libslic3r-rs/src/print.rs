@@ -2485,7 +2485,31 @@ impl Print {
             // itself decides (via has_support()/has_raft()) whether to do any
             // work, so call it unconditionally here too (covers the raft case).
             phase!("support", {
+                // Gate TREE_SUPPORT_ORGANIC_PIN (opt_in_gate, R932): the tree support types through the pin's
+                // support step (PrintObject.cpp:5926-5930) on a faithful Print made from this Print's Model and
+                // full config (support::tree_support_3d::assemble_faithful_print); see
+                // PrintObject::generate_support_material_tree_pin. Off: nothing here runs.
+                // Not reached yet by the slicer: the live Print's `model` stays empty (`Print::new`, cleared in
+                // `apply`; app_slice.rs adds PrintObjects made from the mesh), so the faithful Print has no
+                // object and every object falls back to generate_support_material. What is missing: a Model of
+                // the live objects (the volumes with their types, enforcers and blockers, and the instance
+                // transformation app_slice.rs places them with), handed to this Print.
+                let mut tree_pin: Option<crate::print::faithful::Print> = None;
+                if crate::opt_in_gate("TREE_SUPPORT_ORGANIC_PIN")
+                    && self.objects.iter().any(|o| {
+                        o.config.support_type == crate::print_config::SupportType::Tree && (o.has_support() || o.config.raft_layers > 0)
+                    })
+                {
+                    if let Some(cfg) = self.full_print_config_from_raw_settings().cloned() {
+                        tree_pin = Some(crate::support::tree_support_3d::assemble_faithful_print(&self.model, &cfg));
+                    }
+                }
                 for obj in &mut self.objects {
+                    if let Some(fp) = tree_pin.as_mut() {
+                        if obj.generate_support_material_tree_pin(fp)? {
+                            continue;
+                        }
+                    }
                     obj.generate_support_material()?;
                 }
             });

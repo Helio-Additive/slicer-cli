@@ -12,6 +12,8 @@
 // double is its 16 hexadecimal digits, a float its 8, an integer decimal.
 // "mf <object box> <regions> R <entities>...": what the pin's Layer::make_fills leaves in the `fills`
 // of each region of the layer of the "gf" line before it, in order.
+// `./gen vectors.txt vectors_ironing.txt` also writes the Layer::make_ironing lines ("ic", "il"; see
+// `run_ironing`) to the second file; the first file is the same with or without it.
 // The vectors were made on macOS arm64 with Apple clang and Eigen 5.0.1.
 
 #include <algorithm>
@@ -318,10 +320,116 @@ static void run_group_fills()
     }
 }
 
+// The options of the "ic" line: what Layer::make_ironing reads (Fill.cpp:1059-1093, 1131-1196).
+static const char *const ironing_keys[] = {
+    "nozzle_diameter", "layer_height", "wall_loops", "wall_filament", "solid_infill_filament", "sparse_infill_density", "infill_direction", "top_shell_layers",
+    "bottom_shell_layers", "ironing_type", "ironing_pattern", "ironing_flow", "ironing_spacing", "ironing_inset", "ironing_speed", "ironing_direction",
+};
+
+// Layer::make_ironing (Fill.cpp:983-1250) on layers whose slices, fill surfaces, lslices and upper layer
+// are set by hand: "ic<TAB>tag<TAB>key=value..." the options, then per layer
+// "il <layer> <height> <print_z> <slice_z> <has upper> <slices> <fill surfaces> <lslices> => <box> <regions> R <entities>...":
+// what make_ironing appends to the `fills` (empty before) of each region.
+static void run_ironing(FILE *fo)
+{
+    static const KeyValues base = {{"layer_height", "0.16"}, {"initial_layer_print_height", "0.2"}, {"wall_loops", "2"}, {"sparse_infill_density", "15%"},
+                                   {"top_shell_layers", "6"}, {"bottom_shell_layers", "4"}, {"ironing_type", "top"}};
+    static const std::vector<FillCase> cases = {
+        {"iron_top", {}},
+        {"iron_topmost", {{"ironing_type", "topmost"}}},
+        {"iron_solid", {{"ironing_type", "solid"}}},
+        {"iron_solid_dense", {{"ironing_type", "solid"}, {"sparse_infill_density", "100%"}}},
+        {"iron_spacing_flow", {{"ironing_spacing", "0.2"}, {"ironing_flow", "15%"}}},
+        {"iron_inset", {{"ironing_inset", "0.3"}}},
+        {"iron_direction", {{"ironing_direction", "30"}, {"infill_direction", "100"}}},
+        {"iron_concentric", {{"ironing_pattern", "concentric"}}},
+        {"iron_none", {{"ironing_type", "no ironing"}}},
+        {"iron_no_top_shells", {{"top_shell_layers", "0"}}},
+        {"iron_solid_no_bottom", {{"ironing_type", "solid"}, {"bottom_shell_layers", "0"}}},
+    };
+    static const SurfaceType slice_types[] = {stTop, stBottom, stBottomBridge, stInternal, stTop};
+    static const SurfaceType fill_types[] = {stTop, stInternalSolid, stSubTop, stInternal, stInternalBridge, stInternalVoid, stBottom};
+    Lcg g(0x2545f4914f6cdd1dULL);
+    for (const FillCase &fc : cases) {
+        Model        model;
+        ModelObject *o = model.add_object();
+        o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+        o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+        set_keys(config, base);
+        set_keys(config, fc.kvs);
+        Print print;
+        print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+        print.apply(model, config);
+        PrintObject       *obj    = print.m_objects.front();
+        const PrintRegion &region = *obj->m_shared_regions->all_regions.front();
+        std::string        cfg    = std::string("ic\t") + fc.tag;
+        for (const char *key : ironing_keys) {
+            const ConfigBase *holder = region.config().has(key) ? static_cast<const ConfigBase *>(&region.config()) :
+                                       obj->config().has(key)   ? static_cast<const ConfigBase *>(&obj->config()) :
+                                       print.config().has(key)  ? static_cast<const ConfigBase *>(&print.config()) :
+                                                                  nullptr;
+            cfg += std::string("\t") + key + "=" + (holder == nullptr ? std::string("?") : holder->opt_serialize(key));
+        }
+        std::fprintf(fo, "%s\n", cfg.c_str());
+        const double layer_height = obj->config().layer_height.value;
+        const double first_layer  = print.config().initial_layer_print_height.value;
+        for (int c = 0; c < 8; ++c) {
+            const size_t layer_id = (size_t) g.range(1, 9);
+            const double print_z  = first_layer + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * layer_height;
+            Layer        upper(layer_id + 1, obj, layer_height, print_z + layer_height, slice_z + layer_height);
+            Layer        layer(layer_id, obj, layer_height, print_z, slice_z);
+            const bool   has_upper = c % 3 != 0;
+            if (has_upper) layer.upper_layer = &upper;
+            LayerRegion *layerm = layer.add_region(&region);
+            // Two to four islands apart from each other, 1.5 to 6 mm on a side; per island one slice
+            // surface and the fill surfaces inside it, 0.8 mm in from its sides, in one or two parts.
+            const int   n  = (int) g.range(2, 4);
+            std::string in = hI((long long) layer_id) + " " + hD(layer_height) + " " + hD(print_z) + " " + hD(slice_z) + " " + hB(has_upper);
+            ExPolygons  islands;
+            Surfaces    fills;
+            std::string sl = hI(n);
+            for (int i = 0; i < n; ++i) {
+                const coord_t     x0 = coord_t(i) * 8000000 + g.range(-200000, 200000), y0 = g.range(-200000, 200000);
+                const coord_t     w = g.range(1500000, 6000000), h = g.range(1500000, 6000000);
+                const SurfaceType type = slice_types[g.range(0, 4)];
+                Surface           s(type, ExPolygon(rect(x0, y0, x0 + w, y0 + h)));
+                layerm->slices.surfaces.emplace_back(s);
+                islands.emplace_back(s.expolygon);
+                sl += " " + hI((int) type) + " " + EXPOLY(s.expolygon);
+                const coord_t in0 = 800000;
+                if (g.range(0, 1) == 0) {
+                    fills.emplace_back(Surface(fill_types[g.range(0, 6)], ExPolygon(rect(x0 + in0, y0 + in0, x0 + w - in0, y0 + h - in0))));
+                } else {
+                    const coord_t xm = x0 + w / 2;
+                    fills.emplace_back(Surface(fill_types[g.range(0, 6)], ExPolygon(rect(x0 + in0, y0 + in0, xm, y0 + h - in0))));
+                    fills.emplace_back(Surface(fill_types[g.range(0, 6)], ExPolygon(rect(xm, y0 + in0, x0 + w - in0, y0 + h - in0))));
+                }
+            }
+            std::string fl = hI((long long) fills.size());
+            for (const Surface &s : fills) {
+                layerm->fill_surfaces.surfaces.emplace_back(s);
+                fl += " " + hI((int) s.surface_type) + " " + EXPOLY(s.expolygon);
+            }
+            layer.lslices = islands;
+            in += " " + sl + " " + fl + " " + EXPOLYS(islands);
+            layer.make_ironing();
+            std::string mi = BBOX(obj->bounding_box()) + " " + hI((long long) layer.m_regions.size());
+            for (const LayerRegion *lr : layer.m_regions) {
+                mi += " R " + hI((long long) lr->fills.entities.size());
+                for (const ExtrusionEntity *e : lr->fills.entities) ENT(e, mi);
+            }
+            std::fprintf(fo, "il %s => %s\n", in.c_str(), mi.c_str());
+            std::fflush(fo);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: gen <vectors.txt>\n");
+        std::fprintf(stderr, "usage: gen <vectors.txt> [<vectors_ironing.txt>]\n");
         return 2;
     }
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
@@ -329,5 +437,12 @@ int main(int argc, char **argv)
     if (g_out == nullptr) return 1;
     run_group_fills();
     std::fclose(g_out);
+    // `gen vectors.txt vectors_ironing.txt`: the second file holds the make_ironing lines.
+    if (argc >= 3) {
+        FILE *fo = std::fopen(argv[2], "w");
+        if (fo == nullptr) return 1;
+        run_ironing(fo);
+        std::fclose(fo);
+    }
     return 0;
 }

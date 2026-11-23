@@ -912,6 +912,26 @@ impl fmt::Display for BoundingBox3 {
     }
 }
 
+/// `std::min(a, b)` as libc++ evaluates it, `(b < a) ? b : a` (the cwiseMin of BoundingBox3Base).
+#[inline]
+fn std_min(a: f64, b: f64) -> f64 {
+    if b < a {
+        b
+    } else {
+        a
+    }
+}
+
+/// `std::max(a, b)` as libc++ evaluates it, `(a < b) ? b : a` (the cwiseMax of BoundingBox3Base).
+#[inline]
+fn std_max(a: f64, b: f64) -> f64 {
+    if a < b {
+        b
+    } else {
+        a
+    }
+}
+
 /// A 3D axis-aligned bounding box with floating-point coordinates (in mm).
 #[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct BoundingBox3F {
@@ -1094,6 +1114,98 @@ impl BoundingBox3F {
             self.max.y += margin;
             self.max.z += margin;
         }
+    }
+
+    // ---- BoundingBox3Base<Vec3d> as the pin reads it (R932). New names beside the ones above, which keep
+    // the reading of `Eigen::AlignedBox` that aabb_tree_indirect.rs relies on; nothing live calls these.
+
+    /// BoundingBox.hpp:116-130 `BoundingBox3Base(It from, It to)` (and 132-134 from a vector): min / max
+    /// by cwiseMin / cwiseMax, defined only when the box has a volume.
+    pub fn from_points(points: &[Point3F]) -> Self {
+        // BoundingBox.hpp:118-119
+        if points.is_empty() {
+            panic!("Empty point set supplied to BoundingBox3Base constructor");
+        }
+        let mut min = points[0];
+        let mut max = min;
+        for p in &points[1..] {
+            min = Point3F::new(std_min(min.x, p.x), std_min(min.y, p.y), std_min(min.z, p.z));
+            max = Point3F::new(std_max(max.x, p.x), std_max(max.y, p.y), std_max(max.z, p.z));
+        }
+        // BoundingBox.hpp:129
+        let defined = (min.x < max.x) && (min.y < max.y) && (min.z < max.z);
+        Self { min, max, defined }
+    }
+
+    /// BoundingBox.hpp:21-22, 110-112 `BoundingBox3Base(pmin, pmax)`: defined only when pmin < pmax on
+    /// all three axes (`from_points_minmax` above always defines the box).
+    pub fn new_from_points(pmin: Point3F, pmax: Point3F) -> Self {
+        let mut defined = pmin.x < pmax.x && pmin.y < pmax.y;
+        if pmin.z >= pmax.z {
+            defined = false;
+        }
+        Self { min: pmin, max: pmax, defined }
+    }
+
+    /// BoundingBox.cpp:203-209 `BoundingBox3Base::radius`.
+    pub fn radius(&self) -> f64 {
+        let x = self.max.x - self.min.x;
+        let y = self.max.y - self.min.y;
+        let z = self.max.z - self.min.z;
+        // `x*x+y*y+z*z` is one expression, `(x*x + y*y) + z*z`: clang fuses the left product of the first
+        // add, fma(x, x, y*y), and the product of the second, fma(z, z, s).
+        0.5 * z.mul_add(z, x.mul_add(x, y * y)).sqrt()
+    }
+
+    /// BoundingBox.cpp:248-253 `BoundingBox3Base::max_size`, size without the `defined` guard.
+    pub fn max_size(&self) -> f64 {
+        let s = Point3F::new(self.max.x - self.min.x, self.max.y - self.min.y, self.max.z - self.min.z);
+        std_max(s.x, std_max(s.y, s.z))
+    }
+
+    /// BoundingBox.cpp:222-228 `BoundingBox3Base::offset`, without the `defined` guard of `expand`.
+    pub fn offset(&mut self, delta: f64) {
+        self.min = Point3F::new(self.min.x - delta, self.min.y - delta, self.min.z - delta);
+        self.max = Point3F::new(self.max.x + delta, self.max.y + delta, self.max.z + delta);
+    }
+
+    /// BoundingBox.hpp:145 `BoundingBox3Base::inflated`.
+    pub fn inflated(&self, delta: f64) -> Self {
+        let mut out = *self;
+        out.offset(delta);
+        out
+    }
+
+    /// BoundingBox.hpp:143 `BoundingBox3Base::translate(const Vec3d &v)`.
+    pub fn translate(&mut self, v: Point3F) {
+        self.min = Point3F::new(self.min.x + v.x, self.min.y + v.y, self.min.z + v.z);
+        self.max = Point3F::new(self.max.x + v.x, self.max.y + v.y, self.max.z + v.z);
+    }
+
+    /// BoundingBox.hpp:154-156 `BoundingBox3Base::contains(const BoundingBox3Base &other)`, with the
+    /// pin's point test (BoundingBox.hpp:50-53, 150-152: no `defined` guard).
+    pub fn contains(&self, other: &BoundingBox3F) -> bool {
+        let inside = |p: &Point3F| {
+            p.x >= self.min.x
+                && p.x <= self.max.x
+                && p.y >= self.min.y
+                && p.y <= self.max.y
+                && p.z >= self.min.z
+                && p.z <= self.max.z
+        };
+        inside(&other.min) && inside(&other.max)
+    }
+
+    /// BoundingBox.cpp:117-133 `BoundingBox3Base::polygon(bool is_scaled)`: the 2D footprint, each
+    /// coordinate `double * scale_factor` assigned to a coord_t (truncation).
+    pub fn polygon(&self, is_scaled: bool) -> super::Polygon {
+        let scale_factor = 1.0 / (if is_scaled { crate::libslic3r::SCALING_FACTOR } else { 1.0 });
+        super::Polygon::from_points(vec![
+            Point::new((self.min.x * scale_factor) as Coord, (self.min.y * scale_factor) as Coord),
+            Point::new((self.max.x * scale_factor) as Coord, (self.min.y * scale_factor) as Coord),
+            Point::new((self.max.x * scale_factor) as Coord, (self.max.y * scale_factor) as Coord),
+            Point::new((self.min.x * scale_factor) as Coord, (self.max.y * scale_factor) as Coord),
+        ])
     }
 
     /// Convert to scaled integer bounding box.

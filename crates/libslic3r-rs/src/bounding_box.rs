@@ -1299,6 +1299,13 @@ impl BoundingBoxf3 {
         let x = self.max.x - self.min.x;
         let y = self.max.y - self.min.y;
         let z = self.max.z - self.min.z;
+        // `x*x+y*y+z*z` is one expression: clang fuses fma(x, x, y*y), then fma(z, z, .) (R932,
+        // tests/bounding_box3_native_parity.rs: 402 of 4,000 off-grid boxes differed without it). Gate
+        // `BOUNDING_BOX3_PIN` (faithful); the off arm rounds every product.
+        static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *G.get_or_init(|| crate::faithful_gate("BOUNDING_BOX3_PIN")) {
+            return 0.5 * z.mul_add(z, x.mul_add(x, y * y)).sqrt();
+        }
         0.5 * (x * x + y * y + z * z).sqrt()
     }
 

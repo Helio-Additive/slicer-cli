@@ -97,7 +97,15 @@ impl<'a> FillConcentric<'a> {
         // FillConcentric.cpp:22  coord_t min_spacing = scale_(this->spacing);
         let min_spacing: Coord = scale(self.spacing);
         // FillConcentric.cpp:23  coord_t distance = coord_t(min_spacing / params.density);
-        let mut distance: Coord = (min_spacing as f64 / params.density as f64) as Coord;
+        // `min_spacing / params.density` is coord_t over float: a float division (FillParams::density is a
+        // float, FillBase.hpp:45). Gate FILL_CONCENTRIC_LOOPS_PIN (faithful): the float division, the
+        // ClipperLib miter offset2_ex and union_pt_chained_outside_in below; off: the earlier arm.
+        let loops_pin = crate::faithful_gate("FILL_CONCENTRIC_LOOPS_PIN");
+        let mut distance: Coord = if loops_pin {
+            ((min_spacing as f32) / (params.density as f32)) as Coord
+        } else {
+            (min_spacing as f64 / params.density as f64) as Coord
+        };
 
         // FillConcentric.cpp:25  if (params.density > 0.9999f && !params.dont_adjust) {
         if params.density > 0.9999 && !params.dont_adjust {
@@ -123,11 +131,23 @@ impl<'a> FillConcentric<'a> {
             // miter-join Clipper path is a cross-cutting backend change, not a per-file fix.
             // The integer `coord_t` deltas are negated in integer space (matching C++) then
             // widened to f64; for integral values `-(x as f64) == (-x) as f64`.
-            last = offset2_ex_2(
-                &last,
-                -(distance + min_spacing / 2) as f64,
-                (min_spacing / 2) as f64,
-            );
+            last = if loops_pin {
+                // ClipperUtils.cpp:581-584, the default join type jtMiter and miter limit 3
+                // (ClipperUtils.hpp:31-37, 397); the coord_t deltas converted to float.
+                crate::clipper_utils::cpp::Offset2Ex::offset2_ex(
+                    last.as_slice(),
+                    (-(distance + min_spacing / 2)) as f32,
+                    (min_spacing / 2) as f32,
+                    crate::clipper_utils::cpp::DEFAULT_JOIN_TYPE,
+                    crate::clipper_utils::cpp::DEFAULT_MITER_LIMIT,
+                )
+            } else {
+                offset2_ex_2(
+                    &last,
+                    -(distance + min_spacing / 2) as f64,
+                    (min_spacing / 2) as f64,
+                )
+            };
             // FillConcentric.cpp:34  append(loops, to_polygons(last));
             loops.extend(expolygons_to_polygons(&last));
         }
@@ -142,7 +162,7 @@ impl<'a> FillConcentric<'a> {
         // Clipper2 FFI exposes. The helper below performs the boolean union (correct loop
         // GEOMETRY) and reverses holes to CCW exactly as the C++ traversal does; only the
         // nearest-neighbour sibling ORDER from `chain_clipper_polynodes` is not reproduced.
-        loops = union_pt_chained_outside_in(&loops);
+        loops = if loops_pin { crate::clipper_utils::cpp::union_pt_chained_outside_in(&loops) } else { union_pt_chained_outside_in(&loops) };
 
         // split paths using a nearest neighbor search
         // FillConcentric.cpp:42  size_t iPathFirst = polylines_out.size();

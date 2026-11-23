@@ -4035,5 +4035,68 @@
    "BoundingBoxBase::contains",
    "BoundingBoxBase::construct"
   ]
+ },
+ {
+  "unit": "Fill/Fill",
+  "round": 932,
+  "evidence": "tests/fill_native_parity.rs fill_make_ironing_native_parity: the port's Layer::make_ironing against the pin's (Fill.cpp 983-1250) on 11 configurations x 8 layers (ironing top / topmost / solid, solid at 100 % density, spacing and flow, inset, direction, concentric pattern, none, no top shells, solid without bottom shells): 88 of 88 lines and 92 of 92 entities equal, all required.",
+  "functions": [
+   "Layer::make_ironing"
+  ]
+ },
+ {
+  "unit": "Fill/FillConcentric",
+  "round": 932,
+  "evidence": "tests/fill_native_parity.rs, ironing configuration iron_concentric: the polylines arm of FillConcentric::_fill_surface_single (FillConcentric.cpp 22-39) through the pin's make_ironing, 8 of 8 lines equal; the Arachne arm through make_fills' concentric configurations (R929).",
+  "functions": [
+   "FillConcentric::_fill_surface_single"
+  ]
+ },
+ {
+  "unit": "BoundingBox",
+  "round": 932,
+  "evidence": "tests/bounding_box3_native_parity.rs: 4,000 LCG cases with off-grid coordinates and undefined boxes (default, flat, inverted), 165,002 asserted calls against the pin's BoundingBox.hpp / BoundingBox.cpp, 0 mismatches: the constructors, size, radius (fused sum of squares), center, max_size, volume, contains (point, box), intersects, merge (point, box, points), offset, inflated, translate, polygon.",
+  "functions": [
+   "BoundingBox3Base::center",
+   "BoundingBox3Base::inflated",
+   "BoundingBox3Base::intersects",
+   "BoundingBox3Base::max_size",
+   "BoundingBox3Base::offset",
+   "BoundingBox3Base::polygon",
+   "BoundingBox3Base::radius",
+   "BoundingBox3Base::size",
+   "BoundingBox3Base::translate",
+   "BoundingBox3Base::volume",
+   "BoundingBox3Base::contains",
+   "BoundingBox3Base::merge"
+  ]
+ },
+ {
+  "unit": "Polygon",
+  "round": 932,
+  "evidence": "tests/polygon_rest_native_parity.rs: 2,000 LCG cases, 54,000 asserted calls against the pin's Polygon.cpp / MultiPoint.cpp, 0 mismatches. Not listed (reported, not equal): Polygon::simplify and polygons_simplify (ClipperLib::SimplifyPolygons keeps self-intersecting outputs the pin splits).",
+  "functions": [
+   "Polygon::split_at_vertex",
+   "Polygon::split_at_index",
+   "Polygon::split_at_first_point",
+   "Polygon::is_valid",
+   "Polygon::contains",
+   "Polygon::on_boundary",
+   "Polygon::intersection",
+   "Polygon::overlaps",
+   "Polygon::parameter_by_length",
+   "Polygon::densify",
+   "has_duplicate_points",
+   "remove_same_neighbor",
+   "remove_degenerate",
+   "remove_small",
+   "polygons_match",
+   "overlaps",
+   "get_extents_rotated",
+   "make_circle",
+   "make_circle_num_segments",
+   "total_length",
+   "area"
+  ]
  }
 ]

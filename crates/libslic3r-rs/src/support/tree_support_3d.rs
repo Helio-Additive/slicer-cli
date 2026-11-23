@@ -10602,3 +10602,209 @@ pub fn faithful_layers_from_live(obj: &mut pf::PrintObject, layers: &[crate::lay
         obj.m_layers.push(layer);
     }
 }
+
+/// Bridge for a live caller of the organic pipeline: `Print::apply(model, new_full_config)` (PrintApply.cpp:1290-2331)
+/// on a FRESH `print::faithful` Print, reduced to what a fresh Print goes through and what the support step reads:
+/// the configs (print, default object and region configs and the full config, PrintApply.cpp:1305-1325, :1495-1506,
+/// :1644-1678), the PrintObjects of every ModelObject with their object configs (:1958-1990), the regions shared by
+/// the PrintObjects of one ModelObject with the volumes' types, so support enforcers and blockers (:2116-2272), the
+/// config checked again with the objects in place (:2053-2090), the single-diameter layering nozzle (:2294-2306) and
+/// the slicing parameters and `m_support_used` (:2326-2331). On a fresh Print every model object is new, so the
+/// diff of the model against the old one (:1690-1956) adds them all and invalidates nothing; one extruder variant
+/// (:1438-1456). Moved here from tests/support_shared/mod.rs (`assemble`), which calls it.
+/// What a live Print lacks against the pin: the full config is made from the resolved settings
+/// (`Print::full_print_config_from_raw_settings`), not handed over by the GUI's PresetBundle; the used filaments
+/// of the old Print (:1323-1325) are none, as on a fresh Print.
+pub fn assemble_faithful_print(model: &crate::model::Model, config: &crate::print_config::config_def::DynamicPrintConfig) -> pf::Print {
+    use crate::config::{ConfigBase, ConfigOptionInts, ConfigOptionResolver};
+    use crate::print_apply::{
+        full_print_config_diffs, generate_print_object_regions, object_config_from_model_object, print_config_diffs,
+        print_objects_from_model_object, LayerRanges, PrintObjectTrafoAndInstances,
+    };
+    use crate::print_config::config_def::DynamicPrintConfig;
+    let mut print = pf::Print::new();
+    let mut new_full_config = config.clone();
+    // PrintApply.cpp:1305-1307
+    for key in ["print_settings_id", "filament_settings_id", "printer_settings_id"] {
+        let _ = new_full_config.option_mut(key, true);
+    }
+    // PrintApply.cpp:1323-1325: no objects on the fresh Print, no used filaments.
+    new_full_config.normalize_fdm_1().unwrap();
+    let mut changed_keys_ori_values = crate::config::DynamicConfig::new();
+    let _ = new_full_config.normalize_fdm_2(0, 0, Some(&mut changed_keys_ori_values)).unwrap();
+    // PrintApply.cpp:1438-1456: one extruder.
+    let mut print_variant_index: Vec<i32> = vec![0];
+    print.base.base.m_ori_full_print_config = new_full_config.clone();
+    let filament_maps: Vec<i32> = new_full_config
+        .option("filament_map")
+        .and_then(|o| o.as_any().downcast_ref::<ConfigOptionInts>())
+        .map(|o| o.values.clone())
+        .unwrap_or_else(|| vec![1]);
+    // PrintApply.cpp:1495-1506
+    let mut filament_overrides = DynamicPrintConfig::new();
+    let print_diff = print_config_diffs(&print.m_config, &new_full_config, &mut filament_overrides, 0, &filament_maps);
+    let full_config_diff = full_print_config_diffs(&print.base.base.m_full_print_config, &new_full_config, 0);
+    let object_diff = print.m_default_object_config.diff(&new_full_config).unwrap();
+    let region_diff = print.m_default_region_config.diff(&new_full_config).unwrap();
+    // PrintApply.cpp:1644-1678
+    if !full_config_diff.is_empty() {
+        let _ = print.m_config.apply_only(&new_full_config, &print_diff, true);
+        let keys = filament_overrides.keys();
+        let _ = print.m_config.apply_only(&filament_overrides, &keys, true);
+        let _ = print.m_default_object_config.apply_only(&new_full_config, &object_diff, true);
+        let _ = print.m_default_region_config.apply_only(&new_full_config, &region_diff, true);
+        print.base.base.m_full_print_config = new_full_config.clone();
+        print.update_filament_self_index_cache();
+    }
+    let num_extruders = print.m_config.option("filament_diameter").and_then(|o| o.as_vector_base()).map(|v| v.size()).unwrap_or(0);
+    print.m_model = model.clone();
+    // PrintApply.cpp:1958-1990: the PrintObjects of every ModelObject, in the order of the model.
+    let mut statuses: Vec<(usize, Vec<PrintObjectTrafoAndInstances>)> = Vec::new();
+    for (mo_idx, model_object) in print.m_model.objects.iter().enumerate() {
+        let print_instances = print_objects_from_model_object(model_object);
+        statuses.push((mo_idx, print_instances));
+    }
+    for (mo_idx, print_instances) in &statuses {
+        let model_object = &print.m_model.objects[*mo_idx];
+        let config = object_config_from_model_object(&print.m_default_object_config, model_object, num_extruders, &mut print_variant_index);
+        for pi in print_instances {
+            // PrintApply.cpp:1983 `new PrintObject(this, model_object, trafo, std::move(instances))`
+            let mut po = pf::PrintObject::new(&mut print, *mo_idx, pi.trafo, pi.instances.clone());
+            po.m_config = config.clone();
+            print.m_objects.push(po);
+        }
+    }
+    let n_objects = print.m_objects.len();
+    for i in 0..n_objects {
+        for inst in print.m_objects[i].m_instances.iter_mut() {
+            inst.print_object = i;
+        }
+    }
+    // PrintApply.cpp:2116-2272: the regions, shared by the PrintObjects of one ModelObject.
+    let mut i = 0;
+    while i < n_objects {
+        let mo_idx = print.m_objects[i].m_model_object;
+        let mut end = i + 1;
+        while end < n_objects && print.m_objects[end].m_model_object == mo_idx {
+            end += 1;
+        }
+        let model_object = &print.m_model.objects[mo_idx];
+        let trafo = statuses.iter().find(|s| s.0 == mo_idx).unwrap().1[0].trafo;
+        let xy = *print.m_objects[i].m_config.opt_float("xy_contour_compensation") as f32;
+        let regions = generate_print_object_regions(
+            None,
+            model_object,
+            Some(&print.m_model),
+            &LayerRanges::new(&model_object.layer_config_ranges),
+            &print.m_default_region_config,
+            &trafo,
+            num_extruders,
+            if model_object.is_mm_painted() { 0.0 } else { xy },
+            &[],
+            &mut print_variant_index,
+            false,
+            &[],
+        );
+        for k in i..end {
+            regions.borrow_mut().ref_cnt_inc();
+            print.m_objects[k].m_shared_regions = Some(regions.clone());
+        }
+        i = end;
+    }
+    print.update_print_regions_from_objects();
+    // PrintApply.cpp:2053-2090: the config checked again with the objects in place.
+    let new_used_filaments = print.extruders(true).len() as i32;
+    let new_changed_keys =
+        new_full_config.normalize_fdm_2(print.m_objects.len() as i32, new_used_filaments, Some(&mut changed_keys_ori_values)).unwrap();
+    if !new_changed_keys.is_empty() {
+        print.invalidate_state_by_config_options(&new_changed_keys);
+        print.invalidate_step(pf::PrintStep::psGCodeExport);
+        let _ = print.m_config.apply_only(&new_full_config, &new_changed_keys, true);
+        let _ = print.m_default_object_config.apply_only(&new_full_config, &new_changed_keys, true);
+        let _ = print.m_default_region_config.apply_only(&new_full_config, &new_changed_keys, true);
+        print.base.base.m_full_print_config = new_full_config.clone();
+        print.update_filament_self_index_cache();
+    }
+    // PrintApply.cpp:2294-2306: the single-diameter layering nozzle (0 off multi-diameter mode).
+    let single_nozzle = print.resolve_single_diameter_layering_nozzle();
+    if (single_nozzle - print.m_single_diameter_layering_nozzle).abs() > EPSILON {
+        print.m_single_diameter_layering_nozzle = single_nozzle;
+    }
+    // PrintApply.cpp:2326-2331
+    for i in 0..print.m_objects.len() {
+        pf::PrintObject::update_slicing_parameters(&mut print, i);
+        print.m_support_used |= print.m_objects[i].m_config.opt_bool("enable_support");
+    }
+    print
+}
+
+/// PrintConfig.cpp:11529-11558 `Polygon get_bed_shape_with_excluded_area(const PrintConfig& cfg, bool use_share)`,
+/// over the full config the faithful Print keeps (the keys it reads are the PrintConfig's: printable_area,
+/// bed_exclude_area, enable_wrapping_detection, wrapping_exclude_area).
+pub fn get_bed_shape_with_excluded_area(cfg: &crate::print_config::config_def::DynamicPrintConfig, use_share: bool) -> Polygon {
+    use crate::config::{ConfigOptionBool, ConfigOptionPoints};
+    let mut bed_poly = Polygon::default();
+    bed_poly.points = crate::print_config::config_def::get_bed_shape(cfg, use_share);
+    // PrintConfig.cpp:11450-11456 to_points: coord_t(scale_(v)), divide then truncate.
+    let to_pt = |x: f64, y: f64| Point::new((x / SCALING_FACTOR) as Coord, (y / SCALING_FACTOR) as Coord);
+    let excluse_area_points: Vec<Point> =
+        cfg.opt::<ConfigOptionPoints>("bed_exclude_area").map(|o| o.values.iter().map(|p| to_pt(p.x, p.y)).collect()).unwrap_or_default();
+    let mut exclude_polys: Polygons = Vec::new();
+    let mut exclude_poly = Polygon::default();
+    for (i, pt) in excluse_area_points.iter().enumerate() {
+        exclude_poly.points.push(*pt);
+        if i % 4 == 3 {
+            // exclude areas are always rectangle
+            exclude_polys.push(exclude_poly.clone());
+            exclude_poly.points.clear();
+        }
+    }
+    if cfg.opt::<ConfigOptionBool>("enable_wrapping_detection").map(|o| o.value).unwrap_or(false) {
+        let mut wrapping_poly = Polygon::default();
+        if let Some(o) = cfg.opt::<ConfigOptionPoints>("wrapping_exclude_area") {
+            for pt in &o.values {
+                // Point(scale_(x), scale_(y)): Point(double, double) rounds (Point.hpp:181).
+                wrapping_poly.points.push(Point::new((pt.x / SCALING_FACTOR).round_ties_even() as Coord, (pt.y / SCALING_FACTOR).round_ties_even() as Coord));
+            }
+        }
+        exclude_polys.push(wrapping_poly);
+    }
+    let tmp = cu::diff(&[bed_poly.clone()], &exclude_polys, crate::clipper_utils::ApplySafetyOffset::No);
+    if !tmp.is_empty() {
+        bed_poly = tmp[0].clone();
+    }
+    bed_poly
+}
+
+/// The live caller of the tree supports (gate `TREE_SUPPORT_ORGANIC_PIN`, print.rs / print_object.rs):
+/// `PrintObject::_generate_support_material()` for a tree support type (PrintObject.cpp:5926-5930
+/// `TreeSupport tree_support(*this, m_slicing_params); tree_support.generate();`) on the faithful PrintObject of the
+/// live object's ModelObject in `print` (made by `assemble_faithful_print`), with the live object's layers handed
+/// over (`faithful_layers_from_live`), the engine's fillers (`EngineSupportFillFactory`) and the organic pipeline
+/// for the organic style (TreeSupport.cpp:3538-3541). Returns the support layers in the live form
+/// (`live_support_layers_from_faithful`), or None when `print` has no object of that ModelObject.
+pub fn generate_live_tree_support(
+    print: &mut pf::Print,
+    model_object_id: usize,
+    live_layers: &[crate::layer::Layer],
+) -> Option<crate::Result<Vec<crate::layer::Layer>>> {
+    let k = print.m_objects.iter().position(|o| o.m_model_object == model_object_id)?;
+    faithful_layers_from_live(&mut print.m_objects[k], live_layers);
+    let mut po = print.m_objects.remove(k);
+    // TreeSupport.cpp:632 m_machine_border.contour = get_bed_shape_with_excluded_area(*m_print_config);
+    let bed = get_bed_shape_with_excluded_area(print.full_print_config(), false);
+    let sp = po.slicing_parameters().clone();
+    let res = match SupportParameters::new(&po, print) {
+        Ok(params) => {
+            let factory = EngineSupportFillFactory::new(None);
+            let organic = OrganicTreeSupport3D { idx: k, fill_factory: &factory, throw_on_cancel: &|| {} };
+            let mut ts = crate::support::tree_support::TreeSupport::new(&mut po, print, &sp, params, &bed);
+            ts.generate(&factory, &organic)
+        }
+        // PrintObject.cpp: the SupportParameters constructor throws on an invalid flow.
+        Err(e) => Err(crate::Error::Slicing(format!("{e:?}"))),
+    };
+    let out = res.map(|()| live_support_layers_from_faithful(po.support_layers()));
+    print.m_objects.insert(k, po);
+    Some(out)
+}

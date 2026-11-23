@@ -377,6 +377,20 @@ pub struct PrintRegionConfig {
     /// PrintConfig.hpp:986
     pub ironing_speed: CoordF,
 
+    /// PrintConfig.hpp:1217 ((ConfigOptionEnum<InfillPattern>, ironing_pattern)); default ipRectilinear
+    /// (PrintConfig.cpp:4832-4843). Read by Layer::make_ironing (Fill.cpp:1095).
+    pub ironing_pattern: InfillPattern,
+
+    /// PrintConfig.hpp:1218 ((ConfigOptionPercent, ironing_flow)) as the pin holds it: the percent value
+    /// (10 for "10%"; PrintConfig.cpp:4845-4855). `ironing_flow_rate` above is the older field.
+    pub ironing_flow: CoordF,
+
+    /// PrintConfig.hpp:1220 ((ConfigOptionFloat, ironing_inset)); default 0 (PrintConfig.cpp:4867-4875).
+    pub ironing_inset: CoordF,
+
+    /// PrintConfig.hpp:1221 ((ConfigOptionFloat, ironing_direction)); default 45 (PrintConfig.cpp:4886-4894).
+    pub ironing_direction: CoordF,
+
     // === Fuzzy Skin ===
     /// Enable fuzzy skin
     /// PrintConfig.hpp:969
@@ -609,6 +623,25 @@ impl PrintRegionConfig {
         };
 
         match key {
+            // R932 REGION_CONFIG_WALL_FILAMENT (opt-in, off unless =1): PrintConfig.cpp:5329-5339
+            // `def = this->add("wall_filament", coInt)` (min 0, default 0) is a key of the pin's
+            // PrintRegionConfig (PrintConfig.hpp:1227 ((ConfigOptionInt, wall_filament)));
+            // ConfigOptionInt::deserialize stores the integer as read (a negative one, below the
+            // option's min, does not fit this crate's usize field and is left out). With the gate off the key is not taken here (the arm before R932): the slicing path
+            // sets the field on the regions it makes (print.rs, `cfg.wall_filament = extruder_id`).
+            // Opt-in: a project's "wall_filament" of 0 (the pin's default, Majora's value) means "the
+            // object's filament" at the pin, which Print::apply puts in through the object's and volume's
+            // "extruder" (PrintApply.cpp, region_config_from_model_volume / apply_to_print_region_config);
+            // the live slicing path here does not run that, and with 0 stored Majora's G-code changes
+            // (3,300,013 lines against 3,027,815).
+            "wall_filament" if crate::opt_in_gate("REGION_CONFIG_WALL_FILAMENT") => {
+                if let Ok(v) = value.trim().parse::<i32>() {
+                    if v >= 0 {
+                        self.wall_filament = v as usize;
+                    }
+                }
+                true
+            }
             // === Perimeters ===
             "wall_loops" => {
                 if let Some(v) = parse_u32(value) {
@@ -1085,6 +1118,26 @@ impl PrintRegionConfig {
                 if let Some(v) = parse_f64(value) {
                     self.ironing_flow_rate = v;
                 }
+                // ConfigOptionPercent: the value before the '%' (PrintConfig.cpp:4845).
+                if let Ok(v) = value.trim().trim_end_matches('%').parse::<f64>() {
+                    self.ironing_flow = v;
+                }
+                true
+            }
+            "ironing_pattern" => {
+                self.ironing_pattern = InfillPattern::from_str_bambu(value);
+                true
+            }
+            "ironing_inset" => {
+                if let Ok(v) = value.trim().parse::<f64>() {
+                    self.ironing_inset = v;
+                }
+                true
+            }
+            "ironing_direction" => {
+                if let Ok(v) = value.trim().parse::<f64>() {
+                    self.ironing_direction = v;
+                }
                 true
             }
             "ironing_spacing" => {
@@ -1295,6 +1348,10 @@ impl Default for PrintRegionConfig {
             ironing_flow_rate: 0.15,
             ironing_spacing: 0.1,
             ironing_speed: 15.0,
+            ironing_pattern: InfillPattern::Rectilinear,
+            ironing_flow: 10.0,
+            ironing_inset: 0.0,
+            ironing_direction: 45.0,
 
             // Fuzzy Skin
             fuzzy_skin: false,

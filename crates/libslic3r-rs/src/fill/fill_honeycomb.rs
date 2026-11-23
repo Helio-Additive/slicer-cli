@@ -167,8 +167,13 @@ impl FillHoneycomb {
             // FIDELITY-NOTE(F2): C++ coord_t is int32 (libslic3r.h:40); here Coord = i64, so the
             // intermediate `coord_t(scale_(spacing))` and `min_spacing` do not wrap to int32 as in
             // C++. For realistic honeycomb spacings these values stay well within int32 range.
-            let min_spacing: Coord =
-                ((self.spacing * SCALING_FACTOR) as Coord) * params.multiline as Coord;
+            // Gate FILL_SCALE_DIV_PIN (faithful): scale_ as the pin's division by 0.00001
+            // (libslic3r.h:58-84), which can differ from the multiplication by 1e5 by an ulp.
+            let min_spacing: Coord = if crate::faithful_gate("FILL_SCALE_DIV_PIN") {
+                ((self.spacing / crate::libslic3r::SCALING_FACTOR) as Coord) * params.multiline as Coord
+            } else {
+                ((self.spacing * SCALING_FACTOR) as Coord) * params.multiline as Coord
+            };
             // FillHoneycomb.cpp:23 — m.distance = coord_t(min_spacing / params.density);
             // params.density is a `float` in C++ (FillBase.hpp:54), so `min_spacing / params.density`
             // is evaluated in single precision before truncating; mirror that with f32 here.
