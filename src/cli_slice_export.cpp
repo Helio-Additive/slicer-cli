@@ -326,6 +326,19 @@ static void collect_run_outputs(const CliOptions& o, const boost::filesystem::pa
                     "the folder --export-slicedata writes (" + folder + ")",
                     "inside the folder --export-slicedata writes (" + folder + ")");
         }
+    // --export-statistics (OrcaSlicer from 2.5) writes one more file per plate
+    // of a --slice run (like --export-3mf it does nothing without --slice, as
+    // in the official), next to its G-code and named from it as the engine names it
+    // (gcode_statistics_path, GCodeStatistics.cpp 185-188 at f92a7c0: the
+    // extension replaced by .statistics.json).
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+    const bool statistics = o.given_flag("export_statistics") && o.cli.opt_bool("export_statistics");
+#else
+    const bool statistics = false;
+#endif
+    const auto statistics_name = [](const std::string& gcode) {
+        return fs::path(gcode).replace_extension(".statistics.json").string();
+    };
     if (o.slice_mode) {
         add(false, false, "", outdir / "result.json", "the run's own result.json in --outputdir",
             "the run's own result.json in --outputdir");
@@ -333,6 +346,13 @@ static void collect_run_outputs(const CliOptions& o, const boost::filesystem::pa
             const std::string name = "plate_" + std::to_string(p) + ".gcode";
             add(false, false, "", outdir / name, "the run's own " + name + " in --outputdir",
                 "the run's own " + name + " in --outputdir");
+            if (statistics) {
+                const std::string stats = statistics_name(name);
+                // The run's own file, like the G-code: its name is not the caller's to give.
+                add(false, false, "", outdir / stats,
+                    "the " + stats + " --export-statistics writes in --outputdir",
+                    "the " + stats + " --export-statistics writes in --outputdir");
+            }
         }
     } else if (!slicer_cli::model_actions_only(o) && !o.output_file.empty()) {
         add(false, false, "-o " + o.output_file, fs::path(o.output_file), "the G-code -o " + o.output_file + " writes",
@@ -346,7 +366,8 @@ static void collect_run_outputs(const CliOptions& o, const boost::filesystem::pa
 /// requested output lost), and none may be a file the run reads.
 ///
 /// The outputs: result.json and each sliced plate's plate_<n>.gcode in
-/// --outputdir (--slice), the G-code of -o (the single-plate call),
+/// --outputdir (--slice) with the statistics file --export-statistics writes
+/// next to it, the G-code of -o (the single-plate call),
 /// --export-3mf (joined onto --outputdir, as the official joins it:
 /// export_3mf_file = outfile_dir + "/" + export_3mf_file, BambuStudio.cpp
 /// 7508-7510 at 5873b5f; OrcaSlicer.cpp 7390-7392 at f92a7c0), the
@@ -478,7 +499,7 @@ int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::ve
                 hit = fs::exists(out.path, ec) && fs::exists(in, ec) && inside(in, out.path) != 0;
             if (!hit)
                 continue;
-            if (out.flag.empty())   // result.json or a plate's G-code
+            if (out.flag.empty())   // result.json, a plate's G-code or its statistics
                 return refuse("ExportOverwritesInput", "--slice would overwrite the input file '" + input + "' with " +
                                                            out.what + "; choose another --outputdir.");
             const std::string who = out.flag.rfind("--export-3mf ", 0) == 0 ? std::string("--export-3mf") : out.flag;
@@ -504,7 +525,7 @@ int check_run_outputs(CliRunContext& context, const CliOptions& o, const std::ve
             const RunOutput& a = outputs[i];
             const RunOutput& b = outputs[j];
             if (a.flag.empty())
-                continue;   // two of the run's own files never clash (result.json, plate_<n>.gcode)
+                continue;   // two of the run's own files never clash (result.json, plate_<n>.gcode, plate_<n>.statistics.json)
             if (a.flag == b.flag)
                 continue;   // one flag's own files: one object STL each, one folder per plate
             const int c = meet(a, b);

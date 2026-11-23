@@ -736,6 +736,40 @@ PY
         record "export-statistics-next-to-the-gcode-and-in-the-project" 0 "exit $STAT_EXIT: $(tail -n 1 <<<"$STAT_DETAIL")"
     fi
 
+    # The statistics file is one of the run's outputs. Without --outputdir it
+    # is written next to the G-code, in the current folder (the official skips
+    # it there, where its G-code is a temporary file). Its name is checked
+    # before the run writes: --export-3mf onto it is refused, and so is a run
+    # that reads a settings file of that name in its output folder.
+    mkdir -p "$PART_DIR/sc" "$PART_DIR/sn" "$PART_DIR/si"
+    printf '%s\n' '{"type":"process","name":"Stat process","from":"User","inherits":"0.20mm Standard @BBL X1C"}' > "$PART_DIR/si/plate_1.statistics.json"
+    cp "$PART_DIR/si/plate_1.statistics.json" "$PART_DIR/si.kept"
+    set +e
+    (cd "$PART_DIR/sc" && "$BINARY" ../slab.stl --printer-preset "$PART_PRINTER" --slice 1 --export-statistics > ../sc.out 2>&1); STATC_EXIT=$?
+    "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --export-statistics --export-3mf plate_1.statistics.json --outputdir "$PART_DIR/sn" > "$PART_DIR/sn.out" 2>&1; STATN_EXIT=$?
+    (cd "$PART_DIR/si" && "$BINARY" ../slab.stl --printer-preset "$PART_PRINTER" --process plate_1.statistics.json --slice 1 --export-statistics --outputdir . > ../si.out 2>&1); STATI_EXIT=$?
+    set -e
+    if STATX_DETAIL=$(python3 - "$PART_DIR" "$STATC_EXIT" "$STATN_EXIT" "$STATI_EXIT" <<'PY' 2>&1
+import json, os, sys
+d = sys.argv[1]; rc_cwd, rc_name, rc_input = (int(x) for x in sys.argv[2:5])
+assert rc_cwd == 0, ("no --outputdir", rc_cwd)
+assert os.path.exists(d + "/sc/plate_1.gcode"), "no G-code in the current folder"
+assert {"summary", "layers", "objects"} <= set(json.load(open(d + "/sc/plate_1.statistics.json"))), "no statistics next to it"
+assert rc_name != 0, "--export-3mf onto the statistics file was not refused"
+out = open(d + "/sn.out", encoding="utf-8", errors="replace").read()
+assert '"tag":"ExportNameTaken"' in out and "plate_1.statistics.json --export-statistics writes" in out, out[-400:]
+assert not os.path.exists(d + "/sn/plate_1.gcode"), "the refused run sliced"
+assert rc_input != 0, "a settings file named as the statistics file was not protected"
+out = open(d + "/si.out", encoding="utf-8", errors="replace").read()
+assert '"tag":"ExportOverwritesInput"' in out and "plate_1.statistics.json" in out, out[-400:]
+assert open(d + "/si/plate_1.statistics.json").read() == open(d + "/si.kept").read(), "the settings file was overwritten"
+PY
+    ); then
+        record "export-statistics-is-a-checked-output-in-every-output-place" 1
+    else
+        record "export-statistics-is-a-checked-output-in-every-output-place" 0 "exits $STATC_EXIT/$STATN_EXIT/$STATI_EXIT: $(tail -n 1 <<<"$STATX_DETAIL")"
+    fi
+
     # --align-to-y-axis (OrcaSlicer from 2.5): only when given does it replace
     # the printer-structure default of --arrange (OrcaSlicer.cpp 1631-1634,
     # 5524-5528 at f92a7c0). A 60 x 10 mm bar: the X1 Carbon (CoreXY) leaves

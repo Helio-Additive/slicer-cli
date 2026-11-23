@@ -910,10 +910,13 @@ static int export_plate_gcode(CliRunContext& context, const CliOptions& o, const
                 return 1;
 #if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
             // --export-statistics (OrcaSlicer from 2.5; OrcaSlicer.cpp 7228-7237 at
-            // f92a7c0): the plate's statistics as JSON next to its G-code. Without
-            // an output directory the G-code is a temporary file, kept only in an
-            // exported 3MF.
-            if (o.given_flag("export_statistics") && o.cli.opt_bool("export_statistics") && !o.outputdir.empty()) {
+            // f92a7c0): the plate's statistics as JSON next to its G-code. The
+            // official skips it without an output directory, where its G-code is
+            // a temporary file. Here a --slice run always keeps its G-code (in
+            // --outputdir, or in the current folder without it), so the
+            // statistics are written next to it in both cases; the name is
+            // checked with the run's other outputs (collect_run_outputs).
+            if (o.given_flag("export_statistics") && o.cli.opt_bool("export_statistics")) {
                 try {
                     Slic3r::export_gcode_statistics(gcode_result, Slic3r::gcode_statistics_path(output_file));
                 } catch (const std::exception& ex) {

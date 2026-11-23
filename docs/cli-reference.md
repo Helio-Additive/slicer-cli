@@ -560,7 +560,7 @@ run goes on.
 | `--metadata-value` | "v1;v2" | Metadata values for the 3MF | all binaries |
 | `--makerlab-name` | name | MakerLab name in the 3MF | all binaries |
 | `--makerlab-version` | version | MakerLab version in the 3MF | all binaries |
-| `--export-statistics` | | With `--slice`: each plate's statistics as `plate_N.statistics.json` next to its G-code in `--outputdir`, and inside the 3MF of `--export-3mf` (time, filament and feature totals, also per layer and per object) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
+| `--export-statistics` | | With `--slice`: each plate's statistics as `plate_N.statistics.json` next to its G-code (in `--outputdir`, or the current folder without it), and inside the 3MF of `--export-3mf`. The name is checked like every other output of the run (time, filament and feature totals, also per layer and per object) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
 | `--skip-useless-pick` | `=0` or `=1` | Leave pick pictures out of the 3MF | slicer_cli only (Bambu Studio engine) |
 | `--export-settings` | file | Write the project's settings as JSON (not a plate's own) and stop; with `--slice` the slice goes on | all binaries |
 | `--export-stl` | | Write the objects as one STL and stop | all binaries |
