@@ -17,6 +17,7 @@
 //   #include "FillLine.hpp"
 use super::FillParams;
 use crate::clipper_utils::{diff_pl, intersection_pl, offset_expolygon, OffsetJoinType};
+use crate::clipper_utils::{diff_pl_clib, intersection_pl_clib, offset_ex_expolygon_clib};
 use crate::geometry::{align_to_grid_point_base, BoundingBox, ExPolygon, Line, Point, Polyline};
 use crate::shortest_path::chain_polylines;
 use crate::{scale, unscale, Coord, CoordF};
@@ -110,12 +111,24 @@ impl FillLine {
         // FillLine.cpp:18
         expolygon.rotate(-(direction.0 as CoordF));
 
-        // FillLine.cpp:20
-        self._min_spacing = scale(self.spacing);
+        // FillLine.cpp:20  `this->_min_spacing = scale_(this->spacing);` a division by
+        // SCALING_FACTOR, truncated by the assignment to coord_t (FILL_LINE_PIN; =0 rounds the
+        // product as the earlier port did).
+        let pin = fill_line_pin();
+        self._min_spacing = if pin {
+            (self.spacing / crate::libslic3r::SCALING_FACTOR) as Coord
+        } else {
+            scale(self.spacing)
+        };
         // FillLine.cpp:21
         debug_assert!(params.density > 0.0001 && params.density <= 1.0);
         // FillLine.cpp:22
-        self._line_spacing = ((self._min_spacing as CoordF) / params.density as CoordF) as Coord;
+        // `coordf_t(_min_spacing) / params.density`: FillParams::density is a float.
+        self._line_spacing = if pin {
+            ((self._min_spacing as CoordF) / (params.density as f32 as CoordF)) as Coord
+        } else {
+            ((self._min_spacing as CoordF) / params.density as CoordF) as Coord
+        };
         // FillLine.cpp:23
         self._diagonal_distance = self._line_spacing * 2;
         // FillLine.cpp:24
@@ -128,10 +141,18 @@ impl FillLine {
         // FillLine.cpp:28
         if params.density > 0.9999 && !params.dont_adjust {
             // FillLine.cpp:29
-            self._line_spacing =
-                super::adjust_solid_spacing(bounding_box.size().x, self._line_spacing);
-            // FillLine.cpp:30
-            self.spacing = unscale(self._line_spacing);
+            self._line_spacing = if pin {
+                // FillBase.cpp:180-195 with EPSILON (libslic3r.h)
+                super::fill_base::adjust_solid_spacing(bounding_box.size().x, self._line_spacing)
+            } else {
+                super::adjust_solid_spacing(bounding_box.size().x, self._line_spacing)
+            };
+            // FillLine.cpp:30  unscale<double>: a multiplication by SCALING_FACTOR
+            self.spacing = if pin {
+                self._line_spacing as CoordF * crate::libslic3r::SCALING_FACTOR
+            } else {
+                unscale(self._line_spacing)
+            };
         } else {
             // FillLine.cpp:32-33
             // extend bounding box so that our pattern will be aligned with other layers
@@ -152,7 +173,9 @@ impl FillLine {
         // FillLine.cpp:40
         // generate the basic pattern
         // FillLine.cpp:41
-        let x_max: Coord = bounding_box.max.x + SCALED_EPSILON;
+        // SCALED_EPSILON = scale_(EPSILON) = 10 (libslic3r.h); the earlier port used 1000.
+        let x_max: Coord =
+            bounding_box.max.x + if pin { crate::libslic3r::SCALED_EPSILON as Coord } else { SCALED_EPSILON };
         // FillLine.cpp:42
         let mut lines: Vec<Line> = Vec::new();
         // FillLine.cpp:43-44
@@ -186,8 +209,18 @@ impl FillLine {
         // `offset` (jtMiter, miterLimit 3 default) and `intersection_pl` route
         // through clipper_utils' geo-clipper backend (fixed scale 1000), not
         // ClipperLib at coord_t integer precision.
-        let mut polylines: Vec<Polyline> =
-            intersection_pl(&polylines_src, &offset_expolygon(&expolygon, scale(0.02) as CoordF, OffsetJoinType::Miter));
+        // FILL_LINE_PIN: ClipperLib's offset (jtMiter, DefaultMiterLimit 3) by float(scale_(0.02))
+        // and its open-path intersection (ClipperUtils.cpp). The region of `offset(ExPolygon)`
+        // (Polygons) and of `offset_ex` is the same under pftNonZero.
+        let mut polylines: Vec<Polyline> = if pin {
+            let delta = (0.02 / crate::libslic3r::SCALING_FACTOR) as f32;
+            intersection_pl_clib(
+                &polylines_src,
+                &offset_ex_expolygon_clib(&expolygon, delta as f64, OffsetJoinType::Miter, 3.0),
+            )
+        } else {
+            intersection_pl(&polylines_src, &offset_expolygon(&expolygon, scale(0.02) as CoordF, OffsetJoinType::Miter))
+        };
 
         // FillLine.cpp:63
         // FIXME Vojtech: This is only performed for horizontal lines, not for the vertical lines!
@@ -196,8 +229,13 @@ impl FillLine {
         // FillLine.cpp:65
         // How much to extend an infill path from expolygon outside?
         // FillLine.cpp:66
-        let extra: Coord =
-            (self._min_spacing as f32 * INFILL_OVERLAP_OVER_SPACING + 0.5).floor() as Coord;
+        // `floor(this->_min_spacing * INFILL_OVERLAP_OVER_SPACING + 0.5f)`: float arithmetic,
+        // the multiply-add fused by clang (-ffp-contract=on).
+        let extra: Coord = if pin {
+            (self._min_spacing as f32).mul_add(INFILL_OVERLAP_OVER_SPACING, 0.5f32).floor() as Coord
+        } else {
+            (self._min_spacing as f32 * INFILL_OVERLAP_OVER_SPACING + 0.5).floor() as Coord
+        };
         // FillLine.cpp:67
         for it_polyline in polylines.iter_mut() {
             // FillLine.cpp:68-69
@@ -234,11 +272,18 @@ impl FillLine {
                 // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
                 // (offset_ex routes through clipper_utils' geo-clipper backend).
                 // `_min_spacing / 2` is integer (coord_t) division, as in C++.
-                let mut expolygons_off: Vec<ExPolygon> = offset_expolygon(
-                    &expolygon,
-                    (self._min_spacing / 2) as CoordF,
-                    OffsetJoinType::Miter,
-                );
+                // FILL_LINE_PIN: the delta is in scaled units (float(_min_spacing / 2)); the earlier
+                // port handed it to an offset that takes millimetres.
+                let mut expolygons_off: Vec<ExPolygon> = if pin {
+                    offset_ex_expolygon_clib(
+                        &expolygon,
+                        ((self._min_spacing / 2) as f32) as f64,
+                        OffsetJoinType::Miter,
+                        3.0,
+                    )
+                } else {
+                    offset_expolygon(&expolygon, (self._min_spacing / 2) as CoordF, OffsetJoinType::Miter)
+                };
                 // FillLine.cpp:84
                 if !expolygons_off.is_empty() {
                     // FillLine.cpp:85
@@ -344,5 +389,16 @@ fn expolygon_contains_line(expolygon: &ExPolygon, line: &Line) -> bool {
     // ExPolygon.cpp:89 — diff_pl(polyline, *this).empty()
     // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib
     // (diff_pl routes through clipper_utils' geo-clipper backend).
+    if fill_line_pin() {
+        // ClipperUtils.cpp diff_pl(Polyline, ExPolygon): ClipperLib's open-path difference.
+        return diff_pl_clib(&[polyline], &expolygon.to_polygons()).is_empty();
+    }
     diff_pl(&[polyline], std::slice::from_ref(expolygon)).is_empty()
+}
+
+/// FILL_LINE_PIN (on unless =0): the arithmetic and the clipping of the pin in `FillLine`
+/// (FillLine.cpp:10-120): scale_ as a truncated division, SCALED_EPSILON = 10, ClipperLib's offset
+/// and open-path clipping, the fused `extra`; and the slicing path fills ipLine with this filler.
+pub fn fill_line_pin() -> bool {
+    crate::faithful_gate("FILL_LINE_PIN")
 }

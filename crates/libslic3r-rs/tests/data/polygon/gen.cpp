@@ -5,13 +5,15 @@
 //
 // One line per case, tokens separated by one space. Integers are decimal, doubles are the 16 hex digits of
 // their bits. A line is
-//   c <n> <n points> <line.a> <line.b> <p> <threshold> <tolerance> <spacing>
+//   c <n> <n points> <line.a> <line.b> <p> <threshold> <tolerance> <spacing> <max_deviation> <max_variance>
 //     -> <length> <area> <is_counter_clockwise> <is_clockwise> <centroid> <lines: n, a b each>
 //        <first_intersection(line): found x y> <intersections(line): found n points>
 //        <convex_points(threshold): n points> <concave_points(threshold): n points> <point_projection(p)>
 //        <triangulate_convex: n polygons, each n points> <douglas_peucker(tolerance): n points>
 //        <make_counter_clockwise: reversed, n points> <make_clockwise: reversed, n points>
 //        <equally_spaced_points(spacing): n points>
+//        <polygon_is_convex> <remove_sticks: removed, n points> <remove_collinear: n points>
+//        <is_approx_circle(max_deviation, max_variance): ok [center diameter]>   (R931)
 // where a point is `x y`.
 #include <cstdio>
 #include <cstdint>
@@ -74,7 +76,9 @@ int main()
         std::printf("c");
         pps(pts);
         const double spacing = tolerance + 0.25 * double(range);
-        pp(line.a); pp(line.b); pp(p); pd(threshold); pd(tolerance); pd(spacing);
+        const double max_deviation = (0.01 + 0.2 * unit()) * double(range);
+        const double max_variance  = (0.01 + 0.2 * unit()) * double(range);
+        pp(line.a); pp(line.b); pp(p); pd(threshold); pd(tolerance); pd(spacing); pd(max_deviation); pd(max_variance);
         std::printf(" ->");
 
         const Polygon poly(pts);
@@ -124,6 +128,24 @@ int main()
             pps(cw.points);
         }
         pps(poly.equally_spaced_points(spacing));
+        // R931: the free functions of Polygon.cpp and Polygon::is_approx_circle.
+        std::printf(" %d", polygon_is_convex(poly) ? 1 : 0);
+        {
+            Polygon st(poly);
+            const bool removed = remove_sticks(st);
+            std::printf(" %d", removed ? 1 : 0);
+            pps(st.points);
+            Polygon co(poly);
+            remove_collinear(co);
+            pps(co.points);
+        }
+        {
+            Point  center(0, 0);
+            double diameter = 0.;
+            const bool ok = poly.is_approx_circle(max_deviation, max_variance, center, diameter);
+            std::printf(" %d", ok ? 1 : 0);
+            if (ok) { pp(center); pd(diameter); }
+        }
         std::printf("\n");
     }
     return 0;

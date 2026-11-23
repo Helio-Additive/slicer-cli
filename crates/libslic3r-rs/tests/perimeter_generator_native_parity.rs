@@ -878,3 +878,180 @@ fn perimeter_generator_process_native_parity() {
         assert!(differing.is_empty(), "{prefix} cases differ from the pin: {}", differing.join("; "));
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Layer::make_perimeters on a layer with several regions of a real Print
+// ---------------------------------------------------------------------------------------------
+//
+// tests/data/perimeter_generator/layer_groups_vectors.txt.gz, made by gen.cpp `run_layer_groups`
+// (`gen groups <file>`): the object has PARAMETER_MODIFIER volumes with options of their own (other wall
+// counts, widths, speeds, wall sequence, thin walls, infill density, Arachne), `Print::apply` makes a
+// region of each distinct config. A line "lcfg<TAB>tag<TAB>region<TAB>key=value..." holds the options of
+// one region as the pin holds them, a line "lgrp <layer> ... => ..." one call of the pin's
+// `Layer::make_perimeters` (Layer.cpp:202-408) on a layer with one LayerRegion per region: per region
+// the number of perimeter and thin fill entities, the perimeters, the thin fills, fill_expolygons and
+// fill_no_overlap_expolygons (a long result is "#" and the FNV-1a hash of its text). Which regions share
+// a perimeter pass shows in the counts: a region merged into an earlier one keeps none.
+// The test calls the live `Layer::make_perimeters`. `LAYER_GROUPS_VECTORS` names a file of the
+// generator to read instead of the committed one, `LAYER_GROUPS_SHOW` how many differing results to
+// print (with a file of full results).
+
+fn read_layer_groups_vectors() -> Vec<String> {
+    if let Ok(path) = std::env::var("LAYER_GROUPS_VECTORS") {
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        return text.lines().map(|l| l.to_string()).collect();
+    }
+    let path = format!("{}/tests/data/perimeter_generator/layer_groups_vectors.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).unwrap_or_else(|e| panic!("{path}: {e}"));
+    text.lines().map(|l| l.to_string()).collect()
+}
+
+#[test]
+fn layer_make_perimeters_groups_native_parity() {
+    let expected = read_layer_groups_vectors();
+    let show: usize = std::env::var("LAYER_GROUPS_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    // "pass": whether the region kept walls of its own (no: merged into an earlier region's pass, or no
+    // slices); "islands": the number of top-level entities of perimeters and thin_fills. The live
+    // LayerRegion::make_perimeters stores the walls of the islands one after the other (layer.rs, "The
+    // islands of `loops` one after the other") where the pin keeps a collection per island
+    // (PerimeterGenerator.cpp:1342, 1838): "islands" is reported, not asserted.
+    const PARTS: [&str; 6] = ["pass", "perimeters", "thin_fills", "fill_expolygons", "fill_no_overlap", "islands"];
+    let mut merged_regions = 0usize;
+    let mut cfgs: Vec<ProcCfg> = Vec::new();
+    let mut cfg_tag = String::new();
+    // Per tag: the cases, the regions compared and, per part, the regions that differ.
+    let mut stats: Vec<(String, usize, usize, [usize; 6])> = Vec::new();
+    let mut shown = 0usize;
+    for (line_no, line) in expected.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix("lcfg\t") {
+            let fields: Vec<&str> = rest.split('\t').collect();
+            if fields[0] != cfg_tag {
+                cfg_tag = fields[0].to_string();
+                cfgs.clear();
+                stats.push((cfg_tag.clone(), 0, 0, [0; 6]));
+            }
+            // The speeds are lists at the pin (a value per process config); the slicing path hands the
+            // first one over (app_slice.rs `load_bambustudio_settings`).
+            let mut text = fields[0].to_string();
+            for f in &fields[2..] {
+                let (key, value) = f.split_once('=').expect("key=value");
+                let value = if key.ends_with("_speed") { value.split(',').next().unwrap_or(value) } else { value };
+                text += &format!("\t{key}={value}");
+            }
+            let mut c = proc_cfg(&text);
+            // PrintRegionConfig::set_deserialize of this crate takes no "wall_filament": the slicing path
+            // sets the field on the regions it makes (print.rs, `cfg.wall_filament = extruder_id`).
+            if let Some(w) = c.kv.get("wall_filament").and_then(|v| v.parse::<usize>().ok()) {
+                let mut region_config = c.region.config().clone();
+                region_config.wall_filament = w;
+                c.region = std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config));
+            }
+            cfgs.push(c);
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("lgrp ") else { panic!("unknown line {}", line_no + 1) };
+        let (inputs, results) = rest.split_once(" => ").expect("results");
+        let mut t = Tok::new(inputs);
+        let layer_id = t.i() as usize;
+        let height = t.d();
+        let print_z = t.d();
+        let slice_z = t.d();
+        let nreg = t.i() as usize;
+        assert_eq!(nreg, cfgs.len(), "line {}", line_no + 1);
+        let mut region_slices: Vec<slicer::surface_collection::SurfaceCollection> = Vec::new();
+        for _ in 0..nreg {
+            let n = t.i();
+            let mut slices = slicer::surface_collection::SurfaceCollection::new();
+            for _ in 0..n {
+                let extra = t.i() as usize;
+                let mut surface = Surface::new(SurfaceType::Internal, t.expoly());
+                surface.extra_perimeters = extra;
+                slices.surfaces.push(surface);
+            }
+            region_slices.push(slices);
+        }
+        let has_lower = t.b();
+        let lower = t.expolys();
+        let has_upper = t.b();
+        let upper = t.expolys();
+        let mut layer = slicer::layer::Layer::new(layer_id, 0, height, print_z, slice_z);
+        let has_slices: Vec<bool> = region_slices.iter().map(|s| !s.surfaces.is_empty()).collect();
+        for (r, slices) in region_slices.into_iter().enumerate() {
+            let c = &cfgs[r];
+            let mut layerm = LayerRegion::new(layer_id, r);
+            layerm.set_config_hierarchy(c.region.clone(), c.object_config.clone(), c.print_config.clone());
+            layerm.lower_slices = if has_lower { Some(lower.clone()) } else { None };
+            layerm.upper_slices = if has_upper { Some(upper.clone()) } else { None };
+            layerm.slices = slices;
+            layer.add_region(layerm);
+        }
+        layer.make_perimeters(None).expect("make_perimeters");
+        let theirs: Vec<&str> = results.split(" | ").collect();
+        assert_eq!(theirs.len(), 5 * nreg, "line {}", line_no + 1);
+        let entry = stats.last_mut().unwrap();
+        entry.1 += 1;
+        for (r, layerm) in layer.regions().iter().enumerate() {
+            let pin_counts = theirs[5 * r];
+            let pin_pass = pin_counts != "0 0";
+            if has_slices[r] && !pin_pass {
+                merged_regions += 1;
+            }
+            let mine_pass = !layerm.perimeters.entities.is_empty() || !layerm.thin_fills.entities.is_empty();
+            let mine = [
+                (mine_pass as i32).to_string(),
+                leaves_s(&layerm.perimeters),
+                leaves_s(&layerm.thin_fills),
+                expolys_s(&layerm.fill_expolygons),
+                expolys_s(&layerm.fill_no_overlap_expolygons),
+                format!("{} {}", layerm.perimeters.entities.len(), layerm.thin_fills.entities.len()),
+            ];
+            let pin_pass_s = (pin_pass as i32).to_string();
+            entry.2 += 1;
+            for (k, part) in PARTS.iter().enumerate() {
+                let th = match k {
+                    0 => pin_pass_s.as_str(),
+                    5 => pin_counts,
+                    _ => theirs[5 * r + k],
+                };
+                let equal = match th.strip_prefix('#') {
+                    Some(hash) => fnv(&mine[k]) == hash,
+                    None => mine[k] == th,
+                };
+                if !equal {
+                    entry.3[k] += 1;
+                    if shown < show {
+                        shown += 1;
+                        let detail = if th.starts_with('#') {
+                            format!("mine {}", &mine[k][..mine[k].len().min(200)])
+                        } else if th.len() < 40 {
+                            format!("pin '{th}' mine '{}'", mine[k])
+                        } else {
+                            first_difference(th, &mine[k])
+                        };
+                        eprintln!("line {} {} layer {layer_id} region {r} {part}: {detail}", line_no + 1, entry.0);
+                    }
+                }
+            }
+        }
+    }
+    let mut total = [0usize; 6];
+    eprintln!("{:<12} {:>5} {:>7}  {}", "tag", "cases", "regions", PARTS.join(" "));
+    for (tag, n, regions, bad) in &stats {
+        for k in 0..6 {
+            total[k] += bad[k];
+        }
+        eprintln!("{tag:<12} {n:>5} {regions:>7}  {}", bad.iter().map(|b| format!("{b:>3}")).collect::<Vec<_>>().join(" "));
+    }
+    let cases: usize = stats.iter().map(|s| s.1).sum();
+    let regions: usize = stats.iter().map(|s| s.2).sum();
+    eprintln!(
+        "layer make_perimeters groups parity: {cases} layers, {regions} regions ({merged_regions} with slices merged into an earlier region's pass); differing {}",
+        PARTS.iter().zip(total.iter()).map(|(p, b)| format!("{p} {b}")).collect::<Vec<_>>().join(", ")
+    );
+    // Which regions share a pass (Layer.cpp:237-268), the walls, the thin fills and the fill surfaces split
+    // back among the regions (Layer.cpp:393-404) are equal to the pin in every region.
+    assert!(cases > 0 && merged_regions > 0, "no layer merged regions");
+    assert_eq!(total[..5], [0usize; 5], "Layer::make_perimeters differs from the pin");
+}

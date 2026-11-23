@@ -6070,8 +6070,8 @@ pub fn merge_influence_areas_two_sets(
     dst_end
 }
 
-/// What `tbb::this_task_arena::max_concurrency()` gives merge_influence_areas() (TreeSupport3D.cpp:2376): the number
-/// of threads of the machine, by which the pin chooses the size of its first buckets, and with it the order in
+/// What `tbb::this_task_arena::max_concurrency()` gives merge_influence_areas() (TreeSupport3D.cpp:2380): the number
+/// of threads of the machine (TBB's default arena: the logical CPU count, which `available_parallelism()` gives too), by which the pin chooses the size of its first buckets, and with it the order in
 /// which the areas of a layer are merged. Zero (the initial value) stands for the number of threads of this
 /// machine; a test sets the number of the machine its vectors were made on.
 pub static MERGE_INFLUENCE_AREAS_NUM_THREADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -10396,5 +10396,209 @@ pub struct OrganicTreeSupport3D<'f> {
 impl crate::support::tree_support::TreeSupport3DGenerator for OrganicTreeSupport3D<'_> {
     fn generate_tree_support_3d(&self, tree_support: &mut crate::support::tree_support::TreeSupport<'_>) -> crate::Result<()> {
         generate_tree_support_3d(self.idx, tree_support, self.fill_factory, self.throw_on_cancel)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// `Fill::new_from_type()` over the engine's own fillers, for a live caller of the organic pipeline: what
+// generate_support_toolpaths() (SupportCommon.cpp) and TreeSupport3D.cpp ask of `SupportFillFactory` in the
+// slicer. The tests hand the pipeline recording fillers instead (tests/tree_support_3d_native_parity.rs).
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The fillers of the FillRectilinear family (FillRectilinear.hpp:16-214), the crate's `fill::fill_rectilinear`,
+/// as `Fill::new_from_type()` (FillBase.cpp:33-67) makes them for the patterns a support asks for
+/// (SupportParameters.hpp:224-237: Rectilinear, SupportBase, Grid; the rest of the family for completeness).
+pub enum EngineSupportFiller {
+    Rectilinear(crate::fill::fill_rectilinear::FillRectilinear),
+    AlignedRectilinear(crate::fill::fill_rectilinear::FillAlignedRectilinear),
+    Monotonic(crate::fill::fill_rectilinear::FillMonotonic),
+    Grid(crate::fill::fill_rectilinear::FillGrid),
+    Triangles(crate::fill::fill_rectilinear::FillTriangles),
+    Stars(crate::fill::fill_rectilinear::FillStars),
+    Cubic(crate::fill::fill_rectilinear::FillCubic),
+    SupportBase(crate::fill::fill_rectilinear::FillSupportBase),
+}
+
+impl EngineSupportFiller {
+    /// FillBase.cpp:33-67: the cases of the FillRectilinear family (FillBase.cpp:41-50, :56); `None` for a pattern
+    /// of another class.
+    pub fn new_from_type(pattern: crate::print_config::InfillPattern) -> Option<Self> {
+        use crate::fill::fill_rectilinear as fr;
+        use crate::print_config::InfillPattern as P;
+        Some(match pattern {
+            // FillBase.cpp:41  case ipRectilinear: return new FillRectilinear();
+            P::Rectilinear => Self::Rectilinear(fr::FillRectilinear::new()),
+            // FillBase.cpp:42  case ipAlignedRectilinear: return new FillAlignedRectilinear();
+            P::AlignedRectilinear => Self::AlignedRectilinear(fr::FillAlignedRectilinear::new()),
+            // FillBase.cpp:44  case ipMonotonic: return new FillMonotonic();
+            P::Monotonic => Self::Monotonic(fr::FillMonotonic::new()),
+            // FillBase.cpp:46  case ipGrid: return new FillGrid();
+            P::Grid => Self::Grid(fr::FillGrid::new()),
+            // FillBase.cpp:47  case ipTriangles: return new FillTriangles();
+            P::Triangles => Self::Triangles(fr::FillTriangles::new()),
+            // FillBase.cpp:48  case ipStars: return new FillStars();
+            P::Stars => Self::Stars(fr::FillStars::new()),
+            // FillBase.cpp:49  case ipCubic: return new FillCubic();
+            P::Cubic => Self::Cubic(fr::FillCubic::new()),
+            // FillBase.cpp:56  case ipSupportBase: return new FillSupportBase(); // simply line fill
+            P::SupportBase => Self::SupportBase(fr::FillSupportBase::new()),
+            _ => return None,
+        })
+    }
+
+    fn base(&self) -> &crate::fill::fill_base::Fill {
+        match self {
+            Self::Rectilinear(f) => &f.base,
+            Self::AlignedRectilinear(f) => &f.0.base,
+            Self::Monotonic(f) => &f.0.base,
+            Self::Grid(f) => &f.0.base,
+            Self::Triangles(f) => &f.0.base,
+            Self::Stars(f) => &f.0.base,
+            Self::Cubic(f) => &f.0.base,
+            Self::SupportBase(f) => &f.0.base,
+        }
+    }
+
+    fn base_mut(&mut self) -> &mut crate::fill::fill_base::Fill {
+        match self {
+            Self::Rectilinear(f) => &mut f.base,
+            Self::AlignedRectilinear(f) => &mut f.0.base,
+            Self::Monotonic(f) => &mut f.0.base,
+            Self::Grid(f) => &mut f.0.base,
+            Self::Triangles(f) => &mut f.0.base,
+            Self::Stars(f) => &mut f.0.base,
+            Self::Cubic(f) => &mut f.0.base,
+            Self::SupportBase(f) => &mut f.0.base,
+        }
+    }
+}
+
+impl crate::support::support_common::SupportFill for EngineSupportFiller {
+    fn fill(&self) -> &crate::fill::fill_base::Fill {
+        self.base()
+    }
+    fn fill_mut(&mut self) -> &mut crate::fill::fill_base::Fill {
+        self.base_mut()
+    }
+    /// The `fill_surface()` of each class: FillRectilinear.cpp:3075-3095 (FillRectilinear, FillAlignedRectilinear),
+    /// :3097-3105 (FillMonotonic), :3118-3131 (FillGrid), :3133-3142 (FillTriangles), :3144-3153 (FillStars),
+    /// :3155-3165 (FillCubic), :3182- (FillSupportBase). None of them throws: a region that cannot be filled is
+    /// logged (FillRectilinear.cpp:3087, :3092, :3103, ...) and left as it is.
+    fn fill_surface(&mut self, surface: &crate::surface::Surface, params: &crate::fill::FillParams) -> Result<Polylines, InfillFailedException> {
+        Ok(match self {
+            Self::Rectilinear(f) => f.fill_surface(surface, params),
+            Self::AlignedRectilinear(f) => f.fill_surface(surface, params),
+            Self::Monotonic(f) => f.fill_surface(surface, params),
+            Self::Grid(f) => f.fill_surface(surface, params),
+            Self::Triangles(f) => f.fill_surface(surface, params),
+            Self::Stars(f) => f.fill_surface(surface, params),
+            Self::Cubic(f) => f.fill_surface(surface, params),
+            Self::SupportBase(f) => f.fill_surface(surface, params),
+        })
+    }
+}
+
+/// `Fill::new_from_type()` (FillBase.cpp:33-67) for the support pipeline over the engine's fillers. The patterns
+/// of the FillRectilinear family are the crate's (`EngineSupportFiller`), Concentric is `EngineSupportFillConcentric`;
+/// the crate has no filler of the other classes behind `SupportFill` yet (FillHoneycomb, FillLightning::Filler,
+/// ...: their Rust types carry their own copies of the base members), so those patterns go to `other`, which the
+/// caller hands in. A
+/// pattern neither knows is the pin's `throw Slic3r::InvalidArgument("unknown type")` (FillBase.cpp:66).
+pub struct EngineSupportFillFactory {
+    pub other: Option<Box<dyn SupportFillFactory>>,
+}
+
+impl EngineSupportFillFactory {
+    pub fn new(other: Option<Box<dyn SupportFillFactory>>) -> Self {
+        Self { other }
+    }
+}
+
+/// FillConcentric.hpp `class FillConcentric : public Fill` behind `SupportFill`, for a support whose contact pattern
+/// is concentric (SupportParameters.hpp:236-238). The crate's `FillConcentric` carries its own copies of the base
+/// members it reads (`spacing`, `loop_clipping`); they are handed over from the `Fill` base before the fill and
+/// `spacing` is handed back after it, which FillConcentric.cpp:27 (`this->spacing = unscale<double>(distance)`)
+/// adjusts. Ported only: no vector of the support pipeline asks for this pattern yet.
+pub struct EngineSupportFillConcentric {
+    pub base: crate::fill::fill_base::Fill,
+}
+
+impl crate::support::support_common::SupportFill for EngineSupportFillConcentric {
+    fn fill(&self) -> &crate::fill::fill_base::Fill {
+        &self.base
+    }
+    fn fill_mut(&mut self) -> &mut crate::fill::fill_base::Fill {
+        &mut self.base
+    }
+    /// FillBase.cpp:99-113 `Fill::fill_surface()`, which FillConcentric inherits (its `print_config` pointers stay
+    /// null, FillConcentric.hpp:31-32: generate_support_toolpaths() does not set them).
+    fn fill_surface(&mut self, surface: &crate::surface::Surface, params: &crate::fill::FillParams) -> Result<Polylines, InfillFailedException> {
+        let mut filler = crate::fill::fill_concentric::FillConcentric {
+            spacing: self.base.spacing,
+            loop_clipping: self.base.loop_clipping,
+            print_config: None,
+            print_object_config: None,
+        };
+        let polylines = filler.fill_surface(surface, params, self.base.overlap);
+        self.base.spacing = filler.spacing;
+        Ok(polylines)
+    }
+}
+
+impl SupportFillFactory for EngineSupportFillFactory {
+    fn new_from_type(&self, pattern: crate::print_config::InfillPattern) -> Box<dyn crate::support::support_common::SupportFill> {
+        if let Some(filler) = EngineSupportFiller::new_from_type(pattern) {
+            return Box::new(filler);
+        }
+        // FillBase.cpp:37  case ipConcentric: return new FillConcentric();
+        if pattern == crate::print_config::InfillPattern::Concentric {
+            return Box::new(EngineSupportFillConcentric { base: crate::fill::fill_base::Fill::new() });
+        }
+        match &self.other {
+            Some(other) => other.new_from_type(pattern),
+            // FillBase.cpp:66  default: throw Slic3r::InvalidArgument("unknown type");
+            None => panic!("Fill::new_from_type({:?}): no filler of this pattern behind SupportFill (FillBase.cpp:66)", pattern),
+        }
+    }
+}
+
+/// Bridge for a live caller of the organic pipeline (no C++ counterpart: the pin keeps one PrintObject): the support
+/// layers TreeSupport3D leaves on a `print::faithful` PrintObject (`m_support_layers`, Print.hpp:408) in the form the
+/// live PrintObject keeps them (`PrintObject::support_layers`): one `Layer` per support layer with the pin's id,
+/// height, print_z and slice_z (Layer.hpp:382-383), the support islands (`SupportLayer::support_islands`,
+/// Layer.hpp:353) in `lslices`, where the live support step stores its islands, and the toolpaths
+/// (`SupportLayer::support_fills`, Layer.hpp:355) in `support_fills`, which the live G-code reads as
+/// GCode::extrude_support() (GCode.cpp:5782-5848) reads the pin's. Layers without toolpaths are kept, as the pin
+/// keeps them in `m_support_layers`. The caller wires the configs (`Layer::wire_config_hierarchy`).
+pub fn live_support_layers_from_faithful(support_layers: &[pf::SupportLayer]) -> Vec<crate::layer::Layer> {
+    support_layers
+        .iter()
+        .map(|sl| {
+            let mut layer = crate::layer::Layer::new(sl.layer.id(), sl.layer.object_id(), sl.layer.height, sl.layer.print_z, sl.layer.slice_z);
+            layer.lslices = sl.support_islands.clone();
+            layer.support_fills = Some(sl.support_fills.clone());
+            layer
+        })
+        .collect()
+}
+
+/// Bridge for a live caller of the organic pipeline (no C++ counterpart: the pin keeps one PrintObject): the live
+/// object's layers as the layers of a `print::faithful` PrintObject (`PrintObject::m_layers`, Print.hpp), which the
+/// tree support reads (print_z, height, slice_z, lslices, lslices_extrudable, the regions; generate_overhangs,
+/// TreeSupport3D.cpp:226-, and the layers' upper/lower links, Layer.hpp:156-157). Each layer is copied as it is;
+/// the links are made as new_layers() makes them (PrintObjectSlice.cpp:46-57 `prev->upper_layer = layer;
+/// layer->lower_layer = prev;`), over the order of `layers`. The layers carry the object's id already.
+pub fn faithful_layers_from_live(obj: &mut pf::PrintObject, layers: &[crate::layer::Layer]) {
+    obj.m_layers.clear();
+    obj.m_layers.reserve(layers.len());
+    for (layer_id, src) in layers.iter().enumerate() {
+        let mut layer = src.clone();
+        layer.lower_layer_id = None;
+        layer.upper_layer_id = None;
+        if layer_id > 0 {
+            layer.lower_layer_id = Some(layer_id - 1);
+            obj.m_layers[layer_id - 1].upper_layer_id = Some(layer_id);
+        }
+        obj.m_layers.push(layer);
     }
 }

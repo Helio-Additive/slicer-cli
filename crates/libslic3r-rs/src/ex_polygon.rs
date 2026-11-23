@@ -555,7 +555,10 @@ pub fn projection_onto(polygons: &[ExPolygon], from: &Point) -> Point {
         for i in 0..poly.num_contours() {
             // ExPolygon.cpp:213
             // Point p = from.projection_onto(poly.contour_or_hole(i));
-            let p = from.projection_onto_multipoint(&poly.contour_or_hole(i).points);
+            // `contour_or_hole(i)` is a Polygon, whose virtual `lines()` holds the closing edge (R931: the
+            // polyline form `projection_onto_multipoint` left it out; 126 of 2,000 vectors differed).
+            let ring = poly.contour_or_hole(i);
+            let p = from.projection_onto_multi_point_overload(ring.first_point(), &ring.lines());
             // ExPolygon.cpp:214
             // double dist = (from - p).cast<double>().squaredNorm();
             let dist = {
@@ -944,10 +947,9 @@ fn symmetric_y_polygon(polygon: &mut Polygon, y_axis: Coord) {
 // point's x by factor_x and y by factor_y, rounding to the nearest coord_t
 // (matches the crate's `Point * f64` operator, which uses `.round()`).
 fn scale_polygon_xy(polygon: &mut Polygon, factor_x: f64, factor_y: f64) {
-    for p in &mut polygon.points {
-        p.x = (p.x as f64 * factor_x).round() as Coord;
-        p.y = (p.y as f64 * factor_y).round() as Coord;
-    }
+    // MultiPoint.cpp:12-19 `pt(0) = coord_t(pt(0) * factor_x); pt(1) = coord_t(pt(1) * factor_y);`:
+    // truncating (R931; it rounded before, and nothing outside this file calls `ExPolygon::scale_xy`).
+    polygon.scale_xy(factor_x, factor_y);
 }
 
 // } // namespace Slic3r   (ExPolygon.cpp:642)

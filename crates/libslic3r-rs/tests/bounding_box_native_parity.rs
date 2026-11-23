@@ -6,9 +6,10 @@
 //! every result has to be the pin's (integers equal, doubles bit-equal).
 //!
 //! `scale` / `scaled` are compared on the arm of the opt-in gate `BOUNDING_BOX_SCALE_PIN`, which the test
-//! switches on. `size`, `contains(point)` and `contains(box)` of the Rust file ask for a defined box and the
-//! pin does not: on boxes that are not defined (no area) those three are counted under a name ending in
-//! "(box not defined; reported)" and are not asserted.
+//! switches on. `size`, `contains(point)` and `contains(box)` read `min`/`max` without asking for a defined
+//! box, as the pin (BoundingBox.cpp:176-180, BoundingBox.hpp:51-57), under the gate `BOUNDING_BOX_DEFINED_PIN`
+//! (R931, on by default): asserted on defined and undefined boxes, the undefined ones counted under their own
+//! names "(box not defined)".
 
 use slicer::geometry::{BoundingBox, Point};
 use std::collections::BTreeMap;
@@ -49,10 +50,17 @@ impl<'a> Tok<'a> {
     }
 }
 
-// `BoundingBox(const Points &points)`: `construct<false>` on an undefined box (BoundingBox.hpp:25-35, 88-102).
+// `BoundingBox(const Points &points)`: `construct<false>` on an undefined box (BoundingBox.hpp:25-35, 88-102),
+// which `BoundingBox::from_points` is under the gate `BOUNDING_BOX_FROM_POINTS_PIN` (R931, on by default);
+// `construct` itself is compared as well.
 fn from_points(points: &[Point]) -> BoundingBox {
     let mut bb = BoundingBox::new();
     BoundingBox::construct(&mut bb, points, false);
+    let via = BoundingBox::from_points(points);
+    assert!(
+        via.min == bb.min && via.max == bb.max && via.is_defined() == bb.is_defined(),
+        "BoundingBox::from_points differs from construct<false> on {points:?}"
+    );
     bb
 }
 
@@ -130,7 +138,7 @@ fn bounding_box_matches_the_pin() {
         if bb.is_defined() {
             pt_eq!("size", bb.size());
         } else {
-            pt_eq!("size (box not defined; reported)", bb.size());
+            pt_eq!("size (box not defined)", bb.size());
         }
         dbl_eq!("radius", bb.radius());
         dbl_eq!("area", bb.area() as f64);
@@ -138,12 +146,12 @@ fn bounding_box_matches_the_pin() {
         if bb.is_defined() {
             int_eq!("contains(point)", bb.contains_point(&q) as i64);
         } else {
-            int_eq!("contains(point) (box not defined; reported)", bb.contains_point(&q) as i64);
+            int_eq!("contains(point) (box not defined)", bb.contains_point(&q) as i64);
         }
         if bb.is_defined() && bb2.is_defined() {
             int_eq!("contains(box)", bb.contains(&bb2) as i64);
         } else {
-            int_eq!("contains(box) (box not defined; reported)", bb.contains(&bb2) as i64);
+            int_eq!("contains(box) (box not defined)", bb.contains(&bb2) as i64);
         }
         int_eq!("overlap", bb.overlap(&bb2) as i64);
         {

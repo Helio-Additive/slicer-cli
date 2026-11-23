@@ -50,12 +50,12 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | estimate: divergent | 234 (3% of matched) |
 | estimate: stub | 22 (0% of matched) |
 | missing in the paired Rust file | 1939 |
-| of those, a function of that name exists in another Rust file | 1142 |
+| of those, a function of that name exists in another Rust file | 1144 |
 | of the rest, another overload of the name is ported | 320 |
 | of the rest, under 25 tokens (accessors, one-liners) | 122 |
-| of the rest, 25 tokens or more | 355 |
+| of the rest, 25 tokens or more | 353 |
 | in a C++ unit with no Rust file | 133 |
-| Rust functions with no C++ function of that name in the pair | 8468 |
+| Rust functions with no C++ function of that name in the pair | 8488 |
 
 By tier:
 
@@ -102,7 +102,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `AppConfig` | `app_config.rs` | 72 | 53 | 3 | 2 | 0 | 14 | 3 |
 | 1 | `ExtrusionEntity` | `extrusion_entity.rs` | 125 | 89 | 1 | 5 | 0 | 30 | 0 |
-| 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 46 | 7 | 1 | 0 | 14 | 4 |
 | 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
 | 1 | `Geometry/VoronoiUtils` | `geometry/voronoi_utils.rs` | 13 | 5 | 2 | 2 | 0 | 4 | 3 |
 | 1 | `LayerRegion` | `layer_region.rs` | 29 | 1 | 3 | 0 | 0 | 25 | 5 |
@@ -117,6 +116,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Thread` | `thread.rs` | 24 | 6 | 1 | 1 | 0 | 16 | 3 |
 | 1 | `Clipper2Utils` | `clipper2_utils.rs` | 14 | 9 | 0 | 1 | 0 | 4 | 2 |
 | 1 | `ExPolygon` | `ex_polygon.rs` | 93 | 17 | 2 | 0 | 0 | 74 | 3 |
+| 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 46 | 7 | 1 | 0 | 14 | 2 |
 | 1 | `Fill/Lightning/Generator` | `fill/lightning/generator.rs` | 6 | 1 | 1 | 0 | 0 | 4 | 3 |
 | 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 178 | 23 | 3 | 0 | 1 | 0 |
 | 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 77 | 4 | 3 | 0 | 0 | 0 |
@@ -260,7 +260,7 @@ port, the other has to be merged into it or renamed after what it really ports.
 
 | Rust file | Functions | Of them named like the C++ unit's | C++ unit | Paired with |
 |-|-|-|-|-|
-| `geometry/bounding_box.rs` | 112 | 34% | `BoundingBox` | `bounding_box.rs` |
+| `geometry/bounding_box.rs` | 114 | 33% | `BoundingBox` | `bounding_box.rs` |
 | `geometry/build_volume.rs` | 5 | 60% | `BuildVolume` | `build_volume.rs` |
 | `geometry/expolygon.rs` | 93 | 28% | `ExPolygon` | `ex_polygon.rs` |
 | `gcode/extruder.rs` | 28 | 86% | `Extruder` | `extruder.rs` |
@@ -2595,7 +2595,7 @@ Tier 1. C++ functions 93 (plus 10 constructors, 0 destructors, 2 operators), Rus
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `ExPolygon::overlaps` :158 and `ExPolygon::overlaps` :295 (40%, 0.44x)
-- partial: `is_narrow_expolygon` :462 and `is_narrow_expolygon` :590 (90%, 1.17x)
+- partial: `is_narrow_expolygon` :462 and `is_narrow_expolygon` :593 (90%, 1.17x)
 
 Missing in the Rust file:
 
@@ -2687,15 +2687,15 @@ Rust only:
 - `ExPolygon::contour_or_hole` :505
 - `overlaps_expolys` :516
 - `overlaps_expolys_expoly` :531
-- `get_extents_expoly` :652
-- `get_extents_rotated_expoly` :677
-- `has_duplicate_points_expoly` :716
-- `remove_sticks_expoly` :780
-- `polygon_contains` :838
-- `point_in_polygon` :855
-- `bounding_box_polygon` :926
-- `symmetric_y_polygon` :937
-- `scale_polygon_xy` :946
+- `get_extents_expoly` :655
+- `get_extents_rotated_expoly` :680
+- `has_duplicate_points_expoly` :719
+- `remove_sticks_expoly` :783
+- `polygon_contains` :841
+- `point_in_polygon` :858
+- `bounding_box_polygon` :929
+- `symmetric_y_polygon` :940
+- `scale_polygon_xy` :949
 
 ### `ExPolygonCollection` (.cpp+.hpp) and `ex_polygon_collection.rs`
 
@@ -3234,9 +3234,9 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `Fill::new_from_type` :34 (287 tokens)
+- `Fill::new_from_type` :34 (287 tokens) — in `support/tree_support_3d.rs`
 - `FillParams::dont_connect` :55 (7 tokens) — in `fill/mod.rs`
-- `Fill::new_from_type` :74 (51 tokens)
+- `Fill::new_from_type` :74 (51 tokens) — in `support/tree_support_3d.rs`
 - `Fill::use_bridge_flow` :85 (90 tokens, overload) — in `fill/fill.rs`, `fill/fill3_d_honeycomb.rs`, `fill/fill_gyroid.rs`
 - `Fill::fill_surface` :99 (80 tokens) — in `fill/fill_concentric.rs`, `fill/fill_conformal.rs`, `fill/fill_rectilinear.rs`
 - `Fill::fill_surface_arachne` :115 (67 tokens) — in `fill/fill_concentric.rs`
@@ -3500,11 +3500,11 @@ Rust only:
 
 ### `Fill/FillLine` (.cpp+.hpp) and `fill/fill_line.rs`
 
-Tier 1. C++ functions 5, Rust functions 6. Matched 4: faithful 3, partial 1, divergent 0, stub 0.
+Tier 1. C++ functions 5, Rust functions 7. Matched 4: faithful 3, partial 1, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `FillLine::_fill_surface_single` :10 and `FillLine::_fill_surface_single` :100 (82%, 1.12x)
+- partial: `FillLine::_fill_surface_single` :10 and `FillLine::_fill_surface_single` :101 (82%, 1.41x)
 
 Missing in the Rust file:
 
@@ -3512,8 +3512,9 @@ Missing in the Rust file:
 
 Rust only:
 
-- `FillLine::clone_box` :57
-- `expolygon_contains_line` :330
+- `FillLine::clone_box` :58
+- `expolygon_contains_line` :375
+- `fill_line_pin` :402
 
 ### `Fill/FillPlanePath` (.cpp+.hpp) and `fill/fill_plane_path.rs`
 
@@ -3587,7 +3588,7 @@ Rust only:
 
 ### `Fill/FillRectilinear` (.cpp+.hpp) and `fill/fill_rectilinear.rs`
 
-Tier 1. C++ functions 109 (plus 2 constructors, 0 destructors, 2 operators), Rust functions 202. Matched 82: faithful 78, partial 3, divergent 1, stub 0.
+Tier 1. C++ functions 109 (plus 2 constructors, 0 destructors, 2 operators), Rust functions 204. Matched 82: faithful 78, partial 3, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -3746,8 +3747,10 @@ Rust only:
 - `live_surface` :6620
 - `live_fill_params` :6627
 - `generate_fill_rectilinear_pin` :6645
-- `generate_fill_monotonic_line_w_gap_fill_pin` :6668
-- `monotonic_stages` :6703
+- `generate_fill_line_pin` :6671
+- `generate_fill_honeycomb_pin` :6714
+- `generate_fill_monotonic_line_w_gap_fill_pin` :6763
+- `monotonic_stages` :6798
 
 ### `Fill/Lightning/DistanceField` (.cpp+.hpp) and `fill/lightning/distance_field.rs`
 
@@ -6014,16 +6017,16 @@ Tier 1. C++ functions 56 (plus 5 constructors, 2 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2822 (11%, 0.26x)
-- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2625 (46%, 0.79x)
-- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2664 (31%, 0.44x)
-- divergent: `Layer::merged` :150 and `Layer::merged` :2767 (5%, 0.08x)
-- partial: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :2280 (42%, 0.73x)
-- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :5646 (50%, 0.53x)
-- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :5658 (53%, 0.59x)
-- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :5672 (53%, 0.59x)
-- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :3035 (36%, 1.15x)
-- stub: `get_extents` :761 and `get_extents` :5769 (0%, 0.1x)
+- divergent: `Layer::apply_auto_circle_compensation` :39 and `Layer::apply_auto_circle_compensation` :2830 (11%, 0.26x)
+- partial: `Layer::backup_untyped_slices` :84 and `Layer::backup_untyped_slices` :2633 (46%, 0.79x)
+- partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :2672 (31%, 0.44x)
+- divergent: `Layer::merged` :150 and `Layer::merged` :2775 (5%, 0.08x)
+- partial: `Layer::make_perimeters` :203 and `Layer::make_perimeters` :2280 (43%, 0.76x)
+- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :5700 (50%, 0.53x)
+- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :5712 (53%, 0.59x)
+- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :5726 (53%, 0.59x)
+- partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :3043 (36%, 1.15x)
+- stub: `get_extents` :761 and `get_extents` :5823 (0%, 0.1x)
 
 Missing in the Rust file:
 
@@ -6084,32 +6087,32 @@ Rust only:
 - `Layer::clear_regions` :2152
 - `Layer::make_perimeters_with_lower` :2249
 - `Layer::make_perimeters_with_neighbors` :2258
-- `Layer::merged_f32` :2723
-- `Layer::merged_legacy` :2773
-- `Layer::record_cooling_node_for_each_extrusion` :2991
-- `Layer::make_fills_at_object_base` :3110
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :4659 — C++ has it in `Fill/Fill`
-- `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base` :4666
-- `Layer::make_ironing` :5045 — C++ has it in `Fill/Fill`
-- `Layer::generate_solid_infill` :5168
-- `Layer::generate_sparse_infill` :5175
-- `Layer::new_f` :5184 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :5196
-- `Layer::height_mm` :5202
-- `Layer::set_lower_layer` :5208
-- `Layer::set_upper_layer` :5214
-- `Layer::all_slices` :5220
-- `LayerRegion::set_slices` :5229
-- `LayerRegion::set_config_hierarchy` :5236
-- `ContinuitiousDistancer::new` :5269
-- `Layer::calculate_perimeter_continuity_pin` :5467
-- `Layer::simplify_support_print_params` :5625
-- `chain_points` :5708 — C++ has it in `ShortestPath`
-- `LayerRegion::layer_get_extents` :5755
-- `[LayerRegion]::layer_get_extents` :5761
-- `get_extents_layer_region` :5775
-- `get_extents_layer_regions` :5798
-- `mpprobe` :5820
+- `Layer::merged_f32` :2731
+- `Layer::merged_legacy` :2781
+- `Layer::record_cooling_node_for_each_extrusion` :2999
+- `Layer::make_fills_at_object_base` :3118
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :4713 — C++ has it in `Fill/Fill`
+- `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base` :4720
+- `Layer::make_ironing` :5099 — C++ has it in `Fill/Fill`
+- `Layer::generate_solid_infill` :5222
+- `Layer::generate_sparse_infill` :5229
+- `Layer::new_f` :5238 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :5250
+- `Layer::height_mm` :5256
+- `Layer::set_lower_layer` :5262
+- `Layer::set_upper_layer` :5268
+- `Layer::all_slices` :5274
+- `LayerRegion::set_slices` :5283
+- `LayerRegion::set_config_hierarchy` :5290
+- `ContinuitiousDistancer::new` :5323
+- `Layer::calculate_perimeter_continuity_pin` :5521
+- `Layer::simplify_support_print_params` :5679
+- `chain_points` :5762 — C++ has it in `ShortestPath`
+- `LayerRegion::layer_get_extents` :5809
+- `[LayerRegion]::layer_get_extents` :5815
+- `get_extents_layer_region` :5829
+- `get_extents_layer_regions` :5852
+- `mpprobe` :5874
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 
@@ -7547,15 +7550,15 @@ Rust only:
 
 ### `Polygon` (.cpp+.hpp) and `geometry/polygon.rs`
 
-Tier 1. C++ functions 86 (plus 4 constructors, 0 destructors, 2 operators), Rust functions 133. Matched 59: faithful 54, partial 5, divergent 0, stub 0. Flags: other directory.
+Tier 1. C++ functions 86 (plus 4 constructors, 0 destructors, 2 operators), Rust functions 135. Matched 59: faithful 54, partial 5, divergent 0, stub 0. Flags: other directory.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `polygons_append` :151 and `polygons_append` :1755 (67%, 0.36x)
+- partial: `polygons_append` :151 and `polygons_append` :1786 (67%, 0.36x)
 - partial: `Polygon::overlaps` :245 and `Polygon::overlaps` :626 (88%, 1.02x)
-- partial: `Polygon::transform` :385 and `Polygon::transform` :795 (50%, 0.98x)
-- partial: `remove_same_neighbor` :492 and `remove_same_neighbor` :1310 (50%, 1.16x)
-- partial: `polygons_match` :681 and `polygons_match` :1616 (50%, 1.01x)
+- partial: `Polygon::transform` :385 and `Polygon::transform` :806 (50%, 0.98x)
+- partial: `remove_same_neighbor` :492 and `remove_same_neighbor` :1339 (50%, 1.16x)
+- partial: `polygons_match` :681 and `polygons_match` :1647 (50%, 1.01x)
 
 Missing in the Rust file:
 
@@ -7615,54 +7618,56 @@ Rust only:
 - `Polygon::area_of` :287
 - `Polygon::signed_area` :317
 - `Polygon::contains_point` :432
-- `Polygon::bounding_box` :828 — C++ has it in `BoundingBox`, `CutSurface`, `Model`
-- `Polygon::to_polyline` :833 — C++ has it in `GCode/AvoidCrossingPerimeters`
-- `Polygon::edge` :846 — C++ has it in `GCode/ToolOrderUtils`, `MarchingSquares`
-- `Polygon::edges` :852
-- `Polygon::edge_count` :865
-- `Polygon::point_at` :875
-- `Polygon::perimeter` :880
-- `Polygon::scale` :892 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `Polygon::scaled` :899 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
-- `Polygon::closest_point` :906 — C++ has it in `MultiPoint`
-- `Polygon::distance_to_point` :927
-- `Polygon::is_point_on_boundary` :933
-- `Polygon::to_closed_polyline` :943
-- `Polygon::regular` :952
-- `Polygon::circle` :968 — C++ has it in `Circle`, `Geometry/Circle`, `TriangleSelector`
-- `Polygon::rectangle` :975
-- `Polygon::square` :985
-- `Polygon::simplify_in_place` :994
-- `clipper_orientation` :1083
-- `clipper_area` :1089
-- `point_in_polygon` :1109
-- `get_extents_polygons` :1181
-- `get_extents_rotated_polygons` :1204
-- `get_extents_rotated_points` :1222
-- `polygon_is_convex_poly` :1286
-- `remove_same_neighbor_polygons` :1344
-- `remove_sticks_polygons` :1445
-- `remove_collinear_polygons` :1577
-- `contains_polygon` :1663
-- `contains_polygons` :1675
-- `area_polygons` :1743
-- `to_points_poly` :1779
-- `to_lines_polygons` :1826
-- `to_polygons_paths` :1886
-- `simplify_polygons_clipper` :1909
-- `clipper_simplify_polygons_single_path` :1925
-- `Polygon::fmt` :1954
-- `Polygon::fmt` :1960
-- `Polygon::deref` :1975
-- `Polygon::deref_mut` :1981
-- `Polygon::index` :1989
-- `Polygon::index_mut` :1995
-- `Polygon::from_iter` :2001
-- `Polygon::into_iter` :2012
-- `&'a Polygon::into_iter` :2021
-- `&'a mut Polygon::into_iter` :2030
-- `Polygon::from` :2036 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Vec::from` :2042 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Polygon::bounding_box` :839 — C++ has it in `BoundingBox`, `CutSurface`, `Model`
+- `Polygon::to_polyline` :844 — C++ has it in `GCode/AvoidCrossingPerimeters`
+- `Polygon::edge` :857 — C++ has it in `GCode/ToolOrderUtils`, `MarchingSquares`
+- `Polygon::edges` :863
+- `Polygon::edge_count` :876
+- `Polygon::point_at` :886
+- `Polygon::perimeter` :891
+- `Polygon::scale` :905 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `Polygon::scale_xy` :920
+- `Polygon::scaled` :928 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
+- `Polygon::closest_point` :935 — C++ has it in `MultiPoint`
+- `Polygon::distance_to_point` :956
+- `Polygon::is_point_on_boundary` :962
+- `Polygon::to_closed_polyline` :972
+- `Polygon::regular` :981
+- `Polygon::circle` :997 — C++ has it in `Circle`, `Geometry/Circle`, `TriangleSelector`
+- `Polygon::rectangle` :1004
+- `Polygon::square` :1014
+- `Polygon::simplify_in_place` :1023
+- `clipper_orientation` :1112
+- `clipper_area` :1118
+- `point_in_polygon` :1138
+- `get_extents_polygons` :1210
+- `get_extents_rotated_polygons` :1233
+- `get_extents_rotated_points` :1251
+- `polygon_is_convex_poly` :1315
+- `remove_same_neighbor_polygons` :1373
+- `remove_sticks_polygons` :1474
+- `remove_collinear_polygons` :1608
+- `contains_polygon` :1694
+- `contains_polygons` :1706
+- `area_polygons` :1774
+- `to_points_poly` :1810
+- `to_lines_polygons` :1857
+- `to_polygons_paths` :1917
+- `simplify_polygons_clipper` :1940
+- `clipper_simplify_polygons_single_path` :1956
+- `Polygon::fmt` :1985
+- `Polygon::fmt` :1991
+- `Polygon::deref` :2006
+- `Polygon::deref_mut` :2012
+- `Polygon::index` :2020
+- `Polygon::index_mut` :2026
+- `Polygon::from_iter` :2032
+- `Polygon::into_iter` :2043
+- `&'a Polygon::into_iter` :2052
+- `&'a mut Polygon::into_iter` :2061
+- `Polygon::from` :2067 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Vec::from` :2073 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `expolygon_scale_pin` :2084
 
 ### `PolygonTrimmer` (.cpp+.hpp) and `polygon_trimmer.rs`
 
@@ -7679,9 +7684,9 @@ Tier 1. C++ functions 52 (plus 8 constructors, 0 destructors, 2 operators), Rust
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `Polyline::extend_end` :103 and `Polyline::extend_end` :382 (50%, 1.97x)
-- partial: `polylines_append` :215 and `polylines_append` :1516 (67%, 0.36x)
-- divergent: `Polyline::split_at` :223 and `Polyline::split_at` :1201 (19%, 0.15x)
-- partial: `remove_same_neighbor` :534 and `remove_same_neighbor` :1334 (40%, 0.73x)
+- partial: `polylines_append` :215 and `polylines_append` :1525 (67%, 0.36x)
+- divergent: `Polyline::split_at` :223 and `Polyline::split_at` :1210 (19%, 0.15x)
+- partial: `remove_same_neighbor` :534 and `remove_same_neighbor` :1343 (40%, 0.73x)
 
 Missing in the Rust file:
 
@@ -7745,36 +7750,36 @@ Rust only:
 - `Polyline::distance_to_point` :1143
 - `Polyline::translate` :1149 — C++ has it in `BoundingBox`, `Emboss`, `ExPolygon`
 - `Polyline::translated` :1156
-- `Polyline::scale` :1163 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `Polyline::scaled` :1170 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
-- `Polyline::rotate` :1177 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `Polyline::rotated` :1184 — C++ has it in `BoundingBox`, `Point`
-- `Polyline::rotate_around` :1193
-- `Polyline::concat` :1209
-- `Polyline::to_polygon` :1216 — C++ has it in `Arachne/utils/ExtrusionLine`, `Interlocking/VoxelUtils`, `MultiMaterialSegmentation`
-- `Polyline::simplified` :1221
-- `Polyline::direction_at` :1228
-- `Polyline::douglas_peucker` :1277 — C++ has it in `ExPolygon`, `MultiPoint`, `Polygon`
-- `line_direction` :1285
-- `line_parallel_to_angle` :1300
-- `get_extents_polylines` :1315
-- `remove_same_neighbor_polylines` :1353
-- `leftmost_point` :1370
-- `to_lines_polylines` :1481
-- `polylines_append_move` :1522
-- `Polyline::fmt` :1533
-- `Polyline::fmt` :1539
-- `Polyline::deref` :1554
-- `Polyline::deref_mut` :1560
-- `Polyline::index` :1568
-- `Polyline::index_mut` :1574
-- `Polyline::from_iter` :1580
-- `Polyline::into_iter` :1589
-- `&'a Polyline::into_iter` :1598
-- `&'a mut Polyline::into_iter` :1607
-- `Polyline::from` :1613 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Vec::from` :1619 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `Polyline::from` :1625 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Polyline::scale` :1165 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `Polyline::scaled` :1179 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
+- `Polyline::rotate` :1186 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `Polyline::rotated` :1193 — C++ has it in `BoundingBox`, `Point`
+- `Polyline::rotate_around` :1202
+- `Polyline::concat` :1218
+- `Polyline::to_polygon` :1225 — C++ has it in `Arachne/utils/ExtrusionLine`, `Interlocking/VoxelUtils`, `MultiMaterialSegmentation`
+- `Polyline::simplified` :1230
+- `Polyline::direction_at` :1237
+- `Polyline::douglas_peucker` :1286 — C++ has it in `ExPolygon`, `MultiPoint`, `Polygon`
+- `line_direction` :1294
+- `line_parallel_to_angle` :1309
+- `get_extents_polylines` :1324
+- `remove_same_neighbor_polylines` :1362
+- `leftmost_point` :1379
+- `to_lines_polylines` :1490
+- `polylines_append_move` :1531
+- `Polyline::fmt` :1542
+- `Polyline::fmt` :1548
+- `Polyline::deref` :1563
+- `Polyline::deref_mut` :1569
+- `Polyline::index` :1577
+- `Polyline::index_mut` :1583
+- `Polyline::from_iter` :1589
+- `Polyline::into_iter` :1598
+- `&'a Polyline::into_iter` :1607
+- `&'a mut Polyline::into_iter` :1616
+- `Polyline::from` :1622 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Vec::from` :1628 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `Polyline::from` :1634 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
 
 ### `Preset` (.cpp+.hpp) and `preset.rs`
 
@@ -8890,13 +8895,13 @@ Rust only:
 
 ### `PrintRegion` (.cpp) and `print_region.rs`
 
-Tier 1. C++ functions 6, Rust functions 17. Matched 5: faithful 2, partial 1, divergent 2, stub 0.
+Tier 1. C++ functions 6, Rust functions 19. Matched 5: faithful 2, partial 1, divergent 2, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `PrintRegion::extruder` :7 and `PrintRegion::extruder` :93 (8%, 0.16x)
-- divergent: `PrintRegion::flow` :21 and `PrintRegion::flow` :102 (31%, 0.18x)
-- partial: `PrintRegion::nozzle_dmr_avg` :62 and `PrintRegion::nozzle_dmr_avg` :127 (50%, 1.32x)
+- divergent: `PrintRegion::extruder` :7 and `PrintRegion::extruder` :109 (8%, 0.16x)
+- divergent: `PrintRegion::flow` :21 and `PrintRegion::flow` :118 (31%, 0.18x)
+- partial: `PrintRegion::nozzle_dmr_avg` :62 and `PrintRegion::nozzle_dmr_avg` :143 (50%, 1.32x)
 
 Missing in the Rust file:
 
@@ -8904,18 +8909,20 @@ Missing in the Rust file:
 
 Rust only:
 
-- `PrintRegion::new` :46
-- `PrintRegion::with_ids` :57
-- `PrintRegion::config` :71 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `PrintRegion::config_hash` :76 — C++ has it in `Print`
-- `PrintRegion::print_region_id` :82 — C++ has it in `Print`
-- `PrintRegion::print_object_region_id` :87 — C++ has it in `Print`
-- `PrintRegion::collect_object_printing_extruders_static` :155
-- `PrintRegion::set_config` :221 — C++ has it in `Print`
-- `PrintRegion::hash_config` :233
-- `region_extruder` :246
-- `flow_from_configs` :284
-- `get_at` :357 — C++ has it in `Config`
+- `PrintRegion::new` :49
+- `PrintRegion::with_ids` :61
+- `PrintRegion::gradient_volume_id` :76 — C++ has it in `Print`
+- `PrintRegion::set_gradient_volume_id` :82
+- `PrintRegion::config` :87 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `PrintRegion::config_hash` :92 — C++ has it in `Print`
+- `PrintRegion::print_region_id` :98 — C++ has it in `Print`
+- `PrintRegion::print_object_region_id` :103 — C++ has it in `Print`
+- `PrintRegion::collect_object_printing_extruders_static` :171
+- `PrintRegion::set_config` :237 — C++ has it in `Print`
+- `PrintRegion::hash_config` :249
+- `region_extruder` :262
+- `flow_from_configs` :300
+- `get_at` :373 — C++ has it in `Config`
 
 ### `ProjectTask` (.cpp+.hpp) and `project_task.rs`
 
@@ -11082,7 +11089,7 @@ Rust only:
 
 ### `Support/TreeSupport3D` (.cpp+.hpp) and `support/tree_support_3d.rs`
 
-Tier 2. C++ functions 76 (plus 5 constructors, 0 destructors, 1 operators), Rust functions 216. Matched 72: faithful 61, partial 8, divergent 3, stub 0.
+Tier 2. C++ functions 76 (plus 5 constructors, 0 destructors, 1 operators), Rust functions 229. Matched 72: faithful 61, partial 8, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -11251,6 +11258,19 @@ Rust only:
 - `organic_visit_recursive` :8980
 - `organic_draw_branches` :9043
 - `OrganicTreeSupport3D::generate_tree_support_3d` :10397
+- `EngineSupportFiller::new_from_type` :10425 — C++ has it in `Fill/FillBase`
+- `EngineSupportFiller::base` :10449
+- `EngineSupportFiller::base_mut` :10462
+- `EngineSupportFiller::fill` :10477 — C++ has it in `Fill/FillBase`
+- `EngineSupportFiller::fill_mut` :10480
+- `EngineSupportFiller::fill_surface` :10487 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `EngineSupportFillFactory::new` :10512
+- `EngineSupportFillConcentric::fill` :10527 — C++ has it in `Fill/FillBase`
+- `EngineSupportFillConcentric::fill_mut` :10530
+- `EngineSupportFillConcentric::fill_surface` :10535 — C++ has it in `Fill/FillBase`, `Fill/FillConformal`
+- `EngineSupportFillFactory::new_from_type` :10549 — C++ has it in `Fill/FillBase`
+- `live_support_layers_from_faithful` :10573
+- `faithful_layers_from_live` :10591
 
 ### `Support/TreeSupportCommon` (.hpp) and `support/tree_support_common.rs`
 

@@ -6663,6 +6663,101 @@ fn generate_fill_rectilinear_pin(fill_area: &[ExPolygon], config: &InfillConfig,
     paths
 }
 
+/// ipLine as the pin fills it (FILL_LINE_PIN): `Fill::new_from_type(ipLine)` makes a FillLine
+/// (FillBase.cpp:44), which does not override `Fill::fill_surface` (FillBase.cpp:99-113): the
+/// surface is offset by `float(scale_(this->overlap - 0.5 * this->spacing))` and every island is
+/// handed to `FillLine::_fill_surface_single` (FillLine.cpp:10-120) with `_infill_direction(surface)`
+/// (FillBase.cpp:197-241, the base `_layer_angle`). Nothing connects the lines again.
+pub fn generate_fill_line_pin(fill_area: &[ExPolygon], config: &InfillConfig, layer_index: usize) -> Vec<InfillPath> {
+    ADJUSTED_SPACING_MM.with(|c| c.set(None));
+    let mut paths = Vec::new();
+    for expoly in fill_area {
+        let mut base = Fill::new();
+        live_fill_members(&mut base, config, layer_index);
+        let surface = live_surface(expoly, config);
+        let params = live_fill_params(config, false);
+        let mut f = super::fill_line::FillLine { spacing: base.spacing, ..Default::default() };
+        // FillBase.cpp:102 — `offset_ex(surface->expolygon, float(scale_(this->overlap - 0.5 * this->spacing)))`
+        let delta = ((-0.5f64).mul_add(f.spacing, base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32;
+        let expp = crate::clipper_utils::offset_ex_expolygon_clib(
+            &surface.expolygon,
+            delta as f64,
+            crate::clipper_utils::OffsetJoinType::Miter,
+            3.0,
+        );
+        // FillBase.cpp:104-111
+        let direction = base._infill_direction(&surface);
+        let mut polylines: Vec<Polyline> = Vec::new();
+        for ex in expp {
+            f._fill_surface_single(&params, surface.thickness_layers as u32, &direction, ex, &mut polylines);
+        }
+        // FillLine.cpp:28-30 writes `this->spacing` on a full, adjusted infill, which
+        // Fill::fill_surface_extrusion reads back (FillBase.cpp:146-153).
+        if params.density > 0.9999 && !params.dont_adjust && !polylines.is_empty() {
+            ADJUSTED_SPACING_MM.with(|c| c.set(Some(f.spacing)));
+        }
+        for polyline in polylines {
+            if polyline.points.len() >= 2 {
+                paths.push(InfillPath::Line(polyline));
+            }
+        }
+    }
+    paths
+}
+
+/// ipHoneycomb as the pin fills it (FILL_HONEYCOMB_PIN): `Fill::new_from_type(ipHoneycomb)` makes a
+/// FillHoneycomb (FillBase.cpp), which does not override `Fill::fill_surface` (FillBase.cpp:99-113): the
+/// surface is offset by `float(scale_(this->overlap - 0.5 * this->spacing))` and every island goes to
+/// `FillHoneycomb::_fill_surface_single` (FillHoneycomb.cpp:9-84) with `_infill_direction(surface)` and
+/// the filler's `_layer_angle` (FillHoneycomb.hpp:53). The FillParams are those of Layer::make_fills
+/// (Fill.cpp:789-797). One filler per surface fill, as the pin's `f` (its cache is kept).
+pub fn generate_fill_honeycomb_pin(
+    fill_area: &[ExPolygon],
+    config: &InfillConfig,
+    layer_index: usize,
+    density: f64,
+    multiline: i32,
+    anchor_length: f64,
+    anchor_length_max: f64,
+) -> Vec<InfillPath> {
+    let mut paths = Vec::new();
+    let mut base = Fill::new();
+    live_fill_members(&mut base, config, layer_index);
+    let mut f = super::fill_honeycomb::FillHoneycomb::new(base.spacing);
+    // Fill.cpp:789-797
+    let mut params = FillParams::new();
+    params.density = density;
+    params.multiline = multiline;
+    params.dont_adjust = false;
+    params.anchor_length = anchor_length;
+    params.anchor_length_max = anchor_length_max;
+    for expoly in fill_area {
+        let surface = live_surface(expoly, config);
+        // Fill.cpp:844 — the spacing is reset for each expolygon.
+        f.spacing = base.spacing;
+        // FillBase.cpp:102
+        let delta = ((-0.5f64).mul_add(f.spacing, base.overlap) / crate::libslic3r::SCALING_FACTOR) as f32;
+        let expp = crate::clipper_utils::offset_ex_expolygon_clib(
+            &surface.expolygon,
+            delta as f64,
+            crate::clipper_utils::OffsetJoinType::Miter,
+            3.0,
+        );
+        // FillBase.cpp:104-111
+        let direction = base._infill_direction_with(&surface, |idx| f.layer_angle(idx));
+        let mut polylines: Vec<Polyline> = Vec::new();
+        for ex in expp {
+            f.fill_surface_single(&params, surface.thickness_layers as u32, &direction, ex, &mut polylines);
+        }
+        for polyline in polylines {
+            if polyline.points.len() >= 2 {
+                paths.push(InfillPath::Line(polyline));
+            }
+        }
+    }
+    paths
+}
+
 /// The monotonic lines of a top surface through `FillMonotonicLineWGapFill::fill_surface_by_lines`
 /// (FILL_RECTILINEAR_PIN): the slicing path hands the spacing of the flow over as the extrusion width.
 fn generate_fill_monotonic_line_w_gap_fill_pin(fill_area: &[ExPolygon], config: &InfillConfig, layer_index: usize) -> Vec<InfillPath> {

@@ -64,6 +64,8 @@ fn fnv(s: &str) -> String {
 struct Ctx {
     r: Run,
     full: bool,
+    /// Support layers of the 'final' stage handed over by `live_support_layers_from_faithful` and checked.
+    live_bridge_layers: usize,
 }
 impl Ctx {
     /// gen.cpp `outb(head, body)`
@@ -239,77 +241,23 @@ struct EngineStats {
     panics: usize,
 }
 
-/// The fillers of the FillRectilinear family (FillRectilinear.hpp), the crate's `fill::fill_rectilinear`.
-enum EngineFiller {
-    Rectilinear(slicer::fill::fill_rectilinear::FillRectilinear),
-    AlignedRectilinear(slicer::fill::fill_rectilinear::FillAlignedRectilinear),
-    Monotonic(slicer::fill::fill_rectilinear::FillMonotonic),
-    MonotonicLine(slicer::fill::fill_rectilinear::FillMonotonicLine),
-    Grid(slicer::fill::fill_rectilinear::FillGrid),
-    Triangles(slicer::fill::fill_rectilinear::FillTriangles),
-    Stars(slicer::fill::fill_rectilinear::FillStars),
-    Cubic(slicer::fill::fill_rectilinear::FillCubic),
-    SupportBase(slicer::fill::fill_rectilinear::FillSupportBase),
-}
-impl EngineFiller {
-    fn base(&self) -> &Fill {
-        use EngineFiller::*;
-        match self {
-            Rectilinear(f) => &f.base,
-            AlignedRectilinear(f) => &f.0.base,
-            Monotonic(f) => &f.0.base,
-            MonotonicLine(f) => &f.0.base,
-            Grid(f) => &f.0.base,
-            Triangles(f) => &f.0.base,
-            Stars(f) => &f.0.base,
-            Cubic(f) => &f.0.base,
-            SupportBase(f) => &f.0.base,
-        }
-    }
-    fn base_mut(&mut self) -> &mut Fill {
-        use EngineFiller::*;
-        match self {
-            Rectilinear(f) => &mut f.base,
-            AlignedRectilinear(f) => &mut f.0.base,
-            Monotonic(f) => &mut f.0.base,
-            MonotonicLine(f) => &mut f.0.base,
-            Grid(f) => &mut f.0.base,
-            Triangles(f) => &mut f.0.base,
-            Stars(f) => &mut f.0.base,
-            Cubic(f) => &mut f.0.base,
-            SupportBase(f) => &mut f.0.base,
-        }
-    }
-    fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Polylines {
-        use EngineFiller::*;
-        match self {
-            Rectilinear(f) => f.fill_surface(surface, params),
-            AlignedRectilinear(f) => f.fill_surface(surface, params),
-            Monotonic(f) => f.fill_surface(surface, params),
-            MonotonicLine(f) => f.fill_surface(surface, params),
-            Grid(f) => f.fill_surface(surface, params),
-            Triangles(f) => f.fill_surface(surface, params),
-            Stars(f) => f.fill_surface(surface, params),
-            Cubic(f) => f.fill_surface(surface, params),
-            SupportBase(f) => f.fill_surface(surface, params),
-        }
-    }
-}
 struct EngineFill {
-    f: EngineFiller,
+    /// The engine's filler as `EngineSupportFillFactory` of tree_support_3d.rs makes it (what a live caller hands
+    /// the pipeline).
+    f: Box<dyn SupportFill>,
     stats: Rc<RefCell<EngineStats>>,
 }
 impl SupportFill for EngineFill {
     fn fill(&self) -> &Fill {
-        self.f.base()
+        self.f.fill()
     }
     fn fill_mut(&mut self) -> &mut Fill {
-        self.f.base_mut()
+        self.f.fill_mut()
     }
     fn fill_surface(&mut self, surface: &Surface, params: &FillParams) -> Result<Polylines, InfillFailedException> {
         let f = &mut self.f;
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f.fill_surface(surface, params))) {
-            Ok(polylines) => Ok(polylines),
+            Ok(polylines) => polylines,
             Err(_) => {
                 self.stats.borrow_mut().panics += 1;
                 Err(InfillFailedException)
@@ -330,7 +278,6 @@ struct EngineFactory {
 }
 impl SupportFillFactory for EngineFactory {
     fn new_from_type(&self, pattern: InfillPattern) -> Box<dyn SupportFill> {
-        use slicer::fill::fill_rectilinear as fr;
         // The generator compiles TreeSupport3D.cpp with the recording filler; only what SupportCommon.cpp asks
         // for (generate_support_toolpaths(), in the library) is a filler of the engine.
         if !GENERATE_SUPPORT_AREAS_IN_TOOLPATHS.load(std::sync::atomic::Ordering::Relaxed) {
@@ -338,21 +285,13 @@ impl SupportFillFactory for EngineFactory {
             return Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() });
         }
         *self.stats.borrow_mut().asked.entry(pattern as i32).or_insert(0) += 1;
-        let f = match pattern {
-            InfillPattern::Rectilinear => EngineFiller::Rectilinear(fr::FillRectilinear::new()),
-            InfillPattern::AlignedRectilinear => EngineFiller::AlignedRectilinear(fr::FillAlignedRectilinear::new()),
-            InfillPattern::Monotonic => EngineFiller::Monotonic(fr::FillMonotonic::new()),
-            InfillPattern::MonotonicLine => EngineFiller::MonotonicLine(fr::FillMonotonicLine::new()),
-            InfillPattern::Grid => EngineFiller::Grid(fr::FillGrid::new()),
-            InfillPattern::Triangles => EngineFiller::Triangles(fr::FillTriangles::new()),
-            InfillPattern::Stars => EngineFiller::Stars(fr::FillStars::new()),
-            InfillPattern::Cubic => EngineFiller::Cubic(fr::FillCubic::new()),
-            InfillPattern::SupportBase => EngineFiller::SupportBase(fr::FillSupportBase::new()),
-            _ => {
-                *self.stats.borrow_mut().fallback.entry(pattern as i32).or_insert(0) += 1;
-                return Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() });
-            }
-        };
+        // The src factory a live caller hands the pipeline; the patterns it has no filler of come back to the
+        // recording filler here (counted).
+        if EngineSupportFiller::new_from_type(pattern).is_none() {
+            *self.stats.borrow_mut().fallback.entry(pattern as i32).or_insert(0) += 1;
+            return Box::new(RecFill { base: Fill::new(), pattern, log: self.log.clone() });
+        }
+        let f = EngineSupportFillFactory::new(None).new_from_type(pattern);
         Box::new(EngineFill { f, stats: self.stats.clone() })
     }
 }
@@ -550,21 +489,20 @@ fn run_scenario(c: &mut Ctx, scenario: usize, final_only: bool) {
 
     let mut layer_overhangs: Vec<Polygons> = Vec::new();
     let mut layer_id = 0usize;
+    // The layers as a live object holds them, handed to the object by the bridge a live caller uses
+    // (tree_support_3d.rs `faithful_layers_from_live`, which makes the upper/lower links).
+    let mut live_layers: Vec<slicer::layer::Layer> = Vec::new();
     while let Some(line) = c.r.input(&format!("in {s} layer")) {
         let mut t = Tok::new(&line);
         let (print_z, height, slice_z) = (t.d(), t.d(), t.d());
-        let obj = &mut print.m_objects[0];
-        let mut layer = slicer::layer::Layer::new(layer_id, obj.m_model_object, height, print_z, slice_z);
+        let mut layer = slicer::layer::Layer::new(layer_id, print.m_objects[0].m_model_object, height, print_z, slice_z);
         layer.lslices = t.expolys();
         layer.lslices_extrudable = layer.lslices.clone();
         layer_overhangs.push(t.polys());
-        if layer_id > 0 {
-            layer.lower_layer_id = Some(layer_id - 1);
-            obj.m_layers[layer_id - 1].upper_layer_id = Some(layer_id);
-        }
-        obj.m_layers.push(layer);
+        live_layers.push(layer);
         layer_id += 1;
     }
+    faithful_layers_from_live(&mut print.m_objects[0], &live_layers);
 
     // The second pass over the scenarios: the 'final' stage only, on the fresh object (gen.cpp `final_only`).
     if final_only {
@@ -623,6 +561,24 @@ fn run_scenario(c: &mut Ctx, scenario: usize, final_only: bool) {
                         c.r.out(format!("{s} final fills {i} <none>"));
                     }
                 }
+            }
+            // The bridge a live caller hands these layers over with (tree_support_3d.rs
+            // `live_support_layers_from_faithful`): every support layer, its z, height, islands and toolpaths as the
+            // pin's SupportLayer has them.
+            {
+                let live = live_support_layers_from_faithful(po.support_layers());
+                assert_eq!(live.len(), po.support_layers().len(), "{s} live support layers");
+                for (i, (l, sl)) in live.iter().zip(po.support_layers()).enumerate() {
+                    assert_eq!(l.id(), sl.layer.id(), "{s} live id {i}");
+                    assert_eq!(l.object_id(), sl.layer.object_id(), "{s} live object_id {i}");
+                    assert_eq!(l.print_z.to_bits(), sl.layer.print_z.to_bits(), "{s} live print_z {i}");
+                    assert_eq!(l.height.to_bits(), sl.layer.height.to_bits(), "{s} live height {i}");
+                    assert_eq!(l.slice_z.to_bits(), sl.layer.slice_z.to_bits(), "{s} live slice_z {i}");
+                    assert_eq!(expolys_s(&l.lslices), expolys_s(&sl.support_islands), "{s} live islands {i}");
+                    let fills = l.support_fills.as_ref().expect("live support_fills");
+                    assert_eq!(ents_s(&fills.entities), ents_s(&sl.support_fills.entities), "{s} live fills {i}");
+                }
+                c.live_bridge_layers += live.len();
             }
             {
                 let st = stats.borrow();
@@ -1312,7 +1268,7 @@ fn tree_support_3d_native_parity() {
         }
         Err(_) => Run::load("tree_support_3d"),
     };
-    let mut c = Ctx { r: run, full: false };
+    let mut c = Ctx { r: run, full: false, live_bridge_layers: 0 };
     c.full = c.r.input("in mode").expect("mode") == "full";
     // A diagnostic: one scenario only, of a file the generator wrote for that scenario.
     let only: Option<usize> = std::env::var("TREE_SUPPORT_3D_PARITY_ONLY").ok().and_then(|v| v.parse().ok());
@@ -1331,6 +1287,7 @@ fn tree_support_3d_native_parity() {
             }
         }
     }
+    eprintln!("live_support_layers_from_faithful: {} support layers handed over, all equal", c.live_bridge_layers);
     // A diagnostic: the lines this test produced, written where TREE_SUPPORT_3D_PARITY_DUMP names a file.
     if let Ok(path) = std::env::var("TREE_SUPPORT_3D_PARITY_DUMP") {
         let _ = std::fs::write(path, c.r.lines.join("\n"));

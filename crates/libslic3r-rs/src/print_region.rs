@@ -39,6 +39,9 @@ pub struct PrintRegion {
     print_region_id: i32,
     /// Print.hpp:156
     print_object_region_id: i32,
+    /// Print.hpp:197 `ObjectID m_gradient_volume_id`: the volume of a per-part gradient region, invalid
+    /// (the default `ObjectID()`) for every other region. Nothing on the slicing path of this crate sets it.
+    gradient_volume_id: crate::object_id::ObjectID,
 }
 
 impl PrintRegion {
@@ -50,6 +53,7 @@ impl PrintRegion {
             config_hash,
             print_region_id: -1,
             print_object_region_id: -1,
+            gradient_volume_id: crate::object_id::ObjectID::default_invalid(),
         }
     }
 
@@ -64,7 +68,19 @@ impl PrintRegion {
             config_hash,
             print_region_id: -1,
             print_object_region_id,
+            gradient_volume_id: crate::object_id::ObjectID::default_invalid(),
         }
+    }
+
+    /// Print.hpp:164 `ObjectID gradient_volume_id() const throw()`
+    pub fn gradient_volume_id(&self) -> crate::object_id::ObjectID {
+        self.gradient_volume_id
+    }
+
+    /// Print.hpp:149-151: the `gradient_volume_id` argument of the constructors, which `with_ids` and
+    /// `new` leave at its default.
+    pub fn set_gradient_volume_id(&mut self, gradient_volume_id: crate::object_id::ObjectID) {
+        self.gradient_volume_id = gradient_volume_id;
     }
 
     /// Print.hpp:124

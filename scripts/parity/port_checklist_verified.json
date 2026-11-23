@@ -3974,5 +3974,66 @@
    "generate_support_areas",
    "generate_tree_support_3D"
   ]
+ },
+ {
+  "unit": "Layer",
+  "round": 931,
+  "evidence": "tests/fill_native_parity.rs: the live Layer::make_fills against the pin's on 21 configurations x 12 layers (patterns of top / bottom / solid / sparse incl. line, gyroid, honeycomb, concentric, monotonic, densities, angles, bridges, widths, overlap, narrow regions): 252 of 252 lines and 758 of 758 entities equal (role, width, height, mm3_per_mm, points), every configuration required equal.",
+  "functions": [
+   "Layer::make_fills"
+  ]
+ },
+ {
+  "unit": "Fill/FillLine",
+  "round": 931,
+  "evidence": "tests/fill_native_parity.rs, configuration line_40: the pin's FillLine through Fill::fill_surface in Layer::make_fills, 12 of 12 lines and 34 of 34 entities equal.",
+  "functions": [
+   "FillLine::_fill_surface_single"
+  ]
+ },
+ {
+  "unit": "Fill/FillHoneycomb",
+  "round": 931,
+  "evidence": "tests/fill_native_parity.rs, configuration honeycomb: the pin's FillHoneycomb through Fill::fill_surface in Layer::make_fills, 12 of 12 lines and 32 of 32 entities equal.",
+  "functions": [
+   "FillHoneycomb::_fill_surface_single"
+  ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 931,
+  "evidence": "tests/ex_polygon_native_parity.rs: ExPolygon::scale (uniform and per axis) on 2,000 LCG cases each with factors in [0.25, 2.25], truncating as the pin (MultiPoint.cpp 6-19), 0 mismatches; projection_onto of expolygons 2,000 of 2,000 equal (each ring's closing edge included, ExPolygon.cpp 206-223).",
+  "functions": [
+   "ExPolygon::scale",
+   "projection_onto"
+  ]
+ },
+ {
+  "unit": "MultiPoint",
+  "round": 931,
+  "evidence": "tests/ex_polygon_native_parity.rs: Polygon::scale and Polyline::scale (MultiPoint::scale, uniform and per axis, MultiPoint.cpp 6-19) on 2,000 LCG cases each, 0 mismatches.",
+  "functions": [
+   "MultiPoint::scale"
+  ]
+ },
+ {
+  "unit": "Polygon",
+  "round": 931,
+  "evidence": "tests/polygon_native_parity.rs: 3,000 LCG cases, 75,002 calls against the pin's Polygon.cpp: polygon_is_convex, remove_sticks, remove_collinear (Line::distance_to in double, Polygon.cpp 617-650), 0 mismatches.",
+  "functions": [
+   "polygon_is_convex",
+   "remove_sticks",
+   "remove_collinear"
+  ]
+ },
+ {
+  "unit": "BoundingBox",
+  "round": 931,
+  "evidence": "tests/bounding_box_native_parity.rs: undefined (empty) boxes included: size 951, contains(point) 951, contains(box) 1,766 cases equal to the pin with no defined guard (BoundingBox.cpp 176-180, BoundingBox.hpp 51-57); BoundingBox::from_points equals construct<false> (BoundingBox.hpp 88-102) on 8,000 point sets.",
+  "functions": [
+   "BoundingBoxBase::size",
+   "BoundingBoxBase::contains",
+   "BoundingBoxBase::construct"
+  ]
  }
 ]

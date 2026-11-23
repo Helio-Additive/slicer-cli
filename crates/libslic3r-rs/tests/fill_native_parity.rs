@@ -652,13 +652,15 @@ fn fill_make_fills_native_parity_report() {
         }
     }
 }
-const EQUAL_CONFIGURATIONS: [&str; 18] =
-    ["base", "grid", "dense_100", "no_infill", "top_concentric", "top_monotonicline", "bottom_concentric", "solid_concentric", "solid_rectilinear", "direction_30", "no_narrow", "thick_bridges", "bridge_flow_09", "layer_02", "widths", "overlap_30", "bridge_angle_45", "sub_top"];
+const EQUAL_CONFIGURATIONS: [&str; 21] =
+    ["base", "grid", "gyroid_25", "line_40", "honeycomb", "dense_100", "no_infill", "top_concentric", "top_monotonicline", "bottom_concentric", "solid_concentric", "solid_rectilinear", "direction_30", "no_narrow", "thick_bridges", "bridge_flow_09", "layer_02", "widths", "overlap_30", "bridge_angle_45", "sub_top"];
 // The counts of the report (first run R927: 103 / 512 / 604; R928 with FILL_PATH_HEIGHT_PIN and
 // FILL_MULTILINES_PIN: 217 / 700 / 715; with FILL_MULTILINES_ONE_LINE: 223 / 706 / 715;
-// R929 with FILL_CONCENTRIC_PIN: 235 / 746 / 755; with FILL_MONOLINE_NO_OVERLAP: 241 / 746 / 755): lines with an error or a panic at most; equal lines, equal
+// R929 with FILL_CONCENTRIC_PIN: 235 / 746 / 755; with FILL_MONOLINE_NO_OVERLAP: 241 / 746 / 755;
+// R931 with FILL_LINE_PIN: 245 / 750 / 755; with FILL_GYROID_SPACING_PIN: 247 / 752 / 755; with
+// FILL_HONEYCOMB_PIN: 252 / 758 / 758, every line of the pin): lines with an error or a panic at most; equal lines, equal
 // entities, entities equal points aside at least.
 const FLOOR_FAILED: usize = 0;
-const FLOOR_LINES: usize = 241;
-const FLOOR_ENTITIES: usize = 746;
-const FLOOR_HEADERS: usize = 755;
+const FLOOR_LINES: usize = 252;
+const FLOOR_ENTITIES: usize = 758;
+const FLOOR_HEADERS: usize = 758;

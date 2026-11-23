@@ -1159,8 +1159,17 @@ impl Polyline {
         result
     }
 
-    /// Rust-only: scale about origin.
+    /// `MultiPoint::scale(double)` of a Polyline (MultiPoint.cpp:6-10): `pt *= factor`, truncating through
+    /// `Point::operator*=(const double&)` (Point.hpp:199). Gate `EXPOLYGON_SCALE_PIN` (R931, on unless
+    /// `EXPOLYGON_SCALE_PIN=0`); the off arm rounds as before.
     pub fn scale(&mut self, factor: CoordF) {
+        if crate::geometry::polygon::expolygon_scale_pin() {
+            // MultiPoint.cpp:8-9
+            for p in &mut self.points {
+                *p = Point::new((p.x as CoordF * factor) as Coord, (p.y as CoordF * factor) as Coord);
+            }
+            return;
+        }
         for p in &mut self.points {
             *p = *p * factor;
         }

@@ -702,10 +702,21 @@ impl Polygon {
                     if t > 0.0 && t < 1.0 {
                         // Polygon.cpp:334
                         // Point foot(coord_t(floor(pt0(0) + t*v1(0) + 0.5)), coord_t(floor(pt0(1) + t*v1(1) + 0.5)))
-                        let foot = Point::new(
-                            (pt0.x as CoordF + t * v1.x + 0.5).floor() as Coord,
-                            (pt0.y as CoordF + t * v1.y + 0.5).floor() as Coord,
-                        );
+                        // clang fuses `coordf_t(pt0(0)) + t * v1(0)` into one multiply-add before the `+ 0.5`
+                        // (one expression, -ffp-contract=on): gate `POLYGON_POINT_PROJECTION_FMA` (R931, on
+                        // unless `=0`; 1 of 3,000 polygon vectors differed without it). The off arm rounds t*v1.
+                        static FMA: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+                        let foot = if *FMA.get_or_init(|| crate::faithful_gate("POLYGON_POINT_PROJECTION_FMA")) {
+                            Point::new(
+                                (t.mul_add(v1.x, pt0.x as CoordF) + 0.5).floor() as Coord,
+                                (t.mul_add(v1.y, pt0.y as CoordF) + 0.5).floor() as Coord,
+                            )
+                        } else {
+                            Point::new(
+                                (pt0.x as CoordF + t * v1.x + 0.5).floor() as Coord,
+                                (pt0.y as CoordF + t * v1.y + 0.5).floor() as Coord,
+                            )
+                        };
                         // Polygon.cpp:335
                         d = point.distance(&foot);
                         // Polygon.cpp:336-339
@@ -888,10 +899,28 @@ impl Polygon {
         total
     }
 
-    /// (crate helper) Scale every point about the origin.
+    /// `MultiPoint::scale(double)` of a Polygon (MultiPoint.cpp:6-10): `pt *= factor` for every point, and
+    /// `Point::operator*=(const double&)` truncates (Point.hpp:199, `coord_t(this->x() * rhs)`). Gate
+    /// `EXPOLYGON_SCALE_PIN` (R931, on unless `EXPOLYGON_SCALE_PIN=0`); the off arm rounds as before.
     pub fn scale(&mut self, factor: CoordF) {
+        if expolygon_scale_pin() {
+            // MultiPoint.cpp:8-9
+            for p in &mut self.points {
+                *p = Point::new((p.x as CoordF * factor) as Coord, (p.y as CoordF * factor) as Coord);
+            }
+            return;
+        }
         for p in &mut self.points {
             *p = *p * factor;
+        }
+    }
+
+    /// `MultiPoint::scale(double factor_x, double factor_y)` of a Polygon (MultiPoint.cpp:12-19):
+    /// `pt(0) = coord_t(pt(0) * factor_x); pt(1) = coord_t(pt(1) * factor_y);`, truncating.
+    pub fn scale_xy(&mut self, factor_x: CoordF, factor_y: CoordF) {
+        // MultiPoint.cpp:14-18
+        for p in &mut self.points {
+            *p = Point::new((p.x as CoordF * factor_x) as Coord, (p.y as CoordF * factor_y) as Coord);
         }
     }
 
@@ -1550,7 +1579,9 @@ pub fn remove_collinear(poly: &mut Polygon) {
                 // Polygon.cpp:637
                 let l = Line::new(p1, p3);
                 // Polygon.cpp:638 — if (l.distance_to(p2) < SCALED_EPSILON)
-                if l.distance_to_point(&p2) < crate::libslic3r::SCALED_EPSILON {
+                // `Line::distance_to(const Point&)` is `line_alg::distance_to` in double (Line.hpp:43-68), not
+                // the distance to the integer projection (R931: 89 of 3,000 vectors differed; no live caller).
+                if l.distance_to(&p2) < crate::libslic3r::SCALED_EPSILON {
                     // Polygon.cpp:639
                     k += 1;
                 } else {
@@ -2046,6 +2077,14 @@ impl From<Polygon> for Vec<Point> {
 
 /// Polygon.hpp:14 — `using Polygons = std::vector<Polygon>;`
 pub type Polygons = Vec<Polygon>;
+
+
+/// The gate `EXPOLYGON_SCALE_PIN` of `Polygon::scale`, `Polyline::scale` and `ExPolygon::scale` (the pin's
+/// `MultiPoint::scale(double)`, MultiPoint.cpp:6-10, truncating through Point.hpp:199), read once. R931.
+pub(crate) fn expolygon_scale_pin() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| crate::faithful_gate("EXPOLYGON_SCALE_PIN"))
+}
 
 #[cfg(test)]
 mod tests {

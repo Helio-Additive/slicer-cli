@@ -13,10 +13,11 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 /// Families that are not equal to the pin yet (counted and printed, not asserted).
-/// R929: `scale(x, y)` is `ex_polygon::scale_xy`, which rounds where the pin truncates (MultiPoint.cpp:12-19);
-/// `projection_onto(expolygons)` is `ex_polygon::projection_onto` (ExPolygon.cpp:206-223), 126 of 2,000 differ.
-const REPORTED: &[&str] =
-    &["scale (geometry::ExPolygon::scale, rounding; reported)", "scale(x, y)", "projection_onto(expolygons)"];
+/// R931: empty. `scale(x, y)` truncates as MultiPoint.cpp:12-19, `projection_onto(expolygons)` takes the
+/// closing edge of each ring (Polygon::lines, ExPolygon.cpp:206-223), and `geometry::ExPolygon::scale`,
+/// `Polygon::scale`, `Polyline::scale` truncate under the gate `EXPOLYGON_SCALE_PIN` (on by default; the
+/// test asserts that arm, MultiPoint.cpp:6-10 with Point.hpp:199).
+const REPORTED: &[&str] = &[];
 
 fn read_vectors() -> String {
     let path = std::env::var("EX_POLYGON_VECTORS")
@@ -177,10 +178,17 @@ fn ex_polygon_matches_the_pin() {
             let mut sc = ex.clone();
             sc.scale_factor(factor);
             eq!("scale", rings(&sc), t.ex());
-            // `ExPolygon::scale` of slicer::geometry rounds where the pin truncates (Point.hpp:199).
+            // `ExPolygon::scale` of slicer::geometry, gate `EXPOLYGON_SCALE_PIN` on (ExPolygon.cpp:17-22).
             let mut sr = ex.clone();
             sr.scale(factor);
-            check("scale (geometry::ExPolygon::scale, rounding; reported)", rings(&sr) == rings(&sc), String::new());
+            check("scale (geometry::ExPolygon::scale)", rings(&sr) == rings(&sc), String::new());
+            // `MultiPoint::scale(double)` through Polygon and Polyline (MultiPoint.cpp:6-10).
+            let mut pc = ex.contour.clone();
+            pc.scale(factor);
+            check("scale (geometry::Polygon::scale)", pc.points().to_vec() == rings(&sc)[0], String::new());
+            let mut pl = slicer::geometry::Polyline::from_points(ex.contour.points().to_vec());
+            pl.scale(factor);
+            check("scale (geometry::Polyline::scale)", pl.points().to_vec() == rings(&sc)[0], String::new());
         }
         {
             let mut rc = ex.clone();

@@ -2370,8 +2370,16 @@ impl Layer {
                     if !self.has_compatible_layer_regions(&config, &other_config) {
                         continue;
                     }
-                    // Layer.cpp:264 (the gradient_volume_id comparison) is not ported: the PrintRegion a
-                    // LayerRegion holds in this crate carries no gradient volume id.
+                    // Layer.cpp:264-265 `if ((*layerm)->region().gradient_volume_id() !=
+                    // other_layerm->region().gradient_volume_id()) continue;` (gate
+                    // LAYER_PERIMETERS_GRADIENT_VOLUME_ID; off = R930, no such condition). Nothing on the
+                    // slicing path sets the id, so every region carries the invalid default.
+                    if crate::faithful_gate("LAYER_PERIMETERS_GRADIENT_VOLUME_ID")
+                        && self.regions[region_idx].region().gradient_volume_id()
+                            != self.regions[it].region().gradient_volume_id()
+                    {
+                        continue;
+                    }
                     // Layer.cpp:266-268: a shared perimeter pass can only honor the merge plan of its front
                     // region (gate LAYER_PERIMETERS_SAME_MERGE_PATCHES; off = R928, no such condition).
                     if crate::faithful_gate("LAYER_PERIMETERS_SAME_MERGE_PATCHES")
@@ -3659,10 +3667,21 @@ impl Layer {
             // so its fill region was a full half-spacing too wide and every boundary
             // arc Fill::connect_infill walks was correspondingly too long.
             // R473. Set GYROID_FILL_SHRINK=0 to restore the unshrunk region.
+            // FILL_GYROID_SPACING_PIN (on unless =0): `f->spacing = surface_fill.params.spacing`
+            // (Fill.cpp:844), the spacing group_fills set (for a sparse surface the flow's at the
+            // object's layer height, Fill.cpp:305-328), not the spacing of the surface's own flow.
+            // Only where group_fills of the pin made the list (pin_pattern set).
+            let gyroid_spacing: f64 = if surface_fill.params.pin_pattern.is_some()
+                && crate::faithful_gate("FILL_GYROID_SPACING_PIN")
+            {
+                surface_fill.params.spacing
+            } else {
+                surface_fill.params.flow.spacing()
+            };
             let surface_expolygons = if fill_pattern == InfillPattern::Gyroid
                 && crate::faithful_gate("GYROID_FILL_SHRINK")
             {
-                let delta = -0.5 * surface_fill.params.flow.spacing() * crate::SCALING_FACTOR;
+                let delta = -0.5 * gyroid_spacing * crate::SCALING_FACTOR;
                 crate::clipper_utils::offset_expolygons_clib_scaled(
                     &surface_fill.expolygons,
                     delta,
@@ -3839,7 +3858,7 @@ impl Layer {
                         let mut fill = crate::fill::fill_gyroid::FillGyroid::new(
                             (surface_fill.params.angle as f64).to_radians() as f32,
                             self.print_z,
-                            surface_fill.params.flow.spacing(),
+                            gyroid_spacing,
                         );
                         let mut fp = crate::fill::FillParams::new();
                         fp.density = density;
@@ -3889,6 +3908,41 @@ impl Layer {
                         };
                         pair_boundary = boundary;
                         raw.into_iter().map(InfillPath::Line).collect()
+                    }
+                    // FILL_HONEYCOMB_PIN (on unless =0): ipHoneycomb as group_fills left it is filled
+                    // by FillHoneycomb through Fill::fill_surface (FillBase.cpp:99-113,
+                    // FillHoneycomb.cpp:9-84) with the FillParams of Fill.cpp:789-797; =0 takes the
+                    // generate_infill helper (density 0.2, no connection, no offset).
+                    InfillPattern::Honeycomb
+                        if surface_fill.params.pin_pattern
+                            == Some(crate::print_config::InfillPattern::Honeycomb)
+                            && crate::faithful_gate("FILL_HONEYCOMB_PIN") =>
+                    {
+                        fss_connected = true;
+                        crate::fill::fill_rectilinear::generate_fill_honeycomb_pin(
+                            &[expoly],
+                            &infill_config,
+                            self.id as usize,
+                            density as f64,
+                            surface_fill.params.multiline,
+                            surface_fill.params.anchor_length as f64,
+                            surface_fill.params.anchor_length_max as f64,
+                        )
+                    }
+                    // FILL_LINE_PIN (on unless =0): ipLine as group_fills left it is filled by
+                    // FillLine (FillBase.cpp:44; Fill::fill_surface FillBase.cpp:99-113,
+                    // FillLine.cpp:10-120), not by the rectilinear filler fill/mod.rs maps it to.
+                    InfillPattern::Rectilinear
+                        if surface_fill.params.pin_pattern
+                            == Some(crate::print_config::InfillPattern::Line)
+                            && crate::fill::fill_line::fill_line_pin() =>
+                    {
+                        fss_connected = true;
+                        crate::fill::fill_rectilinear::generate_fill_line_pin(
+                            &[expoly],
+                            &infill_config,
+                            self.id as usize,
+                        )
                     }
                     InfillPattern::Rectilinear | InfillPattern::Grid => {
                         // FillRectilinear.cpp:3074-3092 — `FillRectilinear::fill_surface`

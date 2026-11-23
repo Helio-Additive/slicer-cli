@@ -20,6 +20,13 @@ impl BoundingBox {
     // Create a new empty (undefined) bounding box.
     #[inline]
     pub fn new() -> Self {
+        // BoundingBox.hpp:20 `min(PointClass::Zero()), max(PointClass::Zero()), defined(false)`: under the
+        // gate `BOUNDING_BOX_DEFINED_PIN` (size / contains read min and max of an undefined box, where the
+        // Rust sentinels would overflow `max - min`) the corners are zero as at the pin; the off arm keeps
+        // the Rust sentinels.
+        if bounding_box_defined_pin() {
+            return Self { min: Point::new(0, 0), max: Point::new(0, 0), defined: false };
+        }
         Self {
             min: Point::new(Coord::MAX, Coord::MAX),
             max: Point::new(Coord::MIN, Coord::MIN),
@@ -30,15 +37,22 @@ impl BoundingBox {
     /// Create a bounding box from min and max points.
     #[inline]
     pub fn from_points_minmax(min: Point, max: Point) -> Self {
-        Self {
-            min,
-            max,
-            defined: true,
-        }
+        // BoundingBox.hpp:21-22 `defined(pmin(0) < pmax(0) && pmin(1) < pmax(1))`: gate
+        // `BOUNDING_BOX_FROM_POINTS_PIN` (R931); the off arm defines every box.
+        let defined = if bounding_box_from_points_pin() { min.x < max.x && min.y < max.y } else { true };
+        Self { min, max, defined }
     }
 
     /// Create a bounding box from a slice of points.
     pub fn from_points(points: &[Point]) -> Self {
+        // BoundingBox.hpp:28-35 `BoundingBoxBase(const std::vector<PointClass>&)` = `construct<false>`
+        // (BoundingBox.hpp:88-102): defined only with a positive area. Gate `BOUNDING_BOX_FROM_POINTS_PIN`
+        // (R931); the off arm merges point by point and defines a box of one point.
+        if bounding_box_from_points_pin() {
+            let mut out = Self::new();
+            Self::construct(&mut out, points, false);
+            return out;
+        }
         let mut bb = Self::new();
         for p in points {
             bb.merge_point(*p);
@@ -96,6 +110,12 @@ impl BoundingBox {
 
     /// Reset the bounding box to undefined state.
     pub fn reset(&mut self) {
+        // BoundingBox.hpp:37 `defined = false; min = max = PointClass::Zero()` (gate `BOUNDING_BOX_DEFINED_PIN`,
+        // as `new`); the off arm keeps the Rust sentinels.
+        if bounding_box_defined_pin() {
+            *self = Self::new();
+            return;
+        }
         self.min = Point::new(Coord::MAX, Coord::MAX);
         self.max = Point::new(Coord::MIN, Coord::MIN);
         self.defined = false;
@@ -126,7 +146,9 @@ impl BoundingBox {
     /// Get the width of the bounding box.
     #[inline]
     pub fn width(&self) -> Coord {
-        if self.defined {
+        // BoundingBox.cpp:176-180 `size()` is `max - min` with no `defined` guard: gate
+        // `BOUNDING_BOX_DEFINED_PIN` (R931, on unless `=0`); the off arm gives 0 for an undefined box.
+        if self.defined || bounding_box_defined_pin() {
             self.max.x - self.min.x
         } else {
             0
@@ -136,7 +158,8 @@ impl BoundingBox {
     /// Get the height of the bounding box.
     #[inline]
     pub fn height(&self) -> Coord {
-        if self.defined {
+        // BoundingBox.cpp:176-180, as `width` (gate `BOUNDING_BOX_DEFINED_PIN`).
+        if self.defined || bounding_box_defined_pin() {
             self.max.y - self.min.y
         } else {
             0
@@ -188,7 +211,9 @@ impl BoundingBox {
     /// Check if a point is inside the bounding box.
     #[inline]
     pub fn contains_point(&self, p: &Point) -> bool {
-        self.defined
+        // BoundingBox.hpp:51-54 `contains(const PointClass&)`: no `defined` guard at the pin (gate
+        // `BOUNDING_BOX_DEFINED_PIN`, R931; the off arm asks for a defined box).
+        (self.defined || bounding_box_defined_pin())
             && p.x >= self.min.x
             && p.x <= self.max.x
             && p.y >= self.min.y
@@ -204,8 +229,9 @@ impl BoundingBox {
     /// Check if this bounding box contains another bounding box.
     #[inline]
     pub fn contains(&self, other: &BoundingBox) -> bool {
-        self.defined
-            && other.defined
+        // BoundingBox.hpp:55-57 `contains(other.min) && contains(other.max)`, no `defined` guard at the pin
+        // (gate `BOUNDING_BOX_DEFINED_PIN`, R931).
+        (bounding_box_defined_pin() || (self.defined && other.defined))
             && self.contains_point(&other.min)
             && self.contains_point(&other.max)
     }
@@ -477,6 +503,12 @@ impl BoundingBoxF {
     // Create a new empty bounding box.
     #[inline]
     pub fn new() -> Self {
+        // BoundingBox.hpp:20 `min(PointClass::Zero()), max(PointClass::Zero()), defined(false)`: under the
+        // gate `BOUNDING_BOX_DEFINED_PIN` (size / contains read min and max of an undefined box) the corners
+        // are zero as at the pin; the off arm keeps the Rust sentinels.
+        if bounding_box_defined_pin() {
+            return Self { min: PointF::new(0.0, 0.0), max: PointF::new(0.0, 0.0), defined: false };
+        }
         Self {
             min: PointF::new(CoordF::MAX, CoordF::MAX),
             max: PointF::new(CoordF::MIN, CoordF::MIN),
@@ -487,11 +519,9 @@ impl BoundingBoxF {
     /// Create a bounding box from min and max points.
     #[inline]
     pub fn from_points_minmax(min: PointF, max: PointF) -> Self {
-        Self {
-            min,
-            max,
-            defined: true,
-        }
+        // BoundingBox.hpp:21-22, as `BoundingBox::from_points_minmax` (gate `BOUNDING_BOX_FROM_POINTS_PIN`).
+        let defined = if bounding_box_from_points_pin() { min.x < max.x && min.y < max.y } else { true };
+        Self { min, max, defined }
     }
 
     /// Create a bounding box from coordinates.
@@ -541,7 +571,8 @@ impl BoundingBoxF {
     /// Get the width.
     #[inline]
     pub fn width(&self) -> CoordF {
-        if self.defined {
+        // BoundingBox.cpp:176-180, no `defined` guard (gate `BOUNDING_BOX_DEFINED_PIN`, R931).
+        if self.defined || bounding_box_defined_pin() {
             self.max.x - self.min.x
         } else {
             0.0
@@ -551,7 +582,8 @@ impl BoundingBoxF {
     /// Get the height.
     #[inline]
     pub fn height(&self) -> CoordF {
-        if self.defined {
+        // BoundingBox.cpp:176-180, no `defined` guard (gate `BOUNDING_BOX_DEFINED_PIN`, R931).
+        if self.defined || bounding_box_defined_pin() {
             self.max.y - self.min.y
         } else {
             0.0
@@ -582,7 +614,8 @@ impl BoundingBoxF {
     /// Check if a point is inside.
     #[inline]
     pub fn contains_point(&self, p: &PointF) -> bool {
-        self.defined
+        // BoundingBox.hpp:51-54, no `defined` guard (gate `BOUNDING_BOX_DEFINED_PIN`, R931).
+        (self.defined || bounding_box_defined_pin())
             && p.x >= self.min.x
             && p.x <= self.max.x
             && p.y >= self.min.y
@@ -1112,6 +1145,24 @@ impl From<BoundingBox3> for BoundingBox3F {
     fn from(bb: BoundingBox3) -> Self {
         bb.to_f64()
     }
+}
+
+
+
+/// The gate `BOUNDING_BOX_FROM_POINTS_PIN` (R931): the two-point constructor (BoundingBox.hpp:21-22) and the
+/// points constructor (`construct<false>`, BoundingBox.hpp:28-35, 88-102) define a box only with a positive
+/// area at the pin.
+pub(crate) fn bounding_box_from_points_pin() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| crate::faithful_gate("BOUNDING_BOX_FROM_POINTS_PIN"))
+}
+
+/// The gate `BOUNDING_BOX_DEFINED_PIN` (R931, a `faithful_gate`, on unless `BOUNDING_BOX_DEFINED_PIN=0`):
+/// `size()` (BoundingBox.cpp:176-180) and `contains()` (BoundingBox.hpp:51-57) of the pin read `min`/`max`
+/// whether or not the box is `defined`; the off arm keeps the Rust guard (0 / false on an undefined box).
+pub(crate) fn bounding_box_defined_pin() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| crate::faithful_gate("BOUNDING_BOX_DEFINED_PIN"))
 }
 
 #[cfg(test)]

@@ -68,6 +68,8 @@ fn polygon_matches_the_pin() {
         let threshold = t.d();
         let tolerance = t.d();
         let spacing = t.d();
+        let max_deviation = t.d();
+        let max_variance = t.d();
         assert_eq!(t.s(), "->");
         let poly = Polygon::from_points(pts.clone());
 
@@ -158,6 +160,24 @@ fn polygon_matches_the_pin() {
             pts_eq!("make_clockwise", cw.points().to_vec());
         }
         pts_eq!("equally_spaced_points", poly.equally_spaced_points(spacing));
+        // R931: Polygon.cpp free functions and `Polygon::is_approx_circle` (Polygon.cpp:104-...).
+        int_eq!("polygon_is_convex", slicer::geometry::polygon::polygon_is_convex_poly(&poly) as i64);
+        {
+            let mut st = poly.clone();
+            int_eq!("remove_sticks", slicer::geometry::polygon::remove_sticks(&mut st) as i64);
+            pts_eq!("remove_sticks", st.points().to_vec());
+            let mut co = poly.clone();
+            slicer::geometry::polygon::remove_collinear(&mut co);
+            pts_eq!("remove_collinear", co.points().to_vec());
+        }
+        {
+            let got = poly.is_approx_circle(max_deviation, max_variance);
+            int_eq!("is_approx_circle", got.is_some() as i64);
+            if let Some((center, diameter)) = got {
+                pt_eq!("is_approx_circle center", center);
+                dbl_eq!("is_approx_circle diameter", diameter);
+            }
+        }
         assert_eq!(t.k, t.t.len(), "line {}: tokens left", ln + 1);
     }
     let mut total = 0usize;

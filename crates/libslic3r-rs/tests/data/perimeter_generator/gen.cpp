@@ -1182,6 +1182,150 @@ static void run_process()
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Layer::make_perimeters on a layer with several regions of a real Print
+// ---------------------------------------------------------------------------------------------
+// The object has PARAMETER_MODIFIER volumes with options of their own; Print::apply makes a region of
+// each distinct config (PrintApply.cpp). A line "lcfg<TAB>tag<TAB>region<TAB>key=value..." holds the
+// options of one region as the pin holds them, a line "lgrp <layer> <height> <print_z> <slice_z>
+// <regions> (<islands> (<extra> <expolygon>)...)... <has lower> <lower> <has upper> <upper> =>
+// (<perimeter entities> <thin fill entities> | <perimeters> | <thin fills> | <fill expolygons> |
+// <fill_no_overlap>) per region" one call of the pin's Layer::make_perimeters (Layer.cpp:202-408).
+static const char *const group_keys[] = {
+    "inner_wall_speed", "outer_wall_speed", "bridge_speed", "override_filament_scarf_seam_setting", "seam_slope_type", "seam_slope_start_height",
+    "seam_slope_gap", "seam_slope_min_length", "seam_slope_conditional", "seam_slope_entire_loop", "seam_slope_steps", "seam_slope_inner_walls",
+    "initial_layer_flow_ratio", "fuzzy_skin_thickness", "fuzzy_skin_point_distance",
+};
+
+struct GroupCase
+{
+    const char            *tag;
+    KeyValues              kvs;
+    std::vector<KeyValues> mods;
+};
+
+static void run_layer_groups()
+{
+    static const KeyValues base = {{"layer_height", "0.16"},
+                                   {"initial_layer_print_height", "0.2"},
+                                   {"wall_loops", "2"},
+                                   {"outer_wall_line_width", "0.42"},
+                                   {"inner_wall_line_width", "0.45"},
+                                   {"line_width", "0.42"},
+                                   {"sparse_infill_line_width", "0.45"},
+                                   {"internal_solid_infill_line_width", "0.42"},
+                                   {"top_surface_line_width", "0.42"},
+                                   {"initial_layer_line_width", "0.5"},
+                                   {"initial_layer_infill_line_width", "0.5"},
+                                   {"resolution", "0.012"},
+                                   {"enable_arc_fitting", "0"},
+                                   {"z_direction_outwall_speed_continuous", "1"},
+                                   {"sparse_infill_density", "15%"},
+                                   {"infill_wall_overlap", "15%"},
+                                   {"detect_overhang_wall", "1"},
+                                   {"gap_infill_speed", "250"},
+                                   {"bottom_shell_layers", "4"},
+                                   {"top_shell_layers", "6"},
+                                   {"brim_type", "no_brim"},
+                                   {"wall_generator", "classic"}};
+    static const std::vector<GroupCase> cases = {
+        {"compatible", {}, {{{"sparse_infill_density", "30%"}}, {{"top_shell_layers", "3"}}}},
+        {"walls", {}, {{{"wall_loops", "3"}}, {{"sparse_infill_density", "25%"}}}},
+        {"widths", {}, {{{"inner_wall_line_width", "0.5"}}, {{"outer_wall_line_width", "0.45"}}, {{"sparse_infill_density", "35%"}}}},
+        {"speeds", {}, {{{"inner_wall_speed", "100"}}, {{"outer_wall_speed", "60"}}, {{"gap_infill_speed", "40"}}}},
+        {"mixed", {}, {{{"wall_loops", "3"}}, {{"wall_loops", "3"}, {"sparse_infill_density", "40%"}}, {{"detect_thin_wall", "1"}}}},
+        {"sequence", {}, {{{"wall_sequence", "outer wall/inner wall"}}, {{"bridge_speed", "20"}}, {{"top_shell_layers", "2"}}}},
+        {"arachne", {{"wall_generator", "arachne"}}, {{{"wall_loops", "3"}}, {{"sparse_infill_density", "30%"}}, {{"inner_wall_line_width", "0.5"}}}},
+        // Two filaments of one nozzle diameter: a region with the walls of the second filament (Layer.cpp:175) and
+        // one with its infill only.
+        {"filaments", {{"nozzle_diameter", "0.4,0.4"}, {"filament_diameter", "1.75,1.75"}}, {{{"wall_filament", "2"}}, {{"sparse_infill_filament", "2"}}, {{"solid_infill_filament", "2"}}}},
+    };
+    Lcg g(0x9e3779b97f4a7c15ULL);
+    for (const GroupCase &gc : cases) {
+        Model        model;
+        ModelObject *o = model.add_object();
+        o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+        for (size_t m = 0; m < gc.mods.size(); ++m) {
+            ModelVolume *v = o->add_volume(TriangleMesh(its_make_cube(4., 4., 6.)), ModelVolumeType::PARAMETER_MODIFIER);
+            v->set_offset(Vec3d(2. + 5. * double(m), 2., 0.));
+            ConfigSubstitutionContext ctxt(ForwardCompatibilitySubstitutionRule::Disable);
+            for (const auto &kv : gc.mods[m]) v->config.set_deserialize(kv.first, kv.second, ctxt);
+        }
+        o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+        set_keys(config, base);
+        set_keys(config, gc.kvs);
+        Print print;
+        print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+        print.apply(model, config);
+        PrintObject *obj = print.m_objects.front();
+        std::vector<const PrintRegion *> regions;
+        for (const auto &r : obj->m_shared_regions->all_regions) regions.push_back(r.get());
+        for (size_t r = 0; r < regions.size(); ++r) {
+            std::string cfg = std::string("lcfg\t") + gc.tag + "\t" + hI((long long) r);
+            auto put = [&](const char *key) {
+                const ConfigBase *holder = regions[r]->config().has(key) ? static_cast<const ConfigBase *>(&regions[r]->config()) :
+                                           obj->config().has(key)        ? static_cast<const ConfigBase *>(&obj->config()) :
+                                           print.config().has(key)       ? static_cast<const ConfigBase *>(&print.config()) :
+                                                                           nullptr;
+                cfg += std::string("\t") + key + "=" + (holder == nullptr ? std::string("?") : holder->opt_serialize(key));
+            };
+            for (const char *key : proc_keys) put(key);
+            for (const char *key : group_keys) put(key);
+            out(cfg);
+        }
+        const double layer_height       = obj->config().layer_height.value;
+        const double first_layer_height = print.config().initial_layer_print_height.value;
+        for (int c = 0; c < 10; ++c) {
+            const size_t layer_id = c < 2 ? 0 : (size_t) g.range(1, 9);
+            const double height   = layer_id == 0 ? first_layer_height : layer_height;
+            const double print_z  = first_layer_height + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * height;
+            Layer        lower(layer_id == 0 ? 0 : layer_id - 1, obj, layer_height, print_z - height, slice_z - height);
+            Layer        upper(layer_id + 1, obj, layer_height, print_z + layer_height, slice_z + layer_height);
+            Layer        layer(layer_id, obj, height, print_z, slice_z);
+            std::string  in = hI((long long) layer_id) + " " + hD(height) + " " + hD(print_z) + " " + hD(slice_z) + " " + hI((long long) regions.size());
+            ExPolygons   all;
+            for (size_t r = 0; r < regions.size(); ++r) {
+                LayerRegion *layerm = layer.add_region(regions[r]);
+                // One region in six without slices; the regions' islands 32 mm apart.
+                ExPolygons slices;
+                if (g.range(0, 5) != 0)
+                    append(slices, island(g, (int) g.range(0, 9), coord_t(3200000) * coord_t(r) + g.range(-200000, 200000), g.range(-200000, 200000)));
+                in += " " + hI((long long) slices.size());
+                for (const ExPolygon &e : slices) {
+                    Surface s(stInternal, e);
+                    s.extra_perimeters = g.range(0, 7) == 0 ? 1 : 0;
+                    layerm->slices.surfaces.emplace_back(s);
+                    in += " " + hI(s.extra_perimeters) + " " + EXPOLY(e);
+                }
+                append(all, slices);
+            }
+            const int  lower_how = layer_id == 0 ? 6 : (int) g.range(0, 5);
+            const int  upper_how = (int) g.range(0, 6);
+            const bool has_lower = lower_how != 6, has_upper = upper_how != 6;
+            if (has_lower) {
+                lower.lslices     = neighbour(g, all, lower_how);
+                layer.lower_layer = &lower;
+            }
+            if (has_upper) {
+                upper.lslices     = neighbour(g, all, upper_how);
+                layer.upper_layer = &upper;
+            }
+            in += " " + hB(has_lower) + " " + EXPOLYS(lower.lslices) + " " + hB(has_upper) + " " + EXPOLYS(upper.lslices);
+            // Layer.cpp:202-408
+            layer.make_perimeters();
+            std::string res;
+            for (const LayerRegion *layerm : layer.regions()) {
+                res += std::string(res.empty() ? "" : " | ") + hI((long long) layerm->perimeters.entities.size()) + " " + hI((long long) layerm->thin_fills.entities.size()) + " | " +
+                       part(LEAVES(layerm->perimeters)) + " | " + part(LEAVES(layerm->thin_fills)) + " | " + part(EXPOLYS(layerm->fill_expolygons)) + " | " +
+                       part(EXPOLYS(layerm->fill_no_overlap_expolygons));
+            }
+            out("lgrp " + in + " => " + res);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1189,6 +1333,16 @@ int main(int argc, char **argv)
         return 1;
     }
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
+    // gen groups <layer_groups_vectors.txt> [full]: Layer::make_perimeters on several regions.
+    if (std::strcmp(argv[1], "groups") == 0) {
+        if (argc < 3) return 1;
+        g_full = argc >= 4 && std::strcmp(argv[3], "full") == 0;
+        g_out  = std::fopen(argv[2], "w");
+        if (g_out == nullptr) return 1;
+        run_layer_groups();
+        std::fclose(g_out);
+        return 0;
+    }
     if (std::strcmp(argv[1], "-") != 0) {
         g_out = std::fopen(argv[1], "w");
         if (g_out == nullptr) return 1;

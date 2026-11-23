@@ -208,8 +208,10 @@ impl ExPolygon {
         result
     }
 
-    /// Scale the ExPolygon about the origin.
+    /// `ExPolygon::scale(double)` (ExPolygon.cpp:17-22): the contour and every hole through
+    /// `MultiPoint::scale` (truncating under the gate `EXPOLYGON_SCALE_PIN`, see `Polygon::scale`).
     pub fn scale(&mut self, factor: CoordF) {
+        // ExPolygon.cpp:19-21
         self.contour.scale(factor);
         for hole in &mut self.holes {
             hole.scale(factor);
