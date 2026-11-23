@@ -573,7 +573,15 @@ impl ExtrusionPath {
 
     // ExtrusionEntity.hpp:348 `double total_volume() const override { return mm3_per_mm * unscale<double>(length()); }`
     pub fn total_volume(&self) -> CoordF {
-        self.mm3_per_mm * (self.length() / SCALING_FACTOR)
+        // R935 EXTRUSION_ENTITY_PIN (faithful ON): libslic3r.h:112 `unscale<double>(v)` is
+        // `v * SCALING_FACTOR` with the pin's SCALING_FACTOR 0.00001, a multiplication (it
+        // differs from a division by 1e5 by an ulp in 45% of the native cases); off = the
+        // earlier division by the crate's 100000.
+        if crate::faithful_gate("EXTRUSION_ENTITY_PIN") {
+            self.mm3_per_mm * (self.length() * crate::libslic3r::SCALING_FACTOR)
+        } else {
+            self.mm3_per_mm * (self.length() / SCALING_FACTOR)
+        }
     }
 
     // ExtrusionEntity.hpp:350-353 `void set_overhang_degree(int overhang)`
@@ -2494,4 +2502,59 @@ pub fn extrusion_entities_append_paths(
             dst.push(ExtrusionEntityType::Path(extrusion_path));
         }
     }
+}
+
+// R935: ExtrusionEntity.hpp:732-744 under its C++ name in the paired file (brim.rs and tree_support.rs keep
+// their local copies). `dst.reserve(dst.size() + loops.size())`; every valid polygon becomes a loop of one
+// path, closed by repeating its first point.
+pub fn extrusion_entities_append_loops(
+    dst: &mut Vec<ExtrusionEntityType>,
+    loops: Vec<Polygon>,
+    role: ExtrusionRole,
+    mm3_per_mm: CoordF,
+    width: f32,
+    height: f32,
+) {
+    // ExtrusionEntity.hpp:734
+    dst.reserve(loops.len());
+    // ExtrusionEntity.hpp:735-742
+    for poly in loops {
+        if poly.is_valid() {
+            let mut path = ExtrusionPath::with_params(role, mm3_per_mm, width as CoordF, height as CoordF, false);
+            path.polyline.points = poly.points;
+            let front = path.polyline.points[0];
+            path.polyline.points.push(front);
+            dst.push(ExtrusionEntityType::Loop(ExtrusionLoop::from_path(path, ExtrusionLoopRole::DEFAULT)));
+        }
+    }
+    // ExtrusionEntity.hpp:743 `loops.clear();` (the vector is consumed)
+}
+
+// R935: ExtrusionEntity.hpp:746-763 under its C++ name in the paired file: a closed valid polyline becomes a
+// loop of one path, an open one a path.
+pub fn extrusion_entities_append_loops_and_paths(
+    dst: &mut Vec<ExtrusionEntityType>,
+    polylines: Vec<Polyline>,
+    role: ExtrusionRole,
+    mm3_per_mm: CoordF,
+    width: f32,
+    height: f32,
+) {
+    // ExtrusionEntity.hpp:748
+    dst.reserve(polylines.len());
+    // ExtrusionEntity.hpp:749-761
+    for polyline in polylines {
+        if polyline.is_valid() {
+            let mut extrusion_path =
+                ExtrusionPath::with_params(role, mm3_per_mm, width as CoordF, height as CoordF, false);
+            let closed = polyline.is_closed();
+            extrusion_path.polyline = polyline;
+            if closed {
+                dst.push(ExtrusionEntityType::Loop(ExtrusionLoop::from_path(extrusion_path, ExtrusionLoopRole::DEFAULT)));
+            } else {
+                dst.push(ExtrusionEntityType::Path(extrusion_path));
+            }
+        }
+    }
+    // ExtrusionEntity.hpp:762 `polylines.clear();` (the vector is consumed)
 }

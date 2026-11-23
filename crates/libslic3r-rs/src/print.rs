@@ -1423,6 +1423,16 @@ impl Print {
             i = j;
         }
 
+        // GCODE_LAST_WIPE_PIN (faithful): GCode::_do_export writes the end sequence
+        // straight to the file after the last layer left the cooling buffer
+        // (GCode.cpp:3548-3598 `file.write`, after process_layers), so the cooling
+        // pass below stops at this offset and appends the rest as it is.
+        let last_wipe_pin = crate::faithful_gate("GCODE_LAST_WIPE_PIN");
+        let end_sequence_offset: Option<usize> = if end_sequence_cpp && last_wipe_pin {
+            Some(writer.gcode().content().len())
+        } else {
+            None
+        };
         // R810 END_SEQUENCE_CPP (faithful ON) — what GCode::_do_export writes
         // between the last layer and the machine end G-code (GCode.cpp 3548-3598).
         if end_sequence_cpp {
@@ -1432,7 +1442,11 @@ impl Print {
                 writer.write_raw("M1003 S0");
             }
             // 3566: this->retract(false, true, LiftType::SpiralLift, true).
-            writer.retract_with_lift_type(1, true);
+            if last_wipe_pin {
+                writer.retract_with_lift_type_is_last(1, true, true);
+            } else {
+                writer.retract_with_lift_type(1, true);
+            }
             // 3584: m_writer.set_fan(0).
             writer.write_raw("M106 S0");
             // 3586-3588: every additional fan is closed at the end.
@@ -1534,7 +1548,11 @@ impl Print {
             for (i, _) in raw.match_indices("; CHANGE_LAYER\n") {
                 layer_starts.push(i);
             }
-            layer_starts.push(raw.len()); // sentinel
+            // GCODE_LAST_WIPE_PIN: the end sequence is not a layer's (see above).
+            layer_starts.push(match end_sequence_offset {
+                Some(off) if off <= raw.len() && layer_starts.last().map_or(true, |&l| l <= off) => off,
+                _ => raw.len(),
+            }); // sentinel
 
             // z-direction outwall smoothing (GCode.cpp:3396-3417): two-phase —
             // parse+slowdown all layers, build wall nodes, run the

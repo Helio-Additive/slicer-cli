@@ -1204,6 +1204,196 @@ struct GroupCase
     std::vector<KeyValues> mods;
 };
 
+// R935 'gen patches <file>': Layer::make_perimeters (Layer.cpp:201-400) on the layers of an object whose
+// regions carry adaptive merge patches (AdaptiveLayerMerge.hpp:25-60), set here by hand in the shapes
+// PrintObject::compute_adaptive_merge_groups gives them (PrintObject.cpp:4312-4960): the layers bottom..top-1
+// of a band swallowed (group_top false), the top one the group top with the band's height (bands of two layers). Three objects per
+// case: a band from layer 1, a band from object layer 0, and a band from layer 0 whose top layer has no
+// slices of its own (has_first_band_source, Layer.cpp:233-239). One line 'lobj <K>' per object, then K
+// lines 'lpat <layer inputs> => <results per region as lgrp>'.
+static bool g_patches = false;
+static void run_layer_patches(PrintObject *obj, const std::vector<const PrintRegion *> &regions, const std::string &tag)
+{
+    Lcg          g(0x9e3779b97f4a7c15ULL ^ (uint64_t) std::hash<std::string>()(tag));
+    const size_t K                  = 4;
+    const double layer_height       = obj->config().layer_height.value;
+    const double first_layer_height = obj->print()->config().initial_layer_print_height.value;
+    for (int kind = 0; kind < 3; ++kind) {
+        for (Layer *l : obj->m_layers) delete l;
+        obj->m_layers.clear();
+        // The regions' islands, one shape per region for the whole object (one region in six without any).
+        std::vector<ExPolygons> shapes(regions.size());
+        for (size_t r = 0; r < regions.size(); ++r)
+            if (g.range(0, 5) != 0)
+                shapes[r] = island(g, (int) g.range(0, 9), coord_t(3200000) * coord_t(r) + g.range(-200000, 200000), g.range(-200000, 200000));
+        // Bands of two layers: a merged height above the wall width trips Flow::with_cross_section's assert
+        // (Flow.cpp:161; compiled out at the pin with NDEBUG, a debug_assert in this crate).
+        const size_t bottom = kind == 0 ? 1 : 0, top = bottom + 1;
+        double merged_height = 0.;
+        for (size_t k = 0; k < K; ++k) {
+            const double height  = k == 0 ? first_layer_height : layer_height;
+            const double print_z = first_layer_height + layer_height * double(k);
+            Layer *layer = new Layer(k, obj, height, print_z, print_z - 0.5 * height);
+            if (k >= bottom && k <= top) merged_height += height;
+            if (! obj->m_layers.empty()) {
+                layer->lower_layer = obj->m_layers.back();
+                obj->m_layers.back()->upper_layer = layer;
+            }
+            obj->m_layers.push_back(layer);
+            ExPolygons all;
+            for (size_t r = 0; r < regions.size(); ++r) {
+                LayerRegion *layerm = layer->add_region(regions[r]);
+                if (kind == 2 && k == top) continue;
+                for (const ExPolygon &e : shapes[r]) layerm->slices.surfaces.emplace_back(Surface(stInternal, e));
+                append(all, shapes[r]);
+            }
+            layer->lslices = union_ex(all);
+        }
+        for (size_t k = bottom; k <= top; ++k)
+            for (size_t r = 0; r < regions.size(); ++r) {
+                if (shapes[r].empty()) continue;
+                AdaptiveMergePatch patch;
+                patch.bottom_idx    = bottom;
+                patch.top_idx       = top;
+                patch.group_top     = k == top;
+                patch.merged_height = merged_height;
+                patch.set_area(shapes[r]);
+                obj->m_layers[k]->get_region(int(r))->adaptive_merge_patches.push_back(patch);
+            }
+        std::vector<std::string> ins;
+        for (Layer *layer : obj->m_layers) {
+            std::string in = hI((long long) layer->id()) + " " + hD(layer->height) + " " + hD(layer->print_z) + " " + hD(layer->slice_z) + " " + hI((long long) regions.size());
+            for (const LayerRegion *layerm : layer->regions()) {
+                in += " " + hI((long long) layerm->slices.surfaces.size());
+                for (const Surface &s : layerm->slices.surfaces) in += " " + hI(s.extra_perimeters) + " " + EXPOLY(s.expolygon);
+                in += " " + hI((long long) layerm->adaptive_merge_patches.size());
+                for (const AdaptiveMergePatch &patch : layerm->adaptive_merge_patches)
+                    in += " " + hI((long long) patch.bottom_idx) + " " + hI((long long) patch.top_idx) + " " + hB(patch.group_top) + " " + hD(patch.merged_height) + " " + EXPOLYS(patch.area());
+            }
+            in += " " + EXPOLYS(layer->lslices);
+            ins.push_back(in);
+        }
+        out("lobj " + hI((long long) K));
+        for (size_t k = 0; k < K; ++k) {
+            Layer *layer = obj->m_layers[k];
+            // Layer.cpp:202-408
+            layer->make_perimeters();
+            std::string res;
+            for (const LayerRegion *layerm : layer->regions()) {
+                res += std::string(res.empty() ? "" : " | ") + hI((long long) layerm->perimeters.entities.size()) + " " + hI((long long) layerm->thin_fills.entities.size()) + " | " +
+                       part(LEAVES(layerm->perimeters)) + " | " + part(LEAVES(layerm->thin_fills)) + " | " + part(EXPOLYS(layerm->fill_expolygons)) + " | " +
+                       part(EXPOLYS(layerm->fill_no_overlap_expolygons));
+            }
+            out("lpat " + ins[k] + " => " + res);
+        }
+        for (Layer *l : obj->m_layers) delete l;
+        obj->m_layers.clear();
+    }
+}
+
+// R935 'gen simplify <file>': Layer::simplify_support_entity_collection (Layer.cpp:622-685) on collections
+// of a path, a multi path of two paths, a loop of two paths and a nested collection of one path, with
+// spiral_mode / enable_arc_fitting / resolution of the print config (Layer.cpp:640-643). The polylines are
+// noisy arcs and straight runs. One line 'lsim <spiral> <arc> <resolution> <paths> => <paths>' per case, a path
+// being '<n> <x y>...' and in the results '<n> <x y>... <m> <start end path_type length>...'.
+static bool g_simplify = false;
+static std::string sim_path(const Polyline &pl, bool with_fitting)
+{
+    std::string s = hI((long long) pl.points.size());
+    for (const Point &p : pl.points) s += " " + hI((long long) p.x()) + " " + hI((long long) p.y());
+    if (with_fitting) {
+        s += " " + hI((long long) pl.fitting_result.size());
+        for (const PathFittingData &f : pl.fitting_result)
+            s += " " + hI((long long) f.start_point_index) + " " + hI((long long) f.end_point_index) + " " + hI((long long) int(f.path_type)) + " " + hD(f.arc_data.length);
+    }
+    return s;
+}
+static void run_layer_simplify(PrintObject *obj)
+{
+    Lcg   g(0x5151deadbeefULL);
+    Layer layer(1, obj, 0.2, 0.4, 0.3);
+    PrintConfig &pc = const_cast<PrintConfig &>(obj->print()->config());
+    auto make_polyline = [&g]() {
+        Polyline pl;
+        const int    n  = (int) g.range(2, 60);
+        const double cx = double(g.range(-50000000, 50000000)), cy = double(g.range(-50000000, 50000000));
+        if (g.range(0, 3) == 0) {
+            for (int i = 0; i < n; ++i) pl.points.emplace_back(coord_t(cx + 400000. * i + g.range(-3000, 3000)), coord_t(cy + 150000. * i + g.range(-3000, 3000)));
+        } else {
+            const double r = double(g.range(1000000, 20000000)), a0 = double(g.range(0, 6283)) / 1000., span = double(g.range(300, 6000)) / 1000.;
+            const long long noise = g.range(0, 4) == 0 ? 0 : g.range(0, 4000);
+            for (int i = 0; i < n; ++i) {
+                const double a = a0 + span * double(i) / double(n - 1);
+                pl.points.emplace_back(coord_t(cx + r * std::cos(a)) + (noise ? g.range(-noise, noise) : 0), coord_t(cy + r * std::sin(a)) + (noise ? g.range(-noise, noise) : 0));
+            }
+        }
+        return pl;
+    };
+    auto make_path = [&](const Polyline &pl) { ExtrusionPath p(erSupportMaterial, 0.05, 0.4, 0.2); p.polyline = pl; return p; };
+    for (int c = 0; c < 64; ++c) {
+        const bool   spiral = c % 4 == 3, arc = c % 4 != 1;
+        const double resolution = (c / 4) % 2 == 0 ? 0.01 : double(g.range(1, 120)) / 1000.;
+        pc.spiral_mode.value        = spiral;
+        pc.enable_arc_fitting.value = arc;
+        pc.resolution.value         = resolution;
+        std::vector<Polyline> pls;
+        for (int i = 0; i < 6; ++i) pls.push_back(make_polyline());
+        ExtrusionEntityCollection coll;
+        coll.append(make_path(pls[0]));
+        ExtrusionMultiPath mp;
+        mp.paths.push_back(make_path(pls[1]));
+        mp.paths.push_back(make_path(pls[2]));
+        coll.append(mp);
+        ExtrusionPaths loop_paths{make_path(pls[3]), make_path(pls[4])};
+        coll.append(ExtrusionLoop(std::move(loop_paths)));
+        ExtrusionEntityCollection nested;
+        nested.append(make_path(pls[5]));
+        coll.append(nested);
+        std::string in = hB(spiral) + " " + hB(arc) + " " + hD(resolution);
+        for (const Polyline &pl : pls) in += " " + sim_path(pl, false);
+        const ExtrusionEntityCollection orig = coll;
+        // Layer.cpp:622-636
+        layer.simplify_support_entity_collection(&coll);
+        std::vector<const Polyline *> res_pls;
+        res_pls.push_back(&static_cast<const ExtrusionPath *>(coll.entities[0])->polyline);
+        for (const ExtrusionPath &p : static_cast<const ExtrusionMultiPath *>(coll.entities[1])->paths) res_pls.push_back(&p.polyline);
+        for (const ExtrusionPath &p : static_cast<const ExtrusionLoop *>(coll.entities[2])->paths) res_pls.push_back(&p.polyline);
+        res_pls.push_back(&static_cast<const ExtrusionPath *>(static_cast<const ExtrusionEntityCollection *>(coll.entities[3])->entities[0])->polyline);
+        std::string res;
+        for (const Polyline *pl : res_pls) res += std::string(res.empty() ? "" : " ") + sim_path(*pl, true);
+        out("lsim " + in + " => " + res);
+        // Layer.hpp:266-267 simplify_wall_extrusion_path / simplify_infill_extrusion_path -> LayerRegion.cpp:1037-1110
+        // on the same collection with the roles below (erInternalInfill fits arcs at SCALED_SPARSE_INFILL_RESOLUTION).
+        // One line 'lsrg <roles> => <perimeters paths> <fills paths>' after each lsim line.
+        static const ExtrusionRole roles[6] = {erInternalInfill, erPerimeter, erInternalInfill, erExternalPerimeter, erInternalInfill, erSolidInfill};
+        ExtrusionEntityCollection with_roles = orig;
+        std::vector<ExtrusionPath *> rp;
+        rp.push_back(static_cast<ExtrusionPath *>(with_roles.entities[0]));
+        for (ExtrusionPath &p : static_cast<ExtrusionMultiPath *>(with_roles.entities[1])->paths) rp.push_back(&p);
+        for (ExtrusionPath &p : static_cast<ExtrusionLoop *>(with_roles.entities[2])->paths) rp.push_back(&p);
+        rp.push_back(static_cast<ExtrusionPath *>(static_cast<ExtrusionEntityCollection *>(with_roles.entities[3])->entities[0]));
+        std::string rin;
+        for (size_t i = 0; i < rp.size(); ++i) {
+            rp[i]->set_extrusion_role(roles[(i + size_t(c)) % 6]);
+            rin += std::string(rin.empty() ? "" : " ") + hI((long long) int(roles[(i + size_t(c)) % 6]));
+        }
+        if (layer.regions().empty()) layer.add_region(obj->m_shared_regions->all_regions.front().get());
+        LayerRegion *layerm = layer.get_region(0);
+        layerm->perimeters  = with_roles;
+        layerm->fills       = with_roles;
+        layer.simplify_wall_extrusion_path();
+        layer.simplify_infill_extrusion_path();
+        std::string rres;
+        for (const ExtrusionEntityCollection *ec : {&layerm->perimeters, &layerm->fills}) {
+            rres += std::string(rres.empty() ? "" : " ") + sim_path(static_cast<const ExtrusionPath *>(ec->entities[0])->polyline, true);
+            for (const ExtrusionPath &p : static_cast<const ExtrusionMultiPath *>(ec->entities[1])->paths) rres += " " + sim_path(p.polyline, true);
+            for (const ExtrusionPath &p : static_cast<const ExtrusionLoop *>(ec->entities[2])->paths) rres += " " + sim_path(p.polyline, true);
+            rres += " " + sim_path(static_cast<const ExtrusionPath *>(static_cast<const ExtrusionEntityCollection *>(ec->entities[3])->entities[0])->polyline, true);
+        }
+        out("lsrg " + rin + " => " + rres);
+    }
+}
+
 static void run_layer_groups()
 {
     static const KeyValues base = {{"layer_height", "0.16"},
@@ -1262,6 +1452,7 @@ static void run_layer_groups()
         std::vector<const PrintRegion *> regions;
         for (const auto &r : obj->m_shared_regions->all_regions) regions.push_back(r.get());
         for (size_t r = 0; r < regions.size(); ++r) {
+            if (g_simplify) continue;
             std::string cfg = std::string("lcfg\t") + gc.tag + "\t" + hI((long long) r);
             auto put = [&](const char *key) {
                 const ConfigBase *holder = regions[r]->config().has(key) ? static_cast<const ConfigBase *>(&regions[r]->config()) :
@@ -1321,7 +1512,14 @@ static void run_layer_groups()
                        part(LEAVES(layerm->perimeters)) + " | " + part(LEAVES(layerm->thin_fills)) + " | " + part(EXPOLYS(layerm->fill_expolygons)) + " | " +
                        part(EXPOLYS(layerm->fill_no_overlap_expolygons));
             }
-            out("lgrp " + in + " => " + res);
+            if (! g_patches && ! g_simplify)
+                out("lgrp " + in + " => " + res);
+        }
+        if (g_patches)
+            run_layer_patches(obj, regions, gc.tag);
+        if (g_simplify) {
+            run_layer_simplify(obj);
+            return;
         }
     }
 }
@@ -1334,6 +1532,24 @@ int main(int argc, char **argv)
     }
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
     // gen groups <layer_groups_vectors.txt> [full]: Layer::make_perimeters on several regions.
+    if (std::strcmp(argv[1], "simplify") == 0) {
+        if (argc < 3) return 1;
+        g_simplify = true;
+        g_out      = std::fopen(argv[2], "w");
+        if (g_out == nullptr) return 1;
+        run_layer_groups();
+        std::fclose(g_out);
+        return 0;
+    }
+    if (std::strcmp(argv[1], "patches") == 0) {
+        if (argc < 3) return 1;
+        g_patches = true;
+        g_out     = std::fopen(argv[2], "w");
+        if (g_out == nullptr) return 1;
+        run_layer_groups();
+        std::fclose(g_out);
+        return 0;
+    }
     if (std::strcmp(argv[1], "groups") == 0) {
         if (argc < 3) return 1;
         g_full = argc >= 4 && std::strcmp(argv[3], "full") == 0;

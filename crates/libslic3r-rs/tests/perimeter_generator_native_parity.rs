@@ -1088,3 +1088,160 @@ fn layer_make_perimeters_groups_native_parity() {
         assert_eq!(total[5], 0, "the island collections of the walls differ from the pin");
     }
 }
+
+/// R935: Layer::make_perimeters (Layer.cpp:201-400) on the layers of an object whose regions carry adaptive
+/// merge patches (tests/data/perimeter_generator/gen.cpp `run_layer_patches`, mode 'gen patches <file>';
+/// vectors layer_patches_vectors.txt.gz): the live Layer::make_perimeters with the object's layers
+/// (`make_perimeters_in_object`, as PrintObject::make_perimeters hands them when patches exist) against the
+/// pin. Per case three objects of four layers with a band of two layers: from layer 1, from layer 0, from layer 0
+/// whose group top has no slices of its own (has_first_band_source).
+#[test]
+fn layer_make_perimeters_patches_native_parity() {
+    let path = format!("{}/tests/data/perimeter_generator/layer_patches_vectors.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let lines: Vec<&str> = text.lines().collect();
+    let show: usize = std::env::var("LAYER_PATCHES_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    const PARTS: [&str; 5] = ["counts", "perimeters", "thin_fills", "fill_expolygons", "fill_no_overlap"];
+    // With one of these gates off the differences are reported, not asserted (R935: 125 / 44 / 30 regions
+    // differ in their counts with LAYER_GENERATE_REGION_PERIMETERS / LAYER_FIRST_BAND_SOURCE /
+    // LAYER_PERIMETERS_SAME_MERGE_PATCHES =0).
+    let gates_on = ["LAYER_GENERATE_REGION_PERIMETERS", "LAYER_FIRST_BAND_SOURCE", "LAYER_PERIMETERS_SAME_MERGE_PATCHES"]
+        .iter()
+        .all(|g| std::env::var(g).as_deref() != Ok("0"));
+    let mut cfgs: Vec<ProcCfg> = Vec::new();
+    let mut cfg_tag = String::new();
+    let mut bad = [0usize; 5];
+    let (mut objects, mut layers_n, mut regions_n, mut shown) = (0usize, 0usize, 0usize, 0usize);
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        if let Some(rest) = line.strip_prefix("lcfg\t") {
+            let fields: Vec<&str> = rest.split('\t').collect();
+            if fields[0] != cfg_tag {
+                cfg_tag = fields[0].to_string();
+                cfgs.clear();
+            }
+            // As layer_make_perimeters_groups_native_parity: the first speed of each list, wall_filament as
+            // the slicing path sets it.
+            let mut text = fields[0].to_string();
+            for f in &fields[2..] {
+                let (key, value) = f.split_once('=').expect("key=value");
+                let value = if key.ends_with("_speed") { value.split(',').next().unwrap_or(value) } else { value };
+                text += &format!("\t{key}={value}");
+            }
+            let mut c = proc_cfg(&text);
+            if let Some(w) = c.kv.get("wall_filament").and_then(|v| v.parse::<usize>().ok()) {
+                let mut region_config = c.region.config().clone();
+                region_config.wall_filament = w;
+                c.region = std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config));
+            }
+            cfgs.push(c);
+            i += 1;
+            continue;
+        }
+        let k_layers: usize = line.strip_prefix("lobj ").unwrap_or_else(|| panic!("unknown line {}", i + 1)).trim().parse().expect("K");
+        objects += 1;
+        let mut layers: Vec<slicer::layer::Layer> = Vec::new();
+        let mut results: Vec<(usize, &str)> = Vec::new();
+        for k in 0..k_layers {
+            let ln = i + 1 + k;
+            let rest = lines[ln].strip_prefix("lpat ").unwrap_or_else(|| panic!("line {}: lpat", ln + 1));
+            let (inputs, res) = rest.split_once(" => ").expect("results");
+            results.push((ln, res));
+            let mut t = Tok::new(inputs);
+            let layer_id = t.i() as usize;
+            let height = t.d();
+            let print_z = t.d();
+            let slice_z = t.d();
+            let nreg = t.i() as usize;
+            assert_eq!(nreg, cfgs.len(), "line {}", ln + 1);
+            let mut layer = slicer::layer::Layer::new(layer_id, 0, height, print_z, slice_z);
+            for r in 0..nreg {
+                let c = &cfgs[r];
+                let mut layerm = LayerRegion::new(layer_id, r);
+                layerm.set_config_hierarchy(c.region.clone(), c.object_config.clone(), c.print_config.clone());
+                let n = t.i();
+                for _ in 0..n {
+                    let extra = t.i() as usize;
+                    let mut surface = Surface::new(SurfaceType::Internal, t.expoly());
+                    surface.extra_perimeters = extra;
+                    layerm.slices.surfaces.push(surface);
+                }
+                let np = t.i();
+                for _ in 0..np {
+                    let mut patch = slicer::adaptive_layer_merge::AdaptiveMergePatch::default();
+                    patch.bottom_idx = t.i() as usize;
+                    patch.top_idx = t.i() as usize;
+                    patch.group_top = t.b();
+                    patch.merged_height = t.d();
+                    patch.set_area(t.expolys());
+                    layerm.adaptive_merge_patches.push(patch);
+                }
+                layer.add_region(layerm);
+            }
+            layer.lslices = t.expolys();
+            layers.push(layer);
+        }
+        // The pin's LayerRegion::make_perimeters reads lower_layer / upper_layer's lslices
+        // (LayerRegion.cpp:150-160); this crate's regions take them as lower_slices / upper_slices.
+        let lslices: Vec<Vec<slicer::geometry::ExPolygon>> = layers.iter().map(|l| l.lslices.clone()).collect();
+        for (k, layer) in layers.iter_mut().enumerate() {
+            let lower = if k > 0 { Some(lslices[k - 1].clone()) } else { None };
+            let upper = if k + 1 < lslices.len() { Some(lslices[k + 1].clone()) } else { None };
+            for layerm in layer.regions_mut().iter_mut() {
+                layerm.lower_slices = lower.clone();
+                layerm.upper_slices = upper.clone();
+            }
+        }
+        let snapshot = layers.clone();
+        for (k, layer) in layers.iter_mut().enumerate() {
+            layer.make_perimeters_in_object(Some(&snapshot)).expect("make_perimeters");
+            let (ln, res) = results[k];
+            let theirs: Vec<&str> = res.split(" | ").collect();
+            assert_eq!(theirs.len(), 5 * layer.regions().len(), "line {}", ln + 1);
+            layers_n += 1;
+            for (r, layerm) in layer.regions().iter().enumerate() {
+                regions_n += 1;
+                let mine = [
+                    format!("{} {}", layerm.perimeter_island_collections().entities.len(), layerm.thin_fills.entities.len()),
+                    leaves_s(&layerm.perimeters),
+                    leaves_s(&layerm.thin_fills),
+                    expolys_s(&layerm.fill_expolygons),
+                    expolys_s(&layerm.fill_no_overlap_expolygons),
+                ];
+                for (p, part) in PARTS.iter().enumerate() {
+                    let th = theirs[5 * r + p];
+                    let equal = match th.strip_prefix('#') {
+                        Some(hash) => fnv(&mine[p]) == hash,
+                        None => mine[p] == th,
+                    };
+                    if !equal {
+                        bad[p] += 1;
+                        if shown < show {
+                            shown += 1;
+                            let detail = if th.starts_with('#') {
+                                format!("mine {}", &mine[p][..mine[p].len().min(200)])
+                            } else if th.len() < 40 {
+                                format!("pin '{th}' mine '{}'", mine[p])
+                            } else {
+                                first_difference(th, &mine[p])
+                            };
+                            eprintln!("line {} layer {k} region {r} {part}: {detail}", ln + 1);
+                        }
+                    }
+                }
+            }
+        }
+        i += 1 + k_layers;
+    }
+    eprintln!(
+        "layer make_perimeters patches parity: {objects} objects, {layers_n} layers, {regions_n} regions; differing {}",
+        PARTS.iter().zip(bad.iter()).map(|(p, b)| format!("{p} {b}")).collect::<Vec<_>>().join(", ")
+    );
+    assert!(objects > 0);
+    if gates_on {
+        assert_eq!(bad, [0usize; 5], "Layer::make_perimeters with adaptive merge patches differs from the pin");
+    }
+}

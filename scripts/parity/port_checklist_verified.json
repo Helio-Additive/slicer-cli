@@ -4192,5 +4192,106 @@
    "Linef3::get_point_projection_to_line",
    "Linef3::get_distance_of_point_to_line"
   ]
+ },
+ {
+  "unit": "ExtrusionEntity",
+  "round": 935,
+  "evidence": "tests/extrusion_entity_native_parity.rs: 550 LCG cases, 20,138 asserted calls against the pin's ExtrusionEntity.cpp / .hpp, 0 mismatches (3,000-case and 1,000-case runs too): ExtrusionPath length, polygons_covered_by_width / spacing, total_volume (unscale multiplies); ExtrusionLoop make_clockwise / make_counter_clockwise / reverse / polygon / length, split_at_vertex, get_closest_path_and_point, split_at (given and default epsilon), clip_end, has_overhang_point / paths, polygons_covered_by_*, min_mm3_per_mm, is_counter_clockwise, as_polyline, total_volume; ExtrusionMultiPath reverse, length, min_mm3_per_mm, as_polyline, total_volume; the role helpers, role_to_string / string_to_role, extrusion_entities_append_loops and _and_paths.",
+  "functions": [
+   "is_perimeter",
+   "is_infill",
+   "is_top_surface",
+   "is_solid_infill",
+   "is_bridge",
+   "is_support",
+   "extrusion_entities_append_loops",
+   "extrusion_entities_append_loops_and_paths",
+   "ExtrusionEntity::role_to_string",
+   "ExtrusionEntity::string_to_role",
+   "ExtrusionLoop::make_clockwise",
+   "ExtrusionLoop::make_counter_clockwise",
+   "ExtrusionLoop::reverse",
+   "ExtrusionLoop::polygon",
+   "ExtrusionLoop::length",
+   "ExtrusionLoop::split_at_vertex",
+   "ExtrusionLoop::get_closest_path_and_point",
+   "ExtrusionLoop::split_at",
+   "ExtrusionLoop::clip_end",
+   "ExtrusionLoop::has_overhang_point",
+   "ExtrusionLoop::has_overhang_paths",
+   "ExtrusionLoop::polygons_covered_by_width",
+   "ExtrusionLoop::polygons_covered_by_spacing",
+   "ExtrusionLoop::min_mm3_per_mm",
+   "ExtrusionLoop::is_counter_clockwise",
+   "ExtrusionLoop::as_polyline",
+   "ExtrusionLoop::total_volume",
+   "ExtrusionMultiPath::reverse",
+   "ExtrusionMultiPath::length",
+   "ExtrusionMultiPath::min_mm3_per_mm",
+   "ExtrusionMultiPath::as_polyline",
+   "ExtrusionMultiPath::total_volume",
+   "ExtrusionPath::length",
+   "ExtrusionPath::polygons_covered_by_width",
+   "ExtrusionPath::polygons_covered_by_spacing",
+   "ExtrusionPath::total_volume"
+  ]
+ },
+ {
+  "unit": "ExtrusionEntityCollection",
+  "round": 935,
+  "evidence": "tests/extrusion_entity_native_parity.rs: collections of the 550 cases against the pin's ExtrusionEntityCollection.cpp / .hpp, 0 mismatches: reverse, chained_path_from (550 of 550), polygons_covered_by_width / spacing, items_count, flatten (with and without preserve_ordering), min_mm3_per_mm, total_volume.",
+  "functions": [
+   "ExtrusionEntityCollection::reverse",
+   "ExtrusionEntityCollection::chained_path_from",
+   "ExtrusionEntityCollection::polygons_covered_by_width",
+   "ExtrusionEntityCollection::polygons_covered_by_spacing",
+   "ExtrusionEntityCollection::items_count",
+   "ExtrusionEntityCollection::flatten",
+   "ExtrusionEntityCollection::min_mm3_per_mm",
+   "ExtrusionEntityCollection::total_volume"
+  ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 935,
+  "evidence": "tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.",
+  "functions": [
+   "count_points",
+   "number_polygons",
+   "to_lines",
+   "to_points",
+   "to_polylines",
+   "to_polygons",
+   "to_polygon_ptrs",
+   "to_expolygons",
+   "translate",
+   "polygons_append",
+   "expolygons_append",
+   "expolygons_rotate",
+   "expolygons_contain",
+   "expolygons_simplify"
+  ]
+ },
+ {
+  "unit": "Layer",
+  "round": 935,
+  "evidence": "tests/layer_simplify_native_parity.rs: Layer::simplify_support_entity_collection (Layer.cpp 622-685) on 64 collections (a path, a multi path, a loop, a nested collection; spiral mode, arc fitting and resolution varied; 384 support paths) and simplify_wall_extrusion_path / simplify_infill_extrusion_path (LayerRegion.cpp 1037-1110) on 768 paths, 0 differ in points and arc-fitting results. tests/perimeter_generator_native_parity.rs layer_make_perimeters_patches_native_parity: the pin's Layer::make_perimeters with adaptive merge patches (generate_region_perimeters, has_first_band_source) on 8 cases, 96 layers, 600 regions, 0 differ; with the grouping test (500 regions) and the island collections.",
+  "functions": [
+   "Layer::simplify_wall_extrusion_path",
+   "Layer::simplify_infill_extrusion_path",
+   "Layer::simplify_support_entity_collection",
+   "Layer::simplify_support_path",
+   "Layer::simplify_support_multi_path",
+   "Layer::simplify_support_loop",
+   "Layer::make_perimeters"
+  ]
+ },
+ {
+  "unit": "Fill/Fill",
+  "round": 935,
+  "evidence": "tests/fill_native_parity.rs fill_anchoring_polylines_native_parity: the pin's Layer::generate_sparse_infill_polylines_for_anchoring (Fill.cpp 869-980) on 7 configurations x 8 layers (cubic, triangles, stars, grid, zig-zag, densities, angles; 201 polylines), 56 of 56 layers equal.",
+  "functions": [
+   "Layer::generate_sparse_infill_polylines_for_anchoring"
+  ]
  }
 ]

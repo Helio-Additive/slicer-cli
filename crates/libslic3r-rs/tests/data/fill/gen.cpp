@@ -14,6 +14,9 @@
 // of each region of the layer of the "gf" line before it, in order.
 // `./gen vectors.txt vectors_ironing.txt` also writes the Layer::make_ironing lines ("ic", "il"; see
 // `run_ironing`) to the second file; the first file is the same with or without it.
+// `./gen vectors.txt vectors_ironing.txt vectors_anchoring.txt` also writes the
+// Layer::generate_sparse_infill_polylines_for_anchoring lines ("acfg", "ga"; see `run_anchoring`) to the
+// third file; the first two are the same with or without it.
 // The vectors were made on macOS arm64 with Apple clang and Eigen 5.0.1.
 
 #include <algorithm>
@@ -426,10 +429,87 @@ static void run_ironing(FILE *fo)
     }
 }
 
+// Layer::generate_sparse_infill_polylines_for_anchoring (Fill.cpp:869-980) with no octrees and no
+// lightning generator, as Fill.cpp:760 calls it, on layers whose fill surfaces are set by hand:
+// "acfg<TAB>tag<TAB>key=value..." the options (those of the "gcfg" lines), then per layer
+// "ga <layer> <height> <print_z> <slice_z> <surfaces> => <object box> <polylines>": the polylines in
+// order, each "<points> x y...". The object holds one first layer whose bottom is at 0, as for "mf".
+static void run_anchoring(FILE *fo)
+{
+    static const KeyValues base = {{"layer_height", "0.16"}, {"initial_layer_print_height", "0.2"}, {"wall_loops", "2"}, {"sparse_infill_line_width", "0.45"},
+                                   {"sparse_infill_density", "15%"}, {"top_shell_layers", "6"}, {"bottom_shell_layers", "4"}};
+    static const std::vector<FillCase> cases = {
+        {"anchor_cubic", {{"sparse_infill_pattern", "cubic"}}},
+        {"anchor_triangles", {{"sparse_infill_pattern", "triangles"}}},
+        {"anchor_stars", {{"sparse_infill_pattern", "tri-hexagon"}}},
+        {"anchor_cubic_30", {{"sparse_infill_pattern", "cubic"}, {"sparse_infill_density", "30%"}, {"infill_direction", "30"}}},
+        {"anchor_triangles_dense", {{"sparse_infill_pattern", "triangles"}, {"sparse_infill_density", "85%"}}},
+        {"anchor_grid", {{"sparse_infill_pattern", "grid"}}},
+        {"anchor_zigzag", {{"sparse_infill_pattern", "zig-zag"}}},
+    };
+    static const SurfaceType types[] = {stInternal, stInternal, stInternal, stInternalSolid, stTop};
+    Lcg g(0x2545f4914f6cdd1dULL);
+    for (const FillCase &fc : cases) {
+        Model        model;
+        ModelObject *o = model.add_object();
+        o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+        o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+        DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+        set_keys(config, base);
+        set_keys(config, fc.kvs);
+        Print print;
+        print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+        print.apply(model, config);
+        PrintObject       *obj    = print.m_objects.front();
+        const PrintRegion &region = *obj->m_shared_regions->all_regions.front();
+        std::string        cfg    = std::string("acfg\t") + fc.tag;
+        for (const char *key : fill_keys) {
+            const ConfigBase *holder = region.config().has(key) ? static_cast<const ConfigBase *>(&region.config()) :
+                                       obj->config().has(key)   ? static_cast<const ConfigBase *>(&obj->config()) :
+                                       print.config().has(key)  ? static_cast<const ConfigBase *>(&print.config()) :
+                                                                  nullptr;
+            cfg += std::string("\t") + key + "=" + (holder == nullptr ? std::string("?") : holder->opt_serialize(key));
+        }
+        std::fprintf(fo, "%s\n", cfg.c_str());
+        const double layer_height       = obj->config().layer_height.value;
+        const double first_layer_height = print.config().initial_layer_print_height.value;
+        for (int c = 0; c < 8; ++c) {
+            const size_t layer_id = (size_t) g.range(1, 9);
+            const double height   = layer_height;
+            const double print_z  = first_layer_height + layer_height * double(layer_id);
+            const double slice_z  = print_z - 0.5 * height;
+            Layer        layer(layer_id, obj, height, print_z, slice_z);
+            LayerRegion *layerm = layer.add_region(&region);
+            // One to four rectangles apart from each other, wide enough for sparse infill.
+            const int   n  = (int) g.range(1, 4);
+            std::string in = hI((long long) layer_id) + " " + hD(height) + " " + hD(print_z) + " " + hD(slice_z) + " " + hI(n);
+            for (int i = 0; i < n; ++i) {
+                const coord_t     x0 = coord_t(i) * 2500000 + g.range(-100000, 100000), y0 = g.range(-100000, 100000);
+                const coord_t     w = g.range(400000, 2200000), h = g.range(400000, 2200000);
+                const SurfaceType type = types[g.range(0, 4)];
+                Surface           s(type, ExPolygon(rect(x0, y0, x0 + w, y0 + h)));
+                layerm->fill_surfaces.surfaces.emplace_back(s);
+                in += " " + hI((int) type) + " " + hD(s.thickness) + " " + hD(s.bridge_angle) + " " + EXPOLY(s.expolygon);
+            }
+            Layer base(0, obj, first_layer_height, first_layer_height, 0.5 * first_layer_height);
+            obj->m_layers.emplace_back(&base);
+            Polylines pls = layer.generate_sparse_infill_polylines_for_anchoring(nullptr, nullptr, nullptr);
+            obj->m_layers.pop_back();
+            std::string res = BBOX(obj->bounding_box()) + " " + hI((long long) pls.size());
+            for (const Polyline &pl : pls) {
+                res += " " + hI((long long) pl.points.size());
+                for (const Point &p : pl.points) res += " " + PT(p);
+            }
+            std::fprintf(fo, "ga %s => %s\n", in.c_str(), res.c_str());
+            std::fflush(fo);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: gen <vectors.txt> [<vectors_ironing.txt>]\n");
+        std::fprintf(stderr, "usage: gen <vectors.txt> [<vectors_ironing.txt> [<vectors_anchoring.txt>]]\n");
         return 2;
     }
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
@@ -442,6 +522,14 @@ int main(int argc, char **argv)
         FILE *fo = std::fopen(argv[2], "w");
         if (fo == nullptr) return 1;
         run_ironing(fo);
+        std::fclose(fo);
+    }
+    // `gen vectors.txt vectors_ironing.txt vectors_anchoring.txt`: the third file holds the
+    // generate_sparse_infill_polylines_for_anchoring lines.
+    if (argc >= 4) {
+        FILE *fo = std::fopen(argv[3], "w");
+        if (fo == nullptr) return 1;
+        run_anchoring(fo);
         std::fclose(fo);
     }
     return 0;

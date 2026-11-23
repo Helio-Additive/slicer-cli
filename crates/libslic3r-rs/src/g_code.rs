@@ -2591,6 +2591,15 @@ pub fn extrude_collection(
                 ExtrusionRole::SupportIroning if ironing_speed_gate() => {
                     config.support_ironing_speed
                 }
+                // GCode.cpp:7730-7733 (erSupportTransition: bridge speed) and
+                // :7784-7789 (support / interface speed), GCODE_EXTRUDE_SUPPORT_PIN.
+                ExtrusionRole::SupportTransition if extrude_support_pin_gate() => {
+                    config.bridge_speed
+                }
+                ExtrusionRole::SupportMaterial if extrude_support_pin_gate() => config.support_speed,
+                ExtrusionRole::SupportMaterialInterface if extrude_support_pin_gate() => {
+                    config.support_interface_speed
+                }
                 _ => config.perimeter_speed,
             }
         };
@@ -2770,7 +2779,11 @@ pub fn extrude_collection(
                     // (min-travel, leaving-outer-wall force, reduce-infill skip).
                     let from = writer_last_pos(writer);
                     let to = crate::Point::new(crate::scale(tx), crate::scale(ty));
-                    writer.needs_retraction_faithful(from, to, entity_role, travel_len)
+                    if support_travel_skips_retraction(writer, from, to, entity_role) {
+                        false
+                    } else {
+                        writer.needs_retraction_faithful(from, to, entity_role, travel_len)
+                    }
                 } else {
                     writer.needs_retraction_for_travel(travel_len)
                 };
@@ -3951,6 +3964,17 @@ pub fn extrude_entity(
                         ExtrusionRole::SupportIroning if ironing_speed_gate() => {
                             config.support_ironing_speed
                         }
+                        // GCode.cpp:7730-7733 (erSupportTransition: bridge speed) and
+                        // :7784-7789 (support / interface speed), GCODE_EXTRUDE_SUPPORT_PIN.
+                        ExtrusionRole::SupportTransition if extrude_support_pin_gate() => {
+                            config.bridge_speed
+                        }
+                        ExtrusionRole::SupportMaterial if extrude_support_pin_gate() => {
+                            config.support_speed
+                        }
+                        ExtrusionRole::SupportMaterialInterface if extrude_support_pin_gate() => {
+                            config.support_interface_speed
+                        }
                         _ => config.perimeter_speed,
                     }
                 };
@@ -4473,6 +4497,89 @@ pub fn extrude_infill_entities(
     }
 }
 
+/// GCODE_EXTRUDE_SUPPORT_PIN (faithful_gate, R935): support extrusions printed
+/// as the pin's GCode::extrude_support (GCode.cpp:7011-7083) prints them: role
+/// tag on a role change, `_extrude`'s acceleration and the support speeds
+/// (GCode.cpp `_extrude`), no_sort respected. =0 keeps the earlier arm (one
+/// `; FEATURE: support material` label per entity, one leading travel).
+pub fn extrude_support_pin_gate() -> bool {
+    crate::faithful_gate("GCODE_EXTRUDE_SUPPORT_PIN")
+}
+
+/// `GCode::m_last_pos` as the pin holds it when support is printed
+/// (GCODE_EXTRUDE_SUPPORT_PIN). `m_last_pos` starts at (0, 0) with `m_origin`
+/// (0, 0) and `GCode::set_origin` (GCode.cpp `set_origin`: `m_last_pos +=
+/// scale_(m_origin - pointf)`) moves it into the object's frame, so before the
+/// first XY move of the export it is `-scale_(m_origin)`, i.e. the bed's (0, 0)
+/// seen from the object. The writer here keeps (0, 0) of the object's frame
+/// until its first XY move and stores `-m_origin` as its export origin
+/// (`gcode_origin`), so a position still at (0, 0) is taken as that start.
+fn support_m_last_pos(writer: &GCodeWriter) -> Point {
+    let p = writer.position();
+    if p.x == 0.0 && p.y == 0.0 {
+        let (gox, goy) = writer.gcode_origin();
+        return Point::new(scale(gox), scale(goy));
+    }
+    writer_last_pos(writer)
+}
+
+thread_local! {
+    /// `SupportLayer::support_islands` of the support layer whose extrusions are
+    /// being printed: the pin sets `m_layer` to the support layer around
+    /// `extrude_support` and `GCode::needs_retraction` reads its islands
+    /// (GCode.cpp:8453-8462). Set by [`extrude_support_layer`] only.
+    static SUPPORT_LAYER_ISLANDS: std::cell::RefCell<Option<Vec<crate::geometry::ExPolygon>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// `GCode::extrude_support` with `m_layer` the support layer (GCode.cpp process_layer
+/// sets it before the support extrusions), so a travel of a support extrusion inside
+/// one of the layer's `support_islands` is not retracted (GCode.cpp:8453-8462).
+/// Under GCODE_EXTRUDE_SUPPORT_PIN only; the live export still calls
+/// [`extrude_support`], which knows no islands (the live layers do not carry the
+/// support layer's islands yet).
+pub fn extrude_support_layer(
+    support_fills: &ExtrusionEntityCollection,
+    support_islands: &[crate::geometry::ExPolygon],
+    writer: &mut GCodeWriter,
+    config: &crate::print_config::PrintObjectConfig,
+    is_first_layer: bool,
+) {
+    SUPPORT_LAYER_ISLANDS.with(|s| *s.borrow_mut() = Some(support_islands.to_vec()));
+    extrude_support(support_fills, writer, config, is_first_layer);
+    SUPPORT_LAYER_ISLANDS.with(|s| *s.borrow_mut() = None);
+}
+
+/// GCode.cpp:8453-8462 (`needs_retraction`): `if (role == erSupportMaterial || role ==
+/// erSupportTransition)` and the travel lies inside one of the support layer's islands
+/// (`support_island.contains(travel)`), no retraction. The forced retraction after an
+/// outer or overhang wall (GCode.cpp:8442-8450) is tested before it, and the minimum
+/// travel (GCode.cpp:8365-8368) returns false either way. Only while
+/// [`extrude_support_layer`] has set the islands.
+fn support_travel_skips_retraction(
+    writer: &GCodeWriter,
+    from: crate::Point,
+    to: crate::Point,
+    role: crate::extrusion_entity::ExtrusionRole,
+) -> bool {
+    use crate::extrusion_entity::ExtrusionRole;
+    if !extrude_support_pin_gate()
+        || !matches!(role, ExtrusionRole::SupportMaterial | ExtrusionRole::SupportTransition)
+        || matches!(
+            writer.last_extrusion_role(),
+            Some(ExtrusionRole::ExternalPerimeter) | Some(ExtrusionRole::OverhangPerimeter)
+        )
+    {
+        return false;
+    }
+    SUPPORT_LAYER_ISLANDS.with(|s| {
+        s.borrow().as_ref().map_or(false, |islands| {
+            let travel = crate::geometry::Polyline::from_points(vec![from, to]);
+            islands.iter().any(|island| island.contains_polyline(&travel))
+        })
+    })
+}
+
 /// Extrude support material fills.
 ///
 /// C++ reference: GCode::extrude_support()
@@ -4515,7 +4622,11 @@ pub fn extrude_support(
     // GCode.cpp:5804-5810: chain each group; clear ironing if disabled.
     has_support_ironing = has_support_ironing && config.enable_support_ironing;
     if has_support_ironing {
-        let m_last_pos = writer_last_pos(writer);
+        let m_last_pos = if extrude_support_pin_gate() {
+            support_m_last_pos(writer)
+        } else {
+            writer_last_pos(writer)
+        };
         crate::shortest_path::chain_and_reorder_extrusion_entities(
             &mut ironing_extrusions,
             Some(&m_last_pos),
@@ -4523,13 +4634,35 @@ pub fn extrude_support(
     } else {
         ironing_extrusions.clear();
     }
-    {
-        let m_last_pos = writer_last_pos(writer);
+    // GCODE_EXTRUDE_SUPPORT_PIN (faithful): GCode.cpp:7039-7042 at the pin,
+    // `if (! support_fills.no_sort) chain_and_reorder_extrusion_entities(...)`:
+    // a no_sort collection keeps its order. =0 chains every collection.
+    let extrude_support_pin = extrude_support_pin_gate();
+    if !extrude_support_pin || !support_fills.no_sort {
+        let m_last_pos = if extrude_support_pin {
+            support_m_last_pos(writer)
+        } else {
+            writer_last_pos(writer)
+        };
+        if crate::probe_enabled("EXTRUDE_SUPPORT_PROBE") {
+            eprintln!(
+                "ESP last_pos {} {} n {} no_sort {}",
+                m_last_pos.x,
+                m_last_pos.y,
+                extrusions.len(),
+                support_fills.no_sort
+            );
+            for e in &extrusions {
+                let f = get_entity_first_point(e);
+                eprintln!("ESP ent {:?} first {:?}", get_entity_role(e), f.map(|p| (p.x, p.y)));
+            }
+        }
         crate::shortest_path::chain_and_reorder_extrusion_entities(
             &mut extrusions,
             Some(&m_last_pos),
         );
     }
+
 
     // GCode.cpp:5815-5842: emit one entity, with role label. Nested collections
     // recurse into extrude_support (matching the C++ dynamic_cast<EEC> branch).
@@ -4562,7 +4695,12 @@ pub fn extrude_support(
     // the prior behaviour (retract + travel to the reordered first point).
     if let Some(first_pt) = extrusions.first().and_then(|e| {
         if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-            travel_target_for_entity(e, writer_last_pos(writer))
+            let from = if extrude_support_pin {
+                support_m_last_pos(writer)
+            } else {
+                writer_last_pos(writer)
+            };
+            travel_target_for_entity(e, from)
         } else {
             get_entity_first_point(e)
         }
@@ -4578,7 +4716,11 @@ pub fn extrude_support(
                     .first()
                     .map(get_entity_role)
                     .unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
-                writer.needs_retraction_faithful(from, first_pt, role, travel_len)
+                if support_travel_skips_retraction(writer, from, first_pt, role) {
+                    false
+                } else {
+                    writer.needs_retraction_faithful(from, first_pt, role, travel_len)
+                }
             } else {
                 true
             };
@@ -4613,6 +4755,49 @@ pub fn extrude_support(
             // also clears the initial/carried retracted state.
             writer.unretract();
         }
+    }
+
+    if extrude_support_pin {
+        // GCode.cpp:7044-7081 (pin): process_extrusion_entitys. Every entity
+        // goes through extrude_path / extrude_multi_path / extrude_loop with the
+        // label as the description and speed -1, i.e. through `_extrude`, which
+        // travels to the entity's start, writes `; FEATURE: <role_to_string>`
+        // only when the role differs from m_last_processor_extrusion_role
+        // (GCode.cpp `_extrude`, the reserved Role tag), sets the acceleration
+        // of `_extrude` (initial_layer_acceleration on the first layer, else
+        // default_acceleration for the support roles) and the support speed.
+        // The label itself is not written (it is the description, a comment
+        // only with gcode_comments). A nested collection recurses
+        // (GCode.cpp:7069-7070). The writer's collection printer does all of
+        // that for a collection of one with no_sort, as the fills' single paths
+        // are printed (GCode.cpp:9129-9131 above); the travel to the first
+        // entity (with the layer change's lowering and the unretract of
+        // `_extrude`) is the one written just above, as the earlier arm does.
+        fn process_extrusion_entitys(
+            entities: &[ExtrusionEntityType],
+            writer: &mut GCodeWriter,
+            config: &crate::print_config::PrintObjectConfig,
+            is_first_layer: bool,
+        ) {
+            for ee in entities {
+                if let ExtrusionEntityType::Collection(coll) = ee {
+                    extrude_support(coll, writer, config, is_first_layer);
+                    continue;
+                }
+                let single = ExtrusionEntityCollection {
+                    entities: vec![ee.clone()],
+                    no_sort: true,
+                    ..Default::default()
+                };
+                let _ = extrude_collection(&single, writer, config, is_first_layer);
+            }
+        }
+        process_extrusion_entitys(&extrusions, writer, config, is_first_layer);
+        // GCode.cpp:7079-7080: make sure the ironing was after the support extrusions.
+        if has_support_ironing {
+            process_extrusion_entitys(&ironing_extrusions, writer, config, is_first_layer);
+        }
+        return;
     }
 
     // GCode.cpp:5843-5845: non-ironing first, then ironing.
@@ -14622,5 +14807,129 @@ pub mod gcode_class {
             }
             gcode
         }
+    }
+}
+
+#[cfg(test)]
+mod extrude_support_pin_tests {
+    //! GCODE_EXTRUDE_SUPPORT_PIN (default on): GCode::extrude_support at the pin
+    //! (GCode.cpp:7011-7083) prints the role tag only on a role change, never
+    //! the "support material" label, and chains from `m_last_pos`, which before
+    //! the first XY move is the bed's (0, 0) seen from the object (GCode
+    //! `set_origin`).
+    use super::*;
+    use crate::extrusion_entity::ExtrusionRole;
+    use crate::geometry::{Point, Polyline};
+    use crate::print_config::PrintObjectConfig;
+
+    fn support_path(x0: f64, x1: f64) -> ExtrusionEntityType {
+        let mut path = ExtrusionPath::new(ExtrusionRole::SupportMaterial);
+        path.polyline =
+            Polyline::from_points(vec![Point::new_scale(x0, 0.0), Point::new_scale(x1, 0.0)]);
+        path.mm3_per_mm = 0.05;
+        path.width = 0.4;
+        path.height = 0.2;
+        ExtrusionEntityType::Path(path)
+    }
+
+    #[test]
+    fn support_m_last_pos_is_the_bed_origin_before_the_first_move() {
+        let mut writer = GCodeWriter::new();
+        writer.set_gcode_origin(-174.9, -160.0);
+        let p = support_m_last_pos(&writer);
+        assert_eq!((p.x, p.y), (scale(-174.9), scale(-160.0)));
+    }
+
+    #[test]
+    fn extrude_support_tags_the_role_once_and_chains_from_the_bed_origin() {
+        if !extrude_support_pin_gate() {
+            return;
+        }
+        let mut writer = GCodeWriter::new();
+        writer.set_gcode_origin(-100.0, -100.0);
+        let fills = ExtrusionEntityCollection {
+            entities: vec![support_path(6.0, 8.0), support_path(-8.0, -6.0)],
+            no_sort: false,
+            ..Default::default()
+        };
+        extrude_support(&fills, &mut writer, &PrintObjectConfig::default(), false);
+        let content = writer.get_gcode().content().to_string();
+        assert_eq!(content.matches("; FEATURE: Support\n").count(), 1, "{content}");
+        assert!(!content.contains("support material"), "{content}");
+        // From (-100, -100) in the object's frame the path at x = -8 is nearer:
+        // it is printed first, from its end at x = -8 (G-code X = -8 + 100).
+        let first = content.find("X92").expect("travel to the nearer path");
+        let second = content.find("X106").expect("second path");
+        assert!(first < second, "{content}");
+    }
+
+    /// GCode.cpp:7039-7042: a no_sort collection is printed in its own order.
+    #[test]
+    fn extrude_support_keeps_the_order_of_a_no_sort_collection() {
+        if !extrude_support_pin_gate() {
+            return;
+        }
+        let mut writer = GCodeWriter::new();
+        writer.set_gcode_origin(-100.0, -100.0);
+        let fills = ExtrusionEntityCollection {
+            entities: vec![support_path(6.0, 8.0), support_path(-8.0, -6.0)],
+            no_sort: true,
+            ..Default::default()
+        };
+        extrude_support(&fills, &mut writer, &PrintObjectConfig::default(), false);
+        let content = writer.get_gcode().content().to_string();
+        // The far path (x = 6..8, G-code X106..108) stays first.
+        let first = content.find("X106").expect("first path");
+        let second = content.find("X92").expect("second path");
+        assert!(first < second, "{content}");
+    }
+
+    fn support_path_y(x0: f64, x1: f64, y: f64) -> ExtrusionEntityType {
+        let mut path = ExtrusionPath::new(ExtrusionRole::SupportMaterial);
+        path.polyline =
+            Polyline::from_points(vec![Point::new_scale(x0, y), Point::new_scale(x1, y)]);
+        path.mm3_per_mm = 0.05;
+        path.width = 0.4;
+        path.height = 0.2;
+        ExtrusionEntityType::Path(path)
+    }
+
+    /// GCode.cpp:8453-8462: a support travel inside one of the support layer's
+    /// islands is not retracted; without the islands it is.
+    #[test]
+    fn extrude_support_layer_skips_the_retraction_inside_an_island() {
+        if !extrude_support_pin_gate() || !crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            return;
+        }
+        let fills = ExtrusionEntityCollection {
+            entities: vec![support_path_y(0.0, 5.0, 0.0), support_path_y(5.0, 0.0, 30.0)],
+            no_sort: false,
+            ..Default::default()
+        };
+        let island = crate::geometry::ExPolygon::new(crate::geometry::Polygon::from_points(vec![
+            Point::new_scale(-1.0, -1.0),
+            Point::new_scale(6.0, -1.0),
+            Point::new_scale(6.0, 31.0),
+            Point::new_scale(-1.0, 31.0),
+        ]));
+        let run = |islands: Option<&[crate::geometry::ExPolygon]>| {
+            let mut writer = GCodeWriter::new();
+            match islands {
+                Some(isl) => extrude_support_layer(
+                    &fills,
+                    isl,
+                    &mut writer,
+                    &PrintObjectConfig::default(),
+                    false,
+                ),
+                None => extrude_support(&fills, &mut writer, &PrintObjectConfig::default(), false),
+            }
+            let c = writer.get_gcode().content().to_string();
+            (c.lines().filter(|l| l.starts_with("G1 E-")).count(), c)
+        };
+        let (without, c0) = run(None);
+        let (with, c1) = run(Some(std::slice::from_ref(&island)));
+        assert!(without > 0, "{c0}");
+        assert_eq!(with, 0, "{c1}");
     }
 }

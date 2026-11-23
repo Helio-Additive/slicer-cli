@@ -1998,16 +1998,12 @@ impl PrintObject {
         let canceled = self.canceled.clone();
         let object_config = &self.config;
         let l0_efc_done_in_slice = self.l0_efc_done_in_slice;
-        self.layers
-            .par_iter_mut()
-            .enumerate()
-            .try_for_each(|(idx, layer)| -> Result<()> {
-            // Check for cancellation
-            // PrintObject.cpp:559
-            if canceled.load(Ordering::Relaxed) {
-                return Err(Error::Cancelled);
-            }
-
+        let efc_value = self.config.elephant_foot_compensation;
+        // R935: the layer-0 elephant-foot step of the loop below as a closure, so that it can run before the
+        // object's layers are copied for Layer.cpp:304-351 (the pin compensates while slicing, so its
+        // get_layer(0) slices are the compensated ones). No other layer's perimeters read layer 0's region
+        // slices, so running it first changes nothing else.
+        let efc_step = |idx: usize, layer: &mut Layer| {
             // FIDELITY-NOTE: elephant-foot compensation has no counterpart in C++
             // PrintObject::make_perimeters — in BambuStudio it is applied during
             // slicing (apply_first_layer_compensation in PrintObjectSlice.cpp). It is
@@ -2065,8 +2061,43 @@ impl PrintObject {
                 }
             } else if idx == 0 && object_config.elephant_foot_compensation > 0.0 {
                 for region in layer.regions_mut().iter_mut() {
-                    region.elephant_foot_compensation_step(self.config.elephant_foot_compensation);
+                    region.elephant_foot_compensation_step(efc_value);
                 }
+            }
+
+        };
+        // R935: `this->object()->get_layer(i)` for Layer::make_perimeters (Layer.cpp:304-351): a read-only
+        // copy of every layer, taken only when a region carries adaptive merge patches (PrintObject.cpp:4312
+        // compute_adaptive_merge_groups; nothing in this crate fills them yet) and the gate
+        // LAYER_GENERATE_REGION_PERIMETERS is on. The perimeter step writes nothing the lambda reads
+        // (slices, lslices, adaptive_merge_patches).
+        let any_merge_patches = self
+            .layers
+            .iter()
+            .any(|l| l.regions().iter().any(|r| !r.adaptive_merge_patches.is_empty()));
+        let object_layers: Option<Vec<Layer>> =
+            if any_merge_patches && crate::faithful_gate("LAYER_GENERATE_REGION_PERIMETERS") {
+                if let Some(layer0) = self.layers.first_mut() {
+                    efc_step(0, layer0);
+                }
+                Some(self.layers.clone())
+            } else {
+                None
+            };
+        let efc_in_loop = object_layers.is_none();
+        let object_layers_ref: Option<&[Layer]> = object_layers.as_deref();
+        self.layers
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(idx, layer)| -> Result<()> {
+            // Check for cancellation
+            // PrintObject.cpp:559
+            if canceled.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+
+            if efc_in_loop {
+                efc_step(idx, layer);
             }
 
             // (LayerRegion::flow reads print_config.initial_layer_line_width
@@ -2090,7 +2121,7 @@ impl PrintObject {
             // Call Layer::make_perimeters() which orchestrates perimeter generation
             // This will call LayerRegion::make_perimeters() for each region
             // PrintObject.cpp:560
-            layer.make_perimeters_with_neighbors(lower_slices, upper_slices)
+            layer.make_perimeters_with_neighbors_in_object(lower_slices, upper_slices, object_layers_ref)
             })?;
 
         // PrintObject.cpp:583-615 — perimeter continuity + cooling-node ids

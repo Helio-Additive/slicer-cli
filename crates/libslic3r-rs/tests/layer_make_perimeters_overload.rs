@@ -173,3 +173,73 @@ fn generate_region_perimeters_arms() {
     assert!(e.perimeters.entities.is_empty());
     assert!(e.thin_fills.entities.is_empty());
 }
+
+/// R935: the live `Layer::make_perimeters` (Layer.cpp:201-400) with the object's layers runs
+/// `generate_region_perimeters` (:366) for its regions (gate LAYER_GENERATE_REGION_PERIMETERS) and runs a
+/// region with no slices of its own when it is a first band source (:233-239, gate LAYER_FIRST_BAND_SOURCE).
+/// Compared with the lambda called directly on a copy of the region; without the object's layers the
+/// region's walls are the R934 `make_perimeters` call. Plumbing, not vectors of the pin.
+#[test]
+fn layer_make_perimeters_in_object_arms() {
+    if std::env::var("LAYER_GENERATE_REGION_PERIMETERS").as_deref() == Ok("0")
+        || std::env::var("LAYER_FIRST_BAND_SOURCE").as_deref() == Ok("0")
+    {
+        return;
+    }
+    let slices = slices_of(square(0, 2_000_000));
+    let h = 0.2;
+    let mut layers: Vec<Layer> = Vec::new();
+    for i in 0..3 {
+        let mut layer = Layer::new(i, 0, h, h * (i as f64 + 1.), h * (i as f64 + 0.5));
+        layer.lslices = vec![square(0, 2_000_000)];
+        // Layer 2 is the group top of a band from layer 0 and has no slices of its own; layer 1 is swallowed.
+        let own = if i == 2 { SurfaceCollection::new() } else { slices.clone() };
+        let mut lm = region(i, &own);
+        let mut patch = AdaptiveMergePatch::default();
+        patch.bottom_idx = 0;
+        patch.top_idx = 2;
+        patch.group_top = i == 2;
+        patch.merged_height = 0.3;
+        patch.set_area(vec![square(0, 2_000_000)]);
+        if i >= 1 {
+            lm.adaptive_merge_patches.push(patch);
+        }
+        layer.add_region(lm);
+        layers.push(layer);
+    }
+    let snapshot = layers.clone();
+    let get_layer = |i: usize| -> &Layer { &snapshot[i] };
+
+    // Group top with no slices: Layer::make_perimeters runs it (first band source) through the lambda.
+    let mut direct = snapshot[2].regions()[0].clone();
+    direct.fill_surfaces.surfaces.clear();
+    direct.fill_no_overlap_expolygons.clear();
+    generate_region_perimeters(&mut direct, &SurfaceCollection::new(), 0, 3, &get_layer, h, 2, 0.6, &|_| {}).unwrap();
+    let mut top = layers[2].clone();
+    top.make_perimeters_in_object(Some(&snapshot)).unwrap();
+    assert!(!top.regions()[0].perimeters.entities.is_empty());
+    assert_eq!(format!("{:?}", top.regions()[0].perimeters), format!("{:?}", direct.perimeters));
+    assert_eq!(format!("{:?}", top.regions()[0].fill_surfaces), format!("{:?}", direct.fill_surfaces));
+
+    // Without the object's layers: the region runs, but the R934 call on its own (empty) slices.
+    let mut alone = layers[2].clone();
+    alone.make_perimeters_in_object(None).unwrap();
+    assert!(alone.regions()[0].perimeters.entities.is_empty());
+
+    // Swallowed layer: fill_only, nothing extruded, fill surfaces kept (Layer.cpp:292-302).
+    let mut swallowed = layers[1].clone();
+    swallowed.make_perimeters_in_object(Some(&snapshot)).unwrap();
+    assert!(swallowed.regions()[0].perimeters.entities.is_empty());
+    assert!(!swallowed.regions()[0].fill_surfaces.surfaces.is_empty());
+    // The same layer through make_perimeters(None) extrudes its walls (no object, R934 call).
+    let mut plain = layers[1].clone();
+    plain.make_perimeters(None).unwrap();
+    assert!(!plain.regions()[0].perimeters.entities.is_empty());
+
+    // Layer 0 has no patches: the lambda is make_perimeters_with, equal to make_perimeters(None).
+    let mut l0 = layers[0].clone();
+    l0.make_perimeters_in_object(Some(&snapshot)).unwrap();
+    let mut l0_plain = layers[0].clone();
+    l0_plain.make_perimeters(None).unwrap();
+    assert_eq!(format!("{:?}", l0.regions()[0].perimeters), format!("{:?}", l0_plain.regions()[0].perimeters));
+}

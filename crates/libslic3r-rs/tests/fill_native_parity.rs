@@ -796,3 +796,133 @@ fn fill_make_ironing_native_parity() {
     assert_eq!(lines, 88, "lines of the vectors");
     assert_eq!(equal_lines, lines, "make_ironing: {equal_lines} of {lines} lines equal to the pin");
 }
+
+// Layer::generate_sparse_infill_polylines_for_anchoring (Fill.cpp:869-980, no octrees and no lightning
+// generator, as Fill.cpp:760 calls it): the polylines the pin lays for the stInternal fills of a layer
+// whose fill surfaces are set by hand ("ga" lines of tests/data/fill/vectors_anchoring.txt, 7
+// configurations x 8 layers: cubic, triangles, tri-hexagon (stars), cubic at 30% and 30 degrees,
+// triangles at 85%, grid, zig-zag), against `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base`
+// of layer.rs on the same inputs (the object's base at 0, its bounding box as the pin's).
+fn read_anchoring_vectors() -> Vec<String> {
+    let path = std::env::var("FILL_ANCHORING_VECTORS")
+        .unwrap_or_else(|_| format!("{}/tests/data/fill/vectors_anchoring.txt", env!("CARGO_MANIFEST_DIR")));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    text.lines().map(|l| l.to_string()).collect()
+}
+
+#[test]
+fn fill_anchoring_polylines_native_parity() {
+    let expected = read_anchoring_vectors();
+    let show: usize = std::env::var("FILL_PARITY_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    let mut cfg: Option<(String, std::sync::Arc<slicer::print_config::PrintConfig>, std::sync::Arc<slicer::print_config::PrintObjectConfig>, std::sync::Arc<slicer::print_region::PrintRegion>)> = None;
+    // Per configuration: lines, lines equal.
+    let mut per_cfg: Vec<(String, usize, usize)> = Vec::new();
+    let (mut lines, mut equal, mut shown) = (0usize, 0usize, 0usize);
+    for (line_no, line) in expected.iter().enumerate() {
+        if let Some(rest) = line.strip_prefix("acfg\t") {
+            let fields: Vec<&str> = rest.split('\t').collect();
+            let mut print_config = slicer::print_config::PrintConfig::default();
+            let mut object_config = slicer::print_config::PrintObjectConfig::default();
+            let mut region_config = slicer::region_config::PrintRegionConfig::default();
+            for f in &fields[1..] {
+                let (key, value) = f.split_once('=').expect("key=value");
+                let first = if key == "nozzle_diameter" { value.split(',').next().unwrap_or(value) } else { value };
+                print_config.set_deserialize(key, first);
+                if !object_config.set_deserialize(key, first) {
+                    object_config.apply_key_value(key, first);
+                }
+                region_config.set_deserialize(key, first);
+            }
+            cfg = Some((fields[0].to_string(), std::sync::Arc::new(print_config), std::sync::Arc::new(object_config), std::sync::Arc::new(slicer::print_region::PrintRegion::new(region_config))));
+            per_cfg.push((fields[0].to_string(), 0, 0));
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("ga ") else { panic!("unknown line {}", line_no + 1) };
+        let (tag, print_config, object_config, region) = cfg.as_ref().expect("acfg");
+        let (inputs, result) = rest.split_once(" => ").expect("results");
+        lines += 1;
+        let mut t = Tok::new(inputs);
+        let layer_id = t.i() as usize;
+        let height = t.d();
+        let print_z = t.d();
+        let slice_z = t.d();
+        let n = t.i();
+        let mut layer = Layer::new(layer_id, 0, height, print_z, slice_z);
+        let mut layerm = LayerRegion::new(layer_id, 0);
+        layerm.set_config_hierarchy(region.clone(), object_config.clone(), print_config.clone());
+        for _ in 0..n {
+            let ty = surface_type(t.i());
+            let thickness = t.d();
+            let bridge_angle = t.d();
+            let mut s = Surface::new(ty, t.expoly());
+            s.thickness = thickness;
+            s.bridge_angle = if bridge_angle >= 0. { Some(bridge_angle) } else { None };
+            layerm.fill_surfaces.surfaces.push(s);
+        }
+        layer.add_region(layerm);
+        layer.set_object_configs(object_config.clone(), print_config.clone());
+        // The pin's line: the object's box, then the polylines.
+        let toks: Vec<&str> = result.split(' ').collect();
+        let mut k = 0usize;
+        let bbox = if toks[k] == "1" {
+            let v: Vec<i64> = toks[k + 1..k + 5].iter().map(|s| s.parse().expect("box")).collect();
+            k += 5;
+            Some(slicer::geometry::BoundingBox::from_points_minmax(Point::new(v[0], v[1]), Point::new(v[2], v[3])))
+        } else {
+            k += 1;
+            None
+        };
+        layer.set_object_bounding_box(bbox);
+        let count: usize = toks[k].parse().expect("polylines");
+        k += 1;
+        let mut theirs: Vec<String> = Vec::with_capacity(count);
+        for _ in 0..count {
+            let np: usize = toks[k].parse().expect("points");
+            theirs.push(toks[k..k + 1 + 2 * np].join(" "));
+            k += 1 + 2 * np;
+        }
+        assert_eq!(k, toks.len(), "line {}: tokens left", line_no + 1);
+        let mine: Option<Vec<String>> = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            layer.generate_sparse_infill_polylines_for_anchoring_at_object_base(0.).ok().map(|pls| {
+                pls.iter()
+                    .map(|pl| {
+                        let mut s = pl.points().len().to_string();
+                        for p in pl.points() {
+                            s.push(' ');
+                            s.push_str(&pt(p));
+                        }
+                        s
+                    })
+                    .collect()
+            })
+        }))
+        .unwrap_or(None);
+        let row = per_cfg.last_mut().expect("acfg");
+        row.1 += 1;
+        if mine.as_ref() == Some(&theirs) {
+            equal += 1;
+            row.2 += 1;
+        } else if shown < show {
+            shown += 1;
+            let m = mine.as_ref();
+            let first = (0..theirs.len().max(m.map_or(0, |m| m.len()))).find(|&i| m.and_then(|m| m.get(i)) != theirs.get(i)).unwrap_or(0);
+            eprintln!(
+                "anchoring: line {} ({tag}): pin {} polylines, here {:?}; first differing polyline {first}:\n    pin:  {}\n    rust: {}",
+                line_no + 1,
+                theirs.len(),
+                m.map(|m| m.len()),
+                theirs.get(first).map(|s| &s[..s.len().min(300)]).unwrap_or("-"),
+                m.and_then(|m| m.get(first)).map(|s| &s[..s.len().min(300)]).unwrap_or("-")
+            );
+        }
+    }
+    eprintln!("live Layer::generate_sparse_infill_polylines_for_anchoring: {equal} of {lines} lines equal to the pin");
+    for (tag, n, eq) in &per_cfg {
+        eprintln!("    {tag}: {eq} of {n} lines equal");
+    }
+    assert_eq!(lines, 56, "the vectors hold 7 configurations x 8 layers");
+    assert!(equal >= ANCHORING_FLOOR, "anchoring: {equal} lines equal to the pin, {ANCHORING_FLOOR} before");
+}
+// Lines equal to the pin (R935, when this test was written: 56 of 56, with FILL_ANCHOR_MULTILINES_PIN and
+// FILL_ANCHOR_ONE_LINE_PIN; with both =0 the cubic, triangles and stars lines differ).
+const ANCHORING_FLOOR: usize = 56;

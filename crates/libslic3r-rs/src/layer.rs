@@ -2572,6 +2572,17 @@ impl Layer {
         lower_slices: Option<&Vec<crate::geometry::ExPolygon>>,
         upper_slices: Option<&Vec<crate::geometry::ExPolygon>>,
     ) -> Result<()> {
+        self.make_perimeters_with_neighbors_in_object(lower_slices, upper_slices, None)
+    }
+
+    /// R935: `make_perimeters_with_neighbors` with the object's layers (`this->object()->get_layer(i)`,
+    /// read by Layer.cpp:304-351 for a region with adaptive merge patches); see `make_perimeters_in_object`.
+    pub fn make_perimeters_with_neighbors_in_object(
+        &mut self,
+        lower_slices: Option<&Vec<crate::geometry::ExPolygon>>,
+        upper_slices: Option<&Vec<crate::geometry::ExPolygon>>,
+        object_layers: Option<&[Layer]>,
+    ) -> Result<()> {
         // Store neighbor slices in each region (used by LayerRegion::make_perimeters)
         if let Some(ls) = lower_slices {
             for region in &mut self.regions {
@@ -2583,7 +2594,7 @@ impl Layer {
                 region.upper_slices = Some(us.clone());
             }
         }
-        self.make_perimeters(None)
+        self.make_perimeters_in_object(object_layers)
     }
 
     // Here the perimeters are created cummulatively for all layer regions
@@ -2593,6 +2604,39 @@ impl Layer {
         &mut self,
         _perimeter_generator_options: Option<&()>,
     ) -> Result<()> {
+        self.make_perimeters_in_object(None)
+    }
+
+    /// R935: the call of the `generate_region_perimeters` lambda at Layer.cpp:366 / :386. With the gate
+    /// LAYER_GENERATE_REGION_PERIMETERS off, or with no object (`object_layers` None), it is the R934 call
+    /// `LayerRegion::make_perimeters` (= the lambda's `adaptive_merge_patches.empty()` arm, :287-290).
+    #[allow(clippy::too_many_arguments)]
+    fn run_region_perimeters(
+        lm: &mut LayerRegion,
+        src: &SurfaceCollection,
+        region_id: usize,
+        object_layers: Option<&[Layer]>,
+        height: f64,
+        id: usize,
+        print_z: f64,
+    ) -> Result<()> {
+        match object_layers {
+            Some(layers) if crate::faithful_gate("LAYER_GENERATE_REGION_PERIMETERS") => {
+                let get_layer = |i: usize| -> &Layer { &layers[i] };
+                generate_region_perimeters(lm, src, region_id, layers.len(), &get_layer, height, id, print_z, &|_| {})
+            }
+            _ => lm.make_perimeters(src, height, id, print_z),
+        }
+    }
+
+    /// R935 Layer.cpp:201-400 `Layer::make_perimeters` with the object's layers: `object_layers[i]` is
+    /// `this->object()->get_layer(int(i))` and its length `this->object()->layer_count()`, as the slicing
+    /// path's PrintObject::make_perimeters hands them (a read-only copy of every layer taken before the
+    /// parallel loop: nothing this step writes is read through it). With `None` (a Layer outside an object)
+    /// a region's walls run `make_perimeters_with` as before R935. Gates: LAYER_FIRST_BAND_SOURCE (:233-238)
+    /// and LAYER_GENERATE_REGION_PERIMETERS (:284-361, 366, 386); with either off (=0) that part is the R934
+    /// code. Both change nothing while no region carries adaptive merge patches.
+    pub fn make_perimeters_in_object(&mut self, object_layers: Option<&[Layer]>) -> Result<()> {
         let print_z = self.print_z;
         let height = self.height;
         let id = self.id;
@@ -2634,7 +2678,11 @@ impl Layer {
         // C++: for (LayerRegionPtrs::iterator layerm = m_regions.begin(); layerm != m_regions.end(); ++ layerm)
         //      if ((*layerm)->slices.empty()) {
         for region_idx in 0..self.regions.len() {
-            if self.regions[region_idx].slices.surfaces.is_empty() {
+            // Layer.cpp:233-238: a group top whose band starts at object layer 0 runs with no slices of its
+            // own (gate LAYER_FIRST_BAND_SOURCE; off = R934, slices.empty() alone).
+            let first_band_source =
+                crate::faithful_gate("LAYER_FIRST_BAND_SOURCE") && has_first_band_source(&self.regions[region_idx]);
+            if self.regions[region_idx].slices.surfaces.is_empty() && !first_band_source {
                 // Layer.cpp:209-211
                 // C++: (*layerm)->perimeters.clear();
                 //      (*layerm)->fills.clear();
@@ -2720,7 +2768,11 @@ impl Layer {
                     let surface_fill = self.regions[region_idx].slices.clone();
                     self.regions[region_idx].fill_surfaces.surfaces.clear();
                     self.regions[region_idx].fill_no_overlap_expolygons.clear();
-                    self.regions[region_idx].make_perimeters(&surface_fill, height, id, print_z)?;
+                    // Layer.cpp:366 generate_region_perimeters(*layerm, (*layerm)->slices, ...) (R935 gate
+                    // LAYER_GENERATE_REGION_PERIMETERS; off = R934, the no-patch arm for every region).
+                    Self::run_region_perimeters(
+                        &mut self.regions[region_idx], &surface_fill, region_idx, object_layers, height, id, print_z,
+                    )?;
                     {
                         // Layer.cpp: make_perimeters pushes into this->loop_nodes;
                         // rebase the region-local node ids onto the layer vec.
@@ -2789,7 +2841,11 @@ impl Layer {
                     // used by the split below.
                     self.regions[region_idx].fill_surfaces.surfaces.clear();
                     self.regions[region_idx].fill_no_overlap_expolygons.clear();
-                    self.regions[region_idx].make_perimeters(&new_slices, height, id, print_z)?;
+                    // Layer.cpp:386 generate_region_perimeters(*layerm, new_slices, &fill_surfaces, ...) (R935 gate
+                    // LAYER_GENERATE_REGION_PERIMETERS; off = R934).
+                    Self::run_region_perimeters(
+                        &mut self.regions[region_idx], &new_slices, region_idx, object_layers, height, id, print_z,
+                    )?;
                     {
                         // Layer.cpp: make_perimeters pushes into this->loop_nodes;
                         // rebase the region-local node ids onto the layer vec.

@@ -383,6 +383,10 @@ pub struct GCodeWriter {
     /// The retraction under way is a tool change's (`GCode::retract(true, ..)`),
     /// which `Wipe::wipe` reads for its speed and distance.
     m_toolchange_wipe: bool,
+    /// The retraction under way is the print's last one
+    /// (`GCode::retract(false, true, ..)`, GCode.cpp:3566), which `Wipe::wipe`
+    /// reads as `is_last` (GCode.cpp:440, 498).
+    m_is_last_retraction: bool,
     /// Wipe distance (mm) — how far to move while wiping
     wipe_distance: CoordF,
 
@@ -519,6 +523,7 @@ impl GCodeWriter {
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             tc_retract_probe: false,
             m_toolchange_wipe: false,
+            m_is_last_retraction: false,
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
             last_height_tag: 0.0,
@@ -1031,7 +1036,14 @@ impl GCodeWriter {
     ) {
         use crate::extrusion_entity::ExtrusionRole;
         let short = self.config.travel_short_distance_acceleration;
+        // GCode.cpp:8272-8283: `use_short_travel_accel` is only decided off the first
+        // layer (`if (!this->on_first_layer())`); on the first layer the travel takes
+        // the first-layer travel acceleration (GCodeWriter.cpp:266-285).
+        // GCODE_SHORT_TRAVEL_FIRST_LAYER_PIN (faithful); =0 takes the short one there too.
+        let short_allowed = !(self.is_first_layer
+            && crate::faithful_gate("GCODE_SHORT_TRAVEL_FIRST_LAYER_PIN"));
         let accel = if short > 0.0
+            && short_allowed
             && matches!(
                 dest_role,
                 ExtrusionRole::ExternalPerimeter | ExtrusionRole::OverhangPerimeter
@@ -1706,6 +1718,22 @@ impl GCodeWriter {
         self.retract();
         self.m_forced_lift_type = prev_lt;
         self.m_apply_lift_instantly = prev_ai;
+    }
+
+    /// `GCode::retract(false, is_last_retraction, lift_type, apply_instantly)`
+    /// (GCode.cpp:8498-8530) with `is_last_retraction` handed to `Wipe::wipe`
+    /// (GCode.cpp:8508): the last wipe of the print writes its speed line without
+    /// the `;_WIPE` cooling marker (GCode.cpp:497-498), "because no more cooling
+    /// layer will clean this". GCode.cpp:3566 is the one caller with `true`.
+    pub fn retract_with_lift_type_is_last(
+        &mut self,
+        lift_type: u8,
+        apply_instantly: bool,
+        is_last_retraction: bool,
+    ) {
+        let prev = std::mem::replace(&mut self.m_is_last_retraction, is_last_retraction);
+        self.retract_with_lift_type(lift_type, apply_instantly);
+        self.m_is_last_retraction = prev;
     }
 
     /// R205: GCodeWriter::lazy_lift (GCodeWriter.cpp:425-452), non-spiral-vase,
@@ -2562,7 +2590,13 @@ impl GCodeWriter {
                     if wipe_f > 0.0 {
                         let fs = format!("{:.3}", wipe_f);
                         let fs = fs.trim_end_matches('0').trim_end_matches('.');
-                        self.write_raw(&format!("G1 F{};_WIPE", fs));
+                        // GCode.cpp:497-498: `(enable_cooling_markers() && !is_last)
+                        // ? ";_WIPE" : ""` (GCODE_LAST_WIPE_PIN, faithful).
+                        if self.m_is_last_retraction && crate::faithful_gate("GCODE_LAST_WIPE_PIN") {
+                            self.write_raw(&format!("G1 F{}", fs));
+                        } else {
+                            self.write_raw(&format!("G1 F{};_WIPE", fs));
+                        }
                         self.last_emitted_f = wipe_f;
                         if toolchange_wipe {
                             self.feedrate = wipe_f;
@@ -3623,6 +3657,32 @@ mod tests {
         // In absolute mode, E values are absolute positions
         assert!(gcode.content().contains(" E1"));
         assert!(gcode.content().contains(" E3.5"));
+    }
+
+    /// GCode.cpp:497-498, 3566 (GCODE_LAST_WIPE_PIN): the last wipe of the print writes its speed line
+    /// without the `;_WIPE` cooling marker; any other wipe keeps it.
+    #[test]
+    fn test_retract_is_last_wipe_speed_without_marker() {
+        let run = |is_last: bool| {
+            let mut writer = GCodeWriter::new();
+            writer.write_preamble();
+            writer.extrude_to(10.0, 10.0, 1.0, Some(1800.0));
+            writer.set_wipe_path_points(vec![(10.0, 10.0), (0.0, 10.0)]);
+            writer.retract_with_lift_type_is_last(1, true, is_last);
+            let content = writer.gcode().content().to_string();
+            let wipe = content.split("; WIPE_START\n").nth(1).map(|s| s.to_string());
+            wipe
+        };
+        if !(lift_faithful_gate() && crate::faithful_gate("GCODE_LAST_WIPE_PIN")) {
+            return;
+        }
+        let last = run(true).expect("a wipe");
+        let other = run(false).expect("a wipe");
+        let first_line = |s: &str| s.lines().next().unwrap_or("").to_string();
+        assert!(first_line(&last).starts_with("G1 F"), "last wipe: {last}");
+        assert!(!first_line(&last).contains(";_WIPE"), "last wipe: {last}");
+        assert!(first_line(&other).ends_with(";_WIPE"), "other wipe: {other}");
+        assert_eq!(first_line(&last) + ";_WIPE", first_line(&other));
     }
 
     #[test]
