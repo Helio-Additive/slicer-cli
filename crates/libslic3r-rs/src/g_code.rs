@@ -2041,7 +2041,11 @@ pub fn extrude_loop(
     // to the millimetre. =0 hands the seam placer the position times 1e6, ten
     // times too far from the origin, which only the nearest seam reads.
     let last_pos_f = writer.position();
-    let last_pos = if crate::faithful_gate("SEAM_LAST_POS_SCALED") {
+    // GCODE_LOOP_SEAM_PRE_TRAVEL: the position before extrude_collection's travel.
+    let pre_travel = LOOP_SEAM_PRE_TRAVEL_POS.with(|c| c.take());
+    let last_pos = if let (Some(p), true) = (pre_travel, crate::faithful_gate("SEAM_LAST_POS_SCALED")) {
+        p
+    } else if crate::faithful_gate("SEAM_LAST_POS_SCALED") {
         writer_last_pos(writer)
     } else {
         Point::new(
@@ -2080,6 +2084,26 @@ pub fn extrude_loop(
             }
         }
     };
+    // LOOP_SEAM_ORIENT_PROBE (diagnostic only): the seam the travel target used
+    // (`travel_target_for_entity` asks the seam placer with the loop as stored, before
+    // `make_counter_clockwise`) against the one used here (after it, as GCode.cpp:6673).
+    if !split_at_last_pos && crate::probe_enabled("LOOP_SEAM_ORIENT_PROBE") {
+        let orig_poly = loop_entity.as_polygon();
+        let orig_seam = active_place_seam(loop_entity, &orig_poly, last_pos);
+        if orig_seam.is_some() && orig_seam != Some(seam_point) {
+            eprintln!(
+                "LOOP_SEAM_ORIENT role={:?} ccw_before={} n={} orig_seam={:?} ccw_seam=({},{}) last_pos=({},{})",
+                loop_entity.role(),
+                loop_entity.as_polygon().is_counter_clockwise(),
+                orig_poly.points().len(),
+                orig_seam.map(|p| (p.x, p.y)),
+                seam_point.x,
+                seam_point.y,
+                last_pos.x,
+                last_pos.y
+            );
+        }
+    }
     if split_at_last_pos {
         // GCode.cpp:6684 — `loop.split_at(last_pos, false)`, with the default
         // epsilon of ExtrusionEntity.hpp, scaled<double>(0.001).
@@ -2090,6 +2114,29 @@ pub fn extrude_loop(
         apply_seam_split(&mut loop_copy, &seam_point);
     }
 
+    // LOOP_SEAM_ORIENT_PROBE (diagnostic only): the travel left the nozzle at
+    // `last_pos`; report when the split loop does not start there.
+    if crate::probe_enabled("LOOP_SEAM_ORIENT_PROBE") {
+        let fp = loop_copy.paths.first().and_then(|pa| pa.polyline.points().first().copied());
+        if let Some(fp) = fp {
+            if (fp.x - last_pos.x).abs() > 1 || (fp.y - last_pos.y).abs() > 1 {
+                eprintln!(
+                    "LOOP_START_MISMATCH role={:?} ccw_before={} split_last={} seam=({},{}) first=({},{}) last_pos=({},{}) npaths={} roles={:?}",
+                    loop_entity.role(),
+                    loop_entity.as_polygon().is_counter_clockwise(),
+                    split_at_last_pos,
+                    seam_point.x,
+                    seam_point.y,
+                    fp.x,
+                    fp.y,
+                    last_pos.x,
+                    last_pos.y,
+                    loop_copy.paths.len(),
+                    loop_copy.paths.iter().map(|p| p.role).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
     if std::env::var("SPLITDBG2").is_ok() {
         let post = loop_copy
             .paths
@@ -2328,7 +2375,11 @@ pub fn extrude_loop(
         );
         if ssd_on { ssd_dump("SSDOUT", &smoothed, &path_speed_fn); }
         // GCode.cpp:6599-6601 — per-path ";FEATURE: <role>" on role change.
-        let mut last_path_role = smoothed.first().map(|p| p.role);
+        let mut last_path_role = if loop_role_pin_gate() && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            writer.last_extrusion_role()
+        } else {
+            smoothed.first().map(|p| p.role)
+        };
         for path in &smoothed {
             if Some(path.role) != last_path_role {
                 writer.write_comment(&format!(
@@ -2336,6 +2387,9 @@ pub fn extrude_loop(
                     crate::extrusion_entity::role_to_string(path.role)
                 ));
                 last_path_role = Some(path.role);
+            }
+            if loop_role_pin_gate() && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+                writer.set_last_extrusion_role(last_path_role);
             }
             loop_path_acceleration(writer, path.role, is_first_layer);
             width_tag_before_speed(writer, path);
@@ -2386,7 +2440,13 @@ pub fn extrude_loop(
 
     // GCode.cpp:6599-6601 — emit ";FEATURE: <role>" per path when role changes.
     // extrude_collection already emitted the loop's first-path role, so seed with it.
-    let mut last_path_role = paths.first().map(|p| p.role);
+    // GCODE_LOOP_ROLE_PIN: seeded with the persistent role (the tag written for the
+    // first path after the split) and kept current per path (GCode.cpp:7880-7884).
+    let mut last_path_role = if loop_role_pin_gate() && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+        writer.last_extrusion_role()
+    } else {
+        paths.first().map(|p| p.role)
+    };
     for path in paths {
         // Per-path role-change FEATURE comment (Overhang wall paths within a wall loop).
         if Some(path.role) != last_path_role {
@@ -2395,6 +2455,9 @@ pub fn extrude_loop(
                 crate::extrusion_entity::role_to_string(path.role)
             ));
             last_path_role = Some(path.role);
+        }
+        if loop_role_pin_gate() && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            writer.set_last_extrusion_role(last_path_role);
         }
         loop_path_acceleration(writer, path.role, is_first_layer);
         width_tag_before_speed(writer, path);
@@ -2652,6 +2715,8 @@ pub fn extrude_collection(
         /// C++: gcode += "\n";
         /// C++: }
         let role_changed = Some(entity_role) != current_role;
+        // GCODE_LOOP_ROLE_PIN: the role tag in force before this entity.
+        let prev_role = current_role;
         // R218: native emits the FEATURE/LINE_WIDTH markers AFTER the travel +
         // unretract, at extrusion start (GCode _extrude's description block);
         // rust emitted them before the wipe/travel. Under the gate, defer.
@@ -2743,6 +2808,18 @@ pub fn extrude_collection(
         // C++ GCode::extrude_entity() calls travel_to() before extruding each
         // entity. Without this, consecutive entities in the same collection are
         // connected by a spurious extrusion line across open space.
+        // GCODE_LOOP_SEAM_PRE_TRAVEL: the pin places the seam in extrude_loop BEFORE
+        // the travel, which `_extrude` of the first path makes (GCode.cpp:6667-6680,
+        // :7611), so `place_seam` sees the position the nozzle left from; keep it for
+        // extrude_loop, which runs after the travel here.
+        if crate::faithful_gate("ZSMOOTH_FAITHFUL") && loop_seam_pre_travel_gate() {
+            let pre = if matches!(entity, ExtrusionEntityType::Loop(_)) {
+                Some(writer_last_pos(writer))
+            } else {
+                None
+            };
+            LOOP_SEAM_PRE_TRAVEL_POS.with(|c| c.set(pre));
+        }
         let travel_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             travel_target_for_entity(entity, writer_last_pos(writer))
         } else {
@@ -2811,6 +2888,23 @@ pub fn extrude_collection(
                 }
             }
         }
+        // GCODE_LOOP_ROLE_PIN: a loop's tag is the role of its first path after the
+        // seam split (GCode.cpp:6667-6684, then `_extrude` writes the tag of each path
+        // on a role change, :7880-7884), taken at the position the travel left.
+        let mut tag_role = entity_role;
+        if defer_markers && loop_role_pin_gate() {
+            if let ExtrusionEntityType::Loop(l) = entity {
+                let seam_pos = LOOP_SEAM_PRE_TRAVEL_POS
+                    .with(|c| c.get())
+                    .unwrap_or_else(|| writer_last_pos(writer));
+                if let Some(r) = loop_first_role_as_extruded(l, seam_pos) {
+                    tag_role = r;
+                }
+                pending_markers = Some(tag_role) != prev_role;
+                current_role = Some(tag_role);
+                writer.set_last_extrusion_role(current_role);
+            }
+        }
         if pending_markers {
             // GCode.cpp:7874-7875 — "; Slow Down Start" is written before the
             // role tag of the path it brackets.
@@ -2833,11 +2927,11 @@ pub fn extrude_collection(
             }
             // R218: native marker position — after travel+unretract, before the
             // feature F (GCode.cpp _extrude description/width block).
-            writer.write_comment(&format!("FEATURE: {}", entity_role.to_string()));
+            writer.write_comment(&format!("FEATURE: {}", tag_role.to_string()));
             let line_width = if is_first_layer && config.initial_layer_line_width > 0.0 {
                 config.initial_layer_line_width
             } else {
-                match entity_role {
+                match tag_role {
                     ExtrusionRole::ExternalPerimeter => config.outer_wall_line_width,
                     ExtrusionRole::Perimeter => config.inner_wall_line_width,
                     ExtrusionRole::InternalInfill => config.sparse_infill_line_width,
@@ -2976,6 +3070,14 @@ pub fn extrude_collection(
         /// GCode.cpp:2870-2880
         /// C++: gcode += this->extrude_entity(*entity, description, speed);
         extrude_entity(entity, writer, config, is_first_layer)?;
+        // GCODE_LOOP_ROLE_PIN: `m_last_processor_extrusion_role` is one persistent
+        // member (GCode.hpp); after a loop it holds the role of the loop's last path.
+        if defer_markers
+            && loop_role_pin_gate()
+            && matches!(entity, ExtrusionEntityType::Loop(_))
+        {
+            current_role = writer.last_extrusion_role();
+        }
     }
 
     // R605: port of `GCode::extrude_multi_path`'s wipe-path install
@@ -3117,6 +3219,58 @@ fn travel_target_for_entity(
 fn writer_last_pos(writer: &GCodeWriter) -> Point {
     let p = writer.position();
     Point::new(scale(p.x), scale(p.y))
+}
+
+/// GCODE_LOOP_ROLE_PIN (faithful): the role of the first path `extrude_loop` will
+/// extrude, i.e. of the loop copy after `make_counter_clockwise` and the seam split
+/// (GCode.cpp:6667-6684, the same steps as `extrude_loop` here). The pin writes the
+/// role tag in `_extrude` per path (`path.role() != m_last_processor_extrusion_role`),
+/// so the tag of a loop is its first path AFTER the split, not `ExtrusionLoop::role()`
+/// of the unsplit loop (`paths.front().role()`, ExtrusionEntity.hpp:464), which the
+/// collection-level tag wrote: a seam inside or next to an overhang piece put
+/// "Overhang wall" on the inner-wall path (or the reverse).
+fn loop_first_role_as_extruded(
+    l: &crate::extrusion_entity::ExtrusionLoop,
+    last_pos: Point,
+) -> Option<ExtrusionRole> {
+    let mut probe = l.clone();
+    probe.make_counter_clockwise();
+    let polygon = probe.as_polygon();
+    let split_at_last_pos = loop_is_split_at_last_pos(&probe);
+    if split_at_last_pos {
+        probe.split_at(&last_pos, false, crate::scale(0.001) as f64);
+    } else {
+        let seam_point = match active_place_seam(&probe, &polygon, last_pos) {
+            Some(p) => p,
+            None => {
+                if polygon.points().is_empty() {
+                    return probe.paths.first().map(|p| p.role);
+                }
+                let seam_idx = crate::gcode::seam_placer::find_best_seam_index(
+                    &polygon,
+                    Some(last_pos),
+                    &crate::gcode::seam_placer::SeamPlacerConfig::default(),
+                );
+                polygon.points()[seam_idx]
+            }
+        };
+        apply_seam_split(&mut probe, &seam_point);
+    }
+    probe.paths.first().map(|p| p.role)
+}
+
+fn loop_role_pin_gate() -> bool {
+    crate::faithful_gate("GCODE_LOOP_ROLE_PIN")
+}
+
+fn loop_seam_pre_travel_gate() -> bool {
+    crate::faithful_gate("GCODE_LOOP_SEAM_PRE_TRAVEL")
+}
+
+thread_local! {
+    /// GCODE_LOOP_SEAM_PRE_TRAVEL: `m_last_pos` before the travel to a loop, for the
+    /// seam placement of `extrude_loop` (GCode.cpp:6667-6680).
+    static LOOP_SEAM_PRE_TRAVEL_POS: std::cell::Cell<Option<Point>> = const { std::cell::Cell::new(None) };
 }
 
 /// Rust analogue of `ExtrusionEntityCollection::chained_path_from(start_near, role)`
@@ -3894,6 +4048,12 @@ pub fn extrude_entity(
             let use_seperate_speed = crate::faithful_gate("FVS_SEPARATE_SPEED")
                 && path.get_customize_flag()
                     == crate::extrusion_entity::CustomizeFlag::FloatingVerticalShell;
+            // R937 GCODE_COOLING_MARKERS_PIN (on unless =0): `_extrude` writes the overhang fan
+            // markers for a path on its own too (bridge infill, GCode.cpp:7914-7922, 8071-8080);
+            // =0 writes none here (only the loops' paths had them).
+            let path_ovh_fan = crate::faithful_gate("ZSMOOTH_FAITHFUL")
+                && crate::faithful_gate("GCODE_COOLING_MARKERS_PIN")
+                && crate::gcode::cooling::path_overhang_fan_marker(config, path);
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 use crate::extrusion_entity::ExtrusionRole;
                 let role = path.role;
@@ -3999,6 +4159,10 @@ pub fn extrude_entity(
                     base
                 };
                 width_tag_before_speed(writer, path);
+                // R937 GCODE_COOLING_MARKERS_PIN: GCode.cpp:7914-7922, after the tags, before set_speed.
+                if path_ovh_fan {
+                    writer.write_raw(";_OVERHANG_FAN_START");
+                }
                 if speed > 0.0 {
                     let cooling_comment = if role == ExtrusionRole::BridgeInfill {
                         ""
@@ -4011,6 +4175,10 @@ pub fn extrude_entity(
                 }
             }
             extrude_path(path, writer, config, is_first_layer);
+            // R937 GCODE_COOLING_MARKERS_PIN: GCode.cpp:8071-8080, after ";_EXTRUDE_END".
+            if path_ovh_fan {
+                writer.write_raw(";_OVERHANG_FAN_END");
+            }
             if use_seperate_speed && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 writer.write_raw("; Slow Down End");
             }
@@ -14935,5 +15103,79 @@ mod extrude_support_pin_tests {
         let (with, c1) = run(Some(std::slice::from_ref(&island)));
         assert!(without > 0, "{c0}");
         assert_eq!(with, 0, "{c1}");
+    }
+}
+
+#[cfg(test)]
+mod loop_role_pin_tests {
+    //! GCODE_LOOP_ROLE_PIN (default on): the role tag of a loop is the role of its
+    //! first path after the split (GCode.cpp:6667-6684), written per path in
+    //! `_extrude` on a role change of the persistent `m_last_processor_extrusion_role`
+    //! (GCode.cpp:7880-7884), not `ExtrusionLoop::role()` of the unsplit loop.
+    use super::*;
+    use crate::extrusion_entity::{role_to_string, ExtrusionLoopRole, ExtrusionRole};
+    use crate::geometry::{Point, Polyline};
+    use crate::print_config::PrintObjectConfig;
+
+    fn path(role: ExtrusionRole, pts: &[(f64, f64)]) -> ExtrusionPath {
+        let mut p = ExtrusionPath::new(role);
+        p.polyline =
+            Polyline::from_points(pts.iter().map(|&(x, y)| Point::new_scale(x, y)).collect());
+        p.mm3_per_mm = 0.05;
+        p.width = 0.4;
+        p.height = 0.2;
+        p
+    }
+
+    /// A counter-clockwise square loop of two non-perimeter paths, so that it is
+    /// split at the nozzle's position (GCode.cpp:6684), not by the seam placer.
+    fn two_role_loop() -> ExtrusionLoop {
+        ExtrusionLoop::new(
+            vec![
+                path(ExtrusionRole::GapFill, &[(5.0, 5.0), (15.0, 5.0), (15.0, 15.0)]),
+                path(ExtrusionRole::SolidInfill, &[(15.0, 15.0), (5.0, 15.0), (5.0, 5.0)]),
+            ],
+            ExtrusionLoopRole::DEFAULT,
+        )
+    }
+
+    #[test]
+    fn first_role_is_the_split_loops_first_path() {
+        if !crate::faithful_gate("LOOP_SPLIT_NONPERIMETER") {
+            return;
+        }
+        let l = two_role_loop();
+        assert_eq!(
+            loop_first_role_as_extruded(&l, Point::new_scale(4.0, 14.0)),
+            Some(ExtrusionRole::SolidInfill)
+        );
+        assert_eq!(
+            loop_first_role_as_extruded(&l, Point::new_scale(14.0, 4.0)),
+            Some(ExtrusionRole::GapFill)
+        );
+    }
+
+    #[test]
+    fn loop_tags_follow_the_paths_after_the_split() {
+        if !(loop_role_pin_gate()
+            && crate::faithful_gate("ZSMOOTH_FAITHFUL")
+            && crate::faithful_gate("LOOP_SPLIT_NONPERIMETER"))
+        {
+            return;
+        }
+        let mut writer = GCodeWriter::new();
+        writer.travel_to(4.0, 14.0, None);
+        let mark = writer.output_mark();
+        let mut coll = ExtrusionEntityCollection::default();
+        coll.no_sort = true;
+        coll.entities.push(ExtrusionEntityType::Loop(two_role_loop()));
+        extrude_collection(&coll, &mut writer, &PrintObjectConfig::default(), false).unwrap();
+        let out = writer.take_output_since(mark);
+        let tags: Vec<&str> =
+            out.lines().filter_map(|l| l.strip_prefix("; FEATURE: ")).collect();
+        let solid = role_to_string(ExtrusionRole::SolidInfill);
+        let gap = role_to_string(ExtrusionRole::GapFill);
+        assert_eq!(tags, vec![solid, gap, solid], "{out}");
+        assert_eq!(writer.last_extrusion_role(), Some(ExtrusionRole::SolidInfill));
     }
 }

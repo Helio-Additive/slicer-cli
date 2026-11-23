@@ -3387,6 +3387,59 @@ impl Layer {
             if range_start >= range_end {
                 continue;
             }
+            // R937 COOLING_NODE_ISLAND_PIN (on unless =0): the pin walks every island collection of
+            // `region->perimeters` on its own (Layer.cpp:551-571): the island's walls before its second
+            // node's loop take the merged id of the island's FIRST node, also when that node's loop is
+            // not the island's first wall (PerimeterGenerator.cpp:648, loop_id = the index of the wall
+            // the node is made for); `next_pos` is local to the island. The walk over the one flat
+            // collection (=0) left those walls on the previous island's node (Benchy classic layers
+            // 54-93: one `; COOLING_NODE: 8` where the pin writes 11, which moves the outer-wall speed
+            // smoothing of GCode/Smoothing.cpp). The island's nodes are the consecutive nodes whose
+            // loop lies in the island's walls (they are pushed island by island,
+            // PerimeterGenerator.cpp:628-829, 1301-1336).
+            let n_entities = region.perimeters.entities.len();
+            if crate::faithful_gate("COOLING_NODE_ISLAND_PIN")
+                && !region.perimeter_islands.is_empty()
+                && region.perimeter_islands.iter().map(|(r, _)| r.len()).sum::<usize>() == n_entities
+                && region.perimeter_islands.last().map(|(r, _)| r.end) == Some(n_entities)
+            {
+                let merged = |k: usize| -> i32 {
+                    self.loop_nodes[k].merged_id.map(|v| v as i32).unwrap_or(-1)
+                };
+                region.entity_cooling_nodes = vec![-1; n_entities];
+                let mut k = range_start;
+                for (range, _) in &region.perimeter_islands {
+                    let island_start = k;
+                    while k < range_end
+                        && self.loop_nodes[k].loop_id >= range.start
+                        && self.loop_nodes[k].loop_id < range.end
+                    {
+                        k += 1;
+                    }
+                    let end = k;
+                    let mut start = island_start;
+                    // Layer.cpp:555-556
+                    if start >= end {
+                        continue;
+                    }
+                    let base = range.start as i64;
+                    // Layer.cpp:558-560
+                    let mut cooling_node = merged(start);
+                    let mut next_pos: i64 =
+                        if start + 1 < end { self.loop_nodes[start + 1].loop_id as i64 - base } else { -1 };
+                    // Layer.cpp:561-569
+                    for idx in 0..range.len() {
+                        if idx as i64 == next_pos && next_pos > 0 {
+                            start += 1;
+                            cooling_node = merged(start);
+                            next_pos =
+                                if start + 1 < end { self.loop_nodes[start + 1].loop_id as i64 - base } else { -1 };
+                        }
+                        region.entity_cooling_nodes[range.start + idx] = cooling_node;
+                    }
+                }
+                continue;
+            }
             let mut start = range_start;
             let mut cooling_node: i32 = self.loop_nodes[start]
                 .merged_id
@@ -4023,6 +4076,13 @@ impl Layer {
             } else {
                 Vec::new()
             };
+            // FILL_MONOTONIC_ROUTE_PIN (on unless =0): FillMonotonicLineWGapFill::
+            // fill_surface_extrusion (FillRectilinear.cpp:3641-3753) per expoly, the gap fills
+            // planned into the order of the lines (plan_monotonic_route / append_monotonic_route)
+            // in the expoly's one no-sort collection, instead of one gap collection per region.
+            // The islands of an expoly that laid no line keep the tail below (route_no_lines_areas).
+            let route_gate = is_monotonic_line && crate::faithful_gate("FILL_MONOTONIC_ROUTE_PIN");
+            let mut route_no_lines_areas: ExPolygons = Vec::new();
             let mono_flow = surface_fill.params.flow.clone();
             let mono_density = surface_fill.params.density;
             // Footprint (covered-by-spacing) of all monotonic lines emitted for
@@ -4221,6 +4281,12 @@ impl Layer {
                         &zag,
                     );
 
+                // FILL_MONOTONIC_ROUTE_PIN: the no-overlap islands of this expoly and where
+                // each island's lines end (FillRectilinear.cpp:3654-3668), set by the MonotonicLine arm.
+                let route_pin = route_gate;
+                let mut route_areas: ExPolygons = Vec::new();
+                let mut route_island_end: Vec<usize> = Vec::new();
+                let mut route_scan_angle: f32 = 0.0;
                 let generated = match fill_pattern {
                     // FillRectilinear.cpp:3080 — `return conformal_out;`: the paths
                     // are final, nothing connects them again.
@@ -4375,10 +4441,22 @@ impl Layer {
                                 && !mono_no_overlap.is_empty()
                                 && crate::faithful_gate("TOPFILL_FAITHFUL")
                             {
-                                crate::clipper_utils::intersection_clib(
-                                    &mono_no_overlap,
-                                    &[expoly.clone()],
-                                )
+                                if crate::faithful_gate("FILL_NO_OVERLAP_SAFETY_PIN") {
+                                    // Fill.cpp:837 `f->no_overlap_expolygons =
+                                    // intersection_ex(surface_fill.no_overlap_expolygons,
+                                    // ExPolygons() = {expoly}, ApplySafetyOffset::Yes)`: one
+                                    // intersection of the group's no-overlap area with this
+                                    // expoly, the clip grown by ClipperSafetyOffset first.
+                                    crate::clipper_utils::intersection_clib_safety(
+                                        &surface_fill.no_overlap_expolygons,
+                                        &[expoly.clone()],
+                                    )
+                                } else {
+                                    crate::clipper_utils::intersection_clib(
+                                        &mono_no_overlap,
+                                        &[expoly.clone()],
+                                    )
+                                }
                             } else if fill_pattern == InfillPattern::MonotonicLine
                                 && mono_no_overlap.is_empty()
                                 && crate::faithful_gate("TOPFILL_FAITHFUL")
@@ -4394,13 +4472,37 @@ impl Layer {
                             } else {
                                 vec![expoly.clone()]
                             };
-                        generate_fill_rectilinear_monotonic(
-                            &mono_areas,
-                            &mono_config,
-                            self.id as usize,
-                            is_grid,
-                            true,
-                        )
+                        if route_pin {
+                            // FillRectilinear.cpp:3657-3668: the lines island by island, the
+                            // invalid ones erased per island, `island_end` after each.
+                            let mut out = Vec::new();
+                            for area in &mono_areas {
+                                out.extend(generate_fill_rectilinear_monotonic(
+                                    std::slice::from_ref(area),
+                                    &mono_config,
+                                    self.id as usize,
+                                    is_grid,
+                                    true,
+                                ));
+                                route_island_end.push(out.len());
+                            }
+                            route_areas = mono_areas;
+                            // FillRectilinear.cpp:3735 scan_angle = _infill_direction(surface).first
+                            route_scan_angle = crate::fill::fill_rectilinear::live_monotonic_line_scan_angle(
+                                &expoly,
+                                &mono_config,
+                                self.id as usize,
+                            );
+                            out
+                        } else {
+                            generate_fill_rectilinear_monotonic(
+                                &mono_areas,
+                                &mono_config,
+                                self.id as usize,
+                                is_grid,
+                                true,
+                            )
+                        }
                     }
                     InfillPattern::Gyroid => {
                         // Use gyroid fill — generate paths for bounding box then clip to fill area
@@ -4595,6 +4697,7 @@ impl Layer {
                 };
 
                 if generated.is_empty() {
+                    route_no_lines_areas.append(&mut route_areas);
                     if fsdbg {
                         use std::sync::atomic::Ordering::Relaxed;
                         crate::fill::SPARSE_NOGEN_N.fetch_add(1, Relaxed);
@@ -4613,6 +4716,7 @@ impl Layer {
                 }
 
                 if polylines.is_empty() {
+                    route_no_lines_areas.append(&mut route_areas);
                     if fsdbg {
                         use std::sync::atomic::Ordering::Relaxed;
                         crate::fill::SPARSE_NOGEN_N.fetch_add(1, Relaxed);
@@ -4772,6 +4876,10 @@ impl Layer {
                         ),
                     }
                 };
+                // FillRectilinear.cpp:3688-3691: the lines are handed to the planner as laid
+                // (extrusion_entities_append_paths_with_wipe takes a copy).
+                let mut route_lines: Vec<crate::geometry::Polyline> =
+                    if route_pin { polylines.clone() } else { Vec::new() };
                 let mut collection = ExtrusionEntityCollection::new();
                 // R779 — faithful filler no_sort (FillBase.hpp:149 + overrides):
                 // Concentric/ConcentricInternal/Monotonic/MonotonicLine(WGapFill)
@@ -4871,6 +4979,128 @@ impl Layer {
                     }
                 }
 
+                // FILL_MONOTONIC_ROUTE_PIN: FillRectilinear.cpp:3692-3746 for this expoly.
+                if route_pin && !route_areas.is_empty() {
+                    use crate::clipper_utils::{difference_clib, offset2_clib, union_polygons_ex};
+                    use crate::extrusion_entity::ExtrusionEntityType;
+                    // FillRectilinear.cpp:3692 unextruded_areas = diff_ex(no_overlap_expolygons,
+                    //     union_ex(coll_nosort->polygons_covered_by_spacing(10))), 3694-3695.
+                    let mut covered: Vec<crate::geometry::Polygon> = Vec::new();
+                    for ent in &collection.entities {
+                        if let ExtrusionEntityType::Path(path) = ent {
+                            path.polygons_covered_by_spacing(&mut covered, 10.0);
+                        } else if let ExtrusionEntityType::MultiPath(mp) = ent {
+                            for path in &mp.paths {
+                                path.polygons_covered_by_spacing(&mut covered, 10.0);
+                            }
+                        }
+                    }
+                    let unextruded_areas: ExPolygons = if covered.is_empty() {
+                        route_areas.clone()
+                    } else {
+                        difference_clib(&route_areas, &union_polygons_ex(&covered))
+                    };
+                    // FillRectilinear.cpp:3699-3701 (as the region tail below).
+                    let gapfill_areas =
+                        crate::clipper_utils::intersection_clib(&unextruded_areas, &route_areas);
+                    let mut gap_polylines: crate::geometry::ThickPolylines = Vec::new();
+                    if !gapfill_areas.is_empty() && mono_density >= 1.0 {
+                        // FillRectilinear.cpp:3703-3707, min / max from new_flow.scaled_spacing()
+                        // (the doubles of trunc(spacing / 1e-5), as the region tail below).
+                        let s_sc = (fill_flow_eff.spacing() / 0.00001).trunc();
+                        let min_sc = 0.2 * s_sc * (1.0 - 0.4);
+                        let max_sc = 2.0 * s_sc;
+                        const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
+                        let opened_min = offset2_clib(
+                            &gapfill_areas,
+                            min_sc / 2.0 / crate::SCALING_FACTOR,
+                            min_sc / 2.0 / crate::SCALING_FACTOR,
+                            OffsetJoinType::Miter,
+                        );
+                        let wide_part = offset2_clib(
+                            &gapfill_areas,
+                            max_sc / 2.0 / crate::SCALING_FACTOR,
+                            max_sc / 2.0 / crate::SCALING_FACTOR + CLIPPER_SAFETY_OFFSET,
+                            OffsetJoinType::Miter,
+                        );
+                        let mut gaps_ex = difference_clib(&opened_min, &wide_part);
+                        // FillRectilinear.cpp:3708-3717: the gaps ordered by chain_points of their
+                        // contours' first points.
+                        let ordering_points: Vec<crate::geometry::Point> =
+                            gaps_ex.iter().map(|ex| ex.contour.points[0]).collect();
+                        let order = crate::shortest_path::chain_points(&ordering_points, None);
+                        let mut gaps_ex_sorted: ExPolygons = Vec::with_capacity(gaps_ex.len());
+                        for i in order {
+                            gaps_ex_sorted.push(std::mem::take(&mut gaps_ex[i]));
+                        }
+                        // FillRectilinear.cpp:3719-3723
+                        let simplify_resolution = crate::scale(resolution) as f64 * 0.1;
+                        for ex in &mut gaps_ex_sorted {
+                            ex.douglas_peucker(simplify_resolution);
+                            // ExPolygon::medial_axis (ExPolygon.cpp:263-371): the C++ `width` array
+                            // kept as it is, two per segment in scaled units, in `widths` (the pair
+                            // layout ThickPolyline::thicklines and reverse() read), which
+                            // thick_polyline_to_extrusion_paths_2 takes (VariableWidth.cpp:103-211).
+                            let mut pp: Vec<crate::geometry::MedialAxisThickPolyline> =
+                                Vec::new();
+                            ex.medial_axis_thick_polylines(min_sc, max_sc, &mut pp);
+                            for pl in pp {
+                                if pl.points.len() < 2 || pl.width.is_empty() {
+                                    continue;
+                                }
+                                let mut tp = crate::geometry::ThickPolyline::with_capacity(pl.points.len());
+                                tp.points = pl.points;
+                                tp.widths = pl.width;
+                                tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
+                                gap_polylines.push(tp);
+                            }
+                        }
+                        // FillRectilinear.cpp:3725-3734: tiny gaps dropped (filter_out_gap_fill is
+                        // never set by Fill.cpp: 0), none for a bridge.
+                        if !gap_polylines.is_empty()
+                            && !crate::extrusion_entity::is_bridge(surface_fill.params.extrusion_role)
+                        {
+                            // libslic3r.h SCALED_EPSILON = scale_(EPSILON), EPSILON = 1e-4.
+                            let scaled_epsilon = 1e-4 / 0.00001;
+                            gap_polylines.retain(|p| !(p.length() <= scaled_epsilon || p.length() < 0.0));
+                        } else {
+                            gap_polylines.clear();
+                        }
+                    }
+                    // FillRectilinear.cpp:3736-3746
+                    if !gap_polylines.is_empty() {
+                        collection.entities.clear();
+                        let flow_width = fill_flow_eff.width();
+                        let link_max = 3.0 * (((flow_width as f32) as f64 / 0.00001) as i64) as f64;
+                        let island_end: Vec<usize> = if route_island_end.last() == Some(&route_lines.len()) {
+                            route_island_end.clone()
+                        } else {
+                            vec![route_lines.len()]
+                        };
+                        let route = crate::fill::fill_rectilinear::plan_monotonic_route(
+                            &route_lines,
+                            &mut gap_polylines,
+                            link_max,
+                            route_scan_angle,
+                            &island_end,
+                        );
+                        let gap_comp = (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                        crate::fill::fill_rectilinear::append_monotonic_route(
+                            &mut collection.entities,
+                            &route,
+                            &mut route_lines,
+                            &gap_polylines,
+                            surface_fill.params.extrusion_role,
+                            mm3_per_mm,
+                            flow_width as f32,
+                            path_height,
+                            crate::extrusion_entity::ExtrusionRole::GapFill,
+                            &surface_fill.params.flow,
+                            gap_comp,
+                        );
+                    }
+                }
+
                 if !collection.entities.is_empty() {
                     self.regions[region_id].fills.entities.push(
                         crate::extrusion_entity::ExtrusionEntityType::Collection(Box::new(
@@ -4894,6 +5124,11 @@ impl Layer {
                     mono_no_overlap.len(),
                     a_no
                 );
+            }
+            // FILL_MONOTONIC_ROUTE_PIN: the tail runs only over the islands that laid no line.
+            let mono_no_overlap = if route_gate { route_no_lines_areas } else { mono_no_overlap };
+            if route_gate {
+                mono_covered.clear();
             }
             if is_monotonic_line && mono_density >= 1.0 && !mono_no_overlap.is_empty() {
                 use crate::clipper_utils::{

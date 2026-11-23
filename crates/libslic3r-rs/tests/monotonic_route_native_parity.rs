@@ -100,3 +100,126 @@ fn plan_monotonic_route_native_parity() {
     }
     assert_eq!(equal, cases);
 }
+
+/// Native parity of `append_monotonic_route` (FillRectilinear.cpp:3592-3639): the entities it assembles from
+/// the route (the lines through extrusion_entities_append_paths_with_wipe, the gaps through
+/// thick_polyline_to_extrusion_paths_2, a closed gap as a loop). Vectors: tests/data/monotonic_route/gen.cpp
+/// run as `gen append` (the same cases with widths on the gaps), gzip -9n.
+#[test]
+fn append_monotonic_route_native_parity() {
+    use slicer::extrusion_entity::{ExtrusionEntityType, ExtrusionPath, ExtrusionRole};
+    use std::io::Read;
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/monotonic_route/vectors_append.txt.gz");
+    let file = std::fs::File::open(path).expect("vectors");
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).expect("gzip");
+    let flow = slicer::flow::Flow::new(0.42f32 as f64, 0.2f32 as f64, 0.4f32 as f64).unwrap();
+    let mm3 = flow.mm3_per_mm().unwrap();
+    let fmt_path = |p: &ExtrusionPath| -> String {
+        let mut s = format!("p {:?} {:?} {:?} {}", p.mm3_per_mm, p.width as f32, p.height as f32, p.polyline.points.len());
+        for q in &p.polyline.points {
+            s += &format!(" {} {}", q.x, q.y);
+        }
+        s
+    };
+    let mut lines_it = text.lines();
+    let (mut cases, mut equal, mut entities_total) = (0usize, 0usize, 0usize);
+    let mut first_bad: Vec<String> = Vec::new();
+    while let Some(head) = lines_it.next() {
+        let h: Vec<&str> = head.split_whitespace().collect();
+        assert_eq!(h[0], "case");
+        let n_lines: usize = h[2].parse().unwrap();
+        let n_gaps: usize = h[3].parse().unwrap();
+        let link_max = hex(h[4]);
+        let scan_angle = hex(h[5]) as f32;
+        let n_ie: usize = h[6].parse().unwrap();
+        let island_end: Vec<usize> = (0..n_ie).map(|i| h[7 + i].parse().unwrap()).collect();
+        let mut lines: Vec<Polyline> = Vec::new();
+        for _ in 0..n_lines {
+            let t: Vec<&str> = lines_it.next().unwrap().split_whitespace().collect();
+            lines.push(Polyline::from_points(pts(&t)));
+        }
+        let mut gaps: Vec<ThickPolyline> = Vec::new();
+        for _ in 0..n_gaps {
+            let t: Vec<&str> = lines_it.next().unwrap().split_whitespace().collect();
+            assert_eq!(t[0], "G");
+            let p = pts(&t);
+            let wi = 2 + 2 * p.len();
+            // the C++ width array (two per segment, scaled) in the pair layout of `widths`
+            let w: Vec<f64> = if t.len() > wi && t[wi] == "W" {
+                let k: usize = t[wi + 1].parse().unwrap();
+                (0..k).map(|j| hex(t[wi + 2 + j])).collect()
+            } else {
+                Vec::new()
+            };
+            let mut tp = ThickPolyline::new();
+            tp.points = p;
+            tp.widths = w;
+            gaps.push(tp);
+        }
+        // the pin's entities, formatted as the Rust ones below
+        let mut expected: Vec<String> = Vec::new();
+        loop {
+            let l = lines_it.next().unwrap();
+            if l == "E" {
+                break;
+            }
+            let t: Vec<&str> = l.split_whitespace().collect();
+            match t[0] {
+                "X" => expected.push(format!("X {} {}", t[1], t[2])),
+                "p" => {
+                    let n: usize = t[4].parse().unwrap();
+                    let mut s = format!("p {:?} {:?} {:?} {}", hex(t[1]), hex(t[2]) as f32, hex(t[3]) as f32, n);
+                    for i in 0..n {
+                        s += &format!(" {} {}", t[5 + 2 * i], t[6 + 2 * i]);
+                    }
+                    expected.push(s);
+                }
+                other => panic!("unexpected {other}"),
+            }
+        }
+        let route = plan_monotonic_route(&lines, &mut gaps, link_max, scan_angle, &island_end);
+        let mut dst: Vec<ExtrusionEntityType> = Vec::new();
+        slicer::fill::fill_rectilinear::append_monotonic_route(
+            &mut dst, &route, &mut lines, &gaps, ExtrusionRole::TopSolidInfill, mm3, 0.42f32, 0.2f32,
+            ExtrusionRole::GapFill, &flow, 0.45f32,
+        );
+        let mut got: Vec<String> = Vec::new();
+        for e in &dst {
+            match e {
+                ExtrusionEntityType::Path(p) => {
+                    got.push("X path 1".to_string());
+                    got.push(fmt_path(p));
+                }
+                ExtrusionEntityType::MultiPath(mp) => {
+                    got.push(format!("X multi {}", mp.paths.len()));
+                    got.extend(mp.paths.iter().map(|p| fmt_path(p)));
+                }
+                ExtrusionEntityType::Loop(l) => {
+                    got.push(format!("X loop {}", l.paths.len()));
+                    got.extend(l.paths.iter().map(|p| fmt_path(p)));
+                }
+                _ => got.push("X other 0".to_string()),
+            }
+        }
+        cases += 1;
+        entities_total += expected.iter().filter(|s| s.starts_with('X')).count();
+        if got == expected {
+            equal += 1;
+        } else if first_bad.len() < 3 {
+            let k = got.iter().zip(expected.iter()).position(|(a, b)| a != b).unwrap_or(got.len().min(expected.len()));
+            first_bad.push(format!(
+                "{head}\n first difference at item {k} of {} / {}\n got {:?}\n pin {:?}",
+                got.len(),
+                expected.len(),
+                got.get(k),
+                expected.get(k)
+            ));
+        }
+    }
+    eprintln!("append_monotonic_route: {equal} of {cases} cases equal ({entities_total} entities)");
+    for b in &first_bad {
+        eprintln!("{b}");
+    }
+    assert_eq!(equal, cases);
+}

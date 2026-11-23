@@ -6781,6 +6781,17 @@ fn generate_fill_monotonic_line_w_gap_fill_pin(fill_area: &[ExPolygon], config: 
     paths
 }
 
+/// FillRectilinear.cpp:3735 `const float scan_angle = this->_infill_direction(surface).first;` of the
+/// FillMonotonicLineWGapFill the live make_fills lays a top surface's lines with (its members set as
+/// `generate_fill_monotonic_line_w_gap_fill_pin` sets them). FillMonotonicLineWGapFill derives from Fill
+/// (FillRectilinear.hpp:128) and keeps Fill's `_layer_angle`.
+pub fn live_monotonic_line_scan_angle(expoly: &ExPolygon, config: &InfillConfig, layer_index: usize) -> f32 {
+    let mut f = FillMonotonicLineWGapFill::new();
+    live_fill_members(&mut f.base, config, layer_index);
+    let surface = live_surface(expoly, config);
+    f.base._infill_direction(&surface).0
+}
+
 /// What tests/fill_rectilinear_native_parity.rs reads of the stages of the monotonic path, whose types are
 /// private to this file: the vertical lines after `pinch_contours_insert_phony_outer_intersections`, the
 /// regions after `generate_montonous_regions` and `connect_monotonic_regions` (left and right boundary,
@@ -8051,7 +8062,9 @@ pub fn append_monotonic_route(
 ) {
     use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole};
     // FillRectilinear.cpp:3598-3600
-    let width_tolerance = (0.05 / crate::SCALING_FACTOR) as f32;
+    // `float(scale_(0.05))`: scale_ divides by SCALING_FACTOR = 0.00001 (libslic3r.h), the scaled
+    // units of the ThickLine widths (as variable_width, VariableWidth.cpp:218).
+    let width_tolerance = (0.05_f64 / 0.00001) as f32;
     dst.reserve(lines.len() + gaps.len());
     let mut pending_lines: Vec<Polyline> = Vec::new();
 

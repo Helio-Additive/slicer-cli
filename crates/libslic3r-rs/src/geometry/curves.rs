@@ -222,7 +222,13 @@ impl PiecewiseFittedCurve {
         while segment_index < start_segment_idx + kernel_span {
             // Geometry/Curves.hpp:79
             // NumberType segment_start = start + segment_index * segment_size;
-            let segment_start = self.start + segment_index as f32 * self.segment_size;
+            // one expression at the pin: fmaf(float(segment_index), segment_size, start)
+            // (R937 gate CURVES_FMA; =0 gives the earlier unfused arm)
+            let segment_start = if crate::faithful_gate("CURVES_FMA") {
+                (segment_index as f32).mul_add(self.segment_size, self.start)
+            } else {
+                self.start + segment_index as f32 * self.segment_size
+            };
             // Geometry/Curves.hpp:80
             // NumberType normalized_segment_distance = (segment_start - observation_point) / segment_size;
             let normalized_segment_distance =
@@ -357,7 +363,12 @@ pub fn fit_curve<K: KernelCoefficients>(
         while segment_index < start_segment_idx + kernel_span {
             // Geometry/Curves.hpp:148
             // NumberType segment_start = result.start + segment_index * result.segment_size;
-            let segment_start = start + segment_index as f32 * segment_size;
+            // fused at the pin (R937 gate CURVES_FMA; =0 gives the earlier unfused arm)
+            let segment_start = if crate::faithful_gate("CURVES_FMA") {
+                (segment_index as f32).mul_add(segment_size, start)
+            } else {
+                start + segment_index as f32 * segment_size
+            };
             // Geometry/Curves.hpp:149
             // NumberType normalized_segment_distance = (segment_start - observation_point) / result.segment_size;
             let normalized_segment_distance = (segment_start - observation_point) / segment_size;
@@ -372,7 +383,13 @@ pub fn fit_curve<K: KernelCoefficients>(
             // T(i, parameter_index) += Kernel::kernel(normalized_segment_distance) * sqrt_weights[i];
             let k =
                 CubicKernelWrapper::<K>::kernel(normalized_segment_distance as f64) as f32;
-            t[(i, parameter_index as usize)] += k * sqrt_weights[i];
+            // `T(i, j) += kernel * sqrt_weights[i]` is fused at the pin (R937 gate CURVES_FMA)
+            if crate::faithful_gate("CURVES_FMA") {
+                t[(i, parameter_index as usize)] =
+                    k.mul_add(sqrt_weights[i], t[(i, parameter_index as usize)]);
+            } else {
+                t[(i, parameter_index as usize)] += k * sqrt_weights[i];
+            }
             segment_index += 1;
         }
     }

@@ -1,6 +1,8 @@
 // Vectors for the route of FillMonotonicLineWGapFill: plan_monotonic_route (FillRectilinear.cpp:3247-3590),
 // a static function, reached by including the pin's FillRectilinear.cpp.
 // Build: target/parity-tools/build.sh <this file> <out binary>; run: <out binary> > vectors.txt
+// and <out binary> append > vectors_append.txt: the same cases with widths on the gaps, then the entities
+// append_monotonic_route (FillRectilinear.cpp:3592-3639) assembles from the route.
 #include "libslic3r/Fill/FillRectilinear.cpp"
 #include <cstdio>
 #include <cstdint>
@@ -11,9 +13,19 @@ using namespace Slic3r;
 static uint64_t g_state = 0x2545F4914F6CDD1DULL;
 static uint32_t lcg() { g_state = g_state * 6364136223846793005ULL + 1442695040888963407ULL; return uint32_t(g_state >> 33); }
 static int64_t rnd(int64_t lo, int64_t hi) { return lo + int64_t(lcg() % uint64_t(hi - lo + 1)); }
-
-int main()
+// a second sequence for the widths of the append vectors, so the cases stay those of vectors.txt
+static uint64_t g_state2 = 0x9E3779B97F4A7C15ULL;
+static int64_t rnd2(int64_t lo, int64_t hi) { g_state2 = g_state2 * 6364136223846793005ULL + 1442695040888963407ULL; return lo + int64_t(uint32_t(g_state2 >> 33) % uint64_t(hi - lo + 1)); }
+static void print_path(const ExtrusionPath &p)
 {
+    printf("p %a %a %a %zu", p.mm3_per_mm, double(p.width), double(p.height), p.polyline.points.size());
+    for (const Point &q : p.polyline.points) printf(" %lld %lld", (long long)q.x(), (long long)q.y());
+    printf("\n");
+}
+
+int main(int argc, char **argv)
+{
+    const bool append_mode = argc > 1 && std::string(argv[1]) == "append";
     const int n_cases = 200;
     for (int c = 0; c < n_cases; ++ c) {
         // the scan angle
@@ -72,6 +84,8 @@ int main()
             if (npts >= 3 && rnd(0, 3) == 0) tp.points.push_back(tp.points.front());
             if (tp.points.size() >= 2) {
                 tp.width.assign(2 * (tp.points.size() - 1), 0.);
+                if (append_mode)
+                    for (double &w : tp.width) w = double(rnd2(spacing / 5, 2 * spacing));
             }
             tp.endpoints = std::make_pair(rnd(0, 1) == 1, rnd(0, 1) == 1);
             gaps.push_back(tp);
@@ -87,9 +101,35 @@ int main()
         for (const ThickPolyline &g : gaps) {
             printf("G %zu", g.points.size());
             for (const Point &p : g.points) printf(" %lld %lld", (long long)p.x(), (long long)p.y());
+            if (append_mode) {
+                printf(" W %zu", g.width.size());
+                for (double w : g.width) printf(" %a", w);
+            }
             printf("\n");
         }
         MonotonicRoute route = plan_monotonic_route(lines, gaps, link_max, scan_angle, island_end);
+        if (append_mode) {
+            const Flow gap_flow(0.42f, 0.2f, 0.4f);
+            ExtrusionEntitiesPtr dst;
+            append_monotonic_route(dst, route, lines, gaps, erTopSolidInfill, gap_flow.mm3_per_mm(), 0.42f, 0.2f,
+                erGapFill, gap_flow, 0.45f);
+            for (const ExtrusionEntity *e : dst) {
+                if (const ExtrusionPath *p = dynamic_cast<const ExtrusionPath*>(e)) {
+                    printf("X path 1\n");
+                    print_path(*p);
+                } else if (const ExtrusionMultiPath *mp = dynamic_cast<const ExtrusionMultiPath*>(e)) {
+                    printf("X multi %zu\n", mp->paths.size());
+                    for (const ExtrusionPath &q : mp->paths) print_path(q);
+                } else if (const ExtrusionLoop *l = dynamic_cast<const ExtrusionLoop*>(e)) {
+                    printf("X loop %zu\n", l->paths.size());
+                    for (const ExtrusionPath &q : l->paths) print_path(q);
+                } else
+                    printf("X other 0\n");
+                delete e;
+            }
+            printf("E\n");
+            continue;
+        }
         for (size_t i = 0; i < route.gaps_at.size(); ++ i) {
             if (route.gaps_at[i].empty()) continue;
             printf("S %zu %zu", i, route.gaps_at[i].size());

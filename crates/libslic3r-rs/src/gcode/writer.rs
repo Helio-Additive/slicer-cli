@@ -2511,8 +2511,8 @@ impl GCodeWriter {
                     let n = N.fetch_add(1, Ordering::Relaxed) + 1;
                     let head: Vec<String> = self.wipe_path.iter().take(3).map(|p| format!("({:.3},{:.3})", p.0, p.1)).collect();
                     eprintln!(
-                        "[WIPE] n={n} src={} wp={} pts={} kept={} acc={acc:.3} wd={wipe_dist} prof={:?} cur=({:.3},{:.3}) head={}",
-                        self.wipe_path_src, self.wipe_path.len(), pts.len(), kept.len(), self.config.wipe_distance_profile, self.x, self.y, head.join(" ")
+                        "[WIPE] n={n} src={} wp={} pts={} kept={} acc={acc:.3} wd={wipe_dist} prof={:?} cur=({:.3},{:.3}) cur_scaled=({:.4},{:.4}) head={}",
+                        self.wipe_path_src, self.wipe_path.len(), pts.len(), kept.len(), self.config.wipe_distance_profile, self.x, self.y, self.x / crate::libslic3r::SCALING_FACTOR, self.y / crate::libslic3r::SCALING_FACTOR, head.join(" ")
                     );
                 }
                 // R609: TOWER_ENTRY_WHY=1 also reports the post-guard decision, since

@@ -1291,6 +1291,39 @@ impl CoolingResult {
     }
 }
 
+/// R937 GCODE_COOLING_MARKERS_PIN (on unless =0): whether `GCode::_extrude` brackets a path with
+/// `;_OVERHANG_FAN_START` / `;_OVERHANG_FAN_END` (GCode.cpp:7914-7922, 8071-8080): with
+/// `enable_overhang_bridge_fan`, an external perimeter when the threshold is `Overhang_threshold_none`,
+/// a path whose `get_overhang_degree()` (ExtrusionEntity.hpp:354-359: the degree truncated to int for a
+/// perimeter or support path, 0 for any other role) is above `overhang_fan_threshold - 1`, or a bridge
+/// (`is_bridge`, ExtrusionEntity.hpp:125-128). The gate itself is read by the caller.
+pub fn path_overhang_fan_marker(
+    config: &crate::print_config::PrintObjectConfig,
+    path: &crate::extrusion_entity::ExtrusionPath,
+) -> bool {
+    if !config.enable_overhang_bridge_fan {
+        return false;
+    }
+    let role = path.role;
+    let is_perimeter = matches!(
+        role,
+        ExtrusionRole::Perimeter | ExtrusionRole::ExternalPerimeter | ExtrusionRole::OverhangPerimeter
+    );
+    let is_support = matches!(
+        role,
+        ExtrusionRole::SupportMaterial
+            | ExtrusionRole::SupportMaterialInterface
+            | ExtrusionRole::SupportTransition
+            | ExtrusionRole::SupportIroning
+    );
+    let degree: i32 = if is_perimeter || is_support { path.overhang_degree as i32 } else { 0 };
+    let is_bridge = matches!(role, ExtrusionRole::BridgeInfill | ExtrusionRole::OverhangPerimeter);
+    // GCode.cpp:7916-7917: Overhang_threshold_none stays none, any other threshold minus one.
+    let thr = config.overhang_fan_threshold;
+    let overhang_threshold = if thr == 0 { 0 } else { thr - 1 };
+    (thr == 0 && role == ExtrusionRole::ExternalPerimeter) || degree > overhang_threshold || is_bridge
+}
+
 /// Estimate layer time from path lengths and feedrates.
 pub fn estimate_layer_time(
     path_lengths: &[CoordF],
@@ -3110,6 +3143,31 @@ fn remove_f_param(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GCode.cpp:7914-7922 with ExtrusionEntity.hpp:125-128, 354-359: bridges always, a perimeter
+    /// above `overhang_fan_threshold - 1` by its truncated degree, never an infill role's degree.
+    #[test]
+    fn path_overhang_fan_marker_follows_extrude() {
+        use crate::extrusion_entity::ExtrusionPath;
+        let mut cfg = crate::print_config::PrintObjectConfig::default();
+        cfg.enable_overhang_bridge_fan = true;
+        cfg.overhang_fan_threshold = 3; // "50%" = Overhang_threshold_3_4
+        let mk = |role, degree| {
+            let mut p = ExtrusionPath::new(role);
+            p.overhang_degree = degree;
+            p
+        };
+        assert!(path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::BridgeInfill, 0.0)));
+        assert!(path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::OverhangPerimeter, 0.0)));
+        assert!(path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::ExternalPerimeter, 3.0)));
+        assert!(!path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::ExternalPerimeter, 2.9)));
+        assert!(!path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::SolidInfill, 4.0)));
+        cfg.overhang_fan_threshold = 0; // "0%" = Overhang_threshold_none
+        assert!(path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::ExternalPerimeter, 0.0)));
+        assert!(!path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::Perimeter, 0.0)));
+        cfg.enable_overhang_bridge_fan = false;
+        assert!(!path_overhang_fan_marker(&cfg, &mk(ExtrusionRole::BridgeInfill, 0.0)));
+    }
 
     /// `atof` as the G4 parse of GCodeEditor.cpp:330-337 uses it: a prefix of the
     /// string, 0 for a string that does not start with a number ("G4 P500").

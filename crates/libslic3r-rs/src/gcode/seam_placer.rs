@@ -247,6 +247,9 @@ pub struct Perimeter {
     pub finalized: bool,
     // SeamPlacer.hpp:63
     pub final_seam_position: Vec3f,
+    // SeamPlacer.hpp:60 `int region_id{-1}` (print_object_region_id of the loop's region,
+    // SeamPlacer.cpp:449; read by find_next_seam_in_layer, :1135). R937.
+    pub region_id: i32,
 }
 
 impl Default for Perimeter {
@@ -259,6 +262,7 @@ impl Default for Perimeter {
             flow_width: 0.0,
             finalized: false,
             final_seam_position: Vec3f::zeros(),
+            region_id: -1,
         }
     }
 }
@@ -456,7 +460,14 @@ pub fn sgn(val: f32) -> i32 {
 /// SeamPlacer.cpp:58-64
 pub fn gauss(value: f32, mean_x_coord: f32, mean_value: f32, falloff_speed: f32) -> f32 {
     let shifted = value - mean_x_coord;
-    let denominator = falloff_speed * shifted * shifted + 1.0;
+    // SeamPlacer.cpp:60 `falloff_speed * shifted * shifted + 1.0f` is one expression: clang
+    // (-ffp-contract=on) fuses the last product into the add (fmaf(falloff_speed * shifted,
+    // shifted, 1.0f)). R937 gate SEAM_PENALTY_FMA; =0 gives the earlier unfused arm.
+    let denominator = if crate::faithful_gate("SEAM_PENALTY_FMA") {
+        (falloff_speed * shifted).mul_add(shifted, 1.0)
+    } else {
+        falloff_speed * shifted * shifted + 1.0
+    };
     let exponent = 1.0 / denominator;
     mean_value * (exponent.exp() - 1.0) / (1.0_f32.exp() - 1.0)
 }
@@ -1003,8 +1014,14 @@ impl GlobalModelInfo {
             let mut weight = self.mesh_samples_radius
                 - compute_dist_to_plane(position, &sample_point, &sample_normal);
             weight += self.mesh_samples_radius - (position - sample_point).norm();
-            // SeamPlacer.cpp:321-322
-            total_visibility += weight * self.mesh_samples_visibility[sample_idx];
+            // SeamPlacer.cpp:321-322: `total_visibility += weight * visibility` is fused at the pin
+            // (R937 gate SEAM_VISIBILITY_FMA; =0 gives the earlier unfused arm).
+            if crate::faithful_gate("SEAM_VISIBILITY_FMA") {
+                total_visibility =
+                    weight.mul_add(self.mesh_samples_visibility[sample_idx], total_visibility);
+            } else {
+                total_visibility += weight * self.mesh_samples_visibility[sample_idx];
+            }
             total_weight += weight;
         }
 
@@ -1652,6 +1669,11 @@ pub fn process_perimeter_polygon(
             .width() as f32,
         None => 0.0,
     };
+    // SeamPlacer.cpp:449
+    result.perimeters[perim_idx].region_id = match region {
+        Some(r) => r.region().print_object_region_id(),
+        None => -1,
+    };
     let flow_width = result.perimeters[perim_idx].flow_width;
     // SeamPlacer.cpp:450
     let mut some_point_enforced = false;
@@ -1930,17 +1952,37 @@ impl SeamComparator {
         };
 
         // the penalites are kept close to range [0-1.x] however, it should not be relied upon
-        // SeamPlacer.cpp:708-709
-        let penalty_a = a.overhang
-            + a.visibility
-            + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
-            + distance_penalty_a
-            + a_overhang_around_penalty as f32;
-        let penalty_b = b.overhang
-            + b.visibility
-            + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
-            + distance_penalty_b
-            + b_overhang_around_penalty as f32;
+        // SeamPlacer.cpp:708-709. At the pin `ov + vis + ai * cap` fuses the product into the
+        // add (fmaf(ai, cap, ov + vis)), and the float sum meets the DOUBLE
+        // `*_overhang_around_penalty` in double before the conversion back to float.
+        // R937 gate SEAM_PENALTY_FMA; =0 gives the earlier all-float, unfused arm.
+        let (penalty_a, penalty_b) = if crate::faithful_gate("SEAM_PENALTY_FMA") {
+            let pa = self
+                .angle_importance
+                .mul_add(compute_angle_penalty(a.local_ccw_angle), a.overhang + a.visibility)
+                + distance_penalty_a;
+            let pb = self
+                .angle_importance
+                .mul_add(compute_angle_penalty(b.local_ccw_angle), b.overhang + b.visibility)
+                + distance_penalty_b;
+            (
+                (pa as f64 + a_overhang_around_penalty) as f32,
+                (pb as f64 + b_overhang_around_penalty) as f32,
+            )
+        } else {
+            (
+                a.overhang
+                    + a.visibility
+                    + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
+                    + distance_penalty_a
+                    + a_overhang_around_penalty as f32,
+                b.overhang
+                    + b.visibility
+                    + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
+                    + distance_penalty_b
+                    + b_overhang_around_penalty as f32,
+            )
+        };
 
         // SeamPlacer.cpp:711
         penalty_a < penalty_b
@@ -2010,15 +2052,31 @@ impl SeamComparator {
             b.extra_overhang_point as f64
         };
 
-        // SeamPlacer.cpp:745-746
-        let penalty_a = a.overhang
-            + a.visibility
-            + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
-            + a_overhang_around_penalty as f32;
-        let penalty_b = b.overhang
-            + b.visibility
-            + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
-            + b_overhang_around_penalty as f32;
+        // SeamPlacer.cpp:745-746 (fused product, double add: as in is_first_better; R937 gate
+        // SEAM_PENALTY_FMA, =0 gives the earlier arm)
+        let (penalty_a, penalty_b) = if crate::faithful_gate("SEAM_PENALTY_FMA") {
+            let pa = self
+                .angle_importance
+                .mul_add(compute_angle_penalty(a.local_ccw_angle), a.overhang + a.visibility);
+            let pb = self
+                .angle_importance
+                .mul_add(compute_angle_penalty(b.local_ccw_angle), b.overhang + b.visibility);
+            (
+                (pa as f64 + a_overhang_around_penalty) as f32,
+                (pb as f64 + b_overhang_around_penalty) as f32,
+            )
+        } else {
+            (
+                a.overhang
+                    + a.visibility
+                    + self.angle_importance * compute_angle_penalty(a.local_ccw_angle)
+                    + a_overhang_around_penalty as f32,
+                b.overhang
+                    + b.visibility
+                    + self.angle_importance * compute_angle_penalty(b.local_ccw_angle)
+                    + b_overhang_around_penalty as f32,
+            )
+        };
         // SeamPlacer.cpp:747
         penalty_a <= penalty_b || penalty_a - penalty_b < SEAM_ALIGN_SCORE_TOLERANCE
     }
@@ -2305,7 +2363,19 @@ impl PerimeterDistancer {
 
 #[inline]
 fn unscale_point(p: &Point) -> PointF {
-    PointF::new(unscale(p.x), unscale(p.y))
+    // libslic3r.h:112 `unscale(v) = T(v) * T(SCALING_FACTOR)`: a multiplication by 0.00001,
+    // where crate::unscale divides by 100000 (the two differ by an ulp for some values).
+    // Used at SeamPlacer.cpp:432-441 (candidate positions, edge lengths), :897-900 (the
+    // distancer's lines) and :1614 (the concave-corner depth). R937 gate SEAM_UNSCALE_MUL;
+    // =0 gives the earlier division.
+    if crate::faithful_gate("SEAM_UNSCALE_MUL") {
+        PointF::new(
+            p.x as f64 * crate::libslic3r::SCALING_FACTOR,
+            p.y as f64 * crate::libslic3r::SCALING_FACTOR,
+        )
+    } else {
+        PointF::new(unscale(p.x), unscale(p.y))
+    }
 }
 
 // ============================================================================
@@ -2652,9 +2722,20 @@ impl SeamPlacer {
                     // SeamPlacer.cpp:987-988 — the double expression is
                     // truncated to float on assignment; `tan` promotes the
                     // float threshold to double (C `tan(double)`).
-                    let overhang = (dist_temp + (0.6_f32 * flow_width) as f64
-                        - (OVERHANG_ANGLE_THRESHOLD as f64).tan()
-                            * po.layers()[layer_idx].height) as f32;
+                    // R937 gate SEAM_OVERHANG_FMA (=0 gives the earlier arm): `tan(float)` is
+                    // libc++'s float overload (tanf: exactly 1.0f for 45 deg; the double tan
+                    // of the earlier arm is 1.0000000437), and `X - tan * point_height` is one
+                    // double expression, fused at the pin (fma(-tan, h, X)).
+                    let overhang = if crate::faithful_gate("SEAM_OVERHANG_FMA") {
+                        (-(OVERHANG_ANGLE_THRESHOLD.tan() as f64)).mul_add(
+                            po.layers()[layer_idx].height,
+                            dist_temp + (0.6_f32 * flow_width) as f64,
+                        ) as f32
+                    } else {
+                        (dist_temp + (0.6_f32 * flow_width) as f64
+                            - (OVERHANG_ANGLE_THRESHOLD as f64).tan()
+                                * po.layers()[layer_idx].height) as f32
+                    };
                     points[i].overhang = if overhang < 0.0 { 0.0 } else { overhang };
 
                     // SeamPlacer.cpp:990-991
@@ -2671,9 +2752,14 @@ impl SeamPlacer {
                 if should_compute_layer_embedding {
                     // search for embedded perimeter points (points hidden inside the print,
                     // e.g. multimaterial join, best position for seam)
-                    points[i].embedded_distance =
-                        current_layer_distancer.distance_from_perimeter(&point)
-                            + 0.6_f32 * flow_width;
+                    // SeamPlacer.cpp:1058: float + 0.6f * float, fused at the pin
+                    // (R937 gate SEAM_OVERHANG_FMA; =0 gives the earlier unfused arm).
+                    let d = current_layer_distancer.distance_from_perimeter(&point);
+                    points[i].embedded_distance = if crate::faithful_gate("SEAM_OVERHANG_FMA") {
+                        0.6_f32.mul_add(flow_width, d)
+                    } else {
+                        d + 0.6_f32 * flow_width
+                    };
                 }
 
                 // SeamPlacer.cpp:998-999
@@ -2702,10 +2788,19 @@ impl SeamPlacer {
                         }
                         // C++ `dist += sqrt(squaredNorm)` — float squaredNorm
                         // promoted to double for sqrt, sum truncated back to float.
-                        dist = (dist as f64
-                            + ((points[idx].position.xy() - points[prev].position.xy())
-                                .norm_squared() as f64)
-                                .sqrt()) as f32;
+                        // SeamPlacer.cpp:1076/1094 `dist += sqrt(float squaredNorm)`: libc++'s
+                        // float sqrt overload and a float add (R937 gate SEAM_OVERHANG_FMA; =0
+                        // gives the earlier double arm).
+                        dist = if crate::faithful_gate("SEAM_OVERHANG_FMA") {
+                            dist + (points[idx].position.xy() - points[prev].position.xy())
+                                .norm_squared()
+                                .sqrt()
+                        } else {
+                            (dist as f64
+                                + ((points[idx].position.xy() - points[prev].position.xy())
+                                    .norm_squared() as f64)
+                                    .sqrt()) as f32
+                        };
                         if dist > LENS_LIMIT {
                             break;
                         }
@@ -2730,10 +2825,19 @@ impl SeamPlacer {
                         if idx == i {
                             break;
                         }
-                        dist = (dist as f64
-                            + ((points[idx].position.xy() - points[prev].position.xy())
-                                .norm_squared() as f64)
-                                .sqrt()) as f32;
+                        // SeamPlacer.cpp:1076/1094 `dist += sqrt(float squaredNorm)`: libc++'s
+                        // float sqrt overload and a float add (R937 gate SEAM_OVERHANG_FMA; =0
+                        // gives the earlier double arm).
+                        dist = if crate::faithful_gate("SEAM_OVERHANG_FMA") {
+                            dist + (points[idx].position.xy() - points[prev].position.xy())
+                                .norm_squared()
+                                .sqrt()
+                        } else {
+                            (dist as f64
+                                + ((points[idx].position.xy() - points[prev].position.xy())
+                                    .norm_squared() as f64)
+                                    .sqrt()) as f32
+                        };
                         if dist > LENS_LIMIT {
                             break;
                         }
@@ -2771,6 +2875,25 @@ impl SeamPlacer {
         max_distance: f32,
         comparator: &SeamComparator,
     ) -> Option<(usize, usize)> {
+        Self::find_next_seam_in_layer_region(layers, projected_position, layer_idx, max_distance, None, comparator)
+    }
+
+    /// SeamPlacer.cpp:1117-1172 with the pin's `region_id` argument: a candidate of another
+    /// print-object region is skipped like a finalized one (:1135). `None` = no filter (the
+    /// earlier signature above).
+    pub fn find_next_seam_in_layer_region(
+        layers: &[LayerSeams],
+        projected_position: &Vec3f,
+        layer_idx: usize,
+        max_distance: f32,
+        region_id: Option<i32>,
+        comparator: &SeamComparator,
+    ) -> Option<(usize, usize)> {
+        // SeamPlacer.cpp:1135: the pin skips other regions' candidates as it skips finalized
+        // ones; the loop below treats a skipped candidate as `finalized`.
+        let skipped = |perim: &Perimeter| -> bool {
+            perim.finalized || region_id.map_or(false, |r| perim.region_id != r)
+        };
         // SeamPlacer.cpp:1060
         let points_tree = layers[layer_idx].build_points_tree();
         let nearby_points_indices = find_nearby_points_eps(
@@ -2803,19 +2926,19 @@ impl SeamPlacer {
         for &nearby_point_index in &nearby_points_indices {
             let point = &layer.points[nearby_point_index];
             // SeamPlacer.cpp:1070-1072
-            if perim_of(nearby_point_index).finalized {
+            if skipped(perim_of(nearby_point_index)) {
                 continue; // skip over finalized perimeters
             }
             // SeamPlacer.cpp:1073-1076
             if comparator.is_first_better(point, &layer.points[best_nearby_point_index], &projected_xy)
-                || perim_of(best_nearby_point_index).finalized
+                || skipped(perim_of(best_nearby_point_index))
             {
                 best_nearby_point_index = nearby_point_index;
             }
             // SeamPlacer.cpp:1077-1080
             if (point.position - projected_position).norm_squared()
                 < (layer.points[nearest_point_index].position - projected_position).norm_squared()
-                || perim_of(nearest_point_index).finalized
+                || skipped(perim_of(nearest_point_index))
             {
                 nearest_point_index = nearby_point_index;
             }
@@ -2826,7 +2949,7 @@ impl SeamPlacer {
         let nearest_point = &layer.points[nearest_point_index];
 
         // SeamPlacer.cpp:1086-1089
-        if perim_of(nearest_point_index).finalized {
+        if skipped(perim_of(nearest_point_index)) {
             // all points are from already finalized perimeter, skip
             return None;
         }
@@ -2898,11 +3021,19 @@ impl SeamPlacer {
             projected_position.z = po.layers()[next_layer as usize].slice_z as f32;
 
             // SeamPlacer.cpp:1136
-            let maybe_next_seam = Self::find_next_seam_in_layer(
+            // SeamPlacer.cpp:1200, :1214: the region of the previous seam of the string is
+            // passed on (R937 gate SEAM_REGION_ID; =0 gives the earlier unfiltered search).
+            let region_id = if crate::faithful_gate("SEAM_REGION_ID") {
+                Some(layers[prev_point_index.0].perimeters[layers[prev_point_index.0].points[prev_point_index.1].perimeter].region_id)
+            } else {
+                None
+            };
+            let maybe_next_seam = Self::find_next_seam_in_layer_region(
                 layers,
                 &projected_position,
                 next_layer as usize,
                 max_distance,
+                region_id,
                 comparator,
             );
 
@@ -3050,8 +3181,13 @@ impl SeamPlacer {
                     sign = 1.0;
                     weights[index] += 3.0;
                 }
-                // SeamPlacer.cpp:1257-1258
-                total_length += sign * (last_point_pos - current.position).norm();
+                // SeamPlacer.cpp:1335-1336: `total_length += sign * norm` is fused at the pin
+                // (R937 gate SEAM_PENALTY_FMA; =0 gives the earlier unfused arm).
+                if crate::faithful_gate("SEAM_PENALTY_FMA") {
+                    total_length = sign.mul_add((last_point_pos - current.position).norm(), total_length);
+                } else {
+                    total_length += sign * (last_point_pos - current.position).norm();
+                }
                 last_point_pos = current.position;
             }
 
@@ -3964,5 +4100,55 @@ mod tests {
         } else {
             assert!(z3.x.is_nan());
         }
+    }
+
+    /// R937: SeamPlacer.cpp:1135: a candidate of another print-object region is skipped
+    /// like a finalized one (find_next_seam_in_layer_region); `None` keeps the old search.
+    #[test]
+    fn find_next_seam_in_layer_region_skips_other_regions_r937() {
+        let mut layer = LayerSeams::default();
+        for (rid, x) in [(0_i32, 0.0_f32), (1_i32, 0.5_f32)] {
+            let mut per = Perimeter::default();
+            per.region_id = rid;
+            per.start_index = layer.points.len();
+            per.end_index = layer.points.len() + 1;
+            per.seam_index = layer.points.len();
+            per.flow_width = 0.45;
+            let pi = layer.perimeters.len();
+            layer.perimeters.push_back(per);
+            layer.points.push(SeamCandidate::new(&Vec3f::new(x, 0.0, 0.2), pi, 0.0, EnforcedBlockedSeamPoint::Neutral));
+        }
+        let layers = vec![layer];
+        let cmp = SeamComparator::new(SeamPosition::spAligned);
+        let q = Vec3f::new(0.45, 0.0, 0.2);
+        // nearest is the region-1 candidate (index 1); with region 0 only index 0 qualifies
+        assert_eq!(SeamPlacer::find_next_seam_in_layer_region(&layers, &q, 0, 1.8, None, &cmp), Some((0, 1)));
+        assert_eq!(SeamPlacer::find_next_seam_in_layer_region(&layers, &q, 0, 1.8, Some(0), &cmp), Some((0, 0)));
+        assert_eq!(SeamPlacer::find_next_seam_in_layer_region(&layers, &q, 0, 1.8, Some(7), &cmp), None);
+    }
+
+    /// R937: SeamPlacer.cpp:60 `falloff_speed * shifted * shifted + 1.0f` is one fmaf at the
+    /// pin (clang -ffp-contract=on); gauss follows it with SEAM_PENALTY_FMA on, and the
+    /// float `tan` of the 45 degree overhang threshold (SeamPlacer.cpp:1050) is exactly 1.0f.
+    #[test]
+    fn gauss_denominator_fused_r937() {
+        let mut fused_differs = 0;
+        for i in 0..2000 {
+            let v = -3.0_f32 + i as f32 * 0.003_1;
+            let g = gauss(v, 0.0, 1.0, 3.0);
+            let d_fused = (3.0_f32 * v).mul_add(v, 1.0);
+            let d_plain = 3.0_f32 * v * v + 1.0;
+            let expect = |d: f32| 1.0_f32 * ((1.0_f32 / d).exp() - 1.0) / (1.0_f32.exp() - 1.0);
+            if crate::faithful_gate("SEAM_PENALTY_FMA") {
+                assert_eq!(g.to_bits(), expect(d_fused).to_bits(), "v={v}");
+            } else {
+                assert_eq!(g.to_bits(), expect(d_plain).to_bits(), "v={v}");
+            }
+            if d_fused.to_bits() != d_plain.to_bits() {
+                fused_differs += 1;
+            }
+        }
+        assert!(fused_differs > 0, "the inputs never tell the two arms apart");
+        assert_eq!(OVERHANG_ANGLE_THRESHOLD.tan().to_bits(), 1.0_f32.to_bits());
     }
 }
