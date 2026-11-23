@@ -6318,6 +6318,57 @@ pub struct ToolOrderingLayerRegion {
     pub adaptive_merge_patches: Vec<ToolOrderingMergePatch>,
 }
 
+impl ToolOrderingLayerRegion {
+    /// R934 TOOL_ORDERING_PERIMETER_ISLANDS (faithful_gate): `layerm->perimeters` as the pin's
+    /// ToolOrdering reads it. collect_extruders casts every entry to a collection
+    /// (ToolOrdering.cpp:943-951 `dynamic_cast<const ExtrusionEntityCollection&>(*eec)`, a
+    /// `std::bad_cast` on anything else) and so does mark_wiping_extrusions (:3985-3987): the pin's
+    /// entries are the island collections PerimeterGenerator appends (PerimeterGenerator.cpp:1340-1342
+    /// `this->loops->append(entities)`, :1837-1838 `this->loops->append(extrusion_coll)`), one per
+    /// island, and the role (`eec.role()`, erMixed when walls and gap fill share an island), the
+    /// filament (`LayerTools::extruder(eec, region)`, :160-205) and the override unit
+    /// (`set_extruder_override(fill, ...)` with `fill->total_volume()`, :3988-3992) are the island's.
+    /// This crate's LayerRegion keeps the walls flat with the island ranges beside them
+    /// (`LayerRegion::perimeter_islands`), so the view takes `LayerRegion::perimeter_island_collections()`.
+    /// With `TOOL_ORDERING_PERIMETER_ISLANDS=0` it is the flat list as stored (the earlier arm, on
+    /// which collect_extruders' cast panics as the pin's throws).
+    pub fn perimeters_from_layer_region(
+        layerm: &crate::layer::LayerRegion,
+    ) -> crate::extrusion_entity::ExtrusionEntityCollection {
+        if crate::faithful_gate("TOOL_ORDERING_PERIMETER_ISLANDS") {
+            layerm.perimeter_island_collections()
+        } else {
+            layerm.perimeters.clone()
+        }
+    }
+
+    /// R934: the `WipingEntity` view (ToolOrdering.cpp:3985-3992) of `perimeters` taken by
+    /// `perimeters_from_layer_region`: one entry per top-level entry, with its role, total volume and
+    /// filament (`extruder`, zero based, as `m_layer_tools->extruder(eec, region)` gives it; the caller
+    /// passes the region's wall filament). Ids are `id_base | index`, as print.rs' fills view keys them.
+    pub fn wiping_perimeters(
+        perimeters: &crate::extrusion_entity::ExtrusionEntityCollection,
+        id_base: u64,
+        extruder: u32,
+    ) -> Vec<WipingEntity> {
+        use crate::extrusion_entity::ExtrusionEntityType as T;
+        perimeters
+            .entities
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let (role, total_volume) = match e {
+                    T::Path(p) => (p.role, p.total_volume()),
+                    T::MultiPath(m) => (m.role(), m.total_volume()),
+                    T::Loop(l) => (l.role(), l.total_volume()),
+                    T::Collection(c) => (c.role(), c.total_volume()),
+                };
+                WipingEntity { id: id_base | i as u64, role, total_volume, extruder }
+            })
+            .collect()
+    }
+}
+
 /// What ToolOrdering reads of one `Layer` of an object.
 #[derive(Debug, Clone)]
 pub struct ToolOrderingLayer {

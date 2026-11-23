@@ -742,20 +742,63 @@ impl Print {
         struct LayerToPrint<'a> {
             object_idx: usize,
             layer_idx: usize,
+            // GCode.hpp `LayerToPrint::layer()`: the object layer, else the support layer.
             layer: &'a crate::layer::Layer,
+            // GCode.hpp `LayerToPrint::support_layer` (GCODE_SUPPORT_LAYERS_PIN only; None otherwise).
+            support_layer: Option<&'a crate::layer::Layer>,
         }
         let __gen_setup_t = std::time::Instant::now();
         let mut all_layers: Vec<LayerToPrint> = Vec::new();
+        // Gate GCODE_SUPPORT_LAYERS_PIN (faithful): an object whose support layers carry the pin's toolpaths
+        // (the support step of TREE_SUPPORT_ORGANIC_PIN; the Normal support step leaves `support_fills` None and is
+        // scheduled as before) is scheduled by GCode.cpp:1576-1766 `collect_layers_to_print(const PrintObject&)`:
+        // object and support layers paired by print_z within EPSILON. =0 schedules the object layers only.
+        let support_layers_pin = crate::faithful_gate("GCODE_SUPPORT_LAYERS_PIN");
+        let object_has_pin_support = |object: &PrintObject| -> bool {
+            support_layers_pin && object.support_layers.iter().any(|l| l.support_fills.is_some())
+        };
         for (obj_idx, object) in self.objects.iter().enumerate() {
             writer.set_total_layers(object.layers.len());
+            if object_has_pin_support(object) {
+                for (layer_idx, layer, support_layer) in collect_layers_to_print_object(&object.layers, &object.support_layers) {
+                    all_layers.push(LayerToPrint { object_idx: obj_idx, layer_idx, layer, support_layer });
+                }
+                continue;
+            }
             for (layer_idx, layer) in object.layers.iter().enumerate() {
                 all_layers.push(LayerToPrint {
                     object_idx: obj_idx,
                     layer_idx,
                     layer,
+                    support_layer: None,
                 });
             }
         }
+        // GCode.cpp:2522-2540 `m_layer_count` (objects printed together): the object and support layers' print_z,
+        // sorted, unique, and values closer than EPSILON counted once. Only with the gate and a pin support.
+        let pin_layer_count: Option<usize> = if self.objects.iter().any(|o| object_has_pin_support(o)) {
+            let mut zs: Vec<f64> = Vec::new();
+            for object in &self.objects {
+                zs.extend(object.layers.iter().map(|l| l.print_z));
+                zs.extend(object.support_layers.iter().map(|l| l.print_z));
+            }
+            if zs.is_empty() {
+                Some(0)
+            } else {
+                // std::sort of doubles: equal keys are equal values, so the order is the pin's.
+                zs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                zs.dedup();
+                let mut count = zs.len();
+                for w in zs.windows(2) {
+                    if (w[0] - w[1]).abs() < crate::libslic3r::EPSILON {
+                        count -= 1;
+                    }
+                }
+                Some(count)
+            }
+        } else {
+            None
+        };
         all_layers.sort_by(|a, b| {
             a.layer
                 .print_z
@@ -932,7 +975,8 @@ impl Print {
             }
 
             // GCode.cpp:3971-3977 -- layer progress comments (1-based)
-            let total_layers = self.objects.first().map(|o| o.layers().len()).unwrap_or(0);
+            // GCODE_SUPPORT_LAYERS_PIN: the pin's `m_layer_count` (GCode.cpp:2522-2540) when a support is scheduled.
+            let total_layers = pin_layer_count.unwrap_or_else(|| self.objects.first().map(|o| o.layers().len()).unwrap_or(0));
             if crate::faithful_gate("ZSMOOTH_FAITHFUL")
                 && !self.config.layer_change_gcode.is_empty()
             {
@@ -1268,7 +1312,13 @@ impl Print {
                 let skip_inner_walls = is_spiral_vase && ltp.layer_idx >= bottom_solid;
 
                 // GCode.cpp:4620-4665 -- support extrusion
-                if let Some(ref support_fills) = ltp.layer.support_fills {
+                // GCODE_SUPPORT_LAYERS_PIN: the paired support layer's extrusions (GCode.cpp:5262-5300
+                // `layer_to_print.support_layer`); a support-only entry's `layer` is that support layer.
+                let support_fills_of = match ltp.support_layer {
+                    Some(sl) => sl.support_fills.as_ref(),
+                    None => ltp.layer.support_fills.as_ref(),
+                };
+                if let Some(support_fills) = support_fills_of {
                     if !support_fills.entities.is_empty() {
                         exporter::extrude_support(
                             support_fills,
@@ -4095,6 +4145,62 @@ fn clamp_exturder_to_default_protect0(opt: &mut usize, num_extruders: usize) {
 /// value read off the oracle's `; OBJECT_ID:` lines for one STL on the plate.
 /// STL_OBJECT_ID_28 (on): 28, which this repository's `slicer_cli` writes. =0:
 /// 13, the value of the engine the port was first written against.
+/// GCode.cpp:1576-1766 `GCode::collect_layers_to_print(const PrintObject& object, ...)`: the object layers and the
+/// support layers paired by print_z (GCode.cpp:1626-1645): each step takes the next layer of each list, keeps the
+/// lower print_z and puts back a layer more than EPSILON above it. Returns per entry (the index that stands for
+/// `layer()->id()`, `layer()` = the object layer if any else the support layer, the support layer if any).
+/// FIDELITY-NOTE: the empty-initial-layer SlicingError (GCode.cpp:1659-1689, 1730-1731) and the empty-layer warning
+/// ranges (GCode.cpp:1691-1765) are not raised here: the live export has no warning channel for them; they change
+/// no layer of the schedule.
+fn collect_layers_to_print_object<'a>(
+    object_layers: &'a [crate::layer::Layer],
+    support_layers: &'a [crate::layer::Layer],
+) -> Vec<(usize, &'a crate::layer::Layer, Option<&'a crate::layer::Layer>)> {
+    use crate::libslic3r::EPSILON;
+    let mut layers_to_print = Vec::with_capacity(object_layers.len() + support_layers.len());
+    let mut idx_object_layer = 0usize;
+    let mut idx_support_layer = 0usize;
+    // GCode.cpp:1626
+    while idx_object_layer < object_layers.len() || idx_support_layer < support_layers.len() {
+        let mut object_layer: Option<(usize, &crate::layer::Layer)> = None;
+        let mut support_layer: Option<&crate::layer::Layer> = None;
+        let mut print_z_min = f64::MAX;
+        // GCode.cpp:1629-1632
+        if idx_object_layer < object_layers.len() {
+            object_layer = Some((idx_object_layer, &object_layers[idx_object_layer]));
+            idx_object_layer += 1;
+            print_z_min = print_z_min.min(object_layer.unwrap().1.print_z);
+        }
+        // GCode.cpp:1634-1637
+        if idx_support_layer < support_layers.len() {
+            support_layer = Some(&support_layers[idx_support_layer]);
+            idx_support_layer += 1;
+            print_z_min = print_z_min.min(support_layer.unwrap().print_z);
+        }
+        // GCode.cpp:1639-1642
+        if let Some((_, l)) = object_layer {
+            if l.print_z > print_z_min + EPSILON {
+                object_layer = None;
+                idx_object_layer -= 1;
+            }
+        }
+        // GCode.cpp:1644-1647
+        if let Some(l) = support_layer {
+            if l.print_z > print_z_min + EPSILON {
+                support_layer = None;
+                idx_support_layer -= 1;
+            }
+        }
+        // GCode.cpp:1649-1650; `LayerToPrint::layer()` (GCode.hpp): object_layer ? object_layer : support_layer.
+        match (object_layer, support_layer) {
+            (Some((i, l)), sl) => layers_to_print.push((i, l, sl)),
+            (None, Some(sl)) => layers_to_print.push((sl.id(), sl, Some(sl))),
+            (None, None) => {}
+        }
+    }
+    layers_to_print
+}
+
 fn stl_instance_object_id() -> usize {
     if crate::faithful_gate("STL_OBJECT_ID_28") {
         28
@@ -10370,5 +10476,32 @@ mod tests {
         // Clear
         print.clear();
         assert_eq!(print.objects.len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod collect_layers_to_print_object_tests {
+    use super::collect_layers_to_print_object;
+    use crate::layer::Layer;
+
+    /// GCode.cpp:1626-1650: object layers at 0.2, 0.4, 0.6 and support layers at 0.2, 0.30005, 0.6 + 5e-5, 0.8
+    /// pair as (obj 0.2 + sup 0.2), (sup 0.30005), (obj 0.4), (obj 0.6 + sup 0.60005, within EPSILON), (sup 0.8).
+    #[test]
+    fn pairs_object_and_support_layers_by_print_z() {
+        let objs: Vec<Layer> = [0.2, 0.4, 0.6].iter().enumerate().map(|(i, &z)| Layer::new(i, 0, 0.2, z, z - 0.1)).collect();
+        let sups: Vec<Layer> =
+            [0.2, 0.30005, 0.60005, 0.8].iter().enumerate().map(|(i, &z)| Layer::new(i, 0, 0.1, z, -1.0)).collect();
+        let got = collect_layers_to_print_object(&objs, &sups);
+        let shape: Vec<(usize, f64, Option<f64>)> = got.iter().map(|(i, l, s)| (*i, l.print_z, s.map(|s| s.print_z))).collect();
+        assert_eq!(
+            shape,
+            vec![
+                (0, 0.2, Some(0.2)),
+                (1, 0.30005, Some(0.30005)),
+                (1, 0.4, None),
+                (2, 0.6, Some(0.60005)),
+                (3, 0.8, Some(0.8)),
+            ]
+        );
     }
 }

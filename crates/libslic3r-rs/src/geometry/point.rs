@@ -1980,6 +1980,294 @@ where
 }
 
 /// Point.cpp:287-301 / Point.hpp:358-365 — exact orientation predicates.
+// ---------------------------------------------------------------------------
+// Point.hpp:85-167 and 266-302 under the C++ names (R934). Overloads of one C++ name are the impls
+// of a trait carrying that name; a free function of the name stands for the C++ call syntax.
+// Checked against the pin by tests/point_rest_native_parity.rs.
+// ---------------------------------------------------------------------------
+
+/// Point.hpp:85-97 (`cross2`): `v1.x() * v2.y() - v1.y() * v2.x()`. The `int32_t` overload is
+/// deleted at the pin (Point.hpp:85-86); the others take any 2D vector of one scalar type.
+pub trait Cross2 {
+    type Scalar;
+    fn cross2(&self, v2: &Self) -> Self::Scalar;
+}
+
+impl Cross2 for PointF {
+    type Scalar = CoordF;
+    /// Point.hpp:88-92 (`T cross2(...)`, T = double): one expression, so clang fuses the left
+    /// product into the subtraction: `fma(x1, y2, -(y1 * x2))`.
+    #[inline]
+    fn cross2(&self, v2: &PointF) -> CoordF {
+        self.x.mul_add(v2.y, -(self.y * v2.x))
+    }
+}
+
+impl Cross2 for [i64; 2] {
+    type Scalar = i64;
+    /// Point.hpp:94-99 (`Derived::Scalar cross2(...)`, `Vec2i64`): integer arithmetic, wrapping as the
+    /// pin's signed overflow does on arm64.
+    #[inline]
+    fn cross2(&self, v2: &[i64; 2]) -> i64 {
+        self[0].wrapping_mul(v2[1]).wrapping_sub(self[1].wrapping_mul(v2[0]))
+    }
+}
+
+/// Point.hpp:94-99: the call `cross2(v1, v2)`.
+#[inline]
+pub fn cross2<V: Cross2>(v1: &V, v2: &V) -> V::Scalar {
+    Cross2::cross2(v1, v2)
+}
+
+/// Point.hpp:101-109 (`perp`): the 2D vector perpendicular to the argument, `(-v.y(), v.x())`.
+pub trait Perp {
+    fn perp(&self) -> Self;
+}
+
+impl Perp for PointF {
+    /// Point.hpp:101-102 (T = double)
+    #[inline]
+    fn perp(&self) -> PointF {
+        PointF::new(-self.y, self.x)
+    }
+}
+
+impl Perp for Point {
+    /// Point.hpp:105-109 (Derived = Vec2crd): `-v.y()` of a `coord_t` (int32_t) coordinate.
+    #[inline]
+    fn perp(&self) -> Point {
+        Point::new((self.y as i32).wrapping_neg() as Coord, self.x)
+    }
+}
+
+/// Point.hpp:111-118 (`angle(v1, v2)`): the angle from v1 to v2, `atan2(cross2(v1d, v2d), v1d.dot(v2d))`
+/// normalized to <-PI, PI>. Eigen's dot of two 2D vectors is the product packet reduced by a
+/// horizontal add, unfused; cross2 is fused (Point.hpp:88-92).
+#[inline]
+pub fn angle(v1: &PointF, v2: &PointF) -> CoordF {
+    // Point.hpp:115-116: v1d, v2d = cast<double>()
+    let cross = Cross2::cross2(v1, v2);
+    let dot = v1.x * v2.x + v1.y * v2.y;
+    // Point.hpp:117
+    cross.atan2(dot)
+}
+
+/// Point.hpp:126-130 (`to_3d(pt, z)`)
+#[inline]
+pub fn to_3d(pt: &PointF, z: CoordF) -> Point3F {
+    Point3F::new(pt.x, pt.y, z)
+}
+
+/// Point.hpp:131-136 (`unscale` of 2D and 3D points): every coordinate is `unscale<double>(v)`,
+/// `double(v) * SCALING_FACTOR` (libslic3r.h:112).
+pub trait Unscale {
+    type Output;
+    fn unscale(&self) -> Self::Output;
+}
+
+#[inline]
+fn unscale_double(v: f64) -> f64 {
+    // libslic3r.h:112: T(v) * T(SCALING_FACTOR)
+    v * crate::libslic3r::SCALING_FACTOR
+}
+
+impl Unscale for (Coord, Coord) {
+    type Output = PointF;
+    /// Point.hpp:131 (`unscale(coord_t x, coord_t y)`)
+    #[inline]
+    fn unscale(&self) -> PointF {
+        PointF::new(unscale_double(self.0 as i32 as f64), unscale_double(self.1 as i32 as f64))
+    }
+}
+
+impl Unscale for Point {
+    type Output = PointF;
+    /// Point.hpp:132 (`unscale(const Vec2crd&)`)
+    #[inline]
+    fn unscale(&self) -> PointF {
+        PointF::new(unscale_double(self.x as i32 as f64), unscale_double(self.y as i32 as f64))
+    }
+}
+
+impl Unscale for PointF {
+    type Output = PointF;
+    /// Point.hpp:133 (`unscale(const Vec2d&)`)
+    #[inline]
+    fn unscale(&self) -> PointF {
+        PointF::new(unscale_double(self.x), unscale_double(self.y))
+    }
+}
+
+impl Unscale for (Coord, Coord, Coord) {
+    type Output = Point3F;
+    /// Point.hpp:134 (`unscale(coord_t x, coord_t y, coord_t z)`)
+    #[inline]
+    fn unscale(&self) -> Point3F {
+        Point3F::new(
+            unscale_double(self.0 as i32 as f64),
+            unscale_double(self.1 as i32 as f64),
+            unscale_double(self.2 as i32 as f64),
+        )
+    }
+}
+
+impl Unscale for Point3 {
+    type Output = Point3F;
+    /// Point.hpp:135 (`unscale(const Vec3crd&)`)
+    #[inline]
+    fn unscale(&self) -> Point3F {
+        Point3F::new(
+            unscale_double(self.x as i32 as f64),
+            unscale_double(self.y as i32 as f64),
+            unscale_double(self.z as i32 as f64),
+        )
+    }
+}
+
+impl Unscale for Point3F {
+    type Output = Point3F;
+    /// Point.hpp:136 (`unscale(const Vec3d&)`)
+    #[inline]
+    fn unscale(&self) -> Point3F {
+        Point3F::new(unscale_double(self.x), unscale_double(self.y), unscale_double(self.z))
+    }
+}
+
+/// Eigen's `determinant()` of a 4x4 matrix (Eigen/src/LU/Determinant.h, `determinant_impl<Derived, 4>`):
+/// the 2x2 minors of the first two columns, the 3x3 cofactors through `pmadd` (fused), the sum of two
+/// `pmadd`s. `m(r, c)` reads the coefficient of row r, column c.
+fn eigen_determinant4(m: &dyn Fn(usize, usize) -> f64) -> f64 {
+    // det2: m(i0, 0) * m(i1, 1) - m(i1, 0) * m(i0, 1), one expression
+    let det2 = |i0: usize, i1: usize| m(i0, 0).mul_add(m(i1, 1), -(m(i1, 0) * m(i0, 1)));
+    // det3: pmadd(m(i0, 2), d0, pmadd(-m(i1, 2), d1, m(i2, 2) * d2))
+    let det3 = |i0: usize, d0: f64, i1: usize, d1: f64, i2: usize, d2: f64| {
+        m(i0, 2).mul_add(d0, (-m(i1, 2)).mul_add(d1, m(i2, 2) * d2))
+    };
+    let d2_01 = det2(0, 1);
+    let d2_02 = det2(0, 2);
+    let d2_03 = det2(0, 3);
+    let d2_12 = det2(1, 2);
+    let d2_13 = det2(1, 3);
+    let d2_23 = det2(2, 3);
+    let d3_0 = det3(1, d2_23, 2, d2_13, 3, d2_12);
+    let d3_1 = det3(0, d2_23, 2, d2_03, 3, d2_02);
+    let d3_2 = det3(0, d2_13, 1, d2_03, 3, d2_01);
+    let d3_3 = det3(0, d2_12, 1, d2_02, 2, d2_01);
+    (-m(0, 3)).mul_add(d3_0, m(1, 3) * d3_1) + (-m(2, 3)).mul_add(d3_2, m(3, 3) * d3_3)
+}
+
+/// Point.hpp:152 (`has_reflection(const Transform3d&)`): `transform.matrix().determinant() < 0`, the
+/// determinant of the whole 4x4 matrix as Eigen computes it.
+#[inline]
+pub fn has_reflection(transform: &crate::geometry::Transform3D) -> bool {
+    eigen_determinant4(&|r, c| transform.get(r, c)) < 0.0
+}
+
+/// Point.hpp:154-167 (`get_base`, `get_x_base`, `get_y_base`, `get_z_base`): a column of the linear part
+/// of a transformation, of a `Transform3d` (Point.hpp:160-163) or of its `LinearPart` (Point.hpp:164-167).
+pub trait GetBase {
+    fn get_base(&self, index: u32) -> Point3F;
+    fn get_x_base(&self) -> Point3F;
+    fn get_y_base(&self) -> Point3F;
+    fn get_z_base(&self) -> Point3F;
+}
+
+impl GetBase for crate::geometry::Transform3D {
+    /// Point.hpp:160 (`get_base(unsigned index, const Transform3d&)`): `transform.linear().col(index)`
+    #[inline]
+    fn get_base(&self, index: u32) -> Point3F {
+        let c = index as usize;
+        Point3F::new(self.get(0, c), self.get(1, c), self.get(2, c))
+    }
+    /// Point.hpp:161
+    #[inline]
+    fn get_x_base(&self) -> Point3F {
+        self.get_base(0)
+    }
+    /// Point.hpp:162
+    #[inline]
+    fn get_y_base(&self) -> Point3F {
+        self.get_base(1)
+    }
+    /// Point.hpp:163
+    #[inline]
+    fn get_z_base(&self) -> Point3F {
+        self.get_base(2)
+    }
+}
+
+impl GetBase for crate::geometry::geometry::eigen::Matrix3d {
+    /// Point.hpp:164 (`get_base(unsigned index, const Transform3d::LinearPart&)`): `transform.col(index)`
+    #[inline]
+    fn get_base(&self, index: u32) -> Point3F {
+        let c = index as usize;
+        Point3F::new(self[(0, c)], self[(1, c)], self[(2, c)])
+    }
+    /// Point.hpp:165
+    #[inline]
+    fn get_x_base(&self) -> Point3F {
+        self.get_base(0)
+    }
+    /// Point.hpp:166
+    #[inline]
+    fn get_y_base(&self) -> Point3F {
+        self.get_base(1)
+    }
+    /// Point.hpp:167
+    #[inline]
+    fn get_z_base(&self) -> Point3F {
+        self.get_base(2)
+    }
+}
+
+/// Point.hpp:274-296 (`is_approx` of `Vec2f`, `Vec2d`, `Vec3f`, `Vec3d`): every coordinate of
+/// `(p2 - p1).cwiseAbs()` below epsilon (the pin's default epsilon is `EPSILON`, as float for the
+/// float vectors). The `Point` overload (Point.hpp:266-270) is the free `is_approx` above.
+pub trait IsApprox {
+    type Scalar;
+    fn is_approx(&self, p2: &Self, epsilon: Self::Scalar) -> bool;
+}
+
+impl IsApprox for [f32; 2] {
+    type Scalar = f32;
+    /// Point.hpp:274-278 (`Vec2f`)
+    #[inline]
+    fn is_approx(&self, p2: &[f32; 2], epsilon: f32) -> bool {
+        let d = [(p2[0] - self[0]).abs(), (p2[1] - self[1]).abs()];
+        d[0] < epsilon && d[1] < epsilon
+    }
+}
+
+impl IsApprox for PointF {
+    type Scalar = CoordF;
+    /// Point.hpp:280-284 (`Vec2d`)
+    #[inline]
+    fn is_approx(&self, p2: &PointF, epsilon: CoordF) -> bool {
+        let d = PointF::new((p2.x - self.x).abs(), (p2.y - self.y).abs());
+        d.x < epsilon && d.y < epsilon
+    }
+}
+
+impl IsApprox for [f32; 3] {
+    type Scalar = f32;
+    /// Point.hpp:286-290 (`Vec3f`)
+    #[inline]
+    fn is_approx(&self, p2: &[f32; 3], epsilon: f32) -> bool {
+        let d = [(p2[0] - self[0]).abs(), (p2[1] - self[1]).abs(), (p2[2] - self[2]).abs()];
+        d[0] < epsilon && d[1] < epsilon && d[2] < epsilon
+    }
+}
+
+impl IsApprox for Point3F {
+    type Scalar = CoordF;
+    /// Point.hpp:292-296 (`Vec3d`)
+    #[inline]
+    fn is_approx(&self, p2: &Point3F, epsilon: CoordF) -> bool {
+        let d = Point3F::new((p2.x - self.x).abs(), (p2.y - self.y).abs(), (p2.z - self.z).abs());
+        d.x < epsilon && d.y < epsilon && d.z < epsilon
+    }
+}
+
 pub mod int128 {
     use super::Point;
     use crate::int128::Int128;

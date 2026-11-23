@@ -682,6 +682,300 @@ pub fn get_extents(lines: &[Line]) -> BoundingBox {
     bbox
 }
 
+/// Eigen's `squaredNorm()` of a 3-vector of doubles: the first two lanes are a packet, reduced by a
+/// horizontal add, then the third square is added: `(x*x + y*y) + z*z`, nothing fused.
+#[inline]
+fn eigen_squared_norm3(x: f64, y: f64, z: f64) -> f64 {
+    (x * x + y * y) + z * z
+}
+
+/// Line.hpp:212-226 (`class Line3`): a segment of two `Vec3crd` points.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Line3 {
+    pub a: crate::geometry::Point3,
+    pub b: crate::geometry::Point3,
+}
+
+impl Line3 {
+    /// Line.hpp:216
+    pub fn new(a: crate::geometry::Point3, b: crate::geometry::Point3) -> Self {
+        Self { a, b }
+    }
+    /// Line.hpp:218 (`length()`): `(a - b).cast<double>().norm()`, the difference in `coord_t`.
+    pub fn length(&self) -> f64 {
+        let dx = (self.a.x as i32).wrapping_sub(self.b.x as i32) as f64;
+        let dy = (self.a.y as i32).wrapping_sub(self.b.y as i32) as f64;
+        let dz = (self.a.z as i32).wrapping_sub(self.b.z as i32) as f64;
+        eigen_squared_norm3(dx, dy, dz).sqrt()
+    }
+    /// Line.hpp:219 (`vector()`): `b - a` in `coord_t`.
+    pub fn vector(&self) -> crate::geometry::Point3 {
+        crate::geometry::Point3::new(
+            (self.b.x as i32).wrapping_sub(self.a.x as i32) as Coord,
+            (self.b.y as i32).wrapping_sub(self.a.y as i32) as Coord,
+            (self.b.z as i32).wrapping_sub(self.a.z as i32) as Coord,
+        )
+    }
+}
+
+/// Line.hpp:242-275 (`class Linef3`): a segment of two `Vec3d` points.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Linef3 {
+    pub a: crate::geometry::Point3F,
+    pub b: crate::geometry::Point3F,
+}
+
+impl Linef3 {
+    /// Line.hpp:246
+    pub fn new(a: crate::geometry::Point3F, b: crate::geometry::Point3F) -> Self {
+        Self { a, b }
+    }
+    /// Line.cpp:128-133 (`Linef3::intersect_plane(double z)`)
+    pub fn intersect_plane(&self, z: f64) -> crate::geometry::Point3F {
+        // Line.cpp:130: v = (b - a).cast<double>()
+        let (vx, vy, vz) = (self.b.x - self.a.x, self.b.y - self.a.y, self.b.z - self.a.z);
+        // Line.cpp:131
+        let t = (z - self.a.z) / vz;
+        // Line.cpp:132: a(0) + v(0) * t, one expression each: fused
+        crate::geometry::Point3F::new(vx.mul_add(t, self.a.x), vy.mul_add(t, self.a.y), z)
+    }
+    /// Line.hpp:249 (`scale(double factor)`): `a *= factor; b *= factor;`
+    pub fn scale(&mut self, factor: f64) {
+        self.a = crate::geometry::Point3F::new(self.a.x * factor, self.a.y * factor, self.a.z * factor);
+        self.b = crate::geometry::Point3F::new(self.b.x * factor, self.b.y * factor, self.b.z * factor);
+    }
+    /// Line.hpp:250 (`vector()`): `b - a`
+    pub fn vector(&self) -> crate::geometry::Point3F {
+        crate::geometry::Point3F::new(self.b.x - self.a.x, self.b.y - self.a.y, self.b.z - self.a.z)
+    }
+    /// Line.hpp:251 (`unit_vector()`): zero for a zero length, else `vector().normalized()` (each
+    /// coordinate divided by `sqrt(squaredNorm())`).
+    pub fn unit_vector(&self) -> crate::geometry::Point3F {
+        if self.length() == 0.0 {
+            return crate::geometry::Point3F::new(0.0, 0.0, 0.0);
+        }
+        let v = self.vector();
+        let n2 = eigen_squared_norm3(v.x, v.y, v.z);
+        if n2 > 0.0 {
+            let n = n2.sqrt();
+            crate::geometry::Point3F::new(v.x / n, v.y / n, v.z / n)
+        } else {
+            v
+        }
+    }
+    /// Line.hpp:252 (`length()`): `vector().norm()`
+    pub fn length(&self) -> f64 {
+        let v = self.vector();
+        eigen_squared_norm3(v.x, v.y, v.z).sqrt()
+    }
+    /// Line.hpp:253 (`reverse()`): `std::swap(a, b)`
+    pub fn reverse(&mut self) {
+        std::mem::swap(&mut self.a, &mut self.b);
+    }
+    /// Line.hpp:260-266 (`static get_point_projection_to_line`): the projection of `pt` onto the line through
+    /// `line_start` along `line_dir`; `proj_length` is a float.
+    pub fn get_point_projection_to_line(
+        pt: &crate::geometry::Point3F,
+        line_start: &crate::geometry::Point3F,
+        line_dir: &crate::geometry::Point3F,
+        intersection_pt: &mut crate::geometry::Point3F,
+        proj_length: &mut f32,
+    ) {
+        // Line.hpp:262: line_dir.normalized()
+        let n2 = eigen_squared_norm3(line_dir.x, line_dir.y, line_dir.z);
+        let d = if n2 > 0.0 {
+            let n = n2.sqrt();
+            crate::geometry::Point3F::new(line_dir.x / n, line_dir.y / n, line_dir.z / n)
+        } else {
+            *line_dir
+        };
+        // Line.hpp:263-264: BA = pt - line_start (lazy); proj_length = BA.dot(line_dir_), stored as float
+        let (bx, by, bz) = (pt.x - line_start.x, pt.y - line_start.y, pt.z - line_start.z);
+        *proj_length = ((bx * d.x + by * d.y) + bz * d.z) as f32;
+        // Line.hpp:265: line_start + proj_length * line_dir_ (the float promoted to double), unfused
+        let pl = *proj_length as f64;
+        *intersection_pt = crate::geometry::Point3F::new(line_start.x + pl * d.x, line_start.y + pl * d.y, line_start.z + pl * d.z);
+    }
+    /// Line.hpp:267-273 (`get_distance_of_point_to_line(pt)`): `(intersection_pt - pt).norm()` as a float.
+    pub fn get_distance_of_point_to_line(&self, pt: &crate::geometry::Point3F) -> f32 {
+        let mut intersection_pt = crate::geometry::Point3F::new(0.0, 0.0, 0.0);
+        let mut proj_length = 0f32;
+        Self::get_point_projection_to_line(pt, &self.a, &self.vector(), &mut intersection_pt, &mut proj_length);
+        let (dx, dy, dz) = (intersection_pt.x - pt.x, intersection_pt.y - pt.y, intersection_pt.z - pt.z);
+        eigen_squared_norm3(dx, dy, dz).sqrt() as f32
+    }
+}
+
+/// Line.cpp:10-20 (`transform(const Linef3&, const Transform3d&)`): `t * world_line.colwise().homogeneous()`,
+/// which Eigen evaluates as `affine.leftCols<3>() * world_line` (a lazy 3x3 by 3x2 product: rows 0 and 1
+/// a packet, `fma(a2, z, fma(a1, y, a0 * x))`; row 2 alone, `e0 + (e1 + e2)`) followed by `+=` the
+/// translation column (Homogeneous.h, `homogeneous_left_product_impl`).
+pub fn transform(line: &Linef3, t: &crate::geometry::Transform3D) -> Linef3 {
+    use crate::geometry::geometry::eigen::{coeff_dot3, packet_dot3};
+    let m = |r: usize, c: usize| t.get(r, c);
+    let apply = |p: &crate::geometry::Point3F| {
+        crate::geometry::Point3F::new(
+            packet_dot3(m(0, 0), m(0, 1), m(0, 2), p.x, p.y, p.z) + m(0, 3),
+            packet_dot3(m(1, 0), m(1, 1), m(1, 2), p.x, p.y, p.z) + m(1, 3),
+            coeff_dot3(m(2, 0), m(2, 1), m(2, 2), p.x, p.y, p.z) + m(2, 3),
+        )
+    };
+    // Line.cpp:19
+    Linef3::new(apply(&line.a), apply(&line.b))
+}
+
+/// Line.hpp:277-290 (`class Line3float`): a segment of two `Vec3f` points.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Line3float {
+    pub a: [f32; 3],
+    pub b: [f32; 3],
+}
+
+impl Line3float {
+    /// Line.hpp:281
+    pub fn new(a: [f32; 3], b: [f32; 3]) -> Self {
+        Self { a, b }
+    }
+    /// Line.hpp:283 (`vector()`): `b - a`
+    pub fn vector(&self) -> [f32; 3] {
+        [self.b[0] - self.a[0], self.b[1] - self.a[1], self.b[2] - self.a[2]]
+    }
+    /// Line.hpp:285 (`length()`): `vector().norm()` in float, returned as double.
+    pub fn length(&self) -> f64 {
+        let v = self.vector();
+        ((v[0] * v[0] + v[1] * v[1]) + v[2] * v[2]).sqrt() as f64
+    }
+    /// Line.hpp:284 (`unit_vector()`): zero for a zero length, else `vector().normalized()` in float.
+    pub fn unit_vector(&self) -> [f32; 3] {
+        if self.length() == 0.0 {
+            return [0.0; 3];
+        }
+        let v = self.vector();
+        let n2 = (v[0] * v[0] + v[1] * v[1]) + v[2] * v[2];
+        if n2 > 0.0 {
+            let n = n2.sqrt();
+            [v[0] / n, v[1] / n, v[2] / n]
+        } else {
+            v
+        }
+    }
+}
+
+/// `namespace line_alg` of Line.hpp:23-135 for the 2D integer line (`Line`, `Dim` 2, `Scalar` coord_t),
+/// under the C++ names (R934). The arithmetic is the one of the verified static
+/// `Line::distance_to_squared` above: in double, nothing fused (tests/line_native_parity.rs).
+pub mod line_alg {
+    use super::{Line, Point};
+
+    /// Line.hpp:25-33 (`Traits<L>`): the end points of a line type.
+    pub trait Traits {
+        fn get_a(&self) -> Point;
+        fn get_b(&self) -> Point;
+    }
+
+    impl Traits for Line {
+        /// Line.hpp:31
+        #[inline]
+        fn get_a(&self) -> Point {
+            self.a
+        }
+        /// Line.hpp:32
+        #[inline]
+        fn get_b(&self) -> Point {
+            self.b
+        }
+    }
+
+    /// Line.hpp:38 (`get_a(L &&l)`)
+    #[inline]
+    pub fn get_a<L: Traits>(l: &L) -> Point {
+        Traits::get_a(l)
+    }
+
+    /// Line.hpp:39 (`get_b(L &&l)`)
+    #[inline]
+    pub fn get_b<L: Traits>(l: &L) -> Point {
+        Traits::get_b(l)
+    }
+
+    /// Line.hpp:41-68 (`distance_to_squared(line, point, nearest_point)`): the squared distance to the
+    /// closest point of the segment, which goes to `nearest_point`.
+    pub fn distance_to_squared<L: Traits>(line: &L, point: &Point, nearest_point: &mut Point) -> f64 {
+        let (a, b) = (get_a(line), get_b(line));
+        // Line.hpp:45-47
+        let vx = (b.x - a.x) as f64;
+        let vy = (b.y - a.y) as f64;
+        let vax = (point.x - a.x) as f64;
+        let vay = (point.y - a.y) as f64;
+        let l2 = vx * vx + vy * vy; // avoid a sqrt
+        if l2 == 0.0 {
+            // Line.hpp:48-52: a == b case
+            *nearest_point = a;
+            return vax * vax + vay * vay;
+        }
+        // Line.hpp:56: t = [(this-a) . (b-a)] / |b-a|^2
+        let t = (vax * vx + vay * vy) / l2;
+        if t <= 0.0 {
+            // Line.hpp:57-60: beyond the 'a' end of the segment
+            *nearest_point = a;
+            return vax * vax + vay * vay;
+        } else if t >= 1.0 {
+            // Line.hpp:61-64: beyond the 'b' end of the segment
+            *nearest_point = b;
+            let dx = (point.x - b.x) as f64;
+            let dy = (point.y - b.y) as f64;
+            return dx * dx + dy * dy;
+        }
+        // Line.hpp:66: (a.cast<double>() + t * v).cast<coord_t>(), truncating
+        *nearest_point = Point::new((a.x as f64 + t * vx) as i32 as i64, (a.y as f64 + t * vy) as i32 as i64);
+        // Line.hpp:67
+        let ex = t * vx - vax;
+        let ey = t * vy - vay;
+        ex * ex + ey * ey
+    }
+
+    /// Line.hpp:79-83 (`distance_to(line, point)`): `sqrt(distance_to_squared(line, point))`.
+    #[inline]
+    pub fn distance_to<L: Traits>(line: &L, point: &Point) -> f64 {
+        // Line.hpp:71-77: distance_to_squared(line, point) with a throw-away nearest point
+        let mut nearest_point = Point::new(0, 0);
+        distance_to_squared(line, point, &mut nearest_point).sqrt()
+    }
+
+    /// Line.hpp:85-104 (`distance_to_infinite_squared(line, point, closest_point)`): the squared distance
+    /// to the closest point of the infinite line, which goes to `closest_point` (it may lie beyond a or b).
+    pub fn distance_to_infinite_squared<L: Traits>(line: &L, point: &Point, closest_point: &mut Point) -> f64 {
+        let (a, b) = (get_a(line), get_b(line));
+        // Line.hpp:90-92
+        let vx = (b.x - a.x) as f64;
+        let vy = (b.y - a.y) as f64;
+        let vax = (point.x - a.x) as f64;
+        let vay = (point.y - a.y) as f64;
+        let l2 = vx * vx + vy * vy; // avoid a sqrt
+        if l2 == 0.0 {
+            // Line.hpp:93-97: a == b case
+            *closest_point = a;
+            return vax * vax + vay * vay;
+        }
+        // Line.hpp:101
+        let t = (vax * vx + vay * vy) / l2;
+        // Line.hpp:102: (a.cast<double>() + t * v).cast<coord_t>(), truncating
+        *closest_point = Point::new((a.x as f64 + t * vx) as i32 as i64, (a.y as f64 + t * vy) as i32 as i64);
+        // Line.hpp:103
+        let ex = t * vx - vax;
+        let ey = t * vy - vay;
+        ex * ex + ey * ey
+    }
+
+    /// Line.hpp:115-121 (`distance_to_infinite(line, point)`): `sqrt(distance_to_infinite_squared(line, point))`.
+    #[inline]
+    pub fn distance_to_infinite<L: Traits>(line: &L, point: &Point) -> f64 {
+        // Line.hpp:106-113: distance_to_infinite_squared(line, point) with a throw-away closest point
+        let mut closest_point = Point::new(0, 0);
+        distance_to_infinite_squared(line, point, &mut closest_point).sqrt()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

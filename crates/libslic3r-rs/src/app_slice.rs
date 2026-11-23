@@ -178,6 +178,35 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
         }
         _ => None,
     };
+    // Probe TREE_PIN_MODEL_PROBE (diagnostics only, R934): builds the same Model for any placed STL, times it and
+    // drops it, to localize the R933 runaway; the Print never sees it, so the output does not change.
+    if crate::probe_enabled("TREE_PIN_MODEL_PROBE") {
+        if let Some(place) = &desktop_place {
+            let t0 = std::time::Instant::now();
+            {
+                // TriangleMesh.cpp:47-59 (fill_initial_stats) step by step, timed.
+                use crate::normal_utils::{indexed_triangle_set, Vec3crd, Vec3f};
+                let mut its = indexed_triangle_set::default();
+                its.vertices = place.local_mesh.vertices().iter().map(|p| Vec3f::new(p.x as f32, p.y as f32, p.z as f32)).collect();
+                its.indices = (0..place.local_mesh.triangle_count())
+                    .map(|i| {
+                        let t = place.local_mesh.triangle_indices(i);
+                        Vec3crd::new(t[0] as i32, t[1] as i32, t[2] as i32)
+                    })
+                    .collect();
+                eprintln!("TREE_PIN_MODEL_PROBE: its {} vertices {} faces at {:.3} s", its.vertices.len(), its.indices.len(), t0.elapsed().as_secs_f64());
+                let v = crate::triangle_mesh::its_volume(&its);
+                eprintln!("TREE_PIN_MODEL_PROBE: its_volume {} at {:.3} s", v, t0.elapsed().as_secs_f64());
+                let its_diag = crate::triangle_set_sampling::indexed_triangle_set { vertices: its.vertices.clone(), indices: its.indices.clone() };
+                let mut nb = Vec::new();
+                let st = crate::mesh_diagnostics::its_quick_diagnostics(&its_diag, Some(&mut nb));
+                eprintln!("TREE_PIN_MODEL_PROBE: its_quick_diagnostics open_edges {} at {:.3} s", st.open_edges, t0.elapsed().as_secs_f64());
+            }
+            let model = live_model_from_desktop_placement(place, &settings_value, "probe");
+            eprintln!("TREE_PIN_MODEL_PROBE: Model of {} triangles built in {:.3} s", place.local_mesh.triangle_count(), t0.elapsed().as_secs_f64());
+            drop(model);
+        }
+    }
 
     // Create PrintObject — slicing happens internally during Print::process().
     info!("Creating PrintObject...");

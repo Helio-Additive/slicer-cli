@@ -155,10 +155,9 @@ fn point_matches_the_pin() {
             let want: Vec<Point> = (0..want_n).map(|_| t.pt()).collect();
             check("collect_duplicates", dups == want, format!("got {dups:?} want {want:?}"));
         }
-        // int128::orient and int128::cross: the module is not exported from `slicer::geometry`; the two
-        // results stay in the vectors for when it is.
-        let _orient = t.i();
-        let _cross = t.i();
+        // int128::orient and int128::cross (Point.cpp:289-299), exported as `slicer::geometry::point_int128`.
+        int_eq!("int128::orient", slicer::geometry::point_int128::orient(&p, &a, &b) as i64);
+        int_eq!("int128::cross", slicer::geometry::point_int128::cross(&a, &b) as i64);
         assert_eq!(t.k, t.t.len(), "line {}: tokens left", ln + 1);
     }
     let mut total = 0usize;

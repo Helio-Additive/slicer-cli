@@ -2586,6 +2586,11 @@ pub fn extrude_collection(
                 ExtrusionRole::TopSolidInfill => config.top_solid_infill_speed,
                 ExtrusionRole::BridgeInfill => config.bridge_speed,
                 ExtrusionRole::GapFill => config.gap_fill_speed,
+                // GCode.cpp:7748-7751, see `ironing_speed_gate`.
+                ExtrusionRole::Ironing if ironing_speed_gate() => config.ironing_speed,
+                ExtrusionRole::SupportIroning if ironing_speed_gate() => {
+                    config.support_ironing_speed
+                }
                 _ => config.perimeter_speed,
             }
         };
@@ -2808,6 +2813,10 @@ pub fn extrude_collection(
                         writer.slow_down_start_written = true;
                     }
                 }
+            }
+            // GCode.cpp:7877-7878: the ironing start marker precedes the role tag.
+            if ironing_markers_gate() && is_ironing_marker_role(entity_role) {
+                write_ironing_start_marker(writer);
             }
             // R218: native marker position — after travel+unretract, before the
             // feature F (GCode.cpp _extrude description/width block).
@@ -3178,6 +3187,45 @@ pub fn get_entity_first_point(entity: &ExtrusionEntityType) -> Option<Point> {
 
 /// Helper to extract role from ExtrusionEntityType
 /// GCode.cpp:2100-2120 (role accessor methods)
+// GCode.cpp:7877-7878 and 8060-8061: `_extrude` writes "M1031 S1 ;IRONING_EXTRUSIONS_START"
+// after "; Slow Down Start" and before the role tag of every erIroning / erSupportIroning path,
+// and "M1031 S0 ;IRONING_EXTRUSIONS_END" after the path's moves (before its ";_EXTRUDE_END").
+// Here the role tag of an entity is written by `extrude_collection` before the path's own block
+// runs, so the start marker is written at the first of the two places and remembered until the
+// path's end marker. GCODE_IRONING_MARKERS_PIN (on unless =0); =0 writes neither marker.
+thread_local! {
+    static IRONING_START_WRITTEN: Cell<bool> = const { Cell::new(false) };
+}
+
+fn ironing_markers_gate() -> bool {
+    crate::faithful_gate("GCODE_IRONING_MARKERS_PIN")
+}
+
+// GCode.cpp:7748-7751: an ironing path runs at `ironing_speed`, a support ironing path at
+// `support_ironing_speed`; the export gave both the wall speed. GCODE_IRONING_SPEED_PIN (on
+// unless =0).
+fn ironing_speed_gate() -> bool {
+    crate::faithful_gate("GCODE_IRONING_SPEED_PIN")
+}
+
+fn is_ironing_marker_role(role: ExtrusionRole) -> bool {
+    // GCode.cpp:7878 `path.role() == erSupportIroning || path.role() == erIroning`
+    matches!(role, ExtrusionRole::Ironing | ExtrusionRole::SupportIroning)
+}
+
+fn write_ironing_start_marker(writer: &mut GCodeWriter) {
+    // GCode.cpp:7878
+    if !IRONING_START_WRITTEN.with(|c| c.replace(true)) {
+        writer.write_raw("M1031 S1 ;IRONING_EXTRUSIONS_START");
+    }
+}
+
+fn write_ironing_end_marker(writer: &mut GCodeWriter) {
+    // GCode.cpp:8061
+    IRONING_START_WRITTEN.with(|c| c.set(false));
+    writer.write_raw("M1031 S0 ;IRONING_EXTRUSIONS_END");
+}
+
 pub(crate) fn get_entity_role(entity: &ExtrusionEntityType) -> ExtrusionRole {
     match entity {
         ExtrusionEntityType::Path(path) => path.role,
@@ -3292,6 +3340,11 @@ pub fn extrude_path_with_arc_fitting(
     // Check if path is empty
     if path.polyline.points().is_empty() {
         return;
+    }
+    // GCode.cpp:7877-7878 for a caller that did not write the start marker yet.
+    let ironing_markers = ironing_markers_gate() && is_ironing_marker_role(path.role);
+    if ironing_markers {
+        write_ironing_start_marker(writer);
     }
 
     // R225: native _extrude emits ";LINE_WIDTH: %g" whenever path.width
@@ -3754,6 +3807,11 @@ pub fn extrude_path_with_arc_fitting(
         }
     }
 
+    // GCode.cpp:8060-8061: the ironing end marker, before the cooling end marker.
+    if ironing_markers {
+        write_ironing_end_marker(writer);
+    }
+
     // Emit cooling end marker after extrusion
     // C++ GCode.cpp:6361-6363
     writer.write_raw(";_EXTRUDE_END");
@@ -3886,11 +3944,25 @@ pub fn extrude_entity(
                         ExtrusionRole::FloatingVerticalShell => {
                             config.vertical_shell_speed / 100.0 * config.solid_infill_speed
                         }
+                        // GCode.cpp:7748-7751 `m_config.get_abs_value("ironing_speed")` /
+                        // ("support_ironing_speed"). GCODE_IRONING_SPEED_PIN (on unless =0);
+                        // =0 gives them the wall speed as before.
+                        ExtrusionRole::Ironing if ironing_speed_gate() => config.ironing_speed,
+                        ExtrusionRole::SupportIroning if ironing_speed_gate() => {
+                            config.support_ironing_speed
+                        }
                         _ => config.perimeter_speed,
                     }
                 };
                 if use_seperate_speed && !std::mem::take(&mut writer.slow_down_start_written) {
                     writer.write_raw("; Slow Down Start");
+                }
+                // GCode.cpp:7877-7878 (after "; Slow Down Start", before the width tag).
+                if ironing_markers_gate()
+                    && is_ironing_marker_role(role)
+                    && !path.polyline.points().is_empty()
+                {
+                    write_ironing_start_marker(writer);
                 }
                 let speed = if crate::faithful_gate("VOLCAP_FAITHFUL") {
                     volumetric_capped_speed(
@@ -6081,6 +6153,54 @@ mod exporter_tests {
         let gcode = writer.get_gcode();
         let content = gcode.content();
         assert!(content.contains("FEATURE:"), "Should have feature comment");
+    }
+
+    // GCode.cpp:7877-7878, 8060-8061 (markers) and 7748-7749 (ironing_speed): an ironing
+    // collection of two paths gets one start/end pair per path, the start before the role
+    // tag, the end after the path's moves; its feed rate is ironing_speed (here 30 mm/s).
+    // Both gates are faithful (on unless =0), so the test runs only when neither is set to 0.
+    #[test]
+    fn test_extrude_ironing_markers_and_speed() {
+        if !ironing_markers_gate() || !ironing_speed_gate() {
+            return;
+        }
+        let mut writer = GCodeWriter::new();
+        let mut inner = ExtrusionEntityCollection::new();
+        inner.no_sort = true;
+        for y in [0.0, 1.0] {
+            let mut path = create_simple_path();
+            path.role = ExtrusionRole::Ironing;
+            path.polyline = Polyline::from_points(vec![
+                Point::new_scale(0.0, y),
+                Point::new_scale(10.0, y),
+            ]);
+            inner.entities.push(ExtrusionEntityType::Path(path));
+        }
+        let collection = ExtrusionEntityCollection {
+            entities: vec![ExtrusionEntityType::Collection(Box::new(inner))],
+            no_sort: false,
+            orig_indices: Vec::new(),
+            is_reverse: true,
+            loop_node_range: (0, 0),
+        };
+        let mut config = PrintObjectConfig::default();
+        config.ironing_speed = 30.0;
+        extrude_collection(&collection, &mut writer, &config, false).expect("ironing extrudes");
+        let content = writer.get_gcode().content().to_string();
+        let lines: Vec<&str> = content.lines().collect();
+        let starts: Vec<usize> = (0..lines.len())
+            .filter(|&i| lines[i] == "M1031 S1 ;IRONING_EXTRUSIONS_START")
+            .collect();
+        let ends: Vec<usize> = (0..lines.len())
+            .filter(|&i| lines[i] == "M1031 S0 ;IRONING_EXTRUSIONS_END")
+            .collect();
+        assert_eq!(starts.len(), 2, "{content}");
+        assert_eq!(ends.len(), 2, "{content}");
+        assert!(starts[0] < ends[0] && ends[0] < starts[1] && starts[1] < ends[1], "{content}");
+        let feature = lines.iter().position(|l| l.contains("FEATURE: Ironing")).expect("role tag");
+        assert!(starts[0] < feature, "start marker before the role tag:\n{content}");
+        assert!(content.contains("F1800"), "ironing_speed 30 mm/s:\n{content}");
+        assert!(!content.contains("F18000"), "{content}");
     }
 
     #[test]

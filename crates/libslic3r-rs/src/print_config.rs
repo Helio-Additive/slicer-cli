@@ -3730,6 +3730,14 @@ impl PrintObjectConfig {
                 }
                 true
             }
+            // R934: `ironing_speed` (PrintConfig.hpp, a region option the pin's GCode reads
+            // through m_config, GCode.cpp:7749); the export reads this struct's copy.
+            "ironing_speed" => {
+                if let Some(v) = parse_f64(value) {
+                    self.ironing_speed = v;
+                }
+                true
+            }
 
             // === Interlocking (PrintConfig.hpp:1008-1013) ===
             "interlocking_beam" => {

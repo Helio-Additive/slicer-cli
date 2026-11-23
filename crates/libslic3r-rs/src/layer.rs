@@ -472,6 +472,163 @@ pub struct LayerRegion {
     pub(crate) print_config: Option<Arc<crate::print_config::PrintConfig>>,
 }
 
+/// R934 Layer.cpp:284-361 `generate_region_perimeters`, the lambda of `Layer::make_perimeters` that
+/// runs a region's walls (BBS multi-diameter adaptive layer height): a region inside a band is extruded on
+/// the group top only, at the height of the whole band. `get_layer(i)` stands for
+/// `this->object()->get_layer(int(i))`, `layer_count` for `this->object()->layer_count()`, `region_id` for
+/// the index of `lm` in the layer's regions. The fill outputs are `lm`'s own members (the
+/// `layerms.size() == 1` call, Layer.cpp:366); `perimeter_regions` is not taken (see
+/// `make_perimeters_overload`). Nothing live calls it yet: the live Layer::make_perimeters calls
+/// `make_perimeters_with` for every region (the `adaptive_merge_patches.empty()` arm, :287-290).
+#[allow(clippy::too_many_arguments)]
+pub fn generate_region_perimeters<'a>(
+    lm: &mut LayerRegion,
+    src: &SurfaceCollection,
+    region_id: usize,
+    layer_count: usize,
+    get_layer: &dyn Fn(usize) -> &'a Layer,
+    layer_height: f64,
+    layer_id: usize,
+    print_z: f64,
+    patch_cfg: &dyn Fn(&mut crate::perimeter_generator::PerimeterConfig),
+) -> Result<()> {
+    // Layer.cpp:287-290
+    if lm.adaptive_merge_patches.is_empty() {
+        return lm.make_perimeters_with(src, layer_height, layer_id, print_z, patch_cfg);
+    }
+
+    // Layer.cpp:292-302: swallowed by the group top, so nothing is extruded here. The fill surfaces still
+    // pass through shell discovery (fill_only).
+    let group_top_patch = match lm.adaptive_merge_patches.iter().find(|p| p.group_top) {
+        Some(p) => p.clone(),
+        None => {
+            let mut args = MakePerimetersArgs::plain();
+            args.fill_only = true;
+            return lm.make_perimeters_overload(src, layer_height, layer_id, print_z, &args, patch_cfg);
+        }
+    };
+
+    // Layer.cpp:304-323: the footprint the band above will actually extrude.
+    let mut upper_slices: Option<ExPolygons> = None;
+    let top_idx = group_top_patch.top_idx;
+    if top_idx + 1 < layer_count {
+        let upper_layer = get_layer(top_idx + 1);
+        let mut upper_footprint: Polygons = Vec::new();
+        for upper_region in &upper_layer.regions {
+            if upper_region.adaptive_merge_patches.is_empty() {
+                upper_footprint.extend(crate::surface::to_polygons(&upper_region.slices.surfaces));
+            } else {
+                for upper_patch in &upper_region.adaptive_merge_patches {
+                    // polygons_append(dst, to_polygons(ExPolygons)): contour, then holes.
+                    for ex in upper_patch.area() {
+                        upper_footprint.push(ex.contour.clone());
+                        upper_footprint.extend(ex.holes.iter().cloned());
+                    }
+                }
+            }
+        }
+        // union_ex(const Polygons&) with pftNonZero (ClipperUtils.hpp)
+        upper_slices = Some(crate::clipper_utils::union_ex_clib(&upper_footprint, 1));
+    }
+
+    // Layer.cpp:325-356
+    let mut generated = false;
+    let patches = lm.adaptive_merge_patches.clone();
+    for patch in &patches {
+        if !patch.group_top || patch.area().is_empty() {
+            continue;
+        }
+        let mut core_slices = SurfaceCollection::new();
+        let patch_source: &SurfaceCollection =
+            if patch.bottom_idx == 0 { &get_layer(0).regions[region_id].slices } else { src };
+        for s in &patch_source.surfaces {
+            for e in crate::clipper_utils::intersection_clib(std::slice::from_ref(&s.expolygon), patch.area()) {
+                // Surface(const Surface &other, const ExPolygon &_expolygon)
+                core_slices.surfaces.push(Surface { expolygon: e, ..s.clone() });
+            }
+        }
+        if core_slices.surfaces.is_empty() {
+            continue;
+        }
+        // Layer.cpp:340-351: a suppressed orphan below is sliced but not extruded, so the walls over it overhang.
+        let lower_slices = if patch.bottom_idx > 0 {
+            let lower = get_layer(patch.bottom_idx - 1);
+            let regions: Vec<crate::adaptive_layer_merge::AdaptiveSuppressedOrphanRegion<'_>> = lower
+                .regions
+                .iter()
+                .map(|r| crate::adaptive_layer_merge::AdaptiveSuppressedOrphanRegion {
+                    adaptive_merge_patches: &r.adaptive_merge_patches,
+                    slices: &r.slices.surfaces,
+                })
+                .collect();
+            let dropped = crate::adaptive_layer_merge::adaptive_suppressed_orphan_area(&regions);
+            if dropped.is_empty() {
+                Some(lower.lslices.clone())
+            } else {
+                Some(crate::clipper_utils::difference_clib(&lower.lslices, &dropped))
+            }
+        } else {
+            None
+        };
+        let args = MakePerimetersArgs {
+            perimeter_layer_height: patch.merged_height,
+            clear_outputs: !generated,
+            lower_slices_override: lower_slices,
+            upper_slices_override: upper_slices.clone(),
+            fill_only: false,
+            starts_at_object_base: patch.bottom_idx == 0,
+        };
+        lm.make_perimeters_overload(&core_slices, layer_height, layer_id, print_z, &args, patch_cfg)?;
+        generated = true;
+    }
+    // Layer.cpp:357-360
+    if !generated {
+        lm.perimeters.entities.clear();
+        lm.perimeter_islands.clear();
+        lm.thin_fills.entities.clear();
+    }
+    Ok(())
+}
+
+/// R934 Layer.cpp:233-238 `has_first_band_source`: a group top whose band starts at object layer 0 and
+/// keeps an area, which makes `Layer::make_perimeters` run a region with no slices of its own (:239).
+pub fn has_first_band_source(layerm: &LayerRegion) -> bool {
+    layerm.adaptive_merge_patches.iter().any(|patch| patch.group_top && patch.bottom_idx == 0 && !patch.area().is_empty())
+}
+
+/// R934: the arguments of the pin's `LayerRegion::make_perimeters` overload beyond the slices and the
+/// fill outputs (LayerRegion.cpp:131; the defaults of Layer.hpp's declaration are `plain()`).
+#[derive(Debug, Clone)]
+pub struct MakePerimetersArgs {
+    /// `perimeter_layer_height`: 0 means the physical layer height (LayerRegion.cpp:146).
+    pub perimeter_layer_height: f64,
+    /// `clear_outputs` (LayerRegion.cpp:133)
+    pub clear_outputs: bool,
+    /// `lower_slices_override` (LayerRegion.cpp:182-183)
+    pub lower_slices_override: Option<Vec<crate::geometry::ExPolygon>>,
+    /// `upper_slices_override` (LayerRegion.cpp:187-188)
+    pub upper_slices_override: Option<Vec<crate::geometry::ExPolygon>>,
+    /// `fill_only` (LayerRegion.cpp:133, 167-176)
+    pub fill_only: bool,
+    /// `starts_at_object_base` (LayerRegion.cpp:147)
+    pub starts_at_object_base: bool,
+}
+
+impl MakePerimetersArgs {
+    /// `perimeter_layer_height = 0., clear_outputs = true, lower_slices_override = nullptr,
+    /// upper_slices_override = nullptr, fill_only = false, starts_at_object_base = false`.
+    pub fn plain() -> Self {
+        Self {
+            perimeter_layer_height: 0.,
+            clear_outputs: true,
+            lower_slices_override: None,
+            upper_slices_override: None,
+            fill_only: false,
+            starts_at_object_base: false,
+        }
+    }
+}
+
 impl LayerRegion {
     /// Create a new LayerRegion
     /// Layer.cpp:15
@@ -800,6 +957,79 @@ impl LayerRegion {
         print_z: f64,
         patch: &dyn Fn(&mut crate::perimeter_generator::PerimeterConfig),
     ) -> Result<()> {
+        self.make_perimeters_overload(surface_fill, layer_height, layer_id, print_z, &MakePerimetersArgs::plain(), patch)
+    }
+
+    /// R934: the pin's full overload, LayerRegion.cpp:131-206 `make_perimeters(slices, perimeter_regions,
+    /// fill_surfaces, fill_no_overlap, loop_nodes, perimeter_layer_height, clear_outputs,
+    /// lower_slices_override, upper_slices_override, fill_only, starts_at_object_base)`. The outputs
+    /// `fill_surfaces` / `fill_no_overlap` / `loop_nodes` are this region's members as in
+    /// `make_perimeters_with`; `perimeter_regions` is not taken yet (consumed by apply_fuzzy_skin only,
+    /// PerimeterGenerator.cpp:348, 661). With `MakePerimetersArgs::plain()` this is
+    /// `make_perimeters_with` byte for byte.
+    pub fn make_perimeters_overload(
+        &mut self,
+        surface_fill: &SurfaceCollection,
+        layer_height: f64,
+        layer_id: usize,
+        print_z: f64,
+        args: &MakePerimetersArgs,
+        patch: &dyn Fn(&mut crate::perimeter_generator::PerimeterConfig),
+    ) -> Result<()> {
+        // LayerRegion.cpp:133-140: `fill_only` sends the walls, thin fills and loop nodes the generator
+        // makes to the discarded collections (:167-176); without `clear_outputs` the new walls go after
+        // the ones already there.
+        let keep = !args.clear_outputs || args.fill_only;
+        let saved = if keep {
+            Some((
+                std::mem::take(&mut self.perimeters),
+                std::mem::take(&mut self.perimeter_islands),
+                std::mem::take(&mut self.thin_fills),
+                std::mem::take(&mut self.loop_nodes_out),
+            ))
+        } else {
+            None
+        };
+        let res = self.make_perimeters_body(surface_fill, layer_height, layer_id, print_z, args, patch);
+        if let Some((perimeters, islands, thin_fills, loop_nodes)) = saved {
+            if args.fill_only {
+                // discarded_perimeters / discarded_thin_fills / discarded_loop_nodes (:137-139)
+                self.perimeters = perimeters;
+                self.perimeter_islands = islands;
+                self.thin_fills = thin_fills;
+                self.loop_nodes_out = loop_nodes;
+            } else {
+                // `this->loops->append(...)` onto the walls kept (PerimeterGenerator.cpp:1340-1342,
+                // 1837-1838); the loop of a node is the index among all walls, as the body stores it.
+                let base = perimeters.entities.len();
+                let new_perimeters = std::mem::replace(&mut self.perimeters, perimeters);
+                let new_islands = std::mem::replace(&mut self.perimeter_islands, islands);
+                let mut new_nodes = std::mem::replace(&mut self.loop_nodes_out, loop_nodes);
+                for n in new_nodes.iter_mut() {
+                    n.loop_id += base;
+                }
+                self.perimeters.entities.extend(new_perimeters.entities);
+                for (range, coll) in new_islands {
+                    self.perimeter_islands.push((range.start + base..range.end + base, coll));
+                }
+                self.loop_nodes_out.extend(new_nodes);
+                self.perimeters.loop_node_range = (0, self.loop_nodes_out.len());
+                let new_thin = std::mem::replace(&mut self.thin_fills, thin_fills);
+                self.thin_fills.entities.extend(new_thin.entities);
+            }
+        }
+        res
+    }
+
+    fn make_perimeters_body(
+        &mut self,
+        surface_fill: &SurfaceCollection,
+        layer_height: f64,
+        layer_id: usize,
+        print_z: f64,
+        args: &MakePerimetersArgs,
+        patch: &dyn Fn(&mut crate::perimeter_generator::PerimeterConfig),
+    ) -> Result<()> {
         use crate::perimeter_generator::{PerimeterConfig, PerimeterGenerator};
 
         // LayerRegion.cpp:133-134
@@ -870,8 +1100,27 @@ impl LayerRegion {
         // C++: this->flow(frPerimeter) (LayerRegion.cpp:153) — the LayerRegion
         // reads region/object/print configs off its stored Arcs; layer_height
         // stands in for the missing m_layer->height back-pointer read.
-        let perimeter_flow = self.flow(FlowRole::Perimeter, layer_height)?;
-        let external_perimeter_flow = self.flow(FlowRole::ExternalPerimeter, layer_height)?;
+        // R934 LayerRegion.cpp:144-151: `wall_layer_height` (the merged height of a multi-diameter core,
+        // else the physical one) and `first_object_layer = this->layer()->id() == 0 || starts_at_object_base`
+        // feed every flow of the walls: `wall_flow(role) = region().flow(object, role, wall_layer_height,
+        // first_object_layer)` (PrintRegion::flow; `this->flow(role)` is the same call with the layer's
+        // height and `id() == 0`, LayerRegion.cpp:28, so `MakePerimetersArgs::plain()` keeps the bytes).
+        let wall_layer_height = if args.perimeter_layer_height > 0. { args.perimeter_layer_height } else { layer_height };
+        let first_object_layer = self.layer_id == 0 || args.starts_at_object_base;
+        let wall_flow = |role: FlowRole| -> Result<Flow> {
+            crate::print_region::flow_from_configs(
+                role,
+                wall_layer_height,
+                first_object_layer,
+                print_config.initial_layer_line_width,
+                object_config.line_width,
+                print_config.nozzle_diameter,
+                config,
+            )
+            .map_err(crate::Error::Config)
+        };
+        let perimeter_flow = wall_flow(FlowRole::Perimeter)?;
+        let external_perimeter_flow = wall_flow(FlowRole::ExternalPerimeter)?;
 
         if crate::probe_enabled("MPPROBE") {
             // R555: mirror of [CPP-MPPROBE] -- what make_perimeters receives.
@@ -931,7 +1180,8 @@ impl LayerRegion {
             external_to_internal_spacing: (external_perimeter_flow.spacing()
                 + perimeter_flow.spacing())
                 / 2.0,
-            layer_height,
+            // LayerRegion.cpp:159 `wall_layer_height`
+            layer_height: wall_layer_height,
             perimeter_flow: perimeter_flow.clone(),
             ext_perimeter_flow: external_perimeter_flow.clone(),
             smaller_ext_perimeter_flow: external_perimeter_flow.clone(), // TODO: Create proper smaller flow
@@ -986,8 +1236,17 @@ impl LayerRegion {
             fuzzy_skin_point_distance: config.fuzzy_skin_point_distance,
             wall_sequence: config.wall_sequence,
             detect_overhang_wall: config.overhangs,
-            lower_slices: self.lower_slices.clone(),
-            upper_slices: self.upper_slices.clone(),
+            // LayerRegion.cpp:180-189: the overrides first; a band anchored at the object base takes no
+            // lower slices (`! first_object_layer`; at layer id 0 `lower_slices` is what the caller set,
+            // none for an object's first layer).
+            lower_slices: if let Some(o) = &args.lower_slices_override {
+                Some(o.clone())
+            } else if !args.starts_at_object_base {
+                self.lower_slices.clone()
+            } else {
+                None
+            },
+            upper_slices: if let Some(o) = &args.upper_slices_override { Some(o.clone()) } else { self.upper_slices.clone() },
             // BambuStudio default top_one_wall_type == Alltop (config key only_one_wall_top);
             // gates the top_fills top-surface detection (PerimeterGenerator.cpp:1118).
             top_one_wall: true,
@@ -995,8 +1254,7 @@ impl LayerRegion {
             top_area_threshold: 200.0,
             // PerimeterGenerator.cpp:874 — solid_infill_flow.scaled_spacing()
             // (LayerRegion.cpp:173: g.solid_infill_flow = this->flow(frSolidInfill)).
-            solid_infill_spacing: self
-                .flow(FlowRole::SolidInfill, layer_height)
+            solid_infill_spacing: wall_flow(FlowRole::SolidInfill)
                 .map(|f| f.spacing())
                 .unwrap_or_else(|_| perimeter_flow.spacing()),
             // PerimeterGenerator.cpp:1167 — config->sparse_infill_line_width.value.
@@ -1010,9 +1268,13 @@ impl LayerRegion {
             raft_layers: 0,
             // LayerRegion.cpp:172 — g.overhang_flow = this->bridging_flow(frPerimeter, thick_bridges);
             // Used by detect_bridge_wall for the 100%-overhang (erOverhangPerimeter) walls.
-            overhang_flow: self
-                .bridging_flow(FlowRole::Perimeter, object_config.thick_bridges, layer_height)
-                .ok(),
+            // R934 LayerRegion.cpp:196-198: a merged overhang wall takes the merged height,
+            // `wall_flow(frPerimeter).with_flow_ratio(region_config.bridge_flow)`.
+            overhang_flow: if wall_layer_height > layer_height + crate::libslic3r::EPSILON {
+                wall_flow(FlowRole::Perimeter).ok().and_then(|f| f.with_flow_ratio(config.bridge_flow_ratio).ok())
+            } else {
+                self.bridging_flow(FlowRole::Perimeter, object_config.thick_bridges, layer_height).ok()
+            },
             // What `PerimeterGenerator::process_classic` of the pin reads beside the above (R921).
             // `precise_outer_wall` and `alternate_extra_wall` are not among the options this crate's
             // region config holds: the defaults of PrintConfig.cpp.
@@ -1023,7 +1285,7 @@ impl LayerRegion {
             // PerimeterGenerator.cpp:938 `object_config->only_one_wall_first_layer`
             only_one_wall_first_layer: object_config.only_one_wall_first_layer,
             // LayerRegion.cpp:148, 191 `first_object_layer = this->layer()->id() == 0 || starts_at_object_base`
-            starts_at_object_base: layer_id == 0,
+            starts_at_object_base: layer_id == 0 || args.starts_at_object_base,
             // PerimeterGenerator.cpp:1275-1276
             brim_outer_only: object_config.brim_type == crate::print_config::BrimType::OuterOnly && object_config.brim_width > 0.,
             // PerimeterGenerator.cpp:895 `config->gap_infill_speed`
@@ -1033,7 +1295,7 @@ impl LayerRegion {
             // LayerRegion.cpp:153-156, 168
             spiral_vase: spiral_mode,
             // LayerRegion.cpp:199 `g.solid_infill_flow = wall_flow(frSolidInfill);`
-            solid_infill_flow: self.flow(FlowRole::SolidInfill, layer_height).ok(),
+            solid_infill_flow: wall_flow(FlowRole::SolidInfill).ok(),
             // PerimeterGenerator.cpp:1411 `config->infill_wall_overlap`: the region config of this crate
             // holds the fraction.
             infill_wall_overlap_percent: object_config.infill_wall_overlap * 100.,
@@ -4934,12 +5196,57 @@ impl Layer {
                 // layers (FillRectilinear.cpp:3115-3131). ANCHOR_GRID_FAITHFUL=0
                 // keeps the separate rectilinear generator.
                 if is_grid && crate::faithful_gate("ANCHOR_GRID_FAITHFUL") {
-                    let (raw, pair_boundary) =
-                        crate::fill::fill_rectilinear::generate_grid_raw_lines(
+                    // FILL_ANCHOR_MULTILINES_PIN (on unless =0): Fill.cpp:912 creates the
+                    // region's own filler, so ipTriangles / ipStars / ipCubic are filled by
+                    // FillTriangles / FillStars / FillCubic (FillRectilinear.cpp:3133-3165,
+                    // three sweeps 60 degrees apart, FillCubic shifted by sqrt(0.5) * z),
+                    // returned as connected (no odd-layer reversal, FillGrid only), as
+                    // make_fills does behind FILL_MULTILINES_PIN. =0 lays FillGrid's two
+                    // sweeps, which fill/mod.rs maps the three patterns to.
+                    let anchor_multilines: Option<crate::print_config::InfillPattern> =
+                        match surface_fill.params.sparse_pattern {
+                            Some(
+                                p @ (crate::print_config::InfillPattern::Triangles
+                                | crate::print_config::InfillPattern::Stars
+                                | crate::print_config::InfillPattern::Cubic),
+                            ) if crate::faithful_gate("FILL_MULTILINES_PIN")
+                                && crate::faithful_gate("FILL_ANCHOR_MULTILINES_PIN") =>
+                            {
+                                Some(p)
+                            }
+                            _ => None,
+                        };
+                    let (raw, pair_boundary) = match anchor_multilines.and_then(|p| {
+                        crate::fill::fill_rectilinear::generate_multilines_raw_lines(
                             &expoly,
                             &infill_config,
                             self.id as usize,
-                        );
+                            p,
+                            self.print_z,
+                        )
+                    }) {
+                        Some(lines_and_boundary) => lines_and_boundary,
+                        None => crate::fill::fill_rectilinear::generate_grid_raw_lines(
+                            &expoly,
+                            &infill_config,
+                            self.id as usize,
+                        ),
+                    };
+                    // FillRectilinear.cpp:3064-3069: one line alone is appended as it is.
+                    // FILL_ANCHOR_ONE_LINE_PIN (on unless =0); =0 connects it as before.
+                    if raw.len() <= 1 && crate::faithful_gate("FILL_ANCHOR_ONE_LINE_PIN") {
+                        let mut raw = raw;
+                        if (self.id as usize) % 2 == 1
+                            && anchor_multilines.is_none()
+                            && crate::faithful_gate("GRID_ODD_REVERSE")
+                        {
+                            for pl in raw.iter_mut() {
+                                pl.points.reverse();
+                            }
+                        }
+                        sparse_infill_polylines.extend(raw);
+                        continue;
+                    }
                     let mut fp = crate::fill::FillParams::new();
                     fp.density = density;
                     fp.anchor_length = surface_fill.params.anchor_length as f64;
@@ -4955,7 +5262,10 @@ impl Layer {
                         infill_config.line_spacing,
                         &fp,
                     );
-                    if (self.id as usize) % 2 == 1 && crate::faithful_gate("GRID_ODD_REVERSE") {
+                    if (self.id as usize) % 2 == 1
+                        && anchor_multilines.is_none()
+                        && crate::faithful_gate("GRID_ODD_REVERSE")
+                    {
                         for pl in connected.iter_mut() {
                             pl.points.reverse();
                         }

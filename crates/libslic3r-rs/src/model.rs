@@ -1355,6 +1355,19 @@ pub fn its_convex_hull(pts: &[Vec3f]) -> indexed_triangle_set {
         for &f in &visible {
             alive[f] = false;
         }
+        // R934: drop the faces that left the hull, so the next point is tested against the current hull only
+        // (the dead faces piled up and every point scanned all of them: a 225k-triangle Benchy ran >10 min and
+        // >11 GB). The live faces keep their order, so the visible sets, the horizons and the result are the same.
+        {
+            let mut k = 0;
+            faces.retain(|_| {
+                let keep = alive[k];
+                k += 1;
+                keep
+            });
+            alive.clear();
+            alive.resize(faces.len(), true);
+        }
         for (a, b) in horizon {
             faces.push([a, b, p]);
             alive.push(true);

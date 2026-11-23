@@ -79,6 +79,7 @@ pub use geometry::{
     Transformation, TransformationSVD,
 };
 pub use line::{get_extents as get_extents_lines, Line, LineF, Lines};
+pub use line::{line_alg, transform as line_transform, Line3, Line3float, Linef3};
 pub use medial_axis::{
     compute_medial_axis, compute_medial_axis_multi, compute_medial_axis_thick,
     distance_to_boundary, MedialAxis, MedialAxisConfig, MedialAxisThickPolyline,
@@ -87,6 +88,13 @@ pub use point::{
     align_to_grid, align_to_grid_point, align_to_grid_point_base, collect_duplicates,
     has_duplicate_points, shorter_then, turn90_ccw, ClosestPointInRadiusLookup, Point, Point3,
     Point3F, PointF, Points, Points3,
+};
+// Point.hpp free functions under the C++ names (R934); the aliases keep them apart from the
+// functions of the same names in other geometry files.
+pub use point::{
+    angle as point_angle, cross2 as point_cross2, has_reflection as point_has_reflection, int128 as point_int128,
+    is_approx as point_is_approx, lerp as point_lerp, to_3d as point_to_3d, Cross2, GetBase, IsApprox, Perp,
+    Unscale,
 };
 pub use polygon::{Polygon, Polygons};
 // Polygon.cpp free functions. Names that would collide with the ExPolygon-variant

@@ -4143,5 +4143,54 @@
   "functions": [
    "FillLine::_can_connect"
   ]
+ },
+ {
+  "unit": "Point",
+  "round": 934,
+  "evidence": "tests/point_rest_native_parity.rs: 4,000 cases, 280,000 asserted calls against the pin's Point.hpp / Point.cpp, 0 mismatches: cross2 (fused for Vec2d, wrapping for Vec2i64), perp, angle, to_3d, the six unscale overloads, has_reflection (Eigen's 4x4 determinant; true in 2,018 cases), get_base / get_x_base / get_y_base / get_z_base, the four is_approx overloads, lerp, shorter_then; tests/point_native_parity.rs: int128::orient and int128::cross (Point.cpp 289-299) on 4,000 cases.",
+  "functions": [
+   "cross2",
+   "perp",
+   "angle",
+   "to_3d",
+   "unscale",
+   "has_reflection",
+   "get_base",
+   "get_x_base",
+   "get_y_base",
+   "get_z_base",
+   "is_approx",
+   "lerp",
+   "shorter_then",
+   "orient",
+   "cross"
+  ]
+ },
+ {
+  "unit": "Line",
+  "round": 934,
+  "evidence": "tests/line_rest_native_parity.rs: 3,000 cases, 78,000 asserted calls against the pin's Line.hpp / Line.cpp, 0 mismatches: line_alg get_a, get_b, distance_to_squared (with the nearest point), distance_to, distance_to_infinite_squared, distance_to_infinite; Line3, Linef3 (intersect_plane, scale, vector, unit_vector, length, reverse, get_point_projection_to_line, get_distance_of_point_to_line), Line3float; transform(Linef3, Transform3d) as Eigen evaluates it.",
+  "functions": [
+   "get_a",
+   "get_b",
+   "distance_to_squared",
+   "distance_to",
+   "distance_to_infinite_squared",
+   "distance_to_infinite",
+   "transform",
+   "Line3::length",
+   "Line3::vector",
+   "Line3float::vector",
+   "Line3float::unit_vector",
+   "Line3float::length",
+   "Linef3::intersect_plane",
+   "Linef3::scale",
+   "Linef3::vector",
+   "Linef3::unit_vector",
+   "Linef3::length",
+   "Linef3::reverse",
+   "Linef3::get_point_projection_to_line",
+   "Linef3::get_distance_of_point_to_line"
+  ]
  }
 ]
