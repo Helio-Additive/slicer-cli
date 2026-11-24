@@ -2170,6 +2170,29 @@ pub fn extrude_loop(
             }
         }
     }
+    // LOOP_TWICE_PROBE (diagnostic only, R939): the nozzle is not at the split loop's
+    // start when extrude_loop runs (a travel made by the caller went to another seam).
+    if crate::probe_enabled("LOOP_TWICE_PROBE") {
+        let fp = loop_copy.paths.first().and_then(|pa| pa.polyline.points().first().copied());
+        let wp = writer.position();
+        if let Some(fp) = fp {
+            let dx = crate::unscale(fp.x) - wp.x;
+            let dy = crate::unscale(fp.y) - wp.y;
+            if dx * dx + dy * dy > 0.001 * 0.001 {
+                eprintln!(
+                    "LOOP_TWICE role={:?} pre_travel={:?} writer=({:.3},{:.3}) first=({:.3},{:.3}) seam_from=({},{})",
+                    loop_entity.role(),
+                    pre_travel,
+                    wp.x,
+                    wp.y,
+                    crate::unscale(fp.x),
+                    crate::unscale(fp.y),
+                    last_pos.x,
+                    last_pos.y
+                );
+            }
+        }
+    }
     if std::env::var("SPLITDBG2").is_ok() {
         let post = loop_copy
             .paths
@@ -2845,16 +2868,23 @@ pub fn extrude_collection(
         // the travel, which `_extrude` of the first path makes (GCode.cpp:6667-6680,
         // :7611), so `place_seam` sees the position the nozzle left from; keep it for
         // extrude_loop, which runs after the travel here.
+        // GCODE_BUCKET_SEAM_ONCE: the caller's bucket-start travel already went to this
+        // entity's start, chosen from the position before it; the pin places the seam
+        // once, from that position (GCode.cpp:5512-5530 extrude_perimeters ->
+        // extrude_entity -> extrude_loop's place_seam, :6667-6680), so the seam is
+        // asked again from it here, not from the point the bucket travel reached.
+        let bucket_from = BUCKET_PRE_TRAVEL_POS.with(|c| c.take());
+        let seam_from = bucket_from.unwrap_or_else(|| writer_last_pos(writer));
         if crate::faithful_gate("ZSMOOTH_FAITHFUL") && loop_seam_pre_travel_gate() {
             let pre = if matches!(entity, ExtrusionEntityType::Loop(_)) {
-                Some(writer_last_pos(writer))
+                Some(seam_from)
             } else {
                 None
             };
             LOOP_SEAM_PRE_TRAVEL_POS.with(|c| c.set(pre));
         }
         let travel_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-            travel_target_for_entity(entity, writer_last_pos(writer))
+            travel_target_for_entity(entity, seam_from)
         } else {
             get_entity_first_point(entity)
         };
@@ -3304,6 +3334,15 @@ thread_local! {
     /// GCODE_LOOP_SEAM_PRE_TRAVEL: `m_last_pos` before the travel to a loop, for the
     /// seam placement of `extrude_loop` (GCode.cpp:6667-6680).
     static LOOP_SEAM_PRE_TRAVEL_POS: std::cell::Cell<Option<Point>> = const { std::cell::Cell::new(None) };
+    /// GCODE_BUCKET_SEAM_ONCE: `m_last_pos` before `extrude_perimeters_entities`'
+    /// bucket-start travel, for the first entity's seam in `extrude_collection`.
+    static BUCKET_PRE_TRAVEL_POS: std::cell::Cell<Option<Point>> = const { std::cell::Cell::new(None) };
+}
+
+/// GCODE_BUCKET_SEAM_ONCE (R939, on unless =0): the seam of a bucket's first loop is
+/// placed once, from the position before the bucket-start travel.
+fn bucket_seam_once_gate() -> bool {
+    crate::faithful_gate("GCODE_BUCKET_SEAM_ONCE")
 }
 
 /// Rust analogue of `ExtrusionEntityCollection::chained_path_from(start_near, role)`
@@ -4516,6 +4555,7 @@ pub fn extrude_perimeters_entities(
     // needs_retraction (GCode.cpp:6964) — the unconditional retract here was
     // the outer-wall->gap wipe excess (R167). Legacy path keeps the
     // unconditional behavior (byte-locked).
+    let bucket_from = writer_last_pos(writer);
     let first_pt_opt = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         travel_target_for_entity(&entities[0], writer_last_pos(writer))
     } else {
@@ -4568,6 +4608,15 @@ pub fn extrude_perimeters_entities(
     }
     // Native _extrude unconditionally unretracts at extrusion start.
     writer.unretract();
+    // GCODE_BUCKET_SEAM_ONCE: the first entity's seam from the position before the
+    // bucket-start travel (taken by the first extrude_collection entity).
+    if crate::faithful_gate("ZSMOOTH_FAITHFUL")
+        && bucket_seam_once_gate()
+        && !skip_inner_walls
+        && matches!(entities[0], ExtrusionEntityType::Loop(_))
+    {
+        BUCKET_PRE_TRAVEL_POS.with(|c| c.set(Some(bucket_from)));
+    }
     if skip_inner_walls {
         use crate::extrusion_entity::ExtrusionRole;
         for entity in entities {
@@ -4598,6 +4647,8 @@ pub fn extrude_perimeters_entities(
         };
         let _ = extrude_collection(&coll, writer, config, is_first_layer);
     }
+    // GCODE_BUCKET_SEAM_ONCE: never leaks past this bucket.
+    BUCKET_PRE_TRAVEL_POS.with(|c| c.set(None));
 }
 
 /// Island-subset infill emission (GCode::extrude_infill on one island's by_region
@@ -7912,14 +7963,34 @@ impl GCodeHeader {
             "; total filament weight [g] : {:.2}\n",
             self.stats.filament_weight_g
         ));
-        header.push_str(&format!(
-            "; filament_density: {:.2}\n",
-            self.config.filament_density
-        ));
-        header.push_str(&format!(
-            "; filament_diameter: {:.2}\n",
-            self.config.filament_diameter
-        ));
+        // GCode.cpp:2628-2634: `m_config.filament_density.serialize()` and
+        // `m_config.filament_diameter.serialize()`, every filament's value as the config writes it.
+        // Gate GCODE_CONFIG_BLOCK_PIN.
+        let pin_lists = if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
+            self.raw_settings.as_ref().filter(|s| s.is_object()).map(|s| {
+                use crate::config::ConfigBase;
+                let cfg = full_print_config_from_settings(s);
+                (
+                    ConfigBase::opt_serialize(&cfg, "filament_density").unwrap_or_default(),
+                    ConfigBase::opt_serialize(&cfg, "filament_diameter").unwrap_or_default(),
+                )
+            })
+        } else {
+            None
+        };
+        if let Some((density, diameter)) = pin_lists {
+            header.push_str(&format!("; filament_density: {}\n", density));
+            header.push_str(&format!("; filament_diameter: {}\n", diameter));
+        } else {
+            header.push_str(&format!(
+                "; filament_density: {:.2}\n",
+                self.config.filament_density
+            ));
+            header.push_str(&format!(
+                "; filament_diameter: {:.2}\n",
+                self.config.filament_diameter
+            ));
+        }
         header.push_str(&format!("; max_z_height: {:.2}\n", self.stats.max_z_height));
         // Configured filament count (single-material configs ⇒ 1, preserving
         // the locked default-path bytes). C++ writes the used-filament list;
@@ -7928,6 +7999,31 @@ impl GCodeHeader {
             "; filament: {}\n",
             self.config.num_filaments()
         ));
+        if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
+            // GCode.cpp:2658-2660
+            header.push_str("; support_material_on_wipe_tower: 0\n");
+            // BBS: legal and compliance notice (last lines of HEADER_BLOCK), GCode.cpp:2662-2681
+            header.push_str("; Legal and Compliance Notice\n");
+            header.push_str(
+                "; Certain features are offered on a regional basis and are intended to be used only \
+                 by consumers located in the corresponding region(s). Bambu Lab does not authorize \
+                 cross-region use of the product and assumes no responsibility or liability for any \
+                 use undertaken without the necessary authorizations or otherwise not in compliance \
+                 with applicable regional requirements; you agree to indemnify and hold Bambu Lab \
+                 harmless from any resulting claims, including claims resulting from attempts to \
+                 circumvent regional restrictions on Bambu products. Using Bambu products outside \
+                 their intended region (including through such measures as importing or exporting \
+                 the product, modifying the software, G-code or files generated by the software, \
+                 misrepresenting or manipulating information, altering any identifiers or \
+                 authorizations, including those embodied in G-code) may implicate a range of \
+                 authorizations and compliance requirements, such as intellectual property rights, \
+                 environmental compliance, network-access/telecommunications certification, \
+                 mandatory product certifications and safety standards, privacy and data-protection \
+                 requirements, customs and import/export clearances, and other applicable laws or \
+                 third-party rights. Before taking such action, you must obtain all related \
+                 authorizations and ensure compliance yourself.\n",
+            );
+        }
         header.push_str("; HEADER_BLOCK_END\n");
         header.push_str("\n");
 
@@ -7938,6 +8034,16 @@ impl GCodeHeader {
     /// If raw_settings (from BambuStudio project_settings.config) are available,
     /// emit the full config block matching the reference output format.
     pub fn generate_config_block(&self) -> String {
+        // GCode.cpp:2686-2723: the block is `append_full_config` over a copy of
+        // `print.full_print_config()` (every option, the settings read over the defaults) with
+        // flush_volumes_matrix scaled by the flush multiplier. Gate GCODE_CONFIG_BLOCK_PIN.
+        if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
+            if let Some(ref settings) = self.raw_settings {
+                if settings.is_object() {
+                    return GCode::config_block_pin(settings);
+                }
+            }
+        }
         if let Some(ref settings) = self.raw_settings {
             if let Some(obj) = settings.as_object() {
                 let mut config = String::new();
@@ -8738,6 +8844,99 @@ fn format_config_value(
             normalize_scalar(arr.first().and_then(|v| v.as_str()).unwrap_or(""))
         }
         _ => value.to_string(),
+    }
+}
+
+impl GCode {
+    /// GCode.cpp:6410-6430 `void GCode::append_full_config(const DynamicPrintConfig &cfg, std::string &str)`:
+    /// every key of `cfg` in its (sorted) order, except the banned host keys and nil options, as
+    /// `; key = <opt_serialize(key)>`.
+    pub fn append_full_config(
+        cfg: &crate::print_config::config_def::DynamicPrintConfig,
+        str: &mut String,
+    ) {
+        use crate::config::{ConfigBase, ConfigOptionResolver};
+        // Sorted list of config keys, which shall not be stored into the G-code (GCode.cpp:6413-6423).
+        const BANNED_KEYS: [&str; 9] = [
+            "compatible_printers",
+            "compatible_prints",
+            "print_host",
+            "print_host_webui",
+            "printhost_apikey",
+            "printhost_cafile",
+            "printhost_user",
+            "printhost_password",
+            "printhost_port",
+        ];
+        let is_banned = |key: &str| BANNED_KEYS.contains(&key);
+        for key in ConfigBase::keys(cfg) {
+            let nil = ConfigOptionResolver::option(cfg, &key).map_or(true, |o| o.is_nil());
+            if !is_banned(&key) && !nil {
+                str.push_str("; ");
+                str.push_str(&key);
+                str.push_str(" = ");
+                str.push_str(&ConfigBase::opt_serialize(cfg, &key).unwrap_or_default());
+                str.push('\n');
+            }
+        }
+    }
+
+    /// The CONFIG_BLOCK of `GCode::_do_export` (GCode.cpp:2686-2723) over the job's settings read as
+    /// `print.full_print_config()` (`full_print_config_from_settings`).
+    ///
+    /// FIDELITY-NOTE: a flush_volumes_matrix whose size fits neither rule throws a SlicingError in the
+    /// pin (GCode.cpp:2713-2716); here the matrix is written unscaled. `filament_map_2` is set from
+    /// `print.config()` (GCode.cpp:2719), which is the same settings here.
+    pub fn config_block_pin(settings: &serde_json::Value) -> String {
+        use crate::config::{ConfigBase, ConfigOptionFloats, ConfigOptionStrings};
+        let mut out = String::from("; CONFIG_BLOCK_START\n");
+        let mut full_config = String::new();
+        let mut print_cfg_temp = full_print_config_from_settings(settings);
+        {
+            // correct the flush_volumes_matrix with flush_multiplier values (GCode.cpp:2692-2717)
+            let fast = ConfigBase::opt_serialize(&print_cfg_temp, "prime_volume_mode")
+                .map_or(false, |s| s == "Fast");
+            let mult_key = if fast { "flush_multiplier_fast" } else { "flush_multiplier" };
+            let temp_cfg_flush_multiplier: Vec<f64> = print_cfg_temp
+                .base
+                .opt::<ConfigOptionFloats>(mult_key)
+                .map(|o| o.values.clone())
+                .unwrap_or_default();
+            let mut temp_flush_volumes_matrix: Vec<f64> = print_cfg_temp
+                .base
+                .opt::<ConfigOptionFloats>("flush_volumes_matrix")
+                .map(|o| o.values.clone())
+                .unwrap_or_default();
+            let filament_count_tmp = print_cfg_temp
+                .base
+                .opt::<ConfigOptionStrings>("filament_colour")
+                .map_or(0, |o| o.values.len());
+            let heads_count_tmp = temp_cfg_flush_multiplier.len();
+            if heads_count_tmp > 0 {
+                let matrix_value_count = temp_flush_volumes_matrix.len() / heads_count_tmp;
+                if filament_count_tmp * filament_count_tmp * heads_count_tmp
+                    == temp_flush_volumes_matrix.len()
+                {
+                    for idx in 0..heads_count_tmp {
+                        let m = temp_cfg_flush_multiplier[idx];
+                        for x in &mut temp_flush_volumes_matrix
+                            [idx * matrix_value_count..(idx + 1) * matrix_value_count]
+                        {
+                            *x *= m;
+                        }
+                    }
+                    if let Ok(Some(o)) =
+                        print_cfg_temp.base.opt_mut::<ConfigOptionFloats>("flush_volumes_matrix", false)
+                    {
+                        o.values = temp_flush_volumes_matrix;
+                    }
+                }
+            }
+        }
+        GCode::append_full_config(&print_cfg_temp, &mut full_config);
+        out.push_str(&full_config);
+        out.push_str("; CONFIG_BLOCK_END\n\n");
+        out
     }
 }
 
@@ -11734,11 +11933,12 @@ pub fn split_and_mapping_speed(
             left_paths.extend(this_path.drain(idx..));
             *this_path = std::mem::take(&mut left_paths);
             // C++ does `this_path = std::move(left_paths); break;` (GCode.cpp:7254-7258), so the paths pushed
-            // back still get `final_v` below (GCode.cpp:7352-7355). Gate SPLIT_MAPPING_SPEED_BREAK_PIN (R938, an
-            // opt_in_gate: off unless =1, because with it Majora loses 3 lines in order while Benchy classic gains
-            // 115 and Benchy arachne 870; the counterpart that loses them is not found yet); off: the earlier early
-            // return, which left them at their own speed.
-            if crate::opt_in_gate("SPLIT_MAPPING_SPEED_BREAK_PIN") {
+            // back still get `final_v` below (GCode.cpp:7352-7355). Gate SPLIT_MAPPING_SPEED_BREAK_PIN (R938 opt-in;
+            // R939 faithful_gate, on unless =0: Majora's -3 in R938 was M73 placement only (the walls' in-order equal,
+            // the gate only drops 'G1 F' lines the pin does not write); with GCODE_BUCKET_SEAM_ONCE Majora is equal
+            // on/off and Benchy classic +115, arachne +870); =0: the earlier early return, which left them at their
+            // own speed.
+            if crate::faithful_gate("SPLIT_MAPPING_SPEED_BREAK_PIN") {
                 break;
             }
             interpolated_paths.append(&mut splited_path);

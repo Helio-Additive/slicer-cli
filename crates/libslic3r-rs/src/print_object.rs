@@ -1104,10 +1104,19 @@ impl PrintObject {
                         }
                     }
                 }
-                let merged = crate::clipper_utils::polytree_ex_clib(&polygons);
                 // :2362 lslices_1st_layer = offset_ex(layer->merged(eps), -eps);
-                let lslices_1st_layer =
-                    crate::clipper_utils::offset_expolygons_clib_scaled(&merged, -eps, OffsetJoinType::Miter);
+                // R939 L0_EFC_MERGED_PIN (faithful): the verified Layer::merged (Layer.cpp:150-170,
+                // float delta, layer_native_parity) and offset_ex(ExPolygons, float) (ClipperUtils.cpp)
+                // with `static const float eps`; =0 keeps the inline arm above.
+                let lslices_1st_layer = if crate::faithful_gate("L0_EFC_MERGED_PIN") {
+                    use crate::support::support_common::cu;
+                    let eps_f = eps as f32;
+                    let merged = layer.merged_f32(eps_f);
+                    cu::offset_ex_expolygons(&merged, -eps_f, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+                } else {
+                    let merged = crate::clipper_utils::polytree_ex_clib(&polygons);
+                    crate::clipper_utils::offset_expolygons_clib_scaled(&merged, -eps, OffsetJoinType::Miter)
+                };
                 // :2363-2364
                 let trimming =
                     crate::elephant_foot_compensation::elephant_foot_compensation_expolygons_with_flow(

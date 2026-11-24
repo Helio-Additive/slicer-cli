@@ -6485,6 +6485,19 @@ pub fn traverse_extrusions(
             let flow: &Flow = if is_external { &perimeter_generator.ext_perimeter_flow } else { &perimeter_generator.perimeter_flow };
             extrusion_paths_append_line(&mut paths, extrusion, role, flow, 0.);
         }
+        // R939 TINYPROBE=<max length> (diagnostic only): short Arachne lines of layers 0-2 and the
+        // paths they became (worker B's R938 finding: tiny inner-wall pieces the pin prints).
+        if crate::probe_enabled("TINYPROBE") && perimeter_generator.layer_id <= 2 {
+            let mut len = 0.0_f64;
+            for w in extrusion.junctions.windows(2) {
+                len += ((w[1].p.x - w[0].p.x) as f64).hypot((w[1].p.y - w[0].p.y) as f64);
+            }
+            if len < std::env::var("TINYPROBE").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(3000.0) {
+                let js: Vec<String> = extrusion.junctions.iter().map(|j| format!("{},{},{}", j.p.x, j.p.y, j.w)).collect();
+                let ps: Vec<String> = paths.iter().map(|p| format!("n={} w={:.5} len={:.1}", p.polyline.points.len(), p.width, p.length())).collect();
+                eprintln!("TINYPROBE lid={} inset={} closed={} odd={} len={:.1} j=[{}] paths=[{}]", perimeter_generator.layer_id, extrusion.inset_idx, extrusion.is_closed, extrusion.is_odd, len, js.join(" "), ps.join("; "));
+            }
+        }
 
         // `shouldApplyHoleCompensation(const double threshold = 0.8)`
         let apply_hole_compensation: bool = extrusion.should_apply_hole_compensation(0.8);

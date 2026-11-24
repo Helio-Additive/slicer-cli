@@ -1946,6 +1946,10 @@ impl LayerRegion {
             }
         }
 
+        // BRDG probe (diagnostic only): which layer / region the bridge lines that follow belong to.
+        if crate::probe_enabled("BRDG") {
+            eprintln!("BRDG layer id={} region={}", self.layer_id, self.region_id);
+        }
         // LayerRegion.cpp:518 — operate on this region's fill_surfaces in place.
         let mut surfaces = vec![std::mem::take(&mut self.fill_surfaces.surfaces)];
         process_external_surfaces_wave(&mut surfaces, &config);
@@ -5724,8 +5728,23 @@ impl Layer {
                 if fill_pattern == InfillPattern::Gyroid
                     && crate::faithful_gate("FVS_ANCHOR_GYROID_FSS")
                 {
-                    let spacing = surface_fill.params.flow.spacing();
-                    let delta = -0.5 * spacing * crate::SCALING_FACTOR;
+                    // FILL_ANCHOR_GYROID_SPACING_PIN (R939): Fill.cpp:968 `f->spacing =
+                    // surface_fill.params.spacing` (for a sparse surface the flow's at the object's
+                    // layer height, Fill.cpp:305-328) and FillBase.cpp:102 `float(scale_(this->overlap -
+                    // 0.5 * this->spacing))` (a division by 0.00001, then float), as make_fills' gyroid
+                    // takes them (FILL_GYROID_SPACING_PIN, FILL_SCALE_DIV_PIN); =0 keeps the surface
+                    // flow's spacing and the multiplication by 1e5.
+                    let anchor_gyroid_pin = crate::faithful_gate("FILL_ANCHOR_GYROID_SPACING_PIN");
+                    let spacing = if anchor_gyroid_pin && surface_fill.params.pin_pattern.is_some() {
+                        surface_fill.params.spacing
+                    } else {
+                        surface_fill.params.flow.spacing()
+                    };
+                    let delta = if anchor_gyroid_pin {
+                        (((-0.5f64).mul_add(spacing, 0.0) / crate::libslic3r::SCALING_FACTOR) as f32) as f64
+                    } else {
+                        -0.5 * spacing * crate::SCALING_FACTOR
+                    };
                     let islands = crate::clipper_utils::offset_expolygons_clib_scaled(
                         std::slice::from_ref(&expoly),
                         delta,
