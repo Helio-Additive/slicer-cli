@@ -10,14 +10,15 @@
 //! triangles (3 consecutive vertices = 1 triangle), honoring the `m_flipped`
 //! winding flag.
 //!
-//! `glu-libtess` is a native C dependency and is NOT wasm-safe, so it cannot be
-//! linked here. Instead the polygon-with-holes is triangulated with the
-//! pure-Rust `earcutr` (MapBox earcut) crate, and the resulting triangles are
-//! fed through a faithful 1:1 port of the `GluTessWrapper::tessVertex` state
-//! machine as `GL_TRIANGLES` primitives. This keeps the wrapper logic (winding,
-//! flip, Z assignment, unscaling) byte-identical to C++; the only divergence is
-//! the underlying triangulation backend (earcut vs SGI GLU), which can produce
-//! a different triangle decomposition for the same region. See `divergences`.
+//! R947: `glu-libtess` is ported to Rust in `crate::glu_libtess` (one file per
+//! C file), and with the gate `GLU_LIBTESS_PIN` (faithful, on unless =0) the
+//! wrapper feeds it exactly as Tesselate.cpp does and replays its callbacks
+//! through `tessBegin` / `tessVertex` / `tessEnd` / `tessCombine`; the triangles
+//! are bit-equal to the pin's (tests/tesselate_native_parity.rs). With
+//! `GLU_LIBTESS_PIN=0` the earlier arm runs: the polygon-with-holes is
+//! triangulated with the pure-Rust `earcutr` (MapBox earcut) crate and the
+//! triangles are fed through the same `tessVertex` state machine as
+//! `GL_TRIANGLES` primitives (another triangle decomposition than GLU's).
 //!
 //! C++ Reference:
 //! - Tesselate.hpp (25 lines)
@@ -187,6 +188,12 @@ impl GluTessWrapper {
     /// `GL_TRIANGLES` primitive stream. This stands in for the GLU input
     /// feeding (Tesselate.cpp:35-54 / 76-96) plus the GLU-driven callbacks.
     fn tesselate_one_expoly(&mut self, expoly: &ExPolygon) {
+        // The pin runs glu-libtess here (Tesselate.cpp:35-54 / 76-96); the
+        // earcut arm below stays for GLU_LIBTESS_PIN=0.
+        if crate::faithful_gate("GLU_LIBTESS_PIN") {
+            self.tesselate_one_expoly_glu(expoly);
+            return;
+        }
         // Build the flat coordinate buffer in unscaled mm, contour first then
         // holes, exactly as the GLU vertex feeding does (Tesselate.cpp:37-53):
         //   coords.emplace_back(unscale<double>(pt[0]));
@@ -240,6 +247,49 @@ impl GluTessWrapper {
             }
         }
         self.tess_end(); // tessEnd (Tesselate.cpp:117-120)
+    }
+
+    /// Tesselate.cpp:35-54 (one ExPolygon; also the loop body of
+    /// Tesselate.cpp:76-96): feed the contour and the holes to glu-libtess
+    /// (`crate::glu_libtess`), the vertex data being the fed (x, y) in mm
+    /// (`unscale<double>` = `v * SCALING_FACTOR`, libslic3r.h:58), then replay
+    /// the tessellator's callbacks through tessBegin / tessVertex / tessEnd.
+    /// tessCombine (Tesselate.cpp:159-163) gives a new vertex the combined
+    /// (x, y); tessError is a no-op.
+    fn tesselate_one_expoly_glu(&mut self, expoly: &ExPolygon) {
+        use crate::glu_libtess::{GluTesselator, TessOut};
+        fn combine(new_vertex: &[f64; 3], _data: &[Option<[f64; 2]>; 4], _weight: &[f32; 4]) -> Option<[f64; 2]> {
+            Some([new_vertex[0], new_vertex[1]])
+        }
+        let mut tess = GluTesselator::glu_new_tess();
+        tess.call_combine = Some(combine);
+        tess.glu_tess_begin_polygon();
+        for (k, poly) in std::iter::once(&expoly.contour).chain(expoly.holes.iter()).enumerate() {
+            let _ = k;
+            tess.glu_tess_begin_contour();
+            for pt in &poly.points {
+                let x = crate::libslic3r::unscale(pt.x);
+                let y = crate::libslic3r::unscale(pt.y);
+                tess.glu_tess_vertex(&[x, y, 0.0], Some([x, y]));
+            }
+            tess.glu_tess_end_contour();
+        }
+        tess.glu_tess_end_polygon();
+        for ev in std::mem::take(&mut tess.out) {
+            match ev {
+                TessOut::Begin(which) => self.tess_begin(match which {
+                    crate::glu_libtess::tess::GL_TRIANGLE_FAN => GlPrimitive::TriangleFan,
+                    crate::glu_libtess::tess::GL_TRIANGLE_STRIP => GlPrimitive::TriangleStrip,
+                    _ => GlPrimitive::Triangles,
+                }),
+                TessOut::Vertex(d) => match d {
+                    Some(d) => self.tess_vertex(Some(&[d[0], d[1], self.m_z])),
+                    None => self.tess_vertex(None),
+                },
+                TessOut::End => self.tess_end(),
+                TessOut::Error(_) => self.tess_error(),
+            }
+        }
     }
 
     /// Tesselate.cpp:110-115

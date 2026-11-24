@@ -219,3 +219,20 @@ fn arrange_copy_of_the_skirt_helpers_matches() {
         );
     }
 }
+
+/// The copy of `get_bed_shape_with_excluded_area` in support/tree_support_3d.rs (what the faithful tree
+/// support's machine border reads, TreeSupport.cpp:632) gives the same polygon as the paired port on every
+/// configuration above (R947: checked before the copy was made to call the paired port).
+#[test]
+fn tree_support_copy_of_the_bed_shape_matches() {
+    for s in 0..10 {
+        let c = scenario_config(s);
+        for share in [false, true] {
+            assert_eq!(
+                poly_s(&slicer::support::tree_support_3d::get_bed_shape_with_excluded_area(&c, share)),
+                poly_s(&get_bed_shape_with_excluded_area(&c, share)),
+                "k{s} share {share}"
+            );
+        }
+    }
+}

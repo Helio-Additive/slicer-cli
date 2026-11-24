@@ -246,7 +246,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
     // (empty `.string` means valid). Warnings (is_warning) are non-fatal.
     let validation = print.validate();
     if !validation.string.is_empty() && !validation.is_warning {
-        anyhow::bail!("validation error: {}", validation.string);
+        return Err(validation_refusal(validation));
     }
 
     info!("Running Print::process() pipeline...");
@@ -256,6 +256,102 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
         .with_context(|| "Failed to process print")?;
     let __proc_s = __t_proc.elapsed().as_secs_f64();
     Ok((print, __proc_s))
+}
+
+/// A hard error of `Print::validate()`, carried to the front end so that it refuses the job the way
+/// `slicer_cli` does (main.cpp:11539-11636): `Validation error: <message>` and the tip on stderr, and the
+/// return code the official CLI maps the exception type to (BambuStudio.cpp 7094-7111 at 5873b5f).
+#[derive(Debug, Clone)]
+pub struct ValidationRefusal {
+    pub exception: crate::print_base::StringObjectException,
+}
+
+impl std::fmt::Display for ValidationRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "validation error: {}", self.exception.string)
+    }
+}
+
+impl std::error::Error for ValidationRefusal {}
+
+impl ValidationRefusal {
+    /// main.cpp:11541-11545 (stderr): the engine's sentence, then the tip.
+    pub fn stderr_text(&self) -> String {
+        format!(
+            "Validation error: {}\n\nTip: You may need to specify proper config files:\n  --machine, --filament, and --process options",
+            self.exception.string
+        )
+    }
+
+    /// main.cpp:166-185 `string_exception_tag`.
+    pub fn tag(&self) -> &'static str {
+        use crate::print_base::StringExceptionType as T;
+        match self.exception.r#type {
+            T::StringExceptNotDefined => "STRING_EXCEPT_NOT_DEFINED",
+            T::StringExceptFilamentNotMatchBedType => "STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE",
+            T::StringExceptFilamentsDifferentTemp => "STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP",
+            T::StringExceptObjectCollisionInSeqPrint => "STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT",
+            T::StringExceptObjectCollisionInLayerPrint => "STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT",
+            T::StringExceptLayerHeightExceedsLimit => "STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT",
+            T::StringExceptCount => "STRING_EXCEPT_COUNT",
+        }
+    }
+
+    /// main.cpp:465-484 `emit_validation_event` (Bambu engine): the event's JSON, keys in nlohmann's
+    /// (sorted) order: event, hypertext (if any), message, opt_key (if any), params (if any), tag.
+    pub fn event_payload(&self) -> String {
+        let e = &self.exception;
+        let mut m = serde_json::Map::new();
+        m.insert("event".into(), (if e.is_warning { "validation_warning" } else { "validation_error" }).into());
+        if !e.hypetext.is_empty() {
+            m.insert("hypertext".into(), e.hypetext.clone().into());
+        }
+        m.insert("message".into(), e.string.clone().into());
+        if !e.opt_key.is_empty() {
+            m.insert("opt_key".into(), e.opt_key.clone().into());
+        }
+        if !e.params.is_empty() {
+            m.insert("params".into(), e.params.clone().into());
+        }
+        m.insert("tag".into(), self.tag().into());
+        // serde_json's Map without `preserve_order` is a BTreeMap: the keys come out sorted, as
+        // nlohmann::json's std::map does.
+        serde_json::Value::Object(m).to_string()
+    }
+
+    /// diagnostic_output.hpp:14-18 `write_event_now`: the record written to stdout.
+    pub fn event_record(&self) -> String {
+        format!("\n[[SLICER_EVENT]] {}\n", self.event_payload())
+    }
+
+    /// main.cpp:11635-11636 (`set_outcome_failure(outcome, validate_error, message); return 1;`): the process
+    /// exits with 1; the CLI_* code goes into result.json.
+    pub fn exit_code(&self) -> i32 {
+        1
+    }
+
+    /// main.cpp:11546-11560: `CLI_VALIDATE_ERROR` (-51), or the code of the exception type
+    /// (Utils.hpp:52, 62-65): what slicer_cli writes as result.json's return code.
+    pub fn return_code(&self) -> i32 {
+        use crate::print_base::StringExceptionType as T;
+        match self.exception.r#type {
+            T::StringExceptFilamentNotMatchBedType => -61,
+            T::StringExceptFilamentsDifferentTemp => -62,
+            T::StringExceptObjectCollisionInSeqPrint => -63,
+            T::StringExceptObjectCollisionInLayerPrint => -64,
+            _ => -51,
+        }
+    }
+}
+
+/// The error a hard validation error becomes. Gate FRONT_END_VALIDATE_REFUSAL_PIN (faithful, R947): a
+/// [`ValidationRefusal`] the front end prints and maps as `slicer_cli` does; off, the earlier plain
+/// `validation error: <message>` (a slicing error, -100).
+fn validation_refusal(validation: crate::print_base::StringObjectException) -> anyhow::Error {
+    if crate::faithful_gate("FRONT_END_VALIDATE_REFUSAL_PIN") {
+        return ValidationRefusal { exception: validation }.into();
+    }
+    anyhow::anyhow!("validation error: {}", validation.string)
 }
 
 /// `slicer_cli` rewrites the placeholder `initial_no_support_filament_id` to
@@ -1005,7 +1101,7 @@ pub fn slice_3mf_to_gcode(
     // (empty `.string` means valid). Warnings (is_warning) are non-fatal.
     let validation = print.validate();
     if !validation.string.is_empty() && !validation.is_warning {
-        anyhow::bail!("validation error: {}", validation.string);
+        return Err(validation_refusal(validation));
     }
 
     info!("Running Print::process() pipeline...");

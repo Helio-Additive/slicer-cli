@@ -608,11 +608,15 @@ pub fn is_narrow_expolygon(
     // ExPolygons offsets = offset_ex(expolygon, -min_width / 2);
     // (offset_ex's DefaultJoinType is jtMiter — ClipperUtils.hpp:31.)
     // FIDELITY-NOTE(F1): offset_expolygons uses geo-clipper approximation vs C++ ClipperLib.
-    let offsets = offset_expolygons(
-        std::slice::from_ref(expolygon),
-        -min_width / 2.0,
-        OffsetJoinType::Miter,
-    );
+    // R947 (IS_NARROW_EXPOLYGON_PIN): min_width is in scaled units at the pin (PrintObject.cpp:2727 passes
+    // 3 * a scaled flow width), and the ExPolygon overload offset_ex(const ExPolygon&, const float delta,
+    // jtMiter, 3.) (ClipperUtils.cpp:567-569) takes the double -min_width / 2 as a float. The earlier arm
+    // sent it through offset_expolygons, which reads the delta as mm and scales it by 1e5 again.
+    let offsets = if crate::faithful_gate("IS_NARROW_EXPOLYGON_PIN") {
+        crate::clipper_utils::offset_ex_expolygon_clib(expolygon, ((-min_width / 2.0) as f32) as f64, OffsetJoinType::Miter, 3.0)
+    } else {
+        offset_expolygons(std::slice::from_ref(expolygon), -min_width / 2.0, OffsetJoinType::Miter)
+    };
     // ExPolygon.cpp:469-470
     if offsets.is_empty() {
         return true;
@@ -1085,6 +1089,98 @@ impl ToPoints for Vec<ExPolygon> {
         self.as_slice().to_points()
     }
 }
+/// ExPolygon.hpp:180-198: the closed edges of every contour and hole, unscaled
+/// (`unscaled(p)` = `p.cast<double>() * SCALING_FACTOR`, a multiplication).
+pub fn to_unscaled_linesf(src: &[ExPolygon]) -> Vec<crate::geometry::LineF> {
+    use crate::geometry::{LineF, PointF};
+    let unscaled = |p: &Point| PointF::new(p.x as f64 * SCALING_FACTOR, p.y as f64 * SCALING_FACTOR);
+    let mut lines: Vec<LineF> = Vec::with_capacity(count_points(src));
+    for it_expoly in src {
+        for i in 0..=it_expoly.holes.len() {
+            let points = if i == 0 { &it_expoly.contour.points } else { &it_expoly.holes[i - 1].points };
+            let mut unscaled_a = unscaled(&points[0]);
+            let mut unscaled_b;
+            for it in &points[1..] {
+                unscaled_b = unscaled(it);
+                lines.push(LineF::new(unscaled_a, unscaled_b));
+                unscaled_a = unscaled_b;
+            }
+            lines.push(LineF::new(unscaled_a, unscaled(&points[0])));
+        }
+    }
+    lines
+}
+
+/// boost::polygon `winding_direction` (boost/polygon/polygon_traits.hpp).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindingDirection {
+    ClockwiseWinding = 0,
+    CounterclockwiseWinding = 1,
+    UnknownWinding = 2,
+}
+
+/// boost::polygon `polygon_traits<Slic3r::ExPolygon>` (ExPolygon.hpp:498-523).
+pub struct PolygonTraitsExPolygon;
+
+impl PolygonTraitsExPolygon {
+    /// ExPolygon.hpp:505-507
+    pub fn begin_points(t: &ExPolygon) -> std::slice::Iter<'_, Point> {
+        t.contour.points.iter()
+    }
+    /// ExPolygon.hpp:510-512 (the end of the same range: an exhausted iterator).
+    pub fn end_points(t: &ExPolygon) -> std::slice::Iter<'_, Point> {
+        t.contour.points[t.contour.points.len()..].iter()
+    }
+    /// ExPolygon.hpp:515-517
+    pub fn size(t: &ExPolygon) -> usize {
+        t.contour.points.len()
+    }
+    /// ExPolygon.hpp:520-522: `unknown_winding`.
+    pub fn winding(_t: &ExPolygon) -> WindingDirection {
+        WindingDirection::UnknownWinding
+    }
+}
+
+/// boost::polygon `polygon_with_holes_traits<Slic3r::ExPolygon>` (ExPolygon.hpp:541-554).
+pub struct PolygonWithHolesTraitsExPolygon;
+
+impl PolygonWithHolesTraitsExPolygon {
+    /// ExPolygon.hpp:545-547
+    pub fn begin_holes(t: &ExPolygon) -> std::slice::Iter<'_, Polygon> {
+        t.holes.iter()
+    }
+    /// ExPolygon.hpp:548-550
+    pub fn end_holes(t: &ExPolygon) -> std::slice::Iter<'_, Polygon> {
+        t.holes[t.holes.len()..].iter()
+    }
+    /// ExPolygon.hpp:551-553: `(int)t.holes.size()` returned as unsigned int.
+    pub fn size_holes(t: &ExPolygon) -> u32 {
+        t.holes.len() as i32 as u32
+    }
+}
+
+/// boost::polygon `polygon_set_traits<Slic3r::ExPolygons>` (ExPolygon.hpp:570-587).
+pub struct PolygonSetTraitsExPolygons;
+
+impl PolygonSetTraitsExPolygons {
+    /// ExPolygon.hpp:576-578
+    pub fn begin(polygon_set: &[ExPolygon]) -> std::slice::Iter<'_, ExPolygon> {
+        polygon_set.iter()
+    }
+    /// ExPolygon.hpp:580-582
+    pub fn end(polygon_set: &[ExPolygon]) -> std::slice::Iter<'_, ExPolygon> {
+        polygon_set[polygon_set.len()..].iter()
+    }
+    /// ExPolygon.hpp:585
+    pub fn clean(_polygon_set: &[ExPolygon]) -> bool {
+        false
+    }
+    /// ExPolygon.hpp:586
+    pub fn sorted(_polygon_set: &[ExPolygon]) -> bool {
+        false
+    }
+}
+
 /// ExPolygon.hpp:201-212, 370-378
 pub fn to_points<T: ToPoints + ?Sized>(src: &T) -> Vec<Point> {
     src.to_points()

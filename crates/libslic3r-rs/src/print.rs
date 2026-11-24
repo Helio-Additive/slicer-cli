@@ -989,11 +989,120 @@ impl Print {
             writer.set_travel_acceleration(0.0);
             writer.travel_to_z(z, None);
         }
+        // TIMELAPSE_POS_PICKER_LIVE (faithful): `m_timelapse_pos_picker.init(&print, m_writer.get_xy_offset())`
+        // (GCode.cpp:2483) and, per layer change, `pick_pos(ctx)` (GCode.cpp:4758): for smooth timelapse the
+        // picker's all-layer position (TimelapsePosPicker.cpp:571-622), from the full configuration, the
+        // nozzle group's used extruders, the tower's position and box and the objects' instance boxes
+        // (`change_filament_object_bounding_boxes`, one instance per object). Taken without a raft (the
+        // live objects carry no `get_raft_height` here) and on the first plate (offset 0). =0, or
+        // otherwise, the template keeps the constant safe position (X0 Y83) it had.
+        let mut live_pos_picker: Option<crate::gcode::timelapse_pos_picker::LiveTimelapsePosPicker> = None;
+        if crate::faithful_gate("TIMELAPSE_POS_PICKER_LIVE")
+            && self.config.timelapse_type == 1
+            && self.objects.iter().all(|o| o.config.raft_layers == 0)
+        {
+            if let (Some(settings), Some(boxes)) = (self.raw_settings.as_ref(), self.change_filament_object_bounding_boxes()) {
+                let owned_cfg;
+                let cfg = match self.full_print_config.as_ref() {
+                    Some(c) => c,
+                    None => {
+                        owned_cfg = full_print_config_from_settings(settings);
+                        &owned_cfg
+                    }
+                };
+                let instance_bboxes: Vec<Vec<crate::bounding_box::BoundingBoxf3>> = boxes
+                    .iter()
+                    .map(|(lo, hi)| {
+                        vec![crate::bounding_box::BoundingBoxf3::new_from_points(
+                            crate::geometry::Vec3d::new(lo.x, lo.y, lo.z),
+                            crate::geometry::Vec3d::new(hi.x, hi.y, hi.z),
+                        )]
+                    })
+                    .collect();
+                let raft_heights = vec![0.0; instance_bboxes.len()];
+                live_pos_picker = Some(crate::gcode::timelapse_pos_picker::LiveTimelapsePosPicker::init(
+                    cfg,
+                    self.nozzle_group_result.as_ref().map(|g| g.get_used_extruders().len()),
+                    [self.config.wipe_tower_x as f32, self.config.wipe_tower_y as f32],
+                    self.wipe_tower_bbx.unwrap_or(((0.0, 0.0), (0.0, 0.0))),
+                    &instance_bboxes,
+                    &raft_heights,
+                    &crate::geometry::Point::new(0, 0),
+                ));
+            }
+        }
+        // PROCESS_LAYER_NO_EXTRUDERS_SKIP (faithful): `GCode::process_layer` returns an empty result when the
+        // layer's tools have no extruders (GCode.cpp:4960-4963), before the layer change, `m_layer_index`,
+        // `m_last_layer_z` and `m_max_layer_z` (:5002-5010), so the end G-code's `max_layer_z` is the last
+        // printed layer's; the tower does not move either (GCode.cpp:3860-3861: `has_wipe_tower` stays false
+        // on such a layer, ToolOrdering.cpp:1239-1244). `ToolOrdering::collect_extruders` leaves a layer's
+        // extruders empty only when no object layer of that print_z has a region with perimeters or a
+        // non-empty fill collection (`has_object`, ToolOrdering.cpp:939-1017; an object layer whose
+        // extrusions are all overridden gets the "don't care" 0, :1197-1204) and no support layer has support
+        // or interface extrusions (:1113-1195). =0 prints every print_z group.
+        let skip_no_extruders = crate::faithful_gate("PROCESS_LAYER_NO_EXTRUDERS_SKIP");
+        let group_has_extruders = |group: &[LayerToPrint]| -> bool {
+            use crate::extrusion_entity::{ExtrusionEntityType as T, ExtrusionRole as R};
+            let thin_fills_apart = !crate::faithful_gate("THIN_FILLS_CLONE");
+            group.iter().any(|ltp| {
+                // ToolOrdering.cpp:939, 979: perimeters; :987-1017: a fill collection with entities.
+                let has_object = ltp.layer.regions().iter().any(|r| {
+                    !r.perimeters.entities.is_empty()
+                        || r.fills.entities.iter().any(|e| match e {
+                            T::Collection(c) => !c.entities.is_empty(),
+                            _ => true,
+                        })
+                        // The thin fills are cloned into `fills` (THIN_FILLS_CLONE, Fill.cpp:856-859).
+                        || (thin_fills_apart && !r.thin_fills.entities.is_empty())
+                });
+                // ToolOrdering.cpp:1121-1131: support (erSupportMaterial / erSupportTransition) or interface.
+                let support_fills = match ltp.support_layer {
+                    Some(sl) => sl.support_fills.as_ref(),
+                    None => ltp.layer.support_fills.as_ref(),
+                };
+                let has_support = support_fills.is_some_and(|sf| {
+                    sf.entities.iter().any(|e| {
+                        let role = match e {
+                            T::Path(p) => p.role,
+                            T::MultiPath(m) => m.role(),
+                            T::Loop(l) => l.role(),
+                            T::Collection(c) => c.role(),
+                        };
+                        matches!(role, R::SupportMaterial | R::SupportTransition | R::SupportMaterialInterface)
+                    })
+                });
+                has_object || has_support
+            })
+        };
+        // The end of the last print_z group whose tools have extruders (the last layer `process_layer` prints).
+        let last_printed_end: usize = if skip_no_extruders {
+            let mut end = 0usize;
+            let mut k = 0usize;
+            while k < all_layers.len() {
+                let z = all_layers[k].layer.print_z;
+                let mut m = k + 1;
+                while m < all_layers.len() && (all_layers[m].layer.print_z - z).abs() < 1e-6 {
+                    m += 1;
+                }
+                if group_has_extruders(&all_layers[k..m]) {
+                    end = m;
+                }
+                k = m;
+            }
+            end
+        } else {
+            all_layers.len()
+        };
         while i < all_layers.len() {
             let print_z = all_layers[i].layer.print_z;
             let mut j = i + 1;
             while j < all_layers.len() && (all_layers[j].layer.print_z - print_z).abs() < 1e-6 {
                 j += 1;
+            }
+            if skip_no_extruders && !group_has_extruders(&all_layers[i..j]) {
+                // GCode.cpp:4962-4963 `if (layer_tools.extruders.empty()) return result;`
+                i = j;
+                continue;
             }
             let layer = all_layers[i].layer;
             let first_layer_idx = all_layers[i].layer_idx;
@@ -1273,6 +1382,14 @@ impl Print {
                             serde_json::json!(self.config.timelapse_type);
                         tl_settings["timelapse_pos_x"] = serde_json::json!(0);
                         tl_settings["timelapse_pos_y"] = serde_json::json!(83);
+                        // TIMELAPSE_POS_PICKER_LIVE: GCode.cpp:4758-4774 `timelapse_pos_x/y` and
+                        // `has_timelapse_safe_pos = timelapse_pos != DefaultTimelapsePos`.
+                        if let Some(pos) = live_pos_picker.as_mut().and_then(|p| p.pick_pos(print_z)) {
+                            tl_settings["timelapse_pos_x"] = serde_json::json!(pos.x);
+                            tl_settings["timelapse_pos_y"] = serde_json::json!(pos.y);
+                            tl_settings["has_timelapse_safe_pos"] =
+                                serde_json::json!(if pos.x != 0 || pos.y != 0 { 1 } else { 0 });
+                        }
                         tl_settings["most_used_physical_extruder_id"] = serde_json::json!(0);
                         tl_settings["curr_physical_extruder_id"] = serde_json::json!(0);
                         tl_settings["spiral_mode"] = serde_json::json!(0);
@@ -1553,7 +1670,7 @@ impl Print {
             // R810 END_SEQUENCE_CPP: after the last layer the retraction is the
             // one GCode::_do_export issues itself (below), behind the power-loss
             // line, so it is not issued here.
-            let last_layer_group = j >= all_layers.len();
+            let last_layer_group = j >= all_layers.len() || (skip_no_extruders && j >= last_printed_end);
             if !change_layer_retract_cpp
                 && !writer.is_retracted()
                 && !(last_layer_group && end_sequence_cpp)
@@ -1970,12 +2087,17 @@ impl Print {
             // `{max_layer_z + 4.0}` unsubstituted. Gated.
             let mut settings = settings.clone();
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-                let max_z = self
-                    .objects
-                    .iter()
-                    .flat_map(|o| o.layers.iter())
-                    .map(|l| l.print_z)
-                    .fold(0.0_f64, f64::max);
+                // PROCESS_LAYER_NO_EXTRUDERS_SKIP: GCode.cpp:3607 passes `m_max_layer_z`, the float maximum of
+                // the printed layers' `m_last_layer_z = float(print_z)` (:5009-5010); =0 the highest object layer.
+                let max_z = if skip_no_extruders {
+                    (max_layer_z as f32) as f64
+                } else {
+                    self.objects
+                        .iter()
+                        .flat_map(|o| o.layers.iter())
+                        .map(|l| l.print_z)
+                        .fold(0.0_f64, f64::max)
+                };
                 if max_z > 0.0 {
                     settings["max_layer_z"] = serde_json::Value::String(format!("{}", max_z));
                 }
@@ -2036,7 +2158,13 @@ impl Print {
 
         // Final progress and block end marker (matching reference order)
         body.extend_from_slice(b"M73 P100 R0\n");
-        body.extend_from_slice(b"; EXECUTABLE_BLOCK_END\n");
+        // EXECUTABLE_BLOCK_END_BLANK (faithful): GCode.cpp:3640 `file.write_format("; EXECUTABLE_BLOCK_END\n\n")`,
+        // a blank line after the marker; =0 writes the marker line only.
+        if crate::faithful_gate("EXECUTABLE_BLOCK_END_BLANK") {
+            body.extend_from_slice(b"; EXECUTABLE_BLOCK_END\n\n");
+        } else {
+            body.extend_from_slice(b"; EXECUTABLE_BLOCK_END\n");
+        }
 
         // Run the faithful GCodeProcessor over (provisional header + body) to obtain
         // the acceleration-aware normal-mode print time and filament usage.
@@ -2057,6 +2185,17 @@ impl Print {
             full_gcode.push_str(&String::from_utf8_lossy(&body));
 
             let mut processor = GCodeProcessor::new();
+            // PROCESSOR_NOZZLE_GROUP_CONTEXT (faithful): DoExport::init_gcode_processor hands the print's
+            // nozzle group result to the processor before apply_config (GCode.cpp:2193-2202, called at
+            // :2489 with `print.get_nozzle_group_result()`), so a tool change back to a filament already in
+            // the other extruder's nozzle costs the extruder change time only (GCodeProcessor.cpp:6081-6114);
+            // =0 the processor builds its own result from the live config's filament_map
+            // (ensure_nozzle_group_result).
+            if crate::faithful_gate("PROCESSOR_NOZZLE_GROUP_CONTEXT") {
+                if let Some(group) = self.nozzle_group_result.as_deref() {
+                    processor.initialize_from_context(Some(group.clone()));
+                }
+            }
             processor.apply_config(&self.config);
             processor.process_gcode(&full_gcode);
 
@@ -2516,14 +2655,34 @@ impl Print {
             // than the layer height and at most 2.5x the (max) nozzle diameter.
             // Rust stores line widths as resolved mm; single-nozzle so max == min.
             let too_wide = min_nozzle_diameter * 2.5;
-            for (w, key) in [
-                (oc.line_width, "line_width"),
-                (oc.outer_wall_line_width, "outer_wall_line_width"),
-                (oc.inner_wall_line_width, "inner_wall_line_width"),
-                (oc.sparse_infill_line_width, "sparse_infill_line_width"),
-                (oc.top_surface_line_width, "top_surface_line_width"),
-                (oc.support_line_width, "support_line_width"),
-            ] {
+            // Print.cpp:1791-1800: line_width, support_line_width only with support or a raft
+            // (`object->has_support() || object->has_raft()`, Print.hpp:524-525), then the region keys
+            // inner, outer, sparse, internal solid, top, skin, skeleton (the last three are not in this
+            // config). Gate FRONT_END_VALIDATE_WIDTH_ORDER_PIN (faithful, R947); off, the earlier order
+            // with support_line_width always checked.
+            let widths: Vec<(f64, &str)> = if crate::faithful_gate("FRONT_END_VALIDATE_WIDTH_ORDER_PIN") {
+                let has_support = oc.enable_support || oc.enforce_support_layers > 0;
+                let has_raft = oc.raft_layers > 0;
+                let mut v = vec![(oc.line_width, "line_width")];
+                if has_support || has_raft {
+                    v.push((oc.support_line_width, "support_line_width"));
+                }
+                v.push((oc.inner_wall_line_width, "inner_wall_line_width"));
+                v.push((oc.outer_wall_line_width, "outer_wall_line_width"));
+                v.push((oc.sparse_infill_line_width, "sparse_infill_line_width"));
+                v.push((oc.top_surface_line_width, "top_surface_line_width"));
+                v
+            } else {
+                vec![
+                    (oc.line_width, "line_width"),
+                    (oc.outer_wall_line_width, "outer_wall_line_width"),
+                    (oc.inner_wall_line_width, "inner_wall_line_width"),
+                    (oc.sparse_infill_line_width, "sparse_infill_line_width"),
+                    (oc.top_surface_line_width, "top_surface_line_width"),
+                    (oc.support_line_width, "support_line_width"),
+                ]
+            };
+            for (w, key) in widths {
                 if w == 0.0 {
                     continue; // Print.cpp:1532 — auto width, always valid.
                 } else if w <= oc.layer_height {
@@ -7049,6 +7208,8 @@ pub mod faithful {
         pub m_slicing_params: crate::slicing::SlicingParams,
         /// Print.hpp:694 `bool m_typed_slices = false`
         pub m_typed_slices: bool,
+        /// Print.hpp:690 `std::shared_ptr<TreeSupportData> m_tree_support_preview_cache` (PrintObject.cpp:73 nullptr)
+        pub m_tree_support_preview_cache: Option<Rc<crate::support::tree_support::TreeSupportData>>,
     }
 
     impl PrintObject {
@@ -7082,6 +7243,7 @@ pub mod faithful {
                 firstLayerObjSliceByGroups: Vec::new(),
                 m_slicing_params: crate::slicing::SlicingParams::zero_initialized(),
                 m_typed_slices: false,
+                m_tree_support_preview_cache: None,
             }
         }
 
@@ -7251,6 +7413,21 @@ pub mod faithful {
         /// Print.hpp:526
         pub fn has_support_material(&self) -> bool {
             self.has_support() || self.has_raft()
+        }
+        /// Print.hpp:497 `void clear_tree_support_preview_cache() { m_tree_support_preview_cache.reset(); }`
+        pub fn clear_tree_support_preview_cache(&mut self) {
+            self.m_tree_support_preview_cache = None;
+        }
+        /// Print.hpp:544 `std::vector<Polygons> slice_support_blockers() const { return
+        /// this->slice_support_volumes(ModelVolumeType::SUPPORT_BLOCKER); }` (`print`: the Print of the object's
+        /// ModelObject; slice_support_volumes is in print_object_slice.rs).
+        pub fn slice_support_blockers(&self, print: &Print) -> Result<Vec<Vec<Polygon>>, crate::print_base::CanceledException> {
+            self.slice_support_volumes(print, crate::model::ModelVolumeType::SupportBlocker)
+        }
+        /// Print.hpp:545 `std::vector<Polygons> slice_support_enforcers() const { return
+        /// this->slice_support_volumes(ModelVolumeType::SUPPORT_ENFORCER); }`
+        pub fn slice_support_enforcers(&self, print: &Print) -> Result<Vec<Vec<Polygon>>, crate::print_base::CanceledException> {
+            self.slice_support_volumes(print, crate::model::ModelVolumeType::SupportEnforcer)
         }
         /// Print.hpp:515 `const SlicingParameters& slicing_parameters() const`
         pub fn slicing_parameters(&self) -> &crate::slicing::SlicingParams {
@@ -11073,6 +11250,434 @@ pub mod faithful {
             }
         }
         exclude_polys
+    }
+
+    impl Print {
+        /// Print.cpp:1413-1844 `StringObjectException Print::validate(std::vector<StringObjectException> *warnings,
+        /// Polygons* collison_polygons, std::vector<std::pair<Polygon, float>>* height_polygons) const`: the first hard
+        /// error of the print (empty `string`: valid), the soft findings pushed to `warnings`. `&mut self` because the
+        /// C++ sets `PrintObject::has_variable_layer_heights` through its non-const object pointers and the clearance
+        /// checks sort the instances (arrange_order). The translations `L(..)` are the English text.
+        pub fn validate(
+            &mut self,
+            mut warnings: Option<&mut Vec<crate::print_base::StringObjectException>>,
+            mut collison_polygons: Option<&mut Vec<Polygon>>,
+            mut height_polygons: Option<&mut Vec<(Polygon, f32)>>,
+        ) -> crate::print_base::StringObjectException {
+            use crate::config::ConfigEnum;
+            use crate::print_base::{StringExceptionType, StringObjectException};
+            use crate::print_config::config_def::{get_bed_temp_key, is_tree, multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
+            use crate::print_config::enums::{BedType, SupportMaterialStyle, SupportType, WallSequence};
+            let err = |s: &str| StringObjectException { string: s.to_string(), ..Default::default() };
+            let err_key = |s: &str, object: Option<ObjectID>, opt_key: &str| StringObjectException {
+                string: s.to_string(),
+                object,
+                opt_key: opt_key.to_string(),
+                ..Default::default()
+            };
+
+            // Print.cpp:1415
+            let extruders: Vec<u32> = self.extruders(false);
+
+            // Print.cpp:1417-1421
+            if self.m_objects.is_empty() {
+                return StringObjectException::default();
+            }
+            if extruders.is_empty() {
+                return err("No extrusions under current settings.");
+            }
+
+            // Print.cpp:1423-1457
+            if cfg_enum(&self.m_config, "print_sequence") == PrintSequence::ByObject as i32 && self.m_objects.len() > 1 {
+                if cfg_enum(&self.m_config, "timelapse_type") == TimelapseType::TlSmooth as i32 {
+                    return err("Smooth mode of timelapse is not supported when \"by object\" sequence is enabled.");
+                }
+                if cfg_bool(&self.m_config, "enable_wrapping_detection") {
+                    return err_key("Clumping detection is not supported when \"by object\" sequence is enabled.", None, "enable_wrapping_detection");
+                }
+                //BBS: refine seq-print validation logic
+                let mut ret = Print::sequential_print_clearance_valid(self, collison_polygons.as_deref_mut(), height_polygons.as_deref_mut());
+                if !ret.string.is_empty() {
+                    ret.r#type = StringExceptionType::StringExceptObjectCollisionInSeqPrint;
+                    return ret;
+                }
+            } else {
+                //BBS
+                let mut ret = layered_print_cleareance_valid(self, warnings.as_deref_mut());
+                if !ret.string.is_empty() {
+                    ret.r#type = StringExceptionType::StringExceptObjectCollisionInLayerPrint;
+                    return ret;
+                }
+                // Print.cpp:1448-1456: the compacted prime tower's clearance.
+                ret = Print::compacted_wipe_tower_clearance_valid(self, collison_polygons.as_deref_mut(), height_polygons.as_deref_mut());
+                if !ret.string.is_empty() {
+                    ret.r#type = StringExceptionType::StringExceptObjectCollisionInLayerPrint;
+                    return ret;
+                }
+            }
+
+            // Print.cpp:1459-1470
+            if cfg_bool(&self.m_config, "enable_prime_tower") {
+            } else if cfg_bool(&self.m_config, "enable_wrapping_detection") {
+                if let Some(w) = warnings.as_deref_mut() {
+                    w.push(StringObjectException {
+                        string: "Prime tower is required for clumping detection; otherwise, there may be flaws on the model.".to_string(),
+                        opt_key: "enable_prime_tower".to_string(),
+                        is_warning: true,
+                        hypetext: "Jump to: Prime tower".to_string(),
+                        ..Default::default()
+                    });
+                }
+            }
+
+            // Print.cpp:1472-1498
+            if cfg_bool(&self.m_config, "spiral_mode") {
+                let mut total_copies_count: usize = 0;
+                for object in &self.m_objects {
+                    total_copies_count += object.instances().len();
+                }
+                // #4043
+                if total_copies_count > 1 && cfg_enum(&self.m_config, "print_sequence") != PrintSequence::ByObject as i32 {
+                    return err_key("Please select \"By object\" print sequence to print multiple objects in spiral vase mode.", None, "spiral_mode");
+                }
+                let mut multi_material = false;
+                let mut multi_region = false;
+                let mut uses_mixed = false;
+                let is_mixed = if self.m_config.has("filament_is_mixed") { cfg_bools(&self.m_config, "filament_is_mixed") } else { Vec::new() };
+                for object in &self.m_objects {
+                    let object_extruders = object.object_extruders(self);
+                    if object_extruders.len() > 1 {
+                        multi_material = true;
+                    }
+                    if object.all_regions().len() > 1 {
+                        multi_region = true;
+                    }
+                    for &ext in &object_extruders {
+                        if (ext as usize) < is_mixed.len() && is_mixed[ext as usize] {
+                            uses_mixed = true;
+                        }
+                    }
+                }
+                if multi_material || uses_mixed {
+                    return err_key("The spiral vase mode does not work when an object contains more than one materials.", None, "spiral_mode");
+                }
+                if multi_region {
+                    return err_key("The spiral vase mode does not work when an object contains regions with different print settings.", None, "spiral_mode");
+                }
+            }
+
+            // Print.cpp:1500-1517: the cache of layer height profiles, filled on first use.
+            let mut layer_height_profiles: Vec<Vec<f64>> = Vec::new();
+            fn layer_height_profile<'c>(print: &Print, layer_height_profiles: &'c mut Vec<Vec<f64>>, print_object_idx: usize) -> &'c Vec<f64> {
+                let print_object = &print.m_objects[print_object_idx];
+                if layer_height_profiles.is_empty() {
+                    layer_height_profiles.resize(print.m_objects.len(), Vec::new());
+                }
+                let profile = &mut layer_height_profiles[print_object_idx];
+                if profile.is_empty() {
+                    let mut nozzle_range_reset = false;
+                    PrintObject::update_layer_height_profile(
+                        print_object.model_object(print),
+                        print_object.slicing_parameters(),
+                        profile,
+                        &mut nozzle_range_reset,
+                    );
+                }
+                profile
+            }
+
+            // Print.cpp:1520-1534: custom layering is not allowed for tree supports as of now.
+            for print_object_idx in 0..self.m_objects.len() {
+                self.m_objects[print_object_idx].has_variable_layer_heights = false;
+                let print_object = &self.m_objects[print_object_idx];
+                if print_object.has_support_material()
+                    && is_tree(SupportType::from_int(cfg_enum(print_object.config(), "support_type")))
+                    && print_object.model_object(self).has_custom_layering()
+                {
+                    let layers = layer_height_profile(self, &mut layer_height_profiles, print_object_idx).clone();
+                    if !layers.is_empty() && !crate::slicing::check_object_layers_fixed(self.m_objects[print_object_idx].slicing_parameters(), &layers) {
+                        self.m_objects[print_object_idx].has_variable_layer_heights = true;
+                        if cfg_enum(self.m_objects[print_object_idx].config(), "support_style") == SupportMaterialStyle::SmsTreeOrganic as i32 {
+                            return err("Variable layer height is not supported with Organic supports.");
+                        }
+                    }
+                }
+            }
+
+            // Print.cpp:1536-1690
+            if self.has_wipe_tower() && !self.m_objects.is_empty() {
+                // Different nozzle diameters are supported by the prime tower's per-filament extrusion planning.
+                let nozzle_diameter = cfg_floats(&self.m_config, "nozzle_diameter");
+                let first_nozzle_diam = get_at(&nozzle_diameter, extruders[0] as usize);
+                for &extruder_idx in &extruders {
+                    let nozzle_diam = get_at(&nozzle_diameter, extruder_idx as usize);
+                    if nozzle_diam - EPSILON > first_nozzle_diam || nozzle_diam + EPSILON < first_nozzle_diam {
+                        if let Some(w) = warnings.as_deref_mut() {
+                            w.push(StringObjectException {
+                                string: "Printing with different nozzle diameters and prime tower is experimental. \
+                                         The prime tower may not work correctly with mismatched nozzle sizes."
+                                    .to_string(),
+                                is_warning: true,
+                                ..Default::default()
+                            });
+                        }
+                        break;
+                    }
+                }
+
+                if !cfg_bool(&self.m_config, "use_relative_e_distances") {
+                    return err("The Wipe Tower is currently only supported with the relative extruder addressing (use_relative_e_distances=1).");
+                }
+                if cfg_bool(&self.m_config, "ooze_prevention") {
+                    return err("Ooze prevention is currently not supported with the prime tower enabled.");
+                }
+
+                if self.m_objects.len() > 1 {
+                    // Some of the objects has variable layer height applied by painting or by a table.
+                    let has_custom_layering = self.m_objects.iter().any(|object| object.model_object(self).has_custom_layering());
+
+                    let slicing_params0 = self.m_objects[0].slicing_parameters().clone();
+                    let mut tallest_object_idx: usize = 0;
+                    for i in 1..self.m_objects.len() {
+                        let object = &self.m_objects[i];
+                        let slicing_params = object.slicing_parameters();
+                        if (slicing_params.first_print_layer_height - slicing_params0.first_print_layer_height).abs() > EPSILON
+                            || (slicing_params.layer_height - slicing_params0.layer_height).abs() > EPSILON
+                        {
+                            return err_key("The prime tower requires that all objects have the same layer heights", Some(object.id()), "initial_layer_print_height");
+                        }
+                        if slicing_params.raft_layers() != slicing_params0.raft_layers() {
+                            return err_key("The prime tower requires that all objects are printed over the same number of raft layers", Some(object.id()), "raft_layers");
+                        }
+                        if !crate::slicing::equal_layering(slicing_params, &slicing_params0) {
+                            return err_key("The prime tower requires that all objects are sliced with the same layer heights.", Some(object.id()), "");
+                        }
+                        if has_custom_layering {
+                            let lh = layer_height_profile(self, &mut layer_height_profiles, i).clone();
+                            let lh_tallest = layer_height_profile(self, &mut layer_height_profiles, tallest_object_idx).clone();
+                            if lh[lh.len() - 2] > lh_tallest[lh_tallest.len() - 2] {
+                                tallest_object_idx = i;
+                            }
+                        }
+                    }
+
+                    // Print.cpp:1617-1642: commensurate custom layering in multi-diameter mode.
+                    let allow_commensurate_custom_layering = multi_nozzle_diameter_mode_enabled(self.full_print_config()) && has_custom_layering;
+                    if allow_commensurate_custom_layering {
+                        let mut base_layer_height = f64::MAX;
+                        for idx_object in 0..self.m_objects.len() {
+                            let profile = layer_height_profile(self, &mut layer_height_profiles, idx_object).clone();
+                            let mut idx_height = 1;
+                            while idx_height < profile.len() {
+                                if profile[idx_height] > EPSILON {
+                                    base_layer_height = base_layer_height.min(profile[idx_height]);
+                                }
+                                idx_height += 2;
+                            }
+                        }
+
+                        for idx_object in 0..self.m_objects.len() {
+                            let profile = layer_height_profile(self, &mut layer_height_profiles, idx_object).clone();
+                            let mut idx_height = 1;
+                            while idx_height < profile.len() {
+                                let ratio = profile[idx_height] / base_layer_height;
+                                // `std::abs(profile[i] - std::round(ratio) * base)`: one expression, the product fused.
+                                if (-ratio.round()).mul_add(base_layer_height, profile[idx_height]).abs() > EPSILON {
+                                    return err("The prime tower is only supported if all objects have the same variable layer height");
+                                }
+                                idx_height += 2;
+                            }
+                        }
+                    // BBS: remove obsolete logics and _L()
+                    } else if has_custom_layering {
+                        // Print.cpp:1644-1669
+                        let mut layer_z_series: Vec<Vec<f64>> = vec![Vec::new(); self.m_objects.len()];
+                        if layer_height_profiles.is_empty() {
+                            layer_height_profiles.resize(self.m_objects.len(), Vec::new());
+                        }
+                        for idx_object in 0..self.m_objects.len() {
+                            layer_z_series[idx_object] = crate::slicing::generate_object_layers(
+                                self.m_objects[idx_object].slicing_parameters(),
+                                &layer_height_profiles[idx_object],
+                                cfg_bool(self.m_objects[idx_object].config(), "precise_z_height"),
+                            );
+                        }
+
+                        for idx_object in 0..self.m_objects.len() {
+                            if idx_object == tallest_object_idx {
+                                continue;
+                            }
+                            let mut i = 0usize;
+                            let eps = 0.5 * EPSILON;
+                            while i < layer_z_series[idx_object].len() && i < layer_z_series[tallest_object_idx].len() {
+                                if (layer_z_series[idx_object][i] - layer_z_series[tallest_object_idx][i]).abs() > eps {
+                                    return err("The prime tower is only supported if all objects have the same variable layer height");
+                                }
+                                i += 1;
+                            }
+                        }
+                    }
+                }
+
+                // Print.cpp:1674-1689: the precise Z height warning.
+                if let Some(w) = warnings.as_deref_mut() {
+                    for object in &self.m_objects {
+                        if cfg_bool(object.config(), "precise_z_height") {
+                            w.push(StringObjectException {
+                                string: "Precise Z height gives the objects different layer heights, which may greatly increase the size of the prime tower.".to_string(),
+                                object: Some(object.id()),
+                                opt_key: "precise_z_height".to_string(),
+                                is_warning: true,
+                                hypetext: "Jump to: Precise Z height".to_string(),
+                                ..Default::default()
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Print.cpp:1692-1802
+            {
+                // Find the smallest used nozzle diameter and the number of unique nozzle diameters.
+                let nozzle_diameter = cfg_floats(&self.m_config, "nozzle_diameter");
+                let mut min_nozzle_diameter = f64::MAX;
+                let mut max_nozzle_diameter: f64 = 0.0;
+                for &extruder_id in &extruders {
+                    let dmr = get_at(&nozzle_diameter, extruder_id as usize);
+                    min_nozzle_diameter = min_nozzle_diameter.min(dmr);
+                    max_nozzle_diameter = max_nozzle_diameter.max(dmr);
+                }
+
+                let primary_diameter = primary_nozzle_diameter(self.full_print_config());
+                let preset_nozzle_diameter = if primary_diameter > EPSILON { primary_diameter } else { max_nozzle_diameter };
+                // Print.cpp:1715-1734
+                let validate_extrusion_width = |config: &DynamicPrintConfig, opt_key: &str, layer_height: f64, err_msg: &mut String| -> bool {
+                    // Widths are authored as absolute values for the primary diameter used to select the process preset.
+                    let extrusion_width_min = config.get_abs_value(opt_key).expect("ConfigBase::get_abs_value");
+                    let extrusion_width_max = config.get_abs_value(opt_key).expect("ConfigBase::get_abs_value");
+                    if extrusion_width_min == 0.0 {
+                        // Default "auto-generated" extrusion width is always valid.
+                    } else if extrusion_width_min <= layer_height {
+                        *err_msg = "Too small line width".to_string();
+                        return false;
+                    } else if extrusion_width_max > preset_nozzle_diameter * 2.5 {
+                        *err_msg = "Too large line width".to_string();
+                        return false;
+                    }
+                    true
+                };
+                // One entry is enough for the enforcer warning, the text is identical for every object.
+                let mut support_enforcer_warned = false;
+                for object in &self.m_objects {
+                    // Print.cpp:1738-1761: the support checks are `#if 0` at the pin.
+
+                    // Print.cpp:1763-1778: custom support data that would not be used.
+                    if !object.has_support() && !support_enforcer_warned {
+                        if let Some(w) = warnings.as_deref_mut() {
+                            for mv in &object.model_object(self).volumes {
+                                let has_enforcers = mv.is_support_enforcer()
+                                    || (mv.is_model_part() && mv.supported_facets.has_facets(crate::triangle_selector::EnforcerBlockerType::ENFORCER));
+                                if has_enforcers {
+                                    w.push(StringObjectException {
+                                        string: "Support enforcers are used but support is not enabled. Please enable support.".to_string(),
+                                        object: Some(object.id()),
+                                        ..Default::default()
+                                    });
+                                    support_enforcer_warned = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Print.cpp:1780-1789
+                    let initial_layer_print_height = cfg_float(&self.m_config, "initial_layer_print_height");
+                    let layer_height_nozzle_limit = if primary_diameter > EPSILON { primary_diameter } else { min_nozzle_diameter };
+                    if initial_layer_print_height > layer_height_nozzle_limit {
+                        return err_key("Layer height cannot exceed nozzle diameter", Some(object.id()), "initial_layer_print_height");
+                    }
+
+                    // validate layer_height
+                    let layer_height = cfg_float(object.config(), "layer_height");
+                    if layer_height > layer_height_nozzle_limit {
+                        return err_key("Layer height cannot exceed nozzle diameter", Some(object.id()), "layer_height");
+                    }
+
+                    // Print.cpp:1791-1800: validate extrusion widths.
+                    let mut err_msg = String::new();
+                    if !validate_extrusion_width(object.config(), "line_width", layer_height, &mut err_msg) {
+                        return err_key(&err_msg, Some(object.id()), "line_width");
+                    }
+                    if object.has_support() || object.has_raft() {
+                        if !validate_extrusion_width(object.config(), "support_line_width", layer_height, &mut err_msg) {
+                            return err_key(&err_msg, Some(object.id()), "support_line_width");
+                        }
+                    }
+                    for opt_key in [
+                        "inner_wall_line_width",
+                        "outer_wall_line_width",
+                        "sparse_infill_line_width",
+                        "internal_solid_infill_line_width",
+                        "top_surface_line_width",
+                        "skin_infill_line_width",
+                        "skeleton_infill_line_width",
+                    ] {
+                        for region in object.all_regions() {
+                            if !validate_extrusion_width(region.borrow().config(), opt_key, layer_height, &mut err_msg) {
+                                return err_key(&err_msg, Some(object.id()), opt_key);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Print.cpp:1805-1841
+            let bed_type_keys_map = BedType::get_enum_values();
+            let curr_bed_type = cfg_enum(&self.m_config, "curr_bed_type");
+            for _extruder_id in &extruders {
+                let bed_temp_key = get_bed_temp_key(BedType::from_int(curr_bed_type));
+                let bed_temp_opt = cfg_ints(&self.m_config, &bed_temp_key);
+                for &extruder_id in &extruders {
+                    let curr_bed_temp = get_at(&bed_temp_opt, extruder_id as usize);
+                    if curr_bed_temp == 0 {
+                        let mut bed_type_name = String::new();
+                        for (name, value) in bed_type_keys_map.iter() {
+                            if *value == curr_bed_type {
+                                bed_type_name = name.clone();
+                                break;
+                            }
+                        }
+                        let plate = self.base.base.get_plate_index() + 1;
+                        let mut except = StringObjectException::default();
+                        // Slic3r::format(L("Plate %d: %s does not support filament %s"), plate, bed type, extruder_id + 1)
+                        except.string = format!("Plate {}: {} does not support filament {}", plate, bed_type_name, extruder_id + 1);
+                        except.string += "\n";
+                        except.r#type = StringExceptionType::StringExceptFilamentNotMatchBedType;
+                        except.params.push(plate.to_string());
+                        except.params.push(bed_type_name.clone());
+                        except.params.push((extruder_id + 1).to_string());
+                        except.object = None;
+                        return except;
+                    }
+                }
+
+                // check wall sequence and precise outer wall
+                if cfg_bool(&self.m_default_region_config, "precise_outer_wall")
+                    && cfg_enum(&self.m_default_region_config, "wall_sequence") != WallSequence::InnerOuter as i32
+                {
+                    if let Some(w) = warnings.as_deref_mut() {
+                        w.push(StringObjectException {
+                            string: "Precise outer wall will be ignored unless the order of walls is set to inner/outer".to_string(),
+                            opt_key: "precise_outer_wall".to_string(),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+
+            StringObjectException::default()
+        }
     }
 
     /// Print.cpp:1123-1241 `static StringObjectException layered_print_cleareance_valid(const Print &print,

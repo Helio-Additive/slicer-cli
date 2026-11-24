@@ -1646,12 +1646,14 @@ impl WallToolPaths {
         // WallToolPaths.cpp:538
         self.separate_out_inner_contour();
         stageprobe("3 after separate_out_inner_contour", &self.toolpaths);
+        pa_wa("pa_wsep", &self.toolpaths);
         awst_dump("3", awst, &self.toolpaths);
         agen_dump_tp("sep", agen_orig, &self.toolpaths, agen_ic);
 
         // WallToolPaths.cpp:540
         Self::simplify_tool_paths(&mut self.toolpaths);
         stageprobe("4 after simplify_tool_paths", &self.toolpaths);
+        pa_wa("pa_ws", &self.toolpaths);
         awst_dump("4", awst, &self.toolpaths);
         agen_dump_tp("simp", agen_orig, &self.toolpaths, agen_ic);
 

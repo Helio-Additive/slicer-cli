@@ -1933,222 +1933,49 @@ impl ArrangeParams {
 /// (Arrange.cpp:97). They are PrintConfig.cpp functions; the crate's `print_config.rs` does not
 /// carry them, so they are ported here, beside their only caller.
 pub mod print_config_skirt {
-    use crate::config::{ConfigOption, ConfigOptionFloat, ConfigOptionResolver, ConfigOptionType};
-    use crate::flow::{Flow, FlowRole};
-    use crate::print_config::config_def::{multi_nozzle_diameter_mode_enabled, primary_nozzle_diameter};
-
-    /// `config.option<ConfigOptionXxx>(key)` of a vector class: the type code compared, then the
-    /// values read whatever the nullability of the stored class.
-    fn opt_values<'a, T: 'static>(
-        config: &'a (impl ConfigOptionResolver + ?Sized),
-        key: &str,
-        ty: ConfigOptionType,
-    ) -> Option<&'a Vec<T>> {
-        match config.option(key) {
-            Some(o) if o.r#type() == ty => o.vector_values_any().and_then(|v| v.downcast_ref::<Vec<T>>()),
-            _ => None,
-        }
-    }
-
-    /// `config.option<ConfigOptionXxx>(key)` of a scalar class: the type code, then `->value`.
-    fn opt_value<'a, T: 'static>(
-        config: &'a (impl ConfigOptionResolver + ?Sized),
-        key: &str,
-        ty: ConfigOptionType,
-    ) -> Option<&'a T> {
-        match config.option(key) {
-            Some(o) if o.r#type() == ty => o.single_value_any().and_then(|v| v.downcast_ref::<T>()),
-            _ => None,
-        }
-    }
-
-    /// Config.hpp `ConfigOptionVector<T>::get_at(size_t i)`: the value at `i`, else the first one.
-    #[inline]
-    fn get_at(values: &[f64], i: usize) -> f64 {
-        if i < values.len() {
-            values[i]
-        } else {
-            values[0]
-        }
-    }
-
-    /// `opt->getInt()` / `getBool()` / `getFloat()`: the C++ throws on a wrong option class.
-    fn get_int(opt: &dyn ConfigOption) -> i32 {
-        opt.get_int().expect("ConfigOption::getInt")
-    }
+    //! The skirt helpers of PrintConfig.cpp (11558-11674) as this file has called them; since R947 they call the
+    //! paired port in print_config.rs (`config_def`), verified against the pin and bit-equal to the copy that was
+    //! here (tests/print_config_skirt_native_parity.rs, `arrange_copy_of_the_skirt_helpers_matches`).
+    use crate::config::ConfigOptionResolver;
+    use crate::flow::Flow;
+    use crate::print_config::config_def as pc;
 
     /// PrintConfig.cpp:11558-11565 `bool has_skirt(const ConfigBase& cfg)`
     pub fn has_skirt(cfg: &(impl ConfigOptionResolver + ?Sized)) -> bool {
-        let opt_skirt_height = cfg.option("skirt_height");
-        let opt_skirt_loops = cfg.option("skirt_loops");
-        let opt_draft_shield = cfg.option("draft_shield");
-        (opt_skirt_height.map_or(false, |o| get_int(o) > 0) && opt_skirt_loops.map_or(false, |o| get_int(o) > 0))
-            || opt_draft_shield.map_or(false, |o| get_int(o) != crate::print_config::enums::DraftShield::DsDisabled as i32)
+        pc::has_skirt(cfg)
     }
 
-    /// PrintConfig.cpp:11566-11588 `static bool skirt_expansion_params(const ConfigBase &cfg, int &skirt_loops, float &skirt_distance)`:
-    /// Shared gate of all get_real_skirt_dist() overloads: tells whether a per-object skirt
-    /// expansion applies at all and, if so, reports the effective loop count and the configured gap.
+    /// PrintConfig.cpp:11566-11588 `static bool skirt_expansion_params(const ConfigBase &cfg, int &skirt_loops, float &skirt_distance)`
     pub fn skirt_expansion_params(
         cfg: &(impl ConfigOptionResolver + ?Sized),
         skirt_loops: &mut i32,
         skirt_distance: &mut f32,
     ) -> bool {
-        let opt_skirt_per_object = cfg.option("skirt_per_object");
-        if opt_skirt_per_object.map_or(true, |o| !o.get_bool().expect("ConfigOption::getBool")) {
-            return false;
-        }
-
-        if !has_skirt(cfg) {
-            return false;
-        }
-
-        let opt_skirt_loops = cfg.option("skirt_loops");
-        *skirt_loops = opt_skirt_loops.map_or(0, get_int);
-        let opt_draft_shield = cfg.option("draft_shield");
-        if opt_draft_shield.map_or(false, |o| get_int(o) != crate::print_config::enums::DraftShield::DsDisabled as i32)
-            && *skirt_loops == 0
-        {
-            *skirt_loops = 1;
-        }
-        if *skirt_loops <= 0 {
-            return false;
-        }
-
-        let opt_dist = cfg.option("skirt_distance");
-        *skirt_distance = opt_dist.map_or(0.0, |o| o.get_float().expect("ConfigOption::getFloat") as f32);
-        true
+        pc::skirt_expansion_params(cfg, skirt_loops, skirt_distance)
     }
 
-    /// PrintConfig.cpp:11590-11613 `static float skirt_nozzle_diameter_for_filament(const ConfigBase &cfg, unsigned int filament_id)`:
-    /// Nozzle diameter a filament will be printed with. filament_id is 1-based; 0 means "unknown"
-    /// and falls back to the first extruder.
+    /// PrintConfig.cpp:11590-11613 `static float skirt_nozzle_diameter_for_filament(const ConfigBase &cfg, unsigned int filament_id)`
     pub fn skirt_nozzle_diameter_for_filament(cfg: &(impl ConfigOptionResolver + ?Sized), filament_id: u32) -> f32 {
-        let opt_nozzle_f = opt_values::<f64>(cfg, "nozzle_diameter", ConfigOptionType::CoFloats);
-        let fallback_dia: f32 = match opt_nozzle_f {
-            Some(v) => get_at(v, 0) as f32,
-            None => 0.4,
-        };
-        if filament_id == 0 {
-            return fallback_dia;
-        }
-
-        let filament_idx = (filament_id - 1) as usize;
-        let selected = opt_values::<String>(cfg, "filament_diameter_map", ConfigOptionType::CoStrings);
-        if let Some(selected) = selected {
-            if filament_idx < selected.len() && !selected[filament_idx].contains(';') {
-                let selected_diameter = crate::locales_utils::string_to_double_decimal_point(&selected[filament_idx]).0;
-                if selected_diameter > 0.0 {
-                    return selected_diameter as f32;
-                }
-            }
-        }
-        match opt_nozzle_f {
-            None => fallback_dia,
-            Some(v) => get_at(v, filament_idx) as f32,
-        }
+        pc::skirt_nozzle_diameter_for_filament(cfg, filament_id)
     }
 
-    /// PrintConfig.cpp:11615-11635 `static Flow skirt_flow_from_config(const ConfigBase &cfg, unsigned int filament_id)`:
-    /// Skirt flow inferred from the config alone, mirroring Print::skirt_flow().
+    /// PrintConfig.cpp:11615-11635 `static Flow skirt_flow_from_config(const ConfigBase &cfg, unsigned int filament_id)`
     pub fn skirt_flow_from_config(cfg: &(impl ConfigOptionResolver + ?Sized), filament_id: u32) -> Flow {
-        let mut width_opt = ConfigOptionFloat::with_value(0.0);
-        let opt_lw = opt_value::<f64>(cfg, "initial_layer_line_width", ConfigOptionType::CoFloat);
-        if let Some(&lw) = opt_lw {
-            if lw > 0.0 {
-                width_opt = ConfigOptionFloat::with_value(lw);
-            }
-        }
-        if width_opt.value == 0.0 {
-            let opt_gen_lw = opt_value::<f64>(cfg, "line_width", ConfigOptionType::CoFloat);
-            if let Some(&lw) = opt_gen_lw {
-                if lw > 0.0 {
-                    width_opt = ConfigOptionFloat::with_value(lw);
-                }
-            }
-        }
-
-        let opt_lh = cfg.option("initial_layer_print_height");
-        let layer_height: f32 = opt_lh.map_or(0.2, |o| o.get_float().expect("ConfigOption::getFloat") as f32);
-
-        new_from_config_width(
-            FlowRole::Perimeter,
-            &width_opt,
-            primary_nozzle_diameter(cfg) as f32,
-            skirt_nozzle_diameter_for_filament(cfg, filament_id),
-            layer_height,
-            multi_nozzle_diameter_mode_enabled(cfg),
-        )
+        pc::skirt_flow_from_config(cfg, filament_id)
     }
 
-    /// Flow.cpp:136-156 `Flow Flow::new_from_config_width(FlowRole role, const ConfigOptionFloat &width,
-    /// float preset_nozzle_diameter, float nozzle_diameter, float height, bool multi_nozzle_diameter_mode)`,
-    /// on the crate's Flow pieces: `w` a float, then `Flow(w, height, rounded_rectangle_extrusion_spacing(w, height),
-    /// nozzle_diameter, false)`. The C++ throws on a non-positive height or spacing.
-    fn new_from_config_width(
-        role: FlowRole,
-        width: &ConfigOptionFloat,
-        preset_nozzle_diameter: f32,
-        nozzle_diameter: f32,
-        height: f32,
-        multi_nozzle_diameter_mode: bool,
-    ) -> Flow {
-        if height <= 0.0 {
-            panic!("Invalid flow height supplied to new_from_config_width()");
-        }
-
-        let w: f32 = if width.value == 0.0 {
-            // If user left option to 0, calculate a sane default width.
-            Flow::auto_extrusion_width(role, nozzle_diameter as f64) as f32
-        } else {
-            Flow::extrusion_width_for_nozzle(width, preset_nozzle_diameter, nozzle_diameter, multi_nozzle_diameter_mode)
-                as f32
-        };
-
-        Flow::new(w as f64, height as f64, nozzle_diameter as f64).expect("Flow::rounded_rectangle_extrusion_spacing")
-    }
-
-    /// PrintConfig.cpp:11637-11647 `float get_real_skirt_dist(const ConfigBase& cfg, const Flow &flow)`:
-    /// Outermost skirt centerline = skirt_distance + (N-0.5)*spacing, plus half extrusion width for
-    /// the physical outer edge. The float expression contracts to two fmas.
+    /// PrintConfig.cpp:11637-11647 `float get_real_skirt_dist(const ConfigBase& cfg, const Flow &flow)`
     pub fn get_real_skirt_dist(cfg: &(impl ConfigOptionResolver + ?Sized), flow: &Flow) -> f32 {
-        let mut skirt_loops: i32 = 0;
-        let mut skirt_distance: f32 = 0.0;
-        if !skirt_expansion_params(cfg, &mut skirt_loops, &mut skirt_distance) {
-            return 0.0;
-        }
-
-        let inner = (skirt_loops as f32 - 0.5f32).mul_add(flow.spacing() as f32, skirt_distance);
-        0.5f32.mul_add(flow.width() as f32, inner)
+        pc::get_real_skirt_dist(cfg, flow)
     }
 
     /// The overloads of `get_real_skirt_dist` past the first.
     pub mod overloads {
         use super::*;
 
-        /// PrintConfig.cpp:11649-11669 `float get_real_skirt_dist(const ConfigBase& cfg, const std::vector<unsigned int> &filament_ids)`:
-        /// the same selection rule as Print::skirt_flow(): start from the dedicated skirt filament
-        /// and keep the widest spacing among the filaments in use.
+        /// PrintConfig.cpp:11649-11669 `float get_real_skirt_dist(const ConfigBase& cfg, const std::vector<unsigned int> &filament_ids)`
         pub fn get_real_skirt_dist(cfg: &(impl ConfigOptionResolver + ?Sized), filament_ids: &[u32]) -> f32 {
-            let mut skirt_loops: i32 = 0;
-            let mut skirt_distance: f32 = 0.0;
-            if !skirt_expansion_params(cfg, &mut skirt_loops, &mut skirt_distance) {
-                return 0.0;
-            }
-
-            let opt_skirt_filament = opt_value::<i32>(cfg, "support_filament", ConfigOptionType::CoInt);
-            let skirt_filament: u32 = match opt_skirt_filament {
-                Some(&v) if v > 0 => v as u32,
-                _ => 0,
-            };
-            let mut flow = skirt_flow_from_config(cfg, skirt_filament);
-            for &filament_id in filament_ids {
-                let candidate = skirt_flow_from_config(cfg, filament_id);
-                if (candidate.spacing() as f32) > (flow.spacing() as f32) {
-                    flow = candidate;
-                }
-            }
-            super::get_real_skirt_dist(cfg, &flow)
+            pc::get_real_skirt_dist_overloads::get_real_skirt_dist(cfg, filament_ids)
         }
 
         /// The third overload.
@@ -2157,7 +1984,7 @@ pub mod print_config_skirt {
 
             /// PrintConfig.cpp:11671-11674 `float get_real_skirt_dist(const ConfigBase& cfg)`
             pub fn get_real_skirt_dist(cfg: &(impl ConfigOptionResolver + ?Sized)) -> f32 {
-                super::get_real_skirt_dist(cfg, &[])
+                pc::get_real_skirt_dist_overloads::no_filaments::get_real_skirt_dist(cfg)
             }
         }
     }

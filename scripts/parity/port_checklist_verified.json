@@ -4521,5 +4521,57 @@
    "removeColinearEdges",
    "removeSmallAreas"
   ]
+ },
+ {
+  "unit": "Tesselate",
+  "round": 947,
+  "evidence": "tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.",
+  "functions": [
+   "triangulate_expolygon_3d",
+   "triangulate_expolygons_3d",
+   "triangulate_expolygon_2d",
+   "triangulate_expolygons_2d",
+   "triangulate_expolygon_2f",
+   "triangulate_expolygons_2f"
+  ]
+ },
+ {
+  "unit": "TriangleMeshSlicer",
+  "round": 947,
+  "evidence": "tests/triangle_mesh_slicer_native_parity.rs (cut_mesh_native_parity, 36 cases; cut_mesh_plane_points_native_parity, 40 cases and 80 outputs): the pin's cut_mesh, both overloads (TriangleMeshSlicer.cpp 2430-, 2727-2788), now equal to the pin in every vertex and triangle including the caps, which glu-libtess triangulates (asserted with GLU_LIBTESS_PIN on).",
+  "functions": [
+   "cut_mesh"
+  ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 947,
+  "evidence": "tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).",
+  "functions": [
+   "to_unscaled_linesf",
+   "get_extents_rotated",
+   "is_narrow_expolygon",
+   "expolygons_match"
+  ]
+ },
+ {
+  "unit": "Print",
+  "round": 947,
+  "evidence": "tests/print_clearance_native_parity.rs (validate_matches_the_pin): the pin's Print::validate (Print.cpp 1413-1844) from tests/data/print_clearance/gen.cpp (validate mode) after the pin's Print::apply on 20 cases (the clearance scenarios plus smooth timelapse and clumping by object, layer heights over the nozzle, spiral vase on two objects, a plate that does not support the filament, the precise outer wall warning, line widths too large and too small, the prime tower's relative-E, ooze prevention and precise Z checks): 60 lines equal (messages, warnings, polygons).",
+  "functions": [
+   "Print::validate"
+  ]
+ },
+ {
+  "unit": "Arachne/SkeletalTrapezoidation",
+  "round": 947,
+  "evidence": "tests/skeletal_trapezoidation_construct_native_parity.rs (construct_from_polygons_and_discretize_match_the_pin): the pin's SkeletalTrapezoidation constructor through constructFromPolygons (SkeletalTrapezoidation.cpp 374-516: transferEdge, computePointCellRange, separatePointyQuadEndNodes and the incident-edge pass) and discretize (218-328) from tests/data/skeletal_trapezoidation_construct/gen.cpp on 150 random polygon sets (stars with holes, grid rectangles, thin strips, hole compensation on and off) and two real Majora Voronoi inputs (layer 110 call 1, layer 1 call 1): every node and half-edge in list order, 147,076 graph lines and 60,570 discretized edges, 0 differ.",
+  "functions": [
+   "SkeletalTrapezoidation::constructFromPolygons",
+   "SkeletalTrapezoidation::discretize",
+   "SkeletalTrapezoidation::transferEdge",
+   "SkeletalTrapezoidation::computePointCellRange",
+   "SkeletalTrapezoidation::separatePointyQuadEndNodes"
+  ]
  }
 ]

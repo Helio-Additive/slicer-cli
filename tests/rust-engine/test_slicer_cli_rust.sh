@@ -56,6 +56,25 @@ check_gcode slice-3mf-gcode "$TMP/3mf/cube.gcode"
 expect_exit slice-stl 0 -- "$BIN" --config "$DATA/cube_arachne_settings.json" --output="$TMP/stl.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
 check_gcode slice-stl-gcode "$TMP/stl.gcode"
 
+# A job Print::validate() refuses is refused as slicer_cli refuses it
+# (main.cpp:11466-11636): the validation_error event on stdout, "Validation
+# error: <sentence>" and the tip on stderr, exit status 1. Here the layer height
+# (0.5 mm) is over the nozzle diameter (0.4 mm).
+sed 's/"layer_height": "0.2"/"layer_height": "0.5"/' "$DATA/cube_arachne_settings.json" > "$TMP/lh05.json"
+expect_exit validation-refused 1 -- "$BIN" --config "$TMP/lh05.json" -o "$TMP/lh05.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+if grep -q '^Validation error: Layer height cannot exceed nozzle diameter$' "$TMP/err" \
+    && grep -q '^  --machine, --filament, and --process options$' "$TMP/err" \
+    && grep -qF '[[SLICER_EVENT]] {"event":"validation_error","message":"Layer height cannot exceed nozzle diameter","opt_key":"layer_height","tag":"STRING_EXCEPT_NOT_DEFINED"}' "$TMP/out"; then
+    ok validation-sentence
+else
+    fail validation-sentence "$(cat "$TMP/out" "$TMP/err")"
+fi
+
+# Print::validate checks support_line_width only for an object with support or
+# a raft (Print.cpp:1795-1798): slicer_cli slices this job, so does this program.
+sed 's/"support_line_width": "[0-9.]*"/"support_line_width": "0.1"/' "$DATA/cube_arachne_settings.json" > "$TMP/slw01.json"
+expect_exit support-width-unused 0 -- "$BIN" --config "$TMP/slw01.json" -o "$TMP/slw01.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+
 # The same input gives the same bytes.
 "$BIN" -o "$TMP/again.gcode" "$DATA/painted_cube.3mf" >/dev/null 2>&1
 if cmp -s "$TMP/3mf/cube.gcode" "$TMP/again.gcode"; then ok deterministic; else fail deterministic "two runs differ"; fi

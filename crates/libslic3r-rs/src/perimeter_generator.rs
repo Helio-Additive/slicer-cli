@@ -7617,6 +7617,43 @@ impl PerimeterGenerator {
     /// format of the pin's twin (target/parity-work/d/pa/patch.py over PerimeterGenerator.cpp:
     /// pa_s0 the surface, pa_last / pa_ic before traverse_extrusions (1837), pa_a0 / pa_ipp / pa_u /
     /// pa_fs / pa_no in add_infill_contour_for_arachne (1463-1484)); PAP=<tag>:<lidx> prints points.
+    /// R947 probe PA_PEX (with PA_L, diagnostic only): every ExtrusionPath traverse_extrusions made
+    /// (kind 0 path, 1 multipath, 2 loop; role, width, height, points, first point), in the format of a
+    /// copy of the pin's PerimeterGenerator.cpp printing the same after the call (:1856).
+    fn pa_pex(l: usize, c: &ExtrusionEntityCollection) {
+        if !crate::probe_enabled("PA_PEX") {
+            return;
+        }
+        let Ok(v) = std::env::var("PA_L") else { return };
+        let (a, b) = match v.split_once('-') {
+            Some((a, b)) => (a.parse::<i64>().unwrap_or(-1), b.parse::<i64>().unwrap_or(-1)),
+            None => (v.parse::<i64>().unwrap_or(-1), v.parse::<i64>().unwrap_or(-1)),
+        };
+        if !(a >= 0 && (l as i64) >= a && (l as i64) <= b) {
+            return;
+        }
+        fn walk(l: usize, e: &ExtrusionEntityType) {
+            let (k, ps): (i32, Vec<&ExtrusionPath>) = match e {
+                ExtrusionEntityType::Path(p) => (0, vec![p]),
+                ExtrusionEntityType::MultiPath(m) => (1, m.paths.iter().collect()),
+                ExtrusionEntityType::Loop(lp) => (2, lp.paths.iter().collect()),
+                ExtrusionEntityType::Collection(c) => {
+                    for e in c.entities.iter() {
+                        walk(l, e);
+                    }
+                    return;
+                }
+            };
+            for p in ps {
+                let f = p.polyline.points.first().copied().unwrap_or_default();
+                eprintln!("PEX L={l} k={k} r={} w={:.6} h={:.6} n={} x={} y={}", p.role as i32, p.width, p.height, p.polyline.points.len(), f.x, f.y);
+            }
+        }
+        for e in c.entities.iter() {
+            walk(l, e);
+        }
+    }
+
     fn pa_probe(tag: &str, l: usize, pp: &[crate::geometry::Polygon], x: f64) {
         let Ok(v) = std::env::var("PA_L") else { return };
         let mut it = v.split('-');
@@ -8095,6 +8132,7 @@ impl PerimeterGenerator {
                 Self::pa_probe("pa_last", cfg.layer_id, &expolygons_to_polygons(&last), loop_number as f64);
                 Self::pa_probe("pa_ic", cfg.layer_id, &expolygons_to_polygons(&infill_contour), total_perimeters.len() as f64);
                 let extrusion_coll = traverse_extrusions(&members, &mut result.loop_nodes, &mut pg_extrusions, &apply_fuzzy_skin);
+                Self::pa_pex(cfg.layer_id, &extrusion_coll);
                 if !extrusion_coll.entities.is_empty() {
                     result.entities.entities.push(ExtrusionEntityType::Collection(Box::new(extrusion_coll)));
                 }

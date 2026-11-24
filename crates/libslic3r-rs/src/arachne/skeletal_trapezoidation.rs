@@ -420,8 +420,9 @@ impl<'a> SkeletalTrapezoidation<'a> {
     // SkeletalTrapezoidation.cpp:219-329
     // Points SkeletalTrapezoidation::discretize(const VD::edge_type& vd_edge, const std::vector<Segment>& segments)
     /// R803 DISC — wrapper that dumps every discretize() result for the
-    /// AWST_SX-matched call (cpp twin prints the same line).
-    fn discretize<D: VdAccess>(
+    /// AWST_SX-matched call (cpp twin prints the same line). Public for the native
+    /// parity test (tests/skeletal_trapezoidation_construct_native_parity.rs).
+    pub fn discretize<D: VdAccess>(
         &self,
         diagram: &D,
         vd_edge: usize,

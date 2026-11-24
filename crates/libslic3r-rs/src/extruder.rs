@@ -183,19 +183,26 @@ pub fn get_config_index_base(
     0
 }
 
-// PrintConfig.cpp:92
+// PrintConfig.cpp:110-117
 // size_t get_extruder_index(const GCodeConfig& config, unsigned int filament_id)
 pub fn get_extruder_index(config: &GCodeConfig, filament_id: u32) -> usize {
-    // PrintConfig.cpp:94
+    // PrintConfig.cpp:112
     if (filament_id as usize) < config.filament_map.size() {
-        // PrintConfig.cpp:95
-        return (config.filament_map.get_at(filament_id as usize) - 1) as usize;
+        // PrintConfig.cpp:113 `const int mapped = config.filament_map.get_at(filament_id);`
+        let mapped = config.filament_map.get_at(filament_id as usize);
+        // PrintConfig.cpp:114 `return mapped > 0 ? size_t(mapped - 1) : 0;` (R947
+        // EXTRUDER_INDEX_UNMAPPED_PIN; off: the earlier `(mapped - 1) as usize`, usize::MAX for a
+        // filament mapped to 0)
+        if crate::faithful_gate("EXTRUDER_INDEX_UNMAPPED_PIN") {
+            return if mapped > 0 { (mapped - 1) as usize } else { 0 };
+        }
+        return (mapped - 1) as usize;
     }
-    // PrintConfig.cpp:97
+    // PrintConfig.cpp:116
     0
 }
 
-// PrintConfig.cpp:100
+// PrintConfig.cpp:485-492
 // size_t get_filament_config_idx(const GCodeConfig &config, unsigned int filament_id)
 pub fn get_filament_config_idx(config: &GCodeConfig, filament_id: u32) -> usize {
     // PrintConfig.cpp:102
@@ -221,7 +228,7 @@ pub fn get_filament_config_idx(config: &GCodeConfig, filament_id: u32) -> usize 
     ) as usize
 }
 
-// PrintConfig.cpp:109
+// PrintConfig.cpp:494-502
 // size_t get_process_config_idx(const GCodeConfig& config, unsigned int filament_id)
 pub fn get_process_config_idx(config: &GCodeConfig, filament_id: u32) -> usize {
     // PrintConfig.cpp:111
@@ -1306,5 +1313,29 @@ mod tests {
         assert_eq!(extruder.retract_speed(), 40);
         // deretraction_speed 0.0 -> floor(0.5) = 0 -> falls back to retract_speed()
         assert_eq!(extruder.deretract_speed(), 40);
+    }
+
+    // PrintConfig.cpp:110-117: a filament mapped to 0 (no extruder) is on extruder 0, as is one past the
+    // end of `filament_map`; get_process_config_idx then looks up the variant of extruder 1
+    // (PrintConfig.cpp:494-502, `extruder_id + 1`).
+    #[test]
+    fn test_get_extruder_index_unmapped_filament_is_extruder_0() {
+        let mut config = mock_config();
+        config.filament_map = ConfigOptionVector::new(vec![0, 2, 1]);
+        config.filament_volume_map = ConfigOptionVector::new(vec![0, 0, 0]);
+        config.extruder_type = ConfigOptionVector::new(vec![0, 0]);
+        config.printer_extruder_variant = ConfigOptionVector::new(vec![
+            "Direct Drive Standard".to_string(),
+            "Direct Drive Standard".to_string(),
+        ]);
+        config.printer_extruder_id = ConfigOptionVector::new(vec![1, 2]);
+        if crate::faithful_gate("EXTRUDER_INDEX_UNMAPPED_PIN") {
+            assert_eq!(get_extruder_index(&config, 0), 0);
+            assert_eq!(get_process_config_idx(&config, 0), 0);
+        }
+        assert_eq!(get_extruder_index(&config, 1), 1);
+        assert_eq!(get_process_config_idx(&config, 1), 1);
+        assert_eq!(get_extruder_index(&config, 2), 0);
+        assert_eq!(get_extruder_index(&config, 3), 0);
     }
 }

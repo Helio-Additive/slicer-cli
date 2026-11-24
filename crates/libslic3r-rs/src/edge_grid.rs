@@ -35,6 +35,13 @@
 
 use crate::geometry::{BoundingBox, ExPolygon, Line, Point, Polygon, Polyline};
 
+/// EdgeGrid.cpp:339-343 (static): floor division for a positive divisor,
+/// `((x < 0) ? (x - y + 1) : x) / y` on coord_t.
+pub fn div_floor(x: i64, y: i64) -> i64 {
+    debug_assert!(y > 0);
+    (if x < 0 { x - y + 1 } else { x }) / y
+}
+
 /// A contour represents a sequence of points forming either an open polyline or closed polygon
 /// EdgeGrid.hpp:15-89
 #[derive(Clone, Debug)]
@@ -144,6 +151,47 @@ impl Contour {
         } else {
             idx
         }
+    }
+
+    /// EdgeGrid.hpp:22 `begin()`: the first point (the C++ returns a pointer into the points).
+    pub fn begin(&self) -> std::slice::Iter<'_, Point> {
+        self.points.iter()
+    }
+    /// EdgeGrid.hpp:23 `end()`: one past the last point.
+    pub fn end(&self) -> std::slice::Iter<'_, Point> {
+        self.points[self.points.len()..].iter()
+    }
+    /// EdgeGrid.hpp:24
+    pub fn open(&self) -> bool {
+        self.open
+    }
+    /// EdgeGrid.hpp:25
+    pub fn closed(&self) -> bool {
+        !self.open
+    }
+    /// EdgeGrid.hpp:27
+    pub fn front(&self) -> &Point {
+        &self.points[0]
+    }
+    /// EdgeGrid.hpp:28
+    pub fn back(&self) -> &Point {
+        &self.points[self.points.len() - 1]
+    }
+    /// EdgeGrid.hpp:51-55: `(idx == 0 ? this->size() : idx) - 1`.
+    pub fn segment_idx_prev(&self, idx: usize) -> usize {
+        (if idx == 0 { self.size() } else { idx }) - 1
+    }
+    /// EdgeGrid.hpp:66-70
+    pub fn get_segment(&self, idx: usize) -> Line {
+        Line::new(*self.segment_start(idx), *self.segment_end(idx))
+    }
+    /// EdgeGrid.hpp:72-81
+    pub fn get_segments(&self) -> Vec<Line> {
+        self.segments()
+    }
+    /// EdgeGrid.hpp:84 (private at the pin): `m_end - m_begin`.
+    pub fn size(&self) -> usize {
+        self.points.len()
     }
 
     /// Get a segment as a Line

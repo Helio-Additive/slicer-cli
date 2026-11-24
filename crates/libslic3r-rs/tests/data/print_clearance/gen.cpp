@@ -211,12 +211,76 @@ static std::string orders(const Model &model, long long base = 0)
     return o;
 }
 
-int main()
+// R947: Print::validate (Print.cpp:1413-1844) on the eight scenarios and on variants of scenario 1 (by object,
+// two objects far apart) that reach its other checks; `gen validate` prints only these lines.
+static void validate_line(const std::string &tag, Print &print)
+{
+    std::vector<StringObjectException> warnings;
+    Polygons polys;
+    std::vector<std::pair<Polygon, float>> hp;
+    StringObjectException e = print.validate(&warnings, &polys, &hp);
+    std::string ws = hI((long long) warnings.size());
+    for (auto &w : warnings)
+        ws += " " + hB(w.is_warning) + " " + hB(w.object != nullptr) + " " + (w.opt_key.empty() ? std::string("-") : w.opt_key) + " " +
+              (w.hypetext.empty() ? std::string("-") : MSG(w.hypetext)) + " " + MSG(w.string);
+    std::string ps = hI((long long) e.params.size());
+    for (auto &p : e.params) ps += " " + p;
+    out(tag + " validate " + hI((long long) e.type) + " " + hB(e.object != nullptr) + " " + (e.opt_key.empty() ? std::string("-") : e.opt_key) +
+        " " + hB(e.is_warning) + " params " + ps + " polys " + hI((long long) polys.size()) + " hp " + hI((long long) hp.size()));
+    out(tag + " validate_msg " + MSG(e.string));
+    out(tag + " validate_warnings " + ws);
+}
+
+static int validate_main()
 {
     for (int scenario = 0; scenario < 8; ++scenario) {
         Model model = build_model(scenario);
         DynamicPrintConfig config = base_config(scenario);
         Print print;
+        // Print.hpp:1328 `Vec3d m_origin;` is not initialised (Eigen); the front end always sets it. Without this the
+        // clearance checks read stack garbage (R947: an unrelated edit of this file moved every exclusion check).
+        print.set_plate_origin(Vec3d::Zero());
+        print.apply(model, config);
+        validate_line("c" + std::to_string(scenario), print);
+    }
+    const std::vector<std::vector<std::pair<std::string, std::string>>> variants = {
+        {{"timelapse_type", "1"}},
+        {{"enable_wrapping_detection", "1"}},
+        {{"layer_height", "0.6"}},
+        {{"print_sequence", "by layer"}, {"spiral_mode", "1"}},
+        {{"curr_bed_type", "Cool Plate"}, {"cool_plate_temp", "0"}},
+        {{"precise_outer_wall", "1"}, {"wall_sequence", "outer wall/inner wall"}},
+        {{"sparse_infill_line_width", "2"}},
+        {{"enable_support", "1"}, {"support_line_width", "0.1"}},
+        {{"initial_layer_print_height", "0.5"}},
+        {{"print_sequence", "by layer"}, {"enable_prime_tower", "1"}, {"wall_filament", "2"}, {"use_relative_e_distances", "0"}},
+        {{"print_sequence", "by layer"}, {"enable_prime_tower", "1"}, {"wall_filament", "2"}, {"ooze_prevention", "1"}},
+        {{"print_sequence", "by layer"}, {"enable_prime_tower", "1"}, {"wall_filament", "2"}, {"precise_z_height", "1"}},
+    };
+    for (size_t v = 0; v < variants.size(); ++v) {
+        Model model = build_model(1);
+        DynamicPrintConfig config = base_config(1);
+        for (auto &kv : variants[v]) deser(config, kv.first.c_str(), kv.second.c_str());
+        Print print;
+        // Print.hpp:1328 `Vec3d m_origin;` is not initialised (Eigen); the front end always sets it. Without this the
+        // clearance checks read stack garbage (R947: an unrelated edit of this file moved every exclusion check).
+        print.set_plate_origin(Vec3d::Zero());
+        print.apply(model, config);
+        validate_line("v" + std::to_string(v), print);
+    }
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && std::string(argv[1]) == "validate") return validate_main();
+    for (int scenario = 0; scenario < 8; ++scenario) {
+        Model model = build_model(scenario);
+        DynamicPrintConfig config = base_config(scenario);
+        Print print;
+        // Print.hpp:1328 `Vec3d m_origin;` is not initialised (Eigen); the front end always sets it. Without this the
+        // clearance checks read stack garbage (R947: an unrelated edit of this file moved every exclusion check).
+        print.set_plate_origin(Vec3d::Zero());
         print.apply(model, config);
         std::string sc = "c" + std::to_string(scenario);
         out(sc + " objects " + hI((long long) print.objects().size()) + " sequential " + hB(print.is_sequential_print()) + " short " +

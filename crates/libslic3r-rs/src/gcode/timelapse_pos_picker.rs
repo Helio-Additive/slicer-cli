@@ -1071,6 +1071,275 @@ impl<'p> TimelapsePosPicker<'p> {
     }
 }
 
+/// The smooth-timelapse branch of `TimelapsePosPicker` (`init`, `construct_printable_area_by_printer`,
+/// `get_real_instance_bbox`, `get_limit_area_for_camera`, `collect_limit_areas_for_camera`,
+/// `get_objects_center`, `pick_pos_for_all_layer`, `pick_pos`) for the live export, which holds no
+/// `print::faithful::Print`: the Print's parts these read are handed over (the full print configuration,
+/// the nozzle group result's used extruders, the fake wipe tower position, `wipe_tower_data().bbx`, and
+/// per object and instance `PrintInstance::get_bounding_box()` with `get_raft_height`). The bodies follow
+/// the methods of [`TimelapsePosPicker`] above line by line. The per-layer pick (`pick_pos_for_curr_layer`,
+/// traditional timelapse) reads the layers' slices and is not taken here: `pick_pos` returns `None` for it.
+pub struct LiveTimelapsePosPicker {
+    m_extruder_printable_area: Vec<ExPolygons>,
+    m_bed_polygon: Polygon,
+    m_plate_offset: Point,
+    m_print_seq: PrintSequence,
+    m_based_on_all_layer: bool,
+    m_nozzle_clearance_radius: i32,
+    m_extruder_clearance_max_radius: f64,
+    m_extruder_height_gap: Option<i32>,
+    /// `get_real_instance_bbox` per object and instance (raft height added, plate offset removed).
+    m_real_instance_bboxes: Vec<Vec<BoundingBoxf3>>,
+    m_all_layer_pos: Option<Point>,
+}
+
+impl LiveTimelapsePosPicker {
+    /// TimelapsePosPicker.cpp:9-30 `init(const Print* print_, const Point& plate_offset)` and :322-340
+    /// `get_real_instance_bbox` (the cache filled up front): `instance_bboxes[o][i]` is
+    /// `PrintInstance::get_bounding_box()` of instance `i` of object `o`, `raft_heights[o]` its
+    /// `get_raft_height`, `used_extruders` the size of `get_nozzle_group_result()->get_used_extruders()`
+    /// (`None` without a result).
+    pub fn init(
+        config: &crate::print::faithful::PrintConfig,
+        used_extruders: Option<usize>,
+        fake_wipe_tower_pos: [f32; 2],
+        wipe_tower_bbx: ((f64, f64), (f64, f64)),
+        instance_bboxes: &[Vec<BoundingBoxf3>],
+        raft_heights: &[f64],
+        plate_offset: &Point,
+    ) -> Self {
+        let mut s = LiveTimelapsePosPicker {
+            m_extruder_printable_area: Vec::new(),
+            m_bed_polygon: Polygon::new(),
+            m_plate_offset: *plate_offset,
+            m_print_seq: PrintSequence::ByObject,
+            m_based_on_all_layer: false,
+            m_nozzle_clearance_radius: 0,
+            m_extruder_clearance_max_radius: cfg_float(config, "extruder_clearance_max_radius"),
+            m_extruder_height_gap: None,
+            m_real_instance_bboxes: Vec::new(),
+            m_all_layer_pos: None,
+        };
+        s.m_nozzle_clearance_radius = cfg_float(config, "extruder_clearance_max_radius") as i32;
+        if cfg_floats(config, "nozzle_diameter").len() > 1 {
+            let extruder_printable_height = cfg_floats(config, "extruder_printable_height");
+            // Only honor the dual-nozzle height gap when more than one extruder is actually used.
+            if used_extruders.is_some_and(|n| n > 1) {
+                s.m_extruder_height_gap = Some((extruder_printable_height[0] - extruder_printable_height[1]).abs() as i32);
+            }
+        }
+        s.m_print_seq = if cfg_enum(config, "print_sequence") == PrintSequence::ByObject as i32 {
+            PrintSequence::ByObject
+        } else if cfg_enum(config, "print_sequence") == PrintSequence::ByDefault as i32 {
+            PrintSequence::ByDefault
+        } else {
+            PrintSequence::ByLayer
+        };
+        s.m_based_on_all_layer = cfg_enum(config, "timelapse_type") == TimelapseType::TlSmooth as i32;
+        // TimelapsePosPicker.cpp:322-340: raft height on max.z, plate offset removed.
+        for (o, bboxes) in instance_bboxes.iter().enumerate() {
+            let raft_height = raft_heights.get(o).copied().unwrap_or(0.0);
+            s.m_real_instance_bboxes.push(
+                bboxes
+                    .iter()
+                    .map(|b| {
+                        let mut bbox = *b;
+                        bbox.max.z += raft_height;
+                        bbox.min.x -= s.m_plate_offset.x as f64;
+                        bbox.max.x -= s.m_plate_offset.x as f64;
+                        bbox.min.y -= s.m_plate_offset.y as f64;
+                        bbox.max.y -= s.m_plate_offset.y as f64;
+                        bbox
+                    })
+                    .collect(),
+            );
+        }
+        s.construct_printable_area_by_printer(config, fake_wipe_tower_pos, wipe_tower_bbx);
+        s
+    }
+
+    /// TimelapsePosPicker.cpp:72-117 `construct_printable_area_by_printer()`
+    fn construct_printable_area_by_printer(
+        &mut self,
+        config: &crate::print::faithful::PrintConfig,
+        fake_wipe_tower_pos: [f32; 2],
+        wt_box: ((f64, f64), (f64, f64)),
+    ) {
+        let extruder_count = cfg_floats(config, "nozzle_diameter").len();
+        self.m_extruder_printable_area.clear();
+        self.m_extruder_printable_area.resize(extruder_count, ExPolygons::new());
+        for p in cfg_points(config, "printable_area") {
+            self.m_bed_polygon.points.push(Point::new(scale_(p.x) as i64, scale_(p.y) as i64));
+        }
+        let mut bed_exclude_area = Polygon::new();
+        for p in cfg_points(config, "bed_exclude_area") {
+            bed_exclude_area.points.push(Point::new(scale_(p.x) as i64, scale_(p.y) as i64));
+        }
+        // `print->get_fake_wipe_tower().pos.cast<coord_t>()`, then scaled.
+        let mut base_wp_pt = Point::new(fake_wipe_tower_pos[0] as i64, fake_wipe_tower_pos[1] as i64);
+        base_wp_pt = point_lrint(scale_(base_wp_pt.x as f64), scale_(base_wp_pt.y as f64));
+        let transform_wt_pt = |pt: Point| -> Point { Point::new(pt.x + base_wp_pt.x, pt.y + base_wp_pt.y) };
+        let (wt_min, wt_max) = wt_box;
+        let mut wipe_tower_area = Polygon::from_points(vec![
+            transform_wt_pt(point_lrint(scale_(wt_min.0), scale_(wt_min.1))),
+            transform_wt_pt(point_lrint(scale_(wt_max.0), scale_(wt_min.1))),
+            transform_wt_pt(point_lrint(scale_(wt_max.0), scale_(wt_max.1))),
+            transform_wt_pt(point_lrint(scale_(wt_min.0), scale_(wt_max.1))),
+        ]);
+        wipe_tower_area = self.expand_object_projection(&wipe_tower_area, self.m_print_seq == PrintSequence::ByObject, true);
+        let extruder_printable_area_values = cfg_points_groups(config, "extruder_printable_area");
+        for idx in 0..extruder_count {
+            let bed = clipper_do::<Paths>(
+                ClipType::ctDifference,
+                &vec![polygon_path(&self.m_bed_polygon)],
+                &vec![polygon_path(&bed_exclude_area)],
+                PolyFillType::pftNonZero,
+            );
+            let mut printable_area: ExPolygons =
+                _clipper_ex(ClipType::ctDifference, &bed, &vec![polygon_path(&wipe_tower_area)], ApplySafetyOffset::No, PolyFillType::pftNonZero);
+            if idx < extruder_printable_area_values.len() {
+                let mut extruder_printable_area = Polygon::new();
+                for p in &extruder_printable_area_values[idx] {
+                    extruder_printable_area.points.push(Point::new(scale_(p.x) as i64, scale_(p.y) as i64));
+                }
+                printable_area = _clipper_ex(
+                    ClipType::ctIntersection,
+                    &expolygons_paths(&printable_area),
+                    &vec![polygon_path(&extruder_printable_area)],
+                    ApplySafetyOffset::No,
+                    PolyFillType::pftNonZero,
+                );
+            }
+            self.m_extruder_printable_area[idx] = printable_area;
+        }
+    }
+
+    /// TimelapsePosPicker.cpp:258-276 `expand_object_projection(const Polygon &poly, bool by_object, bool higher_than_curr)`
+    fn expand_object_projection(&self, poly: &Polygon, by_object: bool, higher_than_curr: bool) -> Polygon {
+        let radius: f32 = if by_object && higher_than_curr {
+            scale_(self.m_extruder_clearance_max_radius) as f32
+        } else {
+            scale_(self.m_extruder_clearance_max_radius / 2.0) as f32
+        };
+        let ret = paths_polygons(&raw_offset(
+            &vec![polygon_path(poly)],
+            radius as f64,
+            JoinType::jtMiter,
+            3.0,
+            crate::clipper::EndType::etClosedPolygon,
+        ));
+        if ret.is_empty() {
+            return Polygon::new();
+        }
+        ret[0].clone()
+    }
+
+    /// TimelapsePosPicker.cpp:342-358 `get_limit_area_for_camera(const PrintObject* obj)`
+    fn get_limit_area_for_camera(&self, obj: usize) -> Polygon {
+        let bbox = self.m_real_instance_bboxes[obj][0];
+        let radius: f32 = (self.m_nozzle_clearance_radius / 2) as f32;
+        let offset_bbox = bbox.inflated(2.0f64.sqrt() * radius as f64);
+        Polygon::from_points(vec![
+            DEFAULT_CAMERA_POS,
+            point_lrint(scale_(offset_bbox.max.x).max(0.0), scale_(offset_bbox.min.y).max(0.0)),
+            point_lrint(scale_(offset_bbox.max.x).max(0.0), scale_(offset_bbox.max.y).max(0.0)),
+            point_lrint(scale_(offset_bbox.min.x).max(0.0), scale_(offset_bbox.max.y).max(0.0)),
+        ])
+    }
+
+    /// TimelapsePosPicker.cpp:166-173 `collect_limit_areas_for_camera(object_list)`
+    fn collect_limit_areas_for_camera(&self, object_list: &[usize]) -> Vec<Polygon> {
+        let ret: Vec<Polygon> = object_list.iter().map(|&o| self.get_limit_area_for_camera(o)).collect();
+        union_(&ret)
+    }
+
+    /// TimelapsePosPicker.cpp:546-569 `get_objects_center(object_list)`, scaled data.
+    fn get_objects_center(&self, object_list: &[usize]) -> Point {
+        if object_list.is_empty() {
+            return Point::new(0, 0);
+        }
+        let (mut sum_x, mut sum_y, mut total_instances) = (0.0f64, 0.0f64, 0usize);
+        for &obj in object_list {
+            for bbox in &self.m_real_instance_bboxes[obj] {
+                let min_p = point_lrint(bbox.min.x, bbox.min.y);
+                let max_p = point_lrint(bbox.max.x, bbox.max.y);
+                sum_x += ((min_p.x + max_p.x) as f32 / 2.0f32) as f64;
+                sum_y += ((min_p.y + max_p.y) as f32 / 2.0f32) as f64;
+                total_instances += 1;
+            }
+        }
+        Point::new(scale_(sum_x / total_instances as f64) as i64, scale_(sum_y / total_instances as f64) as i64)
+    }
+
+    /// TimelapsePosPicker.cpp:571-622 `pick_pos_for_all_layer(const PosPickCtx& ctx)` (`ctx.curr_layer->print_z`).
+    fn pick_pos_for_all_layer(&mut self, curr_print_z: f64) -> Point {
+        let by_object = self.m_print_seq == PrintSequence::ByObject;
+        if by_object {
+            return DEFAULT_TIMELAPSE_POS;
+        }
+        if self.m_extruder_height_gap.is_some() && curr_print_z <= self.m_extruder_height_gap.unwrap() as f64 {
+            return DEFAULT_TIMELAPSE_POS;
+        }
+        if let Some(pos) = self.m_all_layer_pos {
+            return pos;
+        }
+        let object_list: Vec<usize> = (0..self.m_real_instance_bboxes.len()).collect();
+        let mut object_projections: Vec<Polygon> = Vec::new();
+        for &obj in &object_list {
+            for bbox in &self.m_real_instance_bboxes[obj] {
+                let min_p = point_lrint(scale_(bbox.min.x), scale_(bbox.min.y));
+                let max_p = point_lrint(scale_(bbox.max.x), scale_(bbox.max.y));
+                let obj_proj = Polygon::from_points(vec![
+                    Point::new(min_p.x, min_p.y),
+                    Point::new(max_p.x, min_p.y),
+                    Point::new(max_p.x, max_p.y),
+                    Point::new(min_p.x, max_p.y),
+                ]);
+                object_projections.push(self.expand_object_projection(&obj_proj, by_object, true));
+            }
+        }
+        object_projections = union_(&object_projections);
+        let camera_limit_areas = self.collect_limit_areas_for_camera(&object_list);
+        let unplacable_area: Vec<Polygon> = {
+            let mut polys = object_projections.clone();
+            polys.extend(camera_limit_areas.iter().cloned());
+            union_(&polys)
+        };
+        let mut extruder_printable_area: ExPolygons = ExPolygons::new();
+        if self.m_extruder_printable_area.len() > 1 {
+            extruder_printable_area = _clipper_ex(
+                ClipType::ctIntersection,
+                &expolygons_paths(&self.m_extruder_printable_area[0]),
+                &expolygons_paths(&self.m_extruder_printable_area[1]),
+                ApplySafetyOffset::No,
+                PolyFillType::pftNonZero,
+            );
+        } else if self.m_extruder_printable_area.len() == 1 {
+            extruder_printable_area = self.m_extruder_printable_area[0].clone();
+        }
+        let mut safe_area: ExPolygons = _clipper_ex(
+            ClipType::ctDifference,
+            &expolygons_paths(&extruder_printable_area),
+            &polygons_paths(&unplacable_area),
+            ApplySafetyOffset::No,
+            PolyFillType::pftNonZero,
+        );
+        safe_area = opening_ex(&safe_area, scale_(FILTER_THRESHOLD as f64) as f32);
+        let starting_pos = self.get_objects_center(&object_list);
+        self.m_all_layer_pos = Some(pick_pos_internal(&starting_pos, &safe_area, &ExPolygons::new(), by_object, &None));
+        self.m_all_layer_pos.unwrap()
+    }
+
+    /// TimelapsePosPicker.cpp:455-464 `pick_pos(const PosPickCtx& ctx)`: `None` for the per-layer pick.
+    pub fn pick_pos(&mut self, curr_print_z: f64) -> Option<Point> {
+        if !self.m_based_on_all_layer {
+            return None;
+        }
+        let res = self.pick_pos_for_all_layer(curr_print_z);
+        Some(point_lrint(unscale_(res.x as f64), unscale_(res.y as f64)))
+    }
+}
+
 /// `config.<key>.values` of a points option (`Pointfs`).
 fn cfg_points(config: &crate::print::faithful::PrintConfig, key: &str) -> Vec<crate::geometry::Vec2d> {
     config.option(key).and_then(|o| o.as_any().downcast_ref::<crate::config::ConfigOptionPoints>()).map(|o| o.values.clone()).unwrap_or_default()
@@ -1133,5 +1402,51 @@ mod tests {
         let res = pick_pos_internal(&curr, &safe, &Vec::new(), false, &None);
         // Must be a real candidate, not the fallback default.
         assert_ne!(res, DEFAULT_TIMELAPSE_POS);
+    }
+
+    /// `LiveTimelapsePosPicker` follows the all-layer rules: smooth timelapse with two extruders used is
+    /// the default position up to the printable-height gap (TimelapsePosPicker.cpp:19-24, 582-583), the
+    /// cached all-layer position above it (:584-585); with one extruder used there is no gap; by object
+    /// it is the default (:574-576); traditional timelapse is not taken live (`None`).
+    #[test]
+    fn live_picker_follows_the_all_layer_rules() {
+        use crate::config::ConfigBase;
+        let make = |pairs: &[(&str, &str)]| {
+            let mut cfg = crate::print_config::config_def::DynamicPrintConfig::full_print_config();
+            for (k, v) in [
+                ("printable_area", "0x0,350x0,350x320,0x320"),
+                ("extruder_printable_area", "0x0,325x0,325x320,0x320#25x0,350x0,350x320,25x320"),
+                ("nozzle_diameter", "0.4,0.4"),
+                ("extruder_printable_height", "320,325"),
+                ("extruder_clearance_max_radius", "96"),
+                ("print_sequence", "by layer"),
+                ("timelapse_type", "1"),
+            ]
+            .iter()
+            .chain(pairs.iter())
+            {
+                cfg.set_deserialize_strict(k, v, false).unwrap_or_else(|e| panic!("{k}: {e:?}"));
+            }
+            cfg
+        };
+        let boxes = vec![vec![BoundingBoxf3::new_from_points(
+            crate::geometry::Vec3d::new(150.0, 140.0, 0.0),
+            crate::geometry::Vec3d::new(200.0, 190.0, 197.0),
+        )]];
+        let tower = ((0.0, 0.0), (60.0, 35.0));
+        let origin = Point::new(0, 0);
+        let cfg = make(&[]);
+        let mut two = LiveTimelapsePosPicker::init(&cfg, Some(2), [232.229, 231.297], tower, &boxes, &[0.0], &origin);
+        assert_eq!(two.pick_pos(4.8), Some(DEFAULT_TIMELAPSE_POS));
+        let above = two.pick_pos(5.2).unwrap();
+        assert_eq!(two.pick_pos(150.0), Some(above));
+        let mut one = LiveTimelapsePosPicker::init(&cfg, Some(1), [232.229, 231.297], tower, &boxes, &[0.0], &origin);
+        assert_eq!(one.pick_pos(4.8), Some(above));
+        let by_object = make(&[("print_sequence", "by object")]);
+        let mut seq = LiveTimelapsePosPicker::init(&by_object, Some(2), [232.229, 231.297], tower, &boxes, &[0.0], &origin);
+        assert_eq!(seq.pick_pos(150.0), Some(DEFAULT_TIMELAPSE_POS));
+        let traditional = make(&[("timelapse_type", "0")]);
+        let mut trad = LiveTimelapsePosPicker::init(&traditional, Some(2), [232.229, 231.297], tower, &boxes, &[0.0], &origin);
+        assert_eq!(trad.pick_pos(150.0), None);
     }
 }

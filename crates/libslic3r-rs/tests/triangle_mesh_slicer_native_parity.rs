@@ -332,6 +332,11 @@ fn cut_mesh_native_parity() {
     }
     assert!(cases > 0);
     assert_eq!(ne, 0, "cut_mesh differs from the pin");
+    // R947: tesselate.rs runs the glu-libtess port (GLU_LIBTESS_PIN, on by default), so the cap
+    // triangles are asserted too.
+    if slicer::faithful_gate("GLU_LIBTESS_PIN") {
+        assert_eq!(caps_ne, 0, "cut_mesh cap triangles differ from the pin");
+    }
 }
 
 type Pts = Vec<Vec<(i64, i64)>>;
@@ -613,4 +618,8 @@ fn cut_mesh_plane_points_native_parity() {
     assert!(cases > 0);
     assert_eq!(verts_ne, 0, "cut_mesh(plane_points) vertices differ from the pin");
     assert_eq!(faces_ne, 0, "cut_mesh(plane_points) face counts differ from the pin");
+    // R947: the caps are triangulated by the glu-libtess port (GLU_LIBTESS_PIN): asserted.
+    if slicer::faithful_gate("GLU_LIBTESS_PIN") {
+        assert_eq!(cap_only, 0, "cut_mesh(plane_points) cap triangles differ from the pin");
+    }
 }

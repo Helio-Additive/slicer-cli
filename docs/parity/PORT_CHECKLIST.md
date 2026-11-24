@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**74.0% of the named C++ functions are ported or verified (7086 of 9574); 73.8% by size of body.**
+**74.3% of the named C++ functions are ported or verified (7112 of 9574); 74.2% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 479 | 5.0% | 7.1% |
-| partial `[~]` | 2009 | 21.0% | 19.1% |
-| ported `[x]` | 3727 | 38.9% | 25.0% |
-| verified `[v]` | 3359 | 35.1% | 48.9% |
+| not started `[ ]` | 460 | 4.8% | 7.0% |
+| partial `[~]` | 2002 | 20.9% | 18.8% |
+| ported `[x]` | 3735 | 39.0% | 24.7% |
+| verified `[v]` | 3377 | 35.3% | 49.4% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -71,7 +71,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy` | 1 | `arachne/beading_strategy/outer_wall_inset_beading_strategy.rs` | partial | 6 | 0 | 1 | 5 | 0 |
 | `Arachne/BeadingStrategy/RedistributeBeadingStrategy` | 1 | `arachne/beading_strategy/redistribute_beading_strategy.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `Arachne/BeadingStrategy/WideningBeadingStrategy` | 1 | `arachne/beading_strategy/widening_beading_strategy.rs` | ported | 8 | 0 | 0 | 8 | 0 |
-| `Arachne/SkeletalTrapezoidation` | 1 | `arachne/skeletal_trapezoidation.rs` | partial | 41 | 0 | 3 | 36 | 2 |
+| `Arachne/SkeletalTrapezoidation` | 1 | `arachne/skeletal_trapezoidation.rs` | partial | 41 | 0 | 1 | 33 | 7 |
 | `Arachne/SkeletalTrapezoidationEdge` | 1 | `arachne/skeletal_trapezoidation_edge.rs` | ported | 14 | 0 | 0 | 14 | 0 |
 | `Arachne/SkeletalTrapezoidationGraph` | 1 | `arachne/skeletal_trapezoidation_graph.rs` | ported | 12 | 0 | 0 | 12 | 0 |
 | `Arachne/SkeletalTrapezoidationJoint` | 1 | `arachne/skeletal_trapezoidation_joint.rs` | ported | 3 | 0 | 0 | 3 | 0 |
@@ -132,7 +132,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `CutUtils` | 3 | `cut_utils.rs` | partial | 19 | 6 | 12 | 1 | 0 |
 | `Debounce` | 3 | `debounce.rs` | ported | 1 | 0 | 0 | 1 | 0 |
 | `Desensitize` | 3 | `desensitize.rs` | verified | 9 | 0 | 0 | 0 | 9 |
-| `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 11 | 25 | 11 | 0 |
+| `EdgeGrid` | 1 | `edge_grid.rs` | partial | 47 | 7 | 23 | 17 | 0 |
 | `ElephantFootCompensation` | 1 | `elephant_foot_compensation.rs` | partial | 10 | 1 | 4 | 4 | 1 |
 | `Emboss` | 3 | `emboss.rs` | partial | 91 | 6 | 5 | 27 | 53 |
 | `EmbossShape` | 3 | `emboss_shape.rs` | partial | 8 | 0 | 8 | 0 | 0 |
@@ -141,7 +141,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Execution/Execution` | 3 | `execution/execution.rs` | partial | 6 | 0 | 3 | 3 | 0 |
 | `Execution/ExecutionSeq` | 3 | `execution/execution_seq.rs` | partial | 7 | 2 | 0 | 5 | 0 |
 | `Execution/ExecutionTBB` | 3 | `execution/execution_tbb.rs` | partial | 5 | 2 | 2 | 1 | 0 |
-| `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 8 | 49 | 3 | 33 |
+| `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 0 | 44 | 12 | 37 |
 | `ExPolygonCollection` | 1 | `ex_polygon_collection.rs` | partial | 11 | 0 | 2 | 9 | 0 |
 | `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `ExPolygonsIndex` | 1 | `ex_polygons_index.rs` | partial | 7 | 0 | 1 | 6 | 0 |
@@ -285,13 +285,13 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Platform` | 1 | `platform.rs` | ported | 5 | 0 | 0 | 5 | 0 |
 | `PNGReadWrite` | 3 | `png_read_write.rs` | partial | 24 | 0 | 13 | 11 | 0 |
 | `Point` | 1 | `geometry/point.rs` | partial | 103 | 0 | 49 | 12 | 42 |
-| `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 4 | 25 | 14 | 43 |
+| `Polygon` | 1 | `geometry/polygon.rs` | partial | 86 | 0 | 29 | 14 | 43 |
 | `PolygonTrimmer` | 1 | `polygon_trimmer.rs` | ported | 3 | 0 | 0 | 3 | 0 |
 | `Polyline` | 1 | `geometry/polyline.rs` | partial | 52 | 2 | 21 | 29 | 0 |
 | `Preset` | 1 | `preset.rs` | partial | 108 | 0 | 16 | 15 | 77 |
 | `PresetBundle` | 1 | `preset_bundle.rs` | partial | 141 | 0 | 6 | 14 | 121 |
 | `PrincipalComponents2D` | 1 | `principal_components2_d.rs` | ported | 2 | 0 | 0 | 2 | 0 |
-| `Print` | 1 | `print.rs` | partial | 236 | 11 | 49 | 135 | 41 |
+| `Print` | 1 | `print.rs` | partial | 236 | 8 | 48 | 138 | 42 |
 | `PrintApply` | 1 | `print_apply.rs` | partial | 44 | 0 | 8 | 20 | 16 |
 | `PrintBase` | 1 | `print_base.rs` | partial | 77 | 0 | 4 | 11 | 62 |
 | `PrintConfig` | 1 | `print_config.rs` | partial | 137 | 2 | 13 | 13 | 109 |
@@ -346,7 +346,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `SurfaceMesh` | 1 | `surface_mesh.rs` | partial | 22 | 2 | 2 | 18 | 0 |
 | `SVG` | 1 | `svg.rs` | partial | 64 | 7 | 40 | 17 | 0 |
 | `Technologies` | 1 | `technologies.rs` | ported | 0 | 0 | 0 | 0 | 0 |
-| `Tesselate` | 1 | `tesselate.rs` | partial | 18 | 7 | 1 | 10 | 0 |
+| `Tesselate` | 1 | `tesselate.rs` | partial | 18 | 7 | 1 | 4 | 6 |
 | `TextConfiguration` | 3 | `text_configuration.rs` | partial | 4 | 0 | 3 | 1 | 0 |
 | `TexturePainting` | 3 | `texture_painting.rs` | partial | 25 | 0 | 1 | 4 | 20 |
 | `TextureToColor/Callbacks` | 3 | `texture_to_color/callbacks.rs` | ported | 0 | 0 | 0 | 0 | 0 |
@@ -360,7 +360,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Timer` | 1 | `timer.rs` | partial | 10 | 0 | 1 | 9 | 0 |
 | `TriangleMesh` | 1 | `triangle_mesh.rs` | partial | 136 | 3 | 18 | 23 | 92 |
 | `TriangleMeshDeal` | 3 | `triangle_mesh_deal.rs` | ported | 1 | 0 | 0 | 1 | 0 |
-| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 1 | 1 | 22 | 21 |
+| `TriangleMeshSlicer` | 1 | `triangle_mesh_slicer.rs` | partial | 45 | 1 | 0 | 21 | 23 |
 | `TriangleSelector` | 1 | `triangle_selector.rs` | partial | 103 | 0 | 20 | 45 | 38 |
 | `TriangleSetSampling` | 3 | `triangle_set_sampling.rs` | verified | 1 | 0 | 0 | 0 | 1 |
 | `TriangulateWall` | 3 | `triangulate_wall.rs` | partial | 13 | 0 | 1 | 12 | 0 |
@@ -784,49 +784,49 @@ Rust file: `arachne/skeletal_trapezoidation.rs`. Status: **partial**. Not listed
 **free functions**
 
 - [~] `export_graph_to_svg` (line 28) → `multi_material_segmentation.rs` — not in the paired file
-- [x] `normal` (line 1310) → `arachne/skeletal_trapezoidation.rs:4674`
+- [x] `normal` (line 1310) → `arachne/skeletal_trapezoidation.rs:4675`
 
 **class `SkeletalTrapezoidation`**
 
-- [x] `transferEdge` (line 107) → `arachne/skeletal_trapezoidation.rs:226`
-- [~] `discretize` (line 218) → `arachne/skeletal_trapezoidation.rs:424` — divergent
-- [x] `computePointCellRange` (line 330) → `arachne/skeletal_trapezoidation.rs:611`
-- [~] `constructFromPolygons` (line 391) → `arachne/skeletal_trapezoidation.rs:691` — divergent
-- [x] `separatePointyQuadEndNodes` (line 510) → `arachne/skeletal_trapezoidation.rs:984`
-- [x] `generateToolpaths` (line 545) → `arachne/skeletal_trapezoidation.rs:1045`
-- [x] `updateIsCentral` (line 603) → `arachne/skeletal_trapezoidation.rs:1202`
-- [x] `filterCentral` (line 653) → `arachne/skeletal_trapezoidation.rs:4148`
-- [x] `filterCentral` (line 664) → `arachne/skeletal_trapezoidation.rs:4178`
-- [x] `filterOuterCentral` (line 690) → `arachne/skeletal_trapezoidation.rs:1269`
-- [x] `updateBeadCount` (line 702) → `arachne/skeletal_trapezoidation.rs:1286`
-- [x] `filterNoncentralRegions` (line 733) → `arachne/skeletal_trapezoidation.rs:4234`
-- [x] `filterNoncentralRegions` (line 751) → `arachne/skeletal_trapezoidation.rs:4271`
-- [x] `generateTransitioningRibs` (line 795) → `arachne/skeletal_trapezoidation.rs:1351`
-- [x] `generateTransitionMids` (line 833) → `arachne/skeletal_trapezoidation.rs:1394`
-- [x] `filterTransitionMids` (line 913) → `arachne/skeletal_trapezoidation.rs:1544`
-- [x] `dissolveNearbyTransitions` (line 982) → `arachne/skeletal_trapezoidation.rs:1700`
-- [x] `dissolveBeadCountRegion` (line 1042) → `arachne/skeletal_trapezoidation.rs:1844`
-- [x] `filterEndOfCentralTransition` (line 1059) → `arachne/skeletal_trapezoidation.rs:1882`
-- [x] `generateAllTransitionEnds` (line 1089) → `arachne/skeletal_trapezoidation.rs:1942`
-- [x] `generateTransitionEnds` (line 1109) → `arachne/skeletal_trapezoidation.rs:1996`
-- [x] `generateTransitionEnd` (line 1146) → `arachne/skeletal_trapezoidation.rs:2074`
-- [x] `isGoingDown` (line 1252) → `arachne/skeletal_trapezoidation.rs:2260`
-- [x] `applyTransitions` (line 1318) → `arachne/skeletal_trapezoidation.rs:2364`
-- [x] `isEndOfCentral` (line 1384) → `arachne/skeletal_trapezoidation.rs:2495`
-- [x] `generateExtraRibs` (line 1405) → `arachne/skeletal_trapezoidation.rs:4024`
-- [x] `generateSegments` (line 1477) → `arachne/skeletal_trapezoidation.rs:2536`
-- [x] `getQuadMaxRedgeTo` (line 1583) → `arachne/skeletal_trapezoidation.rs:2928`
-- [x] `propagateBeadingsUpward` (line 1608) → `arachne/skeletal_trapezoidation.rs:2974`
-- [x] `propagateBeadingsDownward` (line 1637) → `arachne/skeletal_trapezoidation.rs:4363`
-- [x] `propagateBeadingsDownward` (line 1660) → `arachne/skeletal_trapezoidation.rs:4408`
-- [v] `interpolate` (line 1709) → `arachne/skeletal_trapezoidation.rs:4531` — R945: tests/skeletal_trapezoidation_native_parity.rs (interpolate_native_parity): the pin's SkeletalTrapezoidation::interpolate, both overloads (SkeletalTrapezoidation.cpp 1709-1771), from tests/data/skeletal_trapezoidation/gen.cpp on 1,500 three-argument and 3,000 four-argument cases: 0 differ.
-- [v] `interpolate` (line 1752) → `arachne/skeletal_trapezoidation.rs:4592` — R945: tests/skeletal_trapezoidation_native_parity.rs (interpolate_native_parity): the pin's SkeletalTrapezoidation::interpolate, both overloads (SkeletalTrapezoidation.cpp 1709-1771), from tests/data/skeletal_trapezoidation/gen.cpp on 1,500 three-argument and 3,000 four-argument cases: 0 differ.
-- [x] `generateJunctions` (line 1773) → `arachne/skeletal_trapezoidation.rs:3084`
-- [x] `getOrCreateBeading` (line 1852) → `arachne/skeletal_trapezoidation.rs:3288`
-- [x] `getNearestBeading` (line 1894) → `arachne/skeletal_trapezoidation.rs:3381`
-- [x] `addToolpathSegment` (line 1935) → `arachne/skeletal_trapezoidation.rs:3473`
-- [x] `connectJunctions` (line 1982) → `arachne/skeletal_trapezoidation.rs:3685`
-- [x] `generateLocalMaximaSingleBeads` (line 2102) → `arachne/skeletal_trapezoidation.rs:3949`
+- [v] `transferEdge` (line 107) → `arachne/skeletal_trapezoidation.rs:226` — R947: tests/skeletal_trapezoidation_construct_native_parity.rs (construct_from_polygons_and_discretize_match_the_pin): the pin's SkeletalTrapezoidation constructor through constructFromPolygons (SkeletalTrapezoidation.cpp 374-516: transferEdge, computePointCellRange, separatePointyQuadEndNodes and the incident-edge pass) and discretize (218-328) from tests/data/skeletal_trapezoidation_construct/gen.cpp on 150 random polygon sets (stars with holes, grid rectangles, thin strips, hole compensation on and off) and two real Majora Voronoi inputs (layer 110 call 1, layer 1 call 1): every node and half-edge in list order, 147,076 graph lines and 60,570 discretized edges, 0 differ.
+- [v] `discretize` (line 218) → `arachne/skeletal_trapezoidation.rs:425` — R947: tests/skeletal_trapezoidation_construct_native_parity.rs (construct_from_polygons_and_discretize_match_the_pin): the pin's SkeletalTrapezoidation constructor through constructFromPolygons (SkeletalTrapezoidation.cpp 374-516: transferEdge, computePointCellRange, separatePointyQuadEndNodes and the incident-edge pass) and discretize (218-328) from tests/data/skeletal_trapezoidation_construct/gen.cpp on 150 random polygon sets (stars with holes, grid rectangles, thin strips, hole compensation on and off) and two real Majora Voronoi inputs (layer 110 call 1, layer 1 call 1): every node and half-edge in list order, 147,076 graph lines and 60,570 discretized edges, 0 differ. (the body reads as divergent to the estimate)
+- [v] `computePointCellRange` (line 330) → `arachne/skeletal_trapezoidation.rs:612` — R947: tests/skeletal_trapezoidation_construct_native_parity.rs (construct_from_polygons_and_discretize_match_the_pin): the pin's SkeletalTrapezoidation constructor through constructFromPolygons (SkeletalTrapezoidation.cpp 374-516: transferEdge, computePointCellRange, separatePointyQuadEndNodes and the incident-edge pass) and discretize (218-328) from tests/data/skeletal_trapezoidation_construct/gen.cpp on 150 random polygon sets (stars with holes, grid rectangles, thin strips, hole compensation on and off) and two real Majora Voronoi inputs (layer 110 call 1, layer 1 call 1): every node and half-edge in list order, 147,076 graph lines and 60,570 discretized edges, 0 differ.
+- [v] `constructFromPolygons` (line 391) → `arachne/skeletal_trapezoidation.rs:692` — R947: tests/skeletal_trapezoidation_construct_native_parity.rs (construct_from_polygons_and_discretize_match_the_pin): the pin's SkeletalTrapezoidation constructor through constructFromPolygons (SkeletalTrapezoidation.cpp 374-516: transferEdge, computePointCellRange, separatePointyQuadEndNodes and the incident-edge pass) and discretize (218-328) from tests/data/skeletal_trapezoidation_construct/gen.cpp on 150 random polygon sets (stars with holes, grid rectangles, thin strips, hole compensation on and off) and two real Majora Voronoi inputs (layer 110 call 1, layer 1 call 1): every node and half-edge in list order, 147,076 graph lines and 60,570 discretized edges, 0 differ. (the body reads as divergent to the estimate)
+- [v] `separatePointyQuadEndNodes` (line 510) → `arachne/skeletal_trapezoidation.rs:985` — R947: tests/skeletal_trapezoidation_construct_native_parity.rs (construct_from_polygons_and_discretize_match_the_pin): the pin's SkeletalTrapezoidation constructor through constructFromPolygons (SkeletalTrapezoidation.cpp 374-516: transferEdge, computePointCellRange, separatePointyQuadEndNodes and the incident-edge pass) and discretize (218-328) from tests/data/skeletal_trapezoidation_construct/gen.cpp on 150 random polygon sets (stars with holes, grid rectangles, thin strips, hole compensation on and off) and two real Majora Voronoi inputs (layer 110 call 1, layer 1 call 1): every node and half-edge in list order, 147,076 graph lines and 60,570 discretized edges, 0 differ.
+- [x] `generateToolpaths` (line 545) → `arachne/skeletal_trapezoidation.rs:1046`
+- [x] `updateIsCentral` (line 603) → `arachne/skeletal_trapezoidation.rs:1203`
+- [x] `filterCentral` (line 653) → `arachne/skeletal_trapezoidation.rs:4149`
+- [x] `filterCentral` (line 664) → `arachne/skeletal_trapezoidation.rs:4179`
+- [x] `filterOuterCentral` (line 690) → `arachne/skeletal_trapezoidation.rs:1270`
+- [x] `updateBeadCount` (line 702) → `arachne/skeletal_trapezoidation.rs:1287`
+- [x] `filterNoncentralRegions` (line 733) → `arachne/skeletal_trapezoidation.rs:4235`
+- [x] `filterNoncentralRegions` (line 751) → `arachne/skeletal_trapezoidation.rs:4272`
+- [x] `generateTransitioningRibs` (line 795) → `arachne/skeletal_trapezoidation.rs:1352`
+- [x] `generateTransitionMids` (line 833) → `arachne/skeletal_trapezoidation.rs:1395`
+- [x] `filterTransitionMids` (line 913) → `arachne/skeletal_trapezoidation.rs:1545`
+- [x] `dissolveNearbyTransitions` (line 982) → `arachne/skeletal_trapezoidation.rs:1701`
+- [x] `dissolveBeadCountRegion` (line 1042) → `arachne/skeletal_trapezoidation.rs:1845`
+- [x] `filterEndOfCentralTransition` (line 1059) → `arachne/skeletal_trapezoidation.rs:1883`
+- [x] `generateAllTransitionEnds` (line 1089) → `arachne/skeletal_trapezoidation.rs:1943`
+- [x] `generateTransitionEnds` (line 1109) → `arachne/skeletal_trapezoidation.rs:1997`
+- [x] `generateTransitionEnd` (line 1146) → `arachne/skeletal_trapezoidation.rs:2075`
+- [x] `isGoingDown` (line 1252) → `arachne/skeletal_trapezoidation.rs:2261`
+- [x] `applyTransitions` (line 1318) → `arachne/skeletal_trapezoidation.rs:2365`
+- [x] `isEndOfCentral` (line 1384) → `arachne/skeletal_trapezoidation.rs:2496`
+- [x] `generateExtraRibs` (line 1405) → `arachne/skeletal_trapezoidation.rs:4025`
+- [x] `generateSegments` (line 1477) → `arachne/skeletal_trapezoidation.rs:2537`
+- [x] `getQuadMaxRedgeTo` (line 1583) → `arachne/skeletal_trapezoidation.rs:2929`
+- [x] `propagateBeadingsUpward` (line 1608) → `arachne/skeletal_trapezoidation.rs:2975`
+- [x] `propagateBeadingsDownward` (line 1637) → `arachne/skeletal_trapezoidation.rs:4364`
+- [x] `propagateBeadingsDownward` (line 1660) → `arachne/skeletal_trapezoidation.rs:4409`
+- [v] `interpolate` (line 1709) → `arachne/skeletal_trapezoidation.rs:4532` — R945: tests/skeletal_trapezoidation_native_parity.rs (interpolate_native_parity): the pin's SkeletalTrapezoidation::interpolate, both overloads (SkeletalTrapezoidation.cpp 1709-1771), from tests/data/skeletal_trapezoidation/gen.cpp on 1,500 three-argument and 3,000 four-argument cases: 0 differ.
+- [v] `interpolate` (line 1752) → `arachne/skeletal_trapezoidation.rs:4593` — R945: tests/skeletal_trapezoidation_native_parity.rs (interpolate_native_parity): the pin's SkeletalTrapezoidation::interpolate, both overloads (SkeletalTrapezoidation.cpp 1709-1771), from tests/data/skeletal_trapezoidation/gen.cpp on 1,500 three-argument and 3,000 four-argument cases: 0 differ.
+- [x] `generateJunctions` (line 1773) → `arachne/skeletal_trapezoidation.rs:3085`
+- [x] `getOrCreateBeading` (line 1852) → `arachne/skeletal_trapezoidation.rs:3289`
+- [x] `getNearestBeading` (line 1894) → `arachne/skeletal_trapezoidation.rs:3382`
+- [x] `addToolpathSegment` (line 1935) → `arachne/skeletal_trapezoidation.rs:3474`
+- [x] `connectJunctions` (line 1982) → `arachne/skeletal_trapezoidation.rs:3686`
+- [x] `generateLocalMaximaSingleBeads` (line 2102) → `arachne/skeletal_trapezoidation.rs:3950`
 
 ### `Arachne/SkeletalTrapezoidationEdge` (.hpp)
 
@@ -916,12 +916,12 @@ Rust file: `arachne/utils/extrusion_line.rs`. Status: **partial**. Not listed: 4
 - [~] `simplify` (line 43) → `arachne/utils/extrusion_line.rs:257` — partial
 - [x] `size` (line 57) → `arachne/utils/extrusion_line.rs:86`
 - [~] `empty` (line 62) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 95) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
+- [~] `begin` (line 94) → `boost_polygon_voronoi.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
+- [~] `end` (line 95) → `clipper_utils.rs, edge_grid.rs, ex_polygon.rs` — not in the paired file
 - [x] `rbegin` (line 96) → `arachne/utils/extrusion_line.rs:134`
 - [x] `rend` (line 97) → `arachne/utils/extrusion_line.rs:141`
-- [~] `front` (line 98) → `gcode/tool_ordering.rs` — not in the paired file
-- [~] `back` (line 99) → `gcode/tool_ordering.rs` — not in the paired file
+- [~] `front` (line 98) → `edge_grid.rs, gcode/tool_ordering.rs` — not in the paired file
+- [~] `back` (line 99) → `edge_grid.rs, gcode/tool_ordering.rs` — not in the paired file
 - [x] `begin` (line 102) → `arachne/utils/extrusion_line.rs:121`
 - [x] `end` (line 103) → `arachne/utils/extrusion_line.rs:128`
 - [x] `front` (line 104) → `arachne/utils/extrusion_line.rs:100`
@@ -1012,9 +1012,9 @@ Rust file: `arachne/utils/sparse_grid.rs`. Status: **partial**. Not listed: 1 co
 **class `SparseGrid`**
 
 - [~] `begin` (line 46) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 47) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 47) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `begin` (line 48) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 49) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 49) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `processFromCell` (line 105) → `arachne/utils/sparse_grid.rs:202` — partial
 - [x] `processNearby` (line 115) → `arachne/utils/sparse_grid.rs:175`
 - [x] `getNearby` (line 120) → `arachne/utils/sparse_grid.rs:146`
@@ -1070,12 +1070,12 @@ Rust file: `arachne/wall_tool_paths.rs`. Status: **partial**. Not listed: 1 cons
 **class `WallToolPaths`**
 
 - [x] `EnableHoleCompensation` (line 43) → `arachne/wall_tool_paths.rs:1147`
-- [~] `stitchToolPaths` (line 551) → `arachne/wall_tool_paths.rs:1742` — divergent
-- [x] `removeSmallLines` (line 662) → `arachne/wall_tool_paths.rs:1795`
-- [x] `simplifyToolPaths` (line 679) → `arachne/wall_tool_paths.rs:1822`
-- [~] `separateOutInnerContour` (line 700) → `arachne/wall_tool_paths.rs:1854` — partial
-- [~] `removeEmptyToolPaths` (line 798) → `arachne/wall_tool_paths.rs:1979` — partial
-- [x] `getRegionOrder` (line 815) → `arachne/wall_tool_paths.rs:1991`
+- [~] `stitchToolPaths` (line 551) → `arachne/wall_tool_paths.rs:1744` — divergent
+- [x] `removeSmallLines` (line 662) → `arachne/wall_tool_paths.rs:1797`
+- [x] `simplifyToolPaths` (line 679) → `arachne/wall_tool_paths.rs:1824`
+- [~] `separateOutInnerContour` (line 700) → `arachne/wall_tool_paths.rs:1856` — partial
+- [~] `removeEmptyToolPaths` (line 798) → `arachne/wall_tool_paths.rs:1981` — partial
+- [x] `getRegionOrder` (line 815) → `arachne/wall_tool_paths.rs:1993`
 
 ### `ArcFitter` (.cpp+.hpp)
 
@@ -1099,34 +1099,34 @@ Rust file: `arrange.rs`. Status: **partial**. Not listed: 5 constructors, 2 oper
 **free functions**
 
 - [v] `unscaled` (line 56) → `arrange.rs:90` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported (the body reads as partial to the estimate)
-- [v] `update_arrange_params` (line 84) → `arrange.rs:2186` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `update_selected_items_inflation` (line 123) → `arrange.rs:2233` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `update_unselected_items_inflation` (line 147) → `arrange.rs:2266` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `get_shrink_bedpts` (line 171) → `arrange.rs:2310` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `fill_config` (line 199) → `arrange.rs:2364` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `update_arrange_params` (line 84) → `arrange.rs:2013` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `update_selected_items_inflation` (line 123) → `arrange.rs:2060` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `update_unselected_items_inflation` (line 147) → `arrange.rs:2093` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `get_shrink_bedpts` (line 171) → `arrange.rs:2137` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `fill_config` (line 199) → `arrange.rs:2191` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
 - [~] `arrange` (line 219) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 220) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 221) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 222) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 223) → `geometry/geometry.rs` — not in the paired file
-- [v] `fixed_overfit` (line 248) → `arrange.rs:2420` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `fixed_overfit_topright_sliding` (line 260) → `arrange.rs:2432` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `remove_large_items` (line 883) → `arrange.rs:2491` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `min_area_boundingbox_rotation` (line 896) → `arrange.rs:2506` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `fit_into_box_rotation` (line 910) → `arrange.rs:2519` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported (the body reads as partial to the estimate)
+- [v] `fixed_overfit` (line 248) → `arrange.rs:2247` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `fixed_overfit_topright_sliding` (line 260) → `arrange.rs:2259` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `remove_large_items` (line 883) → `arrange.rs:2318` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `min_area_boundingbox_rotation` (line 896) → `arrange.rs:2333` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `fit_into_box_rotation` (line 910) → `arrange.rs:2346` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported (the body reads as partial to the estimate)
 - [~] `_arrange` (line 916) → `geometry/geometry.rs` — not in the paired file
-- [v] `to_nestbin` (line 1101) → `arrange.rs:2538` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `to_nestbin` (line 1102) → `arrange.rs:2546` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `to_nestbin` (line 1103) → `arrange.rs:2554` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `to_nestbin` (line 1104) → `arrange.rs:2562` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `width` (line 1106) → `arrange.rs:2574` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `height` (line 1107) → `arrange.rs:2580` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `area` (line 1108) → `arrange.rs:2586` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `poly_area` (line 1109) → `arrange.rs:2610` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `distance_to` (line 1110) → `arrange.rs:2617` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `to_circle` (line 1117) → `arrange.rs:2627` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `process_arrangeable` (line 1143) → `arrange.rs:2664` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
-- [v] `call_with_bed` (line 1176) → `arrange.rs:2715` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `to_nestbin` (line 1101) → `arrange.rs:2365` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `to_nestbin` (line 1102) → `arrange.rs:2373` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `to_nestbin` (line 1103) → `arrange.rs:2381` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `to_nestbin` (line 1104) → `arrange.rs:2389` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `width` (line 1106) → `arrange.rs:2401` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `height` (line 1107) → `arrange.rs:2407` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `area` (line 1108) → `arrange.rs:2413` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `poly_area` (line 1109) → `arrange.rs:2437` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `distance_to` (line 1110) → `arrange.rs:2444` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `to_circle` (line 1117) → `arrange.rs:2454` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `process_arrangeable` (line 1143) → `arrange.rs:2491` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
+- [v] `call_with_bed` (line 1176) → `arrange.rs:2542` — R917: tests/arrange_native_parity.rs: the helpers of Arrange.cpp (bed dispatch, circle and box fits, inflation, rotation fits, overfit penalties, parameters) against the pin, 362 lines; the libnest2d nester itself is not ported
 - [~] `arrange` (line 1197) → `geometry/geometry.rs` — not in the paired file
 - [~] `arrange` (line 1208) → `geometry/geometry.rs` — not in the paired file
 
@@ -3341,20 +3341,20 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 
 **free functions**
 
-- [ ] `div_floor` (line 339) → `edge_grid.rs`
+- [~] `div_floor` (line 339) → `edge_grid.rs:40` — divergent
 
 **class `Contour`**
 
-- [~] `begin` (line 22) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 23) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
-- [~] `open` (line 24) → `svg.rs` — not in the paired file
-- [ ] `closed` (line 25) → `edge_grid.rs`
-- [ ] `segment_idx_prev` (line 51) → `edge_grid.rs`
-- [~] `segment_idx_next` (line 58) → `edge_grid.rs:140` — divergent
-- [x] `num_segments` (line 64) → `edge_grid.rs:98`
-- [ ] `get_segment` (line 66) → `edge_grid.rs`
-- [~] `get_segments` (line 72) → `multi_material_segmentation.rs` — not in the paired file
-- [~] `size` (line 84) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [x] `begin` (line 22) → `edge_grid.rs:157`
+- [x] `end` (line 23) → `edge_grid.rs:161`
+- [x] `open` (line 24) → `edge_grid.rs:165`
+- [x] `closed` (line 25) → `edge_grid.rs:169`
+- [~] `segment_idx_prev` (line 51) → `edge_grid.rs:181` — divergent
+- [~] `segment_idx_next` (line 58) → `edge_grid.rs:147` — divergent
+- [x] `num_segments` (line 64) → `edge_grid.rs:105`
+- [x] `get_segment` (line 66) → `edge_grid.rs:185`
+- [~] `get_segments` (line 72) → `edge_grid.rs:189` — stub
+- [x] `size` (line 84) → `edge_grid.rs:193`
 
 **class `EdgeGrid`**
 
@@ -3372,31 +3372,31 @@ Rust file: `edge_grid.rs`. Status: **partial**. Not listed: 7 constructors, 2 op
 - [~] `intersect` (line 347) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
 - [ ] `line_cell_intersect` (line 484) → `edge_grid.rs`
 - [~] `inside` (line 536) → `fill/lightning/tree_node.rs` — not in the paired file
-- [~] `calculate_sdf` (line 672) → `edge_grid.rs:1247` — partial
-- [x] `signed_distance_bilinear` (line 982) → `edge_grid.rs:1457`
+- [~] `calculate_sdf` (line 672) → `edge_grid.rs:1295` — partial
+- [x] `signed_distance_bilinear` (line 982) → `edge_grid.rs:1505`
 - [ ] `closest_point_signed_distance` (line 1047) → `edge_grid.rs`
-- [x] `signed_distance_edges` (line 1178) → `edge_grid.rs:1533`
-- [x] `signed_distance` (line 1273) → `edge_grid.rs:1633`
+- [x] `signed_distance_edges` (line 1178) → `edge_grid.rs:1581`
+- [x] `signed_distance` (line 1273) → `edge_grid.rs:1681`
 - [~] `contours_simplified` (line 1283) → `support/support_material.rs` — not in the paired file
 - [ ] `intersecting_edges` (line 1414) → `edge_grid.rs`
-- [x] `has_intersecting_edges` (line 1452) → `edge_grid.rs:369`
+- [x] `has_intersecting_edges` (line 1452) → `edge_grid.rs:417`
 
 **class `Grid`**
 
-- [x] `set_bbox` (line 97) → `edge_grid.rs:308`
+- [x] `set_bbox` (line 97) → `edge_grid.rs:356`
 - [~] `create` (line 111) → `fill/lightning/tree_node.rs, measure.rs, mesh_split_impl.rs` — not in the paired file
 - [~] `intersect` (line 120) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
 - [~] `intersect` (line 121) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
 - [~] `intersect` (line 122) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
 - [~] `intersect` (line 123) → `clipper2/clipper_h.rs, mesh_boolean.rs` — not in the paired file
-- [x] `resolution` (line 160) → `edge_grid.rs:320`
-- [x] `rows` (line 161) → `edge_grid.rs:326`
-- [x] `cols` (line 162) → `edge_grid.rs:332`
+- [x] `resolution` (line 160) → `edge_grid.rs:368`
+- [x] `rows` (line 161) → `edge_grid.rs:374`
+- [x] `cols` (line 162) → `edge_grid.rs:380`
 - [ ] `visit_intersect_line_impl` (line 173) → `edge_grid.rs`
-- [~] `visit_cells_intersecting_line` (line 291) → `edge_grid.rs:423` — divergent
-- [x] `visit_cells_intersecting_box` (line 368) → `edge_grid.rs:601`
-- [~] `cell_data_range` (line 387) → `edge_grid.rs:952` — partial
-- [x] `segment` (line 395) → `edge_grid.rs:353`
+- [~] `visit_cells_intersecting_line` (line 291) → `edge_grid.rs:471` — divergent
+- [x] `visit_cells_intersecting_box` (line 368) → `edge_grid.rs:649`
+- [~] `cell_data_range` (line 387) → `edge_grid.rs:1000` — partial
+- [x] `segment` (line 395) → `edge_grid.rs:401`
 - [~] `line` (line 402) → `file_parser_error.rs, fill/fill_line.rs, gcode/wipe_tower.rs` — not in the paired file
 - [ ] `cell_inside_or_crossing` (line 420) → `edge_grid.rs`
 
@@ -3640,55 +3640,55 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **free functions**
 
-- [v] `count_points` (line 93) → `ex_polygon.rs:969` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `count_points` (line 104) → `ex_polygon.rs:979` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `number_polygons` (line 114) → `ex_polygon.rs:1001` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `to_lines` (line 122) → `ex_polygon.rs:1015` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `to_lines` (line 135) → `ex_polygon.rs:1031` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `count_points` (line 93) → `ex_polygon.rs:973` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `count_points` (line 104) → `ex_polygon.rs:983` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `number_polygons` (line 114) → `ex_polygon.rs:1005` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_lines` (line 122) → `ex_polygon.rs:1019` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_lines` (line 135) → `ex_polygon.rs:1035` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [~] `to_linesf` (line 152) → `emboss.rs` — not in the paired file
-- [ ] `to_unscaled_linesf` (line 180) → `ex_polygon.rs`
+- [v] `to_unscaled_linesf` (line 180) → `ex_polygon.rs:1094` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).
 - [~] `overlaps` (line 186) → `geometry/polygon.rs, print_object_slice.rs, sla/agg/basics.rs` — not in the paired file
 - [~] `overlaps` (line 197) → `geometry/polygon.rs, print_object_slice.rs, sla/agg/basics.rs` — not in the paired file
-- [v] `to_points` (line 201) → `ex_polygon.rs:1072` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_points` (line 201) → `ex_polygon.rs:1076` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [v] `projection_onto` (line 206) → `ex_polygon.rs:544` — R931: tests/ex_polygon_native_parity.rs: ExPolygon::scale (uniform and per axis) on 2,000 LCG cases each with factors in [0.25, 2.25], truncating as the pin (MultiPoint.cpp 6-19), 0 mismatches; projection_onto of expolygons 2,000 of 2,000 equal (each ring's closing edge included, ExPolygon.cpp 206-223).
-- [v] `to_polylines` (line 214) → `ex_polygon.rs:1265` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as stub to the estimate)
+- [v] `to_polylines` (line 214) → `ex_polygon.rs:1361` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as stub to the estimate)
 - [~] `to_polylines` (line 231) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 250) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `to_polylines` (line 267) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [v] `to_polygons` (line 286) → `ex_polygon.rs:1282` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
+- [v] `to_polygons` (line 286) → `ex_polygon.rs:1378` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
 - [~] `to_polygons` (line 295) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [v] `to_polygon_ptrs` (line 306) → `ex_polygon.rs:1292` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `to_polygon_ptrs` (line 316) → `ex_polygon.rs:1303` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_polygon_ptrs` (line 306) → `ex_polygon.rs:1388` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_polygon_ptrs` (line 316) → `ex_polygon.rs:1399` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [~] `to_polygons` (line 328) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
 - [~] `to_polygons` (line 339) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [v] `to_expolygons` (line 352) → `ex_polygon.rs:1341` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
+- [v] `to_expolygons` (line 352) → `ex_polygon.rs:1437` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
 - [~] `to_expolygons` (line 361) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
-- [v] `to_points` (line 370) → `ex_polygon.rs:1061` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `translate` (line 380) → `ex_polygon.rs:1094` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `polygons_append` (line 385) → `ex_polygon.rs:1147` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
+- [v] `to_points` (line 370) → `ex_polygon.rs:1065` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `translate` (line 380) → `ex_polygon.rs:1190` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `polygons_append` (line 385) → `ex_polygon.rs:1243` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
 - [~] `polygons_append` (line 392) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_append` (line 401) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
 - [~] `polygons_append` (line 410) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
-- [v] `expolygons_append` (line 421) → `ex_polygon.rs:1177` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as partial to the estimate)
+- [v] `expolygons_append` (line 421) → `ex_polygon.rs:1273` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as partial to the estimate)
 - [~] `expolygons_append` (line 426) → `geometry/expolygon.rs` — not in the paired file
-- [v] `expolygons_rotate` (line 437) → `ex_polygon.rs:1182` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `expolygons_contain` (line 443) → `ex_polygon.rs:1190` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `expolygons_simplify` (line 451) → `ex_polygon.rs:1350` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `expolygons_rotate` (line 437) → `ex_polygon.rs:1278` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `expolygons_contain` (line 443) → `ex_polygon.rs:1286` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `expolygons_simplify` (line 451) → `ex_polygon.rs:1446` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [v] `get_expolygons_area` (line 455) → `ex_polygon.rs:584` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
-- [~] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:593` — partial
-- [x] `expolygons_match` (line 480) → `ex_polygon.rs:633`
+- [v] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:593` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0). (the body reads as partial to the estimate)
+- [v] `expolygons_match` (line 480) → `ex_polygon.rs:637` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).
 - [~] `area` (line 487) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `area` (line 488) → `adaptive_layer_merge.rs, arachne/utils/extrusion_line.rs, arrange.rs` — not in the paired file
 - [~] `get_extents` (line 490) → `emboss.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
-- [v] `get_extents` (line 495) → `ex_polygon.rs:663` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `get_extents` (line 495) → `ex_polygon.rs:667` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `get_extents_rotated` (line 506) → `bridge_detector.rs, geometry/polygon.rs, internal_bridge_detector.rs` — not in the paired file
-- [x] `get_extents_rotated` (line 511) → `ex_polygon.rs:688`
-- [v] `get_extents_vector` (line 522) → `ex_polygon.rs:706` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `get_extents_rotated` (line 511) → `ex_polygon.rs:692` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).
+- [v] `get_extents_vector` (line 522) → `ex_polygon.rs:710` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `has_duplicate_points` (line 531) → `clipper_utils.rs, geometry/point.rs, geometry/polygon.rs` — not in the paired file
-- [v] `has_duplicate_points` (line 555) → `ex_polygon.rs:742` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `has_duplicate_points` (line 555) → `ex_polygon.rs:746` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `remove_same_neighbor` (line 582) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
 - [~] `remove_sticks` (line 597) → `geometry/polygon.rs` — not in the paired file
-- [v] `remove_small_and_small_holes` (line 602) → `ex_polygon.rs:793` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
+- [v] `remove_small_and_small_holes` (line 602) → `ex_polygon.rs:797` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [~] `keep_largest_contour_only` (line 623) → `geometry/expolygon.rs` — not in the paired file
 
 **class `ExPolygon`**
@@ -3731,23 +3731,23 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
-- [~] `begin` (line 576) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 580) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
-- [ ] `clean` (line 585) → `ex_polygon.rs`
-- [~] `sorted` (line 586) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
+- [x] `begin` (line 576) → `ex_polygon.rs:1167`
+- [x] `end` (line 580) → `ex_polygon.rs:1171`
+- [x] `clean` (line 585) → `ex_polygon.rs:1175`
+- [x] `sorted` (line 586) → `ex_polygon.rs:1179`
 
 **class `polygon_traits<Slic3r::ExPolygon>`**
 
-- [ ] `begin_points` (line 505) → `ex_polygon.rs`
-- [ ] `end_points` (line 510) → `ex_polygon.rs`
-- [~] `size` (line 515) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `winding` (line 520) → `ex_polygon.rs`
+- [x] `begin_points` (line 505) → `ex_polygon.rs:1127`
+- [x] `end_points` (line 510) → `ex_polygon.rs:1131`
+- [x] `size` (line 515) → `ex_polygon.rs:1135`
+- [x] `winding` (line 520) → `ex_polygon.rs:1139`
 
 **class `polygon_with_holes_traits<Slic3r::ExPolygon>`**
 
-- [ ] `begin_holes` (line 545) → `ex_polygon.rs`
-- [ ] `end_holes` (line 548) → `ex_polygon.rs`
-- [ ] `size_holes` (line 551) → `ex_polygon.rs`
+- [x] `begin_holes` (line 545) → `ex_polygon.rs:1149`
+- [x] `end_holes` (line 548) → `ex_polygon.rs:1153`
+- [x] `size_holes` (line 551) → `ex_polygon.rs:1157`
 
 ### `ExPolygonCollection` (.cpp+.hpp)
 
@@ -3802,37 +3802,37 @@ Rust file: `extruder.rs`. Status: **ported**. Not listed: 2 constructors, 1 dest
 
 **class `Extruder`**
 
-- [x] `reset` (line 19) → `extruder.rs:617`
-- [x] `extruder_id` (line 22) → `extruder.rs:654`
-- [x] `id` (line 32) → `extruder.rs:648`
-- [x] `retracted_slot_id` (line 36) → `extruder.rs:668`
-- [x] `E` (line 39) → `extruder.rs:925`
-- [x] `reset_E` (line 40) → `extruder.rs:935`
-- [x] `e_per_mm` (line 41) → `extruder.rs:944`
-- [x] `e_per_mm3` (line 42) → `extruder.rs:950`
-- [x] `filament_crossection` (line 49) → `extruder.rs:989`
-- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1132`
-- [x] `is_share_extruder` (line 61) → `extruder.rs:1120`
-- [x] `nozzle_id` (line 62) → `extruder.rs:706`
-- [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:693`
-- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1126`
-- [x] `extrude` (line 71) → `extruder.rs:750`
-- [x] `retract` (line 100) → `extruder.rs:806`
-- [x] `unretract` (line 133) → `extruder.rs:885`
-- [x] `extruded_volume` (line 152) → `extruder.rs:956`
-- [x] `used_filament` (line 164) → `extruder.rs:969`
-- [x] `filament_diameter` (line 175) → `extruder.rs:982`
-- [x] `filament_density` (line 180) → `extruder.rs:995`
-- [x] `filament_cost` (line 185) → `extruder.rs:1002`
-- [x] `filament_flow_ratio` (line 190) → `extruder.rs:1009`
-- [x] `retract_before_wipe` (line 196) → `extruder.rs:1019`
-- [x] `retraction_length` (line 201) → `extruder.rs:1032`
-- [x] `retract_speed` (line 206) → `extruder.rs:1050`
-- [x] `deretract_speed` (line 211) → `extruder.rs:1062`
-- [x] `retract_restart_extra` (line 217) → `extruder.rs:1080`
-- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1142`
-- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1090`
-- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1105`
+- [x] `reset` (line 19) → `extruder.rs:624`
+- [x] `extruder_id` (line 22) → `extruder.rs:661`
+- [x] `id` (line 32) → `extruder.rs:655`
+- [x] `retracted_slot_id` (line 36) → `extruder.rs:675`
+- [x] `E` (line 39) → `extruder.rs:932`
+- [x] `reset_E` (line 40) → `extruder.rs:942`
+- [x] `e_per_mm` (line 41) → `extruder.rs:951`
+- [x] `e_per_mm3` (line 42) → `extruder.rs:957`
+- [x] `filament_crossection` (line 49) → `extruder.rs:996`
+- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1139`
+- [x] `is_share_extruder` (line 61) → `extruder.rs:1127`
+- [x] `nozzle_id` (line 62) → `extruder.rs:713`
+- [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:700`
+- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1133`
+- [x] `extrude` (line 71) → `extruder.rs:757`
+- [x] `retract` (line 100) → `extruder.rs:813`
+- [x] `unretract` (line 133) → `extruder.rs:892`
+- [x] `extruded_volume` (line 152) → `extruder.rs:963`
+- [x] `used_filament` (line 164) → `extruder.rs:976`
+- [x] `filament_diameter` (line 175) → `extruder.rs:989`
+- [x] `filament_density` (line 180) → `extruder.rs:1002`
+- [x] `filament_cost` (line 185) → `extruder.rs:1009`
+- [x] `filament_flow_ratio` (line 190) → `extruder.rs:1016`
+- [x] `retract_before_wipe` (line 196) → `extruder.rs:1026`
+- [x] `retraction_length` (line 201) → `extruder.rs:1039`
+- [x] `retract_speed` (line 206) → `extruder.rs:1057`
+- [x] `deretract_speed` (line 211) → `extruder.rs:1069`
+- [x] `retract_restart_extra` (line 217) → `extruder.rs:1087`
+- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1149`
+- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1097`
+- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1112`
 
 ### `ExtrusionEntity` (.cpp+.hpp)
 
@@ -6904,7 +6904,7 @@ Rust file: `gcode/tool_ordering.rs`. Status: **partial**. Not listed: 3 construc
 - [x] `first_extruder` (line 320) → `gcode/tool_ordering.rs:2146`
 - [x] `last_extruder` (line 323) → `gcode/tool_ordering.rs:2151`
 - [~] `begin` (line 347) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 348) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 348) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `empty` (line 349) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [x] `has_wipe_tower` (line 352) → `gcode/tool_ordering.rs:2181` — read against the C++ in R914 (the estimate says divergent)
 - [x] `get_most_used_extruder` (line 358) → `gcode/tool_ordering.rs:2188`
@@ -8205,7 +8205,7 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 **class `Range`**
 
 - [~] `begin` (line 358) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 359) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 359) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `size` (line 369) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `empty` (line 370) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 
@@ -9363,8 +9363,8 @@ Rust file: `multi_point.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [v] `remove_duplicate_points` (line 102) → `multi_point.rs:259` — R933: tests/multi_point_native_parity.rs: 5,000 cases, 88,000 asserted calls against the pin's MultiPoint.cpp / MultiPoint.hpp, 0 mismatches (translate, rotate, length, find_point, has_boundary_point, bounding_box, has_duplicate_points, remove_duplicate_points, remove_colinear_points, concave_hull_2d, symmetric_y, get_extents); area on 776 cases (the loop clang vectorizes as an ordered reduction 16 at a time, the remainder fused); MultiPoint3 on 2,000 cases, 12,000 calls. Not compared: visivalingam (undefined behaviour at the pin). (the body reads as partial to the estimate)
 - [~] `begin` (line 103) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
 - [~] `begin` (line 104) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 105) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
-- [~] `end` (line 106) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 105) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
+- [~] `end` (line 106) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `cbegin` (line 107) → `clipper_utils.rs, config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 108) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [v] `remove_colinear_points` (line 121) → `multi_point.rs:288` — R933: tests/multi_point_native_parity.rs: 5,000 cases, 88,000 asserted calls against the pin's MultiPoint.cpp / MultiPoint.hpp, 0 mismatches (translate, rotate, length, find_point, has_boundary_point, bounding_box, has_duplicate_points, remove_duplicate_points, remove_colinear_points, concave_hull_2d, symmetric_y, get_extents); area on 776 cases (the loop clang vectorizes as an ordered reduction 16 at a time, the remainder fused); MultiPoint3 on 2,000 cases, 12,000 calls. Not compared: visivalingam (undefined behaviour at the pin).
@@ -9468,7 +9468,7 @@ Rust file: `mutable_priority_queue.rs`. Status: **partial**. Not listed: 2 const
 - [x] `size` (line 29) → `mutable_priority_queue.rs:284`
 - [~] `empty` (line 30) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `begin` (line 36) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 37) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 37) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `cbegin` (line 38) → `clipper_utils.rs, config.rs, mutable_polygon.rs` — not in the paired file
 - [~] `cend` (line 39) → `clipper_utils.rs, mutable_polygon.rs, preset.rs` — not in the paired file
 - [~] `clear` (line 59) → `mutable_priority_queue.rs:111` — divergent
@@ -9980,11 +9980,11 @@ Rust file: `perimeter_generator.rs`. Status: **partial**. Not listed: 3 construc
 - [v] `dist_boundary` (line 232) → `perimeter_generator.rs:5993` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 - [v] `effective_wall_loops` (line 849) → `perimeter_generator.rs:6009` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
 - [v] `process_classic` (line 859) → `perimeter_generator.rs:6647` — R921: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print (Print::apply) over 21 classic configurations x 12 layers (slices with holes, thin walls, overhangs over lower slices, wall counts, one-wall top, the wall sequences, spiral, overhang detection on and off): the flows, the loops (roles, widths, heights, mm3_per_mm, points), the gap fill, fill_surfaces, fill_no_overlap and the loop nodes of all 252 cases equal to the pin with the faithful process_classic and traverse_loops (gate PG_CLASSIC_PIN). The 168 Arachne cases are reported, not asserted (loops 52, fill_surfaces 22, fill_no_overlap 21, loop nodes 30 differ).
-- [v] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:8119` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
-- [v] `process_arachne` (line 1489) → `perimeter_generator.rs:7657` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
-- [v] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:8178` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `add_infill_contour_for_arachne` (line 1455) → `perimeter_generator.rs:8157` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `process_arachne` (line 1489) → `perimeter_generator.rs:7694` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `should_enable_top_one_wall` (line 1851) → `perimeter_generator.rs:8216` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
 - [v] `generate_lower_polygons_series` (line 1886) → `perimeter_generator.rs:6024` — R920: tests/perimeter_generator_native_parity.rs: 2,154 lines against the pin's PerimeterGenerator.cpp compiled into the generator, none differ: lowpass_filter_by_paths_overhang_degree 400, smooth_overhang_level 400, to_polygons_with_flag 60, the loop predicates 40, 23 configurations x (is_enable_overhang_speed, fuzzy_skin_allows_overhang_slowdown, effective_wall_loops, dist_boundary, generate_lower_polygons_series), the PerimeterRegion helpers (compatible 144, constructor 40, merge 80), detect_brigde_wall_arachne 300 and traverse_extrusions 280.
-- [v] `process_no_bridge` (line 1953) → `perimeter_generator.rs:8205` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
+- [v] `process_no_bridge` (line 1953) → `perimeter_generator.rs:8243` — R922: tests/perimeter_generator_native_parity.rs, perimeter_generator_process_native_parity: the pin's LayerRegion::make_perimeters on a real Print over 41 configurations x 12 layers, 492 cases, all equal on the flows, the loops, the gap fill, fill_surfaces, fill_no_overlap and the loop nodes: 252 classic, 168 Arachne (faithful process_arachne with add_infill_contour_for_arachne and should_enable_top_one_wall, gate PG_ARACHNE_PIN) and 72 with counterbore hole bridging (process_no_bridge, partially bridged and sacrificial layer, classic and Arachne; 19 of them change when it is switched off).
 
 **class `PerimeterGeneratorLoop`**
 
@@ -10230,9 +10230,9 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 696) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `begin` (line 702) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 705) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 705) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `begin` (line 708) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 711) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 711) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 
 **class `ClosestPointInRadiusLookup`**
 
@@ -10371,16 +10371,16 @@ Rust file: `geometry/polygon.rs`. Status: **partial**. Not listed: 4 constructor
 **class `polygon_set_traits<Slic3r::Polygons>`**
 
 - [~] `begin` (line 370) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 374) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
-- [ ] `clean` (line 379) → `geometry/polygon.rs`
-- [~] `sorted` (line 380) → `sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
+- [~] `end` (line 374) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
+- [~] `clean` (line 379) → `ex_polygon.rs` — not in the paired file
+- [~] `sorted` (line 380) → `ex_polygon.rs, sla/agg/rasterizer_cells_aa.rs, support/tree_model_volumes.rs` — not in the paired file
 
 **class `polygon_traits<Slic3r::Polygon>`**
 
-- [ ] `begin_points` (line 323) → `geometry/polygon.rs`
-- [ ] `end_points` (line 328) → `geometry/polygon.rs`
+- [~] `begin_points` (line 323) → `ex_polygon.rs` — not in the paired file
+- [~] `end_points` (line 328) → `ex_polygon.rs` — not in the paired file
 - [~] `size` (line 333) → `aabb_tree_lines.rs, arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [ ] `winding` (line 338) → `geometry/polygon.rs`
+- [~] `winding` (line 338) → `ex_polygon.rs` — not in the paired file
 
 ### `PolygonTrimmer` (.cpp+.hpp)
 
@@ -10494,7 +10494,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [v] `begin` (line 986) → `preset.rs:5867` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [~] `cbegin` (line 987) → `clipper_utils.rs, config.rs, mutable_polygon.rs` — not in the paired file
 - [v] `end` (line 988) → `preset.rs:5871` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
-- [~] `end` (line 989) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 989) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `cend` (line 990) → `clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [v] `empty` (line 992) → `preset.rs:5875` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
 - [v] `get_selected_idx` (line 1029) → `preset.rs:6161` — R912: tests/preset_native_parity.rs: against the pin's Preset.cpp linked from the engine build: a scenario of system, user, custom and broken presets in a scratch directory (inherits chains, .info files, nil values, two extruders) loaded, looked up, selected, edited, saved, checked for compatibility, cloned, deleted and merged, physical printers, vendor profiles and the 9 key lists; 729 lines equal
@@ -10547,7 +10547,7 @@ Rust file: `preset.rs`. Status: **partial**. Not listed: 8 constructors, 4 opera
 - [~] `begin` (line 472) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
 - [x] `cbegin` (line 473) → `preset.rs:2756`
 - [x] `end` (line 474) → `preset.rs:2760`
-- [~] `end` (line 475) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 475) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [x] `cend` (line 476) → `preset.rs:2764`
 - [x] `erase` (line 479) → `preset.rs:2772`
 - [x] `set_sync_func` (line 481) → `preset.rs:2777`
@@ -10777,22 +10777,22 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **free functions**
 
-- [v] `layered_print_cleareance_valid` (line 1124) → `print.rs:11083` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
-- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:11351`
-- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:11369`
-- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:10822`
-- [x] `getObjectExtruderMap` (line 2150) → `print.rs:10855`
-- [x] `convex_outline_gap` (line 3749) → `print.rs:10883`
-- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:10899`
-- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:10932`
-- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:10952`
-- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:11002`
-- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:11040`
-- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:11235`
-- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:11249`
-- [x] `print_instance_hull` (line 3912) → `print.rs:11255`
-- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:11282`
-- [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:5423`
+- [v] `layered_print_cleareance_valid` (line 1124) → `print.rs:11688` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
+- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:11956`
+- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:11974`
+- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:10999`
+- [x] `getObjectExtruderMap` (line 2150) → `print.rs:11032`
+- [x] `convex_outline_gap` (line 3749) → `print.rs:11060`
+- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:11076`
+- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:11109`
+- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:11129`
+- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:11179`
+- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:11217`
+- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:11840`
+- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:11854`
+- [x] `print_instance_hull` (line 3912) → `print.rs:11860`
+- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:11887`
+- [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:5582`
 - [~] `to_json` (line 4596) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4604) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4611) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
@@ -10820,241 +10820,241 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [x] `empty` (line 1387) → `print.rs:10926`
+- [x] `empty` (line 1387) → `print.rs:11103`
 
 **class `ConstVectorOfPtrsAdaptor`**
 
 - [~] `begin` (line 207) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
-- [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
-- [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
-- [x] `size` (line 212) → `print.rs:7097`
+- [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
+- [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, edge_grid.rs, gcode/tool_ordering.rs` — not in the paired file
+- [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, edge_grid.rs, gcode/tool_ordering.rs` — not in the paired file
+- [x] `size` (line 212) → `print.rs:7259`
 - [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
 - [~] `vector` (line 216) → `geometry/line.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `FakeWipeTower`**
 
-- [x] `set_fake_extrusion_data` (line 733) → `print.rs:7416`
-- [x] `set_pos` (line 744) → `print.rs:7427`
-- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:7433`
-- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:7471`
+- [x] `set_fake_extrusion_data` (line 733) → `print.rs:7593`
+- [x] `set_pos` (line 744) → `print.rs:7604`
+- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:7610`
+- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:7648`
 
 **class `Print`**
 
-- [x] `clear` (line 60) → `print.rs:8208`
-- [x] `has_tpu_filament` (line 74) → `print.rs:8225`
-- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:8238` — read against the C++ in R915 (the estimate says partial)
-- [x] `set_calib_params` (line 449) → `print.rs:8383`
-- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:8388`
-- [x] `invalidate_step` (line 459) → `print.rs:8393`
-- [x] `is_step_done` (line 470) → `print.rs:7390` — read against the C++ in R915 (the estimate says partial)
-- [v] `object_extruders` (line 482) → `print.rs:8425` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `support_material_extruders` (line 523) → `print.rs:8459` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `extruders` (line 558) → `print.rs:8495` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `printed_filaments` (line 578) → `print.rs:9852` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:8516` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:9884` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `num_object_instances` (line 713) → `print.rs:8560` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `max_allowed_layer_height` (line 721) → `print.rs:8569` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `print_object_ids` (line 732) → `print.rs:8579`
-- [v] `has_infinite_skirt` (line 742) → `print.rs:8588` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_skirt` (line 747) → `print.rs:8594` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_brim` (line 752) → `print.rs:8600` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `layers_sorted_for_object` (line 758) → `print.rs:9969`
-- [v] `sequential_print_clearance_valid` (line 777) → `print.rs:10385` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
-- [x] `technology` (line 910) → `print.rs:8605`
-- [v] `empty` (line 918) → `print.rs:8610` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_step_done` (line 933) → `print.rs:8403`
-- [x] `finished` (line 937) → `print.rs:8615`
-- [v] `has_auto_brim` (line 943) → `print.rs:8620` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:8625`
-- [x] `objects` (line 994) → `print.rs:8642`
-- [x] `get_object` (line 995) → `print.rs:8646`
+- [x] `clear` (line 60) → `print.rs:8385`
+- [x] `has_tpu_filament` (line 74) → `print.rs:8402`
+- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:8415` — read against the C++ in R915 (the estimate says partial)
+- [x] `set_calib_params` (line 449) → `print.rs:8560`
+- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:8565`
+- [x] `invalidate_step` (line 459) → `print.rs:8570`
+- [x] `is_step_done` (line 470) → `print.rs:7567` — read against the C++ in R915 (the estimate says partial)
+- [v] `object_extruders` (line 482) → `print.rs:8602` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `support_material_extruders` (line 523) → `print.rs:8636` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `extruders` (line 558) → `print.rs:8672` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `printed_filaments` (line 578) → `print.rs:10029` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:8693` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:10061` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `num_object_instances` (line 713) → `print.rs:8737` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `max_allowed_layer_height` (line 721) → `print.rs:8746` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `print_object_ids` (line 732) → `print.rs:8756`
+- [v] `has_infinite_skirt` (line 742) → `print.rs:8765` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_skirt` (line 747) → `print.rs:8771` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_brim` (line 752) → `print.rs:8777` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `layers_sorted_for_object` (line 758) → `print.rs:10146`
+- [v] `sequential_print_clearance_valid` (line 777) → `print.rs:10562` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
+- [x] `technology` (line 910) → `print.rs:8782`
+- [v] `empty` (line 918) → `print.rs:8787` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_step_done` (line 933) → `print.rs:8580`
+- [x] `finished` (line 937) → `print.rs:8792`
+- [v] `has_auto_brim` (line 943) → `print.rs:8797` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:8802`
+- [x] `objects` (line 994) → `print.rs:8819`
+- [x] `get_object` (line 995) → `print.rs:8823`
 - [~] `get_object` (line 996) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
 - [~] `get_object` (line 999) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
-- [x] `statistics_by_extruder` (line 1027) → `print.rs:8651`
-- [v] `is_sequential_print` (line 1038) → `print.rs:8661` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8670`
-- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8674`
-- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8678`
-- [x] `set_filament_print_time` (line 1080) → `print.rs:8682`
-- [x] `get_filament_print_time` (line 1081) → `print.rs:8686`
-- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8690`
-- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8694`
-- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8698`
-- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8702`
-- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8707`
-- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8715`
-- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8723`
-- [v] `num_print_regions` (line 1130) → `print.rs:8732` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_plate_origin` (line 1135) → `print.rs:8740`
-- [x] `get_plate_origin` (line 1136) → `print.rs:8744`
-- [x] `get_modified_count` (line 1142) → `print.rs:8748`
-- [x] `is_support_used` (line 1144) → `print.rs:8752`
-- [x] `is_BBL_Printer` (line 1145) → `print.rs:8756`
-- [x] `set_BBL_Printer` (line 1146) → `print.rs:8760`
-- [x] `get_conflict_string` (line 1147) → `print.rs:8764`
-- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8772`
-- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8776`
-- [x] `get_rib_offset` (line 1173) → `print.rs:8780`
-- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8789` — partial
-- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:4282`
-- [x] `is_filaments_compatible` (line 1268) → `print.rs:4314`
-- [x] `get_compatible_filament_type` (line 1285) → `print.rs:4338`
-- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8795` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_indx` (line 1319) → `print.rs:8813`
-- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:8823`
-- [x] `get_nozzle_config_index` (line 1355) → `print.rs:8854`
+- [x] `statistics_by_extruder` (line 1027) → `print.rs:8828`
+- [v] `is_sequential_print` (line 1038) → `print.rs:8838` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8847`
+- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8851`
+- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8855`
+- [x] `set_filament_print_time` (line 1080) → `print.rs:8859`
+- [x] `get_filament_print_time` (line 1081) → `print.rs:8863`
+- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8867`
+- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8871`
+- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8875`
+- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8879`
+- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8884`
+- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8892`
+- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8900`
+- [v] `num_print_regions` (line 1130) → `print.rs:8909` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_plate_origin` (line 1135) → `print.rs:8917`
+- [x] `get_plate_origin` (line 1136) → `print.rs:8921`
+- [x] `get_modified_count` (line 1142) → `print.rs:8925`
+- [x] `is_support_used` (line 1144) → `print.rs:8929`
+- [x] `is_BBL_Printer` (line 1145) → `print.rs:8933`
+- [x] `set_BBL_Printer` (line 1146) → `print.rs:8937`
+- [x] `get_conflict_string` (line 1147) → `print.rs:8941`
+- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8949`
+- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8953`
+- [x] `get_rib_offset` (line 1173) → `print.rs:8957`
+- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8966` — partial
+- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:4441`
+- [x] `is_filaments_compatible` (line 1268) → `print.rs:4473`
+- [x] `get_compatible_filament_type` (line 1285) → `print.rs:4497`
+- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8972` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_indx` (line 1319) → `print.rs:8990`
+- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:9000`
+- [x] `get_nozzle_config_index` (line 1355) → `print.rs:9031`
 - [~] `get_config_index` (line 1360) → `print.rs` — another overload of the name is ported
-- [x] `get_config_index` (line 1385) → `print.rs:8866`
-- [~] `validate` (line 1413) → `print.rs:2452` — divergent
-- [x] `bounding_box` (line 1849) → `print.rs:9999`
-- [x] `total_bounding_box` (line 1864) → `print.rs:10015`
-- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8905` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `brim_flow` (line 1918) → `print.rs:10058` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:10093` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:10109` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `skirt_flow` (line 2001) → `print.rs:10143` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `get_config_index` (line 1385) → `print.rs:9043`
+- [v] `validate` (line 1413) → `print.rs:11261` — R947: tests/print_clearance_native_parity.rs (validate_matches_the_pin): the pin's Print::validate (Print.cpp 1413-1844) from tests/data/print_clearance/gen.cpp (validate mode) after the pin's Print::apply on 20 cases (the clearance scenarios plus smooth timelapse and clumping by object, layer heights over the nozzle, spiral vase on two objects, a plate that does not support the filament, the precise outer wall warning, line widths too large and too small, the prime tower's relative-E, ooze prevention and precise Z checks): 60 lines equal (messages, warnings, polygons).
+- [x] `bounding_box` (line 1849) → `print.rs:10176`
+- [x] `total_bounding_box` (line 1864) → `print.rs:10192`
+- [v] `skirt_first_layer_height` (line 1903) → `print.rs:9082` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `brim_flow` (line 1918) → `print.rs:10235` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:10270` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:10286` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `skirt_flow` (line 2001) → `print.rs:10320` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [~] `skirt_flow` (line 2017) → `print.rs` — another overload of the name is ported
 - [~] `skirt_flow` (line 2022) → `print.rs` — another overload of the name is ported
-- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:10185` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `has_support_material` (line 2048) → `print.rs:8921` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `auto_assign_extruders` (line 2058) → `print.rs:8933`
-- [~] `process` (line 2178) → `print.rs:2551` — divergent
+- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:10362` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `has_support_material` (line 2048) → `print.rs:9098` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `auto_assign_extruders` (line 2058) → `print.rs:9110`
+- [~] `process` (line 2178) → `print.rs:2710` — divergent
 - [~] `export_gcode` (line 2839) → `print.rs:729` — partial
-- [~] `_make_skirt` (line 2869) → `print.rs:3884` — divergent
-- [x] `first_layer_islands` (line 3061) → `print.rs:10198`
-- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:9601`
-- [x] `translate_to_print_space` (line 3107) → `print.rs:8948`
+- [~] `_make_skirt` (line 2869) → `print.rs:4043` — divergent
+- [x] `first_layer_islands` (line 3061) → `print.rs:10375`
+- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:9778`
+- [x] `translate_to_print_space` (line 3107) → `print.rs:9125`
 - [~] `translate_to_print_space` (line 3112) → `print.rs` — another overload of the name is ported
-- [~] `get_filament_temp_type` (line 3116) → `print.rs:4250` — divergent
-- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8964` — divergent
-- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:10225` — partial
-- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:10280`
-- [v] `update_filament_maps_to_config` (line 3241) → `print.rs:8984` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
-- [v] `resolve_manual_nozzle_map` (line 3322) → `print.rs:9126` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
-- [v] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs:9174` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
-- [x] `apply_config_for_render` (line 3402) → `print.rs:9270`
-- [v] `get_filament_maps` (line 3407) → `print.rs:9277` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:9281`
-- [v] `get_filament_volume_maps` (line 3417) → `print.rs:9285` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_filament_map_mode` (line 3422) → `print.rs:9289` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:9294` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:9320`
-- [v] `get_filament_usage_type` (line 3474) → `print.rs:9343` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:9397` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:9435`
-- [x] `get_extruder_printable_height` (line 3568) → `print.rs:9472`
-- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:9486` — partial
-- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:9496`
-- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:5883`
-- [v] `get_extruder_id` (line 3609) → `print.rs:9508` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_idx` (line 3618) → `print.rs:9517`
-- [x] `get_process_config_idx` (line 3623) → `print.rs:9523`
-- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:9542` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_wipe_tower` (line 3655) → `print.rs:9572` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
-- [v] `enable_timelapse_print` (line 3742) → `print.rs:9594` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:10626`
-- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:10701`
-- [x] `_make_wipe_tower` (line 4157) → `print.rs:5924`
-- [x] `output_filename` (line 4402) → `print.rs:9632`
-- [~] `set_gcode_file_ready` (line 4414) → `print.rs:9643` — partial
-- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:9649`
+- [~] `get_filament_temp_type` (line 3116) → `print.rs:4409` — divergent
+- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:9141` — divergent
+- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:10402` — partial
+- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:10457`
+- [v] `update_filament_maps_to_config` (line 3241) → `print.rs:9161` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
+- [v] `resolve_manual_nozzle_map` (line 3322) → `print.rs:9303` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
+- [v] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs:9351` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
+- [x] `apply_config_for_render` (line 3402) → `print.rs:9447`
+- [v] `get_filament_maps` (line 3407) → `print.rs:9454` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:9458`
+- [v] `get_filament_volume_maps` (line 3417) → `print.rs:9462` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_filament_map_mode` (line 3422) → `print.rs:9466` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:9471` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:9497`
+- [v] `get_filament_usage_type` (line 3474) → `print.rs:9520` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:9574` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:9612`
+- [x] `get_extruder_printable_height` (line 3568) → `print.rs:9649`
+- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:9663` — partial
+- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:9673`
+- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:6042`
+- [v] `get_extruder_id` (line 3609) → `print.rs:9685` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_idx` (line 3618) → `print.rs:9694`
+- [x] `get_process_config_idx` (line 3623) → `print.rs:9700`
+- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:9719` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_wipe_tower` (line 3655) → `print.rs:9749` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
+- [v] `enable_timelapse_print` (line 3742) → `print.rs:9771` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:10803`
+- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:10878`
+- [x] `_make_wipe_tower` (line 4157) → `print.rs:6083`
+- [x] `output_filename` (line 4402) → `print.rs:9809`
+- [~] `set_gcode_file_ready` (line 4414) → `print.rs:9820` — partial
+- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:9826`
 - [ ] `export_gcode_from_previous_file` (line 4428) → `print.rs`
 - [~] `export_cached_data` (line 5316) → `print_base.rs` — not in the paired file
 - [~] `load_cached_data` (line 5597) → `print_base.rs` — not in the paired file
 
 **class `PrintInstance`**
 
-- [x] `get_bounding_box` (line 5836) → `print.rs:6812`
+- [x] `get_bounding_box` (line 5836) → `print.rs:6971`
 - [~] `get_convex_hull_2d` (line 5840) → `model.rs` — not in the paired file
-- [x] `shift_without_plate_offset` (line 5847) → `print.rs:6805`
+- [x] `shift_without_plate_offset` (line 5847) → `print.rs:6964`
 
 **class `PrintObject`**
 
-- [x] `configBrimWidth` (line 416) → `print.rs:7105`
-- [x] `layers` (line 417) → `print.rs:7109`
-- [x] `support_layers` (line 418) → `print.rs:7113`
-- [~] `trafo_centered` (line 421) → `print.rs:7168` — partial
-- [x] `bounding_box` (line 442) → `print.rs:7182`
-- [x] `height` (line 445) → `print.rs:7189`
-- [x] `max_z` (line 446) → `print.rs:7193`
-- [v] `has_brim` (line 457) → `print.rs:7201` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `total_layer_count` (line 472) → `print.rs:7209`
-- [x] `layer_count` (line 473) → `print.rs:7213`
+- [x] `configBrimWidth` (line 416) → `print.rs:7267`
+- [x] `layers` (line 417) → `print.rs:7271`
+- [x] `support_layers` (line 418) → `print.rs:7275`
+- [~] `trafo_centered` (line 421) → `print.rs:7330` — partial
+- [x] `bounding_box` (line 442) → `print.rs:7344`
+- [x] `height` (line 445) → `print.rs:7351`
+- [x] `max_z` (line 446) → `print.rs:7355`
+- [v] `has_brim` (line 457) → `print.rs:7363` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `total_layer_count` (line 472) → `print.rs:7371`
+- [x] `layer_count` (line 473) → `print.rs:7375`
 - [~] `get_layer` (line 475) → `gcode/multi_material.rs` — not in the paired file
-- [x] `get_layer` (line 476) → `print.rs:7217`
-- [ ] `clear_tree_support_preview_cache` (line 497) → `print.rs`
-- [x] `support_layer_count` (line 499) → `print.rs:7221`
-- [x] `get_support_layer` (line 501) → `print.rs:7378`
-- [x] `num_printing_regions` (line 518) → `print.rs:7225`
-- [x] `shared_regions` (line 522) → `print.rs:7240`
-- [x] `has_support` (line 524) → `print.rs:7244`
-- [x] `has_raft` (line 525) → `print.rs:7248`
-- [v] `has_support_material` (line 526) → `print.rs:7252` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_mm_painted` (line 530) → `print.rs:7264`
+- [x] `get_layer` (line 476) → `print.rs:7379`
+- [x] `clear_tree_support_preview_cache` (line 497) → `print.rs:7418`
+- [x] `support_layer_count` (line 499) → `print.rs:7383`
+- [x] `get_support_layer` (line 501) → `print.rs:7555`
+- [x] `num_printing_regions` (line 518) → `print.rs:7387`
+- [x] `shared_regions` (line 522) → `print.rs:7402`
+- [x] `has_support` (line 524) → `print.rs:7406`
+- [x] `has_raft` (line 525) → `print.rs:7410`
+- [v] `has_support_material` (line 526) → `print.rs:7414` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_mm_painted` (line 530) → `print.rs:7441`
 - [~] `is_fuzzy_skin_painted` (line 532) → `model.rs` — not in the paired file
-- [ ] `slice_support_blockers` (line 544) → `print.rs`
-- [ ] `slice_support_enforcers` (line 545) → `print.rs`
-- [x] `get_shared_object` (line 560) → `print.rs:7268`
-- [x] `get_klipper_object_id` (line 578) → `print.rs:7272`
-- [x] `set_klipper_object_id` (line 579) → `print.rs:7276`
-- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:7280`
-- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:7284`
-- [x] `config_apply` (line 591) → `print.rs:7288`
-- [x] `config_apply_only` (line 592) → `print.rs:7294`
-- [x] `set_shared_object` (line 2073) → `print.rs:7298`
-- [~] `clear_shared_object` (line 2079) → `print.rs:7302` — partial
-- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:7315`
-- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:7332`
-- [x] `get_first_layer_bbox` (line 2125) → `print.rs:7345`
+- [x] `slice_support_blockers` (line 544) → `print.rs:7424`
+- [x] `slice_support_enforcers` (line 545) → `print.rs:7429`
+- [x] `get_shared_object` (line 560) → `print.rs:7445`
+- [x] `get_klipper_object_id` (line 578) → `print.rs:7449`
+- [x] `set_klipper_object_id` (line 579) → `print.rs:7453`
+- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:7457`
+- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:7461`
+- [x] `config_apply` (line 591) → `print.rs:7465`
+- [x] `config_apply_only` (line 592) → `print.rs:7471`
+- [x] `set_shared_object` (line 2073) → `print.rs:7475`
+- [~] `clear_shared_object` (line 2079) → `print.rs:7479` — partial
+- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:7492`
+- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:7509`
+- [x] `get_first_layer_bbox` (line 2125) → `print.rs:7522`
 
 **class `PrintObjectRegions`**
 
-- [x] `ref_cnt_inc` (line 353) → `print.rs:6971`
-- [x] `ref_cnt_dec` (line 354) → `print.rs:6976`
-- [x] `clear` (line 355) → `print.rs:6981`
+- [x] `ref_cnt_inc` (line 353) → `print.rs:7130`
+- [x] `ref_cnt_dec` (line 354) → `print.rs:7135`
+- [x] `clear` (line 355) → `print.rs:7140`
 
 **class `PrintObjectRegions::FuzzySkinPaintedRegion`**
 
-- [x] `parent_print_object_region` (line 5914) → `print.rs:6918`
-- [x] `parent_print_object_region_id` (line 5926) → `print.rs:6927`
+- [x] `parent_print_object_region` (line 5914) → `print.rs:7077`
+- [x] `parent_print_object_region_id` (line 5926) → `print.rs:7086`
 
 **class `PrintObjectRegions::LayerRangeRegions`**
 
-- [x] `has_volume` (line 335) → `print.rs:6948`
+- [x] `has_volume` (line 335) → `print.rs:7107`
 
 **class `PrintRegion`**
 
-- [x] `config_hash` (line 157) → `print.rs:6669`
-- [x] `print_region_id` (line 159) → `print.rs:6673`
-- [x] `print_object_region_id` (line 160) → `print.rs:6677`
-- [x] `gradient_volume_id` (line 164) → `print.rs:6681`
+- [x] `config_hash` (line 157) → `print.rs:6828`
+- [x] `print_region_id` (line 159) → `print.rs:6832`
+- [x] `print_object_region_id` (line 160) → `print.rs:6836`
+- [x] `gradient_volume_id` (line 164) → `print.rs:6840`
 - [~] `set_config` (line 179) → `print_region.rs` — not in the paired file
-- [x] `set_config` (line 180) → `print.rs:6729`
-- [x] `config_apply_only` (line 181) → `print.rs:6735`
+- [x] `set_config` (line 180) → `print.rs:6888`
+- [x] `config_apply_only` (line 181) → `print.rs:6894`
 
 **class `PrintStatistics`**
 
-- [x] `clear` (line 842) → `print.rs:7700`
-- [x] `config` (line 4454) → `print.rs:7658`
-- [x] `placeholders` (line 4473) → `print.rs:7678`
+- [x] `clear` (line 842) → `print.rs:7877`
+- [x] `config` (line 4454) → `print.rs:7835`
+- [x] `placeholders` (line 4473) → `print.rs:7855`
 - [~] `finalize_output_path` (line 4484) → `sla_print.rs` — not in the paired file
 
 **class `StatisticsByExtruderCount`**
 
-- [x] `clear` (line 877) → `print.rs:7727`
+- [x] `clear` (line 877) → `print.rs:7904`
 
 **class `SupportStageTimes`**
 
-- [x] `reset` (line 79) → `print.rs:6620`
-- [x] `total` (line 80) → `print.rs:6624`
+- [x] `reset` (line 79) → `print.rs:6779`
+- [x] `total` (line 80) → `print.rs:6783`
 
 **class `WipeTowerData`**
 
-- [x] `clear` (line 799) → `print.rs:7555`
-- [v] `construct_mesh` (line 5888) → `print.rs:7568` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `clear` (line 799) → `print.rs:7732`
+- [v] `construct_mesh` (line 5888) → `print.rs:7745` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 
 ### `PrintApply` (.cpp)
 
@@ -11096,7 +11096,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [v] `assign` (line 362) → `print_apply.rs:736` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
 - [v] `config` (line 388) → `print_apply.rs:766` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
 - [~] `begin` (line 401) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 402) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 402) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [x] `size` (line 403) → `print_apply.rs:790`
 
 **class `ModelObjectStatusDB`**
@@ -11114,7 +11114,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 - [~] `get_range` (line 526) → `print_apply.rs` — another overload of the name is ported
 - [x] `count` (line 530) → `print_apply.rs:964`
 - [~] `begin` (line 534) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
-- [~] `end` (line 535) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
+- [~] `end` (line 535) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [x] `clear` (line 537) → `print_apply.rs:978`
 
 **class `PrintObjectStatusDB::iterator_range`**
@@ -13156,9 +13156,9 @@ Rust file: `svg.rs`. Status: **partial**. Not listed: 9 constructors, 1 destruct
 **class `SVG`**
 
 - [x] `open` (line 11) → `svg.rs:227`
-- [~] `open` (line 29) → `svg.rs` — another overload of the name is ported
-- [~] `open` (line 39) → `svg.rs` — another overload of the name is ported
-- [~] `open` (line 41) → `svg.rs` — another overload of the name is ported
+- [~] `open` (line 29) → `edge_grid.rs` — not in the paired file
+- [~] `open` (line 39) → `edge_grid.rs` — not in the paired file
+- [~] `open` (line 41) → `edge_grid.rs` — not in the paired file
 - [x] `is_opened` (line 43) → `svg.rs:222`
 - [~] `draw` (line 52) → `sla/agg_raster.rs` — not in the paired file
 - [~] `draw` (line 62) → `sla/agg_raster.rs` — not in the paired file
@@ -13217,12 +13217,12 @@ Rust file: `tesselate.rs`. Status: **partial**. Not listed: 1 constructors, 1 de
 
 **free functions**
 
-- [x] `triangulate_expolygon_3d` (line 192) → `tesselate.rs:345`
-- [x] `triangulate_expolygons_3d` (line 198) → `tesselate.rs:351`
-- [x] `triangulate_expolygon_2d` (line 204) → `tesselate.rs:357`
-- [x] `triangulate_expolygons_2d` (line 215) → `tesselate.rs:369`
-- [x] `triangulate_expolygon_2f` (line 226) → `tesselate.rs:381`
-- [x] `triangulate_expolygons_2f` (line 237) → `tesselate.rs:393`
+- [v] `triangulate_expolygon_3d` (line 192) → `tesselate.rs:395` — R947: tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.
+- [v] `triangulate_expolygons_3d` (line 198) → `tesselate.rs:401` — R947: tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.
+- [v] `triangulate_expolygon_2d` (line 204) → `tesselate.rs:407` — R947: tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.
+- [v] `triangulate_expolygons_2d` (line 215) → `tesselate.rs:419` — R947: tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.
+- [v] `triangulate_expolygon_2f` (line 226) → `tesselate.rs:431` — R947: tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.
+- [v] `triangulate_expolygons_2f` (line 237) → `tesselate.rs:443` — R947: tests/tesselate_native_parity.rs (tesselate_native_parity): the pin's Tesselate.cpp triangulation (9-247) over glu-libtess, ported line for line into src/glu_libtess (GLU_LIBTESS_PIN), against tests/data/tesselate/gen.cpp on 500 random ExPolygons with holes (37,173 pin triangles; 323 cases through the combine callback with 7,133 intersection vertices): 0 differ on each of the six functions; with the gate at 0 (earcut), all 500 differ.
 
 **class `GluTessWrapper`**
 
@@ -13233,11 +13233,11 @@ Rust file: `tesselate.rs`. Status: **partial**. Not listed: 1 constructors, 1 de
 - [ ] `tessVertexCB` (line 105) → `tesselate.rs`
 - [ ] `tessCombineCB` (line 106) → `tesselate.rs`
 - [ ] `tessErrorCB` (line 108) → `tesselate.rs`
-- [~] `tessBegin` (line 110) → `tesselate.rs:246` — partial
-- [x] `tessEnd` (line 117) → `tesselate.rs:256`
-- [x] `tessVertex` (line 122) → `tesselate.rs:261`
-- [x] `tessCombine` (line 159) → `tesselate.rs:315`
-- [x] `tessError` (line 165) → `tesselate.rs:326`
+- [~] `tessBegin` (line 110) → `tesselate.rs:296` — partial
+- [x] `tessEnd` (line 117) → `tesselate.rs:306`
+- [x] `tessVertex` (line 122) → `tesselate.rs:311`
+- [x] `tessCombine` (line 159) → `tesselate.rs:365`
+- [x] `tessError` (line 165) → `tesselate.rs:376`
 
 ### `TextConfiguration` (.hpp)
 
@@ -13684,9 +13684,9 @@ Rust file: `triangle_mesh_slicer.rs`. Status: **partial**. Not listed: 4 constru
 - [x] `triangulate_slice` (line 2280) → `triangle_mesh_slicer.rs:3874`
 - [v] `project_mesh` (line 2403) → `triangle_mesh_slicer.rs:3551` — R945: tests/triangle_mesh_slicer_native_parity.rs (project_mesh_native_parity): the pin's transform_mesh_vertices_for_slicing and is_identity (TriangleMeshSlicer.cpp 1953-1980) and project_mesh, both overloads (2403-2427, through slice_mesh_slabs with a transformation, 2233-2234), from tests/data/triangle_mesh_slicer/gen_project.cpp on 100 cases (identity, translation, rotation, tilted rotation with non-uniform scale, mirror): 6,726 vertices and 280 polygons, 0 differ.
 - [v] `project_mesh` (line 2419) → `triangle_mesh_slicer.rs:3573` — R945: tests/triangle_mesh_slicer_native_parity.rs (project_mesh_native_parity): the pin's transform_mesh_vertices_for_slicing and is_identity (TriangleMeshSlicer.cpp 1953-1980) and project_mesh, both overloads (2403-2427, through slice_mesh_slabs with a transformation, 2233-2234), from tests/data/triangle_mesh_slicer/gen_project.cpp on 100 cases (identity, translation, rotation, tilted rotation with non-uniform scale, mirror): 6,726 vertices and 280 polygons, 0 differ.
-- [x] `cut_mesh` (line 2430) → `triangle_mesh_slicer.rs:4030`
+- [v] `cut_mesh` (line 2430) → `triangle_mesh_slicer.rs:4030` — R947: tests/triangle_mesh_slicer_native_parity.rs (cut_mesh_native_parity, 36 cases; cut_mesh_plane_points_native_parity, 40 cases and 80 outputs): the pin's cut_mesh, both overloads (TriangleMeshSlicer.cpp 2430-, 2727-2788), now equal to the pin in every vertex and triangle including the caps, which glu-libtess triangulates (asserted with GLU_LIBTESS_PIN on).
 - [x] `calc_plane_normal` (line 2717) → `triangle_mesh_slicer.rs:4413`
-- [~] `cut_mesh` (line 2727) → `triangle_mesh_slicer.rs:4437` — divergent
+- [v] `cut_mesh` (line 2727) → `triangle_mesh_slicer.rs:4437` — R947: tests/triangle_mesh_slicer_native_parity.rs (cut_mesh_native_parity, 36 cases; cut_mesh_plane_points_native_parity, 40 cases and 80 outputs): the pin's cut_mesh, both overloads (TriangleMeshSlicer.cpp 2430-, 2727-2788), now equal to the pin in every vertex and triangle including the caps, which glu-libtess triangulates (asserted with GLU_LIBTESS_PIN on). (the body reads as divergent to the estimate)
 
 **class `IntersectionLine`**
 

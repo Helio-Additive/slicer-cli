@@ -343,8 +343,13 @@ fn read_vectors() -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
 
+/// The two tests allocate ObjectIDs from one process-wide counter and write them relative to their models: run
+/// one at a time.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn clearance_checks_match_the_pin() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use slicer::print::faithful::layered_print_cleareance_valid;
     let mut o = Out { lines: Vec::new(), base: 0 };
     for scenario in 0..8 {
@@ -391,6 +396,91 @@ fn clearance_checks_match_the_pin() {
         o.out(format!("{} lay_null {}", sc, msg(&l2.string)));
     }
     let expected = read_vectors();
+    let expected: Vec<&str> = expected.lines().collect();
+    let mut mismatches = 0usize;
+    for k in 0..expected.len().max(o.lines.len()) {
+        let e = expected.get(k).copied().unwrap_or("<missing>");
+        let r = o.lines.get(k).map(|s| s.as_str()).unwrap_or("<missing>");
+        if e != r {
+            mismatches += 1;
+            if mismatches <= 40 {
+                eprintln!("line {}:\n  C++:  {}\n  Rust: {}", k + 1, e, r);
+            }
+        }
+    }
+    eprintln!("{} lines, {} mismatches", expected.len(), mismatches);
+    assert_eq!(mismatches, 0);
+}
+
+/// gen.cpp `validate_line(tag, print)`: Print::validate with all three out-parameters.
+fn validate_line(o: &mut Out, tag: &str, print: &mut Print) {
+    let mut warnings = Vec::new();
+    let mut polys: Vec<slicer::geometry::Polygon> = Vec::new();
+    let mut hp: Vec<(slicer::geometry::Polygon, f32)> = Vec::new();
+    let e = print.validate(Some(&mut warnings), Some(&mut polys), Some(&mut hp));
+    let dash = |s: &str| if s.is_empty() { "-".to_string() } else { msg(s) };
+    let mut ws = format!("{}", warnings.len());
+    for w in &warnings {
+        ws += &format!(" {} {} {} {} {}", hb(w.is_warning), hb(w.object.is_some()), dash(&w.opt_key), dash(&w.hypetext), msg(&w.string));
+    }
+    let mut ps = format!("{}", e.params.len());
+    for p in &e.params {
+        ps += &format!(" {}", p);
+    }
+    o.out(format!(
+        "{} validate {} {} {} {} params {} polys {} hp {}",
+        tag,
+        e.r#type as i32,
+        hb(e.object.is_some()),
+        dash(&e.opt_key),
+        hb(e.is_warning),
+        ps,
+        polys.len(),
+        hp.len()
+    ));
+    o.out(format!("{} validate_msg {}", tag, msg(&e.string)));
+    o.out(format!("{} validate_warnings {}", tag, ws));
+}
+
+/// R947: `Print::validate` (Print.cpp:1413-1844) on the eight scenarios and on variants of scenario 1 that reach
+/// its other checks (by-object timelapse and clumping detection, layer heights, spiral vase, the bed type's
+/// temperature, the precise outer wall warning, line widths, the prime tower's relative E and ooze prevention,
+/// the precise Z warning): `gen validate` (tests/data/print_clearance/vectors_validate.txt).
+#[test]
+fn validate_matches_the_pin() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let mut o = Out { lines: Vec::new(), base: 0 };
+    for scenario in 0..8 {
+        let model = build_model(scenario, &mut o);
+        let config = base_config(scenario);
+        let mut print = assemble(&model, &config);
+        validate_line(&mut o, &format!("c{}", scenario), &mut print);
+    }
+    let variants: Vec<Vec<(&str, &str)>> = vec![
+        vec![("timelapse_type", "1")],
+        vec![("enable_wrapping_detection", "1")],
+        vec![("layer_height", "0.6")],
+        vec![("print_sequence", "by layer"), ("spiral_mode", "1")],
+        vec![("curr_bed_type", "Cool Plate"), ("cool_plate_temp", "0")],
+        vec![("precise_outer_wall", "1"), ("wall_sequence", "outer wall/inner wall")],
+        vec![("sparse_infill_line_width", "2")],
+        vec![("enable_support", "1"), ("support_line_width", "0.1")],
+        vec![("initial_layer_print_height", "0.5")],
+        vec![("print_sequence", "by layer"), ("enable_prime_tower", "1"), ("wall_filament", "2"), ("use_relative_e_distances", "0")],
+        vec![("print_sequence", "by layer"), ("enable_prime_tower", "1"), ("wall_filament", "2"), ("ooze_prevention", "1")],
+        vec![("print_sequence", "by layer"), ("enable_prime_tower", "1"), ("wall_filament", "2"), ("precise_z_height", "1")],
+    ];
+    for (v, keys) in variants.iter().enumerate() {
+        let model = build_model(1, &mut o);
+        let mut config = base_config(1);
+        for (k, val) in keys {
+            deser(&mut config, k, val);
+        }
+        let mut print = assemble(&model, &config);
+        validate_line(&mut o, &format!("v{}", v), &mut print);
+    }
+    let path = format!("{}/tests/data/print_clearance/vectors_validate.txt", env!("CARGO_MANIFEST_DIR"));
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     let expected: Vec<&str> = expected.lines().collect();
     let mut mismatches = 0usize;
     for k in 0..expected.len().max(o.lines.len()) {

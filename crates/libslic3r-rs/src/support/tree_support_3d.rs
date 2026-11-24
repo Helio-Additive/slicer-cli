@@ -10791,41 +10791,11 @@ pub fn assemble_faithful_print(model: &crate::model::Model, config: &crate::prin
 }
 
 /// PrintConfig.cpp:11529-11558 `Polygon get_bed_shape_with_excluded_area(const PrintConfig& cfg, bool use_share)`,
-/// over the full config the faithful Print keeps (the keys it reads are the PrintConfig's: printable_area,
-/// bed_exclude_area, enable_wrapping_detection, wrapping_exclude_area).
+/// over the full config the faithful Print keeps. Since R947 the paired port in print_config.rs, verified against
+/// the pin and bit-equal to the copy that was here (tests/print_config_skirt_native_parity.rs,
+/// `tree_support_copy_of_the_bed_shape_matches`).
 pub fn get_bed_shape_with_excluded_area(cfg: &crate::print_config::config_def::DynamicPrintConfig, use_share: bool) -> Polygon {
-    use crate::config::{ConfigOptionBool, ConfigOptionPoints};
-    let mut bed_poly = Polygon::default();
-    bed_poly.points = crate::print_config::config_def::get_bed_shape(cfg, use_share);
-    // PrintConfig.cpp:11450-11456 to_points: coord_t(scale_(v)), divide then truncate.
-    let to_pt = |x: f64, y: f64| Point::new((x / SCALING_FACTOR) as Coord, (y / SCALING_FACTOR) as Coord);
-    let excluse_area_points: Vec<Point> =
-        cfg.opt::<ConfigOptionPoints>("bed_exclude_area").map(|o| o.values.iter().map(|p| to_pt(p.x, p.y)).collect()).unwrap_or_default();
-    let mut exclude_polys: Polygons = Vec::new();
-    let mut exclude_poly = Polygon::default();
-    for (i, pt) in excluse_area_points.iter().enumerate() {
-        exclude_poly.points.push(*pt);
-        if i % 4 == 3 {
-            // exclude areas are always rectangle
-            exclude_polys.push(exclude_poly.clone());
-            exclude_poly.points.clear();
-        }
-    }
-    if cfg.opt::<ConfigOptionBool>("enable_wrapping_detection").map(|o| o.value).unwrap_or(false) {
-        let mut wrapping_poly = Polygon::default();
-        if let Some(o) = cfg.opt::<ConfigOptionPoints>("wrapping_exclude_area") {
-            for pt in &o.values {
-                // Point(scale_(x), scale_(y)): Point(double, double) rounds (Point.hpp:181).
-                wrapping_poly.points.push(Point::new((pt.x / SCALING_FACTOR).round_ties_even() as Coord, (pt.y / SCALING_FACTOR).round_ties_even() as Coord));
-            }
-        }
-        exclude_polys.push(wrapping_poly);
-    }
-    let tmp = cu::diff(&[bed_poly.clone()], &exclude_polys, crate::clipper_utils::ApplySafetyOffset::No);
-    if !tmp.is_empty() {
-        bed_poly = tmp[0].clone();
-    }
-    bed_poly
+    crate::print_config::config_def::get_bed_shape_with_excluded_area(cfg, use_share)
 }
 
 /// The live caller of the tree supports (gate `TREE_SUPPORT_ORGANIC_PIN`, print.rs / print_object.rs):

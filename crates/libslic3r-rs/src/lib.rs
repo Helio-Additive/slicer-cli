@@ -197,6 +197,7 @@ pub mod g_code_writer;
 pub mod gcode;
 pub mod gcode_sender;
 pub mod geometry;
+pub mod glu_libtess;
 pub mod i18n;
 pub mod int128;
 pub mod interlocking;

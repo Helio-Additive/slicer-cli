@@ -1,0 +1,60 @@
+c0 validate 3 0 - 0 params 0 polys 3 hp 1
+c0 validate_msg a is too close to others, and collisions may be caused.\na is too close to others, and collisions may be caused.\nc is too close to exclusion area, there may be collisions when printing.\nb is too tall, and collisions will be caused.
+c0 validate_warnings 0
+c1 validate 0 0 - 0 params 0 polys 0 hp 0
+c1 validate_msg 
+c1 validate_warnings 0
+c2 validate 0 0 - 0 params 0 polys 0 hp 0
+c2 validate_msg 
+c2 validate_warnings 1 1 0 - - Prime Tower is too close to others, and collisions may be caused.\n
+c3 validate 0 0 - 0 params 0 polys 0 hp 0
+c3 validate_msg 
+c3 validate_warnings 0
+c4 validate 4 1 - 0 params 0 polys 0 hp 0
+c4 validate_msg b is too close to clumping detection area, there may be collisions when printing.\n
+c4 validate_warnings 0
+c5 validate 4 0 - 0 params 0 polys 0 hp 0
+c5 validate_msg Prime Tower is too close to clumping detection area, and collisions will be caused.\n
+c5 validate_warnings 0
+c6 validate 3 0 - 0 params 0 polys 3 hp 1
+c6 validate_msg a is too close to others, and collisions may be caused.\na is too close to others, and collisions may be caused.\nc is too close to exclusion area, there may be collisions when printing.\nb is too tall, and collisions will be caused.
+c6 validate_warnings 0
+c7 validate 4 0 - 0 params 0 polys 0 hp 0
+c7 validate_msg Prime Tower is too close to exclusion area, and collisions will be caused.\n
+c7 validate_warnings 0
+v0 validate 0 0 - 0 params 0 polys 0 hp 0
+v0 validate_msg Smooth mode of timelapse is not supported when "by object" sequence is enabled.
+v0 validate_warnings 0
+v1 validate 0 0 enable_wrapping_detection 0 params 0 polys 0 hp 0
+v1 validate_msg Clumping detection is not supported when "by object" sequence is enabled.
+v1 validate_warnings 0
+v2 validate 0 1 layer_height 0 params 0 polys 0 hp 0
+v2 validate_msg Layer height cannot exceed nozzle diameter
+v2 validate_warnings 0
+v3 validate 0 0 spiral_mode 0 params 0 polys 0 hp 0
+v3 validate_msg Please select "By object" print sequence to print multiple objects in spiral vase mode.
+v3 validate_warnings 0
+v4 validate 1 0 - 0 params 3 1 Cool Plate 1 polys 0 hp 0
+v4 validate_msg Plate 1: Cool Plate does not support filament 1\n
+v4 validate_warnings 0
+v5 validate 0 0 - 0 params 0 polys 0 hp 0
+v5 validate_msg 
+v5 validate_warnings 1 0 0 precise_outer_wall - Precise outer wall will be ignored unless the order of walls is set to inner/outer
+v6 validate 0 1 sparse_infill_line_width 0 params 0 polys 0 hp 0
+v6 validate_msg Too large line width
+v6 validate_warnings 0
+v7 validate 0 1 support_line_width 0 params 0 polys 0 hp 0
+v7 validate_msg Too small line width
+v7 validate_warnings 0
+v8 validate 0 1 initial_layer_print_height 0 params 0 polys 0 hp 0
+v8 validate_msg Layer height cannot exceed nozzle diameter
+v8 validate_warnings 0
+v9 validate 0 0 - 0 params 0 polys 0 hp 0
+v9 validate_msg 
+v9 validate_warnings 0
+v10 validate 0 0 - 0 params 0 polys 0 hp 0
+v10 validate_msg 
+v10 validate_warnings 0
+v11 validate 0 0 - 0 params 0 polys 0 hp 0
+v11 validate_msg 
+v11 validate_warnings 0

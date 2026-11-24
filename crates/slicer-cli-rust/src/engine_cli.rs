@@ -7,7 +7,8 @@
 //! program to use instead (the convention of `cli_flag_support.cpp`).
 //!
 //! Return codes are the official ones `slicer_cli` returns
-//! (libslic3r `Utils.hpp`, `CLI_*`), as the process exit status.
+//! (libslic3r `Utils.hpp`, `CLI_*`), as the process exit status; a job
+//! `Print::validate()` refuses exits 1, as `slicer_cli` does (main.cpp:11635-11636).
 
 use std::path::{Path, PathBuf};
 
@@ -141,6 +142,28 @@ fn extension(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// The sentence and code an engine error becomes. A hard validation error is refused as slicer_cli
+/// refuses it (main.cpp:11539-11636): its sentence with the tip, and the CLI_* code of its type
+/// (app_slice.rs `ValidationRefusal`); anything else is a slicing error.
+fn engine_failure<E>(e: E) -> (String, i32)
+where
+    E: AsRef<dyn std::error::Error + Send + Sync + 'static> + std::fmt::Display,
+{
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(e.as_ref());
+    while let Some(err) = source {
+        if let Some(refusal) = err.downcast_ref::<slicer::app_slice::ValidationRefusal>() {
+            // main.cpp:11536 emit_validation_event, on stdout, then the sentence on stderr and exit 1.
+            use std::io::Write;
+            let mut out = std::io::stdout();
+            let _ = out.write_all(refusal.event_record().as_bytes());
+            let _ = out.flush();
+            return (refusal.stderr_text(), refusal.exit_code());
+        }
+        source = err.source();
+    }
+    (format!("The Rust engine could not slice: {e:#}"), CLI_SLICING_ERROR)
+}
+
 fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     if !request.input.is_file() {
         return Err((
@@ -167,7 +190,7 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
         }
     }
 
-    let failed = |e| (format!("The Rust engine could not slice: {e:#}"), CLI_SLICING_ERROR);
+    let failed = engine_failure;
     match extension(&request.input).as_str() {
         "stl" => {
             let config = request.config.as_deref().ok_or_else(|| {
@@ -273,6 +296,37 @@ mod tests {
         // The model file does not exist; the flag is still what is reported.
         let (sentence, _) = parse(&args(&["no-such.stl", "--gcode-timing"])).unwrap_err();
         assert!(sentence.starts_with("--gcode-timing"), "{sentence}");
+    }
+
+    #[test]
+    fn a_validation_error_is_refused_as_slicer_cli_refuses_it() {
+        use slicer::print_base::{StringExceptionType, StringObjectException};
+        let refusal = slicer::app_slice::ValidationRefusal {
+            exception: StringObjectException {
+                string: "Layer height cannot exceed nozzle diameter".to_string(),
+                ..Default::default()
+            },
+        };
+        // main.cpp:11541-11543
+        assert_eq!(
+            refusal.stderr_text(),
+            "Validation error: Layer height cannot exceed nozzle diameter\n\nTip: You may need to specify proper \
+             config files:\n  --machine, --filament, and --process options"
+        );
+        // slicer_cli exits 1 (main.cpp:11635-11636) and writes CLI_VALIDATE_ERROR (Utils.hpp:52) to result.json.
+        assert_eq!(exit_status(refusal.exit_code()), 1);
+        assert_eq!(refusal.return_code(), -51);
+        // main.cpp:465-484, as slicer_cli printed it for layer_height 0.5 on a 0.4 nozzle.
+        let mut lh = refusal.clone();
+        lh.exception.opt_key = "layer_height".to_string();
+        assert_eq!(
+            lh.event_record(),
+            "\n[[SLICER_EVENT]] {\"event\":\"validation_error\",\"message\":\"Layer height cannot exceed nozzle diameter\",\
+             \"opt_key\":\"layer_height\",\"tag\":\"STRING_EXCEPT_NOT_DEFINED\"}\n"
+        );
+        let mut seq = refusal.clone();
+        seq.exception.r#type = StringExceptionType::StringExceptObjectCollisionInSeqPrint;
+        assert_eq!(seq.return_code(), -63);
     }
 
     #[test]
