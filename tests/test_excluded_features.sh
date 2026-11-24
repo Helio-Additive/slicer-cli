@@ -752,10 +752,12 @@ PY
     mkdir -p "$PART_DIR/sc" "$PART_DIR/sn" "$PART_DIR/si"
     printf '%s\n' '{"type":"process","name":"Stat process","from":"User","inherits":"0.20mm Standard @BBL X1C"}' > "$PART_DIR/si/plate_1.statistics.json"
     cp "$PART_DIR/si/plate_1.statistics.json" "$PART_DIR/si.kept"
+    # These runs change folder: the binary may be given by a relative path.
+    STAT_BINARY="$(cd "$(dirname "$BINARY")" && pwd)/$(basename "$BINARY")"
     set +e
-    (cd "$PART_DIR/sc" && "$BINARY" ../slab.stl --printer-preset "$PART_PRINTER" --slice 1 --export-statistics > ../sc.out 2>&1); STATC_EXIT=$?
+    (cd "$PART_DIR/sc" && "$STAT_BINARY" ../slab.stl --printer-preset "$PART_PRINTER" --slice 1 --export-statistics > ../sc.out 2>&1); STATC_EXIT=$?
     "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --export-statistics --export-3mf plate_1.statistics.json --outputdir "$PART_DIR/sn" > "$PART_DIR/sn.out" 2>&1; STATN_EXIT=$?
-    (cd "$PART_DIR/si" && "$BINARY" ../slab.stl --printer-preset "$PART_PRINTER" --process plate_1.statistics.json --slice 1 --export-statistics --outputdir . > ../si.out 2>&1); STATI_EXIT=$?
+    (cd "$PART_DIR/si" && "$STAT_BINARY" ../slab.stl --printer-preset "$PART_PRINTER" --process plate_1.statistics.json --slice 1 --export-statistics --outputdir . > ../si.out 2>&1); STATI_EXIT=$?
     set -e
     if STATX_DETAIL=$(python3 - "$PART_DIR" "$STATC_EXIT" "$STATN_EXIT" "$STATI_EXIT" <<'PY' 2>&1
 import json, os, sys
