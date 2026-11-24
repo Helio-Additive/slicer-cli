@@ -24,11 +24,15 @@ fn painted_cube_slices_end_to_end() {
     let gcode = std::fs::read_to_string(&out).expect("read gcode");
     let count = |tag: &str| gcode.matches(tag).count();
 
-    // 2-filament config must surface in the header (num_filaments chain).
-    assert!(
-        gcode.contains("; filament: 2\n"),
-        "expected '; filament: 2' header"
-    );
+    // 2-filament config must surface in the header. With HEADER_USED_FILAMENTS_PIN (R943) the
+    // header lists the used filaments, 1-based, as GCode.cpp:2646-2655 writes
+    // `print.get_slice_used_filaments(false)`; with it =0, the earlier filament count.
+    let expected = if slicer::faithful_gate("HEADER_USED_FILAMENTS_PIN") {
+        "; filament: 1,2\n"
+    } else {
+        "; filament: 2\n"
+    };
+    assert!(gcode.contains(expected), "expected {expected:?} header");
     // The multi-region split must not break walls/fill.
     assert!(count("; FEATURE: Outer wall") > 0, "outer walls missing");
     assert!(

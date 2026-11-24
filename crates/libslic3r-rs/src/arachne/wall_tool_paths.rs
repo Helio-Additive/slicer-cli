@@ -843,6 +843,83 @@ fn expolygons_to_polygons(ex: &[ExPolygon]) -> Polygons {
     out
 }
 
+thread_local! {
+    /// R943 probe (PA_L, diagnostic only): the layer process_arachne is on when its PA_L range names it,
+    /// else -1; set by perimeter_generator.rs, read by pa_wc / pa_wcr below.
+    pub static PA_LAYER: std::cell::Cell<i64> = const { std::cell::Cell::new(-1) };
+}
+/// R943 probe: the WallContourMarkedWidth lines of `toolpaths` (lines, junctions, sums, closed count), in
+/// the format of the pin's twin (target/parity-work/d/pa/WallToolPaths_pa.cpp).
+fn pa_wc(tag: &str, tps: &[VariableWidthLines]) {
+    let l = PA_LAYER.with(|c| c.get());
+    if l < 0 {
+        return;
+    }
+    let (mut n, mut np, mut nc, mut sx, mut sy) = (0usize, 0usize, 0usize, 0i64, 0i64);
+    for inset in tps {
+        for line in inset {
+            if line.junctions.first().map(|j| j.w != WALL_CONTOUR_MARKED_WIDTH).unwrap_or(true) {
+                continue;
+            }
+            n += 1;
+            if line.is_closed {
+                nc += 1;
+            }
+            for j in &line.junctions {
+                np += 1;
+                sx += j.p.x;
+                sy += j.p.y;
+            }
+        }
+    }
+    eprintln!("BOI {} L={} n={} np={} sx={} sy={} x={:.9}", tag, l, n, np, sx, sy, nc as f64);
+}
+/// R943 probe: the other (non-contour) lines of `toolpaths`: lines, junctions, sums, sum of widths.
+fn pa_wa(tag: &str, tps: &[VariableWidthLines]) {
+    let l = PA_LAYER.with(|c| c.get());
+    if l < 0 {
+        return;
+    }
+    let (mut n, mut np, mut sx, mut sy, mut sw) = (0usize, 0usize, 0i64, 0i64, 0i64);
+    for inset in tps {
+        for line in inset {
+            if line.junctions.first().map(|j| j.w == WALL_CONTOUR_MARKED_WIDTH).unwrap_or(true) {
+                continue;
+            }
+            n += 1;
+            for j in &line.junctions {
+                np += 1;
+                sx += j.p.x;
+                sy += j.p.y;
+                sw += j.w as i64;
+            }
+        }
+    }
+    eprintln!("BOI {} L={} n={} np={} sx={} sy={} x={}", tag, l, n, np, sx, sy, sw);
+}
+fn pa_wcr(tag: &str, pp: &Polygons) {
+    let l = PA_LAYER.with(|c| c.get());
+    if l < 0 {
+        return;
+    }
+    let (mut np, mut sx, mut sy) = (0usize, 0i64, 0i64);
+    for p in pp {
+        for q in p.points() {
+            np += 1;
+            sx += q.x;
+            sy += q.y;
+        }
+    }
+    eprintln!("BOI {} L={} n={} np={} sx={} sy={} x=0", tag, l, pp.len(), np, sx, sy);
+    if std::env::var("PAP").ok().as_deref() == Some(format!("{}:{}", tag, l).as_str()) {
+        for (i, p) in pp.iter().enumerate() {
+            for q in p.points() {
+                eprintln!("PAP {} {} {}", i, q.x, q.y);
+            }
+        }
+    }
+}
+
 /// `union_(const Polygons&)` — NonZero fill. ClipperUtils.cpp.
 fn union_polygons(subject: &Polygons) -> Polygons {
     // ARACHNE_UNION_FLAT (on): `union_(const Polygons &)` is one
@@ -1456,6 +1533,8 @@ impl WallToolPaths {
         // distinct) and 98% flat per loop by the time the perimeter generator sees
         // it, so exactly one of these five stages flattens it.
         stageprobe("0 after generate_toolpaths", &self.toolpaths);
+        pa_wc("pa_wc0", &self.toolpaths);
+        pa_wa("pa_wa0", &self.toolpaths);
         wtp_tp("t0gen", &self.toolpaths);
         if std::env::var("WTPD").ok().as_deref() == Some(wtp_key.as_str()) {
             let mut li = 0;
@@ -1475,6 +1554,7 @@ impl WallToolPaths {
         // WallToolPaths.cpp:534
         Self::stitch_tool_paths(&mut self.toolpaths, self.bead_width_x);
         stageprobe("1 after stitch_tool_paths", &self.toolpaths);
+        pa_wc("pa_wc1", &self.toolpaths);
         wtp_tp("t1stitch", &self.toolpaths);
         awst_dump("1", awst, &self.toolpaths);
         agen_dump_tp("stitch", agen_orig, &self.toolpaths, agen_ic);
@@ -1482,6 +1562,7 @@ impl WallToolPaths {
         // WallToolPaths.cpp:536
         Self::remove_small_lines(&mut self.toolpaths);
         stageprobe("2 after remove_small_lines", &self.toolpaths);
+        pa_wc("pa_wc2", &self.toolpaths);
         awst_dump("2", awst, &self.toolpaths);
         agen_dump_tp("small", agen_orig, &self.toolpaths, agen_ic);
 
@@ -1774,6 +1855,16 @@ impl WallToolPaths {
         // FIDELITY-NOTE(F1): geo-clipper approximation vs C++ ClipperLib — the crate clipper
         // backend (union_polygons_ex) only offers a non-zero union; the even-odd fill rule used
         // here by C++ for self-overlapping wall contours is not available at coord_t precision.
+        // ARACHNE_INNER_CONTOUR_EVENODD (R943, faithful, on): `union_(const Polygons&, PolyFillType)`
+        // (ClipperUtils.cpp:725-726) with pftEvenOdd: one clipper_do<Paths> on the pure-Rust ClipperLib,
+        // as the pin does for both contours (WallToolPaths.cpp:767-768). =0 keeps the non-zero union.
+        pa_wcr("pa_wcr", &self.inner_contour);
+        if crate::faithful_gate("ARACHNE_INNER_CONTOUR_EVENODD") {
+            use crate::clipper_utils::cpp::Union_;
+            self.inner_contour = Union_::union_(self.inner_contour.as_slice(), crate::clipper::PolyFillType::pftEvenOdd);
+            self.first_wall_contour = Union_::union_(self.first_wall_contour.as_slice(), crate::clipper::PolyFillType::pftEvenOdd);
+            return;
+        }
         self.inner_contour = union_polygons(&self.inner_contour);
         // WallToolPaths.cpp:769
         self.first_wall_contour = union_polygons(&self.first_wall_contour);

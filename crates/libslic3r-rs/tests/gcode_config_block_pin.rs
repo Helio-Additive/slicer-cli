@@ -162,3 +162,45 @@ fn config_block_pin_reduces_the_variant_values_to_the_printer_extruders() {
     assert!(has("; outer_wall_speed = 150"), "outer_wall_speed: {:?}", show());
     assert!(has("; print_extruder_variant = \"Direct Drive Standard\""), "print_extruder_variant: {:?}", show());
 }
+
+/// The filament half (R943): main.cpp:1740-1808 `align_per_filament_config_vectors` grows the
+/// per-filament vectors to the roster (`filament_is_mixed = 0,0,0`), PrintApply.cpp:1455-1483
+/// reduces the filament options with variant to one value per filament
+/// (`update_values_to_printer_extruders_for_multiple_filaments`, PrintConfig.cpp:9996-10191),
+/// GCode.cpp:2719 writes `filament_map_2` as Print.cpp:3266-3285 computes it, and the tool
+/// ordering's nozzle map replaces `filament_nozzle_map` (Print.cpp:3258-3261), as Majora's block
+/// shows them in the pin.
+#[test]
+fn config_block_pin_reduces_the_filament_values_and_writes_the_maps() {
+    let settings = serde_json::json!({
+        "nozzle_diameter": ["0.4"],
+        "flush_multiplier": ["1"],
+        "flush_volumes_matrix": ["0", "0", "0", "0", "0", "0", "0", "0", "0"],
+        "filament_colour": ["#FFFFFF", "#000000", "#FF0000"],
+        "filament_map": ["1", "1", "1"],
+        "filament_volume_map": ["0", "0", "0"],
+        "extruder_type": ["Direct Drive"],
+        "nozzle_volume_type": ["Standard"],
+        "extruder_variant_list": ["Direct Drive Standard,Direct Drive High Flow"],
+        "printer_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+        "printer_extruder_id": ["1", "1"],
+        "print_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+        "print_extruder_id": ["1", "1"],
+        "filament_extruder_variant": [
+            "Direct Drive Standard", "Direct Drive High Flow",
+            "Direct Drive Standard", "Direct Drive High Flow",
+            "Direct Drive Standard", "Direct Drive High Flow"
+        ],
+        "filament_self_index": ["1", "1", "2", "2", "3", "3"],
+        "filament_max_volumetric_speed": ["10", "20", "11", "21", "12", "22"],
+    });
+    let block = GCode::config_block_pin_with_nozzle_map(&settings, Some(&[0, 0, 0]));
+    let lines: Vec<&str> = block.lines().collect();
+    let has = |l: &str| lines.iter().any(|x| *x == l);
+    let show = || lines.iter().filter(|l| l.starts_with("; filament_")).cloned().collect::<Vec<_>>();
+    assert!(has("; filament_is_mixed = 0,0,0"), "filament_is_mixed: {:?}", show());
+    assert!(has("; filament_max_volumetric_speed = 10,11,12"), "filament_max_volumetric_speed: {:?}", show());
+    assert!(has("; filament_self_index = 1,2,3"), "filament_self_index: {:?}", show());
+    assert!(has("; filament_map_2 = 0,0,0"), "filament_map_2: {:?}", show());
+    assert!(has("; filament_nozzle_map = 0,0,0"), "filament_nozzle_map: {:?}", show());
+}

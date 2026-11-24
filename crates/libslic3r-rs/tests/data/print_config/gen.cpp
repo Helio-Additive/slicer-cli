@@ -1046,6 +1046,78 @@ static void gen_overrides()
         }
 }
 
+// R943: update_values_to_printer_extruders_for_multiple_filaments (PrintConfig.cpp:9996-10191) on
+// a few filament tables, the printer config a copy of the config (as Print::apply passes
+// m_ori_full_print_config). Written to filaments.txt.
+static const std::vector<std::pair<std::pair<int, int>, Scenario>> &filament_scenarios()
+{
+    static const std::vector<std::pair<std::pair<int, int>, Scenario>> s = {
+        {{1, 1}, {{"filament_map", "1,1"}, {"extruder_type", "Direct Drive"}, {"nozzle_volume_type", "Standard"},
+                  {"filament_extruder_variant", "\"Direct Drive Standard\";\"Direct Drive High Flow\";\"Direct Drive Standard\";\"Direct Drive High Flow\""},
+                  {"filament_self_index", "1,1,2,2"}, {"filament_max_volumetric_speed", "10,20,11,21"}, {"filament_flow_ratio", "0.9,0.8,0.95,0.85"}}},
+        {{2, 2}, {{"filament_map", "1,2,2"}, {"extruder_type", "Direct Drive,Bowden"}, {"nozzle_volume_type", "Standard,High Flow"},
+                  {"filament_volume_map", "0,1,1"},
+                  {"filament_extruder_variant", "\"Direct Drive Standard\";\"Bowden High Flow\";\"Direct Drive Standard\";\"Bowden High Flow\";\"Bowden High Flow\""},
+                  {"filament_self_index", "1,1,2,2,3"}, {"filament_max_volumetric_speed", "1,2,3,4,5"}}},
+        {{2, 3}, {{"filament_map", "1,2,2"}, {"extruder_type", "Direct Drive,Bowden"}, {"nozzle_volume_type", "Standard,Standard"},
+                  {"filament_volume_map", "0,1,0"},
+                  {"filament_extruder_variant", "\"Direct Drive Standard\";\"Bowden High Flow\";\"Bowden Standard\";\"Bowden High Flow\";\"Bowden Standard\""},
+                  {"filament_self_index", "1,2,2,3,3"}, {"filament_max_volumetric_speed", "1,2,3,4,5"}, {"filament_flow_ratio", "0.5,0.6,0.7,0.8,0.9"}}},
+        {{1, 1}, {{"filament_map", "1,1"}, {"extruder_type", "Direct Drive"}, {"nozzle_volume_type", "High Flow"},
+                  {"filament_extruder_variant", "\"Direct Drive Standard\";\"Direct Drive Standard\""},
+                  {"filament_self_index", "2,1"}, {"filament_max_volumetric_speed", "7,8"}}},
+    };
+    return s;
+}
+
+static void gen_filaments()
+{
+    const auto &fs = filament_scenarios();
+    for (size_t a = 0; a < fs.size(); ++a) {
+        DynamicPrintConfig c = make_config(fs[a].second);
+        DynamicPrintConfig p = c;
+        std::set<std::string> ks = filament_options_with_variant;
+        ks.insert("filament_self_index");
+        Toks l{"fn", "update_values_to_printer_extruders_for_multiple_filaments", num(a), "=>"};
+        c.update_values_to_printer_extruders_for_multiple_filaments(p, fs[a].first.first, fs[a].first.second, ks, "filament_self_index",
+                                                                    "filament_extruder_variant");
+        push_config(l, c);
+        emit(l);
+    }
+}
+
+// R943: update_values_to_printer_extruders (PrintConfig.cpp:9780-9994) over the printer options
+// with variant (stride 1), for the machine (extruder_id 0) and for extruder 1 / 2 with a filament
+// volume type. Written to filaments.txt after gen_filaments.
+static void gen_printer_extruders()
+{
+    const std::vector<Scenario> ps = {
+        {{"extruder_type", "Direct Drive"}, {"nozzle_volume_type", "Standard"},
+         {"printer_extruder_variant", "\"Direct Drive Standard\";\"Direct Drive High Flow\""}, {"printer_extruder_id", "1,1"},
+         {"retraction_length", "0.8,1.2"}, {"z_hop", "0.4,0.6"}},
+        {{"extruder_type", "Direct Drive,Direct Drive"}, {"nozzle_volume_type", "Standard,High Flow"},
+         {"printer_extruder_variant", "\"Direct Drive Standard\";\"Direct Drive High Flow\";\"Direct Drive Standard\";\"Direct Drive High Flow\""},
+         {"printer_extruder_id", "1,1,2,2"}, {"retraction_length", "1,2,3,4"}, {"z_hop", "0.1,0.2,0.3,0.4"}},
+        {{"extruder_type", "Direct Drive,Bowden"}, {"nozzle_volume_type", "Hybrid,Standard"},
+         {"printer_extruder_variant", "\"Direct Drive Standard\";\"Direct Drive High Flow\";\"Bowden Standard\""},
+         {"printer_extruder_id", "1,1,2"}, {"retraction_length", "1,2,3"}, {"z_hop", "0.1,0.2,0.3"}},
+    };
+    for (size_t a = 0; a < ps.size(); ++a)
+        for (unsigned int extruder_id = 0; extruder_id < 3; ++extruder_id) {
+            DynamicPrintConfig c = make_config(ps[a]);
+            int extruder_count = 1;
+            c.support_different_extruders(extruder_count);
+            std::vector<std::vector<NozzleVolumeType>> nvt;
+            int envc = c.get_extruder_nozzle_volume_count(extruder_count, nvt);
+            std::set<std::string> ks = printer_options_with_variant_1;
+            std::vector<int> vi = c.update_values_to_printer_extruders(c, extruder_count, envc, nvt, ks, "printer_extruder_id", "printer_extruder_variant", 1,
+                                                                       extruder_id, nvtHighFlow);
+            Toks l{"fn", "update_values_to_printer_extruders", num(a), num(extruder_id), "=>", ints_str(vi)};
+            push_config(l, c);
+            emit(l);
+        }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1063,6 +1135,10 @@ int main(int argc, char **argv)
     gen_static_configs();
     gen_update_values();
     gen_overrides();
+    fclose(g_out);
+    open_out(dir, "filaments.txt");
+    gen_filaments();
+    gen_printer_extruders();
     fclose(g_out);
     return 0;
 }

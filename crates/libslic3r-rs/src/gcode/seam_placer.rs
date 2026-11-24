@@ -364,9 +364,24 @@ pub struct LayerSeams {
     /// the built NODE ARRAY (all of the build cost) is cached instead and
     /// [`LayerSeams::build_points_tree`] reconstructs around it. R523.
     pub points_tree_nodes: std::sync::OnceLock<Vec<usize>>,
+    /// SeamPlacer.hpp:122-125 — the layer was swallowed by an adaptive merge group (its walls
+    /// are extruded by the group top above it). Nothing in the crate sets it yet (the adaptive
+    /// merge patches of LayerRegion are not ported); default false as at the pin.
+    pub merged_out: bool,
+    /// SeamPlacer.hpp:126-129 — print regions swallowed on this physical layer.
+    pub merged_out_region_ids: Vec<i32>,
 }
 
 impl LayerSeams {
+    /// True when this region emits no wall on the layer because its extrusion belongs to a
+    /// group top. SeamPlacer.hpp:131-138
+    pub fn swallowed_in_region(&self, region_id: i32) -> bool {
+        if self.merged_out {
+            return true;
+        }
+        self.merged_out_region_ids.iter().any(|&r| r == region_id)
+    }
+
     /// Build a KD tree over `points`, mirroring
     /// `points_tree = std::make_unique<SeamCandidatesTree>(functor, points.size())`.
     /// SeamPlacer.cpp:944-945
@@ -421,8 +436,16 @@ impl PrintObjectSeamData {
 /// SeamPlacer.hpp:32-39
 #[inline]
 pub fn angle(v1: Vec2d, v2: Vec2d) -> f64 {
-    // cross2(v1d, v2d) = v1.x*v2.y - v1.y*v2.x ; v1d.dot(v2d)
-    let cross = v1.x * v2.y - v1.y * v2.x;
+    // cross2(v1d, v2d) = v1.x*v2.y - v1.y*v2.x (Point.hpp:92-96, one expression: clang
+    // -ffp-contract=on fuses the left product, fma(v1.x, v2.y, -(v1.y*v2.x))); v1d.dot(v2d)
+    // is Eigen's redux (separate products, unfused). The two arms differ only when a
+    // product is not exact in double (components above ~9.5e7 scaled units in both
+    // factors). R943 gate SEAM_ANGLE_CROSS_FMA (faithful); =0 gives the unfused arm.
+    let cross = if crate::faithful_gate("SEAM_ANGLE_CROSS_FMA") {
+        v1.x.mul_add(v2.y, -(v1.y * v2.x))
+    } else {
+        v1.x * v2.y - v1.y * v2.x
+    };
     cross.atan2(v1.dot(&v2))
 }
 
@@ -3615,7 +3638,16 @@ impl SeamPlacer {
         // C++ projects to the candidate z; candidates carry their own z so a 3D
         // query against the loop's xy at the candidate plane is exact. We query
         // with the layer's candidate z (all candidates of a layer share z).
-        let query = Vec3f::new(up.x as f32, up.y as f32, layer.points[0].position.z);
+        // SeamPlacer.cpp:1580 `unscaled<float>(fp)` is `fp.cast<float>() * float(SCALING_FACTOR)`
+        // (Point.hpp:574-577): the coordinate rounded to float first, then a float product,
+        // not the double product rounded to float (they can differ by an ulp).
+        // R943 gate SEAM_QUERY_UNSCALED_F32 (faithful); =0 gives the earlier double arm.
+        let query = if crate::faithful_gate("SEAM_QUERY_UNSCALED_F32") {
+            let sf = crate::libslic3r::SCALING_FACTOR as f32;
+            Vec3f::new(first.x as f32 * sf, first.y as f32 * sf, layer.points[0].position.z)
+        } else {
+            Vec3f::new(up.x as f32, up.y as f32, layer.points[0].position.z)
+        };
         let points_tree = layer.build_points_tree();
         let nearest_point_index = crate::kd_tree_indirect::find_closest_point_eps(
             &points_tree,
@@ -4024,6 +4056,31 @@ mod tests {
         // angle from +X to +Y is +PI/2
         let a = angle(Vec2d::new(1.0, 0.0), Vec2d::new(0.0, 1.0));
         assert!((a - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn layer_seams_swallowed_in_region_r943() {
+        // SeamPlacer.hpp:131-138
+        let mut l = LayerSeams::default();
+        assert!(!l.swallowed_in_region(0));
+        l.merged_out_region_ids = vec![2, 5];
+        assert!(l.swallowed_in_region(5));
+        assert!(!l.swallowed_in_region(3));
+        l.merged_out = true;
+        assert!(l.swallowed_in_region(3));
+    }
+
+    #[test]
+    fn angle_cross_fused_r943() {
+        // Point.hpp:92-96 cross2 is one expression; clang -ffp-contract=on makes it
+        // fma(v1.x, v2.y, -(v1.y*v2.x)). v1.x*v2.y = 2^54 + 2^28 + 1 is not exact in
+        // double (ulp 4): the fused cross is 1, the unfused one 0.
+        let t27 = 134_217_728.0_f64;
+        let v1 = Vec2d::new(t27 + 1.0, t27);
+        let v2 = Vec2d::new(t27 + 2.0, t27 + 1.0);
+        let dot = v1.x * v2.x + v1.y * v2.y;
+        assert_eq!(angle(v1, v2), 1.0_f64.atan2(dot));
+        assert!(angle(v1, v2) > 0.0);
     }
 
     #[test]

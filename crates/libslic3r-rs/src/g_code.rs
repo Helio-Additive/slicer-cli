@@ -7887,6 +7887,17 @@ pub struct GCodeHeader {
     /// The settings the CONFIG_BLOCK writes when they differ from `raw_settings` (the job's settings
     /// before the port's filament-override patch, `Print::config_block_settings`).
     pub config_block_settings: Option<serde_json::Value>,
+
+    /// `print.get_slice_used_filaments(false)` (0-based), which the header's `; filament:` line
+    /// lists (GCode.cpp:2646-2655); `None` writes the configured filament count. Set by the export
+    /// (print.rs). Gate HEADER_USED_FILAMENTS_PIN.
+    pub used_filaments: Option<Vec<u32>>,
+
+    /// The nozzle map the tool ordering hands `Print::update_filament_maps_to_config`
+    /// (ToolOrdering.cpp, `grouping_result.get_nozzle_map(-1)`), which the pin's
+    /// `full_print_config()` and so the CONFIG_BLOCK carry (Print.cpp:3258-3261). Set by the export
+    /// (print.rs). Gate GCODE_CONFIG_NOZZLE_MAP_PIN.
+    pub filament_nozzle_map: Option<Vec<i32>>,
 }
 
 impl GCodeHeader {
@@ -7933,6 +7944,8 @@ impl GCodeHeader {
             config,
             raw_settings,
             config_block_settings: None,
+            used_filaments: None,
+            filament_nozzle_map: None,
         }
     }
 
@@ -8025,10 +8038,25 @@ impl GCodeHeader {
         // Configured filament count (single-material configs ⇒ 1, preserving
         // the locked default-path bytes). C++ writes the used-filament list;
         // matching that per-use accounting is part of the multicolour chain.
-        header.push_str(&format!(
-            "; filament: {}\n",
-            self.config.num_filaments()
-        ));
+        // GCode.cpp:2646-2655: the used filaments, 1-based, comma separated. Gate
+        // HEADER_USED_FILAMENTS_PIN.
+        match self.used_filaments.as_ref().filter(|_| crate::faithful_gate("HEADER_USED_FILAMENTS_PIN")) {
+            Some(used_filaments) => {
+                let mut out = String::from("; filament: ");
+                for (idx, f) in used_filaments.iter().enumerate() {
+                    if idx != 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&(f + 1).to_string());
+                }
+                out.push('\n');
+                header.push_str(&out);
+            }
+            None => header.push_str(&format!(
+                "; filament: {}\n",
+                self.config.num_filaments()
+            )),
+        }
         if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
             // GCode.cpp:2658-2660
             header.push_str("; support_material_on_wipe_tower: 0\n");
@@ -8070,7 +8098,7 @@ impl GCodeHeader {
         if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
             if let Some(ref settings) = self.config_block_settings.as_ref().or(self.raw_settings.as_ref()) {
                 if settings.is_object() {
-                    return GCode::config_block_pin(settings);
+                    return GCode::config_block_pin_with_nozzle_map(settings, self.filament_nozzle_map.as_deref());
                 }
             }
         }
@@ -9114,6 +9142,217 @@ pub fn print_apply_update_values_to_printer_extruders(
     }
 }
 
+/// PrintApply.cpp:1455-1483, the filament half of `Print::apply`'s reduction (`extruder_applied`
+/// false): `m_ori_full_print_config` is `new_full_config` after the printer half (`ori`); with no
+/// nozzle group result yet (slicer_cli's one `Print::apply` precedes the tool ordering) and more than
+/// one extruder or different extruders, the filament options with variant and `filament_self_index`
+/// are reduced to one value per filament. `Print::update_filament_maps_to_config`
+/// (Print.cpp:3266-3290) repeats the reduction on a copy of `m_ori_full_print_config` with the
+/// final maps, which gives the same values for the maps the block writes.
+pub fn print_apply_update_filament_values_to_printer_extruders(
+    cfg: &mut crate::print_config::config_def::DynamicPrintConfig,
+    ori: &crate::print_config::config_def::DynamicPrintConfig,
+) {
+    use crate::print_config::config_def::filament_options_with_variant;
+    use crate::print_config::enums::NozzleVolumeType;
+    let mut nozzle_volume_types: Vec<Vec<NozzleVolumeType>> = Vec::new();
+    let mut extruder_count: i32 = 1;
+    let different_extruder = cfg.support_different_extruders(&mut extruder_count);
+    let extruder_volume_type_count =
+        cfg.get_extruder_nozzle_volume_count(extruder_count, &mut nozzle_volume_types);
+    let mut filament_keys: std::collections::BTreeSet<String> = (*filament_options_with_variant).clone();
+    filament_keys.insert("filament_self_index".to_string());
+    if extruder_count > 1 || different_extruder {
+        let _ = cfg.update_values_to_printer_extruders_for_multiple_filaments(
+            Some(ori),
+            extruder_count,
+            extruder_volume_type_count,
+            &filament_keys,
+            "filament_self_index",
+            "filament_extruder_variant",
+        );
+    }
+}
+
+/// Print.cpp:3266-3285 (`Print::update_filament_maps_to_config`): `m_config.filament_map_2`, the
+/// 0-based variant index of each filament's extruder in `m_ori_full_print_config`
+/// (`print_extruder_id` / `print_extruder_variant`), which GCode.cpp:2719 writes into the block.
+/// `f_maps` / `f_volume_maps` are the maps the tool ordering handed over; `ori` is
+/// `m_ori_full_print_config`.
+pub fn print_filament_map_2(
+    ori: &crate::print_config::config_def::DynamicPrintConfig,
+    f_maps: &[i32],
+    f_volume_maps: &[i32],
+) -> Vec<i32> {
+    use crate::config::{ConfigOptionEnumsGeneric, ConfigOptionResolver};
+    use crate::print_config::enums::{ExtruderType, NozzleVolumeType};
+    let mut extruder_count: i32 = 1;
+    let _support_multi = ori.support_different_extruders(&mut extruder_count);
+    let mut nozzle_volume_types: Vec<Vec<NozzleVolumeType>> = Vec::new();
+    let extruder_volume_type_count =
+        ori.get_extruder_nozzle_volume_count(extruder_count, &mut nozzle_volume_types);
+    let enums_of = |key: &str| -> Vec<i32> {
+        ConfigOptionResolver::optptr(&ori.base, key)
+            .and_then(|o: &dyn crate::config::ConfigOption| o.as_any().downcast_ref::<ConfigOptionEnumsGeneric>())
+            .map(|o| o.values.clone())
+            .unwrap_or_default()
+    };
+    let opt_extruder_type = enums_of("extruder_type");
+    let opt_nozzle_volume_type = enums_of("nozzle_volume_type");
+    let get_at = |v: &[i32], i: i32| -> i32 {
+        let idx = i as isize as usize;
+        if idx < v.len() {
+            v[idx]
+        } else {
+            v.first().copied().unwrap_or(0)
+        }
+    };
+    let mut filament_map_2: Vec<i32> = f_maps.to_vec();
+    for index in 0..f_maps.len() {
+        let extruder_type = ExtruderType::from_i32(get_at(&opt_extruder_type, f_maps[index] - 1));
+        let mut nozzle_volume_type =
+            NozzleVolumeType::from_i32(get_at(&opt_nozzle_volume_type, f_maps[index] - 1));
+        if f_volume_maps.is_empty() {
+            // the volume maps take nozzle_volume_type (not written into the block from here)
+        } else if extruder_volume_type_count > extruder_count && f_volume_maps.len() > index {
+            nozzle_volume_type = NozzleVolumeType::from_i32(f_volume_maps[index]);
+        }
+        filament_map_2[index] = ori.get_index_for_extruder(
+            f_maps[index],
+            "print_extruder_id",
+            extruder_type,
+            nozzle_volume_type,
+            "print_extruder_variant",
+            1,
+        );
+    }
+    filament_map_2
+}
+
+/// slicer_cli main.cpp:974-985 `project_filament_count`: the longest of `filament_colour`,
+/// `filament_settings_id`, `filament_ids`, `filament_type`, `filament_diameter` (any vector kind).
+pub fn front_end_project_filament_count(config: &crate::config::DynamicConfig) -> usize {
+    use crate::config::{ConfigOption, ConfigOptionResolver};
+    let mut count = 0usize;
+    for key in ["filament_colour", "filament_settings_id", "filament_ids", "filament_type", "filament_diameter"] {
+        if let Some(vec) = ConfigOptionResolver::optptr(config, key).and_then(|o: &dyn ConfigOption| o.as_vector_base()) {
+            count = count.max(vec.size());
+        }
+    }
+    count
+}
+
+/// slicer_cli main.cpp:1685-1734 `align_per_filament_maps`: `filament_map` repaired to at least 1
+/// and grown with its front value to `filament_count`, `filament_map_2` grown with the 0-based
+/// mirror of `filament_map`, `filament_nozzle_map` grown with its front value.
+pub fn front_end_align_per_filament_maps(config: &mut crate::config::DynamicConfig, filament_count: usize) -> usize {
+    use crate::config::ConfigOptionInts;
+    if filament_count <= 1 {
+        return 0; // one slot: the flat config already is the whole map
+    }
+    let mut extended = 0usize;
+    let mut filament_map: Option<Vec<i32>> = None;
+    if let Ok(Some(fm)) = config.opt_mut::<ConfigOptionInts>("filament_map", false) {
+        if !fm.values.is_empty() {
+            for value in fm.values.iter_mut() {
+                *value = (*value).max(1);
+            }
+            if fm.values.len() < filament_count {
+                let front = fm.values[0];
+                fm.values.resize(filament_count, front);
+                extended += 1;
+            }
+        }
+        filament_map = Some(fm.values.clone());
+    }
+    if let Some(fm) = filament_map.as_ref().filter(|fm| !fm.is_empty()) {
+        if let Ok(Some(f2)) = config.opt_mut::<ConfigOptionInts>("filament_map_2", false) {
+            if f2.values.len() < filament_count {
+                let known = f2.values.len();
+                f2.values.resize(filament_count, 0);
+                for i in known..filament_count {
+                    let at = if i < fm.len() { fm[i] } else { fm[0] };
+                    f2.values[i] = 0.max(at - 1);
+                }
+                extended += 1;
+            }
+        }
+    }
+    if let Ok(Some(nm)) = config.opt_mut::<ConfigOptionInts>("filament_nozzle_map", false) {
+        if !nm.values.is_empty() && nm.values.len() < filament_count {
+            let front = nm.values[0];
+            nm.values.resize(filament_count, front);
+            extended += 1;
+        }
+    }
+    extended
+}
+
+/// slicer_cli main.cpp:1740-1808 `align_per_filament_config_vectors` (Bambu Studio build, called at
+/// main.cpp:11128 with the count `project_filament_count` gave before the padding, main.cpp:9678):
+/// every non-empty per-filament vector shorter than the roster grows with its front value, then
+/// `align_per_filament_maps`, `filament_self_index` and `flush_volumes_vector`.
+///
+/// FIDELITY-NOTE: the reshape of `flush_volumes_matrix` that follows (main.cpp:1809-1946) is not
+/// ported; applied to the CONFIG_BLOCK copy only.
+pub fn front_end_align_per_filament_config_vectors(
+    config: &mut crate::config::DynamicConfig,
+    filament_count: usize,
+) -> bool {
+    use crate::config::{ConfigBase, ConfigOptionFloats, ConfigOptionInts, ConfigOptionStrings};
+    if filament_count <= 1 {
+        return false; // one slot: the flat config already is the whole roster
+    }
+    let mut extended = 0usize;
+    for key in ConfigBase::keys(&*config) {
+        if !front_end_is_per_filament_config_key(&key) {
+            continue;
+        }
+        let Ok(Some(opt)) = config.optptr_mut(&key, false) else {
+            continue;
+        };
+        let Some(vec) = opt.as_vector_base_mut() else {
+            continue;
+        };
+        if vec.size() == 0 || vec.size() >= filament_count {
+            continue;
+        }
+        let _ = vec.resize(filament_count, None); // duplicates the front value, like get_at()
+        extended += 1;
+    }
+    extended += front_end_align_per_filament_maps(config, filament_count);
+
+    let slots = config.opt::<ConfigOptionStrings>("filament_extruder_variant").map(|o| o.values.len());
+    if let Some(slots) = slots {
+        if let Ok(Some(self_index)) = config.opt_mut::<ConfigOptionInts>("filament_self_index", false) {
+            if slots >= filament_count && self_index.values.len() < slots {
+                let known = self_index.values.len();
+                self_index.values.resize(slots, 1);
+                for i in known..slots {
+                    self_index.values[i] = if slots == filament_count { i as i32 + 1 } else { self_index.values[0] };
+                }
+                extended += 1;
+            }
+        }
+    }
+
+    if let Ok(Some(flush_vector)) = config.opt_mut::<ConfigOptionFloats>("flush_volumes_vector", false) {
+        if !flush_vector.values.is_empty() && flush_vector.values.len() < 2 * filament_count {
+            let unload = flush_vector.values[0];
+            let load = if flush_vector.values.len() > 1 { flush_vector.values[1] } else { 140.0 };
+            if flush_vector.values.len() % 2 != 0 {
+                flush_vector.values.push(load);
+            }
+            while flush_vector.values.len() + 2 <= 2 * filament_count {
+                flush_vector.values.push(unload);
+                flush_vector.values.push(load);
+            }
+            extended += 1;
+        }
+    }
+    extended != 0
+}
+
 impl GCode {
     /// The CONFIG_BLOCK of `GCode::_do_export` (GCode.cpp:2686-2723) over the job's settings read as
     /// `print.full_print_config()` (`full_print_config_from_settings`).
@@ -9122,10 +9361,18 @@ impl GCode {
     /// pin (GCode.cpp:2713-2716); here the matrix is written unscaled. `filament_map_2` is set from
     /// `print.config()` (GCode.cpp:2719), which is the same settings here.
     pub fn config_block_pin(settings: &serde_json::Value) -> String {
+        Self::config_block_pin_with_nozzle_map(settings, None)
+    }
+
+    /// `config_block_pin` with the nozzle map of the tool ordering (`f_nozzle_maps`,
+    /// `GCodeHeader::filament_nozzle_map`).
+    pub fn config_block_pin_with_nozzle_map(settings: &serde_json::Value, f_nozzle_maps: Option<&[i32]>) -> String {
         use crate::config::{ConfigBase, ConfigOptionFloats, ConfigOptionStrings};
         let mut out = String::from("; CONFIG_BLOCK_START\n");
         let mut full_config = String::new();
         let mut print_cfg_temp = full_print_config_from_settings(settings);
+        // main.cpp:9678: the roster, read before the padding.
+        let project_filaments = front_end_project_filament_count(&print_cfg_temp.base);
         // The front end's own values (slicer_cli main.cpp), which reach `print.full_print_config()`
         // in the pin. Gate GCODE_CONFIG_FRONT_END_PIN.
         if crate::faithful_gate("GCODE_CONFIG_FRONT_END_PIN") {
@@ -9135,11 +9382,23 @@ impl GCode {
                 front_end_pad_vectors_to_extruder_count(&mut print_cfg_temp.base);
             }
             front_end_clamp_master_extruder_id(&mut print_cfg_temp.base);
+            // main.cpp:11128, the last write before Print::apply. Gate GCODE_CONFIG_FRONT_END_ALIGN_PIN.
+            if crate::faithful_gate("GCODE_CONFIG_FRONT_END_ALIGN_PIN") {
+                front_end_align_per_filament_config_vectors(&mut print_cfg_temp.base, project_filaments);
+            }
         }
         // Print::apply's reduction to the printer's extruders (PrintApply.cpp:1437-1453). Gate
         // GCODE_CONFIG_PRINT_APPLY_EXTRUDERS_PIN.
+        let mut ori_full_print_config = None;
         if crate::faithful_gate("GCODE_CONFIG_PRINT_APPLY_EXTRUDERS_PIN") {
             print_apply_update_values_to_printer_extruders(&mut print_cfg_temp);
+            // PrintApply.cpp:1453 `m_ori_full_print_config = new_full_config;`
+            let ori = print_cfg_temp.clone();
+            // PrintApply.cpp:1455-1483. Gate GCODE_CONFIG_PRINT_APPLY_FILAMENTS_PIN.
+            if crate::faithful_gate("GCODE_CONFIG_PRINT_APPLY_FILAMENTS_PIN") {
+                print_apply_update_filament_values_to_printer_extruders(&mut print_cfg_temp, &ori);
+            }
+            ori_full_print_config = Some(ori);
         }
         {
             // correct the flush_volumes_matrix with flush_multiplier values (GCode.cpp:2692-2717)
@@ -9180,6 +9439,38 @@ impl GCode {
                         o.values = temp_flush_volumes_matrix;
                     }
                 }
+            }
+        }
+        // Print.cpp:3258-3261: the tool ordering's nozzle map replaces `filament_nozzle_map` of
+        // `m_ori_full_print_config` (copied into `m_full_print_config`, 3287) when it is not empty;
+        // when the maps did not change the values are the same. ToolOrdering.cpp keeps the user's map
+        // for handle_hotend_as_extruder with fmmNozzleManual (the caller hands the map it chose).
+        // Gate GCODE_CONFIG_NOZZLE_MAP_PIN.
+        let keep_user_nozzle_map = ConfigBase::opt_serialize(&print_cfg_temp, "handle_hotend_as_extruder")
+            .map_or(false, |s| s == "1")
+            && ConfigBase::opt_serialize(&print_cfg_temp, "filament_map_mode").map_or(false, |s| s == "Nozzle Manual");
+        if let Some(f_nozzle_maps) = f_nozzle_maps.filter(|m| !m.is_empty() && !keep_user_nozzle_map) {
+            if crate::faithful_gate("GCODE_CONFIG_NOZZLE_MAP_PIN") {
+                use crate::config::ConfigOptionInts;
+                if let Ok(Some(o)) = print_cfg_temp.base.opt_mut::<ConfigOptionInts>("filament_nozzle_map", true) {
+                    o.values = f_nozzle_maps.to_vec();
+                }
+            }
+        }
+        // GCode.cpp:2719 `filament_map_2 = print.config().filament_map_2`, as
+        // Print::update_filament_maps_to_config sets it (Print.cpp:3266-3285) from the maps the
+        // block holds. Gate GCODE_CONFIG_FILAMENT_MAP_2_PIN.
+        if crate::faithful_gate("GCODE_CONFIG_FILAMENT_MAP_2_PIN") {
+            use crate::config::ConfigOptionInts;
+            let ints_of = |cfg: &crate::print_config::config_def::DynamicPrintConfig, key: &str| -> Vec<i32> {
+                cfg.base.opt::<ConfigOptionInts>(key).map(|o| o.values.clone()).unwrap_or_default()
+            };
+            let f_maps = ints_of(&print_cfg_temp, "filament_map");
+            let f_volume_maps = ints_of(&print_cfg_temp, "filament_volume_map");
+            let ori = ori_full_print_config.as_ref().unwrap_or(&print_cfg_temp);
+            let filament_map_2 = print_filament_map_2(ori, &f_maps, &f_volume_maps);
+            if let Ok(Some(o)) = print_cfg_temp.base.opt_mut::<ConfigOptionInts>("filament_map_2", true) {
+                o.values = filament_map_2;
             }
         }
         // GCode.cpp:2720 `append_full_config(print_cfg_temp, full_config)`: the verified port

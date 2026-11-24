@@ -4369,5 +4369,27 @@
   "functions": [
    "GCode::apply_print_config"
   ]
+ },
+ {
+  "unit": "MultiMaterialSegmentation",
+  "round": 943,
+  "evidence": "tests/multi_material_segmentation_native_parity.rs (painted_lines_native_parity): the pin's post_process_painted_lines (with filter_painted_lines) and colorize_contours (with colorize_contour, colorize_line, filter_colorized_polygon), MultiMaterialSegmentation.cpp 642-959 compiled into tests/data/multi_material_segmentation/gen_painted.cpp on one thread, on 2,000 synthetic cases with 32,091 painted lines on a quarter grid so the sort ties (some over 30 lines, past libc++'s insertion-sort cutoff): 0 differences; with MMS_PAINTED_LIBCXX_SORT=0, 206 cases differ.",
+  "functions": [
+   "post_process_painted_lines",
+   "filter_painted_lines",
+   "colorize_contours",
+   "colorize_contour",
+   "colorize_line",
+   "filter_colorized_polygon"
+  ]
+ },
+ {
+  "unit": "PrintConfig",
+  "round": 943,
+  "evidence": "tests/print_config_filaments_native_parity.rs: the pin's DynamicPrintConfig::update_values_to_printer_extruders (9 cases: three printer tables including Hybrid, extruder_id 0/1/2) and update_values_to_printer_extruders_for_multiple_filaments (PrintConfig.cpp 9996-10191; 4 cases: 1 and 2 extruders, the volume-map branch, the fallback when no variant matches) from tests/data/print_config/gen.cpp, serialized configs compared line for line: equal.",
+  "functions": [
+   "DynamicPrintConfig::update_values_to_printer_extruders",
+   "DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments"
+  ]
  }
 ]

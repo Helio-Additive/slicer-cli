@@ -19402,6 +19402,143 @@ pub mod config_def {
 
             Ok(variant_index)
         }
+
+        /// PrintConfig.cpp:9996-10191 `void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments(DynamicPrintConfig& printer_config, int extruder_count, int extruder_nozzle_volume_count, std::set<std::string>& key_set, std::string id_name, std::string variant_name)`:
+        /// every key of `key_set` (less `id_name`) is reduced from the variant table to one value per
+        /// filament of `printer_config`'s `filament_map`, the row of the variant of the filament's
+        /// extruder; then `id_name` itself when it is in the set.
+        ///
+        /// `printer_config` of `None` is the config itself; as in `update_values_to_printer_extruders`
+        /// the printer values are read before the first write. FIDELITY-NOTE: the log lines are not
+        /// written.
+        pub fn update_values_to_printer_extruders_for_multiple_filaments(
+            &mut self,
+            printer_config: Option<&DynamicPrintConfig>,
+            extruder_count: i32,
+            extruder_nozzle_volume_count: i32,
+            key_set: &BTreeSet<String>,
+            id_name: &str,
+            variant_name: &str,
+        ) -> CfgResult<()> {
+            let (opt_filament_map, opt_extruder_type, opt_nozzle_volume_type, opt_filament_volume_maps) = {
+                let printer: &DynamicPrintConfig = printer_config.unwrap_or(self);
+                (
+                    dyn_ints(printer.option("filament_map")).cloned(),
+                    dyn_enums_generic(printer.option("extruder_type")).cloned(),
+                    dyn_enums_generic(printer.option("nozzle_volume_type")).cloned(),
+                    dyn_ints(printer.option("filament_volume_map")).cloned(),
+                )
+            };
+            // filament_map not found, skipping
+            let Some(filament_maps) = opt_filament_map else { return Ok(()) };
+            let filament_count = filament_maps.len();
+            // extruder_type or nozzle_volume_type not found, skipping
+            let (Some(opt_extruder_type), Some(opt_nozzle_volume_type)) = (opt_extruder_type, opt_nozzle_volume_type) else {
+                return Ok(());
+            };
+            let filament_volume_maps: Vec<i32> = opt_filament_volume_maps.unwrap_or_default();
+            let opt_ids: Option<Vec<i32>> = if id_name.is_empty() { None } else { dyn_ints(self.option(id_name)).cloned() };
+            let mut variant_index: Vec<i32> = vec![-1; filament_count];
+
+            for f_index in 0..filament_count {
+                // get_at(filament_maps[f_index] - 1): a size_t index, -1 wraps and reads the front.
+                let e_idx = (filament_maps[f_index] - 1) as isize as usize;
+                let extruder_type = enums::ExtruderType::from_i32(*get_at(&opt_extruder_type, e_idx));
+                let mut nozzle_volume_type = enums::NozzleVolumeType::from_i32(*get_at(&opt_nozzle_volume_type, e_idx));
+
+                if (extruder_nozzle_volume_count > extruder_count || nozzle_volume_type == enums::NozzleVolumeType::NvtHybrid)
+                    && (f_index as i32) < filament_volume_maps.len() as i32
+                {
+                    nozzle_volume_type = enums::NozzleVolumeType::from_i32(filament_volume_maps[f_index]);
+                }
+
+                //variant index
+                variant_index[f_index] = self.get_index_for_extruder(f_index as i32 + 1, id_name, extruder_type, nozzle_volume_type, variant_name, 1);
+                if variant_index[f_index] < 0 {
+                    //for some updates happens in a invalid state(caused by popup window)
+                    //we need to avoid crash
+                    variant_index[f_index] = 0;
+                    if let Some(ids) = opt_ids.as_ref() {
+                        for (i, &id) in ids.iter().enumerate() {
+                            if id == f_index as i32 + 1 {
+                                variant_index[f_index] = i as i32;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // const ConfigDef *config_def = this->def(); never null for a DynamicPrintConfig.
+            let config_def = print_config_def();
+            let has_id_key = !id_name.is_empty() && key_set.contains(id_name);
+            // `opt->get_at(variant_index[f_index])`; FIDELITY-NOTE: an empty vector (front() of it is
+            // undefined behaviour in the C++) is left empty.
+            fn pick<T: Clone>(values: &[T], variant_index: &[i32]) -> Vec<T> {
+                if values.is_empty() {
+                    return Vec::new();
+                }
+                variant_index.iter().map(|&v| get_at(values, v as isize as usize).clone()).collect()
+            }
+            for key in key_set {
+                if has_id_key && key == id_name {
+                    continue;
+                }
+                let optdef = match config_def.get(key) {
+                    Some(d) => d,
+                    // can not find opt define
+                    None => continue,
+                };
+                match optdef.r#type {
+                    ConfigOptionType::CoStrings => {
+                        if let Some(values) = typed_values_mut::<String>(self, key, ConfigOptionType::CoStrings)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    ConfigOptionType::CoInts => {
+                        if let Some(values) = typed_values_mut::<i32>(self, key, ConfigOptionType::CoInts)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    ConfigOptionType::CoFloats => {
+                        if let Some(values) = typed_values_mut::<f64>(self, key, ConfigOptionType::CoFloats)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    ConfigOptionType::CoPercents => {
+                        if let Some(values) = typed_values_mut::<f64>(self, key, ConfigOptionType::CoPercents)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    ConfigOptionType::CoFloatsOrPercents => {
+                        if let Some(values) = typed_values_mut::<FloatOrPercent>(self, key, ConfigOptionType::CoFloatsOrPercents)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    ConfigOptionType::CoBools => {
+                        if let Some(values) = typed_values_mut::<u8>(self, key, ConfigOptionType::CoBools)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    ConfigOptionType::CoEnums => {
+                        if let Some(values) = typed_values_mut::<i32>(self, key, ConfigOptionType::CoEnums)? {
+                            *values = pick(values, &variant_index);
+                        }
+                    }
+                    // unsupported option type
+                    _ => {}
+                }
+            }
+            if has_id_key {
+                if let Some(ids) = opt_ids.as_ref() {
+                    let new_values = pick(ids, &variant_index);
+                    if let Some(values) = typed_values_mut::<i32>(self, id_name, ConfigOptionType::CoInts)? {
+                        *values = new_values;
+                    }
+                }
+            }
+            Ok(())
+        }
     }
 
     /// PrintConfig.hpp:2215-2216 `inline constexpr const char *canonical_multi_nozzle_printer_variant()`:

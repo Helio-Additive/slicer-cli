@@ -2025,6 +2025,10 @@ impl Print {
                 raw_settings_with_bbox.clone(),
             );
             provisional_header.config_block_settings = self.config_block_settings.clone();
+            // R943 (worker C): the used filaments and the tool ordering's nozzle map the header and
+            // the CONFIG_BLOCK write (GCode.cpp:2646-2655, Print.cpp:3258-3261).
+            provisional_header.used_filaments = self.export_header_used_filaments();
+            provisional_header.filament_nozzle_map = self.export_header_filament_nozzle_map();
             let mut full_gcode = provisional_header.generate_complete_header();
             full_gcode.push_str(&String::from_utf8_lossy(&body));
 
@@ -2054,6 +2058,8 @@ impl Print {
             prepare_time_seconds,
         );
         header.config_block_settings = self.config_block_settings.clone();
+        header.used_filaments = self.export_header_used_filaments();
+        header.filament_nozzle_map = self.export_header_filament_nozzle_map();
         let header_str = header.generate_complete_header();
 
         // Write to file: final header first, then the assembled body.
@@ -5593,6 +5599,35 @@ impl Print {
         extruders.sort_unstable();
         extruders.dedup();
         extruders
+    }
+
+    /// `print.get_slice_used_filaments(false)` for the header's `; filament:` line
+    /// (GCode.cpp:2646-2655): the tool ordering's `all_extruders()` (Print.cpp:2678) for a print
+    /// that is not sequential, which `export_set_extruders_ids` gives. `None` (the configured count)
+    /// for a sequential print, whose list is the union of the objects' orderings (Print.cpp:2637-2665),
+    /// not ported here.
+    fn export_header_used_filaments(&self) -> Option<Vec<u32>> {
+        let sequential = self.config.print_sequence == crate::print_config::PrintSequence::ByObject && self.objects.len() > 1;
+        if sequential {
+            return None;
+        }
+        Some(self.export_set_extruders_ids())
+    }
+
+    /// The nozzle map `ToolOrdering` hands `Print::update_filament_maps_to_config` for a print that
+    /// is not sequential and whose group result has no dynamic nozzle map
+    /// (`grouping_result.get_nozzle_map(-1)`, Print.cpp:3258-3261), from the group result
+    /// `_make_wipe_tower` stores. `None` when there is none.
+    fn export_header_filament_nozzle_map(&self) -> Option<Vec<i32>> {
+        let sequential = self.config.print_sequence == crate::print_config::PrintSequence::ByObject && self.objects.len() > 1;
+        if sequential {
+            return None;
+        }
+        let group_result = self.nozzle_group_result.as_ref()?;
+        if group_result.is_support_dynamic_nozzle_map() {
+            return None;
+        }
+        Some(group_result.get_nozzle_map(-1))
     }
 
     /// Print.hpp `const DynamicPrintConfig& full_print_config() const`. Made

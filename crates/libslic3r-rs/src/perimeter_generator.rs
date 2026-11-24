@@ -7613,6 +7613,37 @@ impl PerimeterGenerator {
         pg_scale_(if resolution > crate::libslic3r::EPSILON { resolution } else { crate::libslic3r::EPSILON })
     }
 
+    /// R943 probe (PA_L=a-b, diagnostic only, never changes output): process_arachne's tail in the
+    /// format of the pin's twin (target/parity-work/d/pa/patch.py over PerimeterGenerator.cpp:
+    /// pa_s0 the surface, pa_last / pa_ic before traverse_extrusions (1837), pa_a0 / pa_ipp / pa_u /
+    /// pa_fs / pa_no in add_infill_contour_for_arachne (1463-1484)); PAP=<tag>:<lidx> prints points.
+    fn pa_probe(tag: &str, l: usize, pp: &[crate::geometry::Polygon], x: f64) {
+        let Ok(v) = std::env::var("PA_L") else { return };
+        let mut it = v.split('-');
+        let a = it.next().and_then(|t| t.parse::<usize>().ok());
+        let b = it.next().and_then(|t| t.parse::<usize>().ok()).or(a);
+        match (a, b) {
+            (Some(a), Some(b)) if l >= a && l <= b => {}
+            _ => return,
+        }
+        let (mut np, mut sx, mut sy) = (0usize, 0i64, 0i64);
+        for p in pp {
+            for q in p.points() {
+                np += 1;
+                sx += q.x;
+                sy += q.y;
+            }
+        }
+        eprintln!("BOI {} L={} n={} np={} sx={} sy={} x={:.9}", tag, l, pp.len(), np, sx, sy, x);
+        if std::env::var("PAP").ok().as_deref() == Some(format!("{}:{}", tag, l).as_str()) {
+            for (i, p) in pp.iter().enumerate() {
+                for q in p.points() {
+                    eprintln!("PAP {} {} {}", i, q.x, q.y);
+                }
+            }
+        }
+    }
+
     /// PerimeterGenerator.cpp:1489-1848 `void PerimeterGenerator::process_arachne()`. `surfaces` is
     /// `this->slices->surfaces`; the result carries what the C++ writes: `entities` is `loops` (the
     /// collection of every island that has walls, one after the other), `infill_area` the expolygons of
@@ -7720,6 +7751,14 @@ impl PerimeterGenerator {
             let mut apply_circle_compensation = true;
             let perimeter_offset: f32 =
                 if apply_precise_outer_wall { -((ext_perimeter_width - ext_perimeter_spacing) as f32) } else { -((ext_perimeter_width / 2 - ext_perimeter_spacing / 2) as f32) };
+            Self::pa_probe("pa_s0", cfg.layer_id, &expolygons_to_polygons(std::slice::from_ref(&surface.expolygon)), surface_simplify_resolution as f64);
+            if let Ok(v) = std::env::var("PA_L") {
+                let mut it = v.split('-');
+                let a = it.next().and_then(|t| t.parse::<usize>().ok());
+                let b = it.next().and_then(|t| t.parse::<usize>().ok()).or(a);
+                let on = matches!((a, b), (Some(a), Some(b)) if cfg.layer_id >= a && cfg.layer_id <= b);
+                crate::arachne::wall_tool_paths::PA_LAYER.with(|c| c.set(if on { cfg.layer_id as i64 } else { -1 }));
+            }
             let mut last: ExPolygons = offset_ex_polygons(&simplify_p(&surface.expolygon, surface_simplify_resolution), perimeter_offset);
 
             if !last.is_empty() {
@@ -7848,6 +7887,7 @@ impl PerimeterGenerator {
                             one_wall_paths.enable_hole_compensation(true, circle_poly_indices.clone());
                         }
                         total_perimeters = one_wall_paths.get_tool_paths().clone();
+                        Self::pa_probe("pa_gic", cfg.layer_id, &one_wall_paths.get_inner_contour(), 0.);
                         infill_contour = union_ex(one_wall_paths.get_inner_contour());
                     } else {
                         // plan wall width as noraml
@@ -7857,6 +7897,7 @@ impl PerimeterGenerator {
                             normal_paths.enable_hole_compensation(true, circle_poly_indices.clone());
                         }
                         total_perimeters = normal_paths.get_tool_paths().clone();
+                        Self::pa_probe("pa_gic", cfg.layer_id, &normal_paths.get_inner_contour(), 0.);
                         infill_contour = union_ex(normal_paths.get_inner_contour());
                     }
                 }
@@ -8051,6 +8092,8 @@ impl PerimeterGenerator {
                     .zip(is_contour)
                     .map(|(extrusion, is_contour)| PerimeterGeneratorArachneExtrusion { extrusion, is_contour, fuzzify: false })
                     .collect();
+                Self::pa_probe("pa_last", cfg.layer_id, &expolygons_to_polygons(&last), loop_number as f64);
+                Self::pa_probe("pa_ic", cfg.layer_id, &expolygons_to_polygons(&infill_contour), total_perimeters.len() as f64);
                 let extrusion_coll = traverse_extrusions(&members, &mut result.loop_nodes, &mut pg_extrusions, &apply_fuzzy_skin);
                 if !extrusion_coll.entities.is_empty() {
                     result.entities.entities.push(ExtrusionEntityType::Collection(Box::new(extrusion_coll)));
@@ -8106,6 +8149,16 @@ impl PerimeterGenerator {
         let mut inner_pp: crate::geometry::Polygons = Vec::new();
         for ex in &infill_contour {
             inner_pp.extend(simplify_p(ex, m_scaled_resolution));
+        }
+        if std::env::var("PA_L").is_ok() {
+            let l = self.config.layer_id;
+            Self::pa_probe("pa_a0", l, &expolygons_to_polygons(&infill_contour), insert as f64);
+            Self::pa_probe("pa_ipp", l, &inner_pp, m_scaled_resolution as f64);
+            Self::pa_probe("pa_u", l, &expolygons_to_polygons(&union_ex(&inner_pp)), min_perimeter_infill_spacing as f64);
+            let fs = offset2_ex(&union_ex(&inner_pp), (-(min_perimeter_infill_spacing as f64) / 2.) as f32, (insert as f64 + min_perimeter_infill_spacing as f64 / 2.) as f32);
+            Self::pa_probe("pa_fs", l, &expolygons_to_polygons(&fs), spacing as f64);
+            let no = offset2_ex(&union_ex(&inner_pp), (-(min_perimeter_infill_spacing as f64) / 2.) as f32, (min_perimeter_infill_spacing as f64 / 2.) as f32);
+            Self::pa_probe("pa_no", l, &expolygons_to_polygons(&no), 0.);
         }
 
         result.infill_area.extend(offset2_ex(

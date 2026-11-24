@@ -1140,7 +1140,7 @@ fn get_segments(polygon: &[ColoredLine]) -> Vec<(usize, usize)> {
 }
 
 // MultiMaterialSegmentation.cpp:641
-fn filter_painted_lines(
+pub fn filter_painted_lines(
     line_to_process: &Line,
     start_idx: usize,
     end_idx: usize,
@@ -1214,7 +1214,7 @@ fn filter_painted_lines(
 // MultiMaterialSegmentation.cpp:688
 // `painted_lines` is taken by value (the C++ takes `std::vector<PaintedLine> &&`).
 #[allow(dead_code)]
-fn post_process_painted_lines(
+pub fn post_process_painted_lines(
     contours: &[Contour],
     mut painted_lines: Vec<PaintedLine>,
 ) -> Vec<Vec<PaintedLine>> {
@@ -1300,7 +1300,7 @@ fn are_lines_connected(colored_lines: &[ColoredLine]) -> bool {
 }
 
 // MultiMaterialSegmentation.cpp:730
-fn colorize_line(
+pub fn colorize_line(
     line_to_process: &Line,
     start_idx: usize,
     end_idx: usize,
@@ -1408,7 +1408,7 @@ fn colorize_line(
 }
 
 // MultiMaterialSegmentation.cpp:807
-fn filter_colorized_polygon(mut new_lines: ColoredLines) -> ColoredLines {
+pub fn filter_colorized_polygon(mut new_lines: ColoredLines) -> ColoredLines {
     // MultiMaterialSegmentation.cpp:808-816
     for line_idx in 2..new_lines.len() {
         let line_0 = new_lines[line_idx - 2];
@@ -1548,7 +1548,7 @@ fn filter_colorized_polygon(mut new_lines: ColoredLines) -> ColoredLines {
 
 // MultiMaterialSegmentation.cpp:896
 #[allow(dead_code)]
-fn colorize_contour(contour: &Contour, painted_contour: &[PaintedLine]) -> ColoredLines {
+pub fn colorize_contour(contour: &Contour, painted_contour: &[PaintedLine]) -> ColoredLines {
     // MultiMaterialSegmentation.cpp:897
     debug_assert!(
         painted_contour.is_empty()
@@ -1617,7 +1617,7 @@ fn colorize_contour(contour: &Contour, painted_contour: &[PaintedLine]) -> Color
 
 // MultiMaterialSegmentation.cpp:937
 #[allow(dead_code)]
-fn colorize_contours(
+pub fn colorize_contours(
     contours: &[Contour],
     painted_contours: &[Vec<PaintedLine>],
 ) -> Vec<ColoredLines> {

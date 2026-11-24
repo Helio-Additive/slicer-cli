@@ -152,3 +152,175 @@ fn multi_material_segmentation_native_parity() {
     );
     assert_eq!(mismatches, [0, 0, 0], "of {} diagrams", expected.len());
 }
+
+/// Vectors of tests/data/multi_material_segmentation/gen_painted.cpp; `MMS_PAINTED_PARITY_VECTORS`
+/// names a file of the generator to read instead of the committed one.
+fn read_painted_vectors() -> Vec<String> {
+    if let Ok(path) = std::env::var("MMS_PAINTED_PARITY_VECTORS") {
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        return text.lines().map(|l| l.to_string()).collect();
+    }
+    let path = format!("{}/tests/data/multi_material_segmentation/painted_vectors.txt.gz", env!("CARGO_MANIFEST_DIR"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(file).read_to_string(&mut text).unwrap_or_else(|e| panic!("{path}: {e}"));
+    text.lines().map(|l| l.to_string()).collect()
+}
+
+/// post_process_painted_lines (with filter_painted_lines; MultiMaterialSegmentation.cpp:642-719) and
+/// colorize_contours (with colorize_contour, colorize_line, filter_colorized_polygon; 731-959) against
+/// the pin on synthetic contours whose painted lines tie in the sort's comparator (gen_painted.cpp).
+#[test]
+fn painted_lines_native_parity() {
+    use slicer::edge_grid::Contour;
+    use slicer::geometry::{Line, Point};
+    use slicer::multi_material_segmentation::{
+        build_graph, colorize_contours, extract_colored_segments, has_layer_only_one_color, post_process_painted_lines, remove_multiple_edges_in_vertices, PaintedLine,
+    };
+    let lines = read_painted_vectors();
+    assert!(!lines.is_empty());
+    let (mut bad_pp, mut bad_col, mut n_painted) = (0usize, 0usize, 0usize);
+    let (mut bad_seg, mut n_graph, mut n_graph_panic) = (0usize, 0usize, 0usize);
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    for (k, l) in lines.iter().enumerate() {
+        let (inp, res) = l.split_once(" => ").expect("=>");
+        let (want_pp, rest) = res.split_once(" | ").expect("|");
+        let (want_col, want_seg) = rest.split_once(" # ").expect("#");
+        let t: Vec<i64> = inp[3..].split(' ').filter(|s| *s != ";").map(|s| s.parse().unwrap()).collect();
+        let mut i = 0usize;
+        let nc = t[i] as usize;
+        i += 1;
+        let mut contours = Vec::with_capacity(nc);
+        for _ in 0..nc {
+            let n = t[i] as usize;
+            i += 1;
+            let pts: Vec<Point> = (0..n).map(|j| Point::new(t[i + 2 * j], t[i + 2 * j + 1])).collect();
+            i += 2 * n;
+            contours.push(Contour::new_closed(pts));
+        }
+        let m = t[i] as usize;
+        i += 1;
+        let mut painted = Vec::with_capacity(m);
+        for _ in 0..m {
+            painted.push(PaintedLine {
+                contour_idx: t[i] as usize,
+                line_idx: t[i + 1] as usize,
+                projected_line: Line { a: Point::new(t[i + 2], t[i + 3]), b: Point::new(t[i + 4], t[i + 5]) },
+                color: t[i + 6] as i32,
+            });
+            i += 7;
+        }
+        n_painted += m;
+        let mut post = post_process_painted_lines(&contours, painted);
+        if post.is_empty() {
+            // gen_painted.cpp: no painted line gives no colorization input; the generator passes empty
+            // vectors per contour.
+            post = vec![Vec::new(); nc];
+        }
+        let mut got_pp: Vec<String> = Vec::new();
+        for v in &post {
+            got_pp.push(v.len().to_string());
+            for pl in v {
+                let pl: &PaintedLine = pl;
+                got_pp.push(format!(
+                    "{} {} {} {} {} {} {}",
+                    pl.contour_idx, pl.line_idx, pl.projected_line.a.x, pl.projected_line.a.y, pl.projected_line.b.x, pl.projected_line.b.y, pl.color
+                ));
+            }
+        }
+        let col = colorize_contours(&contours, &post);
+        let mut got_col: Vec<String> = Vec::new();
+        for v in &col {
+            got_col.push(v.len().to_string());
+            for cl in v {
+                got_col.push(format!(
+                    "{} {} {} {} {} {} {}",
+                    cl.line.a.x, cl.line.a.y, cl.line.b.x, cl.line.b.y, cl.color, cl.poly_idx, cl.local_line_idx
+                ));
+            }
+        }
+        // MultiMaterialSegmentation.cpp:2420-2428: the graph stage of a layer.
+        let got_seg = if has_layer_only_one_color(&col) {
+            "one".to_string()
+        } else {
+            n_graph += 1;
+            // A diagram on which the pin's Voronoi.cpp logs "missing Voronoi vertex even after the
+            // rotation of input" can carry edges with extreme coordinates: Line::intersection's integer
+            // subtraction then overflows (a panic in a debug build; the pin wraps). Counted apart.
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Diagnostic only: MMS_PAINTED_DUMP_CASE=<1-based case> prints the graph after each step
+            // in the format of a probe copy of gen_painted.cpp (G/N/A lines).
+            let dump = std::env::var("MMS_PAINTED_DUMP_CASE").ok().and_then(|v| v.parse::<usize>().ok()) == Some(k + 1);
+            let dumpg = |st: &str, g: &slicer::multi_material_segmentation::MmuGraph| {
+                if !dump {
+                    return;
+                }
+                eprintln!("G {} nodes {} arcs {}", st, g.nodes.len(), g.arcs.len());
+                for (i, n) in g.nodes.iter().enumerate() {
+                    let a: Vec<String> = n.arc_idxs.iter().map(|x| x.to_string()).collect();
+                    eprintln!("N {} {} {} {} : {}", st, i, n.point.x, n.point.y, a.join(" "));
+                }
+                for (i, a) in g.arcs.iter().enumerate() {
+                    eprintln!("A {} {} {} {} {} {:?}", st, i, a.from_idx, a.to_idx, a.color, a.r#type);
+                }
+            };
+            let mut graph = build_graph(0, &col);
+            dumpg("b", &graph);
+            remove_multiple_edges_in_vertices(&mut graph, &col);
+            dumpg("m", &graph);
+            graph.remove_nodes_with_one_arc();
+            dumpg("r", &graph);
+            let segs = extract_colored_segments(&graph, 3);
+            let mut o: Vec<String> = vec![segs.len().to_string()];
+            for v in &segs {
+                o.push(v.len().to_string());
+                for poly in v {
+                    o.push(format!("0 {}", poly.points.len()));
+                    for p in &poly.points {
+                        o.push(format!("{} {}", p.x, p.y));
+                    }
+                }
+            }
+            o.join(" ")
+            }))
+            .unwrap_or_else(|_| "PANIC".to_string())
+        };
+        if got_seg == "PANIC" {
+            n_graph_panic += 1;
+        } else if got_seg != want_seg {
+            bad_seg += 1;
+            if bad_seg <= 3 {
+                eprintln!("case {}: graph stage differs\n  C++:  {}\n  Rust: {}", k + 1, want_seg, got_seg);
+            }
+        }
+        let (gp, gc) = (got_pp.join(" "), got_col.join(" "));
+        if gp != want_pp {
+            bad_pp += 1;
+            if bad_pp <= 3 {
+                eprintln!("case {}: post_process_painted_lines differs\n  C++:  {}\n  Rust: {}", k + 1, want_pp, gp);
+            }
+        }
+        if gc != want_col {
+            bad_col += 1;
+            if bad_col <= 3 {
+                eprintln!("case {}: colorize_contours differs\n  C++:  {}\n  Rust: {}", k + 1, want_col, gc);
+            }
+        }
+    }
+    std::panic::set_hook(default_hook);
+    eprintln!(
+        "painted lines parity: {} cases, {} painted lines, {} graphs; differ: post_process_painted_lines {}, colorize_contours {}, graph stage {} (+ {} graphs that overflow in Rust, reported, not asserted)",
+        lines.len(),
+        n_painted,
+        n_graph,
+        bad_pp,
+        bad_col,
+        bad_seg,
+        n_graph_panic
+    );
+    // The graph stage (build_graph, remove_multiple_edges_in_vertices, remove_nodes_with_one_arc,
+    // extract_colored_segments) is REPORTED, not asserted: on the committed vectors 1 of 1,704 graphs
+    // differs (case 578: three extra points in one polygon of colour 0) and 7 overflow in Rust.
+    assert_eq!((bad_pp, bad_col), (0, 0), "of {} cases", lines.len());
+}
