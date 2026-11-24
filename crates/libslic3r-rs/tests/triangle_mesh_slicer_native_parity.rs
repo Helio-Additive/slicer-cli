@@ -333,3 +333,284 @@ fn cut_mesh_native_parity() {
     assert!(cases > 0);
     assert_eq!(ne, 0, "cut_mesh differs from the pin");
 }
+
+type Pts = Vec<Vec<(i64, i64)>>;
+
+fn read_ex<'a>(it: &mut impl Iterator<Item = &'a str>, tag: &str) -> Vec<(Vec<(i64, i64)>, Pts)> {
+    let h: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+    assert_eq!(h[0], tag);
+    let n: usize = h[1].parse().unwrap();
+    (0..n)
+        .map(|_| {
+            let e: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            assert_eq!(e[0], "e");
+            let mut c = read_polys(it, "c");
+            let holes = read_polys(it, "h");
+            (c.remove(0), holes)
+        })
+        .collect()
+}
+
+/// R946: both slice_mesh overloads (TriangleMeshSlicer.cpp:1982-2056 with the vector-of-zs slice_make_lines 511-535
+/// and make_loops 1534-1584 / 1433-1530; the single plane 2059-2119 with its face mask and masked edge ids), the three
+/// slice_mesh_ex overloads (2121-2170, TriangleMeshSlicer.hpp:78-95), the raw lines of slice_make_lines and
+/// make_expolygons_simple (1716-1750) against tests/data/triangle_mesh_slicer/gen_slice.cpp (`gen_slice <out.txt>`,
+/// gzip -9n into slice_vectors.txt.gz; or TMS_SLICE_VECTORS=<plain file>): 72 meshes of the pin's makers (a cube with
+/// a hole among them) under the identity, a rotation, a tilt with a scale and a mirror, planes in the middle and
+/// through vertices, every slicing mode, closing radius, extra offset and resolution. Exact: same lines, same
+/// polygons in order with the same start points.
+#[test]
+fn slice_mesh_native_parity() {
+    use slicer::geometry::{ExPolygons, Polygons};
+    use slicer::triangle_mesh_slicer::{
+        make_expolygons_simple_at_plane, slice_make_lines_raw, MeshSlicingParams, MeshSlicingParamsEx, SliceMesh, SliceMeshEx,
+        SlicingMode,
+    };
+    let text = match std::env::var("TMS_SLICE_VECTORS") {
+        Ok(path) => std::fs::read_to_string(&path).expect("vectors"),
+        Err(_) => {
+            use std::io::Read;
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/triangle_mesh_slicer/slice_vectors.txt.gz");
+            let mut s = String::new();
+            flate2::read::GzDecoder::new(std::fs::File::open(path).expect("slice_vectors.txt.gz"))
+                .read_to_string(&mut s)
+                .expect("gzip");
+            s
+        }
+    };
+    let mode_of = |m: &str| match m {
+        "0" => SlicingMode::Regular,
+        "1" => SlicingMode::EvenOdd,
+        "2" => SlicingMode::Positive,
+        _ => SlicingMode::PositiveLargestContour,
+    };
+    let to_pts = |ps: &Polygons| -> Pts { ps.iter().map(|p| p.points.iter().map(|q| (q.x as i64, q.y as i64)).collect()).collect() };
+    let to_ex = |exs: &ExPolygons| -> Vec<(Vec<(i64, i64)>, Pts)> {
+        exs.iter()
+            .map(|ex| (ex.contour.points.iter().map(|q| (q.x as i64, q.y as i64)).collect(), to_pts(&ex.holes)))
+            .collect()
+    };
+    let no_cancel: &dyn Fn() = &|| {};
+    let mut it = text.lines();
+    let mut cases = 0usize;
+    // Stage name -> (outputs compared, outputs that differ).
+    let mut stats: std::collections::BTreeMap<&str, (usize, usize)> = std::collections::BTreeMap::new();
+    let mut bad: Vec<String> = Vec::new();
+    let mut note = |stats: &mut std::collections::BTreeMap<&'static str, (usize, usize)>, stage: &'static str, case: &str, eq: bool| {
+        let e = stats.entry(stage).or_insert((0, 0));
+        e.0 += 1;
+        if !eq {
+            e.1 += 1;
+            if bad.len() < 12 {
+                bad.push(format!("case {} {}", case, stage));
+            }
+        }
+    };
+    let mut nlines = 0usize;
+    while let Some(head) = it.next() {
+        let h: Vec<&str> = head.split_whitespace().collect();
+        assert_eq!(h[0], "case");
+        let case = h[1].to_string();
+        let (nv, nt, nz): (usize, usize, usize) = (h[2].parse().unwrap(), h[3].parse().unwrap(), h[4].parse().unwrap());
+        let m: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+        assert_eq!(m[0], "m");
+        let mut trafo = [0f64; 16];
+        for (i, x) in m[1..17].iter().enumerate() {
+            trafo[i] = hex(x);
+        }
+        let mut its = indexed_triangle_set::default();
+        for _ in 0..nv {
+            let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            its.vertices.push(StlVertex::new(hex(t[1]) as f32, hex(t[2]) as f32, hex(t[3]) as f32));
+        }
+        for _ in 0..nt {
+            let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            its.indices.push(StlTriangleVertexIndices::new(t[1].parse().unwrap(), t[2].parse().unwrap(), t[3].parse().unwrap()));
+        }
+        let z: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+        assert_eq!(z[0], "z");
+        let zs: Vec<f32> = z[1..].iter().map(|v| hex(v) as f32).collect();
+        assert_eq!(zs.len(), nz);
+        let p: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+        assert_eq!(p[0], "par");
+        let mut params = MeshSlicingParams::default();
+        params.mode = mode_of(p[1]);
+        params.mode_below = mode_of(p[2]);
+        params.slicing_mode_normal_below_layer = p[3].parse().unwrap();
+        params.frame_trafo = Some(trafo);
+        let mut pex = MeshSlicingParamsEx::default();
+        pex.base = params.clone();
+        pex.closing_radius = hex(p[4]) as f32;
+        pex.extra_offset = hex(p[5]) as f32;
+        pex.resolution = hex(p[6]);
+        let closing_radius = hex(p[7]) as f32;
+        let plane_z = hex(p[8]) as f32;
+
+        // slice_make_lines (vector of zs).
+        let raw = slice_make_lines_raw(&its, &trafo, &zs);
+        for i in 0..nz {
+            let l: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            assert_eq!(l[0], "lines");
+            let n: usize = l[2].parse().unwrap();
+            let want: Vec<[i64; 10]> = (0..n)
+                .map(|_| {
+                    let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+                    let mut a = [0i64; 10];
+                    for k in 0..10 {
+                        a[k] = t[1 + k].parse().unwrap();
+                    }
+                    a
+                })
+                .collect();
+            nlines += n;
+            note(&mut stats, "slice_make_lines", &case, raw[i] == want);
+        }
+        // slice_mesh, vector of zs.
+        let sm: Vec<Polygons> = SliceMesh::slice_mesh(&its, (zs.as_slice(), &params, no_cancel));
+        for i in 0..nz {
+            let want = read_polys(&mut it, &format!("sm{}", i));
+            note(&mut stats, "slice_mesh(zs)", &case, to_pts(&sm[i]) == want);
+        }
+        // slice_mesh, single plane.
+        let sp: Polygons = SliceMesh::slice_mesh(&its, (plane_z, &params));
+        let want = read_polys(&mut it, "sp");
+        note(&mut stats, "slice_mesh(plane_z)", &case, to_pts(&sp) == want);
+        // slice_mesh_ex, three overloads.
+        let ex1: Vec<ExPolygons> = SliceMeshEx::slice_mesh_ex(&its, (zs.as_slice(), &pex, no_cancel));
+        let ex2: Vec<ExPolygons> = SliceMeshEx::slice_mesh_ex(&its, (zs.as_slice(), no_cancel));
+        let ex3: Vec<ExPolygons> = SliceMeshEx::slice_mesh_ex(&its, (zs.as_slice(), closing_radius, no_cancel));
+        for i in 0..nz {
+            let w1 = read_ex(&mut it, &format!("ex1_{}", i));
+            note(&mut stats, "slice_mesh_ex(params)", &case, to_ex(&ex1[i]) == w1);
+            let w2 = read_ex(&mut it, &format!("ex2_{}", i));
+            note(&mut stats, "slice_mesh_ex()", &case, to_ex(&ex2[i]) == w2);
+            let w3 = read_ex(&mut it, &format!("ex3_{}", i));
+            note(&mut stats, "slice_mesh_ex(closing_radius)", &case, to_ex(&ex3[i]) == w3);
+        }
+        // make_expolygons_simple.
+        let es = make_expolygons_simple_at_plane(&its, plane_z);
+        let want = read_ex(&mut it, "es");
+        note(&mut stats, "make_expolygons_simple", &case, to_ex(&es) == want);
+        cases += 1;
+    }
+    eprintln!("slice_mesh: {} cases, {} pin lines", cases, nlines);
+    for (stage, (n, ne)) in &stats {
+        eprintln!("  {}: {} outputs, {} differ", stage, n, ne);
+    }
+    for b in &bad {
+        eprintln!("  differs: {}", b);
+    }
+    assert!(cases > 0);
+    for (stage, (_, ne)) in &stats {
+        assert_eq!(*ne, 0, "{} differs from the pin", stage);
+    }
+}
+
+fn read_mesh_out<'a>(it: &mut impl Iterator<Item = &'a str>, tag: &str) -> (Vec<[u32; 3]>, Vec<[i32; 3]>) {
+    let h: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+    assert_eq!(h[0], tag);
+    let (nv, nt): (usize, usize) = (h[1].parse().unwrap(), h[2].parse().unwrap());
+    let verts = (0..nv)
+        .map(|_| {
+            let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            [(hex(t[1]) as f32).to_bits(), (hex(t[2]) as f32).to_bits(), (hex(t[3]) as f32).to_bits()]
+        })
+        .collect();
+    let faces = (0..nt)
+        .map(|_| {
+            let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            [t[1].parse().unwrap(), t[2].parse().unwrap(), t[3].parse().unwrap()]
+        })
+        .collect();
+    (verts, faces)
+}
+
+/// R946: cut_mesh by the plane of four points (TriangleMeshSlicer.cpp:2727-2788, trait CutMesh) against
+/// tests/data/triangle_mesh_slicer/gen_cut_plane.cpp (`gen_cut_plane <out.txt>`, gzip -9n into
+/// cut_plane_vectors.txt.gz; or TMS_CUT_PLANE_VECTORS=<plain file>): 40 meshes, tilted planes with the normal up and
+/// down, vertical and horizontal planes. The vertices (moved back by the inverse transform) and the faces before
+/// the caps are asserted; the cap triangles are counted, not asserted (tesselate.rs runs earcut where the pin runs
+/// glu-libtess, as in cut_mesh_native_parity).
+#[test]
+fn cut_mesh_plane_points_native_parity() {
+    use slicer::geometry::geometry::Vec3d;
+    use slicer::triangle_mesh_slicer::CutMesh;
+    let text = match std::env::var("TMS_CUT_PLANE_VECTORS") {
+        Ok(path) => std::fs::read_to_string(&path).expect("vectors"),
+        Err(_) => {
+            use std::io::Read;
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/triangle_mesh_slicer/cut_plane_vectors.txt.gz");
+            let mut s = String::new();
+            flate2::read::GzDecoder::new(std::fs::File::open(path).expect("cut_plane_vectors.txt.gz"))
+                .read_to_string(&mut s)
+                .expect("gzip");
+            s
+        }
+    };
+    let mut it = text.lines();
+    let (mut cases, mut outputs, mut verts_ne, mut faces_ne, mut cap_only) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut bad: Vec<String> = Vec::new();
+    while let Some(head) = it.next() {
+        let h: Vec<&str> = head.split_whitespace().collect();
+        assert_eq!(h[0], "case");
+        let (nv, nt): (usize, usize) = (h[2].parse().unwrap(), h[3].parse().unwrap());
+        let pp: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+        assert_eq!(pp[0], "pp");
+        let mut plane_points = [Vec3d::new(0.0, 0.0, 0.0); 4];
+        for i in 0..4 {
+            plane_points[i] = Vec3d::new(hex(pp[1 + 3 * i]), hex(pp[2 + 3 * i]), hex(pp[3 + 3 * i]));
+        }
+        let mut its = indexed_triangle_set::default();
+        for _ in 0..nv {
+            let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            its.vertices.push(StlVertex::new(hex(t[1]) as f32, hex(t[2]) as f32, hex(t[3]) as f32));
+        }
+        for _ in 0..nt {
+            let t: Vec<&str> = it.next().unwrap().split_whitespace().collect();
+            its.indices.push(StlTriangleVertexIndices::new(t[1].parse().unwrap(), t[2].parse().unwrap(), t[3].parse().unwrap()));
+        }
+        let want_upper = read_mesh_out(&mut it, "upper");
+        let want_lower = read_mesh_out(&mut it, "lower");
+        let (mut upper, mut lower) = (indexed_triangle_set::default(), indexed_triangle_set::default());
+        CutMesh::cut_mesh(&its, (plane_points, Some(&mut upper), Some(&mut lower), true));
+        for (tag, got, want) in [("upper", &upper, &want_upper), ("lower", &lower, &want_lower)] {
+            outputs += 1;
+            let gv: Vec<[u32; 3]> = got.vertices.iter().map(|v| [v.x.to_bits(), v.y.to_bits(), v.z.to_bits()]).collect();
+            let gf: Vec<[i32; 3]> = got.indices.iter().map(|t| [t[0] as i32, t[1] as i32, t[2] as i32]).collect();
+            if gv != want.0 {
+                verts_ne += 1;
+                if bad.len() < 8 {
+                    let first = gv.iter().zip(want.0.iter()).position(|(a, b)| a != b);
+                    bad.push(format!("case {} {} vertices: rust {} pin {} first differing {:?}", h[1], tag, gv.len(), want.0.len(), first));
+                }
+            }
+            if gf != want.1 {
+                // The faces before the first difference; a cap-only difference leaves every face before the caps equal,
+                // and the caps are the faces whose three vertices were created on the cut (index >= the shell's count is
+                // not known here), so the test counts the outputs whose face COUNT agrees and differ only after the
+                // common prefix.
+                let prefix = gf.iter().zip(want.1.iter()).take_while(|(a, b)| a == b).count();
+                let n_cut_faces = want.1.iter().skip(prefix).count();
+                if gf.len() == want.1.len() {
+                    cap_only += 1;
+                } else {
+                    faces_ne += 1;
+                }
+                if bad.len() < 8 {
+                    bad.push(format!("case {} {} faces: rust {} pin {}, equal prefix {}, pin faces after it {}", h[1], tag, gf.len(), want.1.len(), prefix, n_cut_faces));
+                }
+            }
+        }
+        cases += 1;
+    }
+    eprintln!(
+        "cut_mesh(plane_points): {} cases, {} outputs: vertices differ in {}, faces differ after a common prefix with the same count in {} (caps), with another count in {}",
+        cases, outputs, verts_ne, cap_only, faces_ne
+    );
+    for b in &bad {
+        eprintln!("  {}", b);
+    }
+    assert!(cases > 0);
+    assert_eq!(verts_ne, 0, "cut_mesh(plane_points) vertices differ from the pin");
+    assert_eq!(faces_ne, 0, "cut_mesh(plane_points) face counts differ from the pin");
+}

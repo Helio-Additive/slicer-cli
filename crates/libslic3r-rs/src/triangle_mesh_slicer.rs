@@ -407,11 +407,15 @@ fn slice_facet(
 }
 
 // TriangleMeshSlicer.cpp:475-508
-// `slice_facet_at_zs` — the `TransformVertex` is applied by the caller producing
-// `mesh_vertices` already transformed/scaled, so here we take the vertices directly.
+// template<typename TransformVertex> void slice_facet_at_zs(const std::vector<stl_vertex> &mesh_vertices,
+//     const TransformVertex &transform_vertex_fn, const stl_triangle_vertex_indices &indices, const Vec3i &edge_ids,
+//     const std::vector<float> &zs, std::vector<IntersectionLines> &lines, std::array<std::mutex, 64> &lines_mutex)
+// The mutexes guard the appends of the pin's parallel face loop; the loop here is sequential.
 fn slice_facet_at_zs(
-    // Scaled or unscaled vertices (already transformed by transform_vertex_fn).
+    // Scaled or unscaled vertices.
     mesh_vertices: &[StlVertex],
+    // Transform and optionally scale the vertices.
+    transform_vertex_fn: &dyn Fn(&StlVertex) -> StlVertex,
     indices: &Vec3i,
     edge_ids: &Vec3i,
     // Scaled or unscaled zs.
@@ -420,9 +424,9 @@ fn slice_facet_at_zs(
 ) {
     // TriangleMeshSlicer.cpp:487
     let vertices: [StlVertex; 3] = [
-        mesh_vertices[indices[0] as usize],
-        mesh_vertices[indices[1] as usize],
-        mesh_vertices[indices[2] as usize],
+        transform_vertex_fn(&mesh_vertices[indices[0] as usize]),
+        transform_vertex_fn(&mesh_vertices[indices[1] as usize]),
+        transform_vertex_fn(&mesh_vertices[indices[2] as usize]),
     ];
 
     // find facet extents
@@ -470,11 +474,17 @@ fn upper_bound(zs: &[f32], value: f32) -> usize {
     zs.partition_point(|&z| z <= value)
 }
 
-// TriangleMeshSlicer.cpp:510-532 — vector-of-zs variant of slice_make_lines.
-// `transform_vertex_fn` is applied by the caller, so `vertices` are already
-// transformed. Runs sequentially (no TBB).
+// TriangleMeshSlicer.cpp:510-535 — vector-of-zs variant of slice_make_lines:
+// template<typename TransformVertex, typename ThrowOnCancel> static inline std::vector<IntersectionLines> slice_make_lines(
+//     const std::vector<stl_vertex> &vertices, const TransformVertex &transform_vertex_fn,
+//     const std::vector<stl_triangle_vertex_indices> &indices, const std::vector<Vec3i> &face_edge_ids,
+//     const std::vector<float> &zs, const ThrowOnCancel throw_on_cancel_fn)
+// The pin runs the faces through tbb::parallel_for and appends under 64 mutexes, so the order of a layer's lines
+// follows the thread schedule; on one thread it is the face order, which is the order here.
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (slice_mesh_native_parity, the 'lines' stage).
 fn slice_make_lines(
     vertices: &[StlVertex],
+    transform_vertex_fn: &dyn Fn(&StlVertex) -> StlVertex,
     indices: &[Vec3i],
     face_edge_ids: &[Vec3i],
     zs: &[f32],
@@ -488,7 +498,7 @@ fn slice_make_lines(
         if (face_idx & 0x0ffff) == 0 {
             throw_on_cancel_fn();
         }
-        slice_facet_at_zs(vertices, &indices[face_idx], &face_edge_ids[face_idx], zs, &mut lines);
+        slice_facet_at_zs(vertices, transform_vertex_fn, &indices[face_idx], &face_edge_ids[face_idx], zs, &mut lines);
     }
     lines
 }
@@ -1776,7 +1786,7 @@ fn slice_mesh_its(
                 .collect()
         };
         // TriangleMeshSlicer.cpp:1884 / 1894
-        lines = slice_make_lines(&scaled_vertices, &mesh.indices, &face_edge_ids, zs, throw_on_cancel);
+        lines = slice_make_lines(&scaled_vertices, &|p: &StlVertex| *p, &mesh.indices, &face_edge_ids, zs, throw_on_cancel);
     }
 
     // TriangleMeshSlicer.cpp:1900
@@ -1812,7 +1822,7 @@ pub fn slice_mesh_its_identity(mesh: &indexed_triangle_set, zs: &[f32], params: 
         let s: f32 = (1. / crate::libslic3r::SCALING_FACTOR) as f32;
         mesh.vertices.iter().map(|p| StlVertex::new(p.x * s, p.y * s, p.z)).collect()
     };
-    let mut lines = slice_make_lines(&scaled_vertices, &mesh.indices, &face_edge_ids, zs, throw_on_cancel);
+    let mut lines = slice_make_lines(&scaled_vertices, &|p: &StlVertex| *p, &mesh.indices, &face_edge_ids, zs, throw_on_cancel);
     // TriangleMeshSlicer.cpp:1900
     throw_on_cancel();
     // TriangleMeshSlicer.cpp:1902
@@ -2957,12 +2967,348 @@ pub fn slice_mesh_at_z_transformed(
     let face_edge_ids = its_face_edge_ids(mesh);
     let mut lines_layers = slice_make_lines(
         vertices_transformed,
+        &|p: &StlVertex| *p,
         &mesh.indices,
         &face_edge_ids,
         &[z],
         &|| {},
     );
     make_loops_single(&mut lines_layers[0])
+}
+
+// ---------------------------------------------------------------------------
+// R946: the C++-named overloads of make_loops, slice_mesh and slice_mesh_ex with the pin's slicing transform
+// `params.trafo`, which is `MeshSlicingParams::frame_trafo` here (the row-major 4x4 of the Transform3d; None is
+// the identity). The Rust-only `center_offset` fields play no part in them. Nothing live calls them;
+// tests/triangle_mesh_slicer_native_parity.rs (slice_mesh_native_parity) holds them equal to the pin.
+// ---------------------------------------------------------------------------
+
+const TRAFO16_IDENTITY: [f64; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+
+/// The two `make_loops` overloads of TriangleMeshSlicer.cpp:1433-1530 and 1534-1584, one implementation per
+/// argument list of the C++; `Args` holds the arguments after the lines.
+trait MakeLoops<Args> {
+    type Output;
+    fn make_loops(&mut self, args: Args) -> Self::Output;
+}
+
+// TriangleMeshSlicer.cpp:1433-1530
+// static Polygons make_loops(IntersectionLines &lines)
+// The lines are chained by triangle connectivity, then the open polylines exactly (same direction, then reversed),
+// then the gaps up to 2 mm are closed (same direction, then reversed). [`make_loops_single`] is the body.
+impl MakeLoops<()> for IntersectionLines {
+    type Output = Polygons;
+    fn make_loops(&mut self, _args: ()) -> Polygons {
+        make_loops_single(self)
+    }
+}
+
+// TriangleMeshSlicer.cpp:1534-1584
+// template<typename ThrowOnCancel> static std::vector<Polygons> make_loops(std::vector<IntersectionLines> &lines,
+//     const MeshSlicingParams &params, ThrowOnCancel throw_on_cancel)
+// Every layer through the single-layer make_loops, then oriented by the layer's slicing mode. [`make_loops_layers`]
+// is the body (the layers are independent, so the parallel loop gives the order of the serial one).
+impl<'a> MakeLoops<(&'a MeshSlicingParams, &'a dyn Fn())> for [IntersectionLines] {
+    type Output = Vec<Polygons>;
+    fn make_loops(&mut self, (params, throw_on_cancel): (&'a MeshSlicingParams, &'a dyn Fn())) -> Vec<Polygons> {
+        make_loops_layers(self, params, throw_on_cancel)
+    }
+}
+
+/// The two `slice_mesh` overloads of TriangleMeshSlicer.hpp:60-69 (TriangleMeshSlicer.cpp:1982-2056 and 2059-2119),
+/// one implementation per argument list of the C++; `Args` holds the arguments after the mesh.
+pub trait SliceMesh<Args> {
+    type Output;
+    fn slice_mesh(&self, args: Args) -> Self::Output;
+}
+
+// TriangleMeshSlicer.cpp:1982-2056
+// std::vector<Polygons> slice_mesh(const indexed_triangle_set &mesh, const std::vector<float> &zs,
+//     const MeshSlicingParams &params, std::function<void()> throw_on_cancel)
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (slice_mesh_native_parity).
+impl<'a> SliceMesh<(&'a [f32], &'a MeshSlicingParams, &'a dyn Fn())> for indexed_triangle_set {
+    type Output = Vec<Polygons>;
+    fn slice_mesh(&self, (zs, params, throw_on_cancel): (&'a [f32], &'a MeshSlicingParams, &'a dyn Fn())) -> Vec<Polygons> {
+        let mesh = self;
+        let trafo: [f64; 16] = params.frame_trafo.unwrap_or(TRAFO16_IDENTITY);
+        let mut lines: Vec<IntersectionLines>;
+        {
+            // TriangleMeshSlicer.cpp:1997
+            let face_edge_ids = its_face_edge_ids(mesh);
+            if zs.len() <= 1 {
+                // It likely is not worthwile to copy the vertices. Apply the transformation in place.
+                if is_identity(&trafo) {
+                    // TriangleMeshSlicer.cpp:2001-2003: Vec3f(scaled<float>(p.x()), scaled<float>(p.y()), p.z())
+                    lines = slice_make_lines(
+                        &mesh.vertices,
+                        &|p: &StlVertex| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z),
+                        &mesh.indices,
+                        &face_edge_ids,
+                        zs,
+                        throw_on_cancel,
+                    );
+                } else {
+                    // Transform the vertices, scale up in XY, not in Z. TriangleMeshSlicer.cpp:2006-2007
+                    let tf = make_trafo_for_slicing(&trafo, crate::libslic3r::SCALING_FACTOR);
+                    lines = slice_make_lines(
+                        &mesh.vertices,
+                        &|p: &StlVertex| {
+                            let w = transform3f_mul_vec3f(&tf, [p.x, p.y, p.z]);
+                            StlVertex::new(w[0], w[1], w[2])
+                        },
+                        &mesh.indices,
+                        &face_edge_ids,
+                        zs,
+                        throw_on_cancel,
+                    );
+                }
+            } else {
+                // Copy and scale vertices in XY, don't scale in Z. Possibly apply the transformation.
+                // TriangleMeshSlicer.cpp:2010-2014
+                lines = slice_make_lines(
+                    &transform_mesh_vertices_for_slicing(mesh, &trafo),
+                    &|p: &StlVertex| *p,
+                    &mesh.indices,
+                    &face_edge_ids,
+                    zs,
+                    throw_on_cancel,
+                );
+            }
+        }
+        // TriangleMeshSlicer.cpp:2018
+        throw_on_cancel();
+        // TriangleMeshSlicer.cpp:2020
+        MakeLoops::make_loops(lines.as_mut_slice(), (params, throw_on_cancel))
+    }
+}
+
+// TriangleMeshSlicer.cpp:2058-2119
+// Specialized version for a single slicing plane only, running on a single thread.
+// Polygons slice_mesh(const indexed_triangle_set &mesh, const float plane_z, const MeshSlicingParams &params)
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (slice_mesh_native_parity).
+impl<'a> SliceMesh<(f32, &'a MeshSlicingParams)> for indexed_triangle_set {
+    type Output = Polygons;
+    fn slice_mesh(&self, (plane_z, params): (f32, &'a MeshSlicingParams)) -> Polygons {
+        let mesh = self;
+        let trafo: [f64; 16] = params.frame_trafo.unwrap_or(TRAFO16_IDENTITY);
+        let mut lines: Vec<IntersectionLines> = Vec::new();
+        {
+            let trafo_identity = is_identity(&trafo);
+            // `Transform3f tf;` is only read on the non-identity branches, which assign it first.
+            let mut tf: Transform3f = [[0.0f32; 4]; 3];
+            let mut face_mask: Vec<bool> = vec![false; mesh.indices.len()];
+            {
+                // 1) Mark vertices as below or above the slicing plane. TriangleMeshSlicer.cpp:2073-2089
+                let mut vertex_side: Vec<i8> = vec![0; mesh.vertices.len()];
+                if trafo_identity {
+                    for i in 0..mesh.vertices.len() {
+                        let z = mesh.vertices[i].z;
+                        let s: i8 = if z < plane_z { -1 } else if z == plane_z { 0 } else { 1 };
+                        vertex_side[i] = s;
+                    }
+                } else {
+                    tf = make_trafo_for_slicing(&trafo, crate::libslic3r::SCALING_FACTOR);
+                    for i in 0..mesh.vertices.len() {
+                        //FIXME don't need to transform x & y, just Z.
+                        let v = &mesh.vertices[i];
+                        let z = transform3f_mul_vec3f(&tf, [v.x, v.y, v.z])[2];
+                        let s: i8 = if z < plane_z { -1 } else if z == plane_z { 0 } else { 1 };
+                        vertex_side[i] = s;
+                    }
+                }
+
+                // 2) Mark faces crossing the plane. TriangleMeshSlicer.cpp:2091-2096
+                for i in 0..mesh.indices.len() {
+                    let face = &mesh.indices[i];
+                    let sides: [i32; 3] = [
+                        vertex_side[face[0] as usize] as i32,
+                        vertex_side[face[1] as usize] as i32,
+                        vertex_side[face[2] as usize] as i32,
+                    ];
+                    face_mask[i] = sides[0] * sides[1] <= 0 || sides[1] * sides[2] <= 0 || sides[0] * sides[2] <= 0;
+                }
+            }
+
+            // 3) Calculate face neighbors for just the faces in face_mask. TriangleMeshSlicer.cpp:2099-2100
+            let face_edge_ids = crate::triangle_mesh::its_face_edge_ids_mask(mesh, &face_mask);
+
+            // 4) Slice "face_mask" triangles, collect line segments. TriangleMeshSlicer.cpp:2102-2112
+            // It likely is not worthwile to copy the vertices. Apply the transformation in place.
+            let fm = &face_mask;
+            if trafo_identity {
+                lines.push(SliceMakeLines::slice_make_lines(
+                    mesh.vertices.as_slice(),
+                    &|p: &StlVertex| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z),
+                    &mesh.indices,
+                    &face_edge_ids,
+                    plane_z,
+                    &|face_idx: usize| fm[face_idx],
+                ));
+            } else {
+                // Transform the vertices, scale up in XY, not in Z.
+                lines.push(SliceMakeLines::slice_make_lines(
+                    mesh.vertices.as_slice(),
+                    &|p: &StlVertex| {
+                        let w = transform3f_mul_vec3f(&tf, [p.x, p.y, p.z]);
+                        StlVertex::new(w[0], w[1], w[2])
+                    },
+                    &mesh.indices,
+                    &face_edge_ids,
+                    plane_z,
+                    &|face_idx: usize| fm[face_idx],
+                ));
+            }
+        }
+
+        // 5) Chain the line segments. TriangleMeshSlicer.cpp:2115-2118
+        let mut layers: Vec<Polygons> = MakeLoops::make_loops(lines.as_mut_slice(), (params, &(|| {}) as &dyn Fn()));
+        debug_assert!(layers.len() == 1);
+        layers.swap_remove(0)
+    }
+}
+
+/// The three `slice_mesh_ex` overloads of TriangleMeshSlicer.hpp:71-95 (the main one TriangleMeshSlicer.cpp:2121-2170
+/// and the two inline ones of the header), one implementation per argument list of the C++.
+pub trait SliceMeshEx<Args> {
+    type Output;
+    fn slice_mesh_ex(&self, args: Args) -> Self::Output;
+}
+
+// TriangleMeshSlicer.cpp:2121-2170
+// std::vector<ExPolygons> slice_mesh_ex(const indexed_triangle_set &mesh, const std::vector<float> &zs,
+//     const MeshSlicingParamsEx &params, std::function<void()> throw_on_cancel)
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (slice_mesh_native_parity).
+impl<'a> SliceMeshEx<(&'a [f32], &'a MeshSlicingParamsEx, &'a dyn Fn())> for indexed_triangle_set {
+    type Output = Vec<ExPolygons>;
+    fn slice_mesh_ex(&self, (zs, params, throw_on_cancel): (&'a [f32], &'a MeshSlicingParamsEx, &'a dyn Fn())) -> Vec<ExPolygons> {
+        let layers_p: Vec<Polygons>;
+        {
+            // MeshSlicingParams slicing_params(params); TriangleMeshSlicer.cpp:2128-2133
+            let mut slicing_params = params.base.clone();
+            if params.base.mode == SlicingMode::PositiveLargestContour {
+                slicing_params.mode = SlicingMode::Positive;
+            }
+            if params.base.mode_below == SlicingMode::PositiveLargestContour {
+                slicing_params.mode_below = SlicingMode::Positive;
+            }
+            layers_p = SliceMesh::slice_mesh(self, (zs, &slicing_params, throw_on_cancel));
+        }
+
+        // TriangleMeshSlicer.cpp:2136-2163 (tbb::parallel_for over independent layers).
+        let mut layers: Vec<ExPolygons> = vec![ExPolygons::new(); layers_p.len()];
+        for layer_id in 0..layers_p.len() {
+            throw_on_cancel();
+            let expolygons = &mut layers[layer_id];
+            let this_mode = if layer_id < params.base.slicing_mode_normal_below_layer { params.base.mode_below } else { params.base.mode };
+            make_expolygons(
+                &layers_p[layer_id],
+                params.closing_radius,
+                params.extra_offset,
+                match this_mode {
+                    SlicingMode::EvenOdd => ClipperPolyFillType::EvenOdd,
+                    SlicingMode::PositiveLargestContour => ClipperPolyFillType::Positive,
+                    _ => ClipperPolyFillType::NonZero,
+                },
+                expolygons,
+            );
+            //FIXME simplify
+            if this_mode == SlicingMode::PositiveLargestContour {
+                crate::geometry::keep_largest_contour_only(expolygons);
+            }
+            // auto resolution = scaled<float>(params.resolution): the double division, then the cast to float.
+            let resolution: f32 = (params.resolution / crate::libslic3r::SCALING_FACTOR) as f32;
+            if resolution != 0.0 {
+                let mut simplified = ExPolygons::with_capacity(expolygons.len());
+                for ex in expolygons.iter() {
+                    simplified.extend(expolygon_simplify(ex, resolution as f64));
+                }
+                *expolygons = simplified;
+            }
+        }
+        layers
+    }
+}
+
+// TriangleMeshSlicer.hpp:78-84
+// inline std::vector<ExPolygons> slice_mesh_ex(const indexed_triangle_set &mesh, const std::vector<float> &zs,
+//     std::function<void()> throw_on_cancel = []{})
+impl<'a> SliceMeshEx<(&'a [f32], &'a dyn Fn())> for indexed_triangle_set {
+    type Output = Vec<ExPolygons>;
+    fn slice_mesh_ex(&self, (zs, throw_on_cancel): (&'a [f32], &'a dyn Fn())) -> Vec<ExPolygons> {
+        SliceMeshEx::slice_mesh_ex(self, (zs, &MeshSlicingParamsEx::default(), throw_on_cancel))
+    }
+}
+
+// TriangleMeshSlicer.hpp:86-95
+// inline std::vector<ExPolygons> slice_mesh_ex(const indexed_triangle_set &mesh, const std::vector<float> &zs,
+//     float closing_radius, std::function<void()> throw_on_cancel = []{})
+impl<'a> SliceMeshEx<(&'a [f32], f32, &'a dyn Fn())> for indexed_triangle_set {
+    type Output = Vec<ExPolygons>;
+    fn slice_mesh_ex(&self, (zs, closing_radius, throw_on_cancel): (&'a [f32], f32, &'a dyn Fn())) -> Vec<ExPolygons> {
+        let mut params = MeshSlicingParamsEx::default();
+        params.closing_radius = closing_radius;
+        SliceMeshEx::slice_mesh_ex(self, (zs, &params, throw_on_cancel))
+    }
+}
+
+/// Test access (R946, tests/triangle_mesh_slicer_native_parity.rs): the vector-of-zs `slice_make_lines`
+/// (TriangleMeshSlicer.cpp:511-535) as `slice_mesh` calls it for more than one z (the vertices through
+/// transform_mesh_vertices_for_slicing, an identity transform_vertex_fn), each line as
+/// `[a.x, a.y, b.x, b.y, a_id, b_id, edge_a_id, edge_b_id, edge_type, flags]`.
+#[doc(hidden)]
+pub fn slice_make_lines_raw(mesh: &indexed_triangle_set, trafo16: &[f64; 16], zs: &[f32]) -> Vec<Vec<[i64; 10]>> {
+    let face_edge_ids = its_face_edge_ids(mesh);
+    let lines = slice_make_lines(
+        &transform_mesh_vertices_for_slicing(mesh, trafo16),
+        &|p: &StlVertex| *p,
+        &mesh.indices,
+        &face_edge_ids,
+        zs,
+        &|| {},
+    );
+    lines
+        .iter()
+        .map(|layer| {
+            layer
+                .iter()
+                .map(|l| {
+                    [
+                        l.a.x as i64,
+                        l.a.y as i64,
+                        l.b.x as i64,
+                        l.b.y as i64,
+                        l.a_id as i64,
+                        l.b_id as i64,
+                        l.edge_a_id as i64,
+                        l.edge_b_id as i64,
+                        l.edge_type as i64,
+                        l.flags as i64,
+                    ]
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Test access (R946, tests/triangle_mesh_slicer_native_parity.rs): `make_expolygons_simple`
+/// (TriangleMeshSlicer.cpp:1716-1750) over the single-plane lines (537-561) of the faces that reach `plane_z`, the
+/// vertices scaled in XY with `scaled<float>` (the identity of slice_mesh, 2102-2105).
+#[doc(hidden)]
+pub fn make_expolygons_simple_at_plane(mesh: &indexed_triangle_set, plane_z: f32) -> ExPolygons {
+    let face_edge_ids = its_face_edge_ids(mesh);
+    let mut lines = SliceMakeLines::slice_make_lines(
+        mesh.vertices.as_slice(),
+        &|p: &StlVertex| StlVertex::new(scaled_f32(p.x), scaled_f32(p.y), p.z),
+        &mesh.indices,
+        &face_edge_ids,
+        plane_z,
+        &|face_idx: usize| {
+            let t = &mesh.indices[face_idx];
+            let (a, b, c) = (mesh.vertices[t[0] as usize].z, mesh.vertices[t[1] as usize].z, mesh.vertices[t[2] as usize].z);
+            a.min(b.min(c)) <= plane_z && a.max(b.max(c)) >= plane_z
+        },
+    );
+    make_expolygons_simple(&mut lines)
 }
 
 #[allow(dead_code)]
@@ -4072,6 +4418,33 @@ fn calc_plane_normal(plane_points: &[crate::geometry::geometry::Vec3d; 4]) -> cr
     let mut plane_normal = eigen::cross3(&v01, &v12);
     eigen::normalize3(&mut plane_normal);
     plane_normal
+}
+
+/// The `cut_mesh` overload by the plane of four points (TriangleMeshSlicer.hpp:142-148,
+/// TriangleMeshSlicer.cpp:2727-2788) under the C++ name, as a method of the mesh; the overload by a height z
+/// (2430-2715) is the free function [`cut_mesh`].
+pub trait CutMesh<Args> {
+    fn cut_mesh(&self, args: Args);
+}
+
+// TriangleMeshSlicer.cpp:2727-2788
+// void cut_mesh(const indexed_triangle_set& mesh, std::array<Vec3d, 4> plane_points, indexed_triangle_set* upper,
+//     indexed_triangle_set* lower, bool triangulate_caps)
+// The body is [`cut_mesh_plane_points`].
+impl<'a> CutMesh<([crate::geometry::geometry::Vec3d; 4], Option<&'a mut indexed_triangle_set>, Option<&'a mut indexed_triangle_set>, bool)>
+    for indexed_triangle_set
+{
+    fn cut_mesh(
+        &self,
+        (plane_points, upper, lower, triangulate_caps): (
+            [crate::geometry::geometry::Vec3d; 4],
+            Option<&'a mut indexed_triangle_set>,
+            Option<&'a mut indexed_triangle_set>,
+            bool,
+        ),
+    ) {
+        cut_mesh_plane_points(self, plane_points, upper, lower, triangulate_caps)
+    }
 }
 
 /// TriangleMeshSlicer.cpp:2727-2788 `cut_mesh(mesh, std::array<Vec3d, 4> plane_points, upper,

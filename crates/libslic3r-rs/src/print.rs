@@ -2095,7 +2095,44 @@ impl Print {
             // header, which has the same moves as the final one. =0 writes none.
             let mut full = header_str;
             full.push_str(&String::from_utf8_lossy(&body));
-            let processed = processor.time_processor().post_process(&full);
+            // PROCESSOR_PRE_HEATING (on): with `enable_pre_heating` the whole post-process of the pin
+            // (GCodeProcessor.cpp:571-1300): the filament / extruder blocks, the PreCoolingInjector's
+            // `M104 ... ;Multi extruder pre cooling` / `M632 / M104 ... ;Multi extruder pre heating /
+            // M633` lines (GCodeProcessor.cpp:6628-7202) and `M73 E<n>` after each filament change
+            // (:1150-1169; skipped when the tower splice of g_code.rs already wrote them). The nozzle
+            // group is the print's (GCode.cpp:2489, 2193-2204), else the processor's own. =0 (or
+            // without pre-heating) writes the M73 P/R lines only.
+            let processed = 'pp: {
+                if crate::faithful_gate("PROCESSOR_PRE_HEATING") {
+                    let cfg = self
+                        .full_print_config
+                        .clone()
+                        .or_else(|| self.raw_settings.as_ref().map(full_print_config_from_settings));
+                    if let Some(cfg) = cfg {
+                        use crate::config::ConfigOptionResolver;
+                        if cfg.opt_bool("enable_pre_heating") {
+                            let (proc_group, moves) = processor.time_process_inputs();
+                            let group = self
+                                .nozzle_group_result
+                                .as_ref()
+                                .map(|g| (**g).clone())
+                                .or_else(|| proc_group.cloned());
+                            if let Some(group) = group {
+                                let context =
+                                    crate::gcode::g_code_processor::TimeProcessContext::from_config(&cfg, group);
+                                let splice_wrote_m73_e = full.split('\n').any(|l| l.starts_with("M73 E"));
+                                break 'pp processor.time_processor().post_process_with_context(
+                                    &full,
+                                    &moves,
+                                    &context,
+                                    !splice_wrote_m73_e,
+                                );
+                            }
+                        }
+                    }
+                }
+                processor.time_processor().post_process(&full)
+            };
             file.write_all(processed.as_bytes())?;
         } else {
             file.write_all(header_str.as_bytes())?;
@@ -10341,6 +10378,247 @@ pub mod faithful {
             &self.m_wipe_tower_data
         }
 
+        /// Print.cpp:777-1122 `StringObjectException Print::sequential_print_clearance_valid(const Print &print,
+        /// Polygons *polygons, std::vector<std::pair<Polygon, float>>* height_polygons)`: the horizontal and
+        /// vertical clearance of a sequential (by object) print. The Print is `&mut` for the ModelInstances'
+        /// `arrange_order`, which the C++ sets through a const_cast (Print.cpp:1060).
+        pub fn sequential_print_clearance_valid(
+            print: &mut Print,
+            mut polygons: Option<&mut Vec<Polygon>>,
+            mut height_polygons: Option<&mut Vec<(Polygon, f32)>>,
+        ) -> crate::print_base::StringObjectException {
+            use crate::clipper_utils::{intersection_polygons_raw_clib, offset_polygons_clib_ml, OffsetJoinType};
+            use crate::libslic3r::SCALING_FACTOR;
+            let mut single_object_exception = crate::print_base::StringObjectException::default();
+            let print_ref: &Print = &*print;
+            let print_config = print_ref.config();
+            let exclude_polys = clearance_exclude_polys(print_ref);
+
+            // Print.cpp:796-812 (`height` is read only by the order of the `#if 0` arm, Print.cpp:921-1017)
+            #[allow(dead_code)]
+            struct PrintInstanceInfo {
+                print_instance: (usize, usize),
+                bounding_box: crate::geometry::BoundingBox,
+                hull_polygon: Polygon,
+                object_index: i32,
+                height: f64,
+            }
+            let mut map_model_object_to_convex_hull: BTreeMap<ObjectID, Polygon> = BTreeMap::new();
+            let mut print_instance_with_bounding_box: Vec<PrintInstanceInfo> = Vec::new();
+
+            // Print.cpp:815-823
+            let all_objects_are_short = print_ref.is_all_objects_are_short();
+            let mut obj_distance: f32 = if all_objects_are_short {
+                ((0.5 * MAX_OUTER_NOZZLE_RADIUS as f64 - 0.1) / SCALING_FACTOR) as f32
+            } else {
+                (0.5f64.mul_add(cfg_float(print_config, "extruder_clearance_max_radius"), -0.1) / SCALING_FACTOR) as f32
+            };
+            // BBS: Add skirt expansion for sequential print collision detection.
+            // Per side: max(0.5*clearance + 0.5*skirt_extra, skirt_extra), matching the arrange logic.
+            if print_ref.is_sequential_print() {
+                let skirt_flow = print_ref.skirt_flow().expect("Print::skirt_flow");
+                let skirt_extra = crate::arrange::print_config_skirt::get_real_skirt_dist(print_config, &skirt_flow);
+                obj_distance = (obj_distance as f64 + (0.5f32 * skirt_extra) as f64 / SCALING_FACTOR) as f32;
+                obj_distance = obj_distance.max((skirt_extra as f64 / SCALING_FACTOR) as f32);
+            }
+            {
+                // sequential_print_horizontal_clearance_valid
+                let mut convex_hulls_other: Vec<Polygon> = Vec::new();
+                if let Some(p) = polygons.as_deref_mut() {
+                    p.clear();
+                }
+                let mut intersecting_idxs: Vec<usize> = Vec::new();
+
+                // Shrink the extruder_clearance_radius a tiny bit, so that if the object arrangement algorithm placed the objects
+                // exactly by satisfying the extruder_clearance_radius, this test will not trigger collision.
+                for po in 0..print_ref.objects().len() {
+                    let print_object = &print_ref.objects()[po];
+                    let model_object = print_object.model_object(print_ref);
+                    let model_object_id = model_object.id();
+                    // Get convex hull of all printable volumes assigned to this print object.
+                    let model_instance0 = &model_object.instances[0];
+                    if !map_model_object_to_convex_hull.contains_key(&model_object_id) {
+                        // Calculate the convex hull of a printable object.
+                        // Grow convex hull with the clearance margin.
+                        let mut new_trans = model_instance0.get_transformation().clone();
+                        new_trans.set_offset(&crate::geometry::geometry::Vec3d::new(0.0, 0.0, model_instance0.get_offset()[2]));
+                        map_model_object_to_convex_hull
+                            .insert(model_object_id, model_object.convex_hull_2d(&new_trans.get_matrix(false, false, false, false)));
+                    }
+                    // Make a copy, so it may be rotated for instances.
+                    let mut convex_hull0 = map_model_object_to_convex_hull[&model_object_id].clone();
+                    let z_diff = crate::geometry::geometry::rotation_diff_z(
+                        &model_instance0.get_rotation(),
+                        &model_object.instances[print_object.instances()[0].model_instance].get_rotation(),
+                    );
+                    if z_diff.abs() > EPSILON {
+                        convex_hull0.rotate(z_diff);
+                    }
+                    // Now we check that no instance of convex_hull intersects any of the previously checked object instances.
+                    for pi in 0..print_object.instances().len() {
+                        let instance = &print_object.instances()[pi];
+                        let mut convex_hull_no_offset = convex_hull0.clone();
+                        let mut convex_hull = Polygon::default();
+                        let tmp = offset_polygons_clib_ml(
+                            std::slice::from_ref(&convex_hull_no_offset),
+                            obj_distance as f64,
+                            OffsetJoinType::Round,
+                            0.1 / SCALING_FACTOR,
+                        );
+                        if !tmp.is_empty() {
+                            // tmp may be empty due to clipper's bug, see STUDIO-2452
+                            convex_hull = tmp[0].clone();
+                            // instance.shift is a position of a centered object, while model object may not be centered.
+                            // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
+                            convex_hull.translate(instance.shift - *print_object.center_offset());
+                        }
+                        convex_hull_no_offset.translate(instance.shift - *print_object.center_offset());
+                        // instance.model_instance->get_object() is the PrintObject's ModelObject.
+                        let name = &model_object.name;
+                        //juedge the exclude area
+                        if !intersection_polygons_raw_clib(&exclude_polys, std::slice::from_ref(&convex_hull_no_offset)).is_empty() {
+                            let msg = format!("{} is too close to exclusion area, there may be collisions when printing.", name);
+                            if single_object_exception.string.is_empty() {
+                                single_object_exception.string = msg;
+                                single_object_exception.object = Some(model_object_id);
+                            } else {
+                                single_object_exception.string += &format!("\n{}", msg);
+                                single_object_exception.object = None;
+                            }
+                        }
+
+                        // if output needed, collect indices (inside convex_hulls_other) of intersecting hulls
+                        for i in 0..convex_hulls_other.len() {
+                            if !intersection_polygons_raw_clib(std::slice::from_ref(&convex_hulls_other[i]), std::slice::from_ref(&convex_hull))
+                                .is_empty()
+                            {
+                                let msg = format!("{} is too close to others, and collisions may be caused.", name);
+                                if single_object_exception.string.is_empty() {
+                                    single_object_exception.string = msg;
+                                    single_object_exception.object = Some(model_object_id);
+                                } else {
+                                    single_object_exception.string += &format!("\n{}", msg);
+                                    single_object_exception.object = None;
+                                }
+                                let has_exception = true;
+
+                                if polygons.is_some() {
+                                    intersecting_idxs.push(i);
+                                    intersecting_idxs.push(convex_hulls_other.len());
+                                }
+
+                                if has_exception {
+                                    break;
+                                }
+                            }
+                        }
+                        print_instance_with_bounding_box.push(PrintInstanceInfo {
+                            print_instance: (po, pi),
+                            bounding_box: convex_hull.bounding_box(),
+                            hull_polygon: convex_hull.clone(),
+                            // instance.print_object->height()
+                            height: print_object.height() as f64,
+                            // find_object_index(print.model(), print_object->model_object())
+                            object_index: print_object.m_model_object as i32,
+                        });
+                        convex_hulls_other.push(convex_hull);
+                    }
+                }
+                if !intersecting_idxs.is_empty() {
+                    // use collected indices (inside convex_hulls_other) to update output
+                    intersecting_idxs.sort();
+                    intersecting_idxs.dedup();
+                    if let Some(p) = polygons.as_deref_mut() {
+                        for &i in &intersecting_idxs {
+                            p.push(std::mem::take(&mut convex_hulls_other[i]));
+                        }
+                    }
+                }
+            }
+
+            // calc sort order
+            let hc1 = cfg_float(print_config, "extruder_clearance_height_to_lid") / SCALING_FACTOR; // height to lid
+            let hc2 = cfg_float(print_config, "extruder_clearance_height_to_rod") / SCALING_FACTOR; // height to rod
+            let printable_height = cfg_float(print_config, "printable_height") / SCALING_FACTOR;
+
+            // Print.cpp:1018-1027 (the `#else` arm): sort the print instance by object_index; std::sort, so
+            // the instances of one object (equal keys) keep libc++'s order.
+            let mut order: Vec<usize> = (0..print_instance_with_bounding_box.len()).collect();
+            crate::clipper::libcxx_sort(&mut order, |&l, &r| {
+                print_instance_with_bounding_box[l].object_index < print_instance_with_bounding_box[r].object_index
+            });
+            let mut sorted: Vec<Option<PrintInstanceInfo>> = print_instance_with_bounding_box.into_iter().map(Some).collect();
+            let mut print_instance_with_bounding_box: Vec<PrintInstanceInfo> = order.iter().map(|&i| sorted[i].take().unwrap()).collect();
+
+            // sequential_print_vertical_clearance_valid
+            let mut arrange_orders: Vec<((usize, usize), i32)> = Vec::new();
+            {
+                // if objects are not overlapped on y-axis, they will not collide even if they are taller than extruder_clearance_height_to_rod
+                let print_instance_count = print_instance_with_bounding_box.len();
+                // FIDELITY-NOTE: `std::map<const PrintInstance*, ...>` iterates by address; the instances of one
+                // PrintObject are contiguous in its vector and the objects are allocated in order, so the key here
+                // is (object index, instance index).
+                let mut too_tall_instances: BTreeMap<(usize, usize), (Polygon, f32)> = BTreeMap::new();
+                for k in 0..print_instance_count {
+                    // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
+                    let bbox = &mut print_instance_with_bounding_box[k].bounding_box;
+                    bounding_box_offset(
+                        bbox,
+                        cfg_float(print_config, "extruder_clearance_dist_to_rod") * 0.5 / SCALING_FACTOR - obj_distance as f64,
+                    );
+                }
+                for k in 0..print_instance_count {
+                    let inst = print_instance_with_bounding_box[k].print_instance;
+                    let bbox = print_instance_with_bounding_box[k].bounding_box.clone();
+                    let iy1 = bbox.min.y;
+                    let iy2 = bbox.max.y;
+                    // (const_cast<ModelInstance*>(inst->model_instance))->arrange_order = k+1;
+                    arrange_orders.push((inst, k as i32 + 1));
+                    let mut height = if k == print_instance_count - 1 { printable_height } else { hc1 };
+
+                    for i in k + 1..print_instance_count {
+                        let bbox2 = &print_instance_with_bounding_box[i].bounding_box;
+                        let py1 = bbox2.min.y;
+                        let py2 = bbox2.max.y;
+                        let inter_min = iy1.max(py1); // min y of intersection
+                        let inter_max = iy2.min(py2); // max y of intersection. length=max_y-min_y>0 means intersection exists
+                        if inter_max - inter_min > 0 {
+                            height = hc2;
+                            break;
+                        }
+                    }
+                    if height < print_ref.objects()[inst.0].max_z() {
+                        too_tall_instances
+                            .insert(inst, (print_instance_with_bounding_box[k].hull_polygon.clone(), (height * SCALING_FACTOR) as f32));
+                    }
+                }
+
+                if !too_tall_instances.is_empty() {
+                    for (inst, poly_height) in too_tall_instances {
+                        let model_object = print_ref.objects()[inst.0].model_object(print_ref);
+                        let msg = format!("{} is too tall, and collisions will be caused.", model_object.name);
+                        if single_object_exception.string.is_empty() {
+                            single_object_exception.string = msg;
+                            single_object_exception.object = Some(model_object.id());
+                        } else {
+                            single_object_exception.string += &format!("\n{}", msg);
+                            single_object_exception.object = None;
+                        }
+                        if let Some(hp) = height_polygons.as_deref_mut() {
+                            hp.push(poly_height);
+                        }
+                    }
+                }
+            }
+            for ((po, pi), order) in arrange_orders {
+                let mo = print.m_objects[po].m_model_object;
+                let mi = print.m_objects[po].m_instances[pi].model_instance;
+                print.m_model.objects[mo].instances[mi].arrange_order = order;
+            }
+
+            single_object_exception
+        }
+
         /// Print.cpp:3984-4040 `StringObjectException Print::compacted_wipe_tower_clearance_valid(const Print
         /// &print, Polygons *polygons, std::vector<std::pair<Polygon, float>> *height_polygons)`. Pre-slice
         /// counterpart of validate_compacted_wipe_tower_clearance(). The Print is `&mut` for
@@ -10768,6 +11046,189 @@ pub mod faithful {
         } else {
             grown[0].clone()
         }
+    }
+
+    /// `Point(double x, double y)` (Point.hpp:179): each coordinate `lrint`ed.
+    fn clearance_point_lrint(x: f64, y: f64) -> Point {
+        Point::new(x.round_ties_even() as i64, y.round_ties_even() as i64)
+    }
+
+    /// Print.cpp:780-791 (and 1130-1141): the bed exclusion areas of the print config, four points each, in
+    /// the plate's coordinates, scaled.
+    fn clearance_exclude_polys(print: &Print) -> Vec<Polygon> {
+        let excluse_area_points = cfg_points(print.config(), "bed_exclude_area");
+        let mut exclude_polys: Vec<Polygon> = Vec::new();
+        let mut exclude_poly = Polygon::default();
+        let print_origin = print.get_plate_origin();
+        for i in 0..excluse_area_points.len() {
+            let pt = excluse_area_points[i];
+            exclude_poly.points.push(clearance_point_lrint(
+                (pt.x + print_origin[0]) / crate::libslic3r::SCALING_FACTOR,
+                (pt.y + print_origin[1]) / crate::libslic3r::SCALING_FACTOR,
+            ));
+            if i % 4 == 3 {
+                // exclude areas are always rectangle
+                exclude_polys.push(exclude_poly.clone());
+                exclude_poly.points.clear();
+            }
+        }
+        exclude_polys
+    }
+
+    /// Print.cpp:1123-1241 `static StringObjectException layered_print_cleareance_valid(const Print &print,
+    /// std::vector<StringObjectException> *warnings)`: the clearance of a by-layer print from the bed
+    /// exclusion areas, the clumping detection area and the prime tower. The Print is `&mut` for
+    /// sort_object_instances_by_model_order(print, true) (which sets the ModelInstances' arrange_order) and
+    /// wipe_tower_data().
+    pub fn layered_print_cleareance_valid(
+        print: &mut Print,
+        warnings: Option<&mut Vec<crate::print_base::StringObjectException>>,
+    ) -> crate::print_base::StringObjectException {
+        use crate::clipper_utils::{intersection_polygons_raw_clib, offset_polygons_clib_ml, OffsetJoinType};
+        use crate::libslic3r::SCALING_FACTOR;
+        let print_instances_ordered = crate::g_code::gcode_class::sort_object_instances_by_model_order(print, true);
+        if print_instances_ordered.is_empty() {
+            return Default::default();
+        }
+
+        let exclude_polys = clearance_exclude_polys(print);
+        let print_origin = print.get_plate_origin();
+
+        // Print.cpp:1143-1148
+        let wrapping_detection_area = cfg_points(print.config(), "wrapping_exclude_area");
+        let mut wrapping_poly = Polygon::default();
+        for pt in &wrapping_detection_area {
+            wrapping_poly.points.push(clearance_point_lrint((pt.x + print_origin[0]) / SCALING_FACTOR, (pt.y + print_origin[1]) / SCALING_FACTOR));
+        }
+        let enable_wrapping_detection = cfg_bool(print.config(), "enable_wrapping_detection");
+
+        // FIDELITY-NOTE: `std::map<const ModelVolume*, Polygon>` is only looked up, never iterated; the key
+        // here is (ModelObject index, volume index). The hull of a volume is the one of the first instance
+        // that reaches it, as in the C++.
+        let mut map_model_volume_to_convex_hull: BTreeMap<(usize, usize), Polygon> = BTreeMap::new();
+        let mut convex_hulls_other: Vec<Polygon> = Vec::new();
+        for &(po, pi) in &print_instances_ordered {
+            let print_object = &print.objects()[po];
+            let inst = &print_object.instances()[pi];
+            let mo_idx = print_object.m_model_object;
+            let model_object = &print.m_model.objects[mo_idx];
+            let model_instance = &model_object.instances[inst.model_instance];
+            for (vi, v) in model_object.volumes.iter().enumerate() {
+                if !v.is_model_part() {
+                    continue;
+                }
+                let key = (mo_idx, vi);
+                if !map_model_volume_to_convex_hull.contains_key(&key) {
+                    let mut volume_hull = v.get_convex_hull_2d(&crate::geometry::geometry::assemble_transform(
+                        &crate::geometry::geometry::Vec3d::zeros(),
+                        &model_instance.get_rotation(),
+                        &model_instance.get_scaling_factor(),
+                        &model_instance.get_mirror(),
+                    ));
+                    volume_hull.translate(inst.shift - *print_object.center_offset());
+                    map_model_volume_to_convex_hull.insert(key, volume_hull);
+                }
+                let convex_hull = &map_model_volume_to_convex_hull[&key];
+                if !intersection_polygons_raw_clib(&exclude_polys, std::slice::from_ref(convex_hull)).is_empty() {
+                    return crate::print_base::StringObjectException {
+                        string: format!("{} is too close to exclusion area, there may be collisions when printing.\n", model_object.name),
+                        object: Some(model_object.id()),
+                        ..Default::default()
+                    };
+                }
+
+                if enable_wrapping_detection
+                    && !intersection_polygons_raw_clib(std::slice::from_ref(&wrapping_poly), std::slice::from_ref(convex_hull)).is_empty()
+                {
+                    return crate::print_base::StringObjectException {
+                        string: format!(
+                            "{} is too close to clumping detection area, there may be collisions when printing.\n",
+                            model_object.name
+                        ),
+                        object: Some(model_object.id()),
+                        ..Default::default()
+                    };
+                }
+                convex_hulls_other.push(convex_hull.clone());
+            }
+        }
+
+        //BBS: add the wipe tower check logic
+        let filaments_count = print.extruders(false).len();
+        let plate_index = print.base.base.get_plate_index() as usize;
+        let plate_origin = print.get_plate_origin();
+        let (x, y, mut width, a) = {
+            let config = print.config();
+            (
+                (get_at(&cfg_floats(config, "wipe_tower_x"), plate_index) + plate_origin[0]) as f32,
+                (get_at(&cfg_floats(config, "wipe_tower_y"), plate_index) + plate_origin[1]) as f32,
+                cfg_float(config, "prime_tower_width") as f32,
+                cfg_float(config, "wipe_tower_rotation_angle") as f32,
+            )
+        };
+
+        let depth: f32 = print.wipe_tower_data(filaments_count).depth;
+
+        if cfg_bool(print.config(), "prime_tower_rib_wall") {
+            width = depth;
+        }
+
+        let mut convex_hulls_temp: Vec<Polygon> = Vec::new();
+        if print.has_wipe_tower() {
+            if !print.is_step_done(PrintStep::psWipeTower) {
+                let mut wipe_tower_convex_hull = Polygon::default();
+                wipe_tower_convex_hull.points.push(clearance_point_lrint(x as f64 / SCALING_FACTOR, y as f64 / SCALING_FACTOR));
+                wipe_tower_convex_hull.points.push(clearance_point_lrint((x + width) as f64 / SCALING_FACTOR, y as f64 / SCALING_FACTOR));
+                wipe_tower_convex_hull
+                    .points
+                    .push(clearance_point_lrint((x + width) as f64 / SCALING_FACTOR, (y + depth) as f64 / SCALING_FACTOR));
+                wipe_tower_convex_hull.points.push(clearance_point_lrint(x as f64 / SCALING_FACTOR, (y + depth) as f64 / SCALING_FACTOR));
+                wipe_tower_convex_hull.rotate(a as f64);
+                convex_hulls_temp.push(wipe_tower_convex_hull);
+            } else {
+                //here, wipe_tower_polygon is not always convex.
+                let mut wipe_tower_polygon = Polygon::default();
+                if let Some(d) = print.m_wipe_tower_data.wipe_tower_mesh_data.as_ref() {
+                    wipe_tower_polygon = d.bottom.clone();
+                }
+                wipe_tower_polygon.translate(clearance_point_lrint(x as f64 / SCALING_FACTOR, y as f64 / SCALING_FACTOR));
+                convex_hulls_temp.push(wipe_tower_polygon);
+            }
+            // The diagonal side scrape takes the nozzle outside the tower wall without depositing anything,
+            // so the checks below have to reserve that ring as well. Grown in every direction rather than
+            // only along the scraped pair of walls: the outline is used in bed coordinates, so an isotropic
+            // margin keeps this independent of the tower rotation and can only make the check stricter.
+            let side_scrape_margin = crate::gcode::wipe_tower::prime_tower_side_scrape_margin(print.config());
+            if side_scrape_margin > 0.0 {
+                convex_hulls_temp = offset_polygons_clib_ml(
+                    &convex_hulls_temp,
+                    ((side_scrape_margin / SCALING_FACTOR) as f32) as f64,
+                    OffsetJoinType::Miter,
+                    3.0,
+                );
+            }
+        }
+        if !intersection_polygons_raw_clib(&convex_hulls_other, &convex_hulls_temp).is_empty() {
+            if let Some(warnings) = warnings {
+                let mut warningtemp = crate::print_base::StringObjectException::default();
+                warningtemp.string = "Prime Tower is too close to others, and collisions may be caused.\n".to_string();
+                warningtemp.is_warning = true;
+                warnings.push(warningtemp);
+            }
+        }
+        if !intersection_polygons_raw_clib(&exclude_polys, &convex_hulls_temp).is_empty() {
+            return crate::print_base::StringObjectException {
+                string: "Prime Tower is too close to exclusion area, and collisions will be caused.\n".to_string(),
+                ..Default::default()
+            };
+        }
+        if enable_wrapping_detection && !intersection_polygons_raw_clib(std::slice::from_ref(&wrapping_poly), &convex_hulls_temp).is_empty() {
+            return crate::print_base::StringObjectException {
+                string: "Prime Tower is too close to clumping detection area, and collisions will be caused.\n".to_string(),
+                ..Default::default()
+            };
+        }
+        Default::default()
     }
 
     /// Print.cpp:3893-3901 `bool should_show_height_limit_lines(const Print &print)`

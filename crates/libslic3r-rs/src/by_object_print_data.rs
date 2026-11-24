@@ -109,33 +109,37 @@ impl ByObjectPrintData {
 
     // ByObjectPrintData.cpp:37 — build
     //
-    // BLOCKED: faithful port not possible yet. In addition to the
-    // `collect_filament_data` dependencies above, `build()` requires the following
-    // genuinely not-yet-ported symbols (each verified to have ZERO definitions in
-    // the crate, 2026-06-13):
-    //   - `Print::is_sequential_print()` — not ported.
-    //   - `sort_object_instances_by_model_order(const Print&)` — not ported.
-    //   - `PrintInstance::print_object` back-pointer — `PrintInstance` not ported
-    //     with this shape (the only `PrintInstance` is the unrelated geometry type
-    //     in `shortest_path.rs`).
+    // NOT PORTED YET. AUDIT R946 (each grep-verified): most of what `build()` calls
+    // now exists in the crate, on the faithful `print::faithful::Print`:
+    //   - `Print::is_sequential_print()` — print.rs `faithful::Print::is_sequential_print`.
+    //   - `sort_object_instances_by_model_order(const Print&, bool)` — g_code.rs
+    //     `gcode_class::sort_object_instances_by_model_order` (instances as (object, instance)
+    //     indices); `PrintInstance` with its `print_object` back-pointer — print.rs
+    //     `faithful::PrintInstance` (the parent's index).
     //   - `Print::get_physical_unprintable_filaments(...)`,
     //     `Print::get_geometric_unprintable_filaments()`,
-    //     `Print::get_filament_unprintable_flow(...)` — not ported.
-    //   - `Print::is_dynamic_group_reorder()`, `Print::get_filament_map_mode()` —
-    //     not ported.
-    //   - `ToolOrdering::get_recommended_filament_maps(...)` — not ported.
-    //   - `Print::set_nozzle_group_result(...)`,
-    //     `Print::get_layered_nozzle_group_result()`,
-    //     `Print::update_filament_maps_to_config(...)`,
-    //     `Print::update_to_config_by_nozzle_group_result(...)` — not ported.
-    //   - `GroupReorder::build_filament_group_context(...)` — not ported.
-    //   - `ToolOrdering(const PrintObject&, last_filament_id)` constructor,
-    //     `ToolOrdering::sort_and_build_data(*const PrintObject, last_filament_id)`,
-    //     `ToolOrdering::last_extruder()` (PrintObject-driven),
-    //     `ToolOrdering::get_layered_nozzle_group_result()` — not ported (the Rust
-    //     `ToolOrdering` is config-driven and has no PrintObject build path).
+    //     `Print::get_filament_unprintable_flow(...)`, `Print::is_dynamic_group_reorder()`,
+    //     `Print::get_filament_map_mode()` — print.rs `faithful::Print`.
+    //   - `ToolOrdering::get_recommended_filament_maps(...)`,
+    //     `GroupReorder::build_filament_group_context(...)`,
+    //     `ToolOrdering(const PrintObject&, first_extruder, prime_multi_material)`
+    //     (`ToolOrdering::from_object`), `sort_and_build_data` for one object,
+    //     `ToolOrdering::last_extruder()`, `get_layered_nozzle_group_result()` —
+    //     gcode/tool_ordering.rs; the Print side of `set_nozzle_group_result` /
+    //     `get_layered_nozzle_group_result` is the `ToolOrderingPrint` trait there.
+    //   - `Print::update_filament_maps_to_config(...)` (Print.cpp:3266-3316) and
+    //     `Print::update_to_config_by_nozzle_group_result(...)` (Print.cpp:3347-3400) — ported
+    //     in print.rs `faithful::Print` and verified against the pin (R945,
+    //     tests/print_filament_maps_native_parity.rs); the two calls of ByObjectPrintData.cpp:195-204
+    //     take them as they are.
+    // What still blocks the body: `object_tool_ordering_map` keys the legacy
+    // `print::PrintObject`, while the ToolOrdering object path takes a `ToolOrderingObject`
+    // view of a faithful PrintObject; the struct has to be re-typed onto
+    // `print::faithful` (instances and objects as indices) before build() and
+    // collect_filament_data() can be written line by line, and Print::process's sequential
+    // arm (Print.cpp:2637-2665, the `; filament:` list of a by-object job) reads it.
     //
-    // AVAILABLE now (would be reused once the above land, but do not unblock alone):
+    // AVAILABLE (reused by the body):
     //   - `collect_sorted_used_filaments(...)` (filament_group.rs).
     //   - `MultiNozzleUtils::LayeredNozzleGroupResult` with `create`,
     //     `get_layer_filament_nozzle_maps`, `get_used_filaments`,

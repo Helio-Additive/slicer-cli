@@ -356,6 +356,33 @@ pub fn simplify_polygon(
     *thiss = new_path;
 }
 
+/// The two `simplify` overloads of WallToolPaths.cpp under the C++ name, one implementation per
+/// argument type: `simplify(&mut Polygon, smallest_line_segment_squared, allowed_error_distance_squared)`
+/// (:50, [`simplify_polygon`]) and `simplify(&mut Polygons, smallest_line_segment, allowed_error_distance)`
+/// (:191, [`simplify_polygons`]).
+pub trait Simplify {
+    fn simplify(&mut self, a: i64, b: i64);
+}
+
+impl Simplify for Polygon {
+    /// WallToolPaths.cpp:50-160
+    fn simplify(&mut self, smallest_line_segment_squared: i64, allowed_error_distance_squared: i64) {
+        simplify_polygon(self, smallest_line_segment_squared, allowed_error_distance_squared);
+    }
+}
+
+impl Simplify for Polygons {
+    /// WallToolPaths.cpp:191-204
+    fn simplify(&mut self, smallest_line_segment: i64, allowed_error_distance: i64) {
+        simplify_polygons(self, smallest_line_segment, allowed_error_distance);
+    }
+}
+
+/// `simplify(...)` (WallToolPaths.cpp:50 and :191) as a free function of the C++ name.
+pub fn simplify<T: Simplify + ?Sized>(thiss: &mut T, a: i64, b: i64) {
+    thiss.simplify(a, b);
+}
+
 /// WallToolPaths.cpp:191  void simplify(Polygons &thiss, smallest_line_segment, allowed_error_distance)
 pub fn simplify_polygons(thiss: &mut Polygons, smallest_line_segment: i64, allowed_error_distance: i64) {
     // WallToolPaths.cpp:193
@@ -466,6 +493,14 @@ pub fn fix_self_intersections(epsilon: Coord, thiss: &mut Polygons) {
     // WallToolPaths.cpp:238
     let half_epsilon_sqrd: i64 = half_epsilon * half_epsilon;
 
+    // R946: faithful_gate ARACHNE_FIXSELF_PIN (on unless `=0`). Two things as the pin does them:
+    // `Point &pt` (WallToolPaths.cpp:244) is a reference, so a move made for one nearby segment is
+    // seen by the distance test of the next one (the same segment can come twice, once per grid
+    // cell it crosses); and the closest point is `Line::distance_to_squared(pt, &closest)`
+    // (WallToolPaths.cpp:251-252, Line.hpp:168 -> line_alg::distance_to_squared, Line.hpp:41-68:
+    // `(a + t * v).cast<coord_t>()`), not Point::projection_onto. With `=0`: the copy of `pt`
+    // taken once and `project_onto_segment`, the arm until R945.
+    let fixself_pin = crate::faithful_gate("ARACHNE_FIXSELF_PIN");
     // WallToolPaths.cpp:240
     let n = thiss.len();
     // WallToolPaths.cpp:241
@@ -475,10 +510,12 @@ pub fn fix_self_intersections(epsilon: Coord, thiss: &mut Polygons) {
         // WallToolPaths.cpp:243
         for point_idx in 0..pathlen {
             // WallToolPaths.cpp:244  Point &pt = thiss[poly_idx][point_idx];
-            let pt = thiss[poly_idx][point_idx];
+            let pt0 = thiss[poly_idx][point_idx];
             // WallToolPaths.cpp:245  for (const auto &line : query_grid->getNearby(pt, epsilon))
-            let nearby = query_grid.get_nearby(pt, epsilon);
+            let nearby = query_grid.get_nearby(pt0, epsilon);
             for line in nearby.iter() {
+                // WallToolPaths.cpp:244: `pt` is the live point (a reference)
+                let pt = if fixself_pin { thiss[poly_idx][point_idx] } else { pt0 };
                 // WallToolPaths.cpp:246
                 let line_next_idx = (line.point_idx + 1) % thiss[line.poly_idx].len();
                 // WallToolPaths.cpp:247-248
@@ -490,7 +527,17 @@ pub fn fix_self_intersections(epsilon: Coord, thiss: &mut Polygons) {
                 let seg_a = thiss[line.poly_idx][line.point_idx];
                 let seg_b = thiss[line.poly_idx][line_next_idx];
                 // WallToolPaths.cpp:251-252  segment.distance_to_squared(pt, &segment_closest_point);
-                let segment_closest_point = pt.project_onto_segment(seg_a, seg_b);
+                let segment_closest_point = if fixself_pin {
+                    let mut closest = Point::new(0, 0);
+                    crate::geometry::line_alg::distance_to_squared(
+                        &crate::geometry::Line::new(seg_a, seg_b),
+                        &pt,
+                        &mut closest,
+                    );
+                    closest
+                } else {
+                    pt.project_onto_segment(seg_a, seg_b)
+                };
 
                 // WallToolPaths.cpp:254
                 if half_epsilon_sqrd as i128 >= (pt - segment_closest_point).length_squared() {
@@ -509,6 +556,12 @@ pub fn fix_self_intersections(epsilon: Coord, thiss: &mut Polygons) {
                     let len: i64 = vec.length() as i64;
                     // WallToolPaths.cpp:260-261
                     let mpt = &mut thiss[poly_idx][point_idx];
+                    if fixself_pin && len == 0 {
+                        // A segment of two equal points (a repeated vertex) gives `len == 0`: the
+                        // pin's int64 division by zero is undefined, and the oracle (clang, arm64)
+                        // compiles it to `sdiv`, which yields 0, so the point does not move.
+                        continue;
+                    }
                     mpt.x += (-(vec.y as i64) * move_dist) / len;
                     mpt.y += ((vec.x as i64) * move_dist) / len;
                 }
@@ -717,12 +770,11 @@ pub fn remove_colinear_edges_polygon(poly: &mut Polygon, max_deviation_angle: f6
                 let next = poly[(point_idx + 1) % pathlen];
 
                 // WallToolPaths.cpp:406  [0 : 2 * pi]
-                // R945: opt_in_gate ARACHNE_COLINEAR_ANGLE_F32 (off unless `=1`; faithful, but added at the end
-                // of R945 without a fixture check, so it stays off until one is run). `angle` is a `float`
-                // and the pin maps it with `float(M_PI)` in single precision (`angle -= float(M_PI)`,
-                // WallToolPaths.cpp:406-407), then compares the float with the double limits; off subtracts
-                // the double pi, the arm until R944.
-                let colinear_f32 = crate::opt_in_gate("ARACHNE_COLINEAR_ANGLE_F32");
+                // R945/R946: faithful_gate ARACHNE_COLINEAR_ANGLE_F32 (on unless `=0`; an opt-in gate in R945,
+                // byte-neutral on the three fixtures in R946). `angle` is a `float` and the pin maps it with
+                // `float(M_PI)` in single precision (`angle -= float(M_PI)`, WallToolPaths.cpp:406-407), then
+                // compares the float with the double limits; `=0` subtracts the double pi, the arm until R944.
+                let colinear_f32 = crate::faithful_gate("ARACHNE_COLINEAR_ANGLE_F32");
                 let mut angle = if colinear_f32 {
                     let mut angle_f = linear_alg2d::get_angle_left(prev, pt, next);
                     let pi_f = std::f64::consts::PI as f32;
@@ -788,7 +840,7 @@ pub fn remove_colinear_edges(thiss: &mut Polygons, max_deviation_angle: f64) {
 
 /// WallToolPaths.cpp:650  template<typename T> bool shorterThan(const T &shape, const coord_t check_length)
 /// Instantiated for `ExtrusionLine` in `removeSmallLines`.
-fn shorter_than_extrusion_line(shape: &ExtrusionLine, check_length: Coord) -> bool {
+fn shorter_than(shape: &ExtrusionLine, check_length: Coord) -> bool {
     // WallToolPaths.cpp:652
     if shape.junctions.is_empty() {
         return true;
@@ -1109,7 +1161,7 @@ impl WallToolPaths {
         // R724 — fingerprint the ctor's outline ONCE, before any borrow of
         // self.toolpaths, so every AGEN line self-identifies and joins exactly
         // to the ARWTP records (which key on the same iv/ix/iy).
-        let agen_orig = if crate::probe_enabled("AGEN") {
+        let agen_orig = if crate::probe_enabled("AGEN") || crate::probe_enabled("PA_PRS") {
             agen_fp(&self.outline)
         } else {
             (0usize, 0i64, 0i64)
@@ -1753,7 +1805,7 @@ impl WallToolPaths {
                 }
                 // WallToolPaths.cpp:671
                 let line = &inset[line_idx];
-                if line.is_odd && !line.is_closed && shorter_than_extrusion_line(line, min_width / 2) {
+                if line.is_odd && !line.is_closed && shorter_than(line, min_width / 2) {
                     // remove line — WallToolPaths.cpp:672-674
                     let last = inset.len() - 1;
                     inset[line_idx] = inset[last].clone();
@@ -2390,7 +2442,28 @@ fn agenpts_tp(stage: &str, orig: (usize, i64, i64), tp: &[VariableWidthLines], i
     }
 }
 
+/// R946 probe PA_PRS (with PA_L, diagnostic only): the prepared outline after each step of
+/// WallToolPaths.cpp:461-484 (stages p0..p8), keyed by the input outline's sums; with
+/// `PA_PRP=<input sx>` every point of that call, in the format of a copy of the pin's
+/// WallToolPaths.cpp printing the same after each step.
+fn pa_prs(stage: &str, orig: (usize, i64, i64), v: &crate::geometry::Polygons) {
+    if !crate::probe_enabled("PA_PRS") || PA_LAYER.with(|c| c.get()) < 0 {
+        return;
+    }
+    let (ov, osx, osy) = orig;
+    let (nv, sx, sy) = agen_fp(v);
+    eprintln!("PRS {ov} {osx} {osy} {stage} n={} np={nv} sx={sx} sy={sy}", v.len());
+    if std::env::var("PA_PRP").ok().and_then(|s| s.parse::<i64>().ok()) == Some(osx) {
+        for (pi, p) in v.iter().enumerate() {
+            for q in p.points.iter() {
+                eprintln!("PRP {stage} {pi} {} {}", q.x(), q.y());
+            }
+        }
+    }
+}
+
 fn agen_dump_poly(stage: &str, orig: (usize, i64, i64), v: &crate::geometry::Polygons, ic: usize) {
+    pa_prs(stage, orig, v);
     if !crate::probe_enabled("AGEN") {
         return;
     }

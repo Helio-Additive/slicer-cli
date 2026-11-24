@@ -2636,6 +2636,19 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 less()
             };
 
+            // R946: opt_in_gate ARACHNE_UQM_LIBCXX_SORT (off unless `=1`). The pin sorts with
+            // `std::sort` (SkeletalTrapezoidation.cpp:1488), libc++'s introsort, which is not
+            // stable: equivalent edges (the "Ordering is not important" branch, :1508-1511, and
+            // equal flat distances) come out in introsort's order, not in the input order a stable
+            // sort keeps. Faithful: with it (and ARACHNE_FIXSELF_PIN) every Arachne dump of Majora's
+            // layers 0-3 equals a single-thread twin of the pin; opt-in because it lowers Majora's
+            // in-order score by 126 lines against the kept oracle (verbatim +5), all of it on the
+            // first layer, where two runs of the multi-threaded oracle differ: against the other
+            // kept run the same change gains 244 lines (first layer +193). Off: the stable
+            // `sort_by` below, the arm until R945.
+            if crate::opt_in_gate("ARACHNE_UQM_LIBCXX_SORT") {
+                crate::clipper::libcxx_sort(&mut upward_quad_mids, |a, b| uqm_less(*a, *b));
+            } else {
             upward_quad_mids.sort_by(|&a, &b| {
                 if uqm_less(a, b) {
                     std::cmp::Ordering::Less
@@ -2648,6 +2661,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
                     std::cmp::Ordering::Equal
                 }
             });
+            }
 
             // R691 — count how often the comparator reports EQUIVALENT among the
             // pairs the SORTED array actually places next to each other. This is

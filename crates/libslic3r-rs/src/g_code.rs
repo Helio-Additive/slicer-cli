@@ -1147,7 +1147,57 @@ pub(crate) fn append_tcr(
         let alt = writer.auto_lift_type();
         // GCode.cpp:747 — the entry retract, written after WIPE_TOWER_START.
         let mark = writer.output_mark();
-        writer.retract_for_toolchange_with_lift(alt, true);
+        // TOWER_NOZZLE_CHANGE_CPP (on): the nozzle change of the tool change (GCode.cpp:755,
+        // 871-944): the retract at the model is the short one (`retract(false, false,
+        // auto_lift_type, true)`) when the tower made a nozzle-change ramming, and the ramming
+        // follows it: a travel to its start, the unretract, its G-code moved onto the tower
+        // (`transform_gcode`), then the position at its end, its wipe path and the toolchange
+        // retract with the slow lift. =0 writes the long retract only and drops the ramming.
+        let nc = &tcr.nozzle_change_result;
+        let is_nozzle_change = crate::faithful_gate("TOWER_NOZZLE_CHANGE_CPP") && !nc.gcode.is_empty();
+        if is_nozzle_change && !(nc.zero_flush_idle_cooling || nc.heater_off_only) {
+            writer.retract_with_lift_type(alt, true);
+        } else {
+            writer.retract_for_toolchange_with_lift(alt, true);
+        }
+        if is_nozzle_change {
+            let (gox, goy) = writer.gcode_origin();
+            let sf = crate::libslic3r::SCALING_FACTOR;
+            // wipe_tower_point_to_object_point(transform_wt_pt(p) + plate_origin_2d): the
+            // tower-local point moved by the tower position, less the export origin.
+            let to_bed = |p: crate::gcode::wipe_tower::Vec2f| -> (f64, f64) {
+                let bx = (p.x + off.x) as f64;
+                let by = (p.y + off.y) as f64;
+                let ox = ((bx + gox) / sf).round() as crate::Coord;
+                let oy = ((by + goy) / sf).round() as crate::Coord;
+                (ox as f64 * sf, oy as f64 * sf)
+            };
+            if nc.zero_flush_idle_cooling || nc.heater_off_only {
+                writer.write_raw("M106 S255");
+            }
+            if !nc.heater_off_only {
+                let (sx, sy) = to_bed(nc.start_pos);
+                writer.travel_to_tower_point(sx, sy);
+                if !nc.zero_flush_idle_cooling {
+                    writer.unretract();
+                }
+            }
+            let nc_gcode = post_process_wipe_tower_moves(&nc.gcode, nc.start_pos, off_gcode, 0.0);
+            writer.write_raw_content(&nc_gcode);
+            if !nc.heater_off_only {
+                let (ex, ey) = to_bed(nc.end_pos);
+                writer.set_position_xy(ex, ey);
+                writer.mark_unretracted_after_raw();
+                writer.reset_wipe_path();
+                let pts: Vec<(f64, f64)> = nc.wipe_path.iter().map(|p| to_bed(*p)).collect();
+                if !pts.is_empty() {
+                    writer.set_wipe_path_points(pts);
+                }
+                if !nc.zero_flush_idle_cooling {
+                    writer.retract_for_toolchange_slow_lift(alt, print_config.prime_tower_lift_speed);
+                }
+            }
+        }
         entry_retract_text = Some(writer.take_output_since(mark));
         // :1124-1142 — toolchange_gcode_str as the writer sees it.
         let toolchange_gcode_str =

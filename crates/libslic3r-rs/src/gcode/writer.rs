@@ -1760,6 +1760,21 @@ impl GCodeWriter {
         self.m_lift_feedrate = prev;
     }
 
+    /// `GCode::retract(true, false, lift_type, true, true)` as `append_tcr` calls it after the
+    /// nozzle-change ramming (GCode.cpp:932-933, `retract(tcr.is_tool_change, false, auto_lift_type,
+    /// true, tcr.is_tool_change)`): the toolchange retract, whose `slow_lift` lifts at
+    /// `prime_tower_lift_speed` when that is positive (GCode.cpp:8522, GCodeWriter.cpp:790-792).
+    pub fn retract_for_toolchange_slow_lift(&mut self, lift_type: u8, prime_tower_lift_speed: CoordF) {
+        let speed = if prime_tower_lift_speed > 0.0 {
+            Some(prime_tower_lift_speed * 60.0)
+        } else {
+            None
+        };
+        let prev = std::mem::replace(&mut self.m_lift_feedrate, speed);
+        self.retract_for_toolchange_with_lift(lift_type, true);
+        self.m_lift_feedrate = prev;
+    }
+
     /// `retract()` with C++'s explicit `LiftType` and `apply_instantly` arguments
     /// (`GCode::retract(bool, bool, LiftType, bool)`). R636/R638.
     pub fn retract_with_lift_type(&mut self, lift_type: u8, apply_instantly: bool) {

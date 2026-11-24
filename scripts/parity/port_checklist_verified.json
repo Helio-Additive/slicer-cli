@@ -4455,5 +4455,71 @@
   "functions": [
    "VoronoiUtils::discretize_parabola"
   ]
+ },
+ {
+  "unit": "TriangleMeshSlicer",
+  "round": 946,
+  "evidence": "tests/triangle_mesh_slicer_native_parity.rs (slice_mesh_native_parity): the pin's slice_make_lines (vector of zs, TriangleMeshSlicer.cpp 475-535, with its transform_vertex_fn), slice_mesh (the zs overload 1982-2056 and the single plane 2059-2119 with face mask and masked edge ids), slice_mesh_ex (2121-2170 and the inline overloads, TriangleMeshSlicer.hpp 78-95), make_expolygons_simple (1716-) and make_loops (both overloads, 1433-1584, through slice_mesh) from tests/data/triangle_mesh_slicer/gen_slice.cpp on 72 cases (meshes from the pin's makers and a cube with a hole; identity, rotation, tilt with scale and mirror; planes through vertices; every slicing mode, closing radius, extra offset and resolution): 7,313 lines, 0 differ in every stage.",
+  "functions": [
+   "slice_make_lines",
+   "slice_mesh",
+   "slice_mesh_ex",
+   "make_expolygons_simple",
+   "make_loops"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 946,
+  "evidence": "tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.",
+  "functions": [
+   "GCodeProcessor::PreCoolingInjector::filament_variant_row",
+   "GCodeProcessor::PreCoolingInjector::process_pre_cooling_and_heating",
+   "GCodeProcessor::PreCoolingInjector::build_extruder_free_blocks",
+   "GCodeProcessor::PreCoolingInjector::inject_cooling_heating_command",
+   "GCodeProcessor::PreCoolingInjector::build_by_filament_blocks",
+   "GCodeProcessor::PreCoolingInjector::build_by_extruder_blocks",
+   "GCodeProcessor::PreCoolingInjector::attach_nc_bounds_if_gap_crosses_nozzle_change"
+  ]
+ },
+ {
+  "unit": "Print",
+  "round": 946,
+  "evidence": "tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order).",
+  "functions": [
+   "Print::sequential_print_clearance_valid",
+   "layered_print_cleareance_valid"
+  ]
+ },
+ {
+  "unit": "PrintConfig",
+  "round": 946,
+  "evidence": "tests/print_config_skirt_native_parity.rs (skirt_helpers_and_bed_shape_match_the_pin): the pin's get_extruder_index (PrintConfig.cpp 110-117), nozzle_diameter_for_filament (454-468), get_filament_config_idx (485-492), get_process_config_idx (494-502), get_bed_shape (the PrintConfig overloads, 11477-11525; the SLA overload at 11527 is ported without its own case), get_bed_shape_with_excluded_area (11529-11556), has_skirt, skirt_expansion_params, skirt_nozzle_diameter_for_filament, skirt_flow_from_config and the three get_real_skirt_dist overloads (11558-11674) from tests/data/print_config_skirt/gen.cpp on 10 configurations: 150 lines equal.",
+  "functions": [
+   "get_extruder_index",
+   "nozzle_diameter_for_filament",
+   "get_filament_config_idx",
+   "get_process_config_idx",
+   "get_bed_shape",
+   "get_bed_shape_with_excluded_area",
+   "has_skirt",
+   "skirt_expansion_params",
+   "skirt_nozzle_diameter_for_filament",
+   "skirt_flow_from_config",
+   "get_real_skirt_dist"
+  ]
+ },
+ {
+  "unit": "Arachne/WallToolPaths",
+  "round": 946,
+  "evidence": "tests/wall_tool_paths_native_parity.rs (wall_tool_paths_outline_preparation_native_parity): the pin's outline preparation (WallToolPaths.cpp 458-480) step by step, simplify (both overloads), fixSelfIntersections with createLocToLineGrid (206-264, Line.hpp 41-68), removeDegenerateVerts, removeColinearEdges (both overloads) and removeSmallAreas (both remove_holes arms), from tests/data/wall_tool_paths/gen.cpp on 251 chain cases (including Majora layer 1's outline) over 7 steps and 250 direct cases over 5 functions: 0 differ (with ARACHNE_FIXSELF_PIN on).",
+  "functions": [
+   "simplify",
+   "fixSelfIntersections",
+   "createLocToLineGrid",
+   "removeDegenerateVerts",
+   "removeColinearEdges",
+   "removeSmallAreas"
+  ]
  }
 ]

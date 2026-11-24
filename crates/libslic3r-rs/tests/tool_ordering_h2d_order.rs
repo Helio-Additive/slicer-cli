@@ -17,49 +17,7 @@ use std::io::Read;
 
 #[test]
 fn h2d_majora_layer_order_equals_pin() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/tool_ordering/h2d_majora_order.txt.gz");
-    let mut s = String::new();
-    flate2::read::GzDecoder::new(std::fs::File::open(path).expect("vectors")).read_to_string(&mut s).expect("gzip");
-    let mut cfg = ToolOrderingPrintConfig::full_print_config();
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let mut layers: Vec<Vec<u32>> = Vec::new();
-    let mut expected: Vec<Vec<u32>> = Vec::new();
-    let mut failed: Vec<(String, String)> = Vec::new();
-    let nums = |v: &str| -> Vec<u32> { v.split_whitespace().map(|x| x.parse::<u32>().expect("filament")).collect() };
-    for line in s.lines() {
-        let mut it = line.splitn(3, '\t');
-        let (tag, key, value) = (it.next().unwrap_or(""), it.next().unwrap_or(""), it.next().unwrap_or(""));
-        match tag {
-            // options the defaults do not know are left out, as a configuration load would
-            // (an enum vector without a keys map panics in the port's deserializer: skipped likewise;
-            // the ordering reads none of those)
-            "C" => {
-                let mut c = cfg.clone();
-                let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.set_deserialize_strict(key, value, false).is_ok()));
-                if matches!(ok, Ok(true)) {
-                    cfg = c;
-                } else {
-                    failed.push((key.to_string(), value.to_string()));
-                }
-            }
-            "L" => layers.push(nums(value)),
-            "E" => expected.push(nums(value)),
-            _ => {}
-        }
-    }
-    std::panic::set_hook(hook);
-    eprintln!("not loaded: {failed:?}");
-    // Those are enum vectors of one value per extruder / filament whose names the port cannot read
-    // back (all entries equal here): their default value, repeated to the job's count.
-    for (key, value) in &failed {
-        let n = value.split(',').count();
-        if let Ok(Some(opt)) = cfg.option_mut(key, false) {
-            if let Some(v) = opt.as_vector_base_mut() {
-                let _ = v.resize(n, None);
-            }
-        }
-    }
+    let (cfg, layers, expected) = load_h2d_vectors();
     assert_eq!(layers.len(), 985);
     assert_eq!(expected.len(), 983);
     // prepare_ordering_context(reorder_first_layer = false): Print::process builds ToolOrdering(*this, -1).
@@ -83,43 +41,48 @@ fn h2d_majora_layer_order_equals_pin() {
     assert!(mismatches.is_empty(), "{} of {} layers differ, first {:?}", mismatches.len(), expected.len(), mismatches.first());
 }
 
-/// The job's configuration and layers from the vectors, loaded as in [`h2d_majora_layer_order_equals_pin`].
-fn load_h2d_job() -> (ToolOrderingPrintConfig, Vec<Vec<u32>>) {
+/// The job's configuration, layers and slicer_cli's tool changes from the vectors. The `C` lines are
+/// read into a fresh configuration, whose options are made from their definitions, and every option
+/// they do not give takes its default, as `ConfigBase::load_from_json` and then the print's
+/// PrintConfig do (Config.cpp:296-325, 885-1243; PrintConfig.cpp:8667-8670; the port's
+/// `full_print_config_from_settings` in print.rs). An option made from its definition reads an enum
+/// vector by its names (`nozzle_volume_type`, `extruder_type`, `z_hop_types`, ... : worker C's
+/// tests/print_config_enum_vectors_native_parity.rs); the clones of `full_print_config()` have no
+/// keys map, in the pin too. A key the configuration does not know is left out, as the loader
+/// leaves it.
+fn load_h2d_vectors() -> (ToolOrderingPrintConfig, Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    use slicer::config::{ConfigOptionResolver, ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/tool_ordering/h2d_majora_order.txt.gz");
     let mut s = String::new();
     flate2::read::GzDecoder::new(std::fs::File::open(path).expect("vectors")).read_to_string(&mut s).expect("gzip");
-    let mut cfg = ToolOrderingPrintConfig::full_print_config();
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    let mut cfg = ToolOrderingPrintConfig::new();
+    let defaults = ToolOrderingPrintConfig::full_print_config();
+    let mut ctxt = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::EnableSilent);
     let mut layers: Vec<Vec<u32>> = Vec::new();
-    let mut failed: Vec<(String, String)> = Vec::new();
+    let mut expected: Vec<Vec<u32>> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+    let nums = |v: &str| -> Vec<u32> { v.split_whitespace().map(|x| x.parse::<u32>().expect("filament")).collect() };
     for line in s.lines() {
         let mut it = line.splitn(3, '\t');
         let (tag, key, value) = (it.next().unwrap_or(""), it.next().unwrap_or(""), it.next().unwrap_or(""));
         match tag {
             "C" => {
-                let mut c = cfg.clone();
-                let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.set_deserialize_strict(key, value, false).is_ok()));
-                if matches!(ok, Ok(true)) {
-                    cfg = c;
-                } else {
-                    failed.push((key.to_string(), value.to_string()));
+                if !matches!(cfg.set_deserialize_nothrow(key, value, &mut ctxt, false), Ok(true)) {
+                    failed.push(key.to_string());
                 }
             }
-            "L" => layers.push(value.split_whitespace().map(|x| x.parse::<u32>().expect("filament")).collect()),
+            "L" => layers.push(nums(value)),
+            "E" => expected.push(nums(value)),
             _ => {}
         }
     }
-    std::panic::set_hook(hook);
-    for (key, value) in &failed {
-        let n = value.split(',').count();
-        if let Ok(Some(opt)) = cfg.option_mut(key, false) {
-            if let Some(v) = opt.as_vector_base_mut() {
-                let _ = v.resize(n, None);
-            }
-        }
+    let missing: Vec<String> = defaults.keys().into_iter().filter(|k| !cfg.has(k)).collect();
+    let _ = cfg.apply_only(&defaults, &missing, true);
+    // Every option of the job loads, the enum vectors included.
+    for key in ["nozzle_volume_type", "extruder_type", "z_hop_types", "extruder_nozzle_volume_type"] {
+        assert!(!failed.iter().any(|k| k == key), "{key} not loaded: {failed:?}");
     }
-    (cfg, layers)
+    (cfg, layers, expected)
 }
 
 /// ToolOrdering.cpp:3601-3614 hands the grouping to `Print::update_filament_maps_to_config`
@@ -131,7 +94,7 @@ fn load_h2d_job() -> (ToolOrderingPrintConfig, Vec<Vec<u32>>) {
 #[test]
 fn h2d_majora_filament_maps_to_config_equal_pin_block() {
     use slicer::config::ConfigOptionResolver;
-    let (cfg, layers) = load_h2d_job();
+    let (cfg, layers, _) = load_h2d_vectors();
     let (_, _, maps) =
         slicer::gcode::tool_ordering::reorder_extruders_for_minimum_flush_volume_multi_extruder_with_maps(&cfg, &layers, false)
             .expect("grouping");

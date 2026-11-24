@@ -2493,6 +2493,14 @@ impl TimeProcessor {
     /// the filament and extruder blocks, the pre-heating injection and the
     /// line-offset bookkeeping of the same function.
     pub fn post_process(&self, gcode: &str) -> String {
+        self.post_process_first_pass(gcode, None)
+    }
+
+    /// GCodeProcessor.cpp:571-1032  the first pass of `TimeProcessor::post_process`
+    /// (`gcode_time_handler` over `gcode_process`): the `M73` lines before the moves, and, when
+    /// `offsets` is given, the `offsets` vector the pass fills (:1014-1015, :1028-1031): per input
+    /// line id (1-based, :929-931) the number of lines inserted before it.
+    pub fn post_process_first_pass(&self, gcode: &str, mut offsets: Option<&mut Vec<(u32, u32)>>) -> String {
         use crate::g_code_reader::GCodeLine;
         let machines = &self.machines;
         // :589-592
@@ -2521,12 +2529,17 @@ impl TimeProcessor {
         let mut g1_lines_counter: usize = 0;
 
         let mut out = String::with_capacity(gcode.len() + gcode.len() / 64);
+        // :929-931 — `line_id` counts the input lines from 1.
+        let mut line_id: u32 = 0;
         for gcode_line in gcode.split_inclusive('\n') {
+            line_id += 1;
             if GCodeLine::cmd_is_str(gcode_line, "G1")
                 || GCodeLine::cmd_is_str(gcode_line, "G2")
                 || GCodeLine::cmd_is_str(gcode_line, "G3")
                 || GCodeLine::cmd_start_with(gcode_line, ";VG1")
             {
+                // :825 `exported_lines_count`
+                let out_len_before = out.len();
                 // process_line_move(gcode_buffer, g1_lines_counter++)
                 for i in 0..machines.len() {
                     let machine = &machines[i];
@@ -2603,6 +2616,13 @@ impl TimeProcessor {
                     }
                 }
                 g1_lines_counter += 1;
+                // :1028-1031 — every exported line ends in '\n' (the masks end in one).
+                if let Some(offs) = offsets.as_deref_mut() {
+                    let extra_lines_count = out[out_len_before..].bytes().filter(|&b| b == b'\n').count() as u32;
+                    if extra_lines_count > 0 {
+                        offs.push((line_id, extra_lines_count));
+                    }
+                }
             }
             out.push_str(gcode_line);
         }
@@ -7168,6 +7188,1294 @@ impl FilamentVariantRows {
 }
 
 // ===========================================================================
+// GCodeProcessor.hpp:389-397, 800-878, 929-1040 / GCodeProcessor.cpp:571-1300, 6611-7203:
+// the pre-heating / pre-cooling pass of TimeProcessor::post_process (R946)
+// ===========================================================================
+
+/// GCodeProcessor.hpp:389-397 `struct ExtruderPreHeating::FilamentUsageBlock`: `[lower_gcode_id,
+/// upper_gcode_id)` uses the filament; the upper id is set when the next block is found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FilamentUsageBlock {
+    pub filament_id: i32,
+    pub extruder_id: i32,
+    pub nozzle_id: i32,
+    pub lower_gcode_id: u32,
+    pub upper_gcode_id: u32,
+}
+
+impl FilamentUsageBlock {
+    /// GCodeProcessor.hpp:396 `FilamentUsageBlock(int filament_id_, int extruder_id_, int nozzle_id_,
+    /// unsigned int lower_gcode_id_, unsigned int upper_gcode_id_)`
+    pub fn new(filament_id: i32, extruder_id: i32, nozzle_id: i32, lower_gcode_id: u32, upper_gcode_id: u32) -> Self {
+        FilamentUsageBlock { filament_id, extruder_id, nozzle_id, lower_gcode_id, upper_gcode_id }
+    }
+}
+
+/// GCodeProcessor.hpp:868-876 `enum TimeProcessor::InsertLineType`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertLineType {
+    PlaceholderReplace,
+    TimePredict,
+    FilamentChangePredict,
+    ExtruderChangePredict,
+    PreCooling,
+    PreHeating,
+}
+
+/// GCodeProcessor.hpp:879 `using InsertedLinesMap = std::map<unsigned int, std::vector<std::pair<std::string,
+/// InsertLineType>>>` (first key is the line id, second the content).
+pub type InsertedLinesMap = std::collections::BTreeMap<u32, Vec<(String, InsertLineType)>>;
+
+/// The two members of `GCodeProcessorResult::MoveVertex` the pre-cooling pass reads
+/// (GCodeProcessor.hpp MoveVertex `gcode_id`, `time`), copied out of the result so the pass does not
+/// clone the whole vertex list.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MoveVertexTime {
+    pub gcode_id: u32,
+    pub time: [f32; 2],
+}
+
+/// GCodeProcessor.hpp:800-863 `struct TimeProcessContext`: the members the pre-heating pass reads
+/// (the placeholders the pass also replaces are written by the port's header itself).
+#[derive(Debug, Clone)]
+pub struct TimeProcessContext {
+    pub filament_types: Vec<String>,
+    pub filament_pre_heating_enabled: Vec<u8>,
+    pub physical_extruder_map: Vec<i32>,
+    pub nozzle_group_result: crate::multi_nozzle_utils::LayeredNozzleGroupResult,
+    pub cooling_rate: Vec<f64>,
+    pub cooling_rate_on_rack: Vec<f64>,
+    pub heating_rate: Vec<f64>,
+    pub filament_min_temperature_when_ec: Vec<f64>,
+    pub inject_time_threshold: f32,
+    pub enable_pre_heating: bool,
+    pub handle_hotend_as_extruder: bool,
+    pub has_filament_switcher: bool,
+    pub extruder_max_nozzle_count: Vec<i32>,
+    pub extruder_types: Vec<crate::extruder::ExtruderType>,
+    pub nozzle_diameter: Vec<f64>,
+    pub filament_variant_rows: FilamentVariantRows,
+}
+
+impl TimeProcessContext {
+    /// The context `GCodeProcessor::finalize(true)` builds (GCodeProcessor.cpp:2831-2853) from what
+    /// `GCodeProcessor::apply_config(const PrintConfig&)` stored (GCodeProcessor.cpp:1979-2013):
+    /// `inject_time_threshold` is the constant 0 of :2832, the nozzle group result the print's
+    /// (`DoExport::init_gcode_processor`, GCode.cpp:2193-2204 -> `initialize_from_context`).
+    pub fn from_config(
+        config: &crate::print_config::config_def::DynamicPrintConfig,
+        nozzle_group_result: crate::multi_nozzle_utils::LayeredNozzleGroupResult,
+    ) -> Self {
+        use crate::config::ConfigOptionResolver;
+        use crate::gcode::wipe_tower::{cfg_bools, cfg_floats, cfg_ints, cfg_strings};
+        use crate::extruder::{ExtruderType, NozzleVolumeType};
+        let filament_count = cfg_floats(config, "filament_diameter").len();
+        let get_at_i = |v: &[i32], i: usize| -> i32 {
+            if v.is_empty() { 0 } else if i < v.len() { v[i] } else { v[0] }
+        };
+        // GCodeProcessor.cpp:1979-1986 `m_filament_variant_rows`
+        let mut rows = FilamentVariantRows {
+            nozzle_temp: cfg_ints(config, "nozzle_temperature"),
+            pre_cooling_temp: cfg_ints(config, "filament_pre_cooling_temperature"),
+            preheat_temperature_delta: cfg_floats(config, "filament_preheat_temperature_delta"),
+            extruder_variant: cfg_strings(config, "filament_extruder_variant"),
+            self_index: cfg_ints(config, "filament_self_index"),
+            default_row: vec![0; filament_count],
+        };
+        // PrintConfig.cpp:485-492 get_filament_config_idx(config, idx), with get_extruder_index
+        // (PrintConfig.cpp:92-98) over filament_map.
+        let filament_volume_map = cfg_ints(config, "filament_volume_map");
+        let filament_map = cfg_ints(config, "filament_map");
+        let extruder_type = cfg_ints(config, "extruder_type");
+        for idx in 0..filament_count {
+            let volume_type = NozzleVolumeType::from_i32(get_at_i(&filament_volume_map, idx));
+            let extruder_index = if idx < filament_map.len() { (filament_map[idx] - 1) as usize } else { 0 };
+            let et = ExtruderType::from_i32(get_at_i(&extruder_type, extruder_index));
+            rows.default_row[idx] = crate::extruder::get_config_index_base(
+                volume_type,
+                et,
+                idx as i32 + 1,
+                &rows.extruder_variant,
+                &rows.self_index,
+            );
+        }
+        let filament_type = cfg_strings(config, "filament_type");
+        let pre_heating_enabled = cfg_bools(config, "filament_pre_heating_enabled");
+        TimeProcessContext {
+            // GCodeProcessor.cpp:1988-1990 `config.filament_type.get_at(idx)`
+            filament_types: (0..filament_count)
+                .map(|i| if i < filament_type.len() { filament_type[i].clone() } else { filament_type.first().cloned().unwrap_or_default() })
+                .collect(),
+            // :1992-1994
+            filament_pre_heating_enabled: (0..filament_count)
+                .map(|i| {
+                    let v = if i < pre_heating_enabled.len() { pre_heating_enabled[i] } else { pre_heating_enabled.first().copied().unwrap_or(false) };
+                    if v { 1 } else { 0 }
+                })
+                .collect(),
+            physical_extruder_map: cfg_ints(config, "physical_extruder_map"),
+            nozzle_group_result,
+            cooling_rate: cfg_floats(config, "hotend_cooling_rate"),
+            cooling_rate_on_rack: cfg_floats(config, "hotend_cooling_rate_on_rack"),
+            heating_rate: cfg_floats(config, "hotend_heating_rate"),
+            filament_min_temperature_when_ec: cfg_floats(config, "min_temperature_when_ec"),
+            inject_time_threshold: 0.0,
+            enable_pre_heating: config.opt_bool("enable_pre_heating"),
+            handle_hotend_as_extruder: config.opt_bool("handle_hotend_as_extruder"),
+            has_filament_switcher: config.opt_bool("has_filament_switcher"),
+            extruder_max_nozzle_count: cfg_ints(config, "extruder_max_nozzle_count"),
+            // GCodeProcessor.cpp `m_result.extruder_types` = config.extruder_type.values
+            extruder_types: extruder_type.iter().map(|&v| ExtruderType::from_i32(v)).collect(),
+            nozzle_diameter: cfg_floats(config, "nozzle_diameter"),
+            filament_variant_rows: rows,
+        }
+    }
+}
+
+/// GCodeProcessor.hpp:931-944 `struct PreCoolingInjector::ExtruderFreeBlock`
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExtruderFreeBlock {
+    pub free_lower_gcode_id: u32,
+    pub free_upper_gcode_id: u32,
+    pub partial_free_lower_id: u32,
+    pub partial_free_upper_id: u32,
+    pub last_filament_id: i32,
+    pub next_filament_id: i32,
+    pub last_nozzle_id: i32,
+    pub next_nozzle_id: i32,
+    pub extruder_id: i32,
+    pub idle_chain_key: i32,
+    pub ignore_cooling_before_tower: bool,
+}
+
+/// GCodeProcessor.hpp:929-1040 `class PreCoolingInjector`
+pub struct PreCoolingInjector<'a> {
+    m_extruder_free_blocks: Vec<ExtruderFreeBlock>,
+    moves: &'a [MoveVertexTime],
+    ctx: &'a TimeProcessContext,
+    valid_machine_id: usize,
+    skippable_blocks: &'a [(u32, u32)],
+    machine_start_gcode_end_id: u32,
+    machine_end_gcode_start_id: u32,
+}
+
+impl<'a> PreCoolingInjector<'a> {
+    /// GCodeProcessor.hpp:948-990 the constructor (GCodeProcessor.cpp:1216-1237 passes the
+    /// context's members).
+    pub fn new(
+        moves: &'a [MoveVertexTime],
+        ctx: &'a TimeProcessContext,
+        valid_machine_id: usize,
+        skippable_blocks: &'a [(u32, u32)],
+        machine_start_gcode_end_id: u32,
+        machine_end_gcode_start_id: u32,
+    ) -> Self {
+        PreCoolingInjector {
+            m_extruder_free_blocks: Vec::new(),
+            moves,
+            ctx,
+            valid_machine_id,
+            skippable_blocks,
+            machine_start_gcode_end_id,
+            machine_end_gcode_start_id,
+        }
+    }
+
+    /// GCodeProcessor.cpp:6611-6626 `filament_variant_row(filament_id, nozzle_id)`
+    pub fn filament_variant_row(&self, filament_id: i32, nozzle_id: i32) -> i32 {
+        let rows = &self.ctx.filament_variant_rows;
+        if filament_id < 0 || filament_id >= rows.default_row.len() as i32 {
+            return -1;
+        }
+        if nozzle_id >= 0 && !rows.extruder_variant.is_empty() && rows.extruder_variant.len() == rows.self_index.len() {
+            if let Some(nozzle) = self.ctx.nozzle_group_result.get_nozzle_from_id(nozzle_id) {
+                if nozzle.extruder_id >= 0 && nozzle.extruder_id < self.ctx.extruder_types.len() as i32 {
+                    let row = crate::extruder::get_config_index_base(
+                        nozzle.volume_type,
+                        self.ctx.extruder_types[nozzle.extruder_id as usize],
+                        filament_id + 1,
+                        &rows.extruder_variant,
+                        &rows.self_index,
+                    );
+                    // get_config_index_base() returns 0 when the filament owns no row at all.
+                    if row >= 0 && row < rows.self_index.len() as i32 && rows.self_index[row as usize] == filament_id + 1 {
+                        return row;
+                    }
+                }
+            }
+        }
+        rows.default_row[filament_id as usize]
+    }
+
+    /// GCodeProcessor.cpp:6628-6689 `process_pre_cooling_and_heating(inserted_operation_lines)`
+    pub fn process_pre_cooling_and_heating(&self, inserted_operation_lines: &mut InsertedLinesMap) {
+        let ctx = self.ctx;
+        let rows = &ctx.filament_variant_rows;
+        // :6630 (is_multiple_nozzle is captured by get_nozzle_temp but not read)
+        // :6631-6640
+        let get_nozzle_temp = |filament_id: i32, nozzle_id: i32, from_or_to: bool, consider_preheat_temperature_delta: bool| -> i32 {
+            let row = self.filament_variant_row(filament_id, nozzle_id);
+            if row < 0 {
+                return if from_or_to { 140 } else { 0 }; // default temp for unknown filament
+            }
+            let temp = FilamentVariantRows::value_at(&rows.nozzle_temp, row) as f64;
+            if consider_preheat_temperature_delta {
+                (temp - FilamentVariantRows::value_at(&rows.preheat_temperature_delta, row)) as i32
+            } else {
+                temp as i32
+            }
+        };
+        // :6644-6648
+        let has_mixed_extruder_types =
+            ctx.extruder_types.len() > 1 && ctx.extruder_types.windows(2).any(|w| w[0] != w[1]);
+        let first_nozzle_dia: f32 = if ctx.nozzle_diameter.is_empty() { 0.4 } else { ctx.nozzle_diameter[0] as f32 };
+        let switcher_temp_offset: f32 =
+            if (first_nozzle_dia as f64) >= 0.6 - crate::libslic3r::EPSILON { 40.0 } else { 20.0 };
+        // :6653-6659
+        let wants_pre_heating = |filament_id: i32| -> bool {
+            if !ctx.handle_hotend_as_extruder {
+                return true;
+            }
+            if filament_id < 0 || filament_id >= ctx.filament_pre_heating_enabled.len() as i32 {
+                return true;
+            }
+            ctx.filament_pre_heating_enabled[filament_id as usize] != 0
+        };
+
+        // :6661-6664
+        let mut per_extruder_free_blocks: std::collections::BTreeMap<i32, Vec<ExtruderFreeBlock>> =
+            std::collections::BTreeMap::new();
+        for block in &self.m_extruder_free_blocks {
+            per_extruder_free_blocks.entry(block.idle_chain_key).or_default().push(*block);
+        }
+
+        // :6666-6688
+        for (_extruder_id, extruder_free_blcoks) in per_extruder_free_blocks.iter() {
+            let n = extruder_free_blcoks.len();
+            for (k, iter) in extruder_free_blcoks.iter().enumerate() {
+                let is_end = k + 1 == n;
+                let is_begin = k == 0;
+                let apply_pre_cooling = !is_begin || !ctx.handle_hotend_as_extruder;
+                let apply_pre_heating = if is_end { false } else { wants_pre_heating(iter.next_filament_id) };
+                let curr_temp: f32 = if iter.last_filament_id == -1 && ctx.handle_hotend_as_extruder {
+                    0.0
+                } else {
+                    get_nozzle_temp(iter.last_filament_id, iter.last_nozzle_id, true, false) as f32
+                };
+                let mut target_temp: f32 =
+                    get_nozzle_temp(iter.next_filament_id, iter.next_nozzle_id, false, !iter.ignore_cooling_before_tower) as f32;
+                if ctx.has_filament_switcher && has_mixed_extruder_types && apply_pre_heating {
+                    let print_temp = get_nozzle_temp(iter.next_filament_id, iter.next_nozzle_id, false, false) as f32;
+                    target_temp = target_temp.min(print_temp - switcher_temp_offset);
+                }
+                self.inject_cooling_heating_command(
+                    inserted_operation_lines,
+                    iter,
+                    curr_temp,
+                    target_temp,
+                    apply_pre_cooling,
+                    apply_pre_heating,
+                );
+            }
+        }
+    }
+
+    /// GCodeProcessor.cpp:6691-6697 `build_extruder_free_blocks(filament_usage_blocks, extruder_usage_blocks)`
+    pub fn build_extruder_free_blocks(
+        &mut self,
+        filament_usage_blocks: &[FilamentUsageBlock],
+        extruder_usage_blocks: &[ExtruderUsageBlcok],
+    ) {
+        if extruder_usage_blocks.len() <= 1 {
+            self.build_by_filament_blocks(filament_usage_blocks);
+        } else {
+            self.build_by_extruder_blocks(filament_usage_blocks, extruder_usage_blocks);
+        }
+    }
+
+    /// The `std::sort` of :7045-7047 / :7104-7106 / :7157-7159 by (free_lower, free_upper). The
+    /// comparison is a strict order on the two ids; blocks equal in both (not met on the jobs here)
+    /// keep their order.
+    fn sort_free_blocks(&mut self) {
+        self.m_extruder_free_blocks.sort_by(|a, b| {
+            (a.free_lower_gcode_id, a.free_upper_gcode_id).cmp(&(b.free_lower_gcode_id, b.free_upper_gcode_id))
+        });
+    }
+
+    /// GCodeProcessor.cpp:6699-6996 `inject_cooling_heating_command(inserted_operation_lines, block,
+    /// curr_temp, target_temp, pre_cooling, pre_heating)`
+    pub fn inject_cooling_heating_command(
+        &self,
+        inserted_operation_lines: &mut InsertedLinesMap,
+        block: &ExtruderFreeBlock,
+        mut curr_temp: f32,
+        target_temp: f32,
+        pre_cooling: bool,
+        pre_heating: bool,
+    ) {
+        let ctx = self.ctx;
+        let rows = &ctx.filament_variant_rows;
+        let moves = self.moves;
+        let vm = self.valid_machine_id;
+        // :6703-6706
+        let get_valid_extruder_id = |last_nozzle_id: i32| -> i32 {
+            ctx.nozzle_group_result.get_nozzle_from_id(last_nozzle_id).map_or(0, |n| n.extruder_id)
+        };
+        // :6708-6715
+        let get_filament_nozzle_temp = |idx: i32, nozzle_id: i32| -> i32 {
+            let row = self.filament_variant_row(idx, nozzle_id);
+            if row >= 0 { FilamentVariantRows::value_at(&rows.nozzle_temp, row) } else { 0 }
+        };
+        let get_filament_pre_cooling_temp = |idx: i32, nozzle_id: i32| -> i32 {
+            let row = self.filament_variant_row(idx, nozzle_id);
+            if row >= 0 { FilamentVariantRows::value_at(&rows.pre_cooling_temp, row) } else { 0 }
+        };
+        // :6717-6722
+        let is_pre_cooling_valid = |idx: i32, nozzle_id: i32| -> bool {
+            if idx < 0 {
+                return false;
+            }
+            let pre_cooling_temp = get_filament_pre_cooling_temp(idx, nozzle_id);
+            pre_cooling_temp > 0 && pre_cooling_temp < get_filament_nozzle_temp(idx, nozzle_id)
+        };
+        // :6724-6729
+        let get_partial_free_cooling_thres = |idx: i32, nozzle_id: i32| -> f32 {
+            if idx < 0 {
+                return 30.0;
+            }
+            let temp_in_tower = get_filament_nozzle_temp(idx, nozzle_id) as f32;
+            temp_in_tower - get_filament_pre_cooling_temp(idx, nozzle_id) as f32
+        };
+        // :6730-6734
+        let get_min_temperature_when_ec = |idx: i32| -> f32 {
+            if idx < 0 || idx >= ctx.filament_min_temperature_when_ec.len() as i32 {
+                return -1.0;
+            }
+            ctx.filament_min_temperature_when_ec[idx as usize] as f32
+        };
+        // :6736-6738 / std::lower_bound(moves, gcode_id, a.gcode_id < gcode_id)
+        let lower_bound_gcode = |gcode_id: u32| -> usize { moves.partition_point(|a| a.gcode_id < gcode_id) };
+        // :6740-6751
+        let skippable_blocks = self.skippable_blocks;
+        let find_skip_block = |gcode_id: u32| -> Option<(u32, u32)> {
+            let it = skippable_blocks.partition_point(|block| !(gcode_id < block.0));
+            if it != 0 {
+                let candidate = skippable_blocks[it - 1];
+                if gcode_id >= candidate.0 && gcode_id <= candidate.1 {
+                    return Some(candidate);
+                }
+            }
+            None
+        };
+        // :6753-6763
+        let adjust_insert_gcode_id_backward = |mut gcode_id: u32| -> u32 {
+            while gcode_id > 0 {
+                let Some(skip_block) = find_skip_block(gcode_id) else {
+                    return gcode_id;
+                };
+                if skip_block.0 == 0 {
+                    return 0;
+                }
+                gcode_id = skip_block.0 - 1;
+            }
+            0
+        };
+        // :6764-6774
+        let adjust_insert_gcode_id_forward = |mut gcode_id: u32| -> u32 {
+            while gcode_id < u32::MAX {
+                let Some(skip_block) = find_skip_block(gcode_id) else {
+                    return gcode_id;
+                };
+                if skip_block.1 == u32::MAX {
+                    return 0;
+                }
+                gcode_id = skip_block.1 + 1;
+            }
+            0
+        };
+
+        // :6776-6777
+        if (!pre_cooling && !pre_heating) || block.free_upper_gcode_id <= block.free_lower_gcode_id {
+            return;
+        }
+
+        // :6780-6787
+        let apply_cooling_when_partial_free = is_pre_cooling_valid(block.last_filament_id, block.last_nozzle_id)
+            && pre_cooling
+            && block.partial_free_upper_id > block.partial_free_lower_id;
+        let free_lower_gcode_id =
+            if pre_cooling { adjust_insert_gcode_id_forward(block.free_lower_gcode_id) } else { block.free_lower_gcode_id };
+        if pre_cooling && (free_lower_gcode_id == 0 || free_lower_gcode_id >= block.free_upper_gcode_id) {
+            return;
+        }
+
+        // :6793-6798
+        let mut cooling_insert_gcode_id = free_lower_gcode_id;
+        if pre_cooling && ctx.handle_hotend_as_extruder {
+            let before_skip_blocks = adjust_insert_gcode_id_backward(block.free_lower_gcode_id);
+            if before_skip_blocks != 0 {
+                cooling_insert_gcode_id = before_skip_blocks;
+            }
+        }
+
+        // :6800-6810
+        let move_iter_lower = lower_bound_gcode(free_lower_gcode_id);
+        let mut move_iter_upper = lower_bound_gcode(block.free_upper_gcode_id); // closed iter
+        if move_iter_lower == moves.len() || move_iter_upper == 0 {
+            return;
+        }
+        move_iter_upper -= 1;
+        let complete_free_time_gap: f32 = if move_iter_lower == 0 {
+            moves[move_iter_upper].time[vm]
+        } else {
+            moves[move_iter_upper].time[vm] - moves[move_iter_lower - 1].time[vm]
+        };
+
+        // :6813-6822
+        let partial_free_move_lower = lower_bound_gcode(block.partial_free_lower_id);
+        let mut partial_free_move_upper = lower_bound_gcode(block.partial_free_upper_id); // closed iter
+        if partial_free_move_lower == moves.len() || partial_free_move_upper == 0 {
+            return;
+        }
+        partial_free_move_upper -= 1;
+        let partial_free_time_gap: f32 = if partial_free_move_lower == 0 {
+            moves[partial_free_move_upper].time[vm]
+        } else {
+            moves[partial_free_move_upper].time[vm] - moves[partial_free_move_lower - 1].time[vm]
+        };
+
+        // :6824-6831
+        if move_iter_lower >= move_iter_upper {
+            return;
+        }
+        if apply_cooling_when_partial_free && partial_free_time_gap + complete_free_time_gap < ctx.inject_time_threshold {
+            return;
+        }
+        if !apply_cooling_when_partial_free && complete_free_time_gap < ctx.inject_time_threshold {
+            return;
+        }
+
+        // :6833-6838
+        let extruder_id = get_valid_extruder_id(block.last_nozzle_id);
+        let ext_heating_rate = ctx.heating_rate[extruder_id as usize] as f32;
+        let ext_cooling_rate_post_extrusion = ctx.cooling_rate[extruder_id as usize] as f32;
+        let ext_cooling_rate_when_free = ctx.cooling_rate_on_rack[extruder_id as usize] as f32;
+
+        // :6840-6885 add_M104_lines / format_line_M104
+        let add_m104_lines = |inserted_operation_lines: &mut InsertedLinesMap,
+                              gcode_id: u32,
+                                  target_extruder: i32,
+                                  target_temp: i32,
+                                  target_filament: i32,
+                                  skippable: bool,
+                                  next_filament_idx: i32,
+                                  next_nozzle_id: i32,
+                                  is_heating: bool,
+                                  r#type: InsertLineType,
+                                  comment: &str| {
+            let mut buffer: Vec<String> = Vec::new();
+            if skippable {
+                let support_dynamic_nozzle_map = ctx.nozzle_group_result.is_support_dynamic_nozzle_map();
+                let mut m632_line = format!("M632 S{}", next_filament_idx);
+                if support_dynamic_nozzle_map {
+                    m632_line += &format!(" H{}", next_nozzle_id);
+                }
+                if ctx.extruder_max_nozzle_count[target_extruder as usize] > 1 {
+                    m632_line += " N R";
+                }
+                m632_line += " W\n";
+                buffer.push(m632_line);
+            }
+            if !is_heating {
+                buffer.push("M400\n".to_string());
+            }
+            let mut m104_line = String::from("M104");
+            if ctx.handle_hotend_as_extruder {
+                m104_line += &format!(" I{}", if target_filament == -1 { next_filament_idx } else { target_filament });
+            } else if target_extruder != -1 {
+                m104_line += &format!(" T{}", ctx.physical_extruder_map[target_extruder as usize]);
+            }
+            m104_line += &format!(" S{}", target_temp);
+            m104_line += " N0"; // N0 means the gcode is generated by slicer
+            m104_line += if is_heating { " W" } else { " C" };
+            if !comment.is_empty() {
+                m104_line += " ;";
+                m104_line += comment;
+            }
+            m104_line.push('\n');
+            buffer.push(m104_line);
+            if skippable {
+                buffer.push("M633\n".to_string());
+            }
+            let entry = inserted_operation_lines.entry(gcode_id).or_default();
+            for line in buffer {
+                entry.push((line, r#type));
+            }
+        };
+
+        // :6887-6896 add_M106_full_part_fan — written into the same map after add_M104_lines.
+        // :6898-6907
+        let room_temperature: f32 = 25.0;
+        let get_filament_min_temperature_when_ec = |filament_id: i32, nozzle_id: i32| -> f32 {
+            let min_temperature: f32 = if ctx.handle_hotend_as_extruder { 0.0 } else { room_temperature };
+            if self.filament_variant_row(filament_id, nozzle_id) < 0 {
+                return min_temperature;
+            }
+            let idle_floor = get_min_temperature_when_ec(filament_id);
+            if idle_floor >= 0.0 {
+                return min_temperature.max(idle_floor);
+            }
+            min_temperature
+        };
+
+        // :6909-6929
+        if apply_cooling_when_partial_free {
+            let min_temperature = get_filament_min_temperature_when_ec(block.last_filament_id, block.last_nozzle_id);
+            let mut cooling_budget = get_partial_free_cooling_thres(block.last_filament_id, block.last_nozzle_id);
+            let command_only_active = ctx.handle_hotend_as_extruder
+                && block.last_filament_id >= 0
+                && block.last_filament_id < ctx.filament_types.len() as i32
+                && ctx.filament_types[block.last_filament_id as usize] == "PVA";
+            if !command_only_active {
+                cooling_budget = cooling_budget.min(partial_free_time_gap * ext_cooling_rate_post_extrusion);
+            }
+            let max_cooling_temp = curr_temp.min(cooling_budget);
+            curr_temp = min_temperature.max(curr_temp - max_cooling_temp);
+            add_m104_lines(
+                inserted_operation_lines,
+                block.partial_free_lower_id,
+                extruder_id,
+                curr_temp as i32,
+                block.last_filament_id,
+                false,
+                block.next_filament_id,
+                block.next_nozzle_id,
+                false,
+                InsertLineType::PreCooling,
+                "Multi extruder pre cooling in post extrusion",
+            );
+            if command_only_active {
+                inserted_operation_lines
+                    .entry(block.partial_free_lower_id)
+                    .or_default()
+                    .push(("M106 S255 ;Multi extruder pre cooling fan on\n".to_string(), InsertLineType::PreCooling));
+            }
+        }
+
+        // :6931-6945
+        if pre_cooling && !pre_heating {
+            let temp_floor = get_filament_min_temperature_when_ec(block.last_filament_id, block.last_nozzle_id) as i32;
+            let mut cooling_temp = temp_floor;
+            if self.filament_variant_row(block.next_filament_id, block.next_nozzle_id) >= 0 {
+                let delta_temp = (complete_free_time_gap * ext_cooling_rate_when_free) as i32;
+                cooling_temp = temp_floor.max(curr_temp as i32 - delta_temp);
+            }
+            if cooling_temp >= curr_temp as i32 {
+                return;
+            }
+            add_m104_lines(
+                inserted_operation_lines,
+                cooling_insert_gcode_id,
+                extruder_id,
+                cooling_temp,
+                block.last_filament_id,
+                false,
+                block.next_filament_id,
+                block.next_nozzle_id,
+                false,
+                InsertLineType::PreCooling,
+                "Multi extruder pre cooling",
+            );
+            return;
+        }
+        // :6946-6966 std::upper_bound(first, last, t, time < a.time[vm])
+        let upper_bound_time = |first: usize, last: usize, t: f32| -> usize {
+            first + moves[first..last].partition_point(|a| !(t < a.time[vm]))
+        };
+        if !pre_cooling && pre_heating {
+            if target_temp <= curr_temp {
+                return;
+            }
+            let heating_start_time = moves[move_iter_upper].time[vm] - (target_temp - curr_temp) / ext_heating_rate;
+            let mut heating_move_iter = upper_bound_time(move_iter_lower, move_iter_upper + 1, heating_start_time);
+            if heating_move_iter == move_iter_lower {
+                let heating_gcode_id = adjust_insert_gcode_id_backward(block.free_lower_gcode_id);
+                if heating_gcode_id == 0 || heating_gcode_id < block.free_lower_gcode_id {
+                    return;
+                }
+                add_m104_lines(
+                    inserted_operation_lines,
+                    heating_gcode_id,
+                    extruder_id,
+                    target_temp as i32,
+                    block.next_filament_id,
+                    true,
+                    block.next_filament_id,
+                    block.next_nozzle_id,
+                    true,
+                    InsertLineType::PreHeating,
+                    "Multi extruder pre heating",
+                );
+            } else {
+                heating_move_iter -= 1;
+                let heating_gcode_id = adjust_insert_gcode_id_backward(moves[heating_move_iter].gcode_id);
+                if heating_gcode_id == 0 || heating_gcode_id < block.free_lower_gcode_id {
+                    return;
+                }
+                add_m104_lines(
+                    inserted_operation_lines,
+                    heating_gcode_id,
+                    extruder_id,
+                    target_temp as i32,
+                    block.next_filament_id,
+                    true,
+                    block.next_filament_id,
+                    block.next_nozzle_id,
+                    true,
+                    InsertLineType::PreHeating,
+                    "Multi extruder pre heating",
+                );
+            }
+            return;
+        }
+        // :6967-6996 perform cooling first and then perform heating
+        let cooling_thres = get_filament_min_temperature_when_ec(block.last_filament_id, block.last_nozzle_id);
+        // :6970 — one expression: clang fuses `curr*hr + target*cr` (the left product into the add)
+        // and the subtraction of `(gap*cr)*hr`.
+        let mid_temp = {
+            let t1 = target_temp * ext_cooling_rate_when_free;
+            let s = curr_temp.mul_add(ext_heating_rate, t1);
+            let g = complete_free_time_gap * ext_cooling_rate_when_free;
+            let num = (-g).mul_add(ext_heating_rate, s);
+            cooling_thres.max(num / (ext_cooling_rate_when_free + ext_heating_rate))
+        };
+        let heating_temp = target_temp - mid_temp;
+        let heating_start_time = moves[move_iter_upper].time[vm] - heating_temp / ext_heating_rate;
+        let mut heating_move_iter = upper_bound_time(move_iter_lower, move_iter_upper + 1, heating_start_time);
+        if heating_move_iter == move_iter_lower {
+            return;
+        }
+        heating_move_iter -= 1;
+        let heating_gcode_id = adjust_insert_gcode_id_backward(moves[heating_move_iter].gcode_id);
+        if heating_gcode_id <= free_lower_gcode_id {
+            return;
+        }
+        // :6981-6988 std::upper_bound(lower, upper + 1, heating_gcode_id, gcode_id < move.gcode_id)
+        let adjusted_heating_move_iter =
+            move_iter_lower + moves[move_iter_lower..move_iter_upper + 1].partition_point(|m| !(heating_gcode_id < m.gcode_id));
+        if adjusted_heating_move_iter == move_iter_lower {
+            return;
+        }
+        heating_move_iter = adjusted_heating_move_iter - 1;
+
+        // :6990-6995
+        let real_cooling_time = moves[heating_move_iter].time[vm] - moves[move_iter_lower].time[vm];
+        let real_delta_temp = (real_cooling_time * ext_cooling_rate_when_free) as i32;
+        let cooling_temp = (cooling_thres as i32).max(curr_temp as i32 - real_delta_temp);
+        add_m104_lines(
+            inserted_operation_lines,
+            cooling_insert_gcode_id,
+            extruder_id,
+            cooling_temp,
+            block.last_filament_id,
+            false,
+            block.next_filament_id,
+            block.next_nozzle_id,
+            false,
+            InsertLineType::PreCooling,
+            "Multi extruder pre cooling",
+        );
+        add_m104_lines(
+            inserted_operation_lines,
+            heating_gcode_id,
+            extruder_id,
+            target_temp as i32,
+            block.next_filament_id,
+            true,
+            block.next_filament_id,
+            block.next_nozzle_id,
+            true,
+            InsertLineType::PreHeating,
+            "Multi extruder pre heating",
+        );
+    }
+
+    /// GCodeProcessor.cpp:6998-7048 `build_by_filament_blocks(filament_usage_blocks)`
+    pub fn build_by_filament_blocks(&mut self, filament_usage_blocks: &[FilamentUsageBlock]) {
+        self.m_extruder_free_blocks.clear();
+        let handle_hotend_as_extruder = self.ctx.handle_hotend_as_extruder;
+        let mut per_group_usage_blocks: std::collections::BTreeMap<i32, Vec<FilamentUsageBlock>> =
+            std::collections::BTreeMap::new();
+        for block in filament_usage_blocks {
+            let group_key = if handle_hotend_as_extruder { block.filament_id } else { block.extruder_id };
+            per_group_usage_blocks.entry(group_key).or_default().push(*block);
+        }
+        let start_filament_block = FilamentUsageBlock::new(-1, -1, -1, 0, self.machine_start_gcode_end_id);
+        let end_filament_block = FilamentUsageBlock::new(-1, -1, -1, self.machine_end_gcode_start_id, u32::MAX);
+        for blocks in per_group_usage_blocks.values_mut() {
+            blocks.insert(0, start_filament_block);
+            blocks.push(end_filament_block);
+        }
+        for (&group_key, filament_blocks) in per_group_usage_blocks.iter() {
+            for w in filament_blocks.windows(2) {
+                let (iter, niter) = (&w[0], &w[1]);
+                let mut block = ExtruderFreeBlock {
+                    free_lower_gcode_id: iter.upper_gcode_id,
+                    last_filament_id: iter.filament_id,
+                    last_nozzle_id: iter.nozzle_id,
+                    free_upper_gcode_id: niter.lower_gcode_id,
+                    next_filament_id: niter.filament_id,
+                    next_nozzle_id: niter.nozzle_id,
+                    ..Default::default()
+                };
+                if block.last_nozzle_id == -1 {
+                    block.last_nozzle_id = block.next_nozzle_id;
+                }
+                block.extruder_id = group_key;
+                block.idle_chain_key = group_key;
+                block.partial_free_lower_id = block.free_lower_gcode_id;
+                block.partial_free_upper_id = block.free_lower_gcode_id;
+                self.m_extruder_free_blocks.push(block);
+            }
+        }
+        for block in self.m_extruder_free_blocks.iter_mut() {
+            block.ignore_cooling_before_tower = true;
+        }
+        self.sort_free_blocks();
+    }
+
+    /// GCodeProcessor.cpp:7050-7160 `build_by_extruder_blocks(filament_usage_blocks, extruder_usage_blocks)`
+    pub fn build_by_extruder_blocks(
+        &mut self,
+        filament_usage_blocks: &[FilamentUsageBlock],
+        extruder_usage_blocks: &[ExtruderUsageBlcok],
+    ) {
+        self.m_extruder_free_blocks.clear();
+        // :7061-7108
+        if self.ctx.handle_hotend_as_extruder {
+            let mut per_filament_usage_blocks: std::collections::BTreeMap<i32, Vec<FilamentUsageBlock>> =
+                std::collections::BTreeMap::new();
+            for filament_span in filament_usage_blocks {
+                per_filament_usage_blocks.entry(filament_span.filament_id).or_default().push(*filament_span);
+            }
+            let start_filament_block = FilamentUsageBlock::new(-1, -1, -1, 0, self.machine_start_gcode_end_id);
+            let end_filament_block = FilamentUsageBlock::new(-1, -1, -1, self.machine_end_gcode_start_id, u32::MAX);
+            for spans in per_filament_usage_blocks.values_mut() {
+                spans.insert(0, start_filament_block);
+                spans.push(end_filament_block);
+            }
+            for (&filament_id, filament_spans) in per_filament_usage_blocks.iter() {
+                for w in filament_spans.windows(2) {
+                    let (prev, next) = (&w[0], &w[1]);
+                    let mut block = ExtruderFreeBlock {
+                        free_lower_gcode_id: prev.upper_gcode_id,
+                        last_filament_id: prev.filament_id,
+                        last_nozzle_id: prev.nozzle_id,
+                        free_upper_gcode_id: next.lower_gcode_id,
+                        next_filament_id: next.filament_id,
+                        next_nozzle_id: next.nozzle_id,
+                        ..Default::default()
+                    };
+                    if block.last_nozzle_id == -1 {
+                        block.last_nozzle_id = block.next_nozzle_id;
+                    }
+                    block.idle_chain_key = filament_id;
+                    block.extruder_id =
+                        self.ctx.nozzle_group_result.get_nozzle_from_id(block.last_nozzle_id).map_or(0, |n| n.extruder_id);
+                    block.partial_free_lower_id = block.free_lower_gcode_id;
+                    block.partial_free_upper_id = block.free_lower_gcode_id;
+                    block.ignore_cooling_before_tower = true;
+                    self.attach_nc_bounds_if_gap_crosses_nozzle_change(&mut block, prev, next, extruder_usage_blocks);
+                    self.m_extruder_free_blocks.push(block);
+                }
+            }
+            self.sort_free_blocks();
+            return;
+        }
+
+        // :7110-7129
+        let mut per_extruder_usage_blocks: std::collections::BTreeMap<i32, Vec<ExtruderUsageBlcok>> =
+            std::collections::BTreeMap::new();
+        for block in extruder_usage_blocks {
+            per_extruder_usage_blocks.entry(block.extruder_id).or_default().push(*block);
+        }
+        for (&extruder_id, blocks) in per_extruder_usage_blocks.iter_mut() {
+            let mut start_filament_block = ExtruderUsageBlcok::default();
+            start_filament_block.initialize_step_1(extruder_id, 0, -1, -1);
+            start_filament_block.initialize_step_2(self.machine_start_gcode_end_id as i32);
+            start_filament_block.initialize_step_3(
+                self.machine_start_gcode_end_id as i32,
+                -1,
+                self.machine_start_gcode_end_id as i32,
+                -1,
+            );
+            let mut end_filament_block = ExtruderUsageBlcok::default();
+            end_filament_block.initialize_step_1(extruder_id, self.machine_end_gcode_start_id as i32, -1, -1);
+            end_filament_block.initialize_step_2(i32::MAX);
+            end_filament_block.initialize_step_3(i32::MAX, -1, i32::MAX, -1);
+            blocks.insert(0, start_filament_block);
+            blocks.push(end_filament_block);
+        }
+        // :7132-7155
+        for (&extruder_id, blocks) in per_extruder_usage_blocks.iter() {
+            for w in blocks.windows(2) {
+                let (iter, niter) = (&w[0], &w[1]);
+                let mut block = ExtruderFreeBlock {
+                    free_lower_gcode_id: iter.end_id,
+                    last_filament_id: iter.end_filament,
+                    last_nozzle_id: iter.end_nozzle_id,
+                    free_upper_gcode_id: niter.start_id,
+                    next_filament_id: niter.start_filament,
+                    next_nozzle_id: niter.start_nozzle_id,
+                    ..Default::default()
+                };
+                if block.last_nozzle_id == -1 {
+                    block.last_nozzle_id = block.next_nozzle_id;
+                }
+                block.extruder_id = extruder_id;
+                block.idle_chain_key = extruder_id;
+                block.partial_free_lower_id = iter.post_extrusion_start_id;
+                block.partial_free_upper_id = iter.post_extrusion_end_id;
+                block.ignore_cooling_before_tower = niter.ignore_cooling_before_tower;
+                self.m_extruder_free_blocks.push(block);
+            }
+        }
+        self.sort_free_blocks();
+    }
+
+    /// GCodeProcessor.cpp:7162-7202 `attach_nc_bounds_if_gap_crosses_nozzle_change(idle, prev, next, nc_blocks)`
+    pub fn attach_nc_bounds_if_gap_crosses_nozzle_change(
+        &self,
+        idle: &mut ExtruderFreeBlock,
+        prev: &FilamentUsageBlock,
+        next: &FilamentUsageBlock,
+        nc_blocks: &[ExtruderUsageBlcok],
+    ) {
+        let overlaps = |nc: &ExtruderUsageBlcok, fil: &FilamentUsageBlock| -> bool {
+            fil.filament_id >= 0 && nc.start_id < fil.upper_gcode_id && nc.end_id > fil.lower_gcode_id
+        };
+        for nc in nc_blocks {
+            if nc.end_filament != prev.filament_id || nc.end_id >= self.machine_end_gcode_start_id || !overlaps(nc, prev) {
+                continue;
+            }
+            if nc.post_extrusion_start_id < nc.post_extrusion_end_id {
+                idle.partial_free_lower_id = nc.post_extrusion_start_id;
+                idle.partial_free_upper_id = nc.post_extrusion_end_id;
+            }
+            if nc.end_id < idle.free_upper_gcode_id {
+                idle.free_lower_gcode_id = nc.end_id;
+            }
+            if nc.end_nozzle_id >= 0 {
+                idle.last_nozzle_id = nc.end_nozzle_id;
+            }
+            break;
+        }
+        for nc in nc_blocks {
+            if nc.start_filament != next.filament_id || nc.start_id <= self.machine_start_gcode_end_id {
+                continue;
+            }
+            if nc.start_id < prev.upper_gcode_id || nc.start_id >= next.lower_gcode_id || nc.end_id < next.lower_gcode_id {
+                continue;
+            }
+            idle.ignore_cooling_before_tower = nc.ignore_cooling_before_tower;
+            if nc.start_nozzle_id >= 0 {
+                idle.next_nozzle_id = nc.start_nozzle_id;
+            }
+            break;
+        }
+    }
+}
+
+/// `std::istringstream >> int` over `s`: leading whitespace, an optional sign and digits; `None`
+/// when no digit follows (the stream's fail state). Returns the value and the rest of the string.
+fn istream_int(s: &str) -> Option<(i32, &str)> {
+    let t = s.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
+    let b = t.as_bytes();
+    let mut k = 0;
+    if k < b.len() && (b[k] == b'+' || b[k] == b'-') {
+        k += 1;
+    }
+    let digits_start = k;
+    while k < b.len() && b[k].is_ascii_digit() {
+        k += 1;
+    }
+    if k == digits_start {
+        return None;
+    }
+    let v: i64 = t[..k].parse().ok()?;
+    if v < i32::MIN as i64 || v > i32::MAX as i64 {
+        return None;
+    }
+    Some((v as i32, &t[k..]))
+}
+
+/// GCodeProcessor.cpp:1033-1043 / 1050-1060 / 1069-1079: after the filament id, `while (str >> param)`
+/// reads characters (skipping whitespace) until an `H`, then `str >> nozzle_id`; -1 when absent or
+/// unreadable.
+fn istream_nozzle_after(rest: &str) -> i32 {
+    let mut chars = rest.char_indices().filter(|(_, c)| !c.is_whitespace());
+    if let Some((i, _)) = chars.find(|(_, c)| *c == 'H') {
+        return istream_int(&rest[i + 1..]).map_or(-1, |(v, _)| v);
+    }
+    -1
+}
+
+/// GCodeProcessor.cpp:904-922 `handle_nozzle_change_line`: the regex
+/// `OF(\d+)\s+NF(\d+)\s+ON(\d+)\s+NN(\d+)` searched in the line.
+fn nozzle_change_fields(line: &str) -> Option<(i32, i32, i32, i32)> {
+    let b = line.as_bytes();
+    let digits = |mut k: usize| -> Option<(i32, usize)> {
+        let s = k;
+        while k < b.len() && b[k].is_ascii_digit() {
+            k += 1;
+        }
+        if k == s {
+            return None;
+        }
+        line[s..k].parse::<i32>().ok().map(|v| (v, k))
+    };
+    let ws = |mut k: usize| -> Option<usize> {
+        let s = k;
+        while k < b.len() && (b[k] as char).is_ascii_whitespace() {
+            k += 1;
+        }
+        if k == s { None } else { Some(k) }
+    };
+    let lit = |k: usize, l: &str| -> Option<usize> { if line[k..].starts_with(l) { Some(k + l.len()) } else { None } };
+    for start in 0..b.len() {
+        let r = (|| {
+            let k = lit(start, "OF")?;
+            let (of, k) = digits(k)?;
+            let k = ws(k)?;
+            let k = lit(k, "NF")?;
+            let (nf, k) = digits(k)?;
+            let k = ws(k)?;
+            let k = lit(k, "ON")?;
+            let (on, k) = digits(k)?;
+            let k = ws(k)?;
+            let k = lit(k, "NN")?;
+            let (nn, _) = digits(k)?;
+            Some((of, nf, on, nn))
+        })();
+        if r.is_some() {
+            return r;
+        }
+    }
+    None
+}
+
+/// GCodeProcessor.cpp:923-932 `handle_toolchange_wipe_line`: the regex `CT(\d)(?:\s+FL(\d))?`.
+fn toolchange_wipe_fields(line: &str) -> Option<(bool, bool)> {
+    let b = line.as_bytes();
+    for start in 0..b.len().saturating_sub(2) {
+        if b[start] == b'C' && b[start + 1] == b'T' && b[start + 2].is_ascii_digit() {
+            let is_contact = b[start + 2] != b'0';
+            let mut k = start + 3;
+            let s = k;
+            while k < b.len() && (b[k] as char).is_ascii_whitespace() {
+                k += 1;
+            }
+            let mut is_first_layer = false;
+            if k > s && k + 2 < b.len() + 0 && b[k] == b'F' && b[k + 1] == b'L' && b[k + 2].is_ascii_digit() {
+                is_first_layer = b[k + 2] != b'0';
+            }
+            return Some((is_contact, is_first_layer));
+        }
+    }
+    None
+}
+
+impl TimeProcessor {
+    /// GCodeProcessor.cpp:571-1300 `TimeProcessor::post_process(filename, moves, lines_ends, context)`
+    /// with the pre-heating pass: the first pass (M73 lines, :1012-1124) and its block collection, the
+    /// offsets (:1307-1365, applied by reading the ids off the first pass's output, which is what
+    /// `handle_offsets_of_first_process` computes), the moves' time fill (:1129-1143), the remaining
+    /// filament changes (:1150-1169, written when `write_filament_change_predict`), the extruder blocks'
+    /// initialization (:1175-1199), the PreCoolingInjector (:1204-1240) and the second pass (:1242-1281).
+    /// `moves` are the processor's moves (`gcode_id`, `time`) in the first pass's input numbering.
+    pub fn post_process_with_context(
+        &self,
+        gcode: &str,
+        moves_in: &[MoveVertexTime],
+        context: &TimeProcessContext,
+        write_filament_change_predict: bool,
+    ) -> String {
+        use crate::g_code_reader::GCodeLine;
+        // first pass: the M73 lines and their offsets
+        let mut offsets: Vec<(u32, u32)> = Vec::new();
+        let text1 = self.post_process_first_pass(gcode, Some(&mut offsets));
+
+        // :1318-1327 moves' gcode ids moved by the inserted lines
+        let mut moves: Vec<MoveVertexTime> = moves_in.to_vec();
+        {
+            let mut curr_offset_id = 0usize;
+            let mut total_offset = 0u32;
+            for mv in moves.iter_mut() {
+                while curr_offset_id < offsets.len() && offsets[curr_offset_id].0 <= mv.gcode_id {
+                    total_offset += offsets[curr_offset_id].1;
+                    curr_offset_id += 1;
+                }
+                mv.gcode_id += total_offset;
+            }
+        }
+
+        // The block collection of `gcode_time_handler` (:1001-1121), over the first pass's output: an
+        // input line L sits at L + (lines inserted at or before L) there, which is the id
+        // `handle_offsets_of_first_process` gives every block (:1342-1364).
+        let reserved = |t: ETags| -> String { format!(";{}", reserved_tag(t)) };
+        let tag_machine_start_end = reserved_tag(ETags::MachineStartGCodeEnd);
+        let tag_machine_end_start = reserved_tag(ETags::MachineEndGCodeStart);
+        let tag_skippable_start = custom_tags(CustomETags::SkippableStart);
+        let tag_skippable_end = custom_tags(CustomETags::SkippableEnd);
+        // GCodeProcessor.cpp:82-83 CustomTags FilamentChangeGCodeStart / End
+        let tag_fc_start = " FilamentChangeGCodeStart";
+        let tag_fc_end = " FilamentChangeGCodeEnd";
+        let nozzle_change_start = reserved(ETags::NozzleChangeStart);
+        let nozzle_change_end = reserved(ETags::NozzleChangeEnd);
+        let cp_toolchange_wipe = reserved(ETags::CpToolchangeWipe);
+        let layer_change = reserved(ETags::LayerChange);
+        let ngr = &context.nozzle_group_result;
+
+        let mut machine_start_gcode_end_line_id: u32 = u32::MAX;
+        let mut machine_end_gcode_start_line_id: u32 = u32::MAX;
+        let mut skippable_blocks: Vec<(u32, u32)> = Vec::new();
+        let mut current_layer_id: i32 = 0;
+        let mut filament_blocks: Vec<FilamentUsageBlock> = Vec::new();
+        let mut extruder_blocks: Vec<ExtruderUsageBlcok> = vec![ExtruderUsageBlcok::default()];
+        let mut temp_construct_block = ExtruderUsageBlcok::default();
+
+        let mut line_id: u32 = 0;
+        for gcode_line in text1.split_inclusive('\n') {
+            line_id += 1;
+            // :675-787 process_placeholders: the tags it records (the placeholders themselves are
+            // already replaced in the port's header).
+            let line = gcode_line.strip_suffix('\n').unwrap_or(gcode_line);
+            if line.len() > 1 {
+                let l = &line[1..];
+                if l == tag_machine_start_end {
+                    machine_start_gcode_end_line_id = line_id;
+                } else if l == tag_machine_end_start {
+                    machine_end_gcode_start_line_id = line_id;
+                } else if l == tag_skippable_start {
+                    skippable_blocks.push((line_id, 0));
+                } else if l == tag_skippable_end {
+                    if let Some(b) = skippable_blocks.last_mut() {
+                        b.1 = line_id;
+                    }
+                } else if context.handle_hotend_as_extruder && l == tag_fc_start {
+                    skippable_blocks.push((line_id, 0));
+                } else if context.handle_hotend_as_extruder && l == tag_fc_end && !skippable_blocks.is_empty() {
+                    skippable_blocks.last_mut().unwrap().1 = line_id;
+                }
+            }
+            // :957-975 handle_filament_change
+            let mut handle_filament_change = |filament_id: i32, line_id: u32, mut nozzle_id: i32| {
+                if machine_start_gcode_end_line_id == u32::MAX && line_id < machine_start_gcode_end_line_id
+                    || machine_end_gcode_start_line_id != u32::MAX && line_id > machine_end_gcode_start_line_id
+                {
+                    return;
+                }
+                if let Some(b) = filament_blocks.last_mut() {
+                    b.upper_gcode_id = line_id;
+                }
+                if nozzle_id == -1 {
+                    nozzle_id = ngr.get_nozzle_id(filament_id, current_layer_id);
+                }
+                // :972 `get_nozzle_from_id(nozzle_id)->extruder_id` (dereferenced unchecked in C++).
+                let extruder_id = ngr.get_nozzle_from_id(nozzle_id).map_or(0, |n| n.extruder_id);
+                filament_blocks.push(FilamentUsageBlock::new(filament_id, extruder_id, nozzle_id, line_id, u32::MAX));
+            };
+            // :983-1121 (the G1/G2/G3/;VG1 branch wrote the M73 lines in the first pass)
+            if GCodeLine::cmd_is_str(gcode_line, "G1")
+                || GCodeLine::cmd_is_str(gcode_line, "G2")
+                || GCodeLine::cmd_is_str(gcode_line, "G3")
+                || GCodeLine::cmd_start_with(gcode_line, ";VG1")
+            {
+            } else if GCodeLine::cmd_start_with(gcode_line, "T") {
+                let skips = gcode_line.len() - gcode_line.trim_start_matches([' ', '\t']).len();
+                if let Some((fid, rest)) = istream_int(&gcode_line[skips + 1..]) {
+                    if (0..255).contains(&fid) {
+                        handle_filament_change(fid, line_id, istream_nozzle_after(rest));
+                    }
+                }
+            } else if GCodeLine::cmd_start_with(gcode_line, ";VT") {
+                let skips = gcode_line.len() - gcode_line.trim_start_matches([' ', '\t']).len();
+                if let Some((fid, rest)) = istream_int(&gcode_line[skips + 3..]) {
+                    if (0..255).contains(&fid) {
+                        handle_filament_change(fid, line_id, istream_nozzle_after(rest));
+                    }
+                }
+            } else if GCodeLine::cmd_start_with(gcode_line, "M1020") {
+                if let Some(s_pos) = gcode_line.find('S') {
+                    if let Some((fid, rest)) = istream_int(&gcode_line[s_pos + 1..]) {
+                        if (0..255).contains(&fid) {
+                            handle_filament_change(fid, line_id, istream_nozzle_after(rest));
+                        }
+                    }
+                }
+            } else if GCodeLine::cmd_start_with(gcode_line, &nozzle_change_start) {
+                if let Some(b) = extruder_blocks.last_mut() {
+                    b.initialize_step_2(line_id as i32);
+                }
+            } else if GCodeLine::cmd_start_with(gcode_line, &nozzle_change_end) {
+                let (prev_filament, next_filament, prev_nozzle_id, next_nozzle_id) =
+                    nozzle_change_fields(gcode_line).unwrap_or((-1, -1, -1, -1));
+                // :915-919 (not handle_hotend_as_extruder: the nozzle's extruder; else its group)
+                let extruder_id = if nozzle_change_fields(gcode_line).is_some() {
+                    let info = ngr.get_nozzle_from_id(next_nozzle_id);
+                    if context.handle_hotend_as_extruder {
+                        info.map_or(-1, |n| n.group_id)
+                    } else {
+                        info.map_or(-1, |n| n.extruder_id)
+                    }
+                } else {
+                    -1
+                };
+                if let Some(b) = extruder_blocks.last_mut() {
+                    b.initialize_step_3(line_id as i32, prev_filament, line_id as i32, prev_nozzle_id);
+                }
+                temp_construct_block.initialize_step_1(extruder_id, line_id as i32, next_filament, next_nozzle_id);
+                extruder_blocks.push(temp_construct_block);
+                temp_construct_block.reset();
+            } else if GCodeLine::cmd_start_with(gcode_line, &cp_toolchange_wipe) {
+                let (is_contact, is_first_layer) = toolchange_wipe_fields(gcode_line).unwrap_or((false, false));
+                if let Some(b) = extruder_blocks.last_mut() {
+                    b.ignore_cooling_before_tower = is_contact || is_first_layer;
+                }
+            } else if GCodeLine::cmd_start_with(gcode_line, &layer_change) {
+                current_layer_id += 1;
+            }
+        }
+
+        // :1129-1143 If not initialized, use the time from the previous move.
+        for k in 1..moves.len() {
+            if moves[k].time[0] == 0.0 && moves[k].time[1] == 0.0 {
+                moves[k].time = moves[k - 1].time;
+            }
+        }
+
+        let mut inserted_operation_lines: InsertedLinesMap = InsertedLinesMap::new();
+
+        // :1150-1169 the remaining filament changes
+        if write_filament_change_predict {
+            let mut curr_filament = -1;
+            let mut total_filament_count = 0;
+            for fb in &filament_blocks {
+                if curr_filament != -1 && curr_filament != fb.filament_id {
+                    total_filament_count += 1;
+                }
+                curr_filament = fb.filament_id;
+            }
+            curr_filament = -1;
+            let mut curr_filament_change_num = 0;
+            for fb in &filament_blocks {
+                if curr_filament != -1 && curr_filament != fb.filament_id {
+                    curr_filament_change_num += 1;
+                    inserted_operation_lines.entry(fb.lower_gcode_id).or_default().push((
+                        format!("M73 E{}\n", total_filament_count - curr_filament_change_num),
+                        InsertLineType::FilamentChangePredict,
+                    ));
+                }
+                curr_filament = fb.filament_id;
+            }
+        }
+
+        // :1171-1173
+        if let Some(b) = filament_blocks.last_mut() {
+            b.upper_gcode_id = machine_end_gcode_start_line_id;
+        }
+
+        // :1175-1199
+        if !extruder_blocks.is_empty() {
+            let mut first_filament = 0;
+            let mut last_filament = 0;
+            if !filament_blocks.is_empty() {
+                first_filament = filament_blocks[0].filament_id;
+                last_filament = filament_blocks.last().unwrap().filament_id;
+            }
+            {
+                let nozzle_info = ngr.get_first_nozzle_for_filament(first_filament);
+                let extruder_id = if context.handle_hotend_as_extruder {
+                    nozzle_info.as_ref().map_or(-1, |n| n.group_id)
+                } else {
+                    nozzle_info.as_ref().map_or(-1, |n| n.extruder_id)
+                };
+                let start_nozzle_id = nozzle_info.as_ref().map_or(-1, |n| n.group_id);
+                extruder_blocks[0].initialize_step_1(
+                    extruder_id,
+                    machine_start_gcode_end_line_id as i32,
+                    first_filament,
+                    start_nozzle_id,
+                );
+            }
+            extruder_blocks.last_mut().unwrap().initialize_step_2(machine_end_gcode_start_line_id as i32);
+            let mut last_nozzle_id = -1;
+            if !filament_blocks.is_empty() {
+                last_nozzle_id = filament_blocks.last().unwrap().nozzle_id;
+            }
+            extruder_blocks.last_mut().unwrap().initialize_step_3(
+                machine_end_gcode_start_line_id as i32,
+                last_filament,
+                machine_end_gcode_start_line_id as i32,
+                last_nozzle_id,
+            );
+        }
+        // :1201-1202 `extruder_change_info` is filled and not read again.
+
+        // :1204-1240
+        if context.enable_pre_heating {
+            let mut valid_machine_id = 0usize;
+            for i in 0..ETimeMode::COUNT {
+                if self.machines[i].enabled {
+                    valid_machine_id = i;
+                    break;
+                }
+            }
+            let mut pre_cooling_injector = PreCoolingInjector::new(
+                &moves,
+                context,
+                valid_machine_id,
+                &skippable_blocks,
+                machine_start_gcode_end_line_id,
+                machine_end_gcode_start_line_id,
+            );
+            pre_cooling_injector.build_extruder_free_blocks(&filament_blocks, &extruder_blocks);
+            pre_cooling_injector.process_pre_cooling_and_heating(&mut inserted_operation_lines);
+        }
+
+        // :1242-1281 the second pass: the lines are appended after the line of their id; the
+        // iterator only moves on when a line id equals its key.
+        let mut out = String::with_capacity(text1.len() + inserted_operation_lines.len() * 48);
+        let mut pre_operation_iter = inserted_operation_lines.iter().peekable();
+        let mut line_id: u32 = 0;
+        for gcode_line in text1.split_inclusive('\n') {
+            line_id += 1;
+            out.push_str(gcode_line);
+            if let Some((&key, elems)) = pre_operation_iter.peek() {
+                if line_id == key {
+                    if !gcode_line.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    for (s, t) in elems.iter() {
+                        match t {
+                            InsertLineType::PreCooling | InsertLineType::PreHeating => {
+                                if context.enable_pre_heating {
+                                    out.push_str(s);
+                                }
+                            }
+                            InsertLineType::FilamentChangePredict => out.push_str(s),
+                            _ => {}
+                        }
+                    }
+                    pre_operation_iter.next();
+                }
+            }
+        }
+        out
+    }
+}
+
+// ===========================================================================
 // GCodeProcessor.hpp:1043-1063 class SeamsDetector
 // ===========================================================================
 
@@ -7482,6 +8790,16 @@ impl GCodeProcessor {
     /// std::shared_ptr<MultiNozzleUtils::NozzleGroupResultBase>& nozzle_group_result)`
     pub fn initialize_from_context(&mut self, nozzle_group_result: Option<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
         self.m_nozzle_group_result = nozzle_group_result;
+    }
+
+    /// The processor's `m_nozzle_group_result` (the one `GCodeProcessor::finalize(true)` hands to the
+    /// time context, GCodeProcessor.cpp:2833) and its moves' `gcode_id` / `time`, for
+    /// `TimeProcessor::post_process_with_context`.
+    pub fn time_process_inputs(&self) -> (Option<&crate::multi_nozzle_utils::LayeredNozzleGroupResult>, Vec<MoveVertexTime>) {
+        (
+            self.m_nozzle_group_result.as_ref(),
+            self.m_result.moves.iter().map(|m| MoveVertexTime { gcode_id: m.gcode_id, time: m.time }).collect(),
+        )
     }
 
     /// GCodeProcessor.cpp:2903-2916 `std::vector<std::pair<CustomGCode::Type, std::pair<float,
