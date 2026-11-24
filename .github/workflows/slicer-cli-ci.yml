@@ -542,8 +542,11 @@ jobs:
           # Bambu requires the project CGAL 5.4 overlay; Orca the CGAL 6.2.1
           # overlay (ci/vcpkg-overlays-orca). Keep their caches disjoint. Bumped
           # to -v8 so an OrcaSlicer cache holding the baseline CGAL 6.1.1 is not restored.
-          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
-          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
+          # OrcaSlicer has its own key: OpenCASCADE 8.0.1 with OrcaSlicer's patch, as
+          # static libraries (ci/vcpkg-overlays-orca/opencascade, ci/vcpkg-triplets-orca).
+          # The key names the patch; the install step checks the patch against it.
+          key: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
+          restore-keys: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -574,7 +577,14 @@ jobs:
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           else
             # OrcaSlicer v2.5.2 pins CGAL 6.2.1; the baseline port is 6.1.1.
+            # It pins OpenCASCADE 8.0.1 with one patch; the baseline port is 7.9.3.
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays-orca")
+            # OpenCASCADE is a static library for OrcaSlicer: the package holds one
+            # set of TK*.dll, the 7.9.3 of Bambu Studio and Snapmaker Orca.
+            VCPKG_ARGS+=(--overlay-triplets="$GITHUB_WORKSPACE/ci/vcpkg-triplets-orca")
+            OCCT_PATCH=references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch
+            [[ "$(sha256sum "$OCCT_PATCH" | cut -c1-16)" == 652d13689016f44b ]] \
+              || { echo "OrcaSlicer's OpenCASCADE patch changed: give the vcpkg cache key the new hash"; exit 1; }
           fi
           for attempt in 1 2 3; do
             if vcpkg install "${VCPKG_ARGS[@]}" \
@@ -919,6 +929,9 @@ jobs:
           }
           # Carry runtime DLLs beside the binary; package job unions both engines'.
           $binDir = Split-Path $bin
+          if ("${{ matrix.engine }}" -eq "orca" -and (Get-ChildItem $binDir -Filter TK*.dll -File -ErrorAction SilentlyContinue)) {
+            throw "OrcaSlicer must hold OpenCASCADE 8.0.1 statically: the package's TK*.dll are 7.9.3"
+          }
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination staged\
           $licenseRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed"
@@ -1023,6 +1036,21 @@ jobs:
           if (( install_status != 0 )); then
             brew install openssl@3
           fi
+
+      # OrcaSlicer's pinned OpenCASCADE 8.0.1 with its patch, built by
+      # install_deps.sh when this cache has no complete copy.
+      - name: Prepare OpenCASCADE 8.0.1 prefix (macOS, OrcaSlicer)
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
+        run: |
+          sudo mkdir -p /opt/slicer-cli/occt-8.0
+          sudo chown -R "$USER" /opt/slicer-cli/occt-8.0
+
+      - name: Cache OpenCASCADE 8.0.1 (macOS, OrcaSlicer)
+        if: runner.os == 'macOS' && matrix.engine == 'orca'
+        uses: actions/cache@v4
+        with:
+          path: /opt/slicer-cli/occt-8.0
+          key: macos-${{ runner.arch }}-occt-8.0.1-static-7c033d917ee8f040-patch-652d13689016f44b-v1
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
@@ -1218,8 +1246,11 @@ jobs:
           # Bambu requires the project CGAL 5.4 overlay; Orca the CGAL 6.2.1
           # overlay (ci/vcpkg-overlays-orca). Keep their caches disjoint. Bumped
           # to -v8 so an OrcaSlicer cache holding the baseline CGAL 6.1.1 is not restored.
-          key: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
-          restore-keys: vcpkg-x64-windows-occt793-cgal-${{ matrix.engine }}-v8
+          # OrcaSlicer has its own key: OpenCASCADE 8.0.1 with OrcaSlicer's patch, as
+          # static libraries (ci/vcpkg-overlays-orca/opencascade, ci/vcpkg-triplets-orca).
+          # The key names the patch; the install step checks the patch against it.
+          key: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
+          restore-keys: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -1250,7 +1281,14 @@ jobs:
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays")
           else
             # OrcaSlicer v2.5.2 pins CGAL 6.2.1; the baseline port is 6.1.1.
+            # It pins OpenCASCADE 8.0.1 with one patch; the baseline port is 7.9.3.
             VCPKG_ARGS+=(--overlay-ports="$GITHUB_WORKSPACE/ci/vcpkg-overlays-orca")
+            # OpenCASCADE is a static library for OrcaSlicer: the package holds one
+            # set of TK*.dll, the 7.9.3 of Bambu Studio and Snapmaker Orca.
+            VCPKG_ARGS+=(--overlay-triplets="$GITHUB_WORKSPACE/ci/vcpkg-triplets-orca")
+            OCCT_PATCH=references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch
+            [[ "$(sha256sum "$OCCT_PATCH" | cut -c1-16)" == 652d13689016f44b ]] \
+              || { echo "OrcaSlicer's OpenCASCADE patch changed: give the vcpkg cache key the new hash"; exit 1; }
           fi
           for attempt in 1 2 3; do
             if vcpkg install "${VCPKG_ARGS[@]}" \
@@ -1344,6 +1382,13 @@ jobs:
               CGAL_ORCA_DIR=/opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL
               [[ -f "$CGAL_ORCA_DIR/CGALConfig.cmake" ]] || { echo "missing the CGAL 6.2.1 package OrcaSlicer pins"; exit 1; }
               EXTRA+=(-DCGAL_DIR="$CGAL_ORCA_DIR")
+              # OrcaSlicer's pinned OpenCASCADE 8.0.1 with its patch (install_deps.sh), not Homebrew's.
+              OCCT_ROOT=/opt/slicer-cli/occt-8.0
+              OCCT_MARKER="$OCCT_ROOT/.slicer-cli-occt-8.0.1-static-complete"
+              OCCT_PATCH=references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch
+              { grep -qx "patch_sha256=$(shasum -a 256 "$OCCT_PATCH" | awk '{print $1}')" "$OCCT_MARKER" && test -f "$OCCT_ROOT/lib/libTKernel.a"; } \
+                || { echo "missing or stale pinned OpenCASCADE 8.0.1 at $OCCT_ROOT"; exit 1; }
+              EXTRA+=(-DOpenCASCADE_DIR="$OCCT_ROOT/lib/cmake/opencascade")
             fi
           else
             if [[ "${{ matrix.engine }}" == orca ]]; then
@@ -1593,6 +1638,9 @@ jobs:
           }
           # Carry runtime DLLs beside the binary; package job unions both engines'.
           $binDir = Split-Path $bin
+          if ("${{ matrix.engine }}" -eq "orca" -and (Get-ChildItem $binDir -Filter TK*.dll -File -ErrorAction SilentlyContinue)) {
+            throw "OrcaSlicer must hold OpenCASCADE 8.0.1 statically: the package's TK*.dll are 7.9.3"
+          }
           Get-ChildItem $binDir -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination staged\
           $licenseRoot = Join-Path $env:VCPKG_INSTALLATION_ROOT "installed"

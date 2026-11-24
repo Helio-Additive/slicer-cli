@@ -989,15 +989,6 @@ them as they are.
   (`PresetBundle::min_filament_count`, `PresetBundle.cpp` 5419-5424 at
   `f92a7c0`); 2.4.2 gave one per extruder. Give `--filament-preset` once per
   filament the plate uses.
-- **A STEP file with a tilted cone seam slices only on the Linux build.**
-  OrcaSlicer 2.5.2 builds OpenCASCADE 8.0.1 with a patch of its own
-  (`deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch` at `f92a7c0`). The
-  Linux build of slicer_cli-orcaslicer has both. The Windows build takes
-  OpenCASCADE 7.9.3 from vcpkg and the macOS build takes Homebrew's, without
-  the patch, as before 2.5. Upstream's test file
-  `cone_tilted_seam_pcurve.step` slices on Linux and is refused on Windows
-  (-100, measured); macOS is not measured. Other STEP files tested give the
-  same result on both.
 - **OrcaSlicer 2.5 names filaments with ids of its own.** The filament
   presets OrcaSlicer ships, the Bambu Lab ones too, carry ids such as
   `OFoiVqVM` where 2.4 had Bambu's `GFA00`. A Bambu Lab printer knows only

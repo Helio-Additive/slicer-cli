@@ -1885,6 +1885,15 @@ assert d["kind"] == "step" and "error" not in d, d
 done
 echo "PASS: --engine-info on a STEP file prints only its JSON (both engines)"
 
+# OrcaSlicer's own test model for its OpenCASCADE patch
+# (deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch at f92a7c0): a cone
+# with a tilted seam. Without the patch the mesh is empty and no layer is found.
+cp "$SCRIPT_DIR/../references/OrcaSlicer/tests/data/cone_tilted_seam_pcurve.step" cone.step
+run cone-orca "$O" cone.step --slice 1 --printer-preset "$A1M" --outputdir cone-orca/out
+[ "$(rc cone-orca)" = 0 ] || { show cone-orca; fail "orca: the tilted-seam cone STEP file does not slice (OpenCASCADE 8.0.1 without OrcaSlicer's patch?)"; }
+grep -q '^; total layer number: [1-9]' cone-orca/out/plate_1.gcode || fail "orca: the cone STEP file gave no layers"
+echo "PASS: OrcaSlicer slices its tilted-seam cone STEP file (patched OpenCASCADE 8.0.1)"
+
 # Transforms, in command-line order: --scale, --rotate, --orient, --assemble.
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
