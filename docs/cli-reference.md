@@ -476,7 +476,7 @@ These older shortcuts set one setting each and keep working:
 | `--mtcpp` | count | Refuse a plate with more triangles (-59) | all binaries |
 | `--mstpp` | time | Refuse a plate that takes longer to slice (-58). Bambu Studio counts seconds, OrcaSlicer milliseconds | all binaries |
 | `--no-check` | | Skip some validity checks: a layer height over the printer's limit becomes a warning, and the G-code conflict check, the support-needed warning and the stop on empty-layer or overlap warnings are skipped. The bed refusals stay, as in the official CLI: an object over the bed's edge (-52) and a plate with nothing fully inside (-50) | all binaries |
-| `--strict` | | End the run (-100) when the slice gives a warning the engine otherwise only notes, for example an object that needs support while support is off. `result.json` lists these warnings (`warnings`). Not together with `--no-check` (-2) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
+| `--strict` | | End the run when the slice gives a warning the engine otherwise only notes, for example an object that needs support while support is off: return code -100 with `--slice`, exit 1 on the default call. The plate's G-code is already written at that point and stays, as with the official command line. `result.json` lists these warnings (`warnings`). Not together with `--no-check` (-2) | slicer_cli-orcaslicer only (OrcaSlicer engine) |
 | `--allow-mix-temp` | `=0` or `=1` | Allow filaments with very different temperatures on one plate. `slicer_cli` accepts it and does nothing with it: Bambu Studio 2.9.1 dropped the plate-level temperature-mix check, so there is nothing to lift; the `slicer_cli` run says so once with a `warning` / `AllowMixTempIgnored` event. `slicer_cli-snapmaker` applies it to its own pre-slice temperature check | all binaries |
 | `--normative-check` | `=0` or `=1` | Refuse a project with post-processing scripts (-19). On by default with `--slice` | all binaries |
 | `--enable-timelapse` | | Arrange as for a smooth timelapse (keeps room for the prime tower) | all binaries |
@@ -885,7 +885,8 @@ not the message.
 
 ### Return codes
 
-The default call exits 0 when the G-code is written and 1 when it is not.
+The default call exits 0 when the G-code is written and 1 when it is not
+(or when `--strict` ends the run on a warning).
 `--slice` exits with the return code also written to `result.json`
 (on Linux and macOS the shell shows it as 256 plus the code, for example 254
 for -2):
