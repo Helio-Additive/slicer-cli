@@ -82,3 +82,72 @@ fn h2d_majora_layer_order_equals_pin() {
     }
     assert!(mismatches.is_empty(), "{} of {} layers differ, first {:?}", mismatches.len(), expected.len(), mismatches.first());
 }
+
+/// The job's configuration and layers from the vectors, loaded as in [`h2d_majora_layer_order_equals_pin`].
+fn load_h2d_job() -> (ToolOrderingPrintConfig, Vec<Vec<u32>>) {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/tool_ordering/h2d_majora_order.txt.gz");
+    let mut s = String::new();
+    flate2::read::GzDecoder::new(std::fs::File::open(path).expect("vectors")).read_to_string(&mut s).expect("gzip");
+    let mut cfg = ToolOrderingPrintConfig::full_print_config();
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let mut layers: Vec<Vec<u32>> = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
+    for line in s.lines() {
+        let mut it = line.splitn(3, '\t');
+        let (tag, key, value) = (it.next().unwrap_or(""), it.next().unwrap_or(""), it.next().unwrap_or(""));
+        match tag {
+            "C" => {
+                let mut c = cfg.clone();
+                let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.set_deserialize_strict(key, value, false).is_ok()));
+                if matches!(ok, Ok(true)) {
+                    cfg = c;
+                } else {
+                    failed.push((key.to_string(), value.to_string()));
+                }
+            }
+            "L" => layers.push(value.split_whitespace().map(|x| x.parse::<u32>().expect("filament")).collect()),
+            _ => {}
+        }
+    }
+    std::panic::set_hook(hook);
+    for (key, value) in &failed {
+        let n = value.split(',').count();
+        if let Ok(Some(opt)) = cfg.option_mut(key, false) {
+            if let Some(v) = opt.as_vector_base_mut() {
+                let _ = v.resize(n, None);
+            }
+        }
+    }
+    (cfg, layers)
+}
+
+/// ToolOrdering.cpp:3601-3614 hands the grouping to `Print::update_filament_maps_to_config`
+/// (Print.cpp:3241-3320); the live export writes the maps back (H2D_FILAMENT_MAPS_TO_CONFIG). The
+/// maps and what the port's `Print::update_filament_maps_to_config` makes of them against
+/// slicer_cli's CONFIG_BLOCK for the same job: `filament_map = 1,2,2,1,2,2,2,1`,
+/// `filament_map_2 = 0,1,1,0,1,1,1,0`, `filament_nozzle_map = 0,1,1,0,1,1,1,0`,
+/// `filament_volume_map = 0,0,0,0,0,0,0,0`.
+#[test]
+fn h2d_majora_filament_maps_to_config_equal_pin_block() {
+    use slicer::config::ConfigOptionResolver;
+    let (cfg, layers) = load_h2d_job();
+    let (_, _, maps) =
+        slicer::gcode::tool_ordering::reorder_extruders_for_minimum_flush_volume_multi_extruder_with_maps(&cfg, &layers, false)
+            .expect("grouping");
+    let maps = maps.expect("update_filament_maps_to_config called");
+    assert_eq!(maps.f_maps, vec![1, 2, 2, 1, 2, 2, 2, 1]);
+    assert_eq!(maps.f_nozzle_maps, vec![0, 1, 1, 0, 1, 1, 1, 0]);
+    assert_eq!(maps.f_volume_maps, vec![0, 0, 0, 0, 0, 0, 0, 0]);
+    let mut fp = slicer::print::faithful::Print::new();
+    fp.base.base.m_ori_full_print_config = cfg.clone();
+    fp.base.base.m_full_print_config = cfg.clone();
+    let keys: Vec<String> = fp.m_config.keys().into_iter().filter(|k| cfg.has(k)).collect();
+    let _ = fp.m_config.apply_only(&cfg, &keys, true);
+    fp.update_filament_maps_to_config(maps.f_maps.clone(), maps.f_volume_maps.clone(), maps.f_nozzle_maps.clone());
+    let ints = |key: &str| -> String { fp.m_config.opt_serialize(key).expect(key) };
+    assert_eq!(ints("filament_map"), "1,2,2,1,2,2,2,1");
+    assert_eq!(ints("filament_map_2"), "0,1,1,0,1,1,1,0");
+    assert_eq!(ints("filament_nozzle_map"), "0,1,1,0,1,1,1,0");
+    assert_eq!(ints("filament_volume_map"), "0,0,0,0,0,0,0,0");
+}

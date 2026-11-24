@@ -440,6 +440,11 @@ pub struct GCodeWriter {
     /// The length the last retraction took back (C++ `Extruder::m_retracted`,
     /// Extruder.cpp `retract`), which `unretract` gives back.
     m_retracted_length: CoordF,
+    /// `Extruder::m_share_retracted` (Extruder.cpp:6, 50-60): per retraction slot (the filament's
+    /// extruder, Extruder.cpp:36-46), what its filaments left retracted when the slot was last
+    /// left at a tool change; read for `new_extruder_retracted_length` (GCode.cpp:982,
+    /// GCodeWriter.cpp:957-969). Written by the export's tool changes only.
+    pub m_share_retracted: Vec<f64>,
     /// GCode.cpp m_last_width — persistent LINE_WIDTH tag dedup state.
     last_width_tag: f32,
 
@@ -543,6 +548,7 @@ impl GCodeWriter {
             zsmooth_retract_ctx: None,
             wipe_tower_bbx: None,
             m_retracted_length: 0.0,
+            m_share_retracted: vec![0.0, 0.0],
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
             gcode_origin_y: 0.0,
@@ -736,6 +742,15 @@ impl GCodeWriter {
     }
 
     /// Check if currently retracted.
+    /// The length the writer's last retraction took back while it is retracted, else 0.
+    pub fn retracted_length_now(&self) -> f64 {
+        if self.retracted {
+            self.m_retracted_length
+        } else {
+            0.0
+        }
+    }
+
     pub fn is_retracted(&self) -> bool {
         self.retracted
     }

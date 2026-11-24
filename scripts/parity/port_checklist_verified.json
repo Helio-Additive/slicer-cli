@@ -4411,5 +4411,49 @@
   "functions": [
    "DynamicPrintConfig::update_filament_config_values_for_multiple_extruders"
   ]
+ },
+ {
+  "unit": "TriangleMeshSlicer",
+  "round": 945,
+  "evidence": "tests/triangle_mesh_slicer_native_parity.rs (project_mesh_native_parity): the pin's transform_mesh_vertices_for_slicing and is_identity (TriangleMeshSlicer.cpp 1953-1980) and project_mesh, both overloads (2403-2427, through slice_mesh_slabs with a transformation, 2233-2234), from tests/data/triangle_mesh_slicer/gen_project.cpp on 100 cases (identity, translation, rotation, tilted rotation with non-uniform scale, mirror): 6,726 vertices and 280 polygons, 0 differ.",
+  "functions": [
+   "transform_mesh_vertices_for_slicing",
+   "is_identity",
+   "project_mesh"
+  ]
+ },
+ {
+  "unit": "MultiMaterialSegmentation",
+  "round": 945,
+  "evidence": "Twin probe over Majora: the pin's PrintObject segmentation run on one thread (MultiMaterialSegmentation.cpp compiled into the twin tool) against the port with TMS_CHAIN_LIBCXX_SORT=1 and MMS_TOP_BOTTOM_PIN on: mmu_segmentation_top_and_bottom_layers (MultiMaterialSegmentation.cpp 1356-1636) gives equal top and bottom slices, raw top and bottom layers, top/bottom regions and segmented regions on every layer (stages of 3,700 / 3,137 / 3,604 / 2,839 / 2,905 / 3,375 lines, all equal).",
+  "functions": [
+   "mmu_segmentation_top_and_bottom_layers"
+  ]
+ },
+ {
+  "unit": "Print",
+  "round": 945,
+  "evidence": "tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.",
+  "functions": [
+   "Print::update_filament_maps_to_config",
+   "Print::update_to_config_by_nozzle_group_result",
+   "Print::resolve_manual_nozzle_map"
+  ]
+ },
+ {
+  "unit": "Arachne/SkeletalTrapezoidation",
+  "round": 945,
+  "evidence": "tests/skeletal_trapezoidation_native_parity.rs (interpolate_native_parity): the pin's SkeletalTrapezoidation::interpolate, both overloads (SkeletalTrapezoidation.cpp 1709-1771), from tests/data/skeletal_trapezoidation/gen.cpp on 1,500 three-argument and 3,000 four-argument cases: 0 differ.",
+  "functions": [
+   "SkeletalTrapezoidation::interpolate"
+  ]
+ },
+ {
+  "unit": "Geometry/VoronoiUtils",
+  "round": 945,
+  "evidence": "tests/voronoi_utils_native_parity.rs (discretize_parabola_native_parity): the pin's VoronoiUtils::discretize_parabola (VoronoiUtils.cpp 104-186) from tests/data/voronoi_utils/gen.cpp on 1,501 cases including the Majora layer-110 edge: 0 differ.",
+  "functions": [
+   "VoronoiUtils::discretize_parabola"
+  ]
  }
 ]

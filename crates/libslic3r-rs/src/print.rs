@@ -1278,6 +1278,30 @@ impl Print {
                         tl_settings["spiral_mode"] = serde_json::json!(0);
                         tl_settings["max_layer_z"] = serde_json::Value::String(fmt_z(print_z));
                     }
+                    // TIMELAPSE_INLINE_PHOTO_VAR (on): GCode.cpp:4773 and 4778 set
+                    // `timelapse_inline_photo` (= skip_pos_pick, false for the layer-change
+                    // call at 5601) and `farthest_point_timelapse_enabled`
+                    // (m_farthest_point_timelapse.enabled, 5030-5033) before the template;
+                    // a template that reads them (H2D) fails without. =0 leaves them out.
+                    if crate::faithful_gate("TIMELAPSE_INLINE_PHOTO_VAR") {
+                        let text = |key: &str| -> String {
+                            match settings.get(key) {
+                                Some(serde_json::Value::String(s)) => s.clone(),
+                                Some(serde_json::Value::Array(a)) => {
+                                    a.first().and_then(|v| v.as_str()).unwrap_or("").to_owned()
+                                }
+                                Some(serde_json::Value::Bool(b)) => (if *b { "1" } else { "0" }).to_owned(),
+                                Some(serde_json::Value::Number(n)) => n.to_string(),
+                                _ => String::new(),
+                            }
+                        };
+                        let farthest_enabled = text("farthest_point_timelapse") == "1"
+                            && self.config.timelapse_type == 0
+                            && text("printer_structure") != "i3";
+                        tl_settings["timelapse_inline_photo"] = serde_json::json!(0);
+                        tl_settings["farthest_point_timelapse_enabled"] =
+                            serde_json::json!(if farthest_enabled { 1 } else { 0 });
+                    }
                     let processed =
                         crate::gcode::process_gcode_template(tl_tmpl, &tl_settings, &self.config);
                     writer.write_raw_content(&processed);
@@ -3061,6 +3085,10 @@ impl Print {
             // order below. LayerTools' extruders are sorted (sort_remove_duplicates)
             // except layer 0, which carries the first-layer order.
             let mut multi_extruder_ordered = false;
+            let mut pending_filament_maps: Option<(
+                crate::print_config::config_def::DynamicPrintConfig,
+                crate::gcode::tool_ordering::FilamentMapsToConfig,
+            )> = None;
             if crate::faithful_gate("H2D_GROUP_ORDER") && num_filaments > 1 {
                 use crate::gcode::wipe_tower::{cfg_enum, cfg_floats, cfg_ints};
                 let live_cfg = self
@@ -3085,13 +3113,14 @@ impl Print {
                                 v
                             })
                             .collect();
-                        if let Some((seqs, maps)) =
-                            crate::gcode::tool_ordering::reorder_extruders_for_minimum_flush_volume_multi_extruder(
+                        if let Some((seqs, maps, maps_to_config)) =
+                            crate::gcode::tool_ordering::reorder_extruders_for_minimum_flush_volume_multi_extruder_with_maps(
                                 &cfg,
                                 &layer_filaments,
                                 !flo_gate,
                             )
                         {
+                            pending_filament_maps = maps_to_config.map(|m| (cfg.clone(), m));
                             if crate::probe_enabled("H2DPROBE") {
                                 eprintln!("H2DPROBE maps={maps:?} first={:?}", &seqs[..seqs.len().min(6)]);
                                 // diagnostic only: the inputs of the ordering (configuration and
@@ -3126,6 +3155,23 @@ impl Print {
                                 }
                                 multi_extruder_ordered = true;
                             }
+                        }
+                    }
+                }
+            }
+            // H2D_FILAMENT_MAPS_TO_CONFIG (on): ToolOrdering.cpp:3601-3614 hands the grouping
+            // to `Print::update_filament_maps_to_config` (Print.cpp:3241-3320), so the export
+            // reads each filament's extruder (`filament_map`, GCode::get_extruder_id
+            // GCode.cpp:3793-3800, Extruder::extruder_id / retracted_slot_id Extruder.cpp:22-46,
+            // the CONFIG_BLOCK). =0 leaves the job's maps.
+            if multi_extruder_ordered && crate::faithful_gate("H2D_FILAMENT_MAPS_TO_CONFIG") {
+                if let Some((cfg, maps)) = pending_filament_maps.take() {
+                    self.update_filament_maps_to_config_live(&cfg, &maps);
+                    // H2D_CPP_TOWER (on): the grouping is the print's nozzle group result
+                    // (ToolOrdering.cpp:3602), which Print::_make_wipe_tower reads (:4213-4214).
+                    if crate::faithful_gate("H2D_CPP_TOWER") {
+                        if let Some(group) = maps.nozzle_group_result.clone() {
+                            self.set_nozzle_group_result(group);
                         }
                     }
                 }
@@ -5720,6 +5766,50 @@ impl Print {
         self.full_print_config.as_ref()
     }
 
+    /// ToolOrdering.cpp:3609-3614 `m_print->update_filament_maps_to_config(f_maps, f_volume_maps,
+    /// f_nozzle_maps)` on the live print: the port's `Print::update_filament_maps_to_config`
+    /// (Print.cpp:3241-3320, [`faithful::Print`]) runs over the live full configuration, and the
+    /// maps it writes into `m_config` (`filament_map`, `filament_volume_map`, `filament_nozzle_map`,
+    /// `filament_map_2`) are written back into the job's settings, which the export and the
+    /// CONFIG_BLOCK read, and into the full configuration.
+    ///
+    /// FIDELITY-NOTE: only the four maps are taken back; the per-filament variant values the C++
+    /// also reduces in `m_config` (Print.cpp:3287-3316) stay as the settings give them.
+    fn update_filament_maps_to_config_live(
+        &mut self,
+        cfg: &crate::print_config::config_def::DynamicPrintConfig,
+        maps: &crate::gcode::tool_ordering::FilamentMapsToConfig,
+    ) {
+        use crate::config::{ConfigBase, ConfigOptionInts, ConfigOptionResolver};
+        let mut fp = faithful::Print::new();
+        fp.base.base.m_ori_full_print_config = cfg.clone();
+        fp.base.base.m_full_print_config = cfg.clone();
+        let keys: Vec<String> = fp.m_config.keys().into_iter().filter(|k| cfg.has(k)).collect();
+        let _ = fp.m_config.apply_only(cfg, &keys, true);
+        fp.update_filament_maps_to_config(maps.f_maps.clone(), maps.f_volume_maps.clone(), maps.f_nozzle_maps.clone());
+        for key in ["filament_map", "filament_volume_map", "filament_nozzle_map", "filament_map_2"] {
+            if !fp.m_config.has(key) {
+                continue;
+            }
+            let values = crate::gcode::wipe_tower::cfg_ints(&fp.m_config, key);
+            let strings: Vec<serde_json::Value> = values.iter().map(|v| serde_json::Value::String(v.to_string())).collect();
+            for settings in [self.raw_settings.as_mut(), self.config_block_settings.as_mut()].into_iter().flatten() {
+                if let Some(obj) = settings.as_object_mut() {
+                    let value = match obj.get(key) {
+                        Some(serde_json::Value::String(_)) => serde_json::Value::String(
+                            values.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","),
+                        ),
+                        _ => serde_json::Value::Array(strings.clone()),
+                    };
+                    obj.insert(key.to_string(), value);
+                }
+            }
+            if let Some(full) = self.full_print_config.as_mut() {
+                full.set_key_value(key, Box::new(ConfigOptionInts::from_values(values.clone())));
+            }
+        }
+    }
+
     /// Print.hpp:1083 `set_nozzle_group_result(result)`.
     pub fn set_nozzle_group_result(&mut self, result: Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
         self.nozzle_group_result = Some(result);
@@ -5791,8 +5881,9 @@ impl Print {
     ///
     /// Taken for one object without support layers on a printer with one
     /// extruder and one nozzle (no nozzle diameter mode, no dynamic grouping,
-    /// printed layer by layer): `false` otherwise, before a tower is built, and
-    /// the caller builds the tower with the reduced driver.
+    /// printed layer by layer), or (H2D_CPP_TOWER) with more than one extruder of
+    /// one nozzle each over the grouping the ordering stored: `false` otherwise,
+    /// before a tower is built, and the caller builds the tower with the reduced driver.
     fn _make_wipe_tower(
         &mut self,
         layer_seqs: &[(f32, f32, Vec<usize>)],
@@ -5815,7 +5906,12 @@ impl Print {
         let multi_diameter_mode = crate::print_config::config_def::multi_nozzle_diameter_mode_enabled(&config);
         // PrintSequence::ByLayer = 0 (PrintConfig.hpp:150-153).
         let sequential = cfg_enum(&config, "print_sequence") != 0;
-        if nozzle_diameter.len() != 1 || has_multiple_nozzle || multi_diameter_mode || sequential {
+        // H2D_CPP_TOWER (on): the C++ driver for more than one extruder with one nozzle each
+        // (H2D), over the grouping the ordering stored (ToolOrdering.cpp:3602, Print.cpp:4213-4214);
+        // =0, the reduced driver builds that tower.
+        let multi_extruder_ok =
+            crate::faithful_gate("H2D_CPP_TOWER") && nozzle_diameter.len() > 1 && self.nozzle_group_result.is_some();
+        if (nozzle_diameter.len() != 1 && !multi_extruder_ok) || has_multiple_nozzle || multi_diameter_mode || sequential {
             return false;
         }
 
@@ -5900,7 +5996,8 @@ impl Print {
         // stores (ToolOrdering.cpp:3537-3548, 3602-3603) from
         // get_recommended_filament_maps (:2511-2685) on one extruder and one
         // nozzle: the manual map, or every filament on the master extruder.
-        {
+        // H2D_CPP_TOWER: the multi-extruder grouping the ordering stored is kept.
+        if !(multi_extruder_ok && self.nozzle_group_result.is_some()) {
             let layer_filaments: Vec<Vec<u32>> = layer_tools.iter().map(|lt| lt.extruders.clone()).collect();
             let filament_nums = number_of_extruders;
             let used_filaments = crate::filament_group::collect_sorted_used_filaments(&layer_filaments);
@@ -8984,6 +9081,154 @@ pub mod faithful {
             self.m_has_auto_filament_map_result = true;
         }
 
+        /// Print.cpp:3322-3345 `void Print::resolve_manual_nozzle_map(const std::vector<unsigned int>& used_filaments)`:
+        /// under fmmNozzleManual on a machine with several nozzles per extruder (and not the
+        /// single-extruder multi-diameter mode), `filament_nozzle_map` is read as a group-key map and
+        /// written back as nozzle indices into `m_config` and `m_ori_full_print_config`; an empty
+        /// result throws.
+        pub fn resolve_manual_nozzle_map(&mut self, used_filaments: &[u32]) -> Result<(), crate::exception::RuntimeError> {
+            use crate::config::ConfigOptionInts;
+            use crate::print_config::config_def::{is_single_ext_multi_nozzle, multi_nozzle_diameter_mode_enabled};
+            // Print.cpp:3327-3333
+            let has_multiple_nozzle = cfg_ints(&self.m_config, "extruder_max_nozzle_count").iter().any(|&v| v > 1);
+            let single_ext_multi_nozzle = is_single_ext_multi_nozzle(&self.m_config);
+            let single_ext_multi_diameter =
+                single_ext_multi_nozzle && multi_nozzle_diameter_mode_enabled(&self.base.base.m_full_print_config);
+            if cfg_enum(&self.m_config, "filament_map_mode") != FilamentMapMode::FmmNozzleManual as i32
+                || !has_multiple_nozzle
+                || single_ext_multi_diameter
+            {
+                return Ok(());
+            }
+
+            // Print.cpp:3335-3341
+            let nozzle_index_map = crate::multi_nozzle_utils::resolve_manual_nozzle_map_to_index(
+                &self.m_config,
+                used_filaments,
+                &cfg_ints(&self.m_config, "filament_map"),
+                &cfg_ints(&self.m_config, "filament_volume_map"),
+                &cfg_ints(&self.m_config, "filament_nozzle_map"),
+            );
+            if nozzle_index_map.is_empty() {
+                return Err(crate::exception::RuntimeError::new(
+                    "Nozzle assignment error: invalid per-filament nozzle map. Please check the nozzle setup or regroup.".to_string(),
+                ));
+            }
+
+            // Print.cpp:3343-3344
+            self.m_config.set_key_value("filament_nozzle_map", Box::new(ConfigOptionInts::from_values(nozzle_index_map.clone())));
+            self.base
+                .base
+                .m_ori_full_print_config
+                .set_key_value("filament_nozzle_map", Box::new(ConfigOptionInts::from_values(nozzle_index_map)));
+            Ok(())
+        }
+
+        /// Print.cpp:3347-3400 `void Print::update_to_config_by_nozzle_group_result(const
+        /// MultiNozzleUtils::NozzleGroupResultBase& group_result)`: the extruder / volume types of
+        /// the nozzles each filament uses (3355-3369), the per-filament variant values of the full
+        /// configuration (3372-3376), the filament overrides of the retraction keys (3378-3390), the
+        /// filament keys and the overrides applied to `m_config` (3392-3398).
+        ///
+        /// FIDELITY-NOTE: as `update_filament_maps_to_config`, only keys `m_config` holds are applied
+        /// (the static `PrintConfig` of the pin skips the others); the printer configuration handed
+        /// to `update_filament_config_values_for_multiple_extruders` is `m_full_print_config` itself
+        /// (`None`). `NozzleGroupResultBase` is the trait `NozzleGroupResultNozzles` below.
+        pub fn update_to_config_by_nozzle_group_result<G: NozzleGroupResultNozzles + ?Sized>(&mut self, group_result: &G) {
+            use crate::config::ConfigOptionInts;
+            use crate::print_config::config_def::ExtruderNozleInfo;
+            // Print.cpp:3349-3353
+            let mut extruder_count: i32 = 1;
+            let _support_multi = self.base.base.m_ori_full_print_config.support_different_extruders(&mut extruder_count);
+            let mut nozzle_volume_types: Vec<Vec<NozzleVolumeType>> = Vec::new();
+            let extruder_volume_type_count = self
+                .base
+                .base
+                .m_ori_full_print_config
+                .get_extruder_nozzle_volume_count(extruder_count, &mut nozzle_volume_types);
+
+            // Print.cpp:3355-3369 (std::set<ExtruderNozleInfo> ordered by operator<: the extruder
+            // type, then the volume type, PrintConfig.hpp:663-668)
+            let mut filament_extruder_map: HashMap<i32, Vec<ExtruderNozleInfo>> = HashMap::new();
+            let filament_count = cfg_strings(&self.m_config, "filament_type").len();
+            let extruder_type = cfg_ints(&self.m_config, "extruder_type");
+            for fidx in 0..filament_count as i32 {
+                let used_nozzles = group_result.get_nozzles_for_filament(fidx);
+                let mut extruder_nozzle_set: BTreeSet<(i32, i32)> = BTreeSet::new();
+                for nozzle in &used_nozzles {
+                    extruder_nozzle_set.insert((extruder_type[nozzle.extruder_id as usize], nozzle.volume_type as i32));
+                }
+                filament_extruder_map.insert(
+                    fidx,
+                    extruder_nozzle_set
+                        .into_iter()
+                        .map(|(e, v)| ExtruderNozleInfo {
+                            extruder_type: ExtruderType::from_i32(e),
+                            nozzle_volume_type: NozzleVolumeType::from_i32(v),
+                        })
+                        .collect(),
+                );
+            }
+
+            // Print.cpp:3372-3376
+            self.base.base.m_full_print_config = self.base.base.m_ori_full_print_config.clone();
+            let mut filament_keys: BTreeSet<String> = (*crate::print_config::config_def::filament_options_with_variant).clone();
+            filament_keys.insert("filament_self_index".to_string());
+            let _ = self.base.base.m_full_print_config.update_filament_config_values_for_multiple_extruders(
+                None,
+                &filament_extruder_map,
+                extruder_count,
+                extruder_volume_type_count,
+                &filament_keys,
+                "filament_self_index",
+                "filament_extruder_variant",
+            );
+
+            // Print.cpp:3378-3390
+            let extruder_retract_keys = crate::print_config::config_def::print_config_def().extruder_retract_keys().clone();
+            let filament_prefix = "filament_";
+            let mut print_diff: Vec<String> = Vec::new();
+            let mut filament_overrides = DynamicPrintConfig::default();
+            let mut filament_map_2 = cfg_ints(&self.m_config, "filament_map_2");
+            for opt_key in &extruder_retract_keys {
+                let full = &self.base.base.m_full_print_config;
+                let opt_new_filament = ConfigOptionResolver::option(full, &format!("{}{}", filament_prefix, opt_key));
+                let opt_new_machine = ConfigOptionResolver::option(full, opt_key);
+                let opt_old_machine = ConfigOptionResolver::option(&self.m_config, opt_key);
+                if let (Some(opt_new_filament), Some(opt_new_machine), Some(opt_old_machine)) =
+                    (opt_new_filament, opt_new_machine, opt_old_machine)
+                {
+                    let _ = crate::print_config::config_def::compute_filament_override_value(
+                        opt_key,
+                        opt_old_machine,
+                        opt_new_machine,
+                        opt_new_filament,
+                        full,
+                        &mut print_diff,
+                        &mut filament_overrides,
+                        &mut filament_map_2,
+                    );
+                }
+            }
+            // `m_config.filament_map_2.values`, passed by reference to 3388.
+            if filament_map_2 != cfg_ints(&self.m_config, "filament_map_2") {
+                self.m_config.set_key_value("filament_map_2", Box::new(ConfigOptionInts::from_values(filament_map_2)));
+            }
+
+            // Print.cpp:3392-3398
+            let mut keys: Vec<String> = crate::print_config::config_def::filament_options_with_variant.iter().cloned().collect();
+            keys.push("filament_self_index".to_string());
+            let keys: Vec<String> = keys.into_iter().filter(|k| self.m_config.has(k)).collect();
+            let _ = self.m_config.apply_only(&self.base.base.m_full_print_config, &keys, true);
+            if !print_diff.is_empty() {
+                let _ = self.base.base.m_placeholder_parser.apply_config(&filament_overrides);
+                let keys: Vec<String> = filament_overrides.keys().into_iter().filter(|k| self.m_config.has(k)).collect();
+                let _ = self.m_config.apply_only(&filament_overrides, &keys, true);
+            }
+            // Print.cpp:3399
+            self.update_filament_self_index_cache();
+        }
+
         /// Print.cpp:3402-3405 `void Print::apply_config_for_render(const DynamicConfig &config)`
         pub fn apply_config_for_render(&mut self, config: &DynamicConfig) {
             // StaticConfig::apply: the keys of the class
@@ -9419,6 +9664,26 @@ pub mod faithful {
         let mut tool_changes = crate::custom_g_code::custom_tool_changes(custom_gcode_per_print_z, num_extruders);
         tool_changes.retain(|tool_change| !(tool_change.0 > max_print_z + EPSILON));
         tool_changes
+    }
+
+    /// MultiNozzleUtils.hpp `class NozzleGroupResultBase`: the virtual
+    /// `get_nozzles_for_filament(int filament_id) const` that
+    /// `Print::update_to_config_by_nozzle_group_result` calls (Print.cpp:3361), implemented by
+    /// `LayeredNozzleGroupResult` (MultiNozzleUtils.cpp:566) and `StaticNozzleGroupResult` (:757).
+    pub trait NozzleGroupResultNozzles {
+        fn get_nozzles_for_filament(&self, filament_id: i32) -> Vec<crate::multi_nozzle_utils::NozzleInfo>;
+    }
+
+    impl NozzleGroupResultNozzles for crate::multi_nozzle_utils::LayeredNozzleGroupResult {
+        fn get_nozzles_for_filament(&self, filament_id: i32) -> Vec<crate::multi_nozzle_utils::NozzleInfo> {
+            crate::multi_nozzle_utils::LayeredNozzleGroupResult::get_nozzles_for_filament(self, filament_id)
+        }
+    }
+
+    impl NozzleGroupResultNozzles for crate::multi_nozzle_utils::StaticNozzleGroupResult {
+        fn get_nozzles_for_filament(&self, filament_id: i32) -> Vec<crate::multi_nozzle_utils::NozzleInfo> {
+            crate::multi_nozzle_utils::StaticNozzleGroupResult::get_nozzles_for_filament(self, filament_id)
+        }
     }
 
     /// Layer.hpp:333-408 `class SupportLayer : public Layer`, the members Print.cpp reads.

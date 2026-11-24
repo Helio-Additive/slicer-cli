@@ -7699,6 +7699,21 @@ pub struct LiveGroupingPrint {
     loaded: Vec<crate::filament_group_utils::NozzleLoadedFilamentInfo>,
     custom_gcodes: crate::custom_g_code::Info,
     group: std::cell::RefCell<Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>>,
+    /// The maps handed to `update_filament_maps_to_config` (ToolOrdering.cpp:3609-3614), kept for
+    /// the live print to write back into its configuration (Print.cpp:3241-3320).
+    maps_to_config: std::cell::RefCell<Option<FilamentMapsToConfig>>,
+}
+
+/// The arguments of `m_print->update_filament_maps_to_config(f_maps, f_volume_maps, f_nozzle_maps)`
+/// (ToolOrdering.cpp:3609-3614): the grouping's extruder (1-based), volume and nozzle maps.
+#[derive(Clone, Default)]
+pub struct FilamentMapsToConfig {
+    pub f_maps: Vec<i32>,
+    pub f_volume_maps: Vec<i32>,
+    pub f_nozzle_maps: Vec<i32>,
+    /// `m_print->set_nozzle_group_result(...)` (ToolOrdering.cpp:3602), the grouping the
+    /// maps come from.
+    pub nozzle_group_result: Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>,
 }
 
 impl LiveGroupingPrint {
@@ -7709,6 +7724,7 @@ impl LiveGroupingPrint {
             loaded: Vec::new(),
             custom_gcodes: crate::custom_g_code::Info::default(),
             group: std::cell::RefCell::new(None),
+            maps_to_config: std::cell::RefCell::new(None),
         }
     }
 }
@@ -7813,7 +7829,10 @@ impl ToolOrderingPrint for LiveGroupingPrint {
     fn set_nozzle_group_result(&self, result: std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
         *self.group.borrow_mut() = Some(result);
     }
-    fn update_filament_maps_to_config(&self, _f_maps: Vec<i32>, _f_volume_maps: Vec<i32>, _f_nozzle_maps: Vec<i32>) {}
+    fn update_filament_maps_to_config(&self, f_maps: Vec<i32>, f_volume_maps: Vec<i32>, f_nozzle_maps: Vec<i32>) {
+        *self.maps_to_config.borrow_mut() =
+            Some(FilamentMapsToConfig { f_maps, f_volume_maps, f_nozzle_maps, nozzle_group_result: self.group.borrow().clone() });
+    }
     fn update_to_config_by_nozzle_group_result(&self, _result: &crate::multi_nozzle_utils::LayeredNozzleGroupResult) {}
 }
 
@@ -7831,6 +7850,20 @@ pub fn reorder_extruders_for_minimum_flush_volume_multi_extruder(
     layer_filaments: &[Vec<u32>],
     reorder_first_layer: bool,
 ) -> Option<(Vec<Vec<u32>>, Vec<i32>)> {
+    reorder_extruders_for_minimum_flush_volume_multi_extruder_with_maps(config, layer_filaments, reorder_first_layer)
+        .map(|(seqs, maps, _)| (seqs, maps))
+}
+
+/// [`reorder_extruders_for_minimum_flush_volume_multi_extruder`] with what ToolOrdering.cpp:3601-3614
+/// hands the print after the grouping (not sequential, no dynamic nozzle map):
+/// `update_filament_maps_to_config(update_used_filament_values(filament_map, get_extruder_map(false),
+/// used_filaments), update_used_filament_values(filament_volume_map, get_volume_map(), used_filaments),
+/// keep_user_nozzle_map ? filament_nozzle_map : get_nozzle_map())`.
+pub fn reorder_extruders_for_minimum_flush_volume_multi_extruder_with_maps(
+    config: &ToolOrderingPrintConfig,
+    layer_filaments: &[Vec<u32>],
+    reorder_first_layer: bool,
+) -> Option<(Vec<Vec<u32>>, Vec<i32>, Option<FilamentMapsToConfig>)> {
     use crate::print_config::enums::FilamentMapMode;
     let print = LiveGroupingPrint::new(config.clone());
     let nozzle_flush_mtx = group_reorder::prepare_flush_matrices(config);
@@ -7855,6 +7888,28 @@ pub fn reorder_extruders_for_minimum_flush_volume_multi_extruder(
         &Default::default(),
     )
     .ok()?;
+    // :3601-3614
+    if !print.is_sequential_print() {
+        print.set_nozzle_group_result(std::sync::Arc::new(grouping_result.clone()));
+        if !grouping_result.is_support_dynamic_nozzle_map() {
+            let keep_user_nozzle_map = cfg_bool(config, "handle_hotend_as_extruder")
+                && cfg_int(config, "filament_map_mode") == FilamentMapMode::FmmNozzleManual as i32;
+            print.update_filament_maps_to_config(
+                crate::filament_group_utils::update_used_filament_values(
+                    &cfg_ints(config, "filament_map"),
+                    &grouping_result.get_extruder_map(false, -1),
+                    &used_filaments,
+                ),
+                crate::filament_group_utils::update_used_filament_values(
+                    &cfg_ints(config, "filament_volume_map"),
+                    &grouping_result.get_volume_map(-1),
+                    &used_filaments,
+                ),
+                if keep_user_nozzle_map { cfg_ints(config, "filament_nozzle_map") } else { grouping_result.get_nozzle_map(-1) },
+            );
+        }
+    }
+    let maps_to_config = print.maps_to_config.borrow().clone();
     let filament_maps = grouping_result.get_extruder_map(true, -1);
     // :2861-2869
     let mut filament_sequences: Vec<Vec<u32>> = Vec::new();
@@ -7867,5 +7922,5 @@ pub fn reorder_extruders_for_minimum_flush_volume_multi_extruder(
         Some(&mut filament_sequences),
         &HashMap::new(),
     );
-    Some((filament_sequences, filament_maps))
+    Some((filament_sequences, filament_maps, maps_to_config))
 }

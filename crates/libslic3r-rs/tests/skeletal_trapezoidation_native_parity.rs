@@ -11,7 +11,7 @@
 
 use slicer::arachne::beading_strategy::beading_strategy::Beading;
 use slicer::arachne::beading_strategy::BeadingStrategyFactory;
-use slicer::arachne::skeletal_trapezoidation::SkeletalTrapezoidation;
+use slicer::arachne::skeletal_trapezoidation::{Interpolate, SkeletalTrapezoidation};
 use std::io::Read;
 
 fn vectors() -> String {
@@ -81,7 +81,7 @@ fn interpolate_native_parity() {
                 let right = parse_beading(&mut t);
                 assert_eq!(*t.next().unwrap(), "=>");
                 i3 += 1;
-                (parse_beading(&mut t), st.interpolate2(&left, ratio, &right))
+                (parse_beading(&mut t), st.interpolate((&left, ratio, &right)))
             }
             "i4" => {
                 let sr = t.next().expect("switching radius").parse::<i64>().expect("integer");
@@ -91,7 +91,7 @@ fn interpolate_native_parity() {
                 let right = parse_beading(&mut t);
                 assert_eq!(*t.next().unwrap(), "=>");
                 i4 += 1;
-                (parse_beading(&mut t), st.interpolate4(&left, ratio, &right, sr))
+                (parse_beading(&mut t), st.interpolate((&left, ratio, &right, sr)))
             }
             other => panic!("unknown line kind {other}"),
         };

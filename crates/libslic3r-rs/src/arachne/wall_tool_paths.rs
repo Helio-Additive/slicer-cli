@@ -717,9 +717,24 @@ pub fn remove_colinear_edges_polygon(poly: &mut Polygon, max_deviation_angle: f6
                 let next = poly[(point_idx + 1) % pathlen];
 
                 // WallToolPaths.cpp:406  [0 : 2 * pi]
-                let mut angle = linear_alg2d::get_angle_left(prev, pt, next) as f64;
+                // R945: opt_in_gate ARACHNE_COLINEAR_ANGLE_F32 (off unless `=1`; faithful, but added at the end
+                // of R945 without a fixture check, so it stays off until one is run). `angle` is a `float`
+                // and the pin maps it with `float(M_PI)` in single precision (`angle -= float(M_PI)`,
+                // WallToolPaths.cpp:406-407), then compares the float with the double limits; off subtracts
+                // the double pi, the arm until R944.
+                let colinear_f32 = crate::opt_in_gate("ARACHNE_COLINEAR_ANGLE_F32");
+                let mut angle = if colinear_f32 {
+                    let mut angle_f = linear_alg2d::get_angle_left(prev, pt, next);
+                    let pi_f = std::f64::consts::PI as f32;
+                    if angle_f >= pi_f {
+                        angle_f -= pi_f;
+                    }
+                    angle_f as f64
+                } else {
+                    linear_alg2d::get_angle_left(prev, pt, next) as f64
+                };
                 // WallToolPaths.cpp:407  map [pi : 2 * pi] to [0 : pi]
-                if angle >= std::f64::consts::PI {
+                if !colinear_f32 && angle >= std::f64::consts::PI {
                     angle -= std::f64::consts::PI;
                 }
 
@@ -1177,7 +1192,17 @@ impl WallToolPaths {
         // WallToolPaths.cpp:455
         let epsilon_offset: Coord = (allowed_distance / 2) - 1;
         // WallToolPaths.cpp:456
-        let transitioning_angle: f64 = deg2rad(self.m_params.wall_transition_angle as f64);
+        // R945: faithful_gate ARACHNE_TRANSITION_ANGLE_F32 (on unless `=0`). `wall_transition_angle`
+        // is a `float` (WallToolPaths.hpp:29), so the call is `deg2rad<float>` (Geometry.hpp:295):
+        // `float(PI) * angle / float(180.0)` in single precision, widened to the `double`
+        // `transitioning_angle`. For 10 degrees that is 0.17453293502 against the double 0.17453292520,
+        // which moves the markings of discretize_parabola (VoronoiUtils.cpp:140-146) by a unit. With
+        // `=0`: the double conversion, the arm until R944.
+        let transitioning_angle: f64 = if crate::faithful_gate("ARACHNE_TRANSITION_ANGLE_F32") {
+            ((std::f64::consts::PI as f32) * self.m_params.wall_transition_angle / 180.0f32) as f64
+        } else {
+            deg2rad(self.m_params.wall_transition_angle as f64)
+        };
         // R550: the six resolved params, deduped, mirroring [CPP-WTPPARAMS].
         if crate::probe_enabled("WTPPARAMS") {
             use std::collections::BTreeSet;

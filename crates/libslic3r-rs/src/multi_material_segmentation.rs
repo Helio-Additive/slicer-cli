@@ -247,25 +247,33 @@ pub struct MmuGraph {
     pub polygon_sizes: Vec<usize>,
 }
 
-impl MmuGraph {
-    // MultiMaterialSegmentation.cpp:81 (Node::remove_edge)
+impl Node {
+    // MultiMaterialSegmentation.cpp:82-91
     // void remove_edge(const size_t to_idx, MMU_Graph &graph)
-    fn node_remove_edge(&mut self, node_idx: usize, to_idx: usize) {
-        let arc_idxs = self.nodes[node_idx].arc_idxs.clone();
-        for (pos, &arc_it) in arc_idxs.iter().enumerate() {
-            let arc = self.arcs[arc_it];
+    // `graph` is read only for its arcs, which are passed alone (the node is borrowed out of `graph.nodes`).
+    pub fn remove_edge(&mut self, to_idx: usize, graph_arcs: &[Arc]) {
+        for pos in 0..self.arc_idxs.len() {
+            let arc = &graph_arcs[self.arc_idxs[pos]];
             if arc.to_idx == to_idx {
                 debug_assert!(arc.r#type != ArcType::Border);
-                self.nodes[node_idx].arc_idxs.remove(pos);
+                self.arc_idxs.remove(pos);
                 break;
             }
         }
     }
+}
 
-    // MultiMaterialSegmentation.cpp:101
+impl MmuGraph {
+    // MultiMaterialSegmentation.cpp:82-91 (Node::remove_edge), kept for the callers of the earlier name.
+    #[allow(dead_code)]
+    fn node_remove_edge(&mut self, node_idx: usize, to_idx: usize) {
+        self.nodes[node_idx].remove_edge(to_idx, &self.arcs);
+    }
+
+    // MultiMaterialSegmentation.cpp:102-106
     pub fn remove_edge(&mut self, from_idx: usize, to_idx: usize) {
-        self.node_remove_edge(from_idx, to_idx);
-        self.node_remove_edge(to_idx, from_idx);
+        self.nodes[from_idx].remove_edge(to_idx, &self.arcs);
+        self.nodes[to_idx].remove_edge(from_idx, &self.arcs);
     }
 
     // MultiMaterialSegmentation.cpp:107
@@ -399,14 +407,35 @@ impl MmuGraph {
     // `all_border_points`. We take the two vertex colors directly instead of the edge
     // iterator so the caller reads them once from the diagram.
     #[inline]
-    fn is_edge_attach_to_contour(&self, v0_color: usize, v1_color: usize) -> bool {
+    #[allow(dead_code)]
+    fn is_edge_attach_to_contour_colors(&self, v0_color: usize, v1_color: usize) -> bool {
         self.is_vertex_on_contour(v0_color) || self.is_vertex_on_contour(v1_color)
     }
 
     // MultiMaterialSegmentation.hpp:197 — is_edge_connecting_two_contour_vertices.
     #[inline]
-    fn is_edge_connecting_two_contour_vertices(&self, v0_color: usize, v1_color: usize) -> bool {
+    #[allow(dead_code)]
+    fn is_edge_connecting_two_contour_vertices_colors(&self, v0_color: usize, v1_color: usize) -> bool {
         self.is_vertex_on_contour(v0_color) && self.is_vertex_on_contour(v1_color)
+    }
+
+    // MultiMaterialSegmentation.cpp:193-196
+    // [[nodiscard]] inline bool is_edge_attach_to_contour(const voronoi_diagram<double>::const_edge_iterator &edge_iterator) const
+    // { return this->is_vertex_on_contour(edge_iterator->vertex0()) || this->is_vertex_on_contour(edge_iterator->vertex1()); }
+    // The edge is `edge` of `diagram`; called on finite edges only (both vertices exist).
+    #[inline]
+    fn is_edge_attach_to_contour<D: VdColors>(&self, diagram: &D, edge: usize) -> bool {
+        self.is_vertex_on_contour(diagram.vertex_color(diagram.edge_vertex0(edge).unwrap()))
+            || self.is_vertex_on_contour(diagram.vertex_color(diagram.edge_vertex1(edge).unwrap()))
+    }
+
+    // MultiMaterialSegmentation.cpp:198-201
+    // [[nodiscard]] inline bool is_edge_connecting_two_contour_vertices(const voronoi_diagram<double>::const_edge_iterator &edge_iterator) const
+    // { return this->is_vertex_on_contour(edge_iterator->vertex0()) && this->is_vertex_on_contour(edge_iterator->vertex1()); }
+    #[inline]
+    fn is_edge_connecting_two_contour_vertices<D: VdColors>(&self, diagram: &D, edge: usize) -> bool {
+        self.is_vertex_on_contour(diagram.vertex_color(diagram.edge_vertex0(edge).unwrap()))
+            && self.is_vertex_on_contour(diagram.vertex_color(diagram.edge_vertex1(edge).unwrap()))
     }
 
     // MultiMaterialSegmentation.hpp:109 — `append_edge(from, to, color = -1, NON_BORDER)`.
@@ -573,6 +602,31 @@ impl MmuGraph {
         // MultiMaterialSegmentation.cpp:308-309
         self.nodes = new_nodes;
         self.arcs = new_arcs;
+    }
+}
+
+/// The two `colored_points_to_polygon` overloads of MultiMaterialSegmentation.cpp:314-328, one implementation per
+/// argument type of the C++.
+pub trait ColoredPointsToPolygon {
+    type Output;
+    fn colored_points_to_polygon(&self) -> Self::Output;
+}
+
+// MultiMaterialSegmentation.cpp:314-320
+// static Polygon colored_points_to_polygon(const std::vector<ColoredLine> &lines)
+impl ColoredPointsToPolygon for [ColoredLine] {
+    type Output = Polygon;
+    fn colored_points_to_polygon(&self) -> Polygon {
+        colored_points_to_polygon_one(self)
+    }
+}
+
+// MultiMaterialSegmentation.cpp:322-328
+// static Polygons colored_points_to_polygon(const std::vector<std::vector<ColoredLine>> &lines)
+impl ColoredPointsToPolygon for [Vec<ColoredLine>] {
+    type Output = Vec<Polygon>;
+    fn colored_points_to_polygon(&self) -> Vec<Polygon> {
+        colored_points_to_polygon(self)
     }
 }
 
@@ -2031,8 +2085,21 @@ fn line_intersection_with_epsilon(
     }
 }
 
-// MultiMaterialSegmentation.cpp:1645
+// MultiMaterialSegmentation.cpp:1717-1720
+// static inline bool is_point_closer_to_beginning_of_line(const Line &line, const Point &p)
+// { return (p - line.a).cast<double>().squaredNorm() < (p - line.b).cast<double>().squaredNorm(); }
+// `p - line.a` is a difference of the pin's int32 coord_t points (libslic3r.h:38-40), which wraps at 32 bits
+// before the cast to double; squaredNorm is `x*x + y*y`, not fused (the products and the sum are separate
+// functors of Eigen's reduction). Gate MMS_POINT_CLOSER_I32_PIN (faithful); `=0` keeps the i64 difference.
 fn is_point_closer_to_beginning_of_line(line: &Line, p: &Point) -> bool {
+    if crate::faithful_gate("MMS_POINT_CLOSER_I32_PIN") {
+        let sq = |a: &Point| -> f64 {
+            let x = (p.x as i32).wrapping_sub(a.x as i32) as f64;
+            let y = (p.y as i32).wrapping_sub(a.y as i32) as f64;
+            x * x + y * y
+        };
+        return sq(&line.a) < sq(&line.b);
+    }
     pt_to_vec2d(*p - line.a).length_squared() < pt_to_vec2d(*p - line.b).length_squared()
 }
 
@@ -2215,6 +2282,32 @@ impl CPointLookup {
 #[inline]
 fn vertex_equal_to_point(vx: f64, vy: f64, ipt: PointF) -> bool {
     ulp_eq(vx, ipt.x, 128) && ulp_eq(vy, ipt.y, 128)
+}
+
+/// The two `vertex_equal_to_point` overloads of MultiMaterialSegmentation.cpp:49-58, one implementation per
+/// argument type of the C++ (a vertex by reference and by pointer), as `MkPoint`.
+#[allow(dead_code)]
+trait VertexEqualToPoint {
+    fn vertex_equal_to_point(self, ipt: &PointF) -> bool;
+}
+
+// MultiMaterialSegmentation.cpp:49-56
+// static bool vertex_equal_to_point(const Voronoi::VD::vertex_type &vertex, const Vec2d &ipt)
+// boost::polygon's ulp_comparison with vertex_equality_predicate_type::ULPS (128) on both coordinates.
+impl VertexEqualToPoint for crate::boost_polygon_voronoi::VoronoiVertex {
+    #[inline]
+    fn vertex_equal_to_point(self, ipt: &PointF) -> bool {
+        vertex_equal_to_point(self.x(), self.y(), *ipt)
+    }
+}
+
+// MultiMaterialSegmentation.cpp:58
+// static inline bool vertex_equal_to_point(const Voronoi::VD::vertex_type *vertex, const Vec2d &ipt) { return vertex_equal_to_point(*vertex, ipt); }
+impl VertexEqualToPoint for &crate::boost_polygon_voronoi::VoronoiVertex {
+    #[inline]
+    fn vertex_equal_to_point(self, ipt: &PointF) -> bool {
+        vertex_equal_to_point(self.x(), self.y(), *ipt)
+    }
 }
 
 // boost::polygon::detail::ulp_comparison<double>: EQUAL iff the two doubles are within
@@ -2669,7 +2762,7 @@ fn build_graph_from_voronoi_diagram<D: VdColors>(
 
             // MultiMaterialSegmentation.cpp:1763-1764 — both on contour, or a merged
             // duplicate vertex (same color): skip.
-            if graph.is_edge_connecting_two_contour_vertices(v0_color, v1_color)
+            if graph.is_edge_connecting_two_contour_vertices(&*diagram, edge_id)
                 || v0_color == v1_color
             {
                 continue;
@@ -2716,10 +2809,10 @@ fn build_graph_from_voronoi_diagram<D: VdColors>(
                         v1_idx,
                     );
                 }
-            } else if graph.is_edge_attach_to_contour(v0_color, v1_color) {
+            } else if graph.is_edge_attach_to_contour(&*diagram, edge_id) {
                 // MultiMaterialSegmentation.cpp:1795-1831.
                 mark_processed(diagram, edge_id);
-                if graph.is_edge_connecting_two_contour_vertices(v0_color, v1_color) {
+                if graph.is_edge_connecting_two_contour_vertices(&*diagram, edge_id) {
                     continue;
                 }
                 let from_idx = v0_idx;
@@ -3818,6 +3911,582 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
     triangles_by_color_merged
 }
 
+/// What `mmu_segmentation_top_and_bottom_layers` (MultiMaterialSegmentation.cpp:1356-1636) reads of its
+/// `const PrintObject &print_object`, one method per C++ expression. The pieces that depend on how a
+/// volume's transformation is represented (`object_trafo * mv->get_matrix()` fed to `is_volume_sinking`,
+/// `slice_mesh_slabs` and `slice_mesh`) are methods of the object, so the body below is the C++ body.
+pub trait MmuTopBottomPrintObject {
+    /// MMS.cpp:1361 `print_object.print()->config().filament_colour.size() + 1`.
+    fn num_extruders(&self) -> usize;
+    /// MMS.cpp:1364 `multi_nozzle_diameter_mode_enabled(print_object.print()->full_print_config())`.
+    fn multi_diameter_mode(&self) -> bool;
+    /// MMS.cpp:1370 `print_object.num_printing_regions()`.
+    fn num_printing_regions(&self) -> usize;
+    /// MMS.cpp:1371 `print_object.printing_region(i).config()`.
+    fn printing_region_config(&self, i: usize) -> &TopBottomRegionCfg;
+    /// MMS.cpp:1372 `effective_color_penetration_layers(print_object, config)` (MMS.cpp:1328-1353).
+    fn effective_color_penetration_layers(&self, config: &TopBottomRegionCfg) -> EffectiveColorPenetrationLayers;
+    /// MMS.cpp:1381 `zs_from_layers(layers)`.
+    fn zs_from_layers(&self) -> Vec<f32>;
+    /// MMS.cpp:1363 `layers.size()`.
+    fn layers_size(&self) -> usize;
+    /// `layers[layer_idx]->height`.
+    fn layer_height(&self, layer_idx: usize) -> f64;
+    /// `layers[layer_idx]->regions()`, as the configs of their print regions.
+    fn layer_region_configs(&self, layer_idx: usize) -> Vec<&TopBottomRegionCfg>;
+    /// MMS.cpp:1389-1390 the model parts of `print_object.model_object()->volumes`, counted.
+    fn model_part_volumes(&self) -> usize;
+    /// MMS.cpp:1393 `mv->mmu_segmentation_facets.get_facets_strict(*mv, EnforcerBlockerType(extruder_idx))`.
+    fn get_facets_strict(&self, volume_idx: usize, extruder_idx: usize) -> indexed_triangle_set;
+    /// MMS.cpp:1402 `is_volume_sinking(painted, volume_trafo)` (MMS.cpp:1311-1317).
+    fn is_volume_sinking(&self, volume_idx: usize, painted: &indexed_triangle_set) -> bool;
+    /// MMS.cpp:1405/1418 `slice_mesh_slabs(painted, zs, volume_trafo, want_top ? &top : nullptr,
+    /// want_bottom ? &bottom : nullptr, nullptr, throw_on_cancel_callback)` (TriangleMeshSlicer.cpp:2096-).
+    fn slice_mesh_slabs(
+        &self,
+        volume_idx: usize,
+        painted: &indexed_triangle_set,
+        zs: &[f32],
+        want_top: bool,
+        want_bottom: bool,
+    ) -> (Vec<crate::geometry::Polygons>, Vec<crate::geometry::Polygons>);
+    /// MMS.cpp:1411-1413 `slice_mesh(painted, z, MeshSlicingParams{ trafo = volume_trafo })`.
+    fn slice_mesh(&self, volume_idx: usize, painted: &indexed_triangle_set, z: f32) -> crate::geometry::Polygons;
+    /// MMS.cpp:1509 `nozzle_diameter_for_filament(print_config, config.wall_filament)`.
+    fn nozzle_diameter_for_filament(&self, wall_filament: usize) -> f32;
+    /// MMS.cpp:1500 `print_object.config().line_width`.
+    fn default_line_width_opt(&self) -> f64;
+    /// MMS.cpp:1501 `float(primary_nozzle_diameter(print_object.print()->full_print_config()))`.
+    fn preset_nozzle_diameter(&self) -> f32;
+    /// MMS.cpp:1563 `config.gap_infill_speed.get_at(print_object.print()->get_process_config_idx(config.wall_filament - 1))`.
+    fn gap_infill_speed(&self, config: &TopBottomRegionCfg) -> f64;
+}
+
+// MultiMaterialSegmentation.cpp:1356-1636
+// static inline std::vector<std::vector<ExPolygons>> mmu_segmentation_top_and_bottom_layers(const PrintObject &print_object,
+//     const std::vector<ExPolygons> &input_expolygons, const std::function<void()> &throw_on_cancel_callback)
+//
+// Returns `[extruder 0..num_extruders)[layer]`. The two `tbb::parallel_for` loops run in order on one
+// thread; the first one's `group_idx = range.begin() / granularity` is taken per layer as
+// `layer_idx / granularity` (the two halves it selects are unioned in the merge loop, so the split does not
+// change what is merged, only the order of the appended pieces, which the port takes in layer order).
+// Clipper operations are those of the Tier-1 port (`_tier1`), which equals the pin's twin on Majora.
+pub fn mmu_segmentation_top_and_bottom_layers(
+    print_object: &dyn MmuTopBottomPrintObject,
+    input_expolygons: &[ExPolygons],
+    throw_on_cancel_callback: &dyn Fn(),
+) -> Vec<Vec<ExPolygons>> {
+    // BBS
+    let num_extruders = print_object.num_extruders();
+    let num_layers = input_expolygons.len();
+    let layers_size = print_object.layers_size();
+    let multi_diameter_mode = print_object.multi_diameter_mode();
+
+    // Maximum number of top / bottom layers accounts for maximum overlap of one thread group into a neighbor thread group.
+    let mut max_top_layers: i32 = 0;
+    let mut max_bottom_layers: i32 = 0;
+    let mut granularity: i32 = 1;
+    for i in 0..print_object.num_printing_regions() {
+        let config = print_object.printing_region_config(i);
+        let penetration = print_object.effective_color_penetration_layers(config);
+        max_top_layers = max_top_layers.max(penetration.top);
+        max_bottom_layers = max_bottom_layers.max(penetration.bottom);
+        granularity = granularity.max(penetration.top.max(penetration.bottom) - 1);
+    }
+
+    // Project upwards pointing painted triangles over top surfaces,
+    // project downards pointing painted triangles over bottom surfaces.
+    let mut top_raw: Vec<Vec<crate::geometry::Polygons>> = vec![Vec::new(); num_extruders];
+    let mut bottom_raw: Vec<Vec<crate::geometry::Polygons>> = vec![Vec::new(); num_extruders];
+    let zs: Vec<f32> = print_object.zs_from_layers();
+
+    if max_top_layers > 0 || max_bottom_layers > 0 {
+        for volume_idx in 0..print_object.model_part_volumes() {
+            for extruder_idx in 0..num_extruders {
+                let painted = print_object.get_facets_strict(volume_idx, extruder_idx);
+                if !painted.indices.is_empty() {
+                    let mut top: Vec<crate::geometry::Polygons>;
+                    let mut bottom: Vec<crate::geometry::Polygons>;
+                    if !zs.is_empty() && print_object.is_volume_sinking(volume_idx, &painted) {
+                        let mut zs_sinking: Vec<f32> = vec![0.0];
+                        zs_sinking.extend_from_slice(&zs);
+                        let (t, b) = print_object.slice_mesh_slabs(
+                            volume_idx,
+                            &painted,
+                            &zs_sinking,
+                            max_top_layers > 0,
+                            max_bottom_layers > 0,
+                        );
+                        top = t;
+                        bottom = b;
+
+                        if !top.is_empty() {
+                            top.remove(0);
+                        }
+
+                        if bottom.len() > 1 {
+                            let bottom_slice = print_object.slice_mesh(volume_idx, &painted, zs[0]);
+
+                            bottom.remove(0);
+                            // union_(bottom[0], bottom_slice)
+                            let mut merged = std::mem::take(&mut bottom[0]);
+                            merged.extend(bottom_slice);
+                            bottom[0] = crate::clipper_utils::union_flat_clib(&merged);
+                        }
+                    } else {
+                        let (t, b) = print_object.slice_mesh_slabs(
+                            volume_idx,
+                            &painted,
+                            &zs,
+                            max_top_layers > 0,
+                            max_bottom_layers > 0,
+                        );
+                        top = t;
+                        bottom = b;
+                    }
+                    // R940 probe MMSDUMP (diagnostic only): the slab output itself.
+                    if crate::probe_enabled("MMSDUMP") {
+                        for (l, ps) in top.iter().enumerate() {
+                            mmsdump_polys("slt", l, extruder_idx, ps);
+                        }
+                        for (l, ps) in bottom.iter().enumerate() {
+                            mmsdump_polys("slb", l, extruder_idx, ps);
+                        }
+                    }
+                    let merge = |src: Vec<crate::geometry::Polygons>, dst: &mut Vec<crate::geometry::Polygons>| {
+                        if let Some(it_src) = src.iter().position(|p| !p.is_empty()) {
+                            if dst.is_empty() {
+                                *dst = src;
+                            } else {
+                                debug_assert!(src.len() == dst.len());
+                                for (idx, s) in src.into_iter().enumerate().skip(it_src) {
+                                    if !s.is_empty() {
+                                        if dst[idx].is_empty() {
+                                            dst[idx] = s;
+                                        } else {
+                                            dst[idx].extend(s);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    merge(top, &mut top_raw[extruder_idx]);
+                    merge(bottom, &mut bottom_raw[extruder_idx]);
+                }
+            }
+        }
+    }
+
+    let filter_out_small_polygons = |raw_surfaces: &mut Vec<Vec<crate::geometry::Polygons>>, min_area: f64| {
+        for extruder_idx in 0..num_extruders {
+            if !raw_surfaces[extruder_idx].is_empty() {
+                for layer_idx in 0..num_layers {
+                    if !raw_surfaces[extruder_idx][layer_idx].is_empty() {
+                        // remove_small (Polygon.cpp:600): keeps |area| >= min_area.
+                        raw_surfaces[extruder_idx][layer_idx].retain(|p| p.area().abs() >= min_area);
+                    }
+                }
+            }
+        }
+    };
+
+    // Filter out polygons less than 0.1mm^2, because they are unprintable and causing dimples on outer primers (#7104)
+    filter_out_small_polygons(&mut top_raw, pin_min_area_0_1f());
+    filter_out_small_polygons(&mut bottom_raw, pin_min_area_0_1f());
+
+    // When the upper surface of an object is occluded, it should no longer be considered the upper surface
+    for extruder_idx in 0..num_extruders {
+        for layer_idx in 0..layers_size {
+            if !top_raw[extruder_idx].is_empty() && !top_raw[extruder_idx][layer_idx].is_empty() && layer_idx + 1 < layers_size {
+                top_raw[extruder_idx][layer_idx] = crate::clipper_utils::difference_polygons_clib(
+                    &top_raw[extruder_idx][layer_idx],
+                    &input_expolygons[layer_idx + 1],
+                );
+            }
+            if !bottom_raw[extruder_idx].is_empty() && !bottom_raw[extruder_idx][layer_idx].is_empty() && layer_idx > 0 {
+                bottom_raw[extruder_idx][layer_idx] = crate::clipper_utils::difference_polygons_clib(
+                    &bottom_raw[extruder_idx][layer_idx],
+                    &input_expolygons[layer_idx - 1],
+                );
+            }
+        }
+    }
+
+    // R940 probe MMSDUMP (diagnostic only): the raw projections after the occlusion trim.
+    if crate::probe_enabled("MMSDUMP") {
+        for e in 0..num_extruders {
+            for (l, ps) in top_raw[e].iter().enumerate() {
+                mmsdump_polys("rawt", l, e, ps);
+            }
+            for (l, ps) in bottom_raw[e].iter().enumerate() {
+                mmsdump_polys("rawb", l, e, ps);
+            }
+        }
+    }
+
+    let mut triangles_by_color_bottom: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); num_layers * 2]; num_extruders];
+    let mut triangles_by_color_top: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); num_layers * 2]; num_extruders];
+
+    // BBS: use shell_triangles_by_color_bottom & shell_triangles_by_color_top to save the top and bottom embedded layers's color information
+    let mut shell_triangles_by_color_bottom: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); num_layers * 2]; num_extruders];
+    let mut shell_triangles_by_color_top: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); num_layers * 2]; num_extruders];
+
+    // MMS.cpp:1475-1494 struct LayerColorStat
+    #[derive(Default, Clone, Copy)]
+    struct LayerColorStat {
+        // Number of regions for a queried color.
+        num_regions: i32,
+        // Maximum perimeter extrusion width for a queried color.
+        extrusion_width: f32,
+        // Minimum radius of a region to be printable. Used to filter regions by morphological opening.
+        small_region_threshold: f32,
+        // Maximum number of top layers for a queried color.
+        top_color_penetration_layers: i32,
+        // Maximum number of bottom layers for a queried color.
+        bottom_color_penetration_layers: i32,
+        extrusion_spacing: f32,
+        top_color_penetration_inset_step: f32,
+        bottom_color_penetration_inset_step: f32,
+    }
+    let default_line_width_opt = crate::config::ConfigOptionFloat { value: print_object.default_line_width_opt() };
+    let preset_nozzle_diameter: f32 = print_object.preset_nozzle_diameter();
+    // MMS.cpp:1502-1576
+    let layer_color_stat = |layer_idx: usize, color_idx: usize| -> LayerColorStat {
+        let mut out = LayerColorStat::default();
+        let layer_height = print_object.layer_height(layer_idx);
+        for config in print_object.layer_region_configs(layer_idx) {
+            // color_idx == 0 means "don't know" extruder aka the underlying extruder.
+            // As this region may split existing regions, we collect statistics over all regions for color_idx == 0.
+            if color_idx == 0 || config.wall_filament == color_idx {
+                //BBS: the extrusion line width is outer wall rather than inner wall
+                let nozzle_diamter: f32 = print_object.nozzle_diameter_for_filament(config.wall_filament);
+                let default_line_width: f32 = crate::flow::Flow::extrusion_width_for_nozzle(
+                    &default_line_width_opt,
+                    preset_nozzle_diameter,
+                    nozzle_diamter,
+                    multi_diameter_mode,
+                ) as f32;
+                let outer_wall_line_width_cfg: f32 = crate::flow::Flow::extrusion_width_for_nozzle(
+                    &crate::config::ConfigOptionFloat { value: config.outer_wall_line_width },
+                    preset_nozzle_diameter,
+                    nozzle_diamter,
+                    multi_diameter_mode,
+                ) as f32;
+                let outer_wall_line_width: f32 = if outer_wall_line_width_cfg == 0.0 {
+                    if default_line_width == 0.0 { nozzle_diamter } else { default_line_width }
+                } else {
+                    outer_wall_line_width_cfg
+                };
+                out.extrusion_width = out.extrusion_width.max(outer_wall_line_width);
+                let penetration = print_object.effective_color_penetration_layers(config);
+                // Flow::rounded_rectangle_extrusion_spacing(float, float) throws FlowErrorNegativeSpacing on a
+                // non-positive spacing (Flow.cpp:191-199); the port takes 0 there, as the Tier-1 port does.
+                let extrusion_spacing: f32 =
+                    crate::flow::Flow::rounded_rectangle_extrusion_spacing(outer_wall_line_width as f64, layer_height as f32 as f64)
+                        .unwrap_or(0.0) as f32;
+                let penetration_inset_step: f32 = (outer_wall_line_width + extrusion_spacing) / (penetration.band_size as f32);
+                if multi_diameter_mode {
+                    let select_penetration = |candidate_layers: i32,
+                                              candidate_inset_step: f32,
+                                              selected_layers: &mut i32,
+                                              selected_inset_step: &mut f32| {
+                        if candidate_layers > *selected_layers
+                            || (candidate_layers == *selected_layers && candidate_inset_step > *selected_inset_step)
+                        {
+                            *selected_layers = candidate_layers;
+                            *selected_inset_step = candidate_inset_step;
+                        }
+                    };
+                    select_penetration(
+                        penetration.top,
+                        penetration_inset_step,
+                        &mut out.top_color_penetration_layers,
+                        &mut out.top_color_penetration_inset_step,
+                    );
+                    select_penetration(
+                        penetration.bottom,
+                        penetration_inset_step,
+                        &mut out.bottom_color_penetration_layers,
+                        &mut out.bottom_color_penetration_inset_step,
+                    );
+                } else {
+                    out.top_color_penetration_layers = out.top_color_penetration_layers.max(config.top_color_penetration_layers);
+                    out.bottom_color_penetration_layers =
+                        out.bottom_color_penetration_layers.max(config.bottom_color_penetration_layers);
+                    out.extrusion_spacing = extrusion_spacing;
+                }
+                out.small_region_threshold = if print_object.gap_infill_speed(config) > 0.0 {
+                    // Gap fill enabled. Enable a single line of 1/2 extrusion width.
+                    0.5 * outer_wall_line_width
+                } else {
+                    // Gap fill disabled. Enable two lines slightly overlapping.
+                    outer_wall_line_width + 0.7 * extrusion_spacing
+                };
+                out.small_region_threshold = tb_scaled_f32(out.small_region_threshold * 0.5);
+                out.num_regions += 1;
+            }
+        }
+        debug_assert!(out.num_regions > 0);
+        out.extrusion_width = tb_scaled_f32(out.extrusion_width);
+        out.extrusion_spacing = tb_scaled_f32(out.extrusion_spacing);
+        out.top_color_penetration_inset_step = tb_scaled_f32(out.top_color_penetration_inset_step);
+        out.bottom_color_penetration_inset_step = tb_scaled_f32(out.bottom_color_penetration_inset_step);
+        out
+    };
+
+    // MMS.cpp:1578-1634 (first tbb::parallel_for)
+    let granularity = granularity as usize;
+    for layer_idx in 0..num_layers {
+        let group_idx = layer_idx / granularity;
+        let layer_idx_offset = (group_idx & 1) * num_layers;
+        for color_idx in 0..num_extruders {
+            throw_on_cancel_callback();
+            let stat = layer_color_stat(layer_idx, color_idx);
+            if !top_raw[color_idx].is_empty() && !top_raw[color_idx][layer_idx].is_empty() {
+                let top_ex = crate::clipper_utils::union_ex_clib(&top_raw[color_idx][layer_idx], 1);
+                if !top_ex.is_empty() {
+                    // Clean up thin projections. They are not printable anyways.
+                    let top_ex = tb_opening_ex(&top_ex, stat.small_region_threshold);
+                    if !top_ex.is_empty() {
+                        triangles_by_color_top[color_idx][layer_idx + layer_idx_offset].extend(top_ex.iter().cloned());
+                        let mut offset: f32 = 0.0;
+                        let mut layer_slices_trimmed = input_expolygons[layer_idx].clone();
+                        // for (int last_idx = int(layer_idx) - 1; last_idx > std::max(int(layer_idx - stat.top_color_penetration_layers), int(0)); --last_idx)
+                        // `layer_idx - stat.top_color_penetration_layers` is size_t arithmetic, then cast to int.
+                        let lower: i32 = ((layer_idx as u64).wrapping_sub(stat.top_color_penetration_layers as i64 as u64) as u32 as i32).max(0);
+                        let mut last_idx: i32 = layer_idx as i32 - 1;
+                        while last_idx > lower {
+                            //BBS: offset width should be 2*spacing to avoid too narrow area which has overlap of wall line
+                            offset -= if multi_diameter_mode {
+                                stat.top_color_penetration_inset_step
+                            } else {
+                                stat.extrusion_spacing + stat.extrusion_width
+                            };
+                            layer_slices_trimmed =
+                                crate::clipper_utils::intersection_clib(&layer_slices_trimmed, &input_expolygons[last_idx as usize]);
+                            let last = tb_opening_ex(
+                                &crate::clipper_utils::intersection_clib(
+                                    &top_ex,
+                                    &crate::clipper_utils::offset_expolygons_clib(&layer_slices_trimmed, tb_mm(offset), OffsetJoinType::Miter),
+                                ),
+                                stat.small_region_threshold,
+                            );
+                            if last.is_empty() {
+                                break;
+                            }
+                            shell_triangles_by_color_top[color_idx][last_idx as usize + layer_idx_offset].extend(last);
+                            last_idx -= 1;
+                        }
+                    }
+                }
+            }
+            if !bottom_raw[color_idx].is_empty() && !bottom_raw[color_idx][layer_idx].is_empty() {
+                let bottom_ex = crate::clipper_utils::union_ex_clib(&bottom_raw[color_idx][layer_idx], 1);
+                if !bottom_ex.is_empty() {
+                    // Clean up thin projections. They are not printable anyways.
+                    let bottom_ex = tb_opening_ex(&bottom_ex, stat.small_region_threshold);
+                    if !bottom_ex.is_empty() {
+                        triangles_by_color_bottom[color_idx][layer_idx + layer_idx_offset].extend(bottom_ex.iter().cloned());
+                        let mut offset: f32 = 0.0;
+                        let mut layer_slices_trimmed = input_expolygons[layer_idx].clone();
+                        // std::min(layer_idx + stat.bottom_color_penetration_layers, num_layers), in size_t.
+                        let upper = (layer_idx as u64).wrapping_add(stat.bottom_color_penetration_layers as i64 as u64).min(num_layers as u64) as usize;
+                        let mut last_idx = layer_idx + 1;
+                        while last_idx < upper {
+                            //BBS: offset width should be 2*spacing to avoid too narrow area which has overlap of wall line
+                            offset -= if multi_diameter_mode {
+                                stat.bottom_color_penetration_inset_step
+                            } else {
+                                stat.extrusion_spacing + stat.extrusion_width
+                            };
+                            layer_slices_trimmed =
+                                crate::clipper_utils::intersection_clib(&layer_slices_trimmed, &input_expolygons[last_idx]);
+                            let last = tb_opening_ex(
+                                &crate::clipper_utils::intersection_clib(
+                                    &bottom_ex,
+                                    &crate::clipper_utils::offset_expolygons_clib(&layer_slices_trimmed, tb_mm(offset), OffsetJoinType::Miter),
+                                ),
+                                stat.small_region_threshold,
+                            );
+                            if last.is_empty() {
+                                break;
+                            }
+                            shell_triangles_by_color_bottom[color_idx][last_idx + layer_idx_offset].extend(last);
+                            last_idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // R940 probe MMSDUMP (diagnostic only): the propagated projections and shells.
+    if crate::probe_enabled("MMSDUMP") {
+        for e in 0..num_extruders {
+            for l in 0..2 * num_layers {
+                mmsdump_line("ctop", l, e, &triangles_by_color_top[e][l]);
+                mmsdump_line("cbot", l, e, &triangles_by_color_bottom[e][l]);
+                mmsdump_line("stop", l, e, &shell_triangles_by_color_top[e][l]);
+                mmsdump_line("sbot", l, e, &shell_triangles_by_color_bottom[e][l]);
+            }
+        }
+    }
+
+    // MMS.cpp:1636-1690 (second tbb::parallel_for)
+    let mut triangles_by_color_merged: Vec<Vec<ExPolygons>> = vec![vec![ExPolygons::new(); num_layers]; num_extruders];
+    for layer_idx in 0..num_layers {
+        throw_on_cancel_callback();
+        let mut painted_exploys = ExPolygons::new();
+        for color_idx in 0..triangles_by_color_merged.len() {
+            let mut own = std::mem::take(&mut triangles_by_color_merged[color_idx][layer_idx]);
+            own.extend(std::mem::take(&mut triangles_by_color_bottom[color_idx][layer_idx]));
+            own.extend(std::mem::take(&mut triangles_by_color_bottom[color_idx][layer_idx + num_layers]));
+            own.extend(std::mem::take(&mut triangles_by_color_top[color_idx][layer_idx]));
+            own.extend(std::mem::take(&mut triangles_by_color_top[color_idx][layer_idx + num_layers]));
+            let own = tb_union_ex(&own);
+
+            painted_exploys.extend(own.iter().cloned());
+            triangles_by_color_merged[color_idx][layer_idx] = own;
+        }
+
+        let painted_exploys = tb_union_ex(&painted_exploys);
+
+        //BBS: merge the top and bottom shell layers
+        for color_idx in 0..triangles_by_color_merged.len() {
+            let mut shell_top = std::mem::take(&mut shell_triangles_by_color_top[color_idx][layer_idx]);
+            shell_top.extend(std::mem::take(&mut shell_triangles_by_color_top[color_idx][layer_idx + num_layers]));
+            let top_area = crate::clipper_utils::difference_clib(&tb_union_ex(&shell_top), &painted_exploys);
+
+            let mut shell_bottom = std::mem::take(&mut shell_triangles_by_color_bottom[color_idx][layer_idx]);
+            shell_bottom.extend(std::mem::take(&mut shell_triangles_by_color_bottom[color_idx][layer_idx + num_layers]));
+            let bottom_area = crate::clipper_utils::difference_clib(&tb_union_ex(&shell_bottom), &painted_exploys);
+
+            let own = &mut triangles_by_color_merged[color_idx][layer_idx];
+            own.extend(top_area);
+            own.extend(bottom_area);
+            *own = tb_union_ex(own);
+        }
+        // Trim one region by the other if some of the regions overlap.
+        let mut painted_regions = ExPolygons::new();
+        for color_idx in 1..triangles_by_color_merged.len() {
+            triangles_by_color_merged[color_idx][layer_idx] =
+                crate::clipper_utils::difference_clib(&triangles_by_color_merged[color_idx][layer_idx], &painted_regions);
+            painted_regions.extend(triangles_by_color_merged[color_idx][layer_idx].iter().cloned());
+        }
+        triangles_by_color_merged[0][layer_idx] =
+            crate::clipper_utils::difference_clib(&triangles_by_color_merged[0][layer_idx], &painted_regions);
+    }
+
+    triangles_by_color_merged
+}
+
+/// The live (Tier-1) segmentation's view of the print object for [`mmu_segmentation_top_and_bottom_layers`]:
+/// one model part (the merged volume) whose strict painted sub-meshes and FRAME_UNIFY trafo come in a
+/// [`TopBottomCtx`]; `num_filaments` is the filament count (`filament_colour.size()`). Single-nozzle-diameter:
+/// the context carries one scalar `nozzle_diameter`, so `multi_nozzle_diameter_mode_enabled` is false for it,
+/// and `effective_color_penetration_layers` (MMS.cpp:1328-1336) returns the region's own counts with band 1.
+pub struct TopBottomCtxPrintObject<'a> {
+    pub ctx: &'a TopBottomCtx<'a>,
+    pub num_filaments: usize,
+}
+
+impl<'a> TopBottomCtxPrintObject<'a> {
+    // transform_mesh_vertices_for_slicing(painted, volume_trafo) through the FRAME_UNIFY trafo (XY scaled, Z mm).
+    fn vertices_for_slicing(&self, painted: &indexed_triangle_set) -> Vec<Vec3f> {
+        let mut flat_in: Vec<f32> = Vec::with_capacity(painted.vertices.len() * 3);
+        for p in &painted.vertices {
+            flat_in.push(p.x);
+            flat_in.push(p.y);
+            flat_in.push(p.z);
+        }
+        let flat_out = crate::triangle_mesh_slicer::transform_verts_unified(
+            &self.ctx.trafo16,
+            crate::libslic3r::SCALING_FACTOR,
+            self.ctx.voff,
+            &flat_in,
+        );
+        flat_out.chunks_exact(3).map(|c| Vec3f::new(c[0], c[1], c[2])).collect()
+    }
+}
+
+impl<'a> MmuTopBottomPrintObject for TopBottomCtxPrintObject<'a> {
+    fn num_extruders(&self) -> usize {
+        self.num_filaments + 1
+    }
+    fn multi_diameter_mode(&self) -> bool {
+        false
+    }
+    fn num_printing_regions(&self) -> usize {
+        self.ctx.region_configs.len()
+    }
+    fn printing_region_config(&self, i: usize) -> &TopBottomRegionCfg {
+        &self.ctx.region_configs[i]
+    }
+    fn effective_color_penetration_layers(&self, config: &TopBottomRegionCfg) -> EffectiveColorPenetrationLayers {
+        // MMS.cpp:1330-1336 (`!multi_nozzle_diameter_mode_enabled`).
+        EffectiveColorPenetrationLayers {
+            top: config.top_color_penetration_layers,
+            bottom: config.bottom_color_penetration_layers,
+            band_size: 1,
+        }
+    }
+    fn zs_from_layers(&self) -> Vec<f32> {
+        self.ctx.zs.clone()
+    }
+    fn layers_size(&self) -> usize {
+        self.ctx.layer_heights.len()
+    }
+    fn layer_height(&self, layer_idx: usize) -> f64 {
+        self.ctx.layer_heights[layer_idx]
+    }
+    fn layer_region_configs(&self, _layer_idx: usize) -> Vec<&TopBottomRegionCfg> {
+        // Every layer carries a LayerRegion for every printing region at this stage.
+        self.ctx.region_configs.iter().collect()
+    }
+    fn model_part_volumes(&self) -> usize {
+        1
+    }
+    fn get_facets_strict(&self, _volume_idx: usize, extruder_idx: usize) -> indexed_triangle_set {
+        self.ctx
+            .strict_submeshes
+            .iter()
+            .find(|(state, _)| *state as usize == extruder_idx)
+            .map(|(_, its)| its.clone())
+            .unwrap_or_default()
+    }
+    fn is_volume_sinking(&self, _volume_idx: usize, painted: &indexed_triangle_set) -> bool {
+        tb_is_volume_sinking(painted, &self.ctx.trafo16, self.ctx.voff)
+    }
+    fn slice_mesh_slabs(
+        &self,
+        _volume_idx: usize,
+        painted: &indexed_triangle_set,
+        zs: &[f32],
+        want_top: bool,
+        want_bottom: bool,
+    ) -> (Vec<crate::geometry::Polygons>, Vec<crate::geometry::Polygons>) {
+        let verts = self.vertices_for_slicing(painted);
+        crate::triangle_mesh_slicer::slice_mesh_slabs(painted, zs, &verts, false, want_top, want_bottom)
+    }
+    fn slice_mesh(&self, _volume_idx: usize, painted: &indexed_triangle_set, z: f32) -> crate::geometry::Polygons {
+        let verts = self.vertices_for_slicing(painted);
+        crate::triangle_mesh_slicer::slice_mesh_at_z_transformed(painted, &verts, z)
+    }
+    fn nozzle_diameter_for_filament(&self, _wall_filament: usize) -> f32 {
+        self.ctx.nozzle_diameter as f32
+    }
+    fn default_line_width_opt(&self) -> f64 {
+        self.ctx.default_line_width
+    }
+    fn preset_nozzle_diameter(&self) -> f32 {
+        self.ctx.nozzle_diameter as f32
+    }
+    fn gap_infill_speed(&self, config: &TopBottomRegionCfg) -> f64 {
+        config.gap_fill_speed
+    }
+}
+
 // MultiMaterialSegmentation.cpp:2039-2079 (the line numbers in the body below are those of an
 // earlier pin; verified by tests/multi_material_segmentation_native_parity.rs, merge_segmented_layers_native_parity)
 // `top_and_bottom_layers` is taken by value (the C++ takes
@@ -4822,6 +5491,13 @@ pub fn multi_material_segmentation_by_painting_tier1(
     // empty "no top/bottom overrides" structure.
     // Shape expected by merge_segmented_layers is [extruder 0..=num_extruders][layer].
     let top_and_bottom_layers: Vec<Vec<ExPolygons>> = match topbot_ctx {
+        // Gate MMS_TOP_BOTTOM_PIN (faithful): the C++-named port (MMS.cpp:1356-1636) over the
+        // context's print-object view; `=0` keeps the Tier-1 function.
+        Some(ctx) if crate::faithful_gate("MMS_TOP_BOTTOM_PIN") => mmu_segmentation_top_and_bottom_layers(
+            &TopBottomCtxPrintObject { ctx, num_filaments: num_extruders },
+            &input_expolygons,
+            &|| {},
+        ),
         Some(ctx) => {
             mmu_segmentation_top_and_bottom_layers_tier1(&input_expolygons, ctx, num_extruders)
         }

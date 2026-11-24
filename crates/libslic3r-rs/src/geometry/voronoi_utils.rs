@@ -197,18 +197,44 @@ pub fn discretize_parabola(
     let perp_ppxx = perp(ppxx);
     let perp_x = perp_ppxx.x as f64;
     let perp_y = perp_ppxx.y as f64;
-    // FIDELITY-NOTE: Eigen's `normalized()` divides by `sqrt(x*x + y*y)`; `hypot` can
-    // differ from that in the last place. `Point::rotated(cos, sin)` (Point.hpp:226-231,
-    // used four times below through `rotate_by_cos_sin`) is `round(cos_a * cur_x - sin_a *
-    // cur_y)` and `round(cos_a * cur_y + sin_a * cur_x)`, which the reference build
-    // contracts (left product fused); `rotate_by_cos_sin` does not fuse. Both were tried
-    // as the C++ has them when Arachne moved onto the port of boost's builder: the G-code
-    // of the three fixtures did not change by a byte, so the arithmetic that other
-    // callers share is left as it is.
-    let rot_len = perp_x.hypot(perp_y);
-    // VoronoiUtils.cpp:131-132 const double rot_cos_theta = rot.x(); const double rot_sin_theta = rot.y();
-    let rot_cos_theta = perp_x / rot_len;
-    let rot_sin_theta = perp_y / rot_len;
+    // Eigen's `normalized()` divides by `sqrt(x*x + y*y)`, which `hypot` can miss by an ulp;
+    // `Point::rotated(cos, sin)` (Point.hpp:226-231, used four times below) is contracted by
+    // the reference build (left product fused). Until R944 the port used `hypot` and the
+    // unfused `rotate_by_cos_sin`; the gate below follows the C++.
+    //
+    // R945: faithful_gate ARACHNE_PARABOLA_EIGEN (on unless `=0`). `normalized()` (Eigen Dot.h)
+    // is `n / sqrt(n.squaredNorm())` when the squared norm is positive, the squared norm of a
+    // Vec2d being one packet multiply and a horizontal add (no fused multiply-add), and
+    // `Point::rotated(cos_a, sin_a)` (Point.hpp:226-231) is the contracted
+    // `round(fma(cos_a, cur_x, -(sin_a * cur_y)))`, `round(fma(cos_a, cur_y, sin_a * cur_x))`.
+    // With `=0`: `hypot` and the unfused rotation, the arm until R944.
+    let eigen = crate::faithful_gate("ARACHNE_PARABOLA_EIGEN");
+    let (rot_cos_theta, rot_sin_theta) = if eigen {
+        let z = perp_x * perp_x + perp_y * perp_y;
+        if z > 0.0 {
+            let n = z.sqrt();
+            (perp_x / n, perp_y / n)
+        } else {
+            (perp_x, perp_y)
+        }
+    } else {
+        let rot_len = perp_x.hypot(perp_y);
+        // VoronoiUtils.cpp:131-132 const double rot_cos_theta = rot.x(); const double rot_sin_theta = rot.y();
+        (perp_x / rot_len, perp_y / rot_len)
+    };
+    // Point.hpp:226-231 `Point::rotated(double cos_a, double sin_a)`, as the gate above says.
+    let rotated = |p: Point, cos_a: f64, sin_a: f64| -> Point {
+        if eigen {
+            let cur_x = p.x as f64;
+            let cur_y = p.y as f64;
+            Point::new(
+                cos_a.mul_add(cur_x, -(sin_a * cur_y)).round() as Coord,
+                cos_a.mul_add(cur_y, sin_a * cur_x).round() as Coord,
+            )
+        } else {
+            p.rotate_by_cos_sin(cos_a, sin_a)
+        }
+    };
 
     // VoronoiUtils.cpp:134-138
     if d == 0 {
@@ -227,12 +253,10 @@ pub fn discretize_parabola(
     // VoronoiUtils.cpp:144 const coord_t marking_start_end_h = msx * msx / (2 * d) + d / 2;
     let marking_start_end_h = msx * msx / (2 * d) + d / 2;
     // VoronoiUtils.cpp:145 Point marking_start = Point(coord_t(msx), marking_start_end_h).rotated(rot_cos_theta, rot_sin_theta) + pxx;
-    let mut marking_start = Point::new(msx as Coord, marking_start_end_h as Coord)
-        .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
+    let mut marking_start = rotated(Point::new(msx as Coord, marking_start_end_h as Coord), rot_cos_theta, rot_sin_theta)
         + pxx;
     // VoronoiUtils.cpp:146 Point marking_end = Point(coord_t(mex), marking_start_end_h).rotated(rot_cos_theta, rot_sin_theta) + pxx;
-    let mut marking_end = Point::new(mex as Coord, marking_start_end_h as Coord)
-        .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
+    let mut marking_end = rotated(Point::new(mex as Coord, marking_start_end_h as Coord), rot_cos_theta, rot_sin_theta)
         + pxx;
     // VoronoiUtils.cpp:147 const int dir = (sx > ex) ? -1 : 1;
     let dir: i64 = if sx > ex { -1 } else { 1 };
@@ -248,8 +272,7 @@ pub fn discretize_parabola(
     let mut add_marking_end = mex * dir > (sx - px) * dir && mex * dir < (ex - px) * dir;
 
     // VoronoiUtils.cpp:156 const Point apex = Point(0, d / 2).rotated(rot_cos_theta, rot_sin_theta) + pxx;
-    let apex = Point::new(0, (d / 2) as Coord)
-        .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
+    let apex = rotated(Point::new(0, (d / 2) as Coord), rot_cos_theta, rot_sin_theta)
         + pxx;
     // VoronoiUtils.cpp:157 bool add_apex = int64_t(sx - px) * int64_t(dir) < 0 && int64_t(ex - px) * int64_t(dir) > 0;
     let mut add_apex = (sx - px) * dir < 0 && (ex - px) * dir > 0;
@@ -289,8 +312,7 @@ pub fn discretize_parabola(
             add_marking_end = false;
         }
         // VoronoiUtils.cpp:185-186 const Point result = Point(x, y).rotated(...) + pxx; discretized.emplace_back(result);
-        let result = Point::new(x as Coord, y as Coord)
-            .rotate_by_cos_sin(rot_cos_theta, rot_sin_theta)
+        let result = rotated(Point::new(x as Coord, y as Coord), rot_cos_theta, rot_sin_theta)
             + pxx;
         discretized.push(result);
         step += 1;

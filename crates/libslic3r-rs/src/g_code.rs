@@ -775,9 +775,34 @@ pub(crate) fn append_tcr(
             };
             // GCode.cpp:887, 990-1128
             let change_filament_gcode = pp_string(&gp.m_config, "change_filament_gcode").unwrap_or_default();
+            // TOOLCHANGE_SHARE_RETRACTED (on): GCode.cpp:982 reads the new filament's slot
+            // (GCodeWriter.cpp:957-969, Extruder::get_share_retracted_length Extruder.cpp:57-60,
+            // slot = the filament's extruder Extruder.cpp:22-46 by filament_map). The old
+            // filament's slot was just retracted for the tool change (GCode.cpp:875-879 and the
+            // nozzle change's long retract: retract_length_toolchange): Extruder::retract
+            // (Extruder.cpp:76-100) takes the shared slot to max(retracted, length). A slot no
+            // tool change has left holds 0 (Extruder.cpp:6). =0 writes 0.
+            let new_extruder_retracted_length = if crate::faithful_gate("TOOLCHANGE_SHARE_RETRACTED")
+                && pp_bool(&gp.m_config, "single_extruder_multi_material").unwrap_or(false)
+            {
+                if old_filament_id >= 0 {
+                    let old_slot = gp.get_extruder_id(old_filament_id as u32);
+                    let length = pp_get_at(&pp_floats(&gp.m_config, "retract_length_toolchange"), old_filament_id as usize);
+                    if old_slot >= writer.m_share_retracted.len() {
+                        writer.m_share_retracted.resize(old_slot + 1, 0.0);
+                    }
+                    let retracted = writer.retracted_length_now();
+                    writer.m_share_retracted[old_slot] = retracted.max(length);
+                }
+                let new_slot = gp.get_extruder_id(new_filament_id);
+                Some(writer.m_share_retracted.get(new_slot).copied().unwrap_or(0.0) as f32)
+            } else {
+                None
+            };
             let change = if !change_filament_gcode.is_empty() {
                 let inputs = ToolChangeTemplateInputs {
                     ctx: &ctx,
+                    new_extruder_retracted_length,
                     old_filament_id,
                     new_filament_id,
                     purge_volume: tcr.purge_volume,
@@ -11120,6 +11145,9 @@ pub struct ToolChangeTemplateInputs<'a> {
     /// `crate::gcode::change_filament::build_context`: the temperatures, the toolchange count,
     /// the flush lengths, the positions the template reads.
     pub ctx: &'a crate::gcode::gcode_template::Context,
+    /// `gcodegen.m_writer.get_extruder_retracted_length(new_filament_id)` (GCode.cpp:982), when
+    /// the export tracks it (gate TOOLCHANGE_SHARE_RETRACTED); `None` writes 0.
+    pub new_extruder_retracted_length: Option<f32>,
     /// `gcodegen.writer().filament()->id()`, -1 without one (GCode.cpp:993).
     pub old_filament_id: i32,
     /// `tcr.new_tool` (GCode.cpp:681).
@@ -11248,7 +11276,7 @@ pub fn change_filament_override(gp: &GCodePlaceholders, t: &ToolChangeTemplateIn
     set("filament_retract_length_nc", float(old_filament_retract_length_nc as f64));
     set("old_retract_length_toolchange", float(old_retract_length_toolchange as f64));
     set("new_retract_length_toolchange", float(new_retract_length_toolchange as f64));
-    set("new_extruder_retracted_length", float(0.0));
+    set("new_extruder_retracted_length", float(t.new_extruder_retracted_length.unwrap_or(0.0) as f64));
     set("old_filament_temp", int(ctx_float("old_filament_temp", 210.0) as i32));
     set("new_filament_temp", int(ctx_float("new_filament_temp", 0.0) as i32));
     set("x_after_toolchange", float(t.tool_change_start_pos.0 as f64));

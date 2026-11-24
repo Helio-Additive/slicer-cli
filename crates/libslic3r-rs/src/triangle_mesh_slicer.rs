@@ -41,6 +41,27 @@ fn is_equal(lh: f32, rh: f32) -> bool {
     (lh - rh).abs() <= EPSON
 }
 
+/// The two `is_equal` overloads of TriangleMeshSlicer.cpp:45-56 under the C++ name, one implementation per
+/// argument type (`float`, `Vec3f`).
+pub trait IsEqual {
+    fn is_equal(&self, rh: &Self) -> bool;
+}
+
+// TriangleMeshSlicer.cpp:45-48 bool is_equal(float lh, float rh) { return abs(lh - rh) <= epson; }
+impl IsEqual for f32 {
+    fn is_equal(&self, rh: &f32) -> bool {
+        is_equal(*self, *rh)
+    }
+}
+
+// TriangleMeshSlicer.cpp:54-56
+// bool is_equal(const Vec3f &lh, const Vec3f &rh) { return is_equal(lh[0], rh[0]) && is_equal(lh[1], rh[1]) && is_equal(lh[2], rh[2]); }
+impl IsEqual for StlVertex {
+    fn is_equal(&self, rh: &StlVertex) -> bool {
+        is_equal(self.x, rh.x) && is_equal(self.y, rh.y) && is_equal(self.z, rh.z)
+    }
+}
+
 // TriangleMeshSlicer.cpp:58-69
 /// Where is this intersection point located? On mesh vertex or mesh edge?
 /// Only one of the following will be set, the other will remain set to -1.
@@ -472,7 +493,8 @@ fn slice_make_lines(
     lines
 }
 
-// TriangleMeshSlicer.cpp:534-561 — single-plane variant with a face filter.
+// TriangleMeshSlicer.cpp:534-561 — single-plane variant with a face filter, over vertices that are already
+// transformed (the transform is the identity).
 fn slice_make_lines_single(
     mesh_vertices: &[StlVertex],
     mesh_faces: &[Vec3i],
@@ -480,49 +502,70 @@ fn slice_make_lines_single(
     plane_z: f32,
     face_filter: &dyn Fn(usize) -> bool,
 ) -> IntersectionLines {
-    let mut lines = IntersectionLines::new();
-    // TriangleMeshSlicer.cpp:544
-    for face_idx in 0..mesh_faces.len() {
-        if face_filter(face_idx) {
-            // TriangleMeshSlicer.cpp:546-547
-            let indices = &mesh_faces[face_idx];
-            let vertices: [StlVertex; 3] = [
-                mesh_vertices[indices[0] as usize],
-                mesh_vertices[indices[1] as usize],
-                mesh_vertices[indices[2] as usize],
-            ];
-            // find facet extents
-            // TriangleMeshSlicer.cpp:549-550
-            let min_z = vertices[0].z.min(vertices[1].z.min(vertices[2].z));
-            let _max_z = vertices[0].z.max(vertices[1].z.max(vertices[2].z));
-            // TriangleMeshSlicer.cpp:552
-            let idx_vertex_lowest: i32 = if vertices[1].z == min_z {
-                1
-            } else if vertices[2].z == min_z {
-                2
-            } else {
-                0
-            };
-            let mut il = IntersectionLine::default();
-            // Ignore horizontal triangles.
-            // TriangleMeshSlicer.cpp:555
-            if min_z != _max_z
-                && slice_facet(
-                    plane_z,
-                    &vertices,
-                    indices,
-                    &face_edge_ids[face_idx],
-                    idx_vertex_lowest,
-                    false,
-                    &mut il,
-                ) == FacetSliceType::Slicing
-            {
-                debug_assert!(il.edge_type != FacetEdgeType::Horizontal);
-                lines.push(il);
+    SliceMakeLines::slice_make_lines(mesh_vertices, &|p: &StlVertex| *p, mesh_faces, face_edge_ids, plane_z, face_filter)
+}
+
+/// The single-plane overload of `slice_make_lines` (TriangleMeshSlicer.cpp:537-561) under the C++ name, as a method of
+/// the vertex list; the vector-of-zs overload (510-532) is the free function [`slice_make_lines`].
+trait SliceMakeLines {
+    fn slice_make_lines(
+        &self,
+        transform_vertex_fn: &dyn Fn(&StlVertex) -> StlVertex,
+        mesh_faces: &[Vec3i],
+        face_edge_ids: &[Vec3i],
+        plane_z: f32,
+        face_filter: &dyn Fn(usize) -> bool,
+    ) -> IntersectionLines;
+}
+
+// TriangleMeshSlicer.cpp:537-561
+// template<typename TransformVertex, typename FaceFilter>
+// static inline IntersectionLines slice_make_lines(const std::vector<stl_vertex> &mesh_vertices, const TransformVertex &transform_vertex_fn,
+//     const std::vector<stl_triangle_vertex_indices> &mesh_faces, const std::vector<Vec3i> &face_edge_ids, const float plane_z, FaceFilter face_filter)
+impl SliceMakeLines for [StlVertex] {
+    fn slice_make_lines(
+        &self,
+        transform_vertex_fn: &dyn Fn(&StlVertex) -> StlVertex,
+        mesh_faces: &[Vec3i],
+        face_edge_ids: &[Vec3i],
+        plane_z: f32,
+        face_filter: &dyn Fn(usize) -> bool,
+    ) -> IntersectionLines {
+        let mesh_vertices = self;
+        let mut lines = IntersectionLines::new();
+        for face_idx in 0..mesh_faces.len() {
+            if face_filter(face_idx) {
+                let indices = &mesh_faces[face_idx];
+                let vertices: [StlVertex; 3] = [
+                    transform_vertex_fn(&mesh_vertices[indices[0] as usize]),
+                    transform_vertex_fn(&mesh_vertices[indices[1] as usize]),
+                    transform_vertex_fn(&mesh_vertices[indices[2] as usize]),
+                ];
+                // find facet extents (fminf / fmaxf)
+                let min_z = vertices[0].z.min(vertices[1].z.min(vertices[2].z));
+                let max_z = vertices[0].z.max(vertices[1].z.max(vertices[2].z));
+                // assert(min_z <= plane_z && max_z >= plane_z): compiled out in the pin's -DNDEBUG build, and the
+                // callers here may pass every face, so it is not checked.
+                let idx_vertex_lowest: i32 = if vertices[1].z == min_z {
+                    1
+                } else if vertices[2].z == min_z {
+                    2
+                } else {
+                    0
+                };
+                let mut il = IntersectionLine::default();
+                // Ignore horizontal triangles. Any valid horizontal triangle must have a vertical triangle connected, otherwise the part has zero volume.
+                if min_z != max_z
+                    && slice_facet(plane_z, &vertices, indices, &face_edge_ids[face_idx], idx_vertex_lowest, false, &mut il)
+                        == FacetSliceType::Slicing
+                {
+                    debug_assert!(il.edge_type != FacetEdgeType::Horizontal);
+                    lines.push(il);
+                }
             }
         }
+        lines
     }
-    lines
 }
 
 // TriangleMeshSlicer.cpp:1043-1056
@@ -1405,6 +1448,21 @@ fn make_expolygons(
 /// The two `norm()`s are of integer differences: the ones that can pass the two comparisons are exact in a
 /// double whether the sum of squares is fused or not.
 fn remove_short_backtracks_polygon(polygon: &mut Polygon, max_path_length: i32, endpoint_tolerance: i32) -> bool {
+    RemoveShortBacktracks::remove_short_backtracks(polygon, max_path_length, endpoint_tolerance)
+}
+
+/// The `Polygon` overload of `remove_short_backtracks` (TriangleMeshSlicer.cpp:1790-1830) under the C++ name; the
+/// `ExPolygons` overload (1832-1850) is the free function [`remove_short_backtracks`].
+trait RemoveShortBacktracks {
+    fn remove_short_backtracks(&mut self, max_path_length: i32, endpoint_tolerance: i32) -> bool;
+}
+
+// TriangleMeshSlicer.cpp:1790-1830
+// static bool remove_short_backtracks(Polygon &polygon, coord_t max_path_length, coord_t endpoint_tolerance)
+// Verified through the ExPolygons overload by tests/tree_support_3d_native_parity.rs (slice_mesh_ex).
+impl RemoveShortBacktracks for Polygon {
+    fn remove_short_backtracks(&mut self, max_path_length: i32, endpoint_tolerance: i32) -> bool {
+    let polygon = self;
     const MAX_EDGES: usize = 8;
     let norm = |a: &Point, b: &Point| -> f64 {
         let dx = (a.x - b.x) as f64;
@@ -1455,6 +1513,7 @@ fn remove_short_backtracks_polygon(polygon: &mut Polygon, max_path_length: i32, 
     }
 
     removed
+    }
 }
 
 /// TriangleMeshSlicer.cpp:1832-1850 `static bool remove_short_backtracks(ExPolygons &expolygons, float
@@ -3069,6 +3128,107 @@ pub fn transform_verts_unified(
 ) -> Vec<f32> {
     let tf = make_trafo_for_slicing(trafo16, scaling_factor);
     transform_flat(&tf, verts_in, [voff.0 as f32, voff.1 as f32, voff.2 as f32])
+}
+
+// TriangleMeshSlicer.cpp:1953-1956
+// static inline bool is_identity(const Transform3d &trafo) { return trafo.matrix() == Transform3d::Identity().matrix(); }
+// `trafo16` is the row-major 4x4 of the Transform3d (this file's convention for slicing trafos); Eigen's
+// `==` compares every coefficient with the double `==`.
+pub fn is_identity(trafo16: &[f64; 16]) -> bool {
+    const IDENTITY: [f64; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+    trafo16.iter().zip(IDENTITY.iter()).all(|(a, b)| a == b)
+}
+
+// TriangleMeshSlicer.cpp:1958-1980
+// static std::vector<stl_vertex> transform_mesh_vertices_for_slicing(const indexed_triangle_set &mesh, const Transform3d &trafo)
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (project_mesh_native_parity).
+pub fn transform_mesh_vertices_for_slicing(mesh: &indexed_triangle_set, trafo16: &[f64; 16]) -> Vec<StlVertex> {
+    // Copy and scale vertices in XY, don't scale in Z.
+    // Possibly apply the transformation.
+    // libslic3r.h:58 SCALING_FACTOR = 0.00001 (the crate-root `SCALING_FACTOR` is 1e5).
+    let s: f64 = 1.0 / crate::libslic3r::SCALING_FACTOR;
+    let mut out: Vec<StlVertex> = mesh.vertices.clone();
+    if is_identity(trafo16) {
+        // Identity.
+        for v in out.iter_mut() {
+            // Scale just XY, leave Z unscaled.
+            v.x *= s as f32;
+            v.y *= s as f32;
+        }
+    } else {
+        // Transform the vertices, scale up in XY, not in Y.
+        // auto t = trafo; t.prescale(Vec3d(s, s, 1.)); auto tf = t.cast<float>();
+        let tf = make_trafo_for_slicing(trafo16, crate::libslic3r::SCALING_FACTOR);
+        for v in out.iter_mut() {
+            let w = transform3f_mul_vec3f(&tf, [v.x, v.y, v.z]);
+            *v = StlVertex::new(w[0], w[1], w[2]);
+        }
+    }
+    out
+}
+
+// TriangleMeshSlicer.cpp:2233-2234: the entry of `slice_mesh_slabs(mesh, zs, trafo, out_top, out_bottom,
+// vertical_points = nullptr, throw_on_cancel)`: the vertices through transform_mesh_vertices_for_slicing and
+// the mirrored sign from `trafo.matrix().block(0, 0, 3, 3).determinant() < 0`, then the body of
+// [`slice_mesh_slabs`] (2236-2280; `throw_on_cancel()` at 2272). Eigen takes the determinant of the
+// dynamic-size block through a partial-pivot LU; only its sign is used, which the cofactor expansion
+// gives for any matrix that is not (nearly) singular.
+pub fn slice_mesh_slabs_trafo(
+    mesh: &indexed_triangle_set,
+    zs: &[f32],
+    trafo16: &[f64; 16],
+    want_top: bool,
+    want_bottom: bool,
+    throw_on_cancel: &dyn Fn(),
+) -> (Vec<Polygons>, Vec<Polygons>) {
+    let vertices_transformed = transform_mesh_vertices_for_slicing(mesh, trafo16);
+    let m = trafo16;
+    let det = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[1] * (m[4] * m[10] - m[6] * m[8]) + m[2] * (m[4] * m[9] - m[5] * m[8]);
+    let out = slice_mesh_slabs(mesh, zs, &vertices_transformed, det < 0.0, want_top, want_bottom);
+    throw_on_cancel();
+    out
+}
+
+/// The two `project_mesh` overloads of TriangleMeshSlicer.cpp:2403-2427 (TriangleMeshSlicer.hpp:131-141), one
+/// implementation per argument list of the C++; `Args` holds the arguments after the mesh.
+pub trait ProjectMesh<Args> {
+    type Output;
+    fn project_mesh(&self, args: Args) -> Self::Output;
+}
+
+// TriangleMeshSlicer.cpp:2403-2417
+// void project_mesh(const indexed_triangle_set &mesh, const Transform3d &trafo, Polygons *out_top, Polygons *out_bottom,
+//     std::function<void()> throw_on_cancel)
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (project_mesh_native_parity).
+impl<'a> ProjectMesh<(&'a [f64; 16], Option<&'a mut Polygons>, Option<&'a mut Polygons>, &'a dyn Fn())> for indexed_triangle_set {
+    type Output = ();
+    fn project_mesh(
+        &self,
+        (trafo, out_top, out_bottom, throw_on_cancel): (&'a [f64; 16], Option<&'a mut Polygons>, Option<&'a mut Polygons>, &'a dyn Fn()),
+    ) {
+        let zs: [f32; 2] = [-1e10, 1e10];
+        let (mut top, mut bottom) =
+            slice_mesh_slabs_trafo(self, &zs, trafo, out_top.is_some(), out_bottom.is_some(), throw_on_cancel);
+        if let Some(out_top) = out_top {
+            *out_top = std::mem::take(&mut top[0]);
+        }
+        if let Some(out_bottom) = out_bottom {
+            let last = bottom.len() - 1;
+            *out_bottom = std::mem::take(&mut bottom[last]);
+        }
+    }
+}
+
+// TriangleMeshSlicer.cpp:2419-2427
+// Polygons project_mesh(const indexed_triangle_set &mesh, const Transform3d &trafo, std::function<void()> throw_on_cancel)
+// Verified by tests/triangle_mesh_slicer_native_parity.rs (project_mesh_native_parity).
+impl<'a> ProjectMesh<(&'a [f64; 16], &'a dyn Fn())> for indexed_triangle_set {
+    type Output = Polygons;
+    fn project_mesh(&self, (trafo, throw_on_cancel): (&'a [f64; 16], &'a dyn Fn())) -> Polygons {
+        let zs: [f32; 2] = [-1e10, 1e10];
+        let (top, bottom) = slice_mesh_slabs_trafo(self, &zs, trafo, true, true, throw_on_cancel);
+        crate::clipper_utils::cpp::Union_::union_(top[0].as_slice(), bottom[bottom.len() - 1].as_slice())
+    }
 }
 
 /// `make_trafo_for_slicing(Identity.pretranslate(-cx, -cy, 0))` applied to the vertices.

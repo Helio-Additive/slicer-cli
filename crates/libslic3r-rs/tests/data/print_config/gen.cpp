@@ -1145,6 +1145,105 @@ static void gen_printer_extruders()
         }
 }
 
+// R945: the enum vectors (ConfigOptionEnumsGenericTempl::deserialize / serialize, Config.hpp:2128-2227)
+// of the nine options a two-nozzle job sets by name, through ConfigBase::set_deserialize
+// (Config.cpp:636-719) on a fresh DynamicPrintConfig (the option made by
+// ConfigOptionDef::create_default_option, Config.cpp:296-325, which sets keys_map), and whether the
+// option of DynamicPrintConfig::full_print_config() (a clone of FullPrintConfig::defaults(), whose
+// static options get their values by set() only, PrintConfig.hpp:880-897) has a keys map. Written to
+// enum_vectors.txt:
+//   km <key> <created keys_map == def->enum_keys_map> <full_print_config() keys_map == nullptr>
+//   ev <key> <first or -> <its result: - / ok / !what> <value> <append> <rule 0 Disable / 1 EnableSilent> => <ok or !what>
+//      <n> <values>*n <serialize or !what> <substitutions>
+static const std::vector<std::pair<std::string, std::string>> &enum_vector_keys()
+{
+    // the values of the H2D job (tests/data/tool_ordering/h2d_majora_order.txt.gz)
+    static const std::vector<std::pair<std::string, std::string>> s = {
+        {"cooling_slowdown_logic", "uniform_cooling,uniform_cooling,uniform_cooling,uniform_cooling,uniform_cooling,uniform_cooling,uniform_cooling,uniform_cooling"},
+        {"extruder_nozzle_volume_type", "Standard,Standard"},
+        {"extruder_type", "Direct Drive,Direct Drive"},
+        {"filament_metal_stickiness", "None,None,None,None,None,None,None,None"},
+        {"filament_scarf_seam_type", "none,none,none,none,none,none,none,none"},
+        {"nozzle_volume_type", "Standard,Standard"},
+        {"overhang_fan_threshold", "50%,50%,50%,50%,50%,50%,50%,50%"},
+        {"overhang_threshold_participating_cooling", "95%,95%,95%,95%,95%,95%,95%,95%"},
+        {"z_hop_types", "Auto Lift,Auto Lift"},
+    };
+    return s;
+}
+
+static void gen_enum_vectors()
+{
+    for (const auto &kv : enum_vector_keys()) {
+        const std::string     &key = kv.first;
+        const ConfigOptionDef *def = print_config_def.get(key);
+        DynamicPrintConfig     fresh;
+        const ConfigOption    *created = fresh.option(key, true);
+        auto km_of = [](const ConfigOption *o) -> const t_config_enum_values * {
+            if (auto *a = dynamic_cast<const ConfigOptionEnumsGeneric *>(o)) return a->keys_map;
+            if (auto *b = dynamic_cast<const ConfigOptionEnumsGenericNullable *>(o)) return b->keys_map;
+            return reinterpret_cast<const t_config_enum_values *>(1);
+        };
+        DynamicPrintConfig full = DynamicPrintConfig::full_print_config();
+        emit({"km", hex(key), num(km_of(created) == def->enum_keys_map), num(km_of(full.option(key)) == nullptr)});
+
+        const std::vector<std::string> &names = def->enum_values;
+        std::string all, spaced;
+        for (size_t i = 0; i < names.size(); ++i) {
+            all += (i ? "," : "") + names[i];
+            spaced += (i ? " , " : " ") + names[i];
+        }
+        spaced += " ";
+        struct Case { std::string first; std::string value; bool append; int rule; };
+        std::vector<Case> cases = {
+            {"", kv.second, false, 0},
+            {"", all, false, 0},
+            {"", spaced, false, 0},
+            {"", names.front() + ",Bogus", false, 0},
+            {"", names.front() + ",Bogus", false, 1},
+            {"", "nil," + names.back(), false, 0},
+            {"", "", false, 0},
+            {names.front(), names.back(), true, 0},
+            {names.back(), names.front() + "," + names.back(), false, 1},
+        };
+        for (const Case &c : cases) {
+            DynamicPrintConfig cfg;
+            std::string        first_result = "-";
+            if (!c.first.empty()) {
+                try {
+                    cfg.set_deserialize_strict(key, c.first);
+                    first_result = "ok";
+                } catch (const std::exception &e) {
+                    first_result = "!" + hex(e.what());
+                }
+            }
+            ConfigSubstitutionContext ctxt(c.rule == 0 ? ForwardCompatibilitySubstitutionRule::Disable : ForwardCompatibilitySubstitutionRule::EnableSilent);
+            Toks l{"ev", hex(key), hex(c.first), first_result, hex(c.value), num(c.append), num(c.rule), "=>"};
+            try {
+                cfg.set_deserialize(key, c.value, ctxt, c.append);
+                l.push_back("ok");
+            } catch (const std::exception &e) {
+                l.push_back("!" + hex(e.what()));
+            }
+            const ConfigOption *o = cfg.option(key);
+            if (o == nullptr) {
+                l.push_back("none");
+            } else {
+                const std::vector<int> &v = static_cast<const ConfigOptionInts *>(o)->values;
+                l.push_back(num(v.size()));
+                for (int x : v) l.push_back(num(x));
+                try {
+                    l.push_back(hex(o->serialize()));
+                } catch (const std::exception &e) {
+                    l.push_back("!" + hex(e.what()));
+                }
+            }
+            l.push_back(num(ctxt.substitutions.size()));
+            emit(l);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1168,5 +1267,10 @@ int main(int argc, char **argv)
     gen_printer_extruders();
     gen_filament_nozzle_infos();
     fclose(g_out);
+    g_out = nullptr;
+    open_out(dir, "enum_vectors.txt");
+    gen_enum_vectors();
+    fclose(g_out);
+    g_out = nullptr;
     return 0;
 }
