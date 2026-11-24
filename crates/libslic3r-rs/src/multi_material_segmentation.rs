@@ -4782,7 +4782,7 @@ fn mmsdump_polys(stage: &str, layer_idx: usize, extruder_idx: usize, ps: &[Polyg
 
 // R940 probe MMSDUMP line: count, points, area, bbox and the FNV-1a hash of the scaled points
 // ("C x y ..." per contour, " H x y ..." per hole), as the pin-side dump writes it.
-fn mmsdump_line(stage: &str, layer_idx: usize, extruder_idx: usize, ex: &[ExPolygon]) {
+pub(crate) fn mmsdump_line(stage: &str, layer_idx: usize, extruder_idx: usize, ex: &[ExPolygon]) {
     if ex.is_empty() {
         return;
     }

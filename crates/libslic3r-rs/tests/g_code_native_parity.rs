@@ -443,6 +443,30 @@ fn line_of(t: &[&str]) -> Option<String> {
                 f64h(b.max.y)
             )
         }
+        "wipe" => {
+            // Wipe::wipe (GCode.cpp:440-525), not a tool change.
+            let (kv, i) = read_kv(t, 1);
+            let cur = f64of(t[i]);
+            let n: usize = t[i + 1].parse().unwrap();
+            let pts: Vec<Point> = (0..n).map(|k| Point::new(t[i + 2 + 2 * k].parse().unwrap(), t[i + 3 + 2 * k].parse().unwrap())).collect();
+            let mut g = GCode::new();
+            // GCode.hpp `FullPrintConfig m_config`: every option at its default before
+            // apply_print_config (the port's GCode::new starts it empty; the region options
+            // `wipe_speed` / `role_base_wipe_speed` Wipe::wipe reads are not PrintConfig's).
+            g.m_config = DynamicPrintConfig::full_print_config();
+            g.apply_print_config(&kv_print_cfg(&kv));
+            g.m_writer.set_extruders(vec![0]);
+            g.m_writer.toolchange(0, 0);
+            if cur > 0.0 {
+                g.m_writer.set_speed(cur, "", "");
+            }
+            g.set_last_pos(pts[0]);
+            g.m_wipe.path = Polyline::from_points(pts);
+            let out = Wipe::wipe(&mut g, false, false);
+            let mut s = t[..i + 2 + 2 * n].join(" ");
+            s += &format!(" {} {} {} {}", hex(&out), g.last_pos().x, g.last_pos().y, g.m_wipe.has_path() as i32);
+            s
+        }
         _ => return None,
     })
 }

@@ -776,6 +776,8 @@ impl Print {
                         let full = full_print_config_from_settings(settings);
                         let wipe: Vec<bool> = crate::gcode::wipe_tower::cfg_bools(&full, "wipe");
                         crate::g_code::set_extruders(&mut writer, &extruder_ids, &wipe);
+                        // GCode.cpp:447-449: the wipe's speed options (GCODE_WIPE_SPEED_PIN, writer.rs).
+                        crate::g_code::set_wipe_speed_config(&mut writer, &full);
                     }
                     // A print without settings keeps the writer's wipe as it is.
                     None => writer.set_extruders(&extruder_ids),

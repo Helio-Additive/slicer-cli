@@ -645,6 +645,44 @@ static void export_functions()
     }
 }
 
+// Wipe::wipe (GCode.cpp:440-525), not a tool change, over a GCode after apply_print_config with
+// one filament: the speed (role-based from the current speed, else travel_speed * wipe_speed %),
+// the clipped path and the retraction per segment.
+static void wipe_cases()
+{
+    std::vector<std::tuple<KVs, double, Points>> cases = {
+        {{}, 0., {Point(10000000, 10000000), Point(0, 10000000)}},
+        {{}, 4591.28, {Point(10000000, 10000000), Point(9000000, 10000000), Point(9000000, 9500000)}},
+        {{{"role_base_wipe_speed", "0"}}, 3000., {Point(10000000, 10000000), Point(0, 10000000)}},
+        {{{"wipe_speed", "50%"}, {"travel_speed", "400"}}, 0., {Point(0, 0), Point(300000, 400000), Point(-500000, 2000000)}},
+        {{{"wipe_distance", "0.5"}}, 7058.823, {Point(123456, 654321), Point(223456, 654321)}},
+    };
+    for (const auto &c : cases) {
+        const KVs &kv = std::get<0>(c);
+        DynamicPrintConfig dc = DynamicPrintConfig::full_print_config();
+        for (const auto &p : kv)
+            dc.set_deserialize_strict(p.first, p.second);
+        PrintConfig pc;
+        pc.apply(dc, true);
+        GCode gg;
+        gg.apply_print_config(pc);
+        gg.m_writer.set_extruders({0});
+        gg.m_writer.toolchange(0, 0);
+        double cur = std::get<1>(c);
+        if (cur > 0.)
+            gg.m_writer.set_speed(cur);
+        const Points &pts = std::get<2>(c);
+        gg.set_last_pos(pts.front());
+        gg.m_wipe.path = Polyline(pts);
+        std::string out = gg.m_wipe.wipe(gg, false, false);
+        fprintf(g_out, "wipe %s %s %zu", kv_str(kv).c_str(), f64(cur).c_str(), pts.size());
+        for (const Point &q : pts)
+            fprintf(g_out, " %lld %lld", (long long) q.x(), (long long) q.y());
+        fprintf(g_out, " %s %lld %lld %d\n", hex(out).c_str(), (long long) gg.last_pos().x(), (long long) gg.last_pos().y(),
+                int(gg.m_wipe.has_path()));
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -657,6 +695,7 @@ int main(int argc, char **argv)
     gcode_methods();
     skirt();
     export_functions();
+    wipe_cases();
     fclose(g_out);
     return 0;
 }

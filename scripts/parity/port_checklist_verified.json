@@ -4343,5 +4343,23 @@
    "ArcSegment::calc_arc_length",
    "Circle::try_create_circle"
   ]
+ },
+ {
+  "unit": "TriangleMeshSlicer",
+  "round": 941,
+  "evidence": "tests/triangle_mesh_slicer_native_parity.rs: the pin's slice_mesh_slabs (and through it make_slab_loops and chain_lines_by_triangle_connectivity, TriangleMeshSlicer.cpp 1063-1161, 1589-1710, 2177-2280) on 48 meshes from the pin's mesh makers and corner-touching cubes, 2,320 layers, 1,447 loops, top and bottom slabs, against tests/data/triangle_mesh_slicer/gen.cpp on one thread: every layer equal. On Majora's painted submeshes (twin tool, one thread) the slab loops equal the pin's on every layer with TMS_CHAIN_LIBCXX_SORT=1 (libc++ std::sort tie order); the synthetic inputs do not separate the two sorts.",
+  "functions": [
+   "slice_mesh_slabs",
+   "make_slab_loops",
+   "chain_lines_by_triangle_connectivity"
+  ]
+ },
+ {
+  "unit": "GCode",
+  "round": 941,
+  "evidence": "tests/g_code_native_parity.rs (tag wipe): the pin's Wipe::wipe (GCode.cpp 440-525) on 5 cases from tests/data/g_code/gen.cpp (role-based wipe speed, the travel_speed x wipe_speed fallback when the current speed is 0, path clipping, last position, has_path): output equal. retract_before_wipe 100 % leaves dE untested.",
+  "functions": [
+   "Wipe::wipe"
+  ]
  }
 ]

@@ -940,6 +940,10 @@ impl PrintObject {
         }
         if num_regions > 1 && !self.painted_submeshes.is_empty() {
             self.apply_mm_segmentation_tier1()?;
+            // R941 probe RSLDUMP (diagnostic only): the regions right after the segmentation.
+            if crate::probe_enabled("RSLDUMP") {
+                self.rsldump_regions("ams");
+            }
             // R806 LSLICES_POST_MMS (faithful ON): native rebuilds lslices from the
             // post-segmentation regions (PrintObjectSlice.cpp:1355 make_slices →
             // union_safety_offset_ex over all regions). The pre-split lslices are
@@ -1167,8 +1171,34 @@ impl PrintObject {
                 layer.backup_untyped_slices();
             }
         }
+        // R941 probe RSLDUMP (diagnostic only, never changes output): each region's slices at
+        // the end of PrintObject::slice for layers 0..RSLDUMP_N (default 13), in the format of
+        // the pin-side twin (target/parity-tools/twin/mmsdump): "MMSDUMP rsl <layer> <region> ..."
+        // and one "RSLREG <region> <wall_filament>" line per region.
+        if crate::probe_enabled("RSLDUMP") {
+            self.rsldump_regions("rsl");
+        }
         self.set_step_done(PrintObjectStep::Slice);
         Ok(())
+    }
+
+    /// R941 probe RSLDUMP helper (diagnostic only): dump every region's slices of layers
+    /// 0..RSLDUMP_N as MMSDUMP lines of stage `stage` (key: layer, region index).
+    fn rsldump_regions(&self, stage: &str) {
+        let n: usize = std::env::var("RSLDUMP_N").ok().and_then(|v| v.parse().ok()).unwrap_or(13);
+        if let Some(sr) = self.shared_regions.as_ref() {
+            for (ri, r) in sr.all_regions.iter().enumerate() {
+                eprintln!("RSLREG {} {} {}", stage, ri, r.config().wall_filament);
+            }
+        }
+        for (li, layer) in self.layers.iter().enumerate().take(n) {
+            for (ri, lr) in layer.regions().iter().enumerate() {
+                let ex: crate::geometry::ExPolygons = lr.slices.surfaces.iter().map(|s| s.expolygon.clone()).collect();
+                crate::multi_material_segmentation::mmsdump_line(stage, li, ri, &ex);
+            }
+            // The layer's lslices as region 99.
+            crate::multi_material_segmentation::mmsdump_line(stage, li, 99, &layer.lslices);
+        }
     }
 
     /// Stamp the config-hierarchy Arcs onto every Layer (and support Layer)
@@ -2260,6 +2290,7 @@ impl PrintObject {
                 if __pi_t {
                     __pi.push(($name, __t.elapsed().as_secs_f64()));
                 }
+                boi_stage_dump(&self.layers, $name);
                 __r
             }};
         }
@@ -2637,7 +2668,59 @@ impl PrintObject {
                 }
             }
         };
-        let union2 = |a: &[Polygon], b: &[Polygon]| -> Vec<Polygon> {
+        // R941 probe (BOI, diagnostic only): the object line and, for the layers of BOI_FS=a-b,
+        // fill_surfaces per region and type and fill_expolygons, as bridge_over_infill finds
+        // them; the pin's twin (target/parity-tools/twin/process) writes the same lines.
+        if crate::probe_enabled("BOI") {
+            eprintln!("BOI obj layers={}", self.layers.len());
+            let (a, b) = std::env::var("BOI_FS")
+                .ok()
+                .and_then(|v| {
+                    let mut it = v.split('-');
+                    Some((it.next()?.parse::<usize>().ok()?, it.next()?.parse::<usize>().ok()?))
+                })
+                .unwrap_or((1, 0));
+            for l in a..=b.min(self.layers.len().saturating_sub(1)) {
+                if a > b {
+                    break;
+                }
+                for (ri, r) in self.layers[l].regions().iter().enumerate() {
+                    for (t, name) in [
+                        (SurfaceType::Top, "Top"),
+                        (SurfaceType::Bottom, "Bottom"),
+                        (SurfaceType::BottomBridge, "BottomBridge"),
+                        (SurfaceType::Internal, "Internal"),
+                        (SurfaceType::InternalSolid, "InternalSolid"),
+                        (SurfaceType::InternalBridge, "InternalBridge"),
+                        (SurfaceType::InternalVoid, "InternalVoid"),
+                    ] {
+                        let mut pp: Vec<Polygon> = Vec::new();
+                        for sf in &r.fill_surfaces.surfaces {
+                            if sf.surface_type == t {
+                                pp.push(sf.expolygon.contour.clone());
+                                pp.extend(sf.expolygon.holes.iter().cloned());
+                            }
+                        }
+                        if !pp.is_empty() {
+                            boi_pp(&format!("fs{}r{}", name, ri), l, &pp, 0.0);
+                        }
+                    }
+                    let mut fx: Vec<Polygon> = Vec::new();
+                    for e in &r.fill_expolygons {
+                        fx.push(e.contour.clone());
+                        fx.extend(e.holes.iter().cloned());
+                    }
+                    boi_pp(&format!("fillexr{}", ri), l, &fx, 0.0);
+                    let mut sl: Vec<Polygon> = Vec::new();
+                    for sf in &r.slices.surfaces {
+                        sl.push(sf.expolygon.contour.clone());
+                        sl.extend(sf.expolygon.holes.iter().cloned());
+                    }
+                    boi_pp(&format!("slicesr{}", ri), l, &sl, 0.0);
+                }
+            }
+        }
+        let union2 =|a: &[Polygon], b: &[Polygon]| -> Vec<Polygon> {
             let mut all = a.to_vec();
             all.extend_from_slice(b);
             if clib {
@@ -6608,8 +6691,18 @@ lines={} grown_polys={} grown_verts={}",
                         let cond1 = a < thr15
                             || (a < thr8 && difference(&p1, &object_volume).is_empty());
                         let grown_p = grow(&p1, min_pis, OffsetJoinType::Miter);
-                        let cond2 =
-                            difference(&internal_volume, &grown_p).len() >= internal_volume.len();
+                        // PrintObject.cpp:2626-2628: `diff(internal_volume, expand(p, ..)).size()
+                        // >= internal_volume.size()` compares counts of POLYGONS (Clipper paths:
+                        // every contour and every hole), the port's ExPolygons count contours
+                        // only. R941: faithful_gate VSHELL_REG_RING_COUNT counts rings as the pin.
+                        let cond2 = if crate::faithful_gate("VSHELL_REG_RING_COUNT") {
+                            let rings = |v: &crate::geometry::ExPolygons| -> usize {
+                                v.iter().map(|e| 1 + e.holes.len()).sum()
+                            };
+                            rings(&difference(&internal_volume, &grown_p)) >= rings(&internal_volume)
+                        } else {
+                            difference(&internal_volume, &grown_p).len() >= internal_volume.len()
+                        };
                         if crate::probe_enabled("VSHELL_DEBUG") {
                             use std::sync::atomic::Ordering::Relaxed;
                             crate::layer::VS_REG_IN.fetch_add(1, Relaxed);
@@ -9414,4 +9507,63 @@ pub fn determine_bridging_angle_pin(
         _ => {}
     }
     bridging_angle
+}
+
+/// R941 probe (BOI with BOI_ST=a-b, diagnostic only): fill_surfaces and slices per region and
+/// surface type after each step of prepare_infill, in the format of the pin's twin
+/// (target/parity-tools/twin/process, PrintObject_boi.cpp: boi_stage after each step of
+/// PrintObject::prepare_infill, PrintObject.cpp:902-1040).
+fn boi_stage_dump(layers: &[crate::layer::Layer], name: &str) {
+    use crate::surface::SurfaceType;
+    if !crate::probe_enabled("BOI") {
+        return;
+    }
+    let Some((a, b)) = std::env::var("BOI_ST").ok().and_then(|v| {
+        let mut it = v.split('-');
+        Some((it.next()?.parse::<usize>().ok()?, it.next()?.parse::<usize>().ok()?))
+    }) else {
+        return;
+    };
+    let types = [
+        (SurfaceType::Top, "Top"),
+        (SurfaceType::Bottom, "Bottom"),
+        (SurfaceType::BottomBridge, "BottomBridge"),
+        (SurfaceType::Internal, "Internal"),
+        (SurfaceType::InternalSolid, "InternalSolid"),
+        (SurfaceType::InternalBridge, "InternalBridge"),
+        (SurfaceType::InternalVoid, "InternalVoid"),
+    ];
+    let pr = |tag: String, l: usize, pp: &[crate::geometry::Polygon]| {
+        let mut np = 0usize;
+        let (mut sx, mut sy) = (0i64, 0i64);
+        for p in pp {
+            for q in p.points() {
+                np += 1;
+                sx += q.x;
+                sy += q.y;
+            }
+        }
+        eprintln!("BOI {} L={} n={} np={} sx={} sy={} x={:.9}", tag, l, pp.len(), np, sx, sy, 0.0f64);
+    };
+    if a > b {
+        return;
+    }
+    for l in a..=b.min(layers.len().saturating_sub(1)) {
+        for (ri, r) in layers[l].regions().iter().enumerate() {
+            for (kind, coll) in [("fs", &r.fill_surfaces), ("sl", &r.slices)] {
+                for (t, tn) in types {
+                    let mut pp = Vec::new();
+                    for sf in &coll.surfaces {
+                        if sf.surface_type == t {
+                            pp.push(sf.expolygon.contour.clone());
+                            pp.extend(sf.expolygon.holes.iter().cloned());
+                        }
+                    }
+                    if !pp.is_empty() {
+                        pr(format!("st_{}_{}{}r{}", name, kind, tn, ri), l, &pp);
+                    }
+                }
+            }
+        }
+    }
 }

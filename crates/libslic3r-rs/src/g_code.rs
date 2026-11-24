@@ -1432,6 +1432,15 @@ pub(crate) fn append_tcr(
     //     that path, retract, and lift at once at `prime_tower_lift_speed`.
     // =0 leaves the position where the last object path ended and lets the next
     // travel retract.
+    // GCODE_TCR_EXTRUDE_ACCEL_PIN (faithful): GCode.cpp:1353
+    // `gcodegen.set_extrude_acceleration(gcodegen.on_first_layer())` before the
+    // phony move: `m_acceleration` is the first layer's or the default one, so
+    // the wipe leaving the tower writes it after the reset of GCode.cpp:743
+    // (Majora L1's first tower: `M204 S500` in the wipe). =0 keeps whatever the
+    // last object path left (none before the first one).
+    if crate::faithful_gate("GCODE_TCR_EXTRUDE_ACCEL_PIN") {
+        writer.set_extrude_acceleration_for_layer(first_layer);
+    }
     if crate::faithful_gate("TOWER_LEAVE_CPP") {
         // wipe_tower_point_to_object_point (GCode.cpp:526-529): bed point minus
         // the export origin.
@@ -5434,6 +5443,22 @@ pub fn wipe(
 /// the writer's extruders (`m_writer.set_extruders`, which sets `multiple_extruders`), and the
 /// wipe enabled when any of them has `wipe` on (`m_wipe.enable`). `wipe` is the per-filament
 /// `wipe` option (`m_config.wipe`).
+/// The two options of the print configuration `Wipe::wipe` reads for its speed
+/// (GCode.cpp:447-449): `role_base_wipe_speed` and `wipe_speed` (percent of the
+/// travel speed). An option the configuration lacks keeps the writer's value
+/// (the definitions' defaults).
+pub fn set_wipe_speed_config(
+    writer: &mut GCodeWriter,
+    config: &crate::print_config::config_def::DynamicPrintConfig,
+) {
+    use crate::config::ConfigOptionResolver;
+    let role_base = config.option("role_base_wipe_speed").and_then(|o| o.get_bool().ok());
+    let percent = config.option("wipe_speed").and_then(|o| o.get_float().ok());
+    if let (Some(role_base), Some(percent)) = (role_base, percent) {
+        writer.set_wipe_speed_config(role_base, percent);
+    }
+}
+
 pub fn set_extruders(writer: &mut GCodeWriter, extruder_ids: &[u32], wipe: &[bool]) {
     writer.set_extruders(extruder_ids);
     // enable wipe path generation if any extruder has wipe enabled

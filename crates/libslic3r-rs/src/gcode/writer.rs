@@ -373,6 +373,12 @@ pub struct GCodeWriter {
     m_lift_feedrate: Option<CoordF>,
     /// WIPEPROBE: who installed the current wipe path (R807 diagnostics).
     wipe_path_src: &'static str, // (x, y) points in mm
+    /// `m_config.role_base_wipe_speed` that `Wipe::wipe` reads (GCode.cpp:448);
+    /// the definition's default is true (PrintConfig.cpp:6014-6020).
+    m_role_base_wipe_speed: bool,
+    /// `m_config.wipe_speed.value` (percent of the travel speed, GCode.cpp:449);
+    /// the definition's default is 80 % (PrintConfig.cpp:6005-6013).
+    m_wipe_speed_percent: CoordF,
     /// Whether wipe is enabled for this filament
     wipe_enabled: bool,
     /// R610: true only while `retract_for_toolchange` is driving `retract()`, so the
@@ -520,6 +526,8 @@ impl GCodeWriter {
             slow_down_start_written: false,
             m_lift_feedrate: None,
             wipe_path_src: "init",
+            m_role_base_wipe_speed: true,
+            m_wipe_speed_percent: 80.0,
             wipe_enabled: config.retract_before_wipe > 0.0 || true, // Enable wipe when retract_before_wipe > 0
             tc_retract_probe: false,
             m_toolchange_wipe: false,
@@ -1121,6 +1129,33 @@ impl GCodeWriter {
     /// See `pending_speed`. Overwrites any unflushed value: the collection-level
     /// pre-set is per-entity, so a second one before a flush means the first
     /// entity emitted no path and its F was never C++-visible either.
+    /// The print's `role_base_wipe_speed` and `wipe_speed` (percent), which
+    /// `Wipe::wipe` reads from `gcodegen.config()` (GCode.cpp:447-449).
+    pub fn set_wipe_speed_config(&mut self, role_base_wipe_speed: bool, wipe_speed_percent: CoordF) {
+        self.m_role_base_wipe_speed = role_base_wipe_speed;
+        self.m_wipe_speed_percent = wipe_speed_percent;
+    }
+
+    /// GCodeWriter.cpp:226-229 `void GCodeWriter::set_acceleration(unsigned int
+    /// acceleration)`: only stores `m_acceleration` (here `pending_accel`); the
+    /// next `extrude_to_xy` writes it through `set_extrude_acceleration`
+    /// (GCodeWriter.cpp:256-259), deduplicated against the last M204.
+    pub fn set_acceleration(&mut self, acceleration: u32) {
+        self.pending_accel = acceleration;
+    }
+
+    /// GCode.cpp:3818-3825 `void GCode::set_extrude_acceleration(bool
+    /// is_first_layer)` over this writer: `initial_layer_acceleration` on the
+    /// first layer, else `default_acceleration`, each `floor(v + 0.5)`.
+    pub fn set_extrude_acceleration_for_layer(&mut self, is_first_layer: bool) {
+        let v = if is_first_layer {
+            self.config.initial_layer_acceleration
+        } else {
+            self.config.default_acceleration
+        };
+        self.set_acceleration((v + 0.5).floor() as u32);
+    }
+
     /// GCodeWriter::reset_last_acceleration (GCodeWriter.cpp:241-244).
     pub fn reset_last_acceleration(&mut self) {
         self.last_travel_accel = 0.0;
@@ -2581,9 +2616,29 @@ impl GCodeWriter {
                     // `prime_tower_max_speed`; `set_speed` makes that the
                     // current speed (GCodeWriter.cpp:450), which the wipe
                     // when leaving the tower then takes. =0 the current speed.
+                    // GCODE_WIPE_SPEED_PIN (faithful): GCode.cpp:447-449
+                    //   cur_speed = writer.get_current_speed();
+                    //   wipe_speed = role_base_wipe_speed && cur_speed > EPSILON
+                    //       ? cur_speed / 60
+                    //       : travel_speed * wipe_speed.value / 100;
+                    // and `set_speed(wipe_speed * 60)` (GCode.cpp:498), which always
+                    // writes and makes it the current speed (GCodeWriter.cpp:450).
+                    // Before any `set_speed` (Majora L1's first tower exit) the
+                    // current speed is 0 and the wipe runs at 80 % of the travel
+                    // speed (`G1 F24000`). =0 writes no F line when the current
+                    // speed is 0, and the current speed itself otherwise.
+                    let wipe_speed_pin = crate::faithful_gate("GCODE_WIPE_SPEED_PIN");
                     let wipe_f = if toolchange_wipe {
                         let tc = self.config.prime_tower_wipe_speed;
                         (if tc > 0.0 { tc } else { self.config.prime_tower_max_speed }) * 60.0
+                    } else if wipe_speed_pin {
+                        let cur_speed = self.feedrate;
+                        let wipe_speed = if self.m_role_base_wipe_speed && cur_speed > crate::libslic3r::EPSILON {
+                            cur_speed / 60.0
+                        } else {
+                            self.config.travel_speed * self.m_wipe_speed_percent / 100.0
+                        };
+                        wipe_speed * 60.0
                     } else {
                         self.feedrate
                     };
@@ -2598,7 +2653,7 @@ impl GCodeWriter {
                             self.write_raw(&format!("G1 F{};_WIPE", fs));
                         }
                         self.last_emitted_f = wipe_f;
-                        if toolchange_wipe {
+                        if toolchange_wipe || wipe_speed_pin {
                             self.feedrate = wipe_f;
                         }
                     }
@@ -3683,6 +3738,37 @@ mod tests {
         assert!(!first_line(&last).contains(";_WIPE"), "last wipe: {last}");
         assert!(first_line(&other).ends_with(";_WIPE"), "other wipe: {other}");
         assert_eq!(first_line(&last) + ";_WIPE", first_line(&other));
+    }
+
+    /// GCode.cpp:447-449 + 498: with no current speed yet (`m_current_speed`
+    /// 0) the wipe runs at `travel_speed * wipe_speed / 100` and writes it;
+    /// GCode.cpp:3818-3825 (called at :1353): the stored acceleration is the
+    /// first layer's, written by the wipe's first move after the reset.
+    #[test]
+    fn test_wipe_speed_fallback_and_tcr_extrude_acceleration() {
+        if !(lift_faithful_gate() && crate::faithful_gate("GCODE_WIPE_SPEED_PIN")) {
+            return;
+        }
+        let mut config = PrintConfig::default();
+        config.travel_speed = 500.0;
+        config.initial_layer_acceleration = 500.0;
+        config.default_acceleration = 10000.0;
+        let mut writer = GCodeWriter::with_config(config);
+        writer.write_preamble();
+        writer.set_wipe_speed_config(true, 80.0);
+        writer.set_extrude_acceleration_for_layer(true);
+        writer.reset_last_acceleration();
+        writer.set_position_xy(10.0, 10.0);
+        writer.set_wipe_path_points(vec![(10.0, 10.0), (0.0, 10.0)]);
+        writer.mark_unretracted_after_raw();
+        writer.retract_with_lift_type(1, true);
+        let content = writer.gcode().content().to_string();
+        let wipe = content.split("; WIPE_START\n").nth(1).expect("a wipe").to_string();
+        let mut lines = wipe.lines();
+        assert_eq!(lines.next(), Some("G1 F24000;_WIPE"), "wipe: {wipe}");
+        if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && crate::faithful_gate("WIPE_ACCEL_AFTER_SPEED") {
+            assert_eq!(lines.next(), Some("M204 S500"), "wipe: {wipe}");
+        }
     }
 
     #[test]

@@ -576,8 +576,20 @@ fn chain_lines_by_triangle_connectivity(
         }
     }
     // by_edge_lower / by_vertex_lower
-    by_edge_a_id.sort_by_key(|&i| lines[i].edge_a_id);
-    by_a_id.sort_by_key(|&i| lines[i].a_id);
+    // R941 TMS_CHAIN_LIBCXX_SORT (opt-in: Majora -104 in order with it, Benchy unchanged; the
+    // oracle emits the slab lines from a multi-threaded loop, so its tie order is not this
+    // input order): TriangleMeshSlicer.cpp:1079-1080 sort with
+    // `std::sort`, which is not stable: lines sharing an edge or a vertex (the slab projection
+    // of mmu_segmentation_top_and_bottom_layers chains through shared vertices) come out in
+    // libc++'s introsort order, and the first unskipped one is taken (1107-1130). Unset/=0 keeps
+    // the earlier stable sort.
+    if crate::opt_in_gate("TMS_CHAIN_LIBCXX_SORT") {
+        crate::clipper::libcxx_sort(&mut by_edge_a_id, |&a, &b| lines[a].edge_a_id < lines[b].edge_a_id);
+        crate::clipper::libcxx_sort(&mut by_a_id, |&a, &b| lines[a].a_id < lines[b].a_id);
+    } else {
+        by_edge_a_id.sort_by_key(|&i| lines[i].edge_a_id);
+        by_a_id.sort_by_key(|&i| lines[i].a_id);
+    }
 
     // Chain the segments with a greedy algorithm, collect the loops and unclosed polylines.
     // TriangleMeshSlicer.cpp:1080
@@ -700,12 +712,17 @@ fn open_polylines_sorted(open_polylines: &mut [OpenPolyline], update_lengths: bo
         }
     }
     // sort by length descending
-    out.sort_by(|&a, &b| {
-        open_polylines[b]
-            .length
-            .partial_cmp(&open_polylines[a].length)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // R941 TMS_CHAIN_LIBCXX_SORT: TriangleMeshSlicer.cpp:1174 `std::sort` (not stable).
+    if crate::opt_in_gate("TMS_CHAIN_LIBCXX_SORT") {
+        crate::clipper::libcxx_sort(&mut out, |&a, &b| open_polylines[a].length > open_polylines[b].length);
+    } else {
+        out.sort_by(|&a, &b| {
+            open_polylines[b]
+                .length
+                .partial_cmp(&open_polylines[a].length)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
     out
 }
 
@@ -755,8 +772,12 @@ fn chain_open_polylines_exact(
             });
         }
     }
-    // TriangleMeshSlicer.cpp:1202
-    by_id.sort_by_key(|&e| id_of(open_polylines, e));
+    // TriangleMeshSlicer.cpp:1202 `std::sort` (not stable; R941 TMS_CHAIN_LIBCXX_SORT).
+    if crate::opt_in_gate("TMS_CHAIN_LIBCXX_SORT") {
+        crate::clipper::libcxx_sort(&mut by_id, |&a, &b| id_of(open_polylines, a) < id_of(open_polylines, b));
+    } else {
+        by_id.sort_by_key(|&e| id_of(open_polylines, e));
+    }
 
     // TriangleMeshSlicer.cpp:1204-1210 — find an iterator into by_id for a given end.
     let find_polyline_end = |by_id: &[OpenPolylineEnd],
