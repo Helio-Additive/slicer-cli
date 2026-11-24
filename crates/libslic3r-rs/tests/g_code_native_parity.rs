@@ -426,6 +426,24 @@ fn line_of(t: &[&str]) -> Option<String> {
                 hex(&g.m_config.opt_serialize("printable_area").unwrap())
             )
         }
+        "ctor" => {
+            // GCode() (GCode.hpp:175-203, :544 `FullPrintConfig m_config`): object and region
+            // options at their defaults, before and after apply_print_config.
+            let applied = t[1] == "1";
+            let mut g = GCode::new();
+            if applied {
+                let kv = vec![("travel_speed".to_string(), "321".to_string()), ("resolution".to_string(), "0.02".to_string())];
+                g.apply_print_config(&kv_print_cfg(&kv));
+            }
+            let mut s = format!("ctor {} {}", t[1], g.m_config.keys().len());
+            let mut i = 3;
+            while i + 1 < t.len() {
+                let k = t[i];
+                s += &format!(" {} {}", k, hex(&g.m_config.opt_serialize(k).unwrap_or_default()));
+                i += 2;
+            }
+            s
+        }
         "flp" => {
             let n: usize = t[1].parse().unwrap();
             let pts: Vec<Point> = (0..n).map(|k| Point::new(t[2 + 2 * k].parse().unwrap(), t[3 + 2 * k].parse().unwrap())).collect();
@@ -449,11 +467,11 @@ fn line_of(t: &[&str]) -> Option<String> {
             let cur = f64of(t[i]);
             let n: usize = t[i + 1].parse().unwrap();
             let pts: Vec<Point> = (0..n).map(|k| Point::new(t[i + 2 + 2 * k].parse().unwrap(), t[i + 3 + 2 * k].parse().unwrap())).collect();
+            // GCode.hpp:544 `FullPrintConfig m_config`: GCode::new starts with every option at its
+            // default, so the region options Wipe::wipe reads (`wipe_speed`,
+            // `role_base_wipe_speed`, not PrintConfig's) have their defaults after
+            // apply_print_config, as at the pin.
             let mut g = GCode::new();
-            // GCode.hpp `FullPrintConfig m_config`: every option at its default before
-            // apply_print_config (the port's GCode::new starts it empty; the region options
-            // `wipe_speed` / `role_base_wipe_speed` Wipe::wipe reads are not PrintConfig's).
-            g.m_config = DynamicPrintConfig::full_print_config();
             g.apply_print_config(&kv_print_cfg(&kv));
             g.m_writer.set_extruders(vec![0]);
             g.m_writer.toolchange(0, 0);

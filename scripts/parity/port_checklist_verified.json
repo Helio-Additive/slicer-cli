@@ -4361,5 +4361,13 @@
   "functions": [
    "Wipe::wipe"
   ]
+ },
+ {
+  "unit": "GCode",
+  "round": 942,
+  "evidence": "tests/g_code_native_parity.rs (tags apc, ctor, wipe): the pin's GCode::apply_print_config (GCode.cpp 6403-6408) on 3 configurations, the GCode() constructor's FullPrintConfig defaults before and after it (602 keys and 9 object, region and print options), and Wipe::wipe with retraction during the wipe (retract_before_wipe 0/30/0/70 %, 4 cases with an E per segment) from tests/data/g_code/gen.cpp: every line equal.",
+  "functions": [
+   "GCode::apply_print_config"
+  ]
  }
 ]

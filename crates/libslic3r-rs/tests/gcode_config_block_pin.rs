@@ -81,3 +81,84 @@ fn config_block_pin_writes_the_front_end_values() {
     assert!(pos("; bed_temperature = ") < pos("; bed_temperature_formula = "));
     assert!(pos("; bed_temperature_formula = ") < pos("; bed_temperature_initial_layer = "));
 }
+
+/// The front end's padding of short vectors to `extruder_count` (slicer_cli main.cpp:9902-9935, with
+/// `skip_pad` 9816-9862 and `is_filament_setting_key` 1654-1667), as the pin writes it: Benchy's block
+/// (H2D, one nozzle_diameter) holds `extruder_ams_count = ""` and `extruder_nozzle_slot = 0`;
+/// Majora's (X1C) `extruder_printable_height = 0`. A vector already as long or longer stays as it is
+/// (Benchy's `extruder_printable_height = 320,325`), and filament settings and the skip_pad keys are
+/// not padded.
+#[test]
+fn config_block_pin_pads_short_vectors_to_the_extruder_count() {
+    let settings = serde_json::json!({
+        "nozzle_diameter": ["0.4"],
+        "flush_multiplier": ["1"],
+        "flush_volumes_matrix": ["0"],
+        "filament_colour": ["#FFFFFF"],
+        "extruder_ams_count": [],
+        "extruder_printable_area": [],
+    });
+    let block = GCode::config_block_pin(&settings);
+    let lines: Vec<&str> = block.lines().collect();
+    let has = |l: &str| lines.iter().any(|x| *x == l);
+    assert!(has("; extruder_ams_count = \"\""), "extruder_ams_count");
+    assert!(
+        has("; extruder_nozzle_slot = 0"),
+        "extruder_nozzle_slot: {:?}",
+        lines.iter().filter(|l| l.starts_with("; extruder_n")).collect::<Vec<_>>()
+    );
+    assert!(has("; extruder_printable_height = 0"), "extruder_printable_height");
+    // skip_pad: extruder_printable_area stays empty.
+    assert!(has("; extruder_printable_area = "), "extruder_printable_area");
+
+    let settings2 = serde_json::json!({
+        "nozzle_diameter": ["0.4", "0.4"],
+        "flush_multiplier": ["1", "1"],
+        "flush_volumes_matrix": ["0", "0"],
+        "filament_colour": ["#FFFFFF"],
+        "extruder_printable_height": ["320", "325", "330"],
+    });
+    let block2 = GCode::config_block_pin(&settings2);
+    let lines2: Vec<&str> = block2.lines().collect();
+    let has2 = |l: &str| lines2.iter().any(|x| *x == l);
+    // not truncated
+    assert!(has2("; extruder_printable_height = 320,325,330"), "extruder_printable_height");
+    // padded to two
+    assert!(
+        has2("; extruder_nozzle_slot = 0,0"),
+        "extruder_nozzle_slot: {:?}",
+        lines2.iter().filter(|l| l.starts_with("; extruder_n") || l.starts_with("; nozzle_d")).collect::<Vec<_>>()
+    );
+    // a filament setting keeps its length
+    assert!(has2("; filament_colour = #FFFFFF"), "filament_colour");
+}
+
+/// Print::apply's reduction of the extruder-related values (PrintApply.cpp:1437-1453), as Majora's
+/// block (X1C, one extruder, two variants in `extruder_variant_list`) shows it in the pin:
+/// `bridge_speed = 50`, `print_extruder_variant = "Direct Drive Standard"` where the 3MF's settings
+/// carry two values per variant.
+#[test]
+fn config_block_pin_reduces_the_variant_values_to_the_printer_extruders() {
+    let settings = serde_json::json!({
+        "nozzle_diameter": ["0.4"],
+        "flush_multiplier": ["1"],
+        "flush_volumes_matrix": ["0"],
+        "filament_colour": ["#FFFFFF"],
+        "extruder_type": ["Direct Drive"],
+        "nozzle_volume_type": ["Standard"],
+        "extruder_variant_list": ["Direct Drive Standard,Direct Drive High Flow"],
+        "printer_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+        "printer_extruder_id": ["1", "1"],
+        "print_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+        "print_extruder_id": ["1", "1"],
+        "bridge_speed": ["50", "50"],
+        "outer_wall_speed": ["150", "350"],
+    });
+    let block = GCode::config_block_pin(&settings);
+    let lines: Vec<&str> = block.lines().collect();
+    let has = |l: &str| lines.iter().any(|x| *x == l);
+    let show = || lines.iter().filter(|l| l.contains("_speed =") || l.contains("extruder_")).cloned().collect::<Vec<_>>();
+    assert!(has("; bridge_speed = 50"), "bridge_speed: {:?}", show());
+    assert!(has("; outer_wall_speed = 150"), "outer_wall_speed: {:?}", show());
+    assert!(has("; print_extruder_variant = \"Direct Drive Standard\""), "print_extruder_variant: {:?}", show());
+}

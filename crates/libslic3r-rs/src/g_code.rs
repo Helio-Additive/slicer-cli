@@ -7883,6 +7883,10 @@ pub struct GCodeHeader {
 
     /// Raw BambuStudio settings for full CONFIG_BLOCK output.
     pub raw_settings: Option<serde_json::Value>,
+
+    /// The settings the CONFIG_BLOCK writes when they differ from `raw_settings` (the job's settings
+    /// before the port's filament-override patch, `Print::config_block_settings`).
+    pub config_block_settings: Option<serde_json::Value>,
 }
 
 impl GCodeHeader {
@@ -7928,6 +7932,7 @@ impl GCodeHeader {
             stats,
             config,
             raw_settings,
+            config_block_settings: None,
         }
     }
 
@@ -8063,7 +8068,7 @@ impl GCodeHeader {
         // `print.full_print_config()` (every option, the settings read over the defaults) with
         // flush_volumes_matrix scaled by the flush multiplier. Gate GCODE_CONFIG_BLOCK_PIN.
         if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
-            if let Some(ref settings) = self.raw_settings {
+            if let Some(ref settings) = self.config_block_settings.as_ref().or(self.raw_settings.as_ref()) {
                 if settings.is_object() {
                     return GCode::config_block_pin(settings);
                 }
@@ -8894,6 +8899,18 @@ pub fn front_end_set_default_temps(config: &mut crate::config::DynamicConfig) {
     ensure_temp_opt("bed_temperature_initial_layer", 60);
 }
 
+/// `config.option<ConfigOptionFloats>("nozzle_diameter", false)->values.size()` as slicer_cli
+/// main.cpp:9810-9813 reads it: `ConfigBase::option<TYPE>` (Config.hpp:2558-2562) compares
+/// `opt->type()` with `TYPE::static_type()` and `static_cast`s, so the nullable floats that
+/// `nozzle_diameter` is (PrintConfig.cpp:5229-5230) are found as `ConfigOptionFloats` too.
+fn front_end_nozzle_diameter_count(config: &crate::config::DynamicConfig) -> Option<usize> {
+    use crate::config::{ConfigOptionFloats, ConfigOptionFloatsNullable};
+    if let Some(nd) = config.opt::<ConfigOptionFloats>("nozzle_diameter") {
+        return Some(nd.values.len());
+    }
+    config.opt::<ConfigOptionFloatsNullable>("nozzle_diameter").map(|nd| nd.values.len())
+}
+
 /// slicer_cli main.cpp:9807-9814 + 9944-9950: `master_extruder_id` clamped to
 /// `[1, extruder_count]`, `extruder_count` being the size of `nozzle_diameter` (1 when it is missing
 /// or empty).
@@ -8903,11 +8920,11 @@ pub fn front_end_set_default_temps(config: &mut crate::config::DynamicConfig) {
 /// engine's readers (gcode/tool_ordering.rs, print.rs, g_code.rs `m_extruder_offsets`) take the
 /// job's settings, where the front end of the Rust engine (app_slice.rs) does not clamp yet.
 pub fn front_end_clamp_master_extruder_id(config: &mut crate::config::DynamicConfig) {
-    use crate::config::{ConfigOptionFloats, ConfigOptionInt};
+    use crate::config::ConfigOptionInt;
     let mut extruder_count: usize = 1;
-    if let Some(nd) = config.opt::<ConfigOptionFloats>("nozzle_diameter") {
-        if !nd.values.is_empty() {
-            extruder_count = nd.values.len();
+    if let Some(n) = front_end_nozzle_diameter_count(config) {
+        if n != 0 {
+            extruder_count = n;
         }
     }
     if let Ok(Some(mid)) = config.opt_mut::<ConfigOptionInt>("master_extruder_id", false) {
@@ -8917,6 +8934,183 @@ pub fn front_end_clamp_master_extruder_id(config: &mut crate::config::DynamicCon
         if mid.value > extruder_count as i32 {
             mid.value = extruder_count as i32;
         }
+    }
+}
+
+/// slicer_cli main.cpp:1620-1640 `is_per_filament_config_key` (the Bambu Studio build: the
+/// `#ifndef ENGINE_SNAPMAKER` arm reads `filament_options_with_variant`, PrintConfig.cpp:8542-8590).
+pub fn front_end_is_per_filament_config_key(key: &str) -> bool {
+    const K_SPECIAL_FILAMENT_KEYS: [&str; 4] =
+        ["filament_extruder_variant", "filament_self_index", "filament_map", "filament_map_2"];
+    if key.starts_with("filament_") {
+        for special in K_SPECIAL_FILAMENT_KEYS {
+            if key == special {
+                return false;
+            }
+        }
+        return true;
+    }
+    crate::print_config::config_def::filament_options_with_variant.contains(key)
+}
+
+/// slicer_cli main.cpp:1654-1667 `is_filament_setting_key`: `is_per_filament_config_key` or one of
+/// `Preset::filament_options()` less `compatible_prints`, `compatible_printers` and the four special
+/// spellings.
+pub fn front_end_is_filament_setting_key(key: &str) -> bool {
+    if front_end_is_per_filament_config_key(key) {
+        return true;
+    }
+    static ENGINE_FILAMENT_KEYS: std::sync::LazyLock<std::collections::HashSet<String>> =
+        std::sync::LazyLock::new(|| {
+            let mut keys: std::collections::HashSet<String> =
+                crate::preset::Preset::filament_options().iter().cloned().collect();
+            keys.remove("compatible_prints");
+            keys.remove("compatible_printers");
+            for special in ["filament_extruder_variant", "filament_self_index", "filament_map", "filament_map_2"] {
+                keys.remove(special);
+            }
+            keys
+        });
+    ENGINE_FILAMENT_KEYS.contains(key)
+}
+
+/// slicer_cli main.cpp:9807-9935: every vector option shorter than `extruder_count` (the size of
+/// `nozzle_diameter`, 1 when it is missing or empty) is padded with zeros (`""` for strings), except
+/// the keys of `skip_pad` (main.cpp:9816-9862) and the filament settings
+/// (`is_filament_setting_key`). Points and other vector kinds are left alone.
+///
+/// FIDELITY-NOTE: the pin pads the front end's config, which the engine then reads; here only the
+/// CONFIG_BLOCK copy is padded (as `front_end_clamp_master_extruder_id`); the port's
+/// `full_print_config_from_settings` holds every option with its default, as the pin's front-end
+/// config does after `set_default_config`.
+pub fn front_end_pad_vectors_to_extruder_count(config: &mut crate::config::DynamicConfig) {
+    use crate::config::{
+        ConfigBase, ConfigOptionBools, ConfigOptionBoolsNullable, ConfigOptionEnumsGeneric,
+        ConfigOptionEnumsGenericNullable, ConfigOptionFloats, ConfigOptionFloatsNullable,
+        ConfigOptionFloatsOrPercents, ConfigOptionFloatsOrPercentsNullable, ConfigOptionInts,
+        ConfigOptionIntsNullable, ConfigOptionPercents, ConfigOptionPercentsNullable,
+        ConfigOptionStrings, FloatOrPercent,
+    };
+    let mut extruder_count: usize = 1;
+    if let Some(n) = front_end_nozzle_diameter_count(config) {
+        if n != 0 {
+            extruder_count = n;
+        }
+    }
+    const SKIP_PAD: [&str; 13] = [
+        "printable_area",
+        "bed_exclude_area",
+        "thumbnails",
+        "extruder_printable_area",
+        "filament_map",
+        "filament_map_2",
+        "post_process",
+        "wipe_tower_x",
+        "wipe_tower_y",
+        "flush_multiplier",
+        "flush_multiplier_fast",
+        "first_layer_print_sequence",
+        "other_layers_print_sequence",
+    ];
+    for key in ConfigBase::keys(&*config) {
+        if SKIP_PAD.contains(&key.as_str()) {
+            continue;
+        }
+        if front_end_is_filament_setting_key(&key) {
+            continue;
+        }
+        let Ok(Some(opt)) = config.optptr_mut(&key, false) else {
+            continue;
+        };
+        let any = opt.as_any_mut();
+        macro_rules! norm_vec {
+            ($($ty:ty => $zero:expr),* $(,)?) => {
+                $(if let Some(v) = any.downcast_mut::<$ty>() {
+                    while v.values.len() < extruder_count {
+                        v.values.push($zero);
+                    }
+                    continue;
+                })*
+            };
+        }
+        norm_vec!(
+            ConfigOptionBoolsNullable => 0u8,
+            ConfigOptionBools => 0u8,
+            ConfigOptionIntsNullable => 0,
+            ConfigOptionInts => 0,
+            ConfigOptionFloatsNullable => 0.0,
+            ConfigOptionFloats => 0.0,
+            ConfigOptionPercentsNullable => 0.0,
+            ConfigOptionPercents => 0.0,
+            ConfigOptionFloatsOrPercentsNullable => FloatOrPercent { value: 0.0, percent: false },
+            ConfigOptionFloatsOrPercents => FloatOrPercent { value: 0.0, percent: false },
+            ConfigOptionStrings => String::new(),
+            ConfigOptionEnumsGenericNullable => 0,
+            ConfigOptionEnumsGeneric => 0,
+        );
+        // ConfigOptionPoints, ConfigOptionPointsGroups, etc. — leave alone
+    }
+}
+
+/// PrintApply.cpp:1437-1453 (`Print::apply`, slicer_cli calls it with `extruder_applied` false,
+/// main.cpp:11219/11241): the extruder-related values of `new_full_config`, which becomes
+/// `print.full_print_config()`: with more than one extruder or different extruder variants the
+/// printer options with variant (stride 2, then 1) and the print options with variant are reduced to
+/// the printer's extruders.
+///
+/// FIDELITY-NOTE: the filament half that follows (PrintApply.cpp:1455-1483,
+/// `update_filament_config_values_for_multiple_extruders` /
+/// `update_values_to_printer_extruders_for_multiple_filaments`) is not ported in print_config.rs and
+/// is not applied; applied here to the CONFIG_BLOCK copy only.
+pub fn print_apply_update_values_to_printer_extruders(
+    cfg: &mut crate::print_config::config_def::DynamicPrintConfig,
+) {
+    use crate::print_config::config_def::{
+        print_options_with_variant, printer_options_with_variant_1, printer_options_with_variant_2,
+    };
+    use crate::print_config::enums::NozzleVolumeType;
+    let mut nozzle_volume_types: Vec<Vec<NozzleVolumeType>> = Vec::new();
+    let mut extruder_count: i32 = 1;
+    let different_extruder = cfg.support_different_extruders(&mut extruder_count);
+    let extruder_volume_type_count =
+        cfg.get_extruder_nozzle_volume_count(extruder_count, &mut nozzle_volume_types);
+    if extruder_count > 1 || different_extruder {
+        let _ = cfg.update_values_to_printer_extruders(
+            None,
+            extruder_count,
+            extruder_volume_type_count,
+            &nozzle_volume_types,
+            &printer_options_with_variant_2,
+            "printer_extruder_id",
+            "printer_extruder_variant",
+            2,
+            0,
+            NozzleVolumeType::NvtStandard,
+        );
+        let _ = cfg.update_values_to_printer_extruders(
+            None,
+            extruder_count,
+            extruder_volume_type_count,
+            &nozzle_volume_types,
+            &printer_options_with_variant_1,
+            "printer_extruder_id",
+            "printer_extruder_variant",
+            1,
+            0,
+            NozzleVolumeType::NvtStandard,
+        );
+        let _ = cfg.update_values_to_printer_extruders(
+            None,
+            extruder_count,
+            extruder_volume_type_count,
+            &nozzle_volume_types,
+            &print_options_with_variant,
+            "print_extruder_id",
+            "print_extruder_variant",
+            1,
+            0,
+            NozzleVolumeType::NvtStandard,
+        );
     }
 }
 
@@ -8936,7 +9130,16 @@ impl GCode {
         // in the pin. Gate GCODE_CONFIG_FRONT_END_PIN.
         if crate::faithful_gate("GCODE_CONFIG_FRONT_END_PIN") {
             front_end_set_default_temps(&mut print_cfg_temp.base);
+            // main.cpp:9902-9935, before the clamp of 9944. Gate GCODE_CONFIG_FRONT_END_PAD_PIN.
+            if crate::faithful_gate("GCODE_CONFIG_FRONT_END_PAD_PIN") {
+                front_end_pad_vectors_to_extruder_count(&mut print_cfg_temp.base);
+            }
             front_end_clamp_master_extruder_id(&mut print_cfg_temp.base);
+        }
+        // Print::apply's reduction to the printer's extruders (PrintApply.cpp:1437-1453). Gate
+        // GCODE_CONFIG_PRINT_APPLY_EXTRUDERS_PIN.
+        if crate::faithful_gate("GCODE_CONFIG_PRINT_APPLY_EXTRUDERS_PIN") {
+            print_apply_update_values_to_printer_extruders(&mut print_cfg_temp);
         }
         {
             // correct the flush_volumes_matrix with flush_multiplier values (GCode.cpp:2692-2717)
@@ -13408,7 +13611,11 @@ pub mod gcode_class {
         pub fn new() -> Self {
             GCode {
                 m_origin: Vec2d::new(0.0, 0.0),
-                m_config: DynamicPrintConfig::new(),
+                // GCode.hpp:544 `FullPrintConfig m_config;`: a default-constructed static config,
+                // every option of FullPrintConfig (object, region, print, machine) at its default
+                // before apply_print_config() overwrites the PrintConfig members
+                // (= DynamicPrintConfig::full_print_config(), PrintConfig.cpp:8667-8670).
+                m_config: DynamicPrintConfig::full_print_config(),
                 m_print_config: DynamicPrintConfig::new(),
                 m_scaled_resolution: 0.0,
                 m_writer: GCodeWriter::new(),

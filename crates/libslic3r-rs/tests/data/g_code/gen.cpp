@@ -621,6 +621,27 @@ static void export_functions()
                 hex(gg.m_config.opt_serialize("z_hop")).c_str(), hex(gg.m_config.opt_serialize("resolution")).c_str(),
                 hex(gg.m_config.opt_serialize("printable_area")).c_str());
     }
+    // GCode() (GCode.hpp:175-203, :544 `FullPrintConfig m_config`): the object and region options at
+    // their defaults, before and after apply_print_config (which writes the PrintConfig members only).
+    {
+        const char *ctor_keys[] = {"wipe_speed", "role_base_wipe_speed", "wall_loops", "layer_height", "sparse_infill_density",
+                                   "seam_gap", "wall_sequence", "travel_speed", "resolution"};
+        for (int applied = 0; applied < 2; ++applied) {
+            GCode gg;
+            if (applied) {
+                DynamicPrintConfig dc = DynamicPrintConfig::full_print_config();
+                dc.set_deserialize_strict("travel_speed", "321");
+                dc.set_deserialize_strict("resolution", "0.02");
+                PrintConfig pc;
+                pc.apply(dc, true);
+                gg.apply_print_config(pc);
+            }
+            fprintf(g_out, "ctor %d %zu", applied, gg.m_config.keys().size());
+            for (const char *k : ctor_keys)
+                fprintf(g_out, " %s %s", k, hex(gg.m_config.opt_serialize(k)).c_str());
+            fprintf(g_out, "\n");
+        }
+    }
     // GCode::first_layer_projection of a print without objects
     std::vector<Points> hulls = {
         {Point(0, 0), Point(1000000, 0), Point(1000000, 2000000)},
@@ -656,6 +677,17 @@ static void wipe_cases()
         {{{"role_base_wipe_speed", "0"}}, 3000., {Point(10000000, 10000000), Point(0, 10000000)}},
         {{{"wipe_speed", "50%"}, {"travel_speed", "400"}}, 0., {Point(0, 0), Point(300000, 400000), Point(-500000, 2000000)}},
         {{{"wipe_distance", "0.5"}}, 7058.823, {Point(123456, 654321), Point(223456, 654321)}},
+        // Retraction during the wipe (dE per segment, GCode.cpp:456-511): retract_before_wipe below
+        // 100 % leaves length * (1 - retract_before_wipe) to the wipe; the paths run over several
+        // segments, the last clipped (cases 1, 2) or shorter than wipe_distance (cases 3, 4).
+        {{{"retract_before_wipe", "0%"}, {"retraction_length", "0.8"}}, 4591.28,
+         {Point(10000000, 10000000), Point(9950000, 10000000), Point(9950000, 9920000), Point(9870000, 9890000)}},
+        {{{"retract_before_wipe", "30%"}, {"retraction_length", "1.2"}, {"wipe_distance", "3"}}, 0.,
+         {Point(0, 0), Point(70000, 0), Point(70000, 90000), Point(-10000, 170000), Point(-130000, 165000)}},
+        {{{"retract_before_wipe", "0%"}, {"retraction_length", "2"}}, 3000.,
+         {Point(5000000, 5000000), Point(5030000, 5010000), Point(5040000, 5050000)}},
+        {{{"retract_before_wipe", "70%"}, {"retraction_length", "0.45"}, {"wipe_distance", "1.7"}, {"role_base_wipe_speed", "0"}},
+         2400., {Point(-200000, 30000), Point(-190000, 30000), Point(-190000, 110000), Point(-200000, 110000)}},
     };
     for (const auto &c : cases) {
         const KVs &kv = std::get<0>(c);

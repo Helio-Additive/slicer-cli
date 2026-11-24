@@ -96,6 +96,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
     let mut settings_value: serde_json::Value = serde_json::from_str(&settings_str)
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
     normalize_legacy_gcode_tokens(&mut settings_value);
+    let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
@@ -227,6 +228,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
     // default region config; objects are added separately below.
     print.apply(print_config, region_config);
     print.raw_settings = raw_settings_json;
+    print.config_block_settings = config_block_settings_json;
     if let Some(model) = tree_pin_model {
         // After `apply`, which clears the live Print's model (print.rs).
         print.set_model(model);
@@ -629,6 +631,7 @@ pub fn slice_3mf_to_gcode(
     let mut settings_value: serde_json::Value =
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
     normalize_legacy_gcode_tokens(&mut settings_value);
+    let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
@@ -990,6 +993,7 @@ pub fn slice_3mf_to_gcode(
         print.install_painted_regions(&painting_extruders);
     }
     print.raw_settings = raw_settings_json;
+    print.config_block_settings = config_block_settings_json;
     print.set_status_callback(|percent, message| {
         info!("Progress: {}% - {}", percent, message);
     });
@@ -2126,6 +2130,20 @@ fn apply_brim_logic(config: &mut PrintConfig, json: &serde_json::Value) {
         if let Ok(v) = w.parse::<f64>() {
             config.brim_width = v;
         }
+    }
+}
+
+/// The settings the CONFIG_BLOCK writes: the pin's block is `print.full_print_config()`
+/// (GCode.cpp:2686-2720), the job's settings as loaded, where the machine keys keep the machine's
+/// values in its variant layout and the filament overrides stay in their `filament_*` keys. The port's
+/// `patch_filament_overrides_in_json` rewrites `retraction_length`, `z_hop_types`, ... in the
+/// settings the placeholder parser and the engine read; this keeps the unpatched copy for the
+/// block. Gate CONFIG_BLOCK_UNPATCHED_SETTINGS (faithful; `=0` writes the patched settings).
+fn config_block_settings_before_patch(settings: &serde_json::Value) -> Option<serde_json::Value> {
+    if crate::faithful_gate("CONFIG_BLOCK_UNPATCHED_SETTINGS") {
+        Some(settings.clone())
+    } else {
+        None
     }
 }
 

@@ -1371,6 +1371,32 @@ impl PrintObject {
         // the plain f32 affine apply. Until then the ±1-unit painted-line
         // endpoint drift (PLDUMP lid385: 296/2425 byte-common) remains the
         // Majora colored-boundary noise floor.
+        // R942 (gate MMS_NEG_SLICES_PIN, faithful): the segmentation slices the negative
+        // volumes itself, with DEFAULT MeshSlicingParamsEx (no closing, no simplification)
+        // and trafo = trafo_centered() * get_matrix(), at float(slice_z) of every layer
+        // (MultiMaterialSegmentation.cpp:2226-2241). The earlier arm reuses the slices of the
+        // R704 subtraction, which went through the model parts' closing radius and 0.0025 mm
+        // resolution (Majora: 320 points per layer where the pin has 5,385).
+        let mms_neg_pin: Option<Vec<crate::geometry::ExPolygons>> = if crate::faithful_gate("MMS_NEG_SLICES_PIN")
+            && !self.mm_negative_layer_slices.is_empty()
+            && !self.negative_volumes_raw.is_empty()
+        {
+            let zs: Vec<f32> = self.layers.iter().map(|l| l.slice_z as f32).collect();
+            let mut neg_slices: Vec<crate::geometry::ExPolygons> = vec![crate::geometry::ExPolygons::new(); zs.len()];
+            for (m, t16) in &self.negative_volumes_raw {
+                let mut params = crate::triangle_mesh_slicer::MeshSlicingParamsEx::default();
+                params.base.frame_trafo = Some(*t16);
+                let vol_slices = crate::triangle_mesh_slicer::slice_mesh_ex(m, &zs, &params, &|| {});
+                for (i, s) in vol_slices.into_iter().enumerate() {
+                    if i < neg_slices.len() {
+                        neg_slices[i].extend(s);
+                    }
+                }
+            }
+            Some(neg_slices)
+        } else {
+            None
+        };
         let segmented = crate::multi_material_segmentation::multi_material_segmentation_by_painting_tier1(
             &layer_slices,
             &layer_zs,
@@ -1380,7 +1406,9 @@ impl PrintObject {
             0.0,
             mms_center_offset,
             tb_ctx.as_ref(),
-            if self.mm_negative_layer_slices.is_empty() {
+            if let Some(ns) = mms_neg_pin.as_ref() {
+                Some(ns.as_slice())
+            } else if self.mm_negative_layer_slices.is_empty() {
                 None
             } else {
                 Some(self.mm_negative_layer_slices.as_slice())
@@ -2243,6 +2271,9 @@ impl PrintObject {
                 __t_peri.elapsed().as_secs_f64()
             );
         }
+
+        // R942 probe (BOI with BOI_PM, diagnostic only): perimeters per layer and region.
+        boi_perims_dump(&self.layers);
 
         // Mark step as complete
         // PrintObject.cpp:620
@@ -6605,6 +6636,39 @@ lines={} grown_polys={} grown_verts={}",
                     else { crate::layer::VS_T_HOLES.fetch_add(a(&holes), Relaxed); }
                     if shell_int.is_empty() { crate::layer::VS_T_SHELLINT_EMPTY.fetch_add(1, Relaxed); }
                 }
+                vs_probe("vs_s0", region_id, idx, &shell);
+                vs_probe("vs_holes", region_id, idx, &holes);
+                // R942: PrintObject.cpp:2574-2581: `shell` is Polygons: `diff(polygonsInternal,
+                // holes)` is `to_polygons(clipper_do<Paths>(ctDifference, ..))` (ClipperUtils.cpp
+                // _clipper), the raw Clipper paths with no PolyTree pass, appended to the
+                // intersection's and the internal solids' rings, and only `union_ex(shell)`
+                // (PrintObject.cpp:2594) unions them. The ExPolygons route re-unions the
+                // difference on its own first (Majora L23 r0: 709 points at the pin, 705 here).
+                let loops_pin: Option<Vec<Polygon>> = if crate::faithful_gate("VSHELL_DIH_PATHS") {
+                    // to_polygons(ExPolygons): each contour, then its holes.
+                    let rings = |v: &ExPolygons| -> Vec<Polygon> {
+                        v.iter()
+                            .flat_map(|e| std::iter::once(e.contour.clone()).chain(e.holes.iter().cloned()))
+                            .collect()
+                    };
+                    let dih_raw = crate::clipper_utils::diff_polygons_raw_clib(
+                        &rings(&internal_all),
+                        &rings(&holes),
+                    );
+                    if crate::probe_enabled("BOI") {
+                        let v: ExPolygons =
+                            dih_raw.iter().map(|p| crate::geometry::ExPolygon::new(p.clone())).collect();
+                        vs_probe("vs_dihraw", region_id, idx, &v);
+                    }
+                    let mut l = rings(&shell_int);
+                    l.extend(dih_raw);
+                    l.extend(rings(&solid_only));
+                    Some(l)
+                } else {
+                    None
+                };
+                vs_probe("vs_dih", region_id, idx, &diff_int_holes);
+                vs_probe("vs_s1", region_id, idx, &shell_int);
                 let mut new_shell = shell_int;
                 new_shell.extend(diff_int_holes);
                 if new_shell.is_empty() {
@@ -6612,7 +6676,10 @@ lines={} grown_polys={} grown_verts={}",
                 }
                 // PrintObject.cpp:1999 — append existing internal-solid so they merge.
                 new_shell.extend(solid_only.clone());
-                let shell_u = union_ex(&new_shell);
+                let shell_u = match &loops_pin {
+                    Some(l) => crate::clipper_utils::union_polygons_ex(l),
+                    None => union_ex(&new_shell),
+                };
                 // PrintObject.cpp:2007-2055 — regularize (open then close), then drop scattered tiny bits.
                 // Native radii are f32 chains on min_pis_sc (PrintObject.cpp:2012-2017).
                 let (narrow_wall_r, narrow_sparse_r, tiny_overlap_r) = if faithful()
@@ -6630,7 +6697,36 @@ lines={} grown_polys={} grown_verts={}",
                 // union_ex(shell), -r1, r1+r2, jtSquare), r2-tiny, jtSquare)
                 // (PrintObject.cpp:2018-2024) — run it at ClipperLib precision;
                 // the geo route re-grids and reshapes the ISI contour.
-                let regularized0 = if crate::faithful_gate("TOPFILL_FAITHFUL") {
+                let regularized0 = if crate::faithful_gate("TOPFILL_FAITHFUL")
+                    && faithful()
+                    && crate::faithful_gate("VSHELL_REG_QUANT")
+                    && crate::faithful_gate("VSHELL_REG_DELTA_F32")
+                {
+                    // R942: PrintObject.cpp:2588-2600: the three radii are floats, and so are
+                    // the sum `r1 + r2` (offset2_ex's delta2) and the difference `r2 - tiny`
+                    // (shrink_ex's delta): float additions, rounded once to float. The mm route
+                    // below re-adds the radii in f64 and casts the sum to f32 (a second rounding
+                    // that breaks float ties the other way) and passes `r2 - tiny` unrounded.
+                    // Majora L23 / L130: the regularized shell's points 1-25 units off.
+                    let r1 = 0.5f32 * 0.65f32 * min_pis_sc;
+                    let r2 = 0.5f32 * 1.2f32 * min_pis_sc;
+                    let tiny = 0.2f32 * min_pis_sc;
+                    let d2: f32 = r1 + r2;
+                    let d3: f32 = r2 - tiny;
+                    // offset2_ex_clib takes mm and casts `mm / 0.00001` to f32: a float-valued
+                    // delta times 0.00001 comes back to the same float.
+                    let opened = crate::clipper_utils::offset2_ex_clib(
+                        &shell_u,
+                        -((r1 as f64) * 0.00001),
+                        (d2 as f64) * 0.00001,
+                        OffsetJoinType::Square,
+                    );
+                    crate::clipper_utils::offset_expolygons_clib_scaled(
+                        &opened,
+                        -(d3 as f64),
+                        OffsetJoinType::Square,
+                    )
+                } else if crate::faithful_gate("TOPFILL_FAITHFUL") {
                     let opened = crate::clipper_utils::offset2_ex_clib(
                         &shell_u,
                         -narrow_wall_r,
@@ -6662,6 +6758,9 @@ lines={} grown_polys={} grown_verts={}",
                     crate::layer::VS_REG_OUT_AREA.fetch_add((aout * 1000.0) as usize, Relaxed);
                 }
 
+                vs_probe("vs_shell", region_id, idx, &new_shell);
+                vs_probe("vs_ushell", region_id, idx, &shell_u);
+                vs_probe("vs_reg0", region_id, idx, &regularized0);
                 // object_volume = intersection(lslices[idx-1], lslices[idx+1]); internal_volume = closing(internal).
                 let object_volume = if idx > 0 && idx + 1 < lslices_all.len() {
                     intersection(&lslices_all[idx - 1], &lslices_all[idx + 1])
@@ -6725,12 +6824,15 @@ lines={} grown_polys={} grown_verts={}",
                         !(cond1 && cond2) // keep if NOT removed
                     })
                     .collect();
+                vs_probe("vs_reg", region_id, idx, &regularized);
                 if regularized.is_empty() {
                     return Ok(None);
                 }
 
                 // PrintObject.cpp:2060,2075-2090 — reassign surfaces.
                 let new_solid = intersection(&internal_all, &regularized);
+                vs_probe("vs_nis", region_id, idx, &new_solid);
+                vs_probe("vs_pint", region_id, idx, &internal_all);
                 crate::stage_dump::dump("vshell_reg", idx, &regularized);
                 crate::stage_dump::dump("vshell_solid", idx, &new_solid);
                 let new_internal = difference(&internal_only, &regularized);
@@ -9507,6 +9609,128 @@ pub fn determine_bridging_angle_pin(
         _ => {}
     }
     bridging_angle
+}
+
+/// R942 probe (BOI with BOI_VS=<lidx>, diagnostic only): the stages of discover_vertical_shells'
+/// regularization for one layer, in the format of the pin's twin (PrintObject_boi.cpp,
+/// PrintObject.cpp:2594-2642); BOIP=<tag>_r<region>:<lidx> prints the points.
+fn vs_probe(tag: &str, region_id: usize, l: usize, v: &[crate::geometry::ExPolygon]) {
+    if !crate::probe_enabled("BOI") {
+        return;
+    }
+    if std::env::var("BOI_VS").ok().and_then(|x| x.parse::<usize>().ok()) != Some(l) {
+        return;
+    }
+    let t = format!("{}_r{}", tag, region_id);
+    let (mut n, mut np, mut sx, mut sy) = (0usize, 0usize, 0i64, 0i64);
+    let pts = std::env::var("BOIP").ok().as_deref() == Some(format!("{}:{}", t, l).as_str());
+    let mut lines = Vec::new();
+    for ex in v {
+        for p in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+            for q in p.points() {
+                np += 1;
+                sx += q.x;
+                sy += q.y;
+                if pts {
+                    lines.push(format!("BOIP {} {} {}", n, q.x, q.y));
+                }
+            }
+            n += 1;
+        }
+    }
+    eprintln!("BOI {} L={} n={} np={} sx={} sy={} x={:.9}", t, l, n, np, sx, sy, 0.0f64);
+    for x in lines {
+        eprintln!("{}", x);
+    }
+}
+
+/// R942 probe (BOI with BOI_PM=a-b[,a-b...], diagnostic only): after make_perimeters, per layer
+/// and region, the leaf paths of `perimeters` and `thin_fills` in order and `fill_expolygons`, in
+/// the format of the pin's twin (target/parity-tools/twin/process/gen.cpp boi_perims, called
+/// before set_done(posPerimeters), PrintObject.cpp:620).
+fn boi_perims_dump(layers: &[crate::layer::Layer]) {
+    use crate::extrusion_entity::{ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionPath};
+    if !crate::probe_enabled("BOI") {
+        return;
+    }
+    let Ok(spec) = std::env::var("BOI_PM") else {
+        return;
+    };
+    let has = |l: usize| {
+        spec.split(',').any(|t| {
+            let mut it = t.split('-');
+            let a = it.next().and_then(|x| x.parse::<usize>().ok());
+            let b = it.next().and_then(|x| x.parse::<usize>().ok());
+            match (a, b) {
+                (Some(a), Some(b)) => l >= a && l <= b,
+                (Some(a), None) => l == a,
+                _ => false,
+            }
+        })
+    };
+    fn leaves<'a>(c: &'a ExtrusionEntityCollection, out: &mut Vec<(i32, &'a ExtrusionPath)>) {
+        for e in &c.entities {
+            match e {
+                ExtrusionEntityType::Collection(cc) => leaves(cc, out),
+                ExtrusionEntityType::Loop(lp) => out.extend(lp.paths.iter().map(|p| (1, p))),
+                ExtrusionEntityType::MultiPath(mp) => out.extend(mp.paths.iter().map(|p| (2, p))),
+                ExtrusionEntityType::Path(p) => out.push((0, p)),
+            }
+        }
+    }
+    let boipm = std::env::var("BOIPM").ok();
+    let dump = |pre: &str, ri: usize, l: usize, c: &ExtrusionEntityCollection| {
+        let mut v = Vec::new();
+        leaves(c, &mut v);
+        let (mut np, mut sx, mut sy, mut sw) = (0usize, 0i64, 0i64, 0f64);
+        for (_, p) in &v {
+            for q in p.polyline.points() {
+                np += 1;
+                sx += q.x;
+                sy += q.y;
+            }
+            sw += (p.width as f32) as f64;
+        }
+        eprintln!("BOI {}_r{} L={} n={} np={} sx={} sy={} x={:.9}", pre, ri, l, v.len(), np, sx, sy, sw);
+        for (k, (kind, p)) in v.iter().enumerate() {
+            let (mut n2, mut x2, mut y2) = (0usize, 0i64, 0i64);
+            for q in p.polyline.points() {
+                n2 += 1;
+                x2 += q.x;
+                y2 += q.y;
+            }
+            eprintln!(
+                "BOI {}p_r{}_{} L={} n={} np={} sx={} sy={} x={:.9}",
+                pre, ri, k, l, kind, n2, x2, y2, (p.width as f32) as f64
+            );
+            if boipm.as_deref() == Some(format!("{}_r{}_{}:{}", pre, ri, k, l).as_str()) {
+                for q in p.polyline.points() {
+                    eprintln!("BOIP {} {} {}", k, q.x, q.y);
+                }
+            }
+        }
+    };
+    for (l, layer) in layers.iter().enumerate() {
+        if !has(l) {
+            continue;
+        }
+        for (ri, r) in layer.regions().iter().enumerate() {
+            dump("pm", ri, l, &r.perimeters);
+            dump("tf", ri, l, &r.thin_fills);
+            let (mut n, mut np, mut sx, mut sy) = (0usize, 0usize, 0i64, 0i64);
+            for ex in &r.fill_expolygons {
+                for p in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+                    n += 1;
+                    for q in p.points() {
+                        np += 1;
+                        sx += q.x;
+                        sy += q.y;
+                    }
+                }
+            }
+            eprintln!("BOI pmfx_r{} L={} n={} np={} sx={} sy={} x={:.9}", ri, l, n, np, sx, sy, 0.0f64);
+        }
+    }
 }
 
 /// R941 probe (BOI with BOI_ST=a-b, diagnostic only): fill_surfaces and slices per region and

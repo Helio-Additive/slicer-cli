@@ -165,6 +165,12 @@ pub struct Print {
     /// Stored as sorted key-value pairs from project_settings.config.
     pub raw_settings: Option<serde_json::Value>,
 
+    /// The job's settings as `print.full_print_config()` holds them in the pin, before the port's
+    /// filament-override patch of the machine keys (app_slice.rs `patch_filament_overrides_in_json`):
+    /// what the CONFIG_BLOCK writes (GCode.cpp:2686-2720). `None`: the block writes `raw_settings`.
+    /// Gate CONFIG_BLOCK_UNPATCHED_SETTINGS (set by app_slice.rs).
+    pub config_block_settings: Option<serde_json::Value>,
+
     /// G-code export origin (mm), subtracted from absolute XY at export
     /// (C++ GCode::m_origin). FRAME_PAIR: = the slice center_offset applied by
     /// `TriangleMesh::slice_center_xy`, so the centered-slice frame is re-placed
@@ -434,6 +440,7 @@ impl Print {
             brim: ExtrusionEntityCollection::new(),
             min_skirt_length: 0.0,
             raw_settings: None,
+            config_block_settings: None,
             gcode_origin: (0.0, 0.0),
             wipe_tower_results: Vec::new(),
             wipe_tower_bbx: None,
@@ -2012,11 +2019,12 @@ impl Print {
         let (estimated_print_time_seconds, prepare_time_seconds, processor) = {
             use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
 
-            let provisional_header = GCodeHeader::with_raw_settings(
+            let mut provisional_header = GCodeHeader::with_raw_settings(
                 stats.clone(),
                 self.config.clone(),
                 raw_settings_with_bbox.clone(),
             );
+            provisional_header.config_block_settings = self.config_block_settings.clone();
             let mut full_gcode = provisional_header.generate_complete_header();
             full_gcode.push_str(&String::from_utf8_lossy(&body));
 
@@ -2038,13 +2046,14 @@ impl Print {
         };
 
         // Build the final header with the accel-aware estimated print time.
-        let header = GCodeHeader::with_estimated_times(
+        let mut header = GCodeHeader::with_estimated_times(
             stats,
             self.config.clone(),
             raw_settings_with_bbox,
             estimated_print_time_seconds,
             prepare_time_seconds,
         );
+        header.config_block_settings = self.config_block_settings.clone();
         let header_str = header.generate_complete_header();
 
         // Write to file: final header first, then the assembled body.

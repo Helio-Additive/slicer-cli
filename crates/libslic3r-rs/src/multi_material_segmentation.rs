@@ -1241,6 +1241,13 @@ fn post_process_painted_lines(
                                         .length_squared())))))
     };
     // MultiMaterialSegmentation.cpp:704 — std::sort with the strict-weak-order comparator.
+    // R942 (gate MMS_PAINTED_LIBCXX_SORT): std::sort is libc++'s introsort, NOT stable;
+    // painted lines that tie on (contour, line, start distance, length) — the same contour
+    // segment painted by two colors, or duplicates — come out in libc++'s order, which then
+    // decides which one filter_painted_lines keeps. Off: the earlier stable sort_by.
+    if crate::faithful_gate("MMS_PAINTED_LIBCXX_SORT") {
+        crate::clipper::libcxx_sort(&mut painted_lines, |a, b| comp(a, b));
+    } else {
     painted_lines.sort_by(|a, b| {
         if comp(a, b) {
             std::cmp::Ordering::Less
@@ -1250,6 +1257,7 @@ fn post_process_painted_lines(
             std::cmp::Ordering::Equal
         }
     });
+    }
 
     // MultiMaterialSegmentation.cpp:706-716
     let mut filtered_painted_lines: Vec<Vec<PaintedLine>> = vec![Vec::new(); contours.len()];
@@ -4208,6 +4216,16 @@ pub fn multi_material_segmentation_by_painting_tier1(
     } else {
         Vec::new()
     };
+    // R942 probe MMSDUMP (diagnostic only): negative-volume slices and the filled input.
+    if crate::probe_enabled("MMSDUMP") && has_negative_volumes {
+        let ns = negative_slices.unwrap();
+        for i in 0..num_layers {
+            if let Some(n) = ns.get(i) {
+                mmsdump_line("neg", i, 0, n);
+            }
+            mmsdump_line("fill", i, 0, &input_expolygons_filled[i]);
+        }
+    }
     // cpp:2257 — const &input_for_edge_grid = has_negative_volumes ? filled : input.
     let input_for_edge_grid: &[ExPolygons] = if has_negative_volumes {
         &input_expolygons_filled
@@ -4283,8 +4301,16 @@ pub fn multi_material_segmentation_by_painting_tier1(
             facet.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
 
             // cpp:2256-2261 — first/last layer via upper_bound over slice_z, then `--last_layer`.
-            let first_layer = upper_bound_f64(layer_slice_zs, min_z as f64 - EPSILON);
-            let last_ub = upper_bound_f64(layer_slice_zs, max_z as f64 + EPSILON);
+            // R942 (gate MMS_LAYER_RANGE_F32, faithful): the pin searches with
+            // `float(min_z - EPSILON)` / `float(max_z + EPSILON)` (MMS.cpp:2328-2331): the
+            // double difference rounded to float, then compared with the double slice_z.
+            let (first_key, last_key) = if crate::faithful_gate("MMS_LAYER_RANGE_F32") {
+                (((min_z as f64 - EPSILON) as f32) as f64, ((max_z as f64 + EPSILON) as f32) as f64)
+            } else {
+                (min_z as f64 - EPSILON, max_z as f64 + EPSILON)
+            };
+            let first_layer = upper_bound_f64(layer_slice_zs, first_key);
+            let last_ub = upper_bound_f64(layer_slice_zs, last_key);
             if last_ub == 0 {
                 continue;
             }
@@ -4357,7 +4383,21 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 };
 
                 // cpp:2289-2291
-                let mut line_to_test = Line::new(
+                // R942 (gate MMS_PAINT_LRINT, faithful): `Point(scale_(x), scale_(y))` is the
+                // Point(double, double) constructor (Point.hpp:178): lrint (ties to even) of
+                // `x / SCALING_FACTOR` (libslic3r.h:58, a division by 1e-5). The arms below
+                // (crate::scale = round(x * 1e5), or the truncation) differ by an ulp / a unit.
+                let pin_lrint = crate::faithful_gate("MMS_PAINT_LRINT");
+                let lrint_pt = |v: Vec3f| -> Point {
+                    Point::new(
+                        (v.x as f64 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as Coord,
+                        (v.y as f64 / crate::libslic3r::SCALING_FACTOR).round_ties_even() as Coord,
+                    )
+                };
+                let mut line_to_test = if pin_lrint {
+                    Line::new(lrint_pt(line_start_f), lrint_pt(line_end_f))
+                } else {
+                    Line::new(
                     // R784 (gate MMS_PAINT_TRUNC): native `Point(scale_(f32))` runs the
                     // implicit double->coord_t conversion = TRUNCATION toward zero;
                     // crate::scale ROUNDS. ±1-unit endpoint flips on ~88% of painted
@@ -4378,7 +4418,8 @@ pub fn multi_material_segmentation_by_painting_tier1(
                     } else {
                         Point::new(scale_(line_end_f.x as f64), scale_(line_end_f.y as f64))
                     },
-                );
+                    )
+                };
                 // cpp:2291 — line_to_test.translate(-center_offset). When the slices are
                 // centered, `center_offset` is the scaled bbox-XY center that centers the
                 // painted lines onto them; `(0,0)` (mesh pre-placed) leaves them unmoved.
@@ -4534,7 +4575,26 @@ pub fn multi_material_segmentation_by_painting_tier1(
                         eprintln!("PPRAW ci={} li={} {},{} {},{} c={}", pl.contour_idx, pl.line_idx, pl.projected_line.a.x, pl.projected_line.a.y, pl.projected_line.b.x, pl.projected_line.b.y, pl.color);
                     }
                 }
+                // R942 probe MMSDUMP (diagnostic only): raw painted lines per color.
+                if crate::probe_enabled("MMSDUMP") {
+                    let v: Vec<(i32, Line)> = taken.iter().map(|p| (p.color, p.projected_line)).collect();
+                    mmsdump_colored_lines("pl", layer_idx, &v);
+                }
                 let post_processed = post_process_painted_lines(contours, taken);
+                if crate::probe_enabled("MMSDUMP") {
+                    let v: Vec<(i32, Line)> = post_processed.iter().flat_map(|c| c.iter()).map(|p| (p.color, p.projected_line)).collect();
+                    mmsdump_colored_lines("ppl", layer_idx, &v);
+                    // R942: full lines of one layer (MMSL_LAYER), as the pin twin prints them.
+                    if std::env::var("MMSL_LAYER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(layer_idx) {
+                        let mut o = String::new();
+                        for (ci, c) in post_processed.iter().enumerate() {
+                            for (k, p) in c.iter().enumerate() {
+                                o += &format!("MMSL ppl {} {} {} {} {} {} {} c={} li={}\n", layer_idx, ci, k, p.projected_line.a.x, p.projected_line.a.y, p.projected_line.b.x, p.projected_line.b.y, p.color, p.line_idx);
+                            }
+                        }
+                        eprint!("{o}");
+                    }
+                }
                 if ppd {
                     for (ci, v) in post_processed.iter().enumerate() {
                         for pl in v {
@@ -4557,6 +4617,19 @@ pub fn multi_material_segmentation_by_painting_tier1(
                 }
                 // cpp:2341
                 let color_poly = colorize_contours(contours, &post_processed);
+                if crate::probe_enabled("MMSDUMP") {
+                    let v: Vec<(i32, Line)> = color_poly.iter().flat_map(|c| c.iter()).map(|cl| (cl.color, cl.line)).collect();
+                    mmsdump_colored_lines("cp", layer_idx, &v);
+                    if std::env::var("MMSL_LAYER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(layer_idx) {
+                        let mut o = String::new();
+                        for (ci, c) in color_poly.iter().enumerate() {
+                            for (k, cl) in c.iter().enumerate() {
+                                o += &format!("MMSL cp {} {} {} {} {} {} {} c={}\n", layer_idx, ci, k, cl.line.a.x, cl.line.a.y, cl.line.b.x, cl.line.b.y, cl.color);
+                            }
+                        }
+                        eprint!("{o}");
+                    }
+                }
                 if let Ok(w) = std::env::var("CPDUMP_LID") {
                     if w.parse::<usize>().ok() == Some(layer_idx) {
                         use std::fmt::Write as _;
@@ -4683,6 +4756,15 @@ pub fn multi_material_segmentation_by_painting_tier1(
         }
     }
 
+    // R942 probe MMSDUMP (diagnostic only): the side segmentation per (layer, color).
+    if crate::probe_enabled("MMSDUMP") {
+        for (layer_idx, per) in segmented_regions.iter().enumerate() {
+            for (c, ex) in per.iter().enumerate() {
+                mmsdump_line("side", layer_idx, c, ex);
+            }
+        }
+    }
+
     // R770 — clip segmented regions back to the actual (holed) geometry
     // (cpp:2369-2383): the segmentation ran on filled geometry, subtract the
     // negative-volume holes back out.
@@ -4765,6 +4847,22 @@ pub fn multi_material_segmentation_by_painting_tier1(
         }
     }
     merged
+}
+
+// R942 probe MMSDUMP (diagnostic only): lines grouped by color, each line a two-point
+// contour, in their order; one MMSDUMP line per color (the pin twin writes the same).
+fn mmsdump_colored_lines(stage: &str, layer_idx: usize, lines: &[(i32, Line)]) {
+    let mut colors: Vec<i32> = lines.iter().map(|l| l.0).collect();
+    colors.sort();
+    colors.dedup();
+    for c in colors {
+        let ps: Vec<Polygon> = lines
+            .iter()
+            .filter(|l| l.0 == c)
+            .map(|l| Polygon::from_points(vec![l.1.a, l.1.b]))
+            .collect();
+        mmsdump_polys(stage, layer_idx, c.max(0) as usize, &ps);
+    }
 }
 
 // R940 probe MMSDUMP line of Polygons: every polygon as a contour without holes.
