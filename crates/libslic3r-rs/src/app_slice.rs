@@ -97,6 +97,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
     normalize_legacy_gcode_tokens(&mut settings_value);
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
+    engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
@@ -632,6 +633,7 @@ pub fn slice_3mf_to_gcode(
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
     normalize_legacy_gcode_tokens(&mut settings_value);
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
+    engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
@@ -2144,6 +2146,85 @@ fn config_block_settings_before_patch(settings: &serde_json::Value) -> Option<se
         Some(settings.clone())
     } else {
         None
+    }
+}
+
+/// The values the pin's engine reads: slicer_cli's front end pads, clamps and aligns its config
+/// before `Print::apply` (main.cpp:9807-9935 pad, 9944-9950 clamp, 11128 align), and
+/// `Print::apply` reduces the variant values to the printer's extruders before the print's
+/// configs are set from them (PrintApply.cpp:1437-1453 printer/print options, 1455-1483 the
+/// filament options). The same steps as `GCode::config_block_pin` (g_code.rs, the verified
+/// helpers `front_end_*` / `print_apply_*`), applied to the settings the Rust engine reads; a key
+/// whose value a step changed is written back in the settings' own form (an array of the
+/// elements for a vector option, a string otherwise). One faithful gate per step:
+/// ENGINE_FRONT_END_PAD_PIN, ENGINE_FRONT_END_CLAMP_PIN, ENGINE_FRONT_END_ALIGN_PIN,
+/// ENGINE_PRINT_APPLY_EXTRUDERS_PIN, ENGINE_PRINT_APPLY_FILAMENTS_PIN (the last needs the one
+/// before it, as PrintApply.cpp:1455 follows 1453).
+///
+/// FIDELITY-NOTE: `front_end_set_default_temps` (main.cpp:1355-1366) is not applied: it writes
+/// removed options the pin's engine has no definition for. Runs before
+/// `patch_filament_overrides_in_json`, whose overrides the pin applies on the reduced config.
+fn engine_settings_as_the_pin_reads(settings: &mut serde_json::Value) {
+    use crate::config::{ConfigBase, ConfigOptionResolver};
+    use crate::g_code::{
+        front_end_align_per_filament_config_vectors, front_end_clamp_master_extruder_id,
+        front_end_pad_vectors_to_extruder_count, front_end_project_filament_count,
+        full_print_config_from_settings, print_apply_update_filament_values_to_printer_extruders,
+        print_apply_update_values_to_printer_extruders,
+    };
+    let pad = crate::faithful_gate("ENGINE_FRONT_END_PAD_PIN");
+    let clamp = crate::faithful_gate("ENGINE_FRONT_END_CLAMP_PIN");
+    let align = crate::faithful_gate("ENGINE_FRONT_END_ALIGN_PIN");
+    let extruders = crate::faithful_gate("ENGINE_PRINT_APPLY_EXTRUDERS_PIN");
+    let filaments = extruders && crate::faithful_gate("ENGINE_PRINT_APPLY_FILAMENTS_PIN");
+    if !(pad || clamp || align || extruders) {
+        return;
+    }
+    let loaded = full_print_config_from_settings(settings);
+    let mut cfg = loaded.clone();
+    // main.cpp:9678: the roster, read before the padding.
+    let project_filaments = front_end_project_filament_count(&cfg.base);
+    if pad {
+        front_end_pad_vectors_to_extruder_count(&mut cfg.base);
+    }
+    if clamp {
+        front_end_clamp_master_extruder_id(&mut cfg.base);
+    }
+    if align {
+        front_end_align_per_filament_config_vectors(&mut cfg.base, project_filaments);
+    }
+    if extruders {
+        print_apply_update_values_to_printer_extruders(&mut cfg);
+        // PrintApply.cpp:1453 `m_ori_full_print_config = new_full_config;`
+        let ori = cfg.clone();
+        if filaments {
+            print_apply_update_filament_values_to_printer_extruders(&mut cfg, &ori);
+        }
+    }
+    let Some(map) = settings.as_object_mut() else {
+        return;
+    };
+    for key in ConfigBase::keys(&cfg) {
+        let after = ConfigBase::opt_serialize(&cfg, &key).ok();
+        if after.is_none() || after == ConfigBase::opt_serialize(&loaded, &key).ok() {
+            continue;
+        }
+        let Some(opt) = ConfigOptionResolver::optptr(&cfg, &key) else {
+            continue;
+        };
+        let was_string = matches!(map.get(&key), Some(serde_json::Value::String(_)));
+        let elems: Option<Vec<String>> = opt.as_vector_base().and_then(|v| v.vserialize().ok());
+        let value = match elems {
+            Some(elems) if !was_string => {
+                serde_json::Value::Array(elems.into_iter().map(serde_json::Value::String).collect())
+            }
+            _ => serde_json::Value::String(after.unwrap_or_default()),
+        };
+        // Diagnostic only (ENGINE_SETTINGS_PROBE=1): the keys the steps changed.
+        if crate::probe_enabled("ENGINE_SETTINGS_PROBE") {
+            eprintln!("ENGINE_SETTINGS key={} before={:?} after={}", key, map.get(&key), value);
+        }
+        map.insert(key, value);
     }
 }
 

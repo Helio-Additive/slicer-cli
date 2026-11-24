@@ -3051,6 +3051,86 @@ impl Print {
                 layer_print_z.push(layer.print_z);
             }
 
+            // H2D_GROUP_ORDER (on): a printer with more than one extruder and one
+            // nozzle per extruder (H2D), without dynamic regrouping: the filaments
+            // are grouped onto the extruders (ToolOrdering.cpp:3536-3543,
+            // get_recommended_filament_maps :2511-2690) and each extruder's group is
+            // ordered on its own flush matrix, the groups concatenated by the last
+            // group printed (execute_filament_ordering :2844-2873,
+            // ToolOrderUtils.cpp:1120-1297). =0, or on one extruder, the single-matrix
+            // order below. LayerTools' extruders are sorted (sort_remove_duplicates)
+            // except layer 0, which carries the first-layer order.
+            let mut multi_extruder_ordered = false;
+            if crate::faithful_gate("H2D_GROUP_ORDER") && num_filaments > 1 {
+                use crate::gcode::wipe_tower::{cfg_enum, cfg_floats, cfg_ints};
+                let live_cfg = self
+                    .full_print_config
+                    .clone()
+                    .or_else(|| self.raw_settings.as_ref().map(full_print_config_from_settings));
+                if let Some(cfg) = live_cfg {
+                    let multi_extruder = cfg_floats(&cfg, "nozzle_diameter").len() > 1
+                        && !cfg_ints(&cfg, "extruder_max_nozzle_count").iter().any(|&v| v > 1)
+                        && !cfg.opt_bool("enable_filament_dynamic_map")
+                        && cfg_enum(&cfg, "print_sequence") == 0;
+                    if multi_extruder {
+                        let layer_filaments: Vec<Vec<u32>> = layer_seqs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (_, _, t))| {
+                                let mut v: Vec<u32> = t.iter().map(|&x| x as u32).collect();
+                                if i > 0 || !flo_gate {
+                                    v.sort_unstable();
+                                    v.dedup();
+                                }
+                                v
+                            })
+                            .collect();
+                        if let Some((seqs, maps)) =
+                            crate::gcode::tool_ordering::reorder_extruders_for_minimum_flush_volume_multi_extruder(
+                                &cfg,
+                                &layer_filaments,
+                                !flo_gate,
+                            )
+                        {
+                            if crate::probe_enabled("H2DPROBE") {
+                                eprintln!("H2DPROBE maps={maps:?} first={:?}", &seqs[..seqs.len().min(6)]);
+                                // diagnostic only: the inputs of the ordering (configuration and
+                                // layer filaments) for tests/tool_ordering_h2d_order.rs
+                                if let Ok(path) = std::env::var("H2DPROBE_DUMP") {
+                                    use crate::config::ConfigBase;
+                                    let mut s = String::new();
+                                    for k in cfg.keys() {
+                                        if let Ok(v) = cfg.opt_serialize(&k) {
+                                            if !v.contains('\n') && !v.contains('\t') {
+                                                s.push_str(&format!("C\t{k}\t{v}\n"));
+                                            }
+                                        }
+                                    }
+                                    for (i, l) in layer_filaments.iter().enumerate() {
+                                        let v: Vec<String> = l.iter().map(|x| x.to_string()).collect();
+                                        s.push_str(&format!("L\t{i}\t{}\n", v.join(" ")));
+                                    }
+                                    let _ = std::fs::write(path, s);
+                                }
+                            }
+                            let ok = seqs.len() == layer_filaments.len()
+                                && seqs.iter().zip(&layer_filaments).all(|(o, c)| {
+                                    let (mut a, mut b) = (o.clone(), c.clone());
+                                    a.sort_unstable();
+                                    b.sort_unstable();
+                                    a == b
+                                });
+                            if ok {
+                                for (slot, seq) in layer_seqs.iter_mut().zip(&seqs) {
+                                    slot.2 = seq.iter().map(|&x| x as usize).collect();
+                                }
+                                multi_extruder_ordered = true;
+                            }
+                        }
+                    }
+                }
+            }
+
             // R439: reorder each layer's filament sequence for MINIMUM FLUSH —
             // the port of C++ `ToolOrdering::reorder_extruders_for_minimum_flush_volume`
             // (ToolOrdering.cpp:2334). Our fixed first-appearance order repeats the
@@ -3066,7 +3146,7 @@ impl Print {
             // R445: minimum-flush ordering is now DEFAULT-ON (opt out with
             // FLUSH_OPT=0). Validated in R439: tool changes 2726 -> 2723 (C++
             // 2723), per-change flush 166.67 -> 124.37 E (C++ 120.14).
-            if crate::faithful_gate("FLUSH_OPT") && num_filaments > 1 {
+            if !multi_extruder_ordered && crate::faithful_gate("FLUSH_OPT") && num_filaments > 1 {
                 use crate::gcode::tool_order_utils as tou;
                 let n = num_filaments;
                 let flush = &self.config.flush_volumes_matrix;
@@ -8759,13 +8839,14 @@ pub mod faithful {
         }
 
         /// Print.cpp:3241-3320 `void Print::update_filament_maps_to_config(std::vector<int> f_maps,
-        /// std::vector<int> f_volume_maps, std::vector<int> f_nozzle_maps)`, the part that writes the
-        /// maps (3243-3264).
+        /// std::vector<int> f_volume_maps, std::vector<int> f_nozzle_maps)`: the maps (3243-3264),
+        /// `filament_map_2` and the volume map (3266-3285), the per-filament variant values of the
+        /// full configuration (3287-3293), the filament overrides of the retraction keys (3295-3306),
+        /// and the filament keys / overrides applied to `m_config` (3308-3316).
         ///
-        /// FIDELITY-NOTE: the rest (3266-3318) re-derives the per-filament variant values of the full
-        /// configuration (`update_values_to_printer_extruders_for_multiple_filaments`,
-        /// `compute_filament_override_value`), which is left out; `filament_map_2` and the volume
-        /// map are set as 3271-3285 sets them.
+        /// FIDELITY-NOTE: `m_config` is the static `PrintConfig` in the pin, so its `apply_only` /
+        /// `apply` skip keys the class does not define; here only keys `m_config` holds are applied.
+        /// The log lines are not written.
         pub fn update_filament_maps_to_config(&mut self, f_maps: Vec<i32>, f_volume_maps: Vec<i32>, f_nozzle_maps: Vec<i32>) {
             use crate::config::ConfigOptionInts;
             let set_ints = |cfg: &mut DynamicPrintConfig, key: &str, v: Vec<i32>| {
@@ -8801,29 +8882,103 @@ pub mod faithful {
             }
 
             {
-                //filament_map_2
+                // Print.cpp:3266-3270
+                let mut extruder_count: i32 = 1;
+                let support_multi = self.base.base.m_ori_full_print_config.support_different_extruders(&mut extruder_count);
+                let mut nozzle_volume_types: Vec<Vec<NozzleVolumeType>> = Vec::new();
+                let extruder_volume_type_count = self
+                    .base
+                    .base
+                    .m_ori_full_print_config
+                    .get_extruder_nozzle_volume_count(extruder_count, &mut nozzle_volume_types);
+
+                //filament_map_2 (Print.cpp:3272-3285)
+                let mut filament_map_2: Vec<i32> = f_maps.clone();
                 let ori = &self.base.base.m_ori_full_print_config;
                 let extruder_type = if ori.has("extruder_type") { cfg_ints(ori, "extruder_type") } else { vec![0] };
                 let nozzle_volume_type = if ori.has("nozzle_volume_type") { cfg_ints(ori, "nozzle_volume_type") } else { vec![0] };
                 let mut volume_map = cfg_ints(&self.m_config, "filament_volume_map");
                 let mut ori_volume_map = if ori.has("filament_volume_map") { cfg_ints(ori, "filament_volume_map") } else { Vec::new() };
                 for index in 0..f_maps.len() {
-                    let nvt = get_at(&nozzle_volume_type, (f_maps[index] - 1) as usize);
-                    let _ = get_at(&extruder_type, (f_maps[index] - 1) as usize);
+                    let e_type = ExtruderType::from_i32(get_at(&extruder_type, (f_maps[index] - 1) as usize));
+                    let mut nvt = NozzleVolumeType::from_i32(get_at(&nozzle_volume_type, (f_maps[index] - 1) as usize));
                     if f_volume_maps.is_empty() {
                         if index < volume_map.len() {
-                            volume_map[index] = nvt;
+                            volume_map[index] = nvt as i32;
                         }
                         if index < ori_volume_map.len() {
-                            ori_volume_map[index] = nvt;
+                            ori_volume_map[index] = nvt as i32;
                         }
+                    } else if extruder_volume_type_count > extruder_count && volume_map.len() > index {
+                        nvt = NozzleVolumeType::from_i32(volume_map[index]);
                     }
+                    filament_map_2[index] =
+                        ori.get_index_for_extruder(f_maps[index], "print_extruder_id", e_type, nvt, "print_extruder_variant", 1);
                 }
                 set_ints(&mut self.m_config, "filament_volume_map", volume_map);
                 if self.base.base.m_ori_full_print_config.has("filament_volume_map") {
                     set_ints(&mut self.base.base.m_ori_full_print_config, "filament_volume_map", ori_volume_map);
                 }
+                // Print.cpp:3286
                 self.base.base.m_full_print_config = self.base.base.m_ori_full_print_config.clone();
+
+                // Print.cpp:3288-3293
+                let mut filament_keys: BTreeSet<String> =
+                    (*crate::print_config::config_def::filament_options_with_variant).clone();
+                filament_keys.insert("filament_self_index".to_string());
+                if extruder_count > 1 || support_multi {
+                    let _ = self.base.base.m_full_print_config.update_values_to_printer_extruders_for_multiple_filaments(
+                        None,
+                        extruder_count,
+                        extruder_volume_type_count,
+                        &filament_keys,
+                        "filament_self_index",
+                        "filament_extruder_variant",
+                    );
+                }
+
+                // Print.cpp:3295-3306
+                let extruder_retract_keys =
+                    crate::print_config::config_def::print_config_def().extruder_retract_keys().clone();
+                let filament_prefix = "filament_";
+                let mut print_diff: Vec<String> = Vec::new();
+                let mut filament_overrides = DynamicPrintConfig::default();
+                for opt_key in &extruder_retract_keys {
+                    let full = &self.base.base.m_full_print_config;
+                    let opt_new_filament = ConfigOptionResolver::option(full, &format!("{}{}", filament_prefix, opt_key));
+                    let opt_new_machine = ConfigOptionResolver::option(full, opt_key);
+                    let opt_old_machine = ConfigOptionResolver::option(&self.m_config, opt_key);
+                    if let (Some(opt_new_filament), Some(opt_new_machine), Some(opt_old_machine)) =
+                        (opt_new_filament, opt_new_machine, opt_old_machine)
+                    {
+                        let _ = crate::print_config::config_def::compute_filament_override_value(
+                            opt_key,
+                            opt_old_machine,
+                            opt_new_machine,
+                            opt_new_filament,
+                            full,
+                            &mut print_diff,
+                            &mut filament_overrides,
+                            &mut filament_map_2,
+                        );
+                    }
+                }
+                // `m_config.filament_map_2.values` (3272, 3284), passed by reference to 3304.
+                set_ints(&mut self.m_config, "filament_map_2", filament_map_2);
+
+                // Print.cpp:3308-3312
+                if extruder_count > 1 || support_multi {
+                    let mut keys: Vec<String> = crate::print_config::config_def::filament_options_with_variant.iter().cloned().collect();
+                    keys.push("filament_self_index".to_string());
+                    let keys: Vec<String> = keys.into_iter().filter(|k| self.m_config.has(k)).collect();
+                    let _ = self.m_config.apply_only(&self.base.base.m_full_print_config, &keys, true);
+                }
+                // Print.cpp:3313-3316
+                if !print_diff.is_empty() {
+                    let _ = self.base.base.m_placeholder_parser.apply_config(&filament_overrides);
+                    let keys: Vec<String> = filament_overrides.keys().into_iter().filter(|k| self.m_config.has(k)).collect();
+                    let _ = self.m_config.apply_only(&filament_overrides, &keys, true);
+                }
             }
             self.update_filament_self_index_cache();
             self.m_has_auto_filament_map_result = true;

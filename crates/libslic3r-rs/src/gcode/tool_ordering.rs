@@ -7683,3 +7683,189 @@ mod tests {
         // Partitions propagated from above
     }
 }
+
+/// The `Print` the live export hands the filament grouping of a printer with more than one
+/// extruder (ToolOrdering.cpp:3510-3548 -> get_recommended_filament_maps :2511-2690): the full
+/// configuration and the state a print sliced once by the command line has (no filament print
+/// times, no AMS / loaded-filament information, no calibration, not sequential, no dynamic
+/// regrouping). Every filament is `ModelOnly` (Print.cpp:3474-3503 without support filaments).
+///
+/// FIDELITY-NOTE: `get_geometric_unprintable_filaments` returns the empty list (Print::process fills
+/// m_geometric_unprintable_filaments from the objects against extruder_printable_area; not carried
+/// by the live print).
+pub struct LiveGroupingPrint {
+    config: ToolOrderingPrintConfig,
+    ext_info: Vec<Vec<ToolOrderingPrintConfig>>,
+    loaded: Vec<crate::filament_group_utils::NozzleLoadedFilamentInfo>,
+    custom_gcodes: crate::custom_g_code::Info,
+    group: std::cell::RefCell<Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>>,
+}
+
+impl LiveGroupingPrint {
+    pub fn new(config: ToolOrderingPrintConfig) -> Self {
+        LiveGroupingPrint {
+            config,
+            ext_info: Vec::new(),
+            loaded: Vec::new(),
+            custom_gcodes: crate::custom_g_code::Info::default(),
+            group: std::cell::RefCell::new(None),
+        }
+    }
+}
+
+impl ToolOrderingPrint for LiveGroupingPrint {
+    fn config(&self) -> &ToolOrderingPrintConfig {
+        &self.config
+    }
+    fn full_print_config(&self) -> &ToolOrderingPrintConfig {
+        &self.config
+    }
+    fn uses_multiple_nozzle_diameters(&self) -> bool {
+        false
+    }
+    fn object_extruders(&self) -> Vec<u32> {
+        Vec::new()
+    }
+    fn curr_plate_custom_gcodes(&self) -> &crate::custom_g_code::Info {
+        &self.custom_gcodes
+    }
+    fn get_layered_nozzle_group_result(&self) -> Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>> {
+        self.group.borrow().clone()
+    }
+    fn get_geometric_unprintable_filaments(&self) -> Vec<BTreeSet<i32>> {
+        Vec::new()
+    }
+    fn get_physical_unprintable_filaments(&self, used_filaments: &[u32]) -> Vec<BTreeSet<i32>> {
+        // Print.cpp:3504-3535
+        let extruder_num = cfg_floats(&self.config, "nozzle_diameter").len();
+        let mut physical_unprintables: Vec<BTreeSet<i32>> = vec![BTreeSet::new(); extruder_num];
+        if extruder_num < 2 {
+            return physical_unprintables;
+        }
+        let printable = cfg_ints(&self.config, "filament_printable");
+        for &f in used_filaments {
+            let Some(&status) = printable.get(f as usize) else { continue };
+            if let Some(i) = (0..extruder_num as i32).find(|&i| (status >> i) & 1 == 0) {
+                physical_unprintables[i as usize].insert(f as i32);
+            }
+        }
+        physical_unprintables
+    }
+    fn get_filament_unprintable_flow(&self, used_filaments: &[u32]) -> BTreeMap<i32, BTreeSet<crate::extruder::NozzleVolumeType>> {
+        // Print.cpp:3537-3566
+        use crate::extruder::NozzleVolumeType;
+        use crate::print_config::convert_to_nvt_type;
+        let c = &self.config;
+        let extruder_variant_list = cfg_strings(c, "printer_extruder_variant");
+        let filament_variant_list = cfg_strings(c, "filament_extruder_variant");
+        let filament_self_index: Vec<i32> =
+            if !crate::config::ConfigOptionResolver::has(c, "filament_self_index") { vec![1; filament_variant_list.len()] } else { cfg_ints(c, "filament_self_index") };
+        let mut ret: BTreeMap<i32, BTreeSet<NozzleVolumeType>> = BTreeMap::new();
+        let mut filament_variant_map: BTreeMap<i32, BTreeSet<NozzleVolumeType>> = BTreeMap::new();
+        for i in 0..filament_variant_list.len() {
+            let volume = convert_to_nvt_type(&filament_variant_list[i]);
+            if volume != NozzleVolumeType::NvtHybrid {
+                filament_variant_map.entry(filament_self_index.get(i).copied().unwrap_or(1)).or_default().insert(volume);
+            }
+        }
+        for (first, volumes) in &filament_variant_map {
+            let fil_idx = first - 1;
+            if !used_filaments.iter().any(|&f| f as i32 == fil_idx) {
+                continue;
+            }
+            for v in &extruder_variant_list {
+                let exd_volume = convert_to_nvt_type(v);
+                if !volumes.contains(&exd_volume) && exd_volume != NozzleVolumeType::NvtHybrid {
+                    ret.entry(fil_idx).or_default().insert(exd_volume);
+                }
+            }
+        }
+        ret
+    }
+    fn calib_params(&self) -> ToolOrderingCalibParams {
+        ToolOrderingCalibParams::default()
+    }
+    fn get_extruder_filament_info(&self) -> &[Vec<ToolOrderingPrintConfig>] {
+        &self.ext_info
+    }
+    fn get_filament_usage_type(&self) -> Vec<crate::filament_group_utils::FilamentUsageType> {
+        // Print.cpp:3474-3503: no object has a support filament.
+        vec![crate::filament_group_utils::FilamentUsageType::ModelOnly; cfg_strings(&self.config, "filament_type").len()]
+    }
+    fn get_filament_print_time(
+        &self,
+    ) -> crate::multi_nozzle_utils::UnorderedMapInt<crate::multi_nozzle_utils::UnorderedMapInt<f64>> {
+        Default::default()
+    }
+    fn get_nozzle_loaded_filament_info(&self) -> &[crate::filament_group_utils::NozzleLoadedFilamentInfo] {
+        &self.loaded
+    }
+    fn is_dynamic_group_reorder(&self) -> bool {
+        false
+    }
+    fn is_sequential_print(&self) -> bool {
+        false
+    }
+    fn resolve_manual_nozzle_map(&self, _used_filaments: &[u32]) -> Result<(), crate::exception::RuntimeError> {
+        // Print.cpp:3322-3345 returns at once unless the mode is fmmNozzleManual.
+        Ok(())
+    }
+    fn set_nozzle_group_result(&self, result: std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
+        *self.group.borrow_mut() = Some(result);
+    }
+    fn update_filament_maps_to_config(&self, _f_maps: Vec<i32>, _f_volume_maps: Vec<i32>, _f_nozzle_maps: Vec<i32>) {}
+    fn update_to_config_by_nozzle_group_result(&self, _result: &crate::multi_nozzle_utils::LayeredNozzleGroupResult) {}
+}
+
+/// ToolOrdering.cpp:3510-3635 `reorder_extruders_for_minimum_flush_volume` for a printer with more
+/// than one extruder and one nozzle per extruder, without dynamic regrouping, printed layer by layer:
+/// Stage 1 prepare_flush_matrices (:2176-2200), Stage 4 get_recommended_filament_maps (:3536-3543),
+/// then execute_filament_ordering (:2844-2873, support_multi_nozzle false) =
+/// reorder_filaments_for_minimum_flush_volume(filament_lists, grouping_result.get_extruder_map(true),
+/// layer_filaments, nozzle_flush_mtx, get_custom_seq, &filament_sequences) with the default (empty)
+/// nozzle_status. `layer_filaments` are the LayerTools' extruders as the ordering finds them (layer
+/// 0 in the first-layer order); `reorder_first_layer` as prepare_ordering_context (:2815-2842).
+/// Returns (sequences, zero-based extruder map) or None when the grouping fails.
+pub fn reorder_extruders_for_minimum_flush_volume_multi_extruder(
+    config: &ToolOrderingPrintConfig,
+    layer_filaments: &[Vec<u32>],
+    reorder_first_layer: bool,
+) -> Option<(Vec<Vec<u32>>, Vec<i32>)> {
+    use crate::print_config::enums::FilamentMapMode;
+    let print = LiveGroupingPrint::new(config.clone());
+    let nozzle_flush_mtx = group_reorder::prepare_flush_matrices(config);
+    // :2789-2812 collect_layer_and_unprintable_data
+    let used_filaments = crate::filament_group::collect_sorted_used_filaments(layer_filaments);
+    let geometric_unprintables = print.get_geometric_unprintable_filaments();
+    let physical_unprintables = print.get_physical_unprintable_filaments(&used_filaments);
+    let filament_unprintable_volumes = print.get_filament_unprintable_flow(&used_filaments);
+    // :2815-2842 prepare_ordering_context
+    let filament_nums = cfg_strings(config, "filament_colour").len();
+    let filament_lists: Vec<u32> = (0..filament_nums as u32).collect();
+    let first_layer_filaments: Vec<u32> = layer_filaments.first().cloned().unwrap_or_default();
+    let get_custom_seq = group_reorder::create_custom_seq_function(config, !reorder_first_layer, &first_layer_filaments);
+    // :3536-3543
+    let grouping_result = ToolOrdering::get_recommended_filament_maps(
+        &print,
+        layer_filaments,
+        FilamentMapMode::from_i32(cfg_int(config, "filament_map_mode")),
+        &physical_unprintables,
+        &geometric_unprintables,
+        &filament_unprintable_volumes,
+        &Default::default(),
+    )
+    .ok()?;
+    let filament_maps = grouping_result.get_extruder_map(true, -1);
+    // :2861-2869
+    let mut filament_sequences: Vec<Vec<u32>> = Vec::new();
+    crate::gcode::tool_order_utils::reorder_filaments_for_minimum_flush_volume(
+        &filament_lists,
+        &filament_maps,
+        layer_filaments,
+        &nozzle_flush_mtx,
+        Some(&*get_custom_seq),
+        Some(&mut filament_sequences),
+        &HashMap::new(),
+    );
+    Some((filament_sequences, filament_maps))
+}

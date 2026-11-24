@@ -9293,8 +9293,9 @@ pub fn front_end_align_per_filament_maps(config: &mut crate::config::DynamicConf
 /// every non-empty per-filament vector shorter than the roster grows with its front value, then
 /// `align_per_filament_maps`, `filament_self_index` and `flush_volumes_vector`.
 ///
-/// FIDELITY-NOTE: the reshape of `flush_volumes_matrix` that follows (main.cpp:1809-1946) is not
-/// ported; applied to the CONFIG_BLOCK copy only.
+/// The reshape of `flush_volumes_matrix` that follows (main.cpp:1809-1946) is
+/// `front_end_reshape_flush_volumes_matrix`, gate GCODE_CONFIG_FRONT_END_FLUSH_RESHAPE_PIN
+/// (faithful).
 pub fn front_end_align_per_filament_config_vectors(
     config: &mut crate::config::DynamicConfig,
     filament_count: usize,
@@ -9350,7 +9351,118 @@ pub fn front_end_align_per_filament_config_vectors(
             extended += 1;
         }
     }
+    if crate::faithful_gate("GCODE_CONFIG_FRONT_END_FLUSH_RESHAPE_PIN") {
+        extended += front_end_reshape_flush_volumes_matrix(config, filament_count);
+    }
     extended != 0
+}
+
+/// slicer_cli main.cpp:1809-1946 (the end of `align_per_filament_config_vectors`): a
+/// `flush_volumes_matrix` shorter than `filament_count * filament_count * nozzle_count` is rebuilt
+/// to that size; the saved pairs are carried over by the shape read from the saved length (one
+/// square block, one block per head, or the largest whole block that divides it, with the
+/// diagonal zeros deciding between the first two), the new pairs are 0 on the diagonal and
+/// `flush_volumes_vector[2i] + flush_volumes_vector[2j+1]` off it. Returns 1 when it rebuilt the
+/// matrix (the `++extended` of main.cpp:1943).
+pub fn front_end_reshape_flush_volumes_matrix(config: &mut crate::config::DynamicConfig, filament_count: usize) -> usize {
+    use crate::config::ConfigOptionFloats;
+    let Some(flush_vector) = config.opt::<ConfigOptionFloats>("flush_volumes_vector").map(|o| o.values.clone()) else {
+        return 0;
+    };
+    // main.cpp:1810-1811
+    let Some(old_values) = config.opt::<ConfigOptionFloats>("flush_volumes_matrix").map(|o| o.values.clone()) else {
+        return 0;
+    };
+    if !(flush_vector.len() >= 2 * filament_count && !old_values.is_empty()) {
+        return 0;
+    }
+    // main.cpp:1816-1819: `option<ConfigOptionFloats>("nozzle_diameter")` (found by type, so the
+    // nullable spelling too: `front_end_nozzle_diameter_count`).
+    let nozzle_count = front_end_nozzle_diameter_count(config).map_or(1, |n| n.max(1));
+    let matrix_target = filament_count * filament_count * nozzle_count;
+    if old_values.len() >= matrix_target {
+        return 0;
+    }
+    // main.cpp:1832-1917
+    let old_filament_count: usize;
+    let mut old_nozzle_count: usize = 1;
+    {
+        let old_size = old_values.len();
+        let exact_square_root = |value: usize, root: &mut usize| -> bool {
+            *root = 1;
+            while *root * *root < value {
+                *root += 1;
+            }
+            *root * *root == value
+        };
+        let mut square_root = 1usize;
+        let whole_is_square = exact_square_root(old_size, &mut square_root);
+        let mut per_head_root = 1usize;
+        let per_head_blocks = nozzle_count > 1
+            && old_size % nozzle_count == 0
+            && exact_square_root(old_size / nozzle_count, &mut per_head_root)
+            && per_head_root > 1;
+        let diagonals_all_zero = |side: usize, blocks: usize| -> bool {
+            for block in 0..blocks {
+                for d in 0..side {
+                    let idx = block * side * side + d * side + d;
+                    if idx >= old_size || old_values[idx] != 0.0 {
+                        return false;
+                    }
+                }
+            }
+            true
+        };
+        if whole_is_square && square_root > 1 && square_root >= filament_count {
+            let per_head_shape = per_head_blocks && diagonals_all_zero(per_head_root, nozzle_count);
+            if per_head_shape && !diagonals_all_zero(square_root, 1) {
+                old_filament_count = per_head_root;
+                old_nozzle_count = nozzle_count;
+            } else {
+                old_filament_count = square_root;
+            }
+        } else if per_head_blocks {
+            old_filament_count = per_head_root;
+            old_nozzle_count = nozzle_count;
+        } else if whole_is_square {
+            old_filament_count = square_root;
+        } else {
+            let mut candidate = 1usize;
+            while (candidate + 1) * (candidate + 1) <= old_size {
+                candidate += 1;
+            }
+            while candidate > 1 {
+                if old_size % (candidate * candidate) == 0 {
+                    break;
+                }
+                candidate -= 1;
+            }
+            old_filament_count = candidate;
+            old_nozzle_count = old_size / (candidate * candidate);
+        }
+    }
+    // main.cpp:1919-1942
+    let old_sub = old_filament_count * old_filament_count;
+    let new_sub = filament_count * filament_count;
+    let mut rebuilt = vec![0.0f64; matrix_target];
+    for i in 0..filament_count {
+        for j in 0..filament_count {
+            for nozzle_id in 0..nozzle_count {
+                let value = if nozzle_id < old_nozzle_count && i < old_filament_count && j < old_filament_count {
+                    old_values[(i * old_filament_count + j) + old_sub * nozzle_id]
+                } else if i == j {
+                    0.0 // a filament never purges into itself
+                } else {
+                    flush_vector[2 * i] + flush_vector[2 * j + 1]
+                };
+                rebuilt[i * filament_count + j + new_sub * nozzle_id] = value;
+            }
+        }
+    }
+    if let Ok(Some(flush_matrix)) = config.opt_mut::<ConfigOptionFloats>("flush_volumes_matrix", false) {
+        flush_matrix.values = rebuilt;
+    }
+    1
 }
 
 impl GCode {

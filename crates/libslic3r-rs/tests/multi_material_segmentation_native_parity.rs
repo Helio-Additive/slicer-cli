@@ -182,7 +182,12 @@ fn painted_lines_native_parity() {
     let (mut bad_pp, mut bad_col, mut n_painted) = (0usize, 0usize, 0usize);
     let (mut bad_seg, mut n_graph, mut n_graph_panic) = (0usize, 0usize, 0usize);
     let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    // Diagnostic: MMS_PAINTED_PANIC_LOC=1 prints where a graph-stage panic happened.
+    std::panic::set_hook(Box::new(|info| {
+        if std::env::var_os("MMS_PAINTED_PANIC_LOC").is_some() {
+            eprintln!("PANIC {}", info);
+        }
+    }));
     for (k, l) in lines.iter().enumerate() {
         let (inp, res) = l.split_once(" => ").expect("=>");
         let (want_pp, rest) = res.split_once(" | ").expect("|");
@@ -310,7 +315,7 @@ fn painted_lines_native_parity() {
     }
     std::panic::set_hook(default_hook);
     eprintln!(
-        "painted lines parity: {} cases, {} painted lines, {} graphs; differ: post_process_painted_lines {}, colorize_contours {}, graph stage {} (+ {} graphs that overflow in Rust, reported, not asserted)",
+        "painted lines parity: {} cases, {} painted lines, {} graphs; differ: post_process_painted_lines {}, colorize_contours {}, graph stage {} (+ {} graphs that panic in Rust)",
         lines.len(),
         n_painted,
         n_graph,
@@ -320,7 +325,107 @@ fn painted_lines_native_parity() {
         n_graph_panic
     );
     // The graph stage (build_graph, remove_multiple_edges_in_vertices, remove_nodes_with_one_arc,
-    // extract_colored_segments) is REPORTED, not asserted: on the committed vectors 1 of 1,704 graphs
-    // differs (case 578: three extra points in one polygon of colour 0) and 7 overflow in Rust.
+    // extract_colored_segments) is asserted since R944: case 578 needed the pin's int32 coord_t in
+    // clip_finite_voronoi_edge (MMS_CLIP_EDGE_I32_PIN), the 7 that panicked the wrapping subtraction
+    // of Line::intersection (LINE_INTERSECTION_WRAP_PIN) and the pin's NDEBUG build of points_inside
+    // (MMS_NDEBUG_ASSERTS_PIN).
     assert_eq!((bad_pp, bad_col), (0, 0), "of {} cases", lines.len());
+    assert_eq!((bad_seg, n_graph_panic), (0, 0), "graph stage, of {} graphs", n_graph);
+}
+
+/// merge_segmented_layers (MultiMaterialSegmentation.cpp:2039-2079) against
+/// tests/data/multi_material_segmentation/merge_vectors.txt.gz (gen_merge.cpp, the pin on one thread): a line
+/// is "ms <layers> <extruders> <segmented[layer][0..=extruders]> ; <top_and_bottom[0..=extruders][layer]> =>
+/// <merged[layer][0..extruders]>", every ExPolygons as "<n> (<rings> (<points> (x y)*)*)*".
+/// `MMS_MERGE_PARITY_VECTORS` names an uncompressed file of the generator to read instead.
+#[test]
+fn merge_segmented_layers_native_parity() {
+    use slicer::geometry::{ExPolygon, ExPolygons, Point, Polygon};
+    use slicer::multi_material_segmentation::merge_segmented_layers;
+    let text = match std::env::var("MMS_MERGE_PARITY_VECTORS") {
+        Ok(p) => std::fs::read_to_string(p).expect("vectors"),
+        Err(_) => {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/multi_material_segmentation/merge_vectors.txt.gz");
+            let mut s = String::new();
+            flate2::read::GzDecoder::new(std::fs::File::open(path).expect("merge_vectors.txt.gz")).read_to_string(&mut s).expect("gunzip");
+            s
+        }
+    };
+    fn read_expolys<'a>(it: &mut impl Iterator<Item = &'a str>) -> ExPolygons {
+        let mut next = || it.next().expect("token").parse::<i64>().expect("int");
+        let n = next() as usize;
+        let mut out = ExPolygons::new();
+        for _ in 0..n {
+            let rings = next() as usize;
+            let mut polys: Vec<Polygon> = Vec::new();
+            for _ in 0..rings {
+                let np = next() as usize;
+                let mut pts = Vec::with_capacity(np);
+                for _ in 0..np {
+                    let x = next();
+                    let y = next();
+                    pts.push(Point::new(x, y));
+                }
+                polys.push(Polygon::from_points(pts));
+            }
+            let contour = polys.remove(0);
+            out.push(ExPolygon { contour, holes: polys });
+        }
+        out
+    }
+    fn print_expolys(o: &mut Vec<String>, e: &ExPolygons) {
+        o.push(e.len().to_string());
+        for ex in e {
+            o.push((ex.holes.len() + 1).to_string());
+            for p in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+                o.push(p.points.len().to_string());
+                for pt in &p.points {
+                    o.push(format!("{} {}", pt.x, pt.y));
+                }
+            }
+        }
+    }
+    let (mut n, mut bad) = (0usize, 0usize);
+    for line in text.lines() {
+        let (inp, want) = line.split_once(" => ").expect("=>");
+        let mut it = inp.split_whitespace();
+        assert_eq!(it.next(), Some("ms"));
+        let num_layers: usize = it.next().unwrap().parse().unwrap();
+        let num_extruders: usize = it.next().unwrap().parse().unwrap();
+        let mut segmented: Vec<Vec<ExPolygons>> = Vec::new();
+        for _ in 0..num_layers {
+            let mut v = Vec::new();
+            for _ in 0..=num_extruders {
+                v.push(read_expolys(&mut it));
+            }
+            segmented.push(v);
+        }
+        assert_eq!(it.next(), Some(";"));
+        let mut tb: Vec<Vec<ExPolygons>> = Vec::new();
+        for _ in 0..=num_extruders {
+            let mut v = Vec::new();
+            for _ in 0..num_layers {
+                v.push(read_expolys(&mut it));
+            }
+            tb.push(v);
+        }
+        let merged = merge_segmented_layers(&segmented, tb, num_extruders);
+        let mut o: Vec<String> = Vec::new();
+        for l in 0..num_layers {
+            for e in 0..num_extruders {
+                print_expolys(&mut o, &merged[l][e]);
+            }
+        }
+        let got = o.join(" ");
+        n += 1;
+        if got != want.trim() {
+            bad += 1;
+            if bad <= 3 {
+                eprintln!("case {}: merge_segmented_layers differs\n  C++:  {}\n  Rust: {}", n, want.trim(), got);
+            }
+        }
+    }
+    eprintln!("merge_segmented_layers parity: {} cases, {} differ", n, bad);
+    assert!(n > 0);
+    assert_eq!(bad, 0, "merge_segmented_layers differs from the pin");
 }

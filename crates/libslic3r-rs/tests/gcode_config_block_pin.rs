@@ -204,3 +204,22 @@ fn config_block_pin_reduces_the_filament_values_and_writes_the_maps() {
     assert!(has("; filament_map_2 = 0,0,0"), "filament_map_2: {:?}", show());
     assert!(has("; filament_nozzle_map = 0,0,0"), "filament_nozzle_map: {:?}", show());
 }
+
+/// slicer_cli main.cpp:1809-1946: a saved 2x2 `flush_volumes_matrix` of a three-filament job is
+/// rebuilt to 3x3, the saved pairs kept, the new ones `flush_volumes_vector[2i] + [2j+1]` off the
+/// diagonal and 0 on it (gate GCODE_CONFIG_FRONT_END_FLUSH_RESHAPE_PIN; with it `=0` the saved four
+/// values are written as they are).
+#[test]
+fn config_block_pin_reshapes_a_short_flush_volumes_matrix() {
+    let settings = serde_json::json!({
+        "nozzle_diameter": ["0.4"],
+        "flush_multiplier": ["1"],
+        "flush_volumes_vector": ["10", "20", "30", "40", "50", "60"],
+        "flush_volumes_matrix": ["0", "100", "200", "0"],
+        "filament_colour": ["#FFFFFF", "#000000", "#FF0000"],
+    });
+    let block = GCode::config_block_pin(&settings);
+    let lines: Vec<&str> = block.lines().collect();
+    let got: Vec<&str> = lines.iter().filter(|l| l.starts_with("; flush_volumes_matrix")).cloned().collect();
+    assert_eq!(got, vec!["; flush_volumes_matrix = 0,100,70,200,0,90,70,90,0"]);
+}

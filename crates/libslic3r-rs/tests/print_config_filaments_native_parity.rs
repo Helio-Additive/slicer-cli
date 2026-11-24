@@ -165,3 +165,59 @@ fn update_values_to_printer_extruders_matches_the_pin() {
         }
     }
 }
+
+/// gen.cpp `gen_filament_nozzle_infos`: `update_filament_config_values_for_multiple_extruders`
+/// (PrintConfig.cpp:10194-10320) over `filament_scenarios()` with a nozzle-info map per scenario
+/// (filaments used with one or two nozzles, unused ones through `filament_volume_map`, the
+/// `opt_ids` fallback of scenario 3); the key set is the filament options with variant the config
+/// holds (the C++ dereferences each one).
+#[test]
+fn update_filament_config_values_for_multiple_extruders_matches_the_pin() {
+    use slicer::print_config::enums::{ExtruderType, NozzleVolumeType};
+    use std::collections::HashMap;
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/print_config/filaments.txt");
+    let text = std::fs::read_to_string(path).expect("filaments.txt");
+    let expected: Vec<&str> = text
+        .lines()
+        .filter(|l| l.starts_with("fn update_filament_config_values_for_multiple_extruders "))
+        .collect();
+    let sc = scenarios();
+    assert_eq!(expected.len(), sc.len());
+    let info = |e: ExtruderType, n: NozzleVolumeType| ExtruderNozleInfo { extruder_type: e, nozzle_volume_type: n };
+    let mut maps: Vec<HashMap<i32, Vec<ExtruderNozleInfo>>> = vec![HashMap::new(); sc.len()];
+    maps[0].insert(0, vec![info(ExtruderType::EtDirectDrive, NozzleVolumeType::NvtStandard), info(ExtruderType::EtDirectDrive, NozzleVolumeType::NvtHighFlow)]);
+    maps[1].insert(1, vec![info(ExtruderType::EtBowden, NozzleVolumeType::NvtHighFlow)]);
+    maps[1].insert(2, vec![info(ExtruderType::EtBowden, NozzleVolumeType::NvtHighFlow)]);
+    maps[2].insert(1, vec![info(ExtruderType::EtBowden, NozzleVolumeType::NvtStandard), info(ExtruderType::EtBowden, NozzleVolumeType::NvtHighFlow)]);
+    for (a, ((extruder_count, nvc), settings)) in sc.iter().enumerate() {
+        let mut c = DynamicPrintConfig::new();
+        for (k, v) in settings {
+            c.set_deserialize_strict(k, v, false).expect("set_deserialize_strict");
+        }
+        let p = c.clone();
+        let ks: BTreeSet<String> = filament_options_with_variant.iter().filter(|k| c.has(k)).cloned().collect();
+        c.update_filament_config_values_for_multiple_extruders(
+            Some(&p),
+            &maps[a],
+            *extruder_count,
+            *nvc,
+            &ks,
+            "filament_self_index",
+            "filament_extruder_variant",
+        )
+        .expect("update");
+        let mut l: Vec<String> = vec![
+            "fn".into(),
+            "update_filament_config_values_for_multiple_extruders".into(),
+            a.to_string(),
+            "=>".into(),
+        ];
+        let keys = c.keys();
+        l.push(keys.len().to_string());
+        for k in &keys {
+            l.push(hex(k));
+            l.push(hex(&c.option(k).unwrap().serialize().expect("serialize")));
+        }
+        assert_eq!(l.join(" "), expected[a], "scenario {a}");
+    }
+}

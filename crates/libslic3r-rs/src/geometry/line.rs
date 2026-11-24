@@ -15,6 +15,29 @@ pub struct Line {
     pub b: Point,
 }
 
+/// An int64 `coord_t` subtraction as the pin's compiled code does it: two's complement,
+/// wrapping on overflow (Line.hpp:127-129, 137 compute `l1.b - l1.a`, `l2.b - l2.a`,
+/// `l1.a - l2.a` on Vec2crd before the cast to double; clang arm64 emits a plain `sub`).
+/// Only an overflowing subtraction looks at the gate, so the common case costs nothing.
+/// LINE_INTERSECTION_WRAP_PIN=0 restores the earlier arm (a plain `-`: a panic in a debug
+/// build, the same wrap in a release build).
+#[inline]
+fn pin_sub_i64(a: Coord, b: Coord) -> Coord {
+    match a.checked_sub(b) {
+        Some(v) => v,
+        None if crate::faithful_gate("LINE_INTERSECTION_WRAP_PIN") => a.wrapping_sub(b),
+        None => a - b,
+    }
+}
+
+/// LINE_INTERSECTION_FMA_PIN (faithful): `Line::intersection`'s cross products fused as the
+/// pin's `cross2`. Read once: the gates come from a snapshot of the environment (lib.rs).
+#[inline]
+fn line_intersection_fma_pin() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| crate::faithful_gate("LINE_INTERSECTION_FMA_PIN"))
+}
+
 impl Line {
     // Create a new line segment from two points.
     #[inline]
@@ -220,21 +243,35 @@ impl Line {
     pub fn intersection(&self, other: &Line) -> Option<Point> {
         // `line_alg::intersection` (Line.hpp:123-148) in double; the point is
         // cast to coord_t, which truncates.
-        // Line.hpp:127-129
-        let v1x = (self.b.x - self.a.x) as CoordF;
-        let v1y = (self.b.y - self.a.y) as CoordF;
-        let v2x = (other.b.x - other.a.x) as CoordF;
-        let v2y = (other.b.y - other.a.y) as CoordF;
-        let denom = v1x * v2y - v1y * v2x;
+        // Line.hpp:127-129. `l1.b - l1.a` is a Vec2crd (int64) subtraction, cast to double
+        // afterwards; it wraps at the pin where it overflows (a saturated Voronoi vertex in
+        // MultiMaterialSegmentation.cpp's build_graph), see `pin_sub_i64`.
+        let v1x = pin_sub_i64(self.b.x, self.a.x) as CoordF;
+        let v1y = pin_sub_i64(self.b.y, self.a.y) as CoordF;
+        let v2x = pin_sub_i64(other.b.x, other.a.x) as CoordF;
+        let v2y = pin_sub_i64(other.b.y, other.a.y) as CoordF;
+        // `cross2(v1, v2)` (Point.hpp:86-89): one expression, so clang fuses the left product,
+        // `fma(x1, y2, -(y1 * x2))` (as `Cross2 for PointF`, geometry/point.rs). Equal to the
+        // unfused form whenever the products are exact (|coordinates| < 2^26), so only far
+        // points (a saturated Voronoi vertex in build_graph) see it. Gate LINE_INTERSECTION_FMA_PIN.
+        let fused = line_intersection_fma_pin();
+        let cross = |ax: CoordF, ay: CoordF, bx: CoordF, by: CoordF| -> CoordF {
+            if fused {
+                ax.mul_add(by, -(ay * bx))
+            } else {
+                ax * by - ay * bx
+            }
+        };
+        let denom = cross(v1x, v1y, v2x, v2y);
         // Line.hpp:130-136
         if denom.abs() < crate::libslic3r::EPSILON {
             return None;
         }
-        // Line.hpp:137-141
-        let v12x = (self.a.x - other.a.x) as CoordF;
-        let v12y = (self.a.y - other.a.y) as CoordF;
-        let nume_a = v2x * v12y - v2y * v12x;
-        let nume_b = v1x * v12y - v1y * v12x;
+        // Line.hpp:137-141 (`l1.a - l2.a`, int64 as above)
+        let v12x = pin_sub_i64(self.a.x, other.a.x) as CoordF;
+        let v12y = pin_sub_i64(self.a.y, other.a.y) as CoordF;
+        let nume_a = cross(v2x, v2y, v12x, v12y);
+        let nume_b = cross(v1x, v1y, v12x, v12y);
         let t1 = nume_a / denom;
         let t2 = nume_b / denom;
         // Line.hpp:142-147

@@ -1664,16 +1664,25 @@ pub fn colorize_contours(
 // Determines if the line points from the point between two contour lines is pointing inside polygon or outside.
 fn points_inside(contour_first: &Line, contour_second: &Line, new_point: &Point) -> bool {
     // MultiMaterialSegmentation.cpp:963-967
+    // The pin's `assert`s here are compiled out (Release, -DNDEBUG): on a degenerate corner
+    // (`left == middle`, reached on a diagram with a NaN Voronoi vertex) it goes on with a zero
+    // vector, which `normalized()` returns unchanged. MMS_NDEBUG_ASSERTS_PIN=0 restores the
+    // debug-build assertions of the earlier arm.
+    let check = cfg!(debug_assertions) && !crate::faithful_gate("MMS_NDEBUG_ASSERTS_PIN");
     let three_points_inward_normal = |left: &Point, middle: &Point, right: &Point| -> PointF {
-        debug_assert!(left != middle);
-        debug_assert!(middle != right);
+        if check {
+            debug_assert!(left != middle);
+            debug_assert!(middle != right);
+        }
         (pt_to_vec2d(perp(*middle - *left)).normalize()
             + pt_to_vec2d(perp(*right - *middle)).normalize())
         .normalize()
     };
 
     // MultiMaterialSegmentation.cpp:969-974
-    debug_assert!(contour_first.b == contour_second.a);
+    if check {
+        debug_assert!(contour_first.b == contour_second.a);
+    }
     let inward_normal =
         three_points_inward_normal(&contour_first.a, &contour_first.b, &contour_second.b);
     let edge_norm = pt_to_vec2d(*new_point - contour_first.b).normalize();
@@ -2346,6 +2355,15 @@ fn clip_finite_voronoi_edge(v0: PointF, v1: PointF, bbox: &BoundingBoxF) -> Line
     let contains_v0 = bbox.contains_point(&v0);
     let contains_v1 = bbox.contains_point(&v1);
     if (contains_v0 && contains_v1) || (!contains_v0 && !contains_v1) {
+        // MultiMaterialSegmentation.cpp:1728 `{mk_point(edge.vertex0()), mk_point(edge.vertex1())}`.
+        // The pin's coord_t is int32_t (libslic3r.h:38-40): a vertex beyond +-2^31 (a far vertex
+        // of a diagram the pin logs as "missing Voronoi vertex even after the rotation") comes out
+        // of clang arm64's code here as the low 32 bits of the int64 conversion (measured in a
+        // probe of the pin: 41916504716 -> -1033168244). Gate MMS_CLIP_EDGE_I32_PIN (faithful).
+        if crate::faithful_gate("MMS_CLIP_EDGE_I32_PIN") {
+            let wrap = |v: f64| -> Coord { ((v as i64) as i32) as Coord };
+            return Line::new(Point::new(wrap(v0.x), wrap(v0.y)), Point::new(wrap(v1.x), wrap(v1.y)));
+        }
         return Line::new(vec2d_to_pt(v0), vec2d_to_pt(v1));
     }
 
@@ -3800,12 +3818,12 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
     triangles_by_color_merged
 }
 
-// MultiMaterialSegmentation.cpp:1968
+// MultiMaterialSegmentation.cpp:2039-2079 (the line numbers in the body below are those of an
+// earlier pin; verified by tests/multi_material_segmentation_native_parity.rs, merge_segmented_layers_native_parity)
 // `top_and_bottom_layers` is taken by value (the C++ takes
 // `std::vector<std::vector<ExPolygons>> &&`). The tbb::parallel_for runs serially and
 // the `throw_on_cancel_callback` parameter is omitted, per crate convention.
-#[allow(dead_code)]
-fn merge_segmented_layers(
+pub fn merge_segmented_layers(
     segmented_regions: &[Vec<ExPolygons>],
     top_and_bottom_layers: Vec<Vec<ExPolygons>>,
     num_extruders: usize,

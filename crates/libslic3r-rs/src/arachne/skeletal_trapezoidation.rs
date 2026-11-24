@@ -1022,6 +1022,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
         // SkeletalTrapezoidation.cpp:551 p_generated_toolpaths = &generated_toolpaths;
         self.p_generated_toolpaths = generated_toolpaths as *mut _;
 
+        self.pa_st("pa_st0");
         // SkeletalTrapezoidation.cpp:553 updateIsCentral();
         self.update_is_central();
         self.central_census("0 after updateIsCentral");
@@ -1068,6 +1069,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
         // SkeletalTrapezoidation.cpp:580 generateTransitioningRibs();
         self.generate_transitioning_ribs();
+        self.pa_st("pa_st4");
         self.central_census("4 after generateTransitioningRibs");
         if tbarach {
             self.tbarach_dump("s4");
@@ -1075,6 +1077,7 @@ impl<'a> SkeletalTrapezoidation<'a> {
 
         // SkeletalTrapezoidation.cpp:586 generateExtraRibs();
         self.generate_extra_ribs();
+        self.pa_st("pa_st5");
         if tbarach {
             self.tbarach_dump("s5");
         }
@@ -3456,6 +3459,33 @@ impl<'a> SkeletalTrapezoidation<'a> {
         };
         // SkeletalTrapezoidation.cpp:1758 for (size_t inset_idx = 0; inset_idx < std::min(left.bead_widths.size(), right.bead_widths.size()); inset_idx++)
         let n = std::cmp::min(left.bead_widths.len(), right.bead_widths.len());
+        // R944: faithful_gate ARACHNE_INTERPOLATE_FMA (the pin's two sums are fused multiply-adds).
+        let fma = crate::faithful_gate("ARACHNE_INTERPOLATE_FMA");
+        // R944 probe ST_INTERP_DUMP (diagnostic only, never changes output): the inputs of the calls whose
+        // two sums truncate differently fused and unfused, for tests/data/skeletal_trapezoidation/gen.cpp.
+        if crate::probe_enabled("ST_INTERP_DUMP") {
+            let sens = |l: Coord, r: Coord| {
+                let rhs = (ratio_right_to_whole * r as f32) as f64;
+                (ratio_left_to_whole * l as f64 + rhs) as Coord != ratio_left_to_whole.mul_add(l as f64, rhs) as Coord
+            };
+            let hit = (0..n).any(|i| {
+                (left.bead_widths[i] != 0 && right.bead_widths[i] != 0 && sens(left.bead_widths[i], right.bead_widths[i]))
+                    || sens(left.toolpath_locations[i], right.toolpath_locations[i])
+            });
+            if hit {
+                let fmt = |b: &Beading| {
+                    let mut t = format!("{} {} {}", b.total_thickness, b.left_over, b.bead_widths.len());
+                    for w in &b.bead_widths {
+                        t += &format!(" {w}");
+                    }
+                    for w in &b.toolpath_locations {
+                        t += &format!(" {w}");
+                    }
+                    t
+                };
+                eprintln!("STI {:016x} L {} R {}", ratio_left_to_whole.to_bits(), fmt(left), fmt(right));
+            }
+        }
         for inset_idx in 0..n {
             // SkeletalTrapezoidation.cpp:1760 if(left.bead_widths[inset_idx] == 0 || right.bead_widths[inset_idx] == 0)
             if left.bead_widths[inset_idx] == 0 || right.bead_widths[inset_idx] == 0 {
@@ -3465,15 +3495,23 @@ impl<'a> SkeletalTrapezoidation<'a> {
                 // SkeletalTrapezoidation.cpp:1766 ret.bead_widths[inset_idx] = ratio_left_to_whole * left.bead_widths[inset_idx] + ratio_right_to_whole * right.bead_widths[inset_idx];
                 // Left term is `double * int -> double`; right term is `float * int -> float`,
                 // promoted to double for the sum, then truncated to coord_t.
-                ret.bead_widths[inset_idx] = (ratio_left_to_whole * left.bead_widths[inset_idx] as f64
-                    + (ratio_right_to_whole * right.bead_widths[inset_idx] as f32) as f64)
-                    as Coord;
+                // clang -ffp-contract=on fuses the left (double) product into the add:
+                // fmuladd(ratio_left_to_whole, double(left), double(float product)).
+                let rhs = (ratio_right_to_whole * right.bead_widths[inset_idx] as f32) as f64;
+                ret.bead_widths[inset_idx] = if fma {
+                    ratio_left_to_whole.mul_add(left.bead_widths[inset_idx] as f64, rhs) as Coord
+                } else {
+                    (ratio_left_to_whole * left.bead_widths[inset_idx] as f64 + rhs) as Coord
+                };
             }
             // SkeletalTrapezoidation.cpp:1768 ret.toolpath_locations[inset_idx] = ratio_left_to_whole * left.toolpath_locations[inset_idx] + ratio_right_to_whole * right.toolpath_locations[inset_idx];
-            ret.toolpath_locations[inset_idx] = (ratio_left_to_whole
-                * left.toolpath_locations[inset_idx] as f64
-                + (ratio_right_to_whole * right.toolpath_locations[inset_idx] as f32) as f64)
-                as Coord;
+            // Same contraction as the bead width above (SkeletalTrapezoidation.cpp:1768).
+            let rhs = (ratio_right_to_whole * right.toolpath_locations[inset_idx] as f32) as f64;
+            ret.toolpath_locations[inset_idx] = if fma {
+                ratio_left_to_whole.mul_add(left.toolpath_locations[inset_idx] as f64, rhs) as Coord
+            } else {
+                (ratio_left_to_whole * left.toolpath_locations[inset_idx] as f64 + rhs) as Coord
+            };
         }
         // SkeletalTrapezoidation.cpp:1770 return ret;
         ret
@@ -4969,6 +5007,34 @@ impl SkeletalTrapezoidation<'_> {
     /// R803 — true on the thread running the AWST_SX-matched WallToolPaths call.
     fn awst_on_inner() -> bool {
         crate::arachne::wall_tool_paths::AWST_ON.with(|c| c.get())
+    }
+
+    /// R944 probe (PA_L, diagnostic only): graph node/edge counts and sums after a stage, in the format of
+    /// a copy of the pin's SkeletalTrapezoidation.cpp with the same sums printed after each stage.
+    pub(crate) fn pa_st(&self, tag: &str) {
+        let l = crate::arachne::wall_tool_paths::PA_LAYER.with(|c| c.get());
+        if l < 0 {
+            return;
+        }
+        let (mut n, mut sx, mut sy, mut sd, mut sb) = (0i64, 0i64, 0i64, 0i64, 0i64);
+        for nd in self.graph.nodes.iter() {
+            n += 1;
+            sx += nd.base.p.x;
+            sy += nd.base.p.y;
+            sd += nd.base.data.distance_to_boundary;
+            sb += nd.base.data.bead_count;
+        }
+        let ne = self.graph.edges.iter().count();
+        eprintln!("BOI {tag} L={l} n={n} ne={ne} sx={sx} sy={sy} sd={sd} sb={sb}");
+        thread_local! { static CALLS: std::cell::Cell<i32> = const { std::cell::Cell::new(0) }; }
+        if crate::probe_enabled("PA_STN") && tag == "pa_st0" {
+            let c = CALLS.with(|c| { c.set(c.get() + 1); c.get() });
+            if c <= 2 {
+                for nd in self.graph.nodes.iter() {
+                    eprintln!("STN {c} {} {} {}", nd.base.p.x, nd.base.p.y, nd.base.data.distance_to_boundary);
+                }
+            }
+        }
     }
 
     pub(crate) fn tbarach_dump(&self, stage: &str) {

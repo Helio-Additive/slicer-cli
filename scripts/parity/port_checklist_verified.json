@@ -4391,5 +4391,25 @@
    "DynamicPrintConfig::update_values_to_printer_extruders",
    "DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments"
   ]
+ },
+ {
+  "unit": "MultiMaterialSegmentation",
+  "round": 944,
+  "evidence": "tests/multi_material_segmentation_native_parity.rs (painted_lines_native_parity): the pin's graph stage of a layer (MultiMaterialSegmentation.cpp 2420-2428: build_graph, remove_multiple_edges_in_vertices, MMU_Graph::remove_nodes_with_one_arc, extract_colored_segments) compiled into tests/data/multi_material_segmentation/gen_painted.cpp on one thread, over the 1,704 graphs of 2,000 synthetic cases: 0 differences and 0 panics (asserted), with Line::intersection wrapping as the pin's int64 math (LINE_INTERSECTION_WRAP_PIN), the pin's NDEBUG asserts (MMS_NDEBUG_ASSERTS_PIN) and clip_finite_voronoi_edge's mk_point keeping the low 32 bits of an out-of-range coordinate as the pin's arm64 build does (MMS_CLIP_EDGE_I32_PIN; coord_t is int32 at the pin, libslic3r.h 38-40); merge_segmented_layers_native_parity: merge_segmented_layers (MultiMaterialSegmentation.cpp 2039-2079) from tests/data/multi_material_segmentation/gen_merge.cpp on 600 cases (1-3 layers, 1-4 extruders, ExPolygons with holes and grid rectangles): 0 differ.",
+  "functions": [
+   "build_graph",
+   "remove_multiple_edges_in_vertices",
+   "MMU_Graph::remove_nodes_with_one_arc",
+   "extract_colored_segments",
+   "merge_segmented_layers"
+  ]
+ },
+ {
+  "unit": "PrintConfig",
+  "round": 944,
+  "evidence": "tests/print_config_filaments_native_parity.rs (update_filament_config_values_for_multiple_extruders_matches_the_pin): the pin's DynamicPrintConfig::update_filament_config_values_for_multiple_extruders (PrintConfig.cpp 10194-10320) from tests/data/print_config/gen.cpp (gen_filament_nozzle_infos), 4 scenarios: filaments used with one and two nozzles, unused filaments through filament_volume_map, the fallback when no variant matches; serialized configs compared line for line: equal.",
+  "functions": [
+   "DynamicPrintConfig::update_filament_config_values_for_multiple_extruders"
+  ]
  }
 ]

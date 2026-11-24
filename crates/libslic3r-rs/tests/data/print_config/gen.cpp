@@ -1086,6 +1086,33 @@ static void gen_filaments()
     }
 }
 
+// R944: update_filament_config_values_for_multiple_extruders (PrintConfig.cpp:10194-10320) over
+// filament_scenarios() with a nozzle-info map per scenario (used filaments with one or two nozzles,
+// unused ones through filament_volume_map, and the opt_ids fallback of scenario 3).
+static void gen_filament_nozzle_infos()
+{
+    const auto &fs = filament_scenarios();
+    std::vector<std::unordered_map<int, std::vector<ExtruderNozleInfo>>> maps(fs.size());
+    maps[0][0] = {{etDirectDrive, nvtStandard}, {etDirectDrive, nvtHighFlow}};
+    maps[1][1] = {{etBowden, nvtHighFlow}};
+    maps[1][2] = {{etBowden, nvtHighFlow}};
+    maps[2][1] = {{etBowden, nvtStandard}, {etBowden, nvtHighFlow}};
+    for (size_t a = 0; a < fs.size(); ++a) {
+        DynamicPrintConfig c = make_config(fs[a].second);
+        DynamicPrintConfig p = c;
+        // The C++ dereferences option<T>(key) of every key of the set: only the keys the config holds.
+        std::set<std::string> ks;
+        for (const std::string &k : filament_options_with_variant)
+            if (c.has(k))
+                ks.insert(k);
+        Toks l{"fn", "update_filament_config_values_for_multiple_extruders", num(a), "=>"};
+        c.update_filament_config_values_for_multiple_extruders(p, maps[a], fs[a].first.first, fs[a].first.second, ks, "filament_self_index",
+                                                               "filament_extruder_variant");
+        push_config(l, c);
+        emit(l);
+    }
+}
+
 // R943: update_values_to_printer_extruders (PrintConfig.cpp:9780-9994) over the printer options
 // with variant (stride 1), for the machine (extruder_id 0) and for extruder 1 / 2 with a filament
 // volume type. Written to filaments.txt after gen_filaments.
@@ -1139,6 +1166,7 @@ int main(int argc, char **argv)
     open_out(dir, "filaments.txt");
     gen_filaments();
     gen_printer_extruders();
+    gen_filament_nozzle_infos();
     fclose(g_out);
     return 0;
 }

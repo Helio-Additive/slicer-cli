@@ -19539,6 +19539,150 @@ pub mod config_def {
             }
             Ok(())
         }
+
+        /// PrintConfig.cpp:10194-10320 `void DynamicPrintConfig::update_filament_config_values_for_multiple_extruders(DynamicPrintConfig &printer_config, const std::unordered_map<int, std::vector<ExtruderNozleInfo>> &filament_extruder_nozzle_infos, int extruder_count, int extruder_nozzle_volume_count, std::set<std::string> &key_set, std::string id_name, std::string variant_name)`:
+        /// the values of `key_set` are trimmed to one value per (filament, nozzle) the slicing uses
+        /// (`filament_extruder_nozzle_infos`, one per nozzle of a filament in order) and one per
+        /// filament it does not use, the variant row being `get_index_for_extruder` of the filament's
+        /// extruder type and nozzle volume type.
+        ///
+        /// `printer_config` of `None` is the config itself (its values are read before the first
+        /// write). Only `find` is used on the unordered map, so its iteration order does not matter.
+        /// FIDELITY-NOTE: an option of `key_set` missing from the config is skipped (the C++
+        /// dereferences the null `option<T>(key)`), an empty vector stays empty (`get_at` of an empty
+        /// vector is undefined behaviour), and the log lines are not written.
+        #[allow(clippy::too_many_arguments)]
+        pub fn update_filament_config_values_for_multiple_extruders(
+            &mut self,
+            printer_config: Option<&DynamicPrintConfig>,
+            filament_extruder_nozzle_infos: &std::collections::HashMap<i32, Vec<ExtruderNozleInfo>>,
+            extruder_count: i32,
+            extruder_nozzle_volume_count: i32,
+            key_set: &BTreeSet<String>,
+            id_name: &str,
+            variant_name: &str,
+        ) -> CfgResult<()> {
+            let (opt_filament_map, opt_extruder_type, opt_nozzle_volume_type, opt_filament_volume_maps) = {
+                let printer: &DynamicPrintConfig = printer_config.unwrap_or(self);
+                (
+                    dyn_ints(printer.option("filament_map")).cloned(),
+                    dyn_enums_generic(printer.option("extruder_type")).cloned(),
+                    dyn_enums_generic(printer.option("nozzle_volume_type")).cloned(),
+                    dyn_ints(printer.option("filament_volume_map")).cloned(),
+                )
+            };
+            // PrintConfig.cpp:10207 dereferences these; a config without them is left alone.
+            let Some(filament_maps) = opt_filament_map else { return Ok(()) };
+            let filament_count = filament_maps.len();
+            let (Some(opt_extruder_type), Some(opt_nozzle_volume_type)) = (opt_extruder_type, opt_nozzle_volume_type) else {
+                return Ok(());
+            };
+            let filament_volume_maps: Vec<i32> = opt_filament_volume_maps.unwrap_or_default();
+            let opt_ids: Option<Vec<i32>> = if id_name.is_empty() { None } else { dyn_ints(self.option(id_name)).cloned() };
+            // PrintConfig.cpp:10216-10217 (`variant_index` is sized and never read)
+            let fallback_index = |f_index: usize| -> i32 {
+                // for some updates happens in a invalid state(caused by popup window)
+                // we need to avoid crash
+                let mut param_index = 0;
+                if let Some(ids) = opt_ids.as_ref() {
+                    for (i, &id) in ids.iter().enumerate() {
+                        if id == f_index as i32 + 1 {
+                            param_index = i as i32;
+                            break;
+                        }
+                    }
+                }
+                param_index
+            };
+
+            let mut trim_param_indices: Vec<i32> = Vec::with_capacity(filament_count * 2);
+            for f_index in 0..filament_count {
+                let e_idx = (filament_maps[f_index] - 1) as isize as usize;
+                let mut extruder_type = enums::ExtruderType::from_i32(*get_at(&opt_extruder_type, e_idx));
+                let mut nozzle_volume_type = enums::NozzleVolumeType::from_i32(*get_at(&opt_nozzle_volume_type, e_idx));
+                if let Some(nozzle_infos) = filament_extruder_nozzle_infos.get(&(f_index as i32)) {
+                    for nozzle_info in nozzle_infos {
+                        extruder_type = nozzle_info.extruder_type;
+                        nozzle_volume_type = nozzle_info.nozzle_volume_type;
+                        let mut param_index =
+                            self.get_index_for_extruder(f_index as i32 + 1, id_name, extruder_type, nozzle_volume_type, variant_name, 1);
+                        if param_index < 0 {
+                            param_index = fallback_index(f_index);
+                        }
+                        trim_param_indices.push(param_index);
+                    }
+                } else {
+                    // filament not used in slicing
+                    if (extruder_nozzle_volume_count > extruder_count || nozzle_volume_type == enums::NozzleVolumeType::NvtHybrid)
+                        && (f_index as i32) < filament_volume_maps.len() as i32
+                    {
+                        nozzle_volume_type = enums::NozzleVolumeType::from_i32(filament_volume_maps[f_index]);
+                    }
+                    let mut param_index =
+                        self.get_index_for_extruder(f_index as i32 + 1, id_name, extruder_type, nozzle_volume_type, variant_name, 1);
+                    if param_index < 0 {
+                        param_index = fallback_index(f_index);
+                    }
+                    trim_param_indices.push(param_index);
+                }
+            }
+
+            // PrintConfig.cpp:10281-10316
+            let config_def = print_config_def();
+            fn trim<T: Clone>(values: &mut Vec<T>, trim_param_indices: &[i32]) {
+                if values.is_empty() {
+                    return;
+                }
+                *values = trim_param_indices.iter().map(|&i| get_at(values, i as isize as usize).clone()).collect();
+            }
+            for key in key_set {
+                let optdef = match config_def.get(key) {
+                    Some(d) => d,
+                    // can not find opt define
+                    None => continue,
+                };
+                match optdef.r#type {
+                    ConfigOptionType::CoStrings => {
+                        if let Some(values) = typed_values_mut::<String>(self, key, ConfigOptionType::CoStrings)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    ConfigOptionType::CoInts => {
+                        if let Some(values) = typed_values_mut::<i32>(self, key, ConfigOptionType::CoInts)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    ConfigOptionType::CoFloats => {
+                        if let Some(values) = typed_values_mut::<f64>(self, key, ConfigOptionType::CoFloats)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    ConfigOptionType::CoPercents => {
+                        if let Some(values) = typed_values_mut::<f64>(self, key, ConfigOptionType::CoPercents)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    ConfigOptionType::CoFloatsOrPercents => {
+                        if let Some(values) = typed_values_mut::<FloatOrPercent>(self, key, ConfigOptionType::CoFloatsOrPercents)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    ConfigOptionType::CoBools => {
+                        if let Some(values) = typed_values_mut::<u8>(self, key, ConfigOptionType::CoBools)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    ConfigOptionType::CoEnums => {
+                        if let Some(values) = typed_values_mut::<i32>(self, key, ConfigOptionType::CoEnums)? {
+                            trim(values, &trim_param_indices);
+                        }
+                    }
+                    // unsupported option type
+                    _ => {}
+                }
+            }
+            Ok(())
+        }
     }
 
     /// PrintConfig.hpp:2215-2216 `inline constexpr const char *canonical_multi_nozzle_printer_variant()`:
