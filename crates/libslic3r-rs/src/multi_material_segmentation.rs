@@ -61,6 +61,20 @@ fn scale_(mm: f64) -> Coord {
     scale(mm)
 }
 
+// `Slic3r::sqr(scale_(0.1f))` (MultiMaterialSegmentation.cpp:1436-1437, 2195): the macro
+// `scale_(val) = val / SCALING_FACTOR` (libslic3r.h:58, 81) on the FLOAT 0.1f, in double, not
+// rounded to an integer: 10000.000149011612^2 = 100000002.98.... Gate MMS_MIN_AREA_PIN (faithful;
+// R940: the three fixtures are byte-identical on and off and the Majora segmentation dump against
+// the pin is unchanged); `=0` keeps the earlier rounded `scale_(0.1)^2 = 1e8`.
+fn pin_min_area_0_1f() -> f64 {
+    if crate::faithful_gate("MMS_MIN_AREA_PIN") {
+        // libslic3r.h:58 SCALING_FACTOR = 0.00001 (the crate-root `SCALING_FACTOR` is 1e5).
+        sqr_f64((0.1f32 as f64) / crate::libslic3r::SCALING_FACTOR)
+    } else {
+        sqr_f64(scale_(0.1) as f64)
+    }
+}
+
 // MultiMaterialSegmentation.hpp:13
 /// `ColoredLine` — a contour `Line` tagged with a color (extruder index) and the
 /// polygon/local-line indices it belongs to.
@@ -3304,6 +3318,27 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
             if extruder_idx >= ne1 || painted.indices.is_empty() {
                 continue;
             }
+            // R940 probe MMSDUMP (diagnostic only): the painted submesh (get_facets_strict).
+            if crate::probe_enabled("MMSDUMP") {
+                let mut h: u64 = 1469598103934665603;
+                let mut eat = |v: u32| {
+                    for b in v.to_le_bytes() {
+                        h ^= b as u64;
+                        h = h.wrapping_mul(1099511628211);
+                    }
+                };
+                for v in &painted.vertices {
+                    eat(v.x.to_bits());
+                    eat(v.y.to_bits());
+                    eat(v.z.to_bits());
+                }
+                for t in &painted.indices {
+                    eat(t[0] as u32);
+                    eat(t[1] as u32);
+                    eat(t[2] as u32);
+                }
+                eprintln!("MMSITS {} nv={} nt={} h={:016x}", extruder_idx, painted.vertices.len(), painted.indices.len(), h);
+            }
             // transform_mesh_vertices_for_slicing(painted, volume_trafo) via the
             // Eigen shim (XY scaled, Z mm) — the FRAME_UNIFY vertex prep.
             let mut flat_in: Vec<f32> = Vec::with_capacity(painted.vertices.len() * 3);
@@ -3322,6 +3357,20 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
                 .chunks_exact(3)
                 .map(|c| Vec3f::new(c[0], c[1], c[2]))
                 .collect();
+            // R940 probe MMSDUMP (diagnostic only): the transformed vertices.
+            if crate::probe_enabled("MMSDUMP") {
+                let mut h: u64 = 1469598103934665603;
+                for v in &flat_out {
+                    for b in v.to_bits().to_le_bytes() {
+                        h ^= b as u64;
+                        h = h.wrapping_mul(1099511628211);
+                    }
+                }
+                eprintln!(
+                    "MMSVTX {} h={:016x} trafo={:?} voff={:?} v0={:?}",
+                    extruder_idx, h, ctx.trafo16, ctx.voff, &flat_out[..3.min(flat_out.len())]
+                );
+            }
 
             let want_top = max_top_layers > 0;
             let want_bottom = max_bottom_layers > 0;
@@ -3355,6 +3404,15 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
                 top = t;
                 bottom = b;
             }
+            // R940 probe MMSDUMP (diagnostic only): the slab output itself.
+            if crate::probe_enabled("MMSDUMP") {
+                for (l, ps) in top.iter().enumerate() {
+                    mmsdump_polys("slt", l, extruder_idx, ps);
+                }
+                for (l, ps) in bottom.iter().enumerate() {
+                    mmsdump_polys("slb", l, extruder_idx, ps);
+                }
+            }
             // MMS.cpp:1385-1403 — merge into the per-extruder raw stacks.
             let merge = |src: Vec<crate::geometry::Polygons>, dst: &mut Vec<crate::geometry::Polygons>| {
                 if let Some(first) = src.iter().position(|p| !p.is_empty()) {
@@ -3382,7 +3440,7 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
     // MMS.cpp:1410-1420 — filter out polygons under 0.1mm^2 (unprintable,
     // caused dimples on outer perimeters, BBS #7104). remove_small keeps
     // |area| >= min_area (Polygon.cpp:600).
-    let min_area = sqr_f64(scale_(0.1) as f64);
+    let min_area = pin_min_area_0_1f();
     let mut filter_out_small_polygons = |raw_surfaces: &mut Vec<Vec<crate::geometry::Polygons>>| {
         for by_extruder in raw_surfaces.iter_mut() {
             for polys in by_extruder.iter_mut() {
@@ -3418,6 +3476,17 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
         }
     }
 
+    // R940 probe MMSDUMP (diagnostic only): the raw projections after the occlusion trim.
+    if crate::probe_enabled("MMSDUMP") {
+        for e in 0..ne1 {
+            for (l, ps) in top_raw[e].iter().enumerate() {
+                mmsdump_polys("rawt", l, e, ps);
+            }
+            for (l, ps) in bottom_raw[e].iter().enumerate() {
+                mmsdump_polys("rawb", l, e, ps);
+            }
+        }
+    }
     // R769 stage probe: raw projections after the occlusion trim.
     if crate::probe_enabled("TBPROBE2") {
         for e in 0..ne1 {
@@ -3628,6 +3697,17 @@ pub fn mmu_segmentation_top_and_bottom_layers_tier1(
         }
     }
 
+    // R940 probe MMSDUMP (diagnostic only): the propagated projections and shells.
+    if crate::probe_enabled("MMSDUMP") {
+        for e in 0..ne1 {
+            for l in 0..2 * num_layers {
+                mmsdump_line("ctop", l, e, &triangles_by_color_top[e][l]);
+                mmsdump_line("cbot", l, e, &triangles_by_color_bottom[e][l]);
+                mmsdump_line("stop", l, e, &shell_triangles_by_color_top[e][l]);
+                mmsdump_line("sbot", l, e, &shell_triangles_by_color_bottom[e][l]);
+            }
+        }
+    }
     // MMS.cpp:1567-1613 — merge the two halves, the shells, and trim overlaps.
     let mut triangles_by_color_merged: Vec<Vec<ExPolygons>> =
         vec![vec![ExPolygons::new(); num_layers]; ne1];
@@ -3945,7 +4025,7 @@ pub fn multi_material_segmentation_by_painting_tier1(
     // scaled `10 * SCALED_EPSILON` is converted via `/ SCALING_FACTOR`.
     let grow_mm = (10.0 * SCALED_EPSILON) / SCALING_FACTOR;
     // remove_small_and_small_holes(..., Slic3r::sqr(scale_(0.1f))). MultiMaterialSegmentation.cpp:2126.
-    let min_area = sqr_f64(scale_(0.1) as f64);
+    let min_area = pin_min_area_0_1f();
     let mut input_expolygons: Vec<ExPolygons> = Vec::with_capacity(num_layers);
     for layer_idx in 0..num_layers {
         // cpp:2121 offset_ex(+10*SCALED_EPSILON) then cpp:2124 union_ex.
@@ -4660,8 +4740,100 @@ pub fn multi_material_segmentation_by_painting_tier1(
         );
     }
 
+    // R940 probe MMSDUMP (diagnostic only, never changes output): the same lines the
+    // pin-side dump generator writes (target/parity-tools/twin/mmsdump), per stage, layer and
+    // extruder: input_expolygons (cpp:2186-2205), mmu_segmentation_top_and_bottom_layers
+    // (cpp:1356) and the merged result (cpp:2396).
+    let mmsdump = crate::probe_enabled("MMSDUMP");
+    if mmsdump {
+        for (layer_idx, ex) in input_expolygons.iter().enumerate() {
+            mmsdump_line("in", layer_idx, 0, ex);
+        }
+        for (extruder_idx, per_layer) in top_and_bottom_layers.iter().enumerate() {
+            for (layer_idx, ex) in per_layer.iter().enumerate() {
+                mmsdump_line("tb", layer_idx, extruder_idx, ex);
+            }
+        }
+    }
     // cpp:2396 — returns [layer][num_extruders] (0-based extruder; default color dropped).
-    merge_segmented_layers(&segmented_regions, top_and_bottom_layers, num_extruders)
+    let merged = merge_segmented_layers(&segmented_regions, top_and_bottom_layers, num_extruders);
+    if mmsdump {
+        for (layer_idx, per_extruder) in merged.iter().enumerate() {
+            for (extruder_idx, ex) in per_extruder.iter().enumerate() {
+                mmsdump_line("seg", layer_idx, extruder_idx, ex);
+            }
+        }
+    }
+    merged
+}
+
+// R940 probe MMSDUMP line of Polygons: every polygon as a contour without holes.
+fn mmsdump_polys(stage: &str, layer_idx: usize, extruder_idx: usize, ps: &[Polygon]) {
+    let ex: Vec<ExPolygon> = ps
+        .iter()
+        .map(|p| {
+            let mut e = ExPolygon::default();
+            e.contour = p.clone();
+            e
+        })
+        .collect();
+    mmsdump_line(stage, layer_idx, extruder_idx, &ex);
+}
+
+// R940 probe MMSDUMP line: count, points, area, bbox and the FNV-1a hash of the scaled points
+// ("C x y ..." per contour, " H x y ..." per hole), as the pin-side dump writes it.
+fn mmsdump_line(stage: &str, layer_idx: usize, extruder_idx: usize, ex: &[ExPolygon]) {
+    if ex.is_empty() {
+        return;
+    }
+    let mut body = String::new();
+    let mut npts = 0usize;
+    let mut area = 0.0f64;
+    let (mut x0, mut y0, mut x1, mut y1) = (i64::MAX, i64::MAX, i64::MIN, i64::MIN);
+    for e in ex {
+        area += e.area();
+        body.push('C');
+        for p in &e.contour.points {
+            body.push_str(&format!(" {} {}", p.x, p.y));
+            npts += 1;
+            x0 = x0.min(p.x as i64);
+            y0 = y0.min(p.y as i64);
+            x1 = x1.max(p.x as i64);
+            y1 = y1.max(p.y as i64);
+        }
+        for h in &e.holes {
+            body.push_str(" H");
+            for p in &h.points {
+                body.push_str(&format!(" {} {}", p.x, p.y));
+                npts += 1;
+            }
+        }
+        body.push('\n');
+    }
+    let mut h: u64 = 1469598103934665603;
+    for c in body.bytes() {
+        h ^= c as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    // Order-free hash: the sorted multiset of every point.
+    let mut all: Vec<(i64, i64)> = Vec::with_capacity(npts);
+    for e in ex {
+        for p in e.contour.points.iter().chain(e.holes.iter().flat_map(|h| h.points.iter())) {
+            all.push((p.x as i64, p.y as i64));
+        }
+    }
+    all.sort();
+    let mut hs: u64 = 1469598103934665603;
+    for (x, y) in all {
+        for c in format!("{} {} ", x, y).bytes() {
+            hs ^= c as u64;
+            hs = hs.wrapping_mul(1099511628211);
+        }
+    }
+    eprintln!(
+        "MMSDUMP {} {} {} n={} pts={} area={:.0} bbox={},{},{},{} h={:016x} s={:016x}",
+        stage, layer_idx, extruder_idx, ex.len(), npts, area, x0, y0, x1, y1, h, hs
+    );
 }
 
 // ---------------------------------------------------------------------------

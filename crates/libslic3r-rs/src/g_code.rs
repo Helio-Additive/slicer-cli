@@ -8847,40 +8847,55 @@ fn format_config_value(
     }
 }
 
-impl GCode {
-    /// GCode.cpp:6410-6430 `void GCode::append_full_config(const DynamicPrintConfig &cfg, std::string &str)`:
-    /// every key of `cfg` in its (sorted) order, except the banned host keys and nil options, as
-    /// `; key = <opt_serialize(key)>`.
-    pub fn append_full_config(
-        cfg: &crate::print_config::config_def::DynamicPrintConfig,
-        str: &mut String,
-    ) {
-        use crate::config::{ConfigBase, ConfigOptionResolver};
-        // Sorted list of config keys, which shall not be stored into the G-code (GCode.cpp:6413-6423).
-        const BANNED_KEYS: [&str; 9] = [
-            "compatible_printers",
-            "compatible_prints",
-            "print_host",
-            "print_host_webui",
-            "printhost_apikey",
-            "printhost_cafile",
-            "printhost_user",
-            "printhost_password",
-            "printhost_port",
-        ];
-        let is_banned = |key: &str| BANNED_KEYS.contains(&key);
-        for key in ConfigBase::keys(cfg) {
-            let nil = ConfigOptionResolver::option(cfg, &key).map_or(true, |o| o.is_nil());
-            if !is_banned(&key) && !nil {
-                str.push_str("; ");
-                str.push_str(&key);
-                str.push_str(" = ");
-                str.push_str(&ConfigBase::opt_serialize(cfg, &key).unwrap_or_default());
-                str.push('\n');
-            }
+/// slicer_cli main.cpp:1355-1366 (end of `set_default_config`): `ensure_temp_opt` gives the four
+/// temperature keys a one-value `ConfigOptionInts` when the config does not hold them. It goes in
+/// with `set_key_value`, past `handle_legacy`, so `bed_temperature` and
+/// `bed_temperature_initial_layer` (removed options, PrintConfig.cpp:8470) are written in the
+/// CONFIG_BLOCK as `60`; the engine has no definition for them and never reads them.
+///
+/// FIDELITY-NOTE: applied here, to the copy `config_block_pin` writes, because the port's
+/// `full_print_config_from_settings` drops removed options as the pin's JSON load does and the
+/// front end's later `set_key_value` has no other consumer.
+pub fn front_end_set_default_temps(config: &mut crate::config::DynamicConfig) {
+    use crate::config::{ConfigOptionInts, ConfigOptionResolver};
+    let mut ensure_temp_opt = |key: &str, default_val: i32| {
+        if !config.has(key) {
+            config.set_key_value(key, Box::new(ConfigOptionInts::from_values(vec![default_val])));
+        }
+    };
+    ensure_temp_opt("nozzle_temperature", 200);
+    ensure_temp_opt("nozzle_temperature_initial_layer", 200);
+    ensure_temp_opt("bed_temperature", 60);
+    ensure_temp_opt("bed_temperature_initial_layer", 60);
+}
+
+/// slicer_cli main.cpp:9807-9814 + 9944-9950: `master_extruder_id` clamped to
+/// `[1, extruder_count]`, `extruder_count` being the size of `nozzle_diameter` (1 when it is missing
+/// or empty).
+///
+/// FIDELITY-NOTE: the pin clamps the front end's config, which the engine then reads
+/// (ToolOrdering::get_recommended_filament_maps); here only the CONFIG_BLOCK copy is clamped. The
+/// engine's readers (gcode/tool_ordering.rs, print.rs, g_code.rs `m_extruder_offsets`) take the
+/// job's settings, where the front end of the Rust engine (app_slice.rs) does not clamp yet.
+pub fn front_end_clamp_master_extruder_id(config: &mut crate::config::DynamicConfig) {
+    use crate::config::{ConfigOptionFloats, ConfigOptionInt};
+    let mut extruder_count: usize = 1;
+    if let Some(nd) = config.opt::<ConfigOptionFloats>("nozzle_diameter") {
+        if !nd.values.is_empty() {
+            extruder_count = nd.values.len();
         }
     }
+    if let Ok(Some(mid)) = config.opt_mut::<ConfigOptionInt>("master_extruder_id", false) {
+        if mid.value < 1 {
+            mid.value = 1;
+        }
+        if mid.value > extruder_count as i32 {
+            mid.value = extruder_count as i32;
+        }
+    }
+}
 
+impl GCode {
     /// The CONFIG_BLOCK of `GCode::_do_export` (GCode.cpp:2686-2723) over the job's settings read as
     /// `print.full_print_config()` (`full_print_config_from_settings`).
     ///
@@ -8892,6 +8907,12 @@ impl GCode {
         let mut out = String::from("; CONFIG_BLOCK_START\n");
         let mut full_config = String::new();
         let mut print_cfg_temp = full_print_config_from_settings(settings);
+        // The front end's own values (slicer_cli main.cpp), which reach `print.full_print_config()`
+        // in the pin. Gate GCODE_CONFIG_FRONT_END_PIN.
+        if crate::faithful_gate("GCODE_CONFIG_FRONT_END_PIN") {
+            front_end_set_default_temps(&mut print_cfg_temp.base);
+            front_end_clamp_master_extruder_id(&mut print_cfg_temp.base);
+        }
         {
             // correct the flush_volumes_matrix with flush_multiplier values (GCode.cpp:2692-2717)
             let fast = ConfigBase::opt_serialize(&print_cfg_temp, "prime_volume_mode")
@@ -8933,7 +8954,9 @@ impl GCode {
                 }
             }
         }
-        GCode::append_full_config(&print_cfg_temp, &mut full_config);
+        // GCode.cpp:2720 `append_full_config(print_cfg_temp, full_config)`: the verified port
+        // (gcode_class::GCode::append_full_config, g_code_native_parity `afc`).
+        gcode_class::GCode::append_full_config(&print_cfg_temp, &mut full_config);
         out.push_str(&full_config);
         out.push_str("; CONFIG_BLOCK_END\n\n");
         out
@@ -10388,6 +10411,69 @@ pub fn with_export_placeholders<R>(f: impl FnOnce(&mut GCodePlaceholders) -> R) 
 }
 
 /// The value of a scalar of a tool change's template context as a double.
+thread_local! {
+    /// What GCode.cpp:3266-3274 hands `get_path_of_change_filament(print)` at the export's start, when
+    /// `m_writer.multiple_extruders`: per object of the print, in its order, the bounding box (min, max)
+    /// of the model object of its first instance (GCode.cpp:205-206). `print.rs`'s export sets it
+    /// ([`set_change_filament_object_bounding_boxes`]); `None` leaves the globals `travel_point_1..3`
+    /// (GCode.cpp:172-174) at their zero initialisation.
+    static CHANGE_FILAMENT_OBJECT_BBOXES: std::cell::RefCell<Option<Vec<(crate::geometry::Vec3d, crate::geometry::Vec3d)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// GCode.cpp:3266-3274: the export's start publishes the objects' first-instance bounding boxes
+/// (`None` without `multiple_extruders`) for `travel_point_1..3` of the tool-change template.
+pub fn set_change_filament_object_bounding_boxes(bboxes: Option<Vec<(crate::geometry::Vec3d, crate::geometry::Vec3d)>>) {
+    CHANGE_FILAMENT_OBJECT_BBOXES.with(|c| *c.borrow_mut() = bboxes);
+}
+
+/// GCode.cpp:172-174, 3268-3274: `travel_point_1..3`, from `get_path_of_change_filament(print)` over
+/// `print.config()`'s `start_end_points` / `bed_exclude_area` and the published bounding boxes; `None`
+/// when the export did not publish them (the globals stay zero).
+fn change_filament_travel_points(cfg: &crate::config::DynamicConfig) -> Option<Vec<crate::geometry::Vec2d>> {
+    CHANGE_FILAMENT_OBJECT_BBOXES.with(|c| {
+        c.borrow().as_ref().map(|bboxes| {
+            gcode_class::get_path_of_change_filament(
+                &gcode_class::pp_points(cfg, "start_end_points"),
+                &gcode_class::pp_points(cfg, "bed_exclude_area"),
+                bboxes,
+            )
+        })
+    })
+}
+
+#[cfg(test)]
+mod change_filament_travel_points_tests {
+    use crate::geometry::{Vec2d, Vec3d};
+
+    /// The oracle's Majora G-code (slicer_cli at the pin) writes on its first tool change
+    /// `M620.1 X230.534 Y0 .. P0/P1` and `X230.534 Y245 .. P2` from `start_end_points = 30x-3,54x245`,
+    /// `bed_exclude_area = 0x0,18x0,18x28,0x28` and an object reaching x = 228.534 whose box starts left
+    /// of the start point and below the cutter area (GCode.cpp:203-295: no way from the left, the
+    /// nearest free x right of the object, +2 mm).
+    #[test]
+    fn majora_first_tool_change_path() {
+        let start_end = [Vec2d::new(30.0, -3.0), Vec2d::new(54.0, 245.0)];
+        let exclude = [Vec2d::new(0.0, 0.0), Vec2d::new(18.0, 0.0), Vec2d::new(18.0, 28.0), Vec2d::new(0.0, 28.0)];
+        let bboxes = [(Vec3d::new(20.0, 10.0, 0.0), Vec3d::new(228.534, 240.0, 150.0))];
+        let p = super::gcode_class::get_path_of_change_filament(&start_end, &exclude, &bboxes);
+        let got: Vec<(f32, f32)> = p.iter().map(|v| (v.x as f32, v.y as f32)).collect();
+        assert_eq!(got, vec![(230.534f32, 0.0), (230.534f32, 0.0), (230.534f32, 245.0)]);
+        // GCode.cpp:178-181: without two start/end points the safe values.
+        let p = super::gcode_class::get_path_of_change_filament(&start_end[..1], &exclude, &bboxes);
+        let got: Vec<(f64, f64)> = p.iter().map(|v| (v.x, v.y)).collect();
+        assert_eq!(got, vec![(54.0, 0.0), (54.0, 0.0), (54.0, 245.0)]);
+    }
+
+    /// GCode.cpp:172-174: nothing published (no multiple extruders) leaves the zero globals.
+    #[test]
+    fn nothing_published_keeps_zero_globals() {
+        super::set_change_filament_object_bounding_boxes(None);
+        let cfg = crate::config::DynamicConfig::new();
+        assert!(super::change_filament_travel_points(&cfg).is_none());
+    }
+}
+
 fn context_number(ctx: &crate::gcode::gcode_template::Context, key: &str) -> Option<f64> {
     use crate::gcode::gcode_template::Value;
     match ctx.get(key)? {
@@ -10543,8 +10629,23 @@ pub fn change_filament_override(gp: &GCodePlaceholders, t: &ToolChangeTemplateIn
     set("new_filament_e_feedrate", int(new_filament_e_feedrate));
     set("old_extruder_variant", Box::new(ConfigOptionString::with_value(variant(old_extruder_id))));
     set("new_extruder_variant", Box::new(ConfigOptionString::with_value(variant(new_extruder_id))));
-    for k in ["travel_point_1_x", "travel_point_1_y", "travel_point_2_x", "travel_point_2_y", "travel_point_3_x", "travel_point_3_y"] {
-        set(k, float(ctx_float(k, 0.0) as f32 as f64));
+    // GCode.cpp:1037-1042 `float(travel_point_N.x())`: the globals GCode.cpp:3268-3274 set at the
+    // export's start (`get_path_of_change_filament`). GCODE_TRAVEL_POINTS_PIN (faithful): from the
+    // bounding boxes the export published; =0 keeps the context's zeros.
+    let travel_points = if crate::faithful_gate("GCODE_TRAVEL_POINTS_PIN") {
+        change_filament_travel_points(cfg).filter(|p| p.len() == 3)
+    } else {
+        None
+    };
+    for (i, k) in ["travel_point_1_x", "travel_point_1_y", "travel_point_2_x", "travel_point_2_y", "travel_point_3_x", "travel_point_3_y"]
+        .into_iter()
+        .enumerate()
+    {
+        let v = match &travel_points {
+            Some(p) => (if i % 2 == 0 { p[i / 2].x } else { p[i / 2].y }) as f32 as f64,
+            None => ctx_float(k, 0.0) as f32 as f64,
+        };
+        set(k, float(v));
     }
     // GCode.cpp:1044-1069
     {

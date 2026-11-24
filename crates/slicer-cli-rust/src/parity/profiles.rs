@@ -167,6 +167,62 @@ pub fn load_profile(path: &Path) -> Result<Value, String> {
 
 fn finalize_resolved_config(config: &mut Map<String, Value>) {
     normalize_single_filament_stl_config(config);
+    // Gate FRONT_END_MASTER_EXTRUDER_CLAMP_PIN.
+    if slicer::faithful_gate("FRONT_END_MASTER_EXTRUDER_CLAMP_PIN") {
+        clamp_master_extruder_id(config);
+    }
+}
+
+/// slicer_cli main.cpp:9807-9814 + 9944-9950: `master_extruder_id` clamped to `[1, extruder_count]`
+/// (1-indexed), `extruder_count` being the size of `nozzle_diameter` (1 when missing or empty), so
+/// that ToolOrdering::get_recommended_filament_maps indexes inside the nozzle list.
+fn clamp_master_extruder_id(config: &mut Map<String, Value>) {
+    let mut extruder_count = 1usize;
+    let nd = value_array_len(config, "nozzle_diameter");
+    if nd > 0 {
+        extruder_count = nd;
+    }
+    let Some(current) = config.get("master_extruder_id") else {
+        return;
+    };
+    let parsed = match current {
+        Value::String(s) => s.trim().parse::<i64>().ok(),
+        Value::Number(n) => n.as_i64(),
+        _ => None,
+    };
+    let Some(mut value) = parsed else {
+        return;
+    };
+    if value < 1 {
+        value = 1;
+    }
+    if value > extruder_count as i64 {
+        value = extruder_count as i64;
+    }
+    if parsed != Some(value) {
+        config.insert("master_extruder_id".to_owned(), Value::String(value.to_string()));
+    }
+}
+
+/// Config.cpp:40-48 + 1114-1123 (ConfigBase::load_from_json, run on every preset file
+/// desktop_presets.cpp:116/248 loads): the optional auxiliary fan's keys a file does not set take
+/// the standard fan's value of the same file.
+const AUX_FAN_STANDARD_TO_OPTIONAL_KEYS: [(&str, &str); 4] = [
+    ("additional_cooling_fan_speed", "optional_cooling_fan_speed"),
+    ("close_additional_fan_first_x_layers", "close_optional_fan_first_x_layers"),
+    ("first_x_layer_fan_speed", "first_x_layer_optional_fan_speed"),
+    ("additional_fan_full_speed_layer", "optional_fan_full_speed_layer"),
+];
+
+fn aux_fan_standard_to_optional(obj: &mut Map<String, Value>) {
+    for (first, second) in AUX_FAN_STANDARD_TO_OPTIONAL_KEYS {
+        if !obj.contains_key(first) || obj.contains_key(second) {
+            continue;
+        }
+        if let Some(src) = obj.get(first).cloned() {
+            obj.insert(second.to_owned(), src);
+        }
+    }
 }
 
 fn normalize_single_filament_stl_config(config: &mut Map<String, Value>) {
@@ -382,9 +438,13 @@ impl ProfilesIndex {
         merged: &mut Map<String, Value>,
         visited: &mut HashSet<String>,
     ) -> Result<(), String> {
-        let Value::Object(obj) = value else {
+        let Value::Object(mut obj) = value else {
             return Ok(());
         };
+        // Gate PROFILE_AUX_FAN_FALLBACK_PIN (Config.cpp:1114-1123, per loaded file).
+        if slicer::faithful_gate("PROFILE_AUX_FAN_FALLBACK_PIN") {
+            aux_fan_standard_to_optional(&mut obj);
+        }
 
         for include_name in parse_include_field(obj.get("include")) {
             self.resolve_into(&include_name, merged, visited)?;
@@ -616,4 +676,33 @@ mod tests {
         assert_eq!(config["filament_colour"], serde_json::json!(["#fff"]));
     }
 
+    /// main.cpp:9944-9950: clamped to [1, size of nozzle_diameter].
+    #[test]
+    fn clamps_master_extruder_id_to_the_nozzle_count() {
+        let mut config = Map::new();
+        config.insert("nozzle_diameter".into(), serde_json::json!(["0.4"]));
+        config.insert("master_extruder_id".into(), serde_json::json!("2"));
+        clamp_master_extruder_id(&mut config);
+        assert_eq!(config["master_extruder_id"], serde_json::json!("1"));
+        config.insert("nozzle_diameter".into(), serde_json::json!(["0.4", "0.4"]));
+        config.insert("master_extruder_id".into(), serde_json::json!("2"));
+        clamp_master_extruder_id(&mut config);
+        assert_eq!(config["master_extruder_id"], serde_json::json!("2"));
+        config.insert("master_extruder_id".into(), serde_json::json!("0"));
+        clamp_master_extruder_id(&mut config);
+        assert_eq!(config["master_extruder_id"], serde_json::json!("1"));
+    }
+
+    /// Config.cpp:1114-1123: a file's optional-fan keys it does not set take its standard-fan value.
+    #[test]
+    fn optional_fan_keys_fall_back_to_the_standard_fan_per_file() {
+        let mut obj = Map::new();
+        obj.insert("additional_cooling_fan_speed".into(), serde_json::json!(["75"]));
+        obj.insert("first_x_layer_fan_speed".into(), serde_json::json!(["0"]));
+        obj.insert("first_x_layer_optional_fan_speed".into(), serde_json::json!(["5"]));
+        aux_fan_standard_to_optional(&mut obj);
+        assert_eq!(obj["optional_cooling_fan_speed"], serde_json::json!(["75"]));
+        assert_eq!(obj["first_x_layer_optional_fan_speed"], serde_json::json!(["5"]));
+        assert!(!obj.contains_key("close_optional_fan_first_x_layers"));
+    }
 }

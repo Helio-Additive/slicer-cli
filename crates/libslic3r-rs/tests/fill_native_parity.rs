@@ -799,9 +799,9 @@ fn fill_make_ironing_native_parity() {
 
 // Layer::generate_sparse_infill_polylines_for_anchoring (Fill.cpp:869-980, no octrees and no lightning
 // generator, as Fill.cpp:760 calls it): the polylines the pin lays for the stInternal fills of a layer
-// whose fill surfaces are set by hand ("ga" lines of tests/data/fill/vectors_anchoring.txt, 7
+// whose fill surfaces are set by hand ("ga" lines of tests/data/fill/vectors_anchoring.txt, 10
 // configurations x 8 layers: cubic, triangles, tri-hexagon (stars), cubic at 30% and 30 degrees,
-// triangles at 85%, grid, zig-zag), against `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base`
+// triangles at 85%, grid, zig-zag, and (R940) gyroid at 15%, at 30% and 30 degrees, at 60%), against `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base`
 // of layer.rs on the same inputs (the object's base at 0, its bounding box as the pin's).
 fn read_anchoring_vectors() -> Vec<String> {
     let path = std::env::var("FILL_ANCHORING_VECTORS")
@@ -920,9 +920,12 @@ fn fill_anchoring_polylines_native_parity() {
     for (tag, n, eq) in &per_cfg {
         eprintln!("    {tag}: {eq} of {n} lines equal");
     }
-    assert_eq!(lines, 56, "the vectors hold 7 configurations x 8 layers");
+    assert_eq!(lines, 80, "the vectors hold 10 configurations x 8 layers");
     assert!(equal >= ANCHORING_FLOOR, "anchoring: {equal} lines equal to the pin, {ANCHORING_FLOOR} before");
 }
 // Lines equal to the pin (R935, when this test was written: 56 of 56, with FILL_ANCHOR_MULTILINES_PIN and
-// FILL_ANCHOR_ONE_LINE_PIN; with both =0 the cubic, triangles and stars lines differ).
-const ANCHORING_FLOOR: usize = 56;
+// FILL_ANCHOR_ONE_LINE_PIN; with both =0 the cubic, triangles and stars lines differ). R940: 80 of 80 with the
+// three gyroid configurations (FILL_ANCHOR_GYROID_SPACING_PIN, FVS_ANCHOR_GYROID_FSS on; every other gyroid
+// layer is 0.08 mm against the object's 0.16, and with FILL_ANCHOR_GYROID_SPACING_PIN=0 11 of the 24 gyroid
+// lines differ).
+const ANCHORING_FLOOR: usize = 80;

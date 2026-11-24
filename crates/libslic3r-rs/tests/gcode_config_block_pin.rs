@@ -53,3 +53,31 @@ fn config_block_pin_serializes_like_the_pin() {
     // Every option of the full print config is written (the pin's block has about 600 lines).
     assert!(keys.len() > 500, "{} keys", keys.len());
 }
+
+/// The front end's values (slicer_cli main.cpp:1355-1366 `ensure_temp_opt`, main.cpp:9944-9950 the
+/// `master_extruder_id` clamp), as the pin writes them: Benchy's block (H2D, one nozzle_diameter
+/// after the single-filament reduction) holds `bed_temperature = 60`,
+/// `bed_temperature_initial_layer = 60` and `master_extruder_id = 1`; Majora's (X1C) the same 60s.
+#[test]
+fn config_block_pin_writes_the_front_end_values() {
+    let settings = serde_json::json!({
+        "nozzle_diameter": ["0.4"],
+        "master_extruder_id": "2",
+        "nozzle_temperature": ["220", "220"],
+        "flush_multiplier": ["1"],
+        "flush_volumes_matrix": ["0"],
+        "filament_colour": ["#FFFFFF"],
+    });
+    let block = GCode::config_block_pin(&settings);
+    let lines: Vec<&str> = block.lines().collect();
+    let has = |l: &str| lines.iter().any(|x| *x == l);
+    assert!(has("; bed_temperature = 60"), "bed_temperature");
+    assert!(has("; bed_temperature_initial_layer = 60"), "bed_temperature_initial_layer");
+    assert!(has("; master_extruder_id = 1"), "master_extruder_id");
+    // ensure_temp_opt only fills a missing key.
+    assert!(has("; nozzle_temperature = 220,220"), "nozzle_temperature");
+    // DynamicConfig::keys() is sorted: the two keys the front end adds sit in that order.
+    let pos = |k: &str| lines.iter().position(|l| l.starts_with(k)).unwrap();
+    assert!(pos("; bed_temperature = ") < pos("; bed_temperature_formula = "));
+    assert!(pos("; bed_temperature_formula = ") < pos("; bed_temperature_initial_layer = "));
+}

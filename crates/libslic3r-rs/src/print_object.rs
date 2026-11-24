@@ -3036,6 +3036,10 @@ impl PrintObject {
         // ====================================================================
         let determine_bridging_angle =
             |bridged_area: &[Polygon], anchors: &[Line], dominant_pattern: InfillPattern, infill_direction: f64| -> f64 {
+                // R940: the pin's lambda body (PrintObject.cpp:3081-3160).
+                if crate::faithful_gate("BRIDGING_ANGLE_PIN") {
+                    return determine_bridging_angle_pin(bridged_area, anchors, dominant_pattern, infill_direction);
+                }
                 let lines_tree = LinesDistancer::new(anchors.to_vec());
                 // PrintObject.cpp:2501-2505 — fixed-angle patterns.
                 match dominant_pattern {
@@ -3746,6 +3750,39 @@ impl PrintObject {
                         )
                     };
 
+                    // R940 probe BA_DUMP=<layer index>: the lambda's inputs in the format of
+                    // tests/data/bridging_angle/vectors (pattern code 0 = any pattern the lambda
+                    // does not special-case), diagnostic only.
+                    if crate::probe_enabled("BA_DUMP")
+                        && std::env::var("BA_DUMP").ok().and_then(|v| v.parse::<usize>().ok()) == Some(lidx)
+                    {
+                        let (pat, dir, lines) = if !anchors.is_empty() {
+                            (region_cfg_pattern, region_cfg_dir, to_lines_polylines(&anchors))
+                        } else {
+                            (InfillPattern::Line, 0.0, to_lines_polylines(&boundary_plines))
+                        };
+                        let k = match pat {
+                            InfillPattern::Line => 1,
+                            InfillPattern::HilbertCurve => 2,
+                            InfillPattern::OctagramSpiral => 3,
+                            InfillPattern::CrossHatch => 4,
+                            InfillPattern::Honeycomb3D => 5,
+                            _ => 0,
+                        };
+                        let mut s = format!("in ba {} {:016x} {}", k, dir.to_bits(), area_to_be_bridge.len());
+                        for p in &area_to_be_bridge {
+                            s += &format!(" {}", p.points.len());
+                            for q in &p.points {
+                                s += &format!(" {} {}", q.x, q.y);
+                            }
+                        }
+                        s += &format!(" {}", lines.len());
+                        for l in &lines {
+                            s += &format!(" {} {} {} {}", l.a.x, l.a.y, l.b.x, l.b.y);
+                        }
+                        eprintln!("{s}");
+                        eprintln!("BA_DUMP rust {:016x} {}", bridging_angle.to_bits(), bridging_angle);
+                    }
                     boi_pp("a2b", lidx, &area_to_be_bridge, bridging_angle);
                     boi_pl("anchors", lidx, &anchors);
                     boi_pl("bplines", lidx, &boundary_plines);
@@ -9247,4 +9284,134 @@ pub mod faithful {
             }
         }
     }
+}
+
+/// The `determine_bridging_angle` lambda of `PrintObject::bridge_over_infill`
+/// as the pin writes it (PrintObject.cpp:3081-3160). Differences from the
+/// earlier inline port (kept behind gate BRIDGING_ANGLE_PIN=0):
+/// - `scaled(2.0)` is `scaled<coord_t>` = `coord_t(2.0 / SCALING_FACTOR)` =
+///   199999 (Point.hpp:536-541), compared and divided as a double;
+/// - `float step_size` (:3101), `i * step_size` in float (:3103);
+/// - the sample point is `.cast<coord_t>()`: truncation, not rounding (:3103);
+/// - `std::map<double, int>` keyed by the exact angle (:3092; angles lie in
+///   [0.5 PI, 1.5 PI], so the bit pattern orders them);
+/// - the window's end is `upper_bound` (inclusive, :3121), the wrapped
+///   window at 1.5 PI likewise (:3136);
+/// - `dir_acc += first * second` is one contracted expression (fmuladd);
+/// - no `lines_count >= 1` clamp (:3100).
+/// Empty `anchors` would make the pin index `size_t(-1)` (UB); the caller
+/// never passes them empty (PrintObject.cpp:3471-3478), the guard stays.
+pub fn determine_bridging_angle_pin(
+    bridged_area: &[Polygon],
+    anchors: &[crate::geometry::Line],
+    dominant_pattern: crate::print_config::InfillPattern,
+    infill_direction: f64,
+) -> f64 {
+    use crate::print_config::InfillPattern;
+    use std::f64::consts::PI;
+    // PrintObject.cpp:3082
+    let lines_tree = crate::aabb_tree_lines::LinesDistancer::new(anchors.to_vec());
+    // PrintObject.cpp:3084-3090
+    match dominant_pattern {
+        InfillPattern::Honeycomb3D | InfillPattern::CrossHatch => {
+            return (infill_direction + 45.0) * 2.0 * PI / 360.0;
+        }
+        _ => {}
+    }
+    // PrintObject.cpp:3092 — std::map<double, int>
+    let mut counted_directions: std::collections::BTreeMap<u64, i32> = std::collections::BTreeMap::new();
+    // scaled(2.0) = scaled<coord_t>(2.0), converted to double where used.
+    let scaled_2 = crate::scaled(2.0) as f64;
+    if !anchors.is_empty() {
+        // PrintObject.cpp:3093-3116
+        for p in bridged_area {
+            let mut acc_distance = 0.0_f64;
+            let pts = &p.points;
+            let n = pts.len() as i32 - 1;
+            let mut point_idx = 0_i32;
+            while point_idx < n {
+                let start = [pts[point_idx as usize].x as f64, pts[point_idx as usize].y as f64];
+                let next = [pts[point_idx as usize + 1].x as f64, pts[point_idx as usize + 1].y as f64];
+                let mut v = [next[0] - start[0], next[1] - start[1]];
+                // v.norm(): sqrt of the packet redux x*x + y*y
+                let dist_to_next = (v[0] * v[0] + v[1] * v[1]).sqrt();
+                acc_distance += dist_to_next;
+                if acc_distance > scaled_2 {
+                    acc_distance = 0.0;
+                    // v.normalize(): divide by sqrt(squaredNorm) when > 0
+                    let sq = v[0] * v[0] + v[1] * v[1];
+                    if sq > 0.0 {
+                        let nrm = sq.sqrt();
+                        v[0] /= nrm;
+                        v[1] /= nrm;
+                    }
+                    let lines_count = (dist_to_next / scaled_2).ceil() as i32;
+                    let step_size = (dist_to_next / lines_count as f64) as f32;
+                    for i in 0..lines_count {
+                        // (start + v * (i * step_size)).cast<coord_t>()
+                        let s = (i as f32 * step_size) as f64;
+                        let ax = start[0] + v[0] * s;
+                        let ay = start[1] + v[1] * s;
+                        let a = crate::geometry::Point::new(ax as i64, ay as i64);
+                        let (_d, index, _np) = lines_tree.distance_from_lines_extra::<false>(a);
+                        let mut angle = lines_tree.get_line(index).orientation();
+                        if angle > PI {
+                            angle -= PI;
+                        }
+                        angle += PI * 0.5;
+                        *counted_directions.entry(angle.to_bits()).or_insert(0) += 1;
+                    }
+                }
+                point_idx += 1;
+            }
+        }
+    }
+    let keys: Vec<(f64, i32)> = counted_directions.iter().map(|(&k, &c)| (f64::from_bits(k), c)).collect();
+    // PrintObject.cpp:3118-3147 — sliding window accumulation
+    let mut best_dir: (f64, i32) = (0.0, 0);
+    for &(dir_first, _) in &keys {
+        let mut score_acc = 0_i32;
+        let mut dir_acc = 0.0_f64;
+        let window_start_angle = dir_first - PI * 0.1;
+        let window_end_angle = dir_first + PI * 0.1;
+        // [lower_bound(start), upper_bound(end))
+        for &(a, c) in &keys {
+            if a >= window_start_angle && a <= window_end_angle {
+                dir_acc = a.mul_add(c as f64, dir_acc);
+                score_acc += c;
+            }
+        }
+        if window_start_angle < 0.5 * PI {
+            let lb = 1.5 * PI - (0.5 * PI - window_start_angle);
+            for &(a, c) in &keys {
+                if a >= lb {
+                    dir_acc = a.mul_add(c as f64, dir_acc);
+                    score_acc += c;
+                }
+            }
+        }
+        if window_start_angle > 1.5 * PI {
+            let ub = window_start_angle - 1.5 * PI;
+            for &(a, c) in &keys {
+                if a <= ub {
+                    dir_acc = a.mul_add(c as f64, dir_acc);
+                    score_acc += c;
+                }
+            }
+        }
+        if score_acc > best_dir.1 {
+            best_dir = (dir_acc / score_acc as f64, score_acc);
+        }
+    }
+    // PrintObject.cpp:3148-3157
+    let mut bridging_angle = best_dir.0;
+    if bridging_angle == 0.0 {
+        bridging_angle = 0.001;
+    }
+    match dominant_pattern {
+        InfillPattern::HilbertCurve => bridging_angle += 0.25 * PI,
+        InfillPattern::OctagramSpiral => bridging_angle += (1.0 / 16.0) * PI,
+        _ => {}
+    }
+    bridging_angle
 }

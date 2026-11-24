@@ -459,6 +459,79 @@ impl Print {
         self.model = model;
     }
 
+    /// GCode.cpp:203-206, what `get_path_of_change_filament` reads of each object: the bounding box of
+    /// the model object of its first instance, `ModelObject::bounding_box()` (Model.cpp:1655-1665: the
+    /// raw mesh box, Model.cpp:1738-1746 = the MODEL_PART volumes' meshes through their matrices, through
+    /// each instance's `get_matrix()` as eight corners, BoundingBox.cpp:266-290), in the print's order.
+    /// With the live Model (`set_model`) it is that Model's; otherwise rebuilt from what the loader keeps
+    /// on the PrintObject: the volumes (`occlusion_volumes`, local meshes, matrices, `trafo_centered()`)
+    /// and the instance's shift. FIDELITY-NOTE: the instance's XY translation is recovered from the
+    /// truncated `instance_shift` minus `trafo_centered()`'s centre offset (one scaled unit, 1e-5 mm, at
+    /// most); a single instance is assumed (the loader keeps one). `None` if an object has neither.
+    pub(crate) fn change_filament_object_bounding_boxes(&self) -> Option<Vec<(crate::geometry::Vec3d, crate::geometry::Vec3d)>> {
+        use crate::geometry::geometry::eigen::transform_mul_vec;
+        use crate::geometry::geometry::{Transform3d, Vec3d as EVec3d};
+        let sf = crate::libslic3r::SCALING_FACTOR;
+        let mut out = Vec::with_capacity(self.objects.len());
+        for obj in &self.objects {
+            if let Some(mo) = self.model.objects.get(obj.model_object_id) {
+                let bb = mo.bounding_box();
+                out.push((
+                    crate::geometry::Vec3d::new(bb.min.x, bb.min.y, bb.min.z),
+                    crate::geometry::Vec3d::new(bb.max.x, bb.max.y, bb.max.z),
+                ));
+                continue;
+            }
+            let (Some((volumes, tc)), Some((sx, sy))) = (obj.occlusion_volumes.as_ref(), obj.instance_shift) else {
+                return None;
+            };
+            let m12 = |m: &[f64; 12]| -> Transform3d {
+                Transform3d::new(
+                    m[0], m[1], m[2], m[9], m[3], m[4], m[5], m[10], m[6], m[7], m[8], m[11], 0.0, 0.0, 0.0, 1.0,
+                )
+            };
+            // Model.cpp:1743-1745: MODEL_PART volumes only, `mesh().transformed_bounding_box(get_matrix())`
+            // (TriangleMesh.cpp:501-507, every vertex through the Transform3d).
+            let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+            let mut any = false;
+            for (mesh, vol_tf, is_negative) in volumes {
+                if *is_negative {
+                    continue;
+                }
+                let t = m12(vol_tf);
+                for v in mesh.vertices() {
+                    let p = transform_mul_vec(&t, &EVec3d::new(v.x, v.y, v.z));
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(p[k]);
+                        hi[k] = hi[k].max(p[k]);
+                    }
+                    any = true;
+                }
+            }
+            if !any {
+                return None;
+            }
+            // The instance's get_matrix(): trafo_centered()'s linear part and Z, the XY translation
+            // `unscale(shift) - unscale(center_offset)`, with -unscale(center_offset) = tc's XY.
+            let inst = [
+                [tc[0], tc[1], tc[2], sx as f64 * sf + tc[9]],
+                [tc[3], tc[4], tc[5], sy as f64 * sf + tc[10]],
+                [tc[6], tc[7], tc[8], tc[11]],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+            let raw = crate::bounding_box::BoundingBoxf3::new_from_points(
+                crate::geometry::Vec3d::new(lo[0], lo[1], lo[2]),
+                crate::geometry::Vec3d::new(hi[0], hi[1], hi[2]),
+            );
+            let bb = raw.transformed(&inst);
+            out.push((
+                crate::geometry::Vec3d::new(bb.min.x, bb.min.y, bb.min.z),
+                crate::geometry::Vec3d::new(bb.max.x, bb.max.y, bb.max.z),
+            ));
+        }
+        Some(out)
+    }
+
     /// Add a PrintObject to the print
     /// Print.cpp:440
     pub fn add_object(&mut self, mut object: PrintObject) {
@@ -709,6 +782,17 @@ impl Print {
                 }
             }
         }
+        // GCode.cpp:3266-3274 (BBS: get path for change filament): with `m_writer.multiple_extruders`,
+        // `travel_point_1..3` come from `get_path_of_change_filament(print)`, which reads the objects'
+        // first-instance bounding boxes (GCode.cpp:203-206). GCODE_TRAVEL_POINTS_PIN (faithful, read in
+        // g_code.rs); without multiple extruders, or =0, nothing is published and the points stay 0.
+        crate::g_code::set_change_filament_object_bounding_boxes(
+            if crate::faithful_gate("GCODE_TRAVEL_POINTS_PIN") && writer.has_multiple_extruders() {
+                self.change_filament_object_bounding_boxes()
+            } else {
+                None
+            },
+        );
 
         // GCode.cpp member state
         let mut last_layer_z: f64 = 0.0;

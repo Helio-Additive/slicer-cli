@@ -5939,92 +5939,92 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **free functions**
 
-- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:12406` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:8965`
-- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:8985`
-- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:12445`
+- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:12507` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:8988`
+- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:9008`
+- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:12546`
 - [v] `check_add_eol` (line 298) → `g_code.rs:49` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `custom_gcode_changes_tool` (line 306) → `g_code.rs:58` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `transform_gcode` (line 378) → `g_code.rs:133` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `get_wipe_avoid_pos_x` (line 428) → `g_code.rs:224` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:12576`
-- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:9042`
-- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:12613` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:14911`
-- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:14604` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:12677`
+- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:9065`
+- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:12714` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:15012`
+- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:14705` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
 - [ ] `init_gcode_processor` (line 2193) → `g_code.rs`
 - [ ] `autospeed_volumetric_limit` (line 2207) → `g_code.rs`
 - [ ] `init_ooze_prevention` (line 2266) → `g_code.rs`
 - [ ] `export_thumbnails_to_file` (line 2301) → `g_code.rs`
-- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:14963`
-- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:15006` — partial
-- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:15025` — partial
+- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:15064`
+- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:15107` — partial
+- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:15126` — partial
 - [~] `to_bambu_bed_type` (line 2461) → `g_code.rs:1494` — divergent
-- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:14841`
-- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:14690`
-- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:14716`
-- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:14779`
-- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:14805`
-- [x] `get_instance_name` (line 4568) → `g_code.rs:12753` — read against the C++ in R915 (the estimate says partial)
+- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:14942`
+- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:14791`
+- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:14817`
+- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:14880`
+- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:14906`
+- [x] `get_instance_name` (line 4568) → `g_code.rs:12854` — read against the C++ in R915 (the estimate says partial)
 - [~] `get_instance_name` (line 4576) → `g_code.rs` — another overload of the name is ported
 - [ ] `calculate_layer_edge_grid` (line 6543) → `g_code.rs`
-- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:14584` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `need_smooth_speed` (line 7205) → `g_code.rs:11850`
-- [v] `encodeBase64` (line 8091) → `g_code.rs:12707` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
-- [x] `polygon_to_string` (line 8993) → `g_code.rs:15068`
+- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:14685` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `need_smooth_speed` (line 7205) → `g_code.rs:11951`
+- [v] `encodeBase64` (line 8091) → `g_code.rs:12808` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `polygon_to_string` (line 8993) → `g_code.rs:15169`
 
 **class `GCode`**
 
-- [x] `set_gcode_offset` (line 211) → `g_code.rs:13345`
-- [v] `set_origin` (line 216) → `g_code.rs:14187` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `layer` (line 223) → `g_code.rs:13415`
-- [x] `enable_cooling_markers` (line 231) → `g_code.rs:13435`
-- [x] `layer_count` (line 234) → `g_code.rs:13440`
-- [x] `set_layer_count` (line 235) → `g_code.rs:13445`
-- [x] `set_smooth_coff` (line 252) → `g_code.rs:13489`
-- [x] `set_last_pos` (line 420) → `g_code.rs:13494`
-- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:13500`
-- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:13505`
-- [x] `last_pos_defined` (line 423) → `g_code.rs:13510`
-- [x] `on_first_layer` (line 713) → `g_code.rs:14152`
-- [x] `path_touches_bed` (line 716) → `g_code.rs:14161`
-- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:14169`
-- [x] `object_layer_over_raft` (line 725) → `g_code.rs:14180`
+- [x] `set_gcode_offset` (line 211) → `g_code.rs:13446`
+- [v] `set_origin` (line 216) → `g_code.rs:14288` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `layer` (line 223) → `g_code.rs:13516`
+- [x] `enable_cooling_markers` (line 231) → `g_code.rs:13536`
+- [x] `layer_count` (line 234) → `g_code.rs:13541`
+- [x] `set_layer_count` (line 235) → `g_code.rs:13546`
+- [x] `set_smooth_coff` (line 252) → `g_code.rs:13590`
+- [x] `set_last_pos` (line 420) → `g_code.rs:13595`
+- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:13601`
+- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:13606`
+- [x] `last_pos_defined` (line 423) → `g_code.rs:13611`
+- [x] `on_first_layer` (line 713) → `g_code.rs:14253`
+- [x] `path_touches_bed` (line 716) → `g_code.rs:14262`
+- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:14270`
+- [x] `object_layer_over_raft` (line 725) → `g_code.rs:14281`
 - [ ] `collect_layers_to_print` (line 1576) → `g_code.rs`
 - [ ] `collect_layers_to_print` (line 1769) → `g_code.rs`
-- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:13481`
-- [x] `unretract` (line 1959) → `g_code.rs:13475`
-- [v] `first_layer_projection` (line 1965) → `g_code.rs:15085` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
+- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:13582`
+- [x] `unretract` (line 1959) → `g_code.rs:13576`
+- [v] `first_layer_projection` (line 1965) → `g_code.rs:15186` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
 - [ ] `do_export` (line 1986) → `g_code.rs`
 - [ ] `_do_export` (line 2478) → `g_code.rs`
 - [ ] `export_layer_filaments` (line 3670) → `g_code.rs`
-- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:10021`
-- [x] `get_extruder_id` (line 3793) → `g_code.rs:9518`
-- [x] `get_filament_config_index` (line 3802) → `g_code.rs:9531`
-- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:9537`
-- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:13562`
+- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:10044`
+- [x] `get_extruder_id` (line 3793) → `g_code.rs:9541`
+- [x] `get_filament_config_index` (line 3802) → `g_code.rs:9554`
+- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:9560`
+- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:13663`
 - [ ] `process_layers` (line 3830) → `g_code.rs`
 - [ ] `process_layers` (line 3973) → `g_code.rs`
-- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:9988`
-- [v] `print_machine_envelope` (line 4132) → `g_code.rs:13576` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
-- [x] `get_bed_temperature` (line 4173) → `g_code.rs:9543`
-- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:9551`
-- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:13639`
-- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:13680`
+- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:10011`
+- [v] `print_machine_envelope` (line 4132) → `g_code.rs:13677` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `get_bed_temperature` (line 4173) → `g_code.rs:9566`
+- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:9574`
+- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:13740`
+- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:13781`
 - [ ] `sort_print_object_instances` (line 4284) → `g_code.rs`
 - [ ] `compute_farthest_point` (line 4582) → `g_code.rs`
 - [ ] `generate_timelapse_gcode` (line 4735) → `g_code.rs`
 - [ ] `filament_in_first_layer_phase` (line 4844) → `g_code.rs`
 - [~] `process_layer` (line 4919) → `gcode/cooling.rs, gcode/spiral_vase.rs` — not in the paired file
-- [x] `apply_print_config` (line 6403) → `g_code.rs:15137`
-- [v] `append_full_config` (line 6410) → `g_code.rs:8854` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `set_extruders` (line 6433) → `g_code.rs:13516`
-- [v] `set_origin` (line 6446) → `g_code.rs:13356` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `preamble` (line 6458) → `g_code.rs:13531`
+- [x] `apply_print_config` (line 6403) → `g_code.rs:15238`
+- [v] `append_full_config` (line 6410) → `g_code.rs:13553` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `set_extruders` (line 6433) → `g_code.rs:13617`
+- [v] `set_origin` (line 6446) → `g_code.rs:13457` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `preamble` (line 6458) → `g_code.rs:13632`
 - [~] `change_layer` (line 6473) → `g_code.rs:5923` — partial
-- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:13726` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:13758` — read against the C++ in R915 (the estimate says partial)
-- [x] `get_path_speed` (line 6615) → `g_code.rs:13775` — read against the C++ in R915 (the estimate says partial)
+- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:13827` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:13859` — read against the C++ in R915 (the estimate says partial)
+- [x] `get_path_speed` (line 6615) → `g_code.rs:13876` — read against the C++ in R915 (the estimate says partial)
 - [~] `extrude_loop` (line 6664) → `g_code.rs:2049` — divergent
 - [ ] `extrude_multi_path` (line 6884) → `g_code.rs`
 - [x] `extrude_entity` (line 6914) → `g_code.rs:4074`
@@ -6032,86 +6032,86 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 - [~] `extrude_perimeters` (line 6959) → `g_code.rs:4346` — divergent
 - [x] `extrude_infill` (line 6983) → `g_code.rs:4410`
 - [~] `extrude_support` (line 7011) → `g_code.rs:4849` — partial
-- [x] `mapping_speed` (line 7158) → `g_code.rs:11832`
-- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:11842`
-- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:13827`
-- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:11869`
-- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:12123` — partial
-- [x] `set_speed_transition` (line 7403) → `g_code.rs:12173`
-- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:12336`
-- [x] `slowDownByHeight` (line 7513) → `g_code.rs:13902`
-- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:13973` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `mapping_speed` (line 7158) → `g_code.rs:11933`
+- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:11943`
+- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:13928`
+- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:11970`
+- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:12224` — partial
+- [x] `set_speed_transition` (line 7403) → `g_code.rs:12274`
+- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:12437`
+- [x] `slowDownByHeight` (line 7513) → `g_code.rs:14003`
+- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:14074` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [~] `_extrude` (line 7587) → `extruder.rs, gcode/extruder.rs, gcode/wipe_tower.rs` — not in the paired file
-- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:14004` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:14024`
-- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:14029` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:14038` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:14057`
-- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:14087` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:14095`
+- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:14105` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:14125`
+- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:14130` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:14139` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:14158`
+- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:14188` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:14196`
 - [~] `travel_to` (line 8198) → `g_code.rs:5087` — divergent
-- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:14107`
+- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:14208`
 - [x] `to_lift_type` (line 8348) → `g_code.rs:5888`
 - [ ] `needs_retraction` (line 8363) → `g_code.rs`
-- [x] `retract` (line 8498) → `g_code.rs:14113`
-- [x] `update_layer_related_config` (line 8531) → `g_code.rs:15150`
-- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:9894` — partial
+- [x] `retract` (line 8498) → `g_code.rs:14214`
+- [x] `update_layer_related_config` (line 8531) → `g_code.rs:15251`
+- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:9917` — partial
 - [~] `set_extruder` (line 8617) → `g_code.rs:5476` — divergent
-- [x] `set_object_info` (line 9007) → `g_code.rs:15179`
-- [x] `point_to_gcode` (line 9029) → `g_code.rs:13386`
-- [x] `gcode_to_point` (line 9036) → `g_code.rs:13396`
+- [x] `set_object_info` (line 9007) → `g_code.rs:15280`
+- [x] `point_to_gcode` (line 9029) → `g_code.rs:13487`
+- [x] `gcode_to_point` (line 9036) → `g_code.rs:13497`
 
 **class `GCode::GCodeOutputStream`**
 
-- [x] `is_open` (line 300) → `g_code.rs:13102`
-- [x] `write` (line 311) → `g_code.rs:13141`
-- [x] `is_error` (line 7082) → `g_code.rs:13107`
-- [x] `get_last_error` (line 7087) → `g_code.rs:13112`
-- [x] `flush` (line 7092) → `g_code.rs:13121`
-- [x] `close` (line 7098) → `g_code.rs:13134`
+- [x] `is_open` (line 300) → `g_code.rs:13203`
+- [x] `write` (line 311) → `g_code.rs:13242`
+- [x] `is_error` (line 7082) → `g_code.rs:13208`
+- [x] `get_last_error` (line 7087) → `g_code.rs:13213`
+- [x] `flush` (line 7092) → `g_code.rs:13222`
+- [x] `close` (line 7098) → `g_code.rs:13235`
 - [~] `write` (line 7106) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
-- [x] `writeln` (line 7119) → `g_code.rs:13159`
-- [v] `write_format` (line 7125) → `g_code.rs:13172` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `writeln` (line 7119) → `g_code.rs:13260`
+- [v] `write_format` (line 7125) → `g_code.rs:13273` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
 
 **class `GCode::LayerToPrint`**
 
-- [x] `layer` (line 261) → `g_code.rs:13009`
-- [x] `object` (line 272) → `g_code.rs:13023`
-- [x] `print_z` (line 276) → `g_code.rs:13028`
+- [x] `layer` (line 261) → `g_code.rs:13110`
+- [x] `object` (line 272) → `g_code.rs:13124`
+- [x] `print_z` (line 276) → `g_code.rs:13129`
 
 **class `GCode::ObjectByExtruder::Island::Region`**
 
-- [x] `append` (line 9106) → `g_code.rs:14421`
+- [x] `append` (line 9106) → `g_code.rs:14522`
 
 **class `OozePrevention`**
 
-- [x] `pre_toolchange` (line 332) → `g_code.rs:12779`
-- [x] `post_toolchange` (line 362) → `g_code.rs:12813`
-- [x] `_get_temp` (line 369) → `g_code.rs:12824`
+- [x] `pre_toolchange` (line 332) → `g_code.rs:12880`
+- [x] `post_toolchange` (line 362) → `g_code.rs:12914`
+- [x] `_get_temp` (line 369) → `g_code.rs:12925`
 
 **class `Wipe`**
 
-- [x] `has_path` (line 63) → `g_code.rs:12855`
-- [x] `reset_path` (line 64) → `g_code.rs:12860`
-- [x] `wipe` (line 440) → `g_code.rs:12867`
+- [x] `has_path` (line 63) → `g_code.rs:12956`
+- [x] `reset_path` (line 64) → `g_code.rs:12961`
+- [x] `wipe` (line 440) → `g_code.rs:12968`
 
 **class `WipeTowerIntegration`**
 
-- [x] `next_layer` (line 106) → `g_code.rs:14292`
-- [x] `is_first_print` (line 112) → `g_code.rs:14351`
-- [x] `set_is_first_print` (line 113) → `g_code.rs:14356`
-- [x] `enable_timelapse_print` (line 115) → `g_code.rs:14361`
-- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:14366`
-- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:14371`
-- [x] `set_rib_offset` (line 118) → `g_code.rs:14376`
+- [x] `next_layer` (line 106) → `g_code.rs:14393`
+- [x] `is_first_print` (line 112) → `g_code.rs:14452`
+- [x] `set_is_first_print` (line 113) → `g_code.rs:14457`
+- [x] `enable_timelapse_print` (line 115) → `g_code.rs:14462`
+- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:14467`
+- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:14472`
+- [x] `set_rib_offset` (line 118) → `g_code.rs:14477`
 - [x] `generate_path_to_wipe_tower` (line 623) → `g_code.rs:258`
 - [~] `append_tcr` (line 741) → `g_code.rs:655` — divergent
 - [~] `post_process_wipe_tower_moves` (line 1383) → `g_code.rs:503` — divergent
-- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:14339`
-- [x] `prime` (line 1477) → `g_code.rs:14287` — read against the C++ in R915 (the estimate says divergent)
+- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:14440`
+- [x] `prime` (line 1477) → `g_code.rs:14388` — read against the C++ in R915 (the estimate says divergent)
 - [~] `tool_change` (line 1489) → `g_code_writer.rs, gcode/tool_ordering.rs, gcode/wipe_tower.rs` — not in the paired file
-- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:14299`
-- [~] `finalize` (line 1554) → `g_code.rs:14333` — stub
+- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:14400`
+- [~] `finalize` (line 1554) → `g_code.rs:14434` — stub
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp)
 
@@ -9150,80 +9150,80 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **free functions**
 
-- [x] `mk_point` (line 39) → `multi_material_segmentation.rs:142`
-- [x] `mk_point` (line 41) → `multi_material_segmentation.rs:125`
-- [x] `mk_point` (line 43) → `multi_material_segmentation.rs:151`
-- [x] `mk_point` (line 45) → `multi_material_segmentation.rs:160`
-- [x] `mk_vec2` (line 47) → `multi_material_segmentation.rs:169`
+- [x] `mk_point` (line 39) → `multi_material_segmentation.rs:156`
+- [x] `mk_point` (line 41) → `multi_material_segmentation.rs:139`
+- [x] `mk_point` (line 43) → `multi_material_segmentation.rs:165`
+- [x] `mk_point` (line 45) → `multi_material_segmentation.rs:174`
+- [x] `mk_vec2` (line 47) → `multi_material_segmentation.rs:183`
 - [~] `vertex_equal_to_point` (line 49) → `geometry/voronoi_annotation.rs, geometry/voronoi_offset.rs` — not in the paired file
-- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:2185`
+- [x] `vertex_equal_to_point` (line 60) → `multi_material_segmentation.rs:2199`
 - [~] `colored_points_to_polygon` (line 314) → `multi_material_segmentation.rs` — another overload of the name is ported
-- [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:576`
-- [x] `get_all_next_arcs` (line 330) → `multi_material_segmentation.rs:586`
-- [x] `get_next_arc` (line 351) → `multi_material_segmentation.rs:621`
-- [x] `is_profile_self_interaction` (line 391) → `multi_material_segmentation.rs:684`
-- [x] `to_polygon` (line 403) → `multi_material_segmentation.rs:702`
-- [x] `extract_colored_segments` (line 414) → `multi_material_segmentation.rs:743`
-- [x] `is_equal` (line 485) → `multi_material_segmentation.rs:854`
-- [x] `is_less` (line 489) → `multi_material_segmentation.rs:863`
-- [v] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:873` — R873: tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced
-- [x] `get_extents` (line 593) → `multi_material_segmentation.rs:1068`
-- [x] `to_lines` (line 605) → `multi_material_segmentation.rs:1081`
-- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1094`
-- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1129`
-- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1203`
-- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1271`
-- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1281`
-- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1389`
-- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1529`
-- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1598`
-- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1643`
-- [x] `export_graph_to_svg` (line 984) → `multi_material_segmentation.rs:1679`
-- [v] `non_deleted_edge_count` (line 1016) → `multi_material_segmentation.rs:1741` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
-- [v] `can_vertex_be_deleted` (line 1027) → `multi_material_segmentation.rs:1761` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
-- [v] `delete_vertex_deep` (line 1034) → `multi_material_segmentation.rs:1772` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
-- [x] `mk_point_vec2d` (line 1054) → `multi_material_segmentation.rs:100`
-- [x] `mk_vector_vec2d` (line 1059) → `multi_material_segmentation.rs:1817`
-- [x] `mk_flipped_vector_vec2d` (line 1064) → `multi_material_segmentation.rs:1826`
-- [v] `edge_length` (line 1069) → `multi_material_segmentation.rs:1834` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
-- [v] `calc_total_edge_length` (line 1077) → `multi_material_segmentation.rs:1868` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
-- [v] `remove_multiple_edges_in_vertex` (line 1118) → `multi_material_segmentation.rs:1930` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
+- [x] `colored_points_to_polygon` (line 322) → `multi_material_segmentation.rs:590`
+- [x] `get_all_next_arcs` (line 330) → `multi_material_segmentation.rs:600`
+- [x] `get_next_arc` (line 351) → `multi_material_segmentation.rs:635`
+- [x] `is_profile_self_interaction` (line 391) → `multi_material_segmentation.rs:698`
+- [x] `to_polygon` (line 403) → `multi_material_segmentation.rs:716`
+- [x] `extract_colored_segments` (line 414) → `multi_material_segmentation.rs:757`
+- [x] `is_equal` (line 485) → `multi_material_segmentation.rs:868`
+- [x] `is_less` (line 489) → `multi_material_segmentation.rs:877`
+- [v] `project_line_on_line` (line 494) → `multi_material_segmentation.rs:887` — R873: tests/project_line_on_line_native_parity.rs: 900,000 line pairs at three magnitudes equal to the C++ compiled with Eigen; byte-identical G-code on the three fixtures with the shim call replaced
+- [x] `get_extents` (line 593) → `multi_material_segmentation.rs:1082`
+- [x] `to_lines` (line 605) → `multi_material_segmentation.rs:1095`
+- [x] `get_segments` (line 617) → `multi_material_segmentation.rs:1108`
+- [x] `filter_painted_lines` (line 642) → `multi_material_segmentation.rs:1143`
+- [x] `post_process_painted_lines` (line 689) → `multi_material_segmentation.rs:1217`
+- [x] `are_lines_connected` (line 722) → `multi_material_segmentation.rs:1285`
+- [x] `colorize_line` (line 731) → `multi_material_segmentation.rs:1295`
+- [x] `filter_colorized_polygon` (line 808) → `multi_material_segmentation.rs:1403`
+- [x] `colorize_contour` (line 897) → `multi_material_segmentation.rs:1543`
+- [x] `colorize_contours` (line 937) → `multi_material_segmentation.rs:1612`
+- [x] `points_inside` (line 961) → `multi_material_segmentation.rs:1657`
+- [x] `export_graph_to_svg` (line 984) → `multi_material_segmentation.rs:1693`
+- [v] `non_deleted_edge_count` (line 1016) → `multi_material_segmentation.rs:1755` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
+- [v] `can_vertex_be_deleted` (line 1027) → `multi_material_segmentation.rs:1775` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
+- [v] `delete_vertex_deep` (line 1034) → `multi_material_segmentation.rs:1786` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
+- [x] `mk_point_vec2d` (line 1054) → `multi_material_segmentation.rs:114`
+- [x] `mk_vector_vec2d` (line 1059) → `multi_material_segmentation.rs:1831`
+- [x] `mk_flipped_vector_vec2d` (line 1064) → `multi_material_segmentation.rs:1840`
+- [v] `edge_length` (line 1069) → `multi_material_segmentation.rs:1848` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
+- [v] `calc_total_edge_length` (line 1077) → `multi_material_segmentation.rs:1882` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
+- [v] `remove_multiple_edges_in_vertex` (line 1118) → `multi_material_segmentation.rs:1944` — R920: tests/multi_material_segmentation_native_parity.rs: the Voronoi diagram helpers on 200 annotated diagrams against the pin's MultiMaterialSegmentation.cpp compiled into the generator, none differ. (At the pin their only caller is inside #if 0.)
 - [~] `extract_colored_segments` (line 1151) → `multi_material_segmentation.rs` — another overload of the name is ported
-- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:3019`
-- [x] `is_volume_sinking` (line 1311) → `multi_material_segmentation.rs:3177`
-- [x] `effective_color_penetration_layers` (line 1328) → `multi_material_segmentation.rs:3201`
+- [x] `cut_segmented_layers` (line 1285) → `multi_material_segmentation.rs:3033`
+- [x] `is_volume_sinking` (line 1311) → `multi_material_segmentation.rs:3191`
+- [x] `effective_color_penetration_layers` (line 1328) → `multi_material_segmentation.rs:3215`
 - [ ] `mmu_segmentation_top_and_bottom_layers` (line 1356) → `multi_material_segmentation.rs`
-- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1968`
-- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:1987`
-- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2342`
-- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:2004` — partial
-- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:2323` — partial
-- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:2010`
-- [~] `build_graph` (line 1741) → `multi_material_segmentation.rs:2417` — divergent
-- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2806`
-- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2816`
-- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2873`
-- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3720` — partial
-- [x] `export_regions_to_svg` (line 2083) → `multi_material_segmentation.rs:2911`
-- [x] `export_processed_input_expolygons_to_svg` (line 2103) → `multi_material_segmentation.rs:2931`
-- [x] `export_painted_lines_to_svg` (line 2120) → `multi_material_segmentation.rs:2950`
-- [x] `export_colorized_polygons_to_svg` (line 2138) → `multi_material_segmentation.rs:2975`
-- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:2995`
+- [x] `init_polygon_indices` (line 1688) → `multi_material_segmentation.rs:1982`
+- [x] `line_intersection_with_epsilon` (line 1703) → `multi_material_segmentation.rs:2001`
+- [x] `mark_processed` (line 1710) → `multi_material_segmentation.rs:2356`
+- [~] `is_point_closer_to_beginning_of_line` (line 1716) → `multi_material_segmentation.rs:2018` — partial
+- [~] `clip_finite_voronoi_edge` (line 1721) → `multi_material_segmentation.rs:2337` — partial
+- [x] `has_same_color` (line 1739) → `multi_material_segmentation.rs:2024`
+- [~] `build_graph` (line 1741) → `multi_material_segmentation.rs:2431` — divergent
+- [x] `get_all_segments` (line 1958) → `multi_material_segmentation.rs:2820`
+- [x] `compute_edge_length` (line 1968) → `multi_material_segmentation.rs:2830`
+- [x] `remove_multiple_edges_in_vertices` (line 2008) → `multi_material_segmentation.rs:2887`
+- [~] `merge_segmented_layers` (line 2039) → `multi_material_segmentation.rs:3800` — partial
+- [x] `export_regions_to_svg` (line 2083) → `multi_material_segmentation.rs:2925`
+- [x] `export_processed_input_expolygons_to_svg` (line 2103) → `multi_material_segmentation.rs:2945`
+- [x] `export_painted_lines_to_svg` (line 2120) → `multi_material_segmentation.rs:2964`
+- [x] `export_colorized_polygons_to_svg` (line 2138) → `multi_material_segmentation.rs:2989`
+- [x] `has_layer_only_one_color` (line 2153) → `multi_material_segmentation.rs:3009`
 
 **class `MMU_Graph`**
 
-- [~] `remove_edge` (line 102) → `multi_material_segmentation.rs:252` — partial
-- [x] `get_global_index` (line 108) → `multi_material_segmentation.rs:259`
-- [x] `append_edge` (line 110) → `multi_material_segmentation.rs:264`
-- [x] `get_border_arc` (line 131) → `multi_material_segmentation.rs:306`
-- [x] `nodes_count` (line 137) → `multi_material_segmentation.rs:313`
-- [x] `remove_nodes_with_one_arc` (line 139) → `multi_material_segmentation.rs:318`
-- [x] `add_contours` (line 162) → `multi_material_segmentation.rs:345`
-- [x] `is_vertex_on_contour` (line 187) → `multi_material_segmentation.rs:378`
-- [~] `is_edge_attach_to_contour` (line 193) → `multi_material_segmentation.rs:388` — divergent
-- [~] `is_edge_connecting_two_contour_vertices` (line 198) → `multi_material_segmentation.rs:394` — divergent
-- [x] `append_voronoi_vertices` (line 205) → `multi_material_segmentation.rs:415`
-- [x] `garbage_collect` (line 284) → `multi_material_segmentation.rs:523`
+- [~] `remove_edge` (line 102) → `multi_material_segmentation.rs:266` — partial
+- [x] `get_global_index` (line 108) → `multi_material_segmentation.rs:273`
+- [x] `append_edge` (line 110) → `multi_material_segmentation.rs:278`
+- [x] `get_border_arc` (line 131) → `multi_material_segmentation.rs:320`
+- [x] `nodes_count` (line 137) → `multi_material_segmentation.rs:327`
+- [x] `remove_nodes_with_one_arc` (line 139) → `multi_material_segmentation.rs:332`
+- [x] `add_contours` (line 162) → `multi_material_segmentation.rs:359`
+- [x] `is_vertex_on_contour` (line 187) → `multi_material_segmentation.rs:392`
+- [~] `is_edge_attach_to_contour` (line 193) → `multi_material_segmentation.rs:402` — divergent
+- [~] `is_edge_connecting_two_contour_vertices` (line 198) → `multi_material_segmentation.rs:408` — divergent
+- [x] `append_voronoi_vertices` (line 205) → `multi_material_segmentation.rs:429`
+- [x] `garbage_collect` (line 284) → `multi_material_segmentation.rs:537`
 
 **class `MMU_Graph::Node`**
 
@@ -9231,7 +9231,7 @@ Rust file: `multi_material_segmentation.rs`. Status: **partial**. Not listed: 1 
 
 **class `PaintedLineVisitor`**
 
-- [x] `reset` (line 532) → `multi_material_segmentation.rs:978`
+- [x] `reset` (line 532) → `multi_material_segmentation.rs:992`
 
 **class `segment_traits<Slic3r::ColoredLine>`**
 
@@ -10778,21 +10778,21 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 **free functions**
 
 - [ ] `layered_print_cleareance_valid` (line 1124) → `print.rs`
-- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:10340`
-- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:10358`
-- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:9994`
-- [x] `getObjectExtruderMap` (line 2150) → `print.rs:10027`
-- [x] `convex_outline_gap` (line 3749) → `print.rs:10055`
-- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:10071`
-- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:10104`
-- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:10124`
-- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:10174`
-- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:10212`
-- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:10224`
-- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:10238`
-- [x] `print_instance_hull` (line 3912) → `print.rs:10244`
-- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:10271`
-- [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:5159`
+- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:10424`
+- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:10442`
+- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:10078`
+- [x] `getObjectExtruderMap` (line 2150) → `print.rs:10111`
+- [x] `convex_outline_gap` (line 3749) → `print.rs:10139`
+- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:10155`
+- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:10188`
+- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:10208`
+- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:10258`
+- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:10296`
+- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:10308`
+- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:10322`
+- [x] `print_instance_hull` (line 3912) → `print.rs:10328`
+- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:10355`
+- [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:5243`
 - [~] `to_json` (line 4596) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4604) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4611) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
@@ -10820,7 +10820,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [x] `empty` (line 1387) → `print.rs:10098`
+- [x] `empty` (line 1387) → `print.rs:10182`
 
 **class `ConstVectorOfPtrsAdaptor`**
 
@@ -10828,233 +10828,233 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, mutable_polygon.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, gcode/tool_ordering.rs` — not in the paired file
-- [x] `size` (line 212) → `print.rs:6753`
+- [x] `size` (line 212) → `print.rs:6837`
 - [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
 - [~] `vector` (line 216) → `geometry/line.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `FakeWipeTower`**
 
-- [x] `set_fake_extrusion_data` (line 733) → `print.rs:7072`
-- [x] `set_pos` (line 744) → `print.rs:7083`
-- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:7089`
-- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:7127`
+- [x] `set_fake_extrusion_data` (line 733) → `print.rs:7156`
+- [x] `set_pos` (line 744) → `print.rs:7167`
+- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:7173`
+- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:7211`
 
 **class `Print`**
 
-- [x] `clear` (line 60) → `print.rs:7864`
-- [x] `has_tpu_filament` (line 74) → `print.rs:7881`
-- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:7894` — read against the C++ in R915 (the estimate says partial)
-- [x] `set_calib_params` (line 449) → `print.rs:8039`
-- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:8044`
-- [x] `invalidate_step` (line 459) → `print.rs:8049`
-- [x] `is_step_done` (line 470) → `print.rs:7046` — read against the C++ in R915 (the estimate says partial)
-- [v] `object_extruders` (line 482) → `print.rs:8081` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `support_material_extruders` (line 523) → `print.rs:8115` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `extruders` (line 558) → `print.rs:8151` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `printed_filaments` (line 578) → `print.rs:9265` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:8172` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:9297` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `num_object_instances` (line 713) → `print.rs:8216` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `max_allowed_layer_height` (line 721) → `print.rs:8225` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `print_object_ids` (line 732) → `print.rs:8235`
-- [v] `has_infinite_skirt` (line 742) → `print.rs:8244` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_skirt` (line 747) → `print.rs:8250` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_brim` (line 752) → `print.rs:8256` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `layers_sorted_for_object` (line 758) → `print.rs:9382`
+- [x] `clear` (line 60) → `print.rs:7948`
+- [x] `has_tpu_filament` (line 74) → `print.rs:7965`
+- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:7978` — read against the C++ in R915 (the estimate says partial)
+- [x] `set_calib_params` (line 449) → `print.rs:8123`
+- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:8128`
+- [x] `invalidate_step` (line 459) → `print.rs:8133`
+- [x] `is_step_done` (line 470) → `print.rs:7130` — read against the C++ in R915 (the estimate says partial)
+- [v] `object_extruders` (line 482) → `print.rs:8165` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `support_material_extruders` (line 523) → `print.rs:8199` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `extruders` (line 558) → `print.rs:8235` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `printed_filaments` (line 578) → `print.rs:9349` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:8256` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:9381` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `num_object_instances` (line 713) → `print.rs:8300` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `max_allowed_layer_height` (line 721) → `print.rs:8309` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `print_object_ids` (line 732) → `print.rs:8319`
+- [v] `has_infinite_skirt` (line 742) → `print.rs:8328` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_skirt` (line 747) → `print.rs:8334` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_brim` (line 752) → `print.rs:8340` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `layers_sorted_for_object` (line 758) → `print.rs:9466`
 - [ ] `sequential_print_clearance_valid` (line 777) → `print.rs`
-- [x] `technology` (line 910) → `print.rs:8261`
-- [v] `empty` (line 918) → `print.rs:8266` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_step_done` (line 933) → `print.rs:8059`
-- [x] `finished` (line 937) → `print.rs:8271`
-- [v] `has_auto_brim` (line 943) → `print.rs:8276` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:8281`
-- [x] `objects` (line 994) → `print.rs:8298`
-- [x] `get_object` (line 995) → `print.rs:8302`
+- [x] `technology` (line 910) → `print.rs:8345`
+- [v] `empty` (line 918) → `print.rs:8350` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_step_done` (line 933) → `print.rs:8143`
+- [x] `finished` (line 937) → `print.rs:8355`
+- [v] `has_auto_brim` (line 943) → `print.rs:8360` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:8365`
+- [x] `objects` (line 994) → `print.rs:8382`
+- [x] `get_object` (line 995) → `print.rs:8386`
 - [~] `get_object` (line 996) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
 - [~] `get_object` (line 999) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
-- [x] `statistics_by_extruder` (line 1027) → `print.rs:8307`
-- [v] `is_sequential_print` (line 1038) → `print.rs:8317` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8326`
-- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8330`
-- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8334`
-- [x] `set_filament_print_time` (line 1080) → `print.rs:8338`
-- [x] `get_filament_print_time` (line 1081) → `print.rs:8342`
-- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8346`
-- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8350`
-- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8354`
-- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8358`
-- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8363`
-- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8371`
-- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8379`
-- [v] `num_print_regions` (line 1130) → `print.rs:8388` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_plate_origin` (line 1135) → `print.rs:8396`
-- [x] `get_plate_origin` (line 1136) → `print.rs:8400`
-- [x] `get_modified_count` (line 1142) → `print.rs:8404`
-- [x] `is_support_used` (line 1144) → `print.rs:8408`
-- [x] `is_BBL_Printer` (line 1145) → `print.rs:8412`
-- [x] `set_BBL_Printer` (line 1146) → `print.rs:8416`
-- [x] `get_conflict_string` (line 1147) → `print.rs:8420`
-- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8428`
-- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8432`
-- [x] `get_rib_offset` (line 1173) → `print.rs:8436`
-- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8445` — partial
-- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:4018`
-- [x] `is_filaments_compatible` (line 1268) → `print.rs:4050`
-- [x] `get_compatible_filament_type` (line 1285) → `print.rs:4074`
-- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8451` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_indx` (line 1319) → `print.rs:8469`
-- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:8479`
-- [x] `get_nozzle_config_index` (line 1355) → `print.rs:8510`
+- [x] `statistics_by_extruder` (line 1027) → `print.rs:8391`
+- [v] `is_sequential_print` (line 1038) → `print.rs:8401` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_extruder_filament_info` (line 1072) → `print.rs:8410`
+- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:8414`
+- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:8418`
+- [x] `set_filament_print_time` (line 1080) → `print.rs:8422`
+- [x] `get_filament_print_time` (line 1081) → `print.rs:8426`
+- [x] `set_nozzle_group_result` (line 1083) → `print.rs:8430`
+- [x] `get_nozzle_group_result` (line 1084) → `print.rs:8434`
+- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:8438`
+- [x] `set_slice_used_filaments` (line 1090) → `print.rs:8442`
+- [x] `get_slice_used_filaments` (line 1094) → `print.rs:8447`
+- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:8455`
+- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:8463`
+- [v] `num_print_regions` (line 1130) → `print.rs:8472` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_plate_origin` (line 1135) → `print.rs:8480`
+- [x] `get_plate_origin` (line 1136) → `print.rs:8484`
+- [x] `get_modified_count` (line 1142) → `print.rs:8488`
+- [x] `is_support_used` (line 1144) → `print.rs:8492`
+- [x] `is_BBL_Printer` (line 1145) → `print.rs:8496`
+- [x] `set_BBL_Printer` (line 1146) → `print.rs:8500`
+- [x] `get_conflict_string` (line 1147) → `print.rs:8504`
+- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:8512`
+- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:8516`
+- [x] `get_rib_offset` (line 1173) → `print.rs:8520`
+- [~] `is_all_objects_are_short` (line 1192) → `print.rs:8529` — partial
+- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:4102`
+- [x] `is_filaments_compatible` (line 1268) → `print.rs:4134`
+- [x] `get_compatible_filament_type` (line 1285) → `print.rs:4158`
+- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:8535` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_indx` (line 1319) → `print.rs:8553`
+- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:8563`
+- [x] `get_nozzle_config_index` (line 1355) → `print.rs:8594`
 - [~] `get_config_index` (line 1360) → `print.rs` — another overload of the name is ported
-- [x] `get_config_index` (line 1385) → `print.rs:8522`
-- [~] `validate` (line 1413) → `print.rs:2290` — divergent
-- [x] `bounding_box` (line 1849) → `print.rs:9412`
-- [x] `total_bounding_box` (line 1864) → `print.rs:9428`
-- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8561` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `brim_flow` (line 1918) → `print.rs:9471` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9506` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9522` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `skirt_flow` (line 2001) → `print.rs:9556` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `get_config_index` (line 1385) → `print.rs:8606`
+- [~] `validate` (line 1413) → `print.rs:2374` — divergent
+- [x] `bounding_box` (line 1849) → `print.rs:9496`
+- [x] `total_bounding_box` (line 1864) → `print.rs:9512`
+- [v] `skirt_first_layer_height` (line 1903) → `print.rs:8645` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `brim_flow` (line 1918) → `print.rs:9555` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:9590` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:9606` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `skirt_flow` (line 2001) → `print.rs:9640` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [~] `skirt_flow` (line 2017) → `print.rs` — another overload of the name is ported
 - [~] `skirt_flow` (line 2022) → `print.rs` — another overload of the name is ported
-- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9598` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `has_support_material` (line 2048) → `print.rs:8577` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `auto_assign_extruders` (line 2058) → `print.rs:8589`
-- [~] `process` (line 2178) → `print.rs:2389` — divergent
-- [~] `export_gcode` (line 2839) → `print.rs:649` — divergent
-- [~] `_make_skirt` (line 2869) → `print.rs:3620` — divergent
-- [x] `first_layer_islands` (line 3061) → `print.rs:9611`
-- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:9034`
-- [x] `translate_to_print_space` (line 3107) → `print.rs:8604`
+- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:9682` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `has_support_material` (line 2048) → `print.rs:8661` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `auto_assign_extruders` (line 2058) → `print.rs:8673`
+- [~] `process` (line 2178) → `print.rs:2473` — divergent
+- [~] `export_gcode` (line 2839) → `print.rs:722` — divergent
+- [~] `_make_skirt` (line 2869) → `print.rs:3704` — divergent
+- [x] `first_layer_islands` (line 3061) → `print.rs:9695`
+- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:9118`
+- [x] `translate_to_print_space` (line 3107) → `print.rs:8688`
 - [~] `translate_to_print_space` (line 3112) → `print.rs` — another overload of the name is ported
-- [~] `get_filament_temp_type` (line 3116) → `print.rs:3986` — divergent
-- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8620` — divergent
-- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9638` — partial
-- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9693`
-- [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8639` — divergent
+- [~] `get_filament_temp_type` (line 3116) → `print.rs:4070` — divergent
+- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:8704` — divergent
+- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:9722` — partial
+- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:9777`
+- [~] `update_filament_maps_to_config` (line 3241) → `print.rs:8723` — divergent
 - [ ] `resolve_manual_nozzle_map` (line 3322) → `print.rs`
 - [ ] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs`
-- [x] `apply_config_for_render` (line 3402) → `print.rs:8703`
-- [v] `get_filament_maps` (line 3407) → `print.rs:8710` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:8714`
-- [v] `get_filament_volume_maps` (line 3417) → `print.rs:8718` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_filament_map_mode` (line 3422) → `print.rs:8722` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:8727` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:8753`
-- [v] `get_filament_usage_type` (line 3474) → `print.rs:8776` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:8830` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:8868`
-- [x] `get_extruder_printable_height` (line 3568) → `print.rs:8905`
-- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:8919` — partial
-- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:8929`
-- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:5546`
-- [v] `get_extruder_id` (line 3609) → `print.rs:8941` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_idx` (line 3618) → `print.rs:8950`
-- [x] `get_process_config_idx` (line 3623) → `print.rs:8956`
-- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:8975` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_wipe_tower` (line 3655) → `print.rs:9005` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
-- [v] `enable_timelapse_print` (line 3742) → `print.rs:9027` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9798`
-- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9873`
-- [x] `_make_wipe_tower` (line 4157) → `print.rs:5586`
-- [x] `output_filename` (line 4402) → `print.rs:9065`
-- [~] `set_gcode_file_ready` (line 4414) → `print.rs:9076` — partial
-- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:9082`
+- [x] `apply_config_for_render` (line 3402) → `print.rs:8787`
+- [v] `get_filament_maps` (line 3407) → `print.rs:8794` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:8798`
+- [v] `get_filament_volume_maps` (line 3417) → `print.rs:8802` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_filament_map_mode` (line 3422) → `print.rs:8806` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:8811` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:8837`
+- [v] `get_filament_usage_type` (line 3474) → `print.rs:8860` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:8914` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:8952`
+- [x] `get_extruder_printable_height` (line 3568) → `print.rs:8989`
+- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:9003` — partial
+- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:9013`
+- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:5630`
+- [v] `get_extruder_id` (line 3609) → `print.rs:9025` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_idx` (line 3618) → `print.rs:9034`
+- [x] `get_process_config_idx` (line 3623) → `print.rs:9040`
+- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:9059` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_wipe_tower` (line 3655) → `print.rs:9089` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
+- [v] `enable_timelapse_print` (line 3742) → `print.rs:9111` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:9882`
+- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:9957`
+- [x] `_make_wipe_tower` (line 4157) → `print.rs:5670`
+- [x] `output_filename` (line 4402) → `print.rs:9149`
+- [~] `set_gcode_file_ready` (line 4414) → `print.rs:9160` — partial
+- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:9166`
 - [ ] `export_gcode_from_previous_file` (line 4428) → `print.rs`
 - [~] `export_cached_data` (line 5316) → `print_base.rs` — not in the paired file
 - [~] `load_cached_data` (line 5597) → `print_base.rs` — not in the paired file
 
 **class `PrintInstance`**
 
-- [x] `get_bounding_box` (line 5836) → `print.rs:6468`
+- [x] `get_bounding_box` (line 5836) → `print.rs:6552`
 - [~] `get_convex_hull_2d` (line 5840) → `model.rs` — not in the paired file
-- [x] `shift_without_plate_offset` (line 5847) → `print.rs:6461`
+- [x] `shift_without_plate_offset` (line 5847) → `print.rs:6545`
 
 **class `PrintObject`**
 
-- [x] `configBrimWidth` (line 416) → `print.rs:6761`
-- [x] `layers` (line 417) → `print.rs:6765`
-- [x] `support_layers` (line 418) → `print.rs:6769`
-- [~] `trafo_centered` (line 421) → `print.rs:6824` — partial
-- [x] `bounding_box` (line 442) → `print.rs:6838`
-- [x] `height` (line 445) → `print.rs:6845`
-- [x] `max_z` (line 446) → `print.rs:6849`
-- [v] `has_brim` (line 457) → `print.rs:6857` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `total_layer_count` (line 472) → `print.rs:6865`
-- [x] `layer_count` (line 473) → `print.rs:6869`
+- [x] `configBrimWidth` (line 416) → `print.rs:6845`
+- [x] `layers` (line 417) → `print.rs:6849`
+- [x] `support_layers` (line 418) → `print.rs:6853`
+- [~] `trafo_centered` (line 421) → `print.rs:6908` — partial
+- [x] `bounding_box` (line 442) → `print.rs:6922`
+- [x] `height` (line 445) → `print.rs:6929`
+- [x] `max_z` (line 446) → `print.rs:6933`
+- [v] `has_brim` (line 457) → `print.rs:6941` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `total_layer_count` (line 472) → `print.rs:6949`
+- [x] `layer_count` (line 473) → `print.rs:6953`
 - [~] `get_layer` (line 475) → `gcode/multi_material.rs` — not in the paired file
-- [x] `get_layer` (line 476) → `print.rs:6873`
+- [x] `get_layer` (line 476) → `print.rs:6957`
 - [ ] `clear_tree_support_preview_cache` (line 497) → `print.rs`
-- [x] `support_layer_count` (line 499) → `print.rs:6877`
-- [x] `get_support_layer` (line 501) → `print.rs:7034`
-- [x] `num_printing_regions` (line 518) → `print.rs:6881`
-- [x] `shared_regions` (line 522) → `print.rs:6896`
-- [x] `has_support` (line 524) → `print.rs:6900`
-- [x] `has_raft` (line 525) → `print.rs:6904`
-- [v] `has_support_material` (line 526) → `print.rs:6908` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_mm_painted` (line 530) → `print.rs:6920`
+- [x] `support_layer_count` (line 499) → `print.rs:6961`
+- [x] `get_support_layer` (line 501) → `print.rs:7118`
+- [x] `num_printing_regions` (line 518) → `print.rs:6965`
+- [x] `shared_regions` (line 522) → `print.rs:6980`
+- [x] `has_support` (line 524) → `print.rs:6984`
+- [x] `has_raft` (line 525) → `print.rs:6988`
+- [v] `has_support_material` (line 526) → `print.rs:6992` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_mm_painted` (line 530) → `print.rs:7004`
 - [~] `is_fuzzy_skin_painted` (line 532) → `model.rs` — not in the paired file
 - [ ] `slice_support_blockers` (line 544) → `print.rs`
 - [ ] `slice_support_enforcers` (line 545) → `print.rs`
-- [x] `get_shared_object` (line 560) → `print.rs:6924`
-- [x] `get_klipper_object_id` (line 578) → `print.rs:6928`
-- [x] `set_klipper_object_id` (line 579) → `print.rs:6932`
-- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:6936`
-- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:6940`
-- [x] `config_apply` (line 591) → `print.rs:6944`
-- [x] `config_apply_only` (line 592) → `print.rs:6950`
-- [x] `set_shared_object` (line 2073) → `print.rs:6954`
-- [~] `clear_shared_object` (line 2079) → `print.rs:6958` — partial
-- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:6971`
-- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:6988`
-- [x] `get_first_layer_bbox` (line 2125) → `print.rs:7001`
+- [x] `get_shared_object` (line 560) → `print.rs:7008`
+- [x] `get_klipper_object_id` (line 578) → `print.rs:7012`
+- [x] `set_klipper_object_id` (line 579) → `print.rs:7016`
+- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:7020`
+- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:7024`
+- [x] `config_apply` (line 591) → `print.rs:7028`
+- [x] `config_apply_only` (line 592) → `print.rs:7034`
+- [x] `set_shared_object` (line 2073) → `print.rs:7038`
+- [~] `clear_shared_object` (line 2079) → `print.rs:7042` — partial
+- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:7055`
+- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:7072`
+- [x] `get_first_layer_bbox` (line 2125) → `print.rs:7085`
 
 **class `PrintObjectRegions`**
 
-- [x] `ref_cnt_inc` (line 353) → `print.rs:6627`
-- [x] `ref_cnt_dec` (line 354) → `print.rs:6632`
-- [x] `clear` (line 355) → `print.rs:6637`
+- [x] `ref_cnt_inc` (line 353) → `print.rs:6711`
+- [x] `ref_cnt_dec` (line 354) → `print.rs:6716`
+- [x] `clear` (line 355) → `print.rs:6721`
 
 **class `PrintObjectRegions::FuzzySkinPaintedRegion`**
 
-- [x] `parent_print_object_region` (line 5914) → `print.rs:6574`
-- [x] `parent_print_object_region_id` (line 5926) → `print.rs:6583`
+- [x] `parent_print_object_region` (line 5914) → `print.rs:6658`
+- [x] `parent_print_object_region_id` (line 5926) → `print.rs:6667`
 
 **class `PrintObjectRegions::LayerRangeRegions`**
 
-- [x] `has_volume` (line 335) → `print.rs:6604`
+- [x] `has_volume` (line 335) → `print.rs:6688`
 
 **class `PrintRegion`**
 
-- [x] `config_hash` (line 157) → `print.rs:6325`
-- [x] `print_region_id` (line 159) → `print.rs:6329`
-- [x] `print_object_region_id` (line 160) → `print.rs:6333`
-- [x] `gradient_volume_id` (line 164) → `print.rs:6337`
+- [x] `config_hash` (line 157) → `print.rs:6409`
+- [x] `print_region_id` (line 159) → `print.rs:6413`
+- [x] `print_object_region_id` (line 160) → `print.rs:6417`
+- [x] `gradient_volume_id` (line 164) → `print.rs:6421`
 - [~] `set_config` (line 179) → `print_region.rs` — not in the paired file
-- [x] `set_config` (line 180) → `print.rs:6385`
-- [x] `config_apply_only` (line 181) → `print.rs:6391`
+- [x] `set_config` (line 180) → `print.rs:6469`
+- [x] `config_apply_only` (line 181) → `print.rs:6475`
 
 **class `PrintStatistics`**
 
-- [x] `clear` (line 842) → `print.rs:7356`
-- [x] `config` (line 4454) → `print.rs:7314`
-- [x] `placeholders` (line 4473) → `print.rs:7334`
+- [x] `clear` (line 842) → `print.rs:7440`
+- [x] `config` (line 4454) → `print.rs:7398`
+- [x] `placeholders` (line 4473) → `print.rs:7418`
 - [~] `finalize_output_path` (line 4484) → `sla_print.rs` — not in the paired file
 
 **class `StatisticsByExtruderCount`**
 
-- [x] `clear` (line 877) → `print.rs:7383`
+- [x] `clear` (line 877) → `print.rs:7467`
 
 **class `SupportStageTimes`**
 
-- [x] `reset` (line 79) → `print.rs:6276`
-- [x] `total` (line 80) → `print.rs:6280`
+- [x] `reset` (line 79) → `print.rs:6360`
+- [x] `total` (line 80) → `print.rs:6364`
 
 **class `WipeTowerData`**
 
-- [x] `clear` (line 799) → `print.rs:7211`
-- [v] `construct_mesh` (line 5888) → `print.rs:7224` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `clear` (line 799) → `print.rs:7295`
+- [v] `construct_mesh` (line 5888) → `print.rs:7308` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 
 ### `PrintApply` (.cpp)
 
@@ -11392,78 +11392,78 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 
 **free functions**
 
-- [x] `zero_gap_threshold_rad` (line 658) → `print_object.rs:8017`
-- [x] `scaled_external_perimeter_width` (line 667) → `print_object.rs:8131`
-- [~] `should_refine_zero_gap_contact` (line 679) → `print_object.rs:8026` — partial
-- [x] `is_significant_contact_piece` (line 698) → `print_object.rs:8039`
-- [x] `filter_significant_contact_pieces` (line 709) → `print_object.rs:8053`
-- [x] `compute_zero_gap_contact_mask` (line 726) → `print_object.rs:8152`
-- [x] `refine_fill_surfaces_for_zero_gap_contact` (line 817) → `print_object.rs:8266`
-- [x] `type_bridges_over_suppressed_orphans` (line 866) → `print_object.rs:8320`
-- [x] `volume_slices_by_id` (line 1075) → `print_object.rs:8388`
-- [x] `conformal_modifier_islands` (line 1085) → `print_object.rs:8410`
-- [x] `layer_skips_periodic_modifier` (line 2245) → `print_object.rs:8507`
-- [x] `shell_band_size` (line 2263) → `print_object.rs:8072`
-- [x] `effective_top_shell_parameters` (line 2271) → `print_object.rs:8085`
-- [x] `effective_bottom_shell_parameters` (line 2286) → `print_object.rs:8101`
+- [x] `zero_gap_threshold_rad` (line 658) → `print_object.rs:8054`
+- [x] `scaled_external_perimeter_width` (line 667) → `print_object.rs:8168`
+- [~] `should_refine_zero_gap_contact` (line 679) → `print_object.rs:8063` — partial
+- [x] `is_significant_contact_piece` (line 698) → `print_object.rs:8076`
+- [x] `filter_significant_contact_pieces` (line 709) → `print_object.rs:8090`
+- [x] `compute_zero_gap_contact_mask` (line 726) → `print_object.rs:8189`
+- [x] `refine_fill_surfaces_for_zero_gap_contact` (line 817) → `print_object.rs:8303`
+- [x] `type_bridges_over_suppressed_orphans` (line 866) → `print_object.rs:8357`
+- [x] `volume_slices_by_id` (line 1075) → `print_object.rs:8425`
+- [x] `conformal_modifier_islands` (line 1085) → `print_object.rs:8447`
+- [x] `layer_skips_periodic_modifier` (line 2245) → `print_object.rs:8544`
+- [x] `shell_band_size` (line 2263) → `print_object.rs:8109`
+- [x] `effective_top_shell_parameters` (line 2271) → `print_object.rs:8122`
+- [x] `effective_bottom_shell_parameters` (line 2286) → `print_object.rs:8138`
 - [~] `clamp_exturder_to_default_protect0` (line 3617) → `print.rs, print_apply.rs` — not in the paired file
 - [~] `apply_to_print_region_config` (line 3644) → `print_apply.rs` — not in the paired file
 - [~] `volume_ignores_modifier_infill` (line 3724) → `print_apply.rs` — not in the paired file
 - [~] `restore_parent_internal_infill` (line 3732) → `print_apply.rs` — not in the paired file
 - [~] `region_config_from_model_volume` (line 3742) → `print_apply.rs` — not in the paired file
-- [x] `band_reference_nozzle` (line 4283) → `print_object.rs:8520`
-- [x] `collect_span_bridges` (line 5008) → `print_object.rs:8552`
+- [x] `band_reference_nozzle` (line 4283) → `print_object.rs:8557`
+- [x] `collect_span_bridges` (line 5008) → `print_object.rs:8589`
 - [ ] `project_triangles_to_slabs` (line 6540) → `print_object.rs`
 
 **class `PrintObject`**
 
-- [x] `set_instances` (line 110) → `print_object.rs:7388`
-- [~] `all_regions` (line 132) → `print_object.rs:5627` — divergent
-- [~] `merge_layer_node` (line 141) → `print_object.rs:5643` — partial
-- [x] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs:8617`
-- [x] `calc_estimated_filament_print_time` (line 328) → `print_object.rs:8875`
+- [x] `set_instances` (line 110) → `print_object.rs:7425`
+- [~] `all_regions` (line 132) → `print_object.rs:5664` — divergent
+- [~] `merge_layer_node` (line 141) → `print_object.rs:5680` — partial
+- [x] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs:8654`
+- [x] `calc_estimated_filament_print_time` (line 328) → `print_object.rs:8912`
 - [~] `make_perimeters` (line 470) → `print_object.rs:1907` — divergent
 - [~] `prepare_infill` (line 902) → `print_object.rs:2226` — divergent
-- [~] `infill` (line 1154) → `print_object.rs:4651` — partial
-- [~] `ironing` (line 1249) → `print_object.rs:5482` — divergent
-- [~] `clear_overhangs_for_lift` (line 1270) → `print_object.rs:5257` — partial
-- [~] `detect_overhangs_for_lift` (line 1282) → `print_object.rs:5276` — divergent
+- [~] `infill` (line 1154) → `print_object.rs:4688` — partial
+- [~] `ironing` (line 1249) → `print_object.rs:5519` — divergent
+- [~] `clear_overhangs_for_lift` (line 1270) → `print_object.rs:5294` — partial
+- [~] `detect_overhangs_for_lift` (line 1282) → `print_object.rs:5313` — divergent
 - [~] `generate_support_material` (line 1330) → `print_object.rs` — another overload of the name is ported
-- [~] `simplify_extrusion_path` (line 1374) → `print_object.rs:5229` — divergent
+- [~] `simplify_extrusion_path` (line 1374) → `print_object.rs:5266` — divergent
 - [ ] `prepare_adaptive_infill_data` (line 1430) → `print_object.rs`
 - [ ] `prepare_lightning_infill_data` (line 1467) → `print_object.rs`
-- [~] `clear_layers` (line 1479) → `print_object.rs:5780` — divergent
-- [x] `add_layer` (line 1488) → `print_object.rs:5790`
-- [x] `get_support_layer_at_printz` (line 1494) → `print_object.rs:5803`
+- [~] `clear_layers` (line 1479) → `print_object.rs:5817` — divergent
+- [x] `add_layer` (line 1488) → `print_object.rs:5827`
+- [x] `get_support_layer_at_printz` (line 1494) → `print_object.rs:5840`
 - [~] `get_support_layer_at_printz` (line 1501) → `print.rs` — not in the paired file
-- [x] `clear_support_layers` (line 1506) → `print_object.rs:5823`
+- [x] `clear_support_layers` (line 1506) → `print_object.rs:5860`
 - [ ] `alloc_tree_support_preview_cache` (line 1520) → `print_object.rs`
-- [x] `add_tree_support_layer` (line 1530) → `print_object.rs:8590`
-- [x] `add_support_layer` (line 1536) → `print_object.rs:8598`
-- [x] `insert_support_layer` (line 1542) → `print_object.rs:8607`
-- [x] `invalidate_state_by_config_options` (line 1549) → `print_object.rs:7417`
-- [x] `invalidate_step` (line 1879) → `print_object.rs:7734`
-- [x] `invalidate_all_steps` (line 1916) → `print_object.rs:7776`
-- [x] `reset_slice_surfaces` (line 1925) → `print_object.rs:9028`
-- [~] `detect_surfaces_type` (line 1951) → `print_object.rs:4043` — partial
-- [~] `process_external_surfaces` (line 2167) → `print_object.rs:7135` — divergent
-- [x] `discover_shell_for_perimeters` (line 2698) → `print_object.rs:9065`
+- [x] `add_tree_support_layer` (line 1530) → `print_object.rs:8627`
+- [x] `add_support_layer` (line 1536) → `print_object.rs:8635`
+- [x] `insert_support_layer` (line 1542) → `print_object.rs:8644`
+- [x] `invalidate_state_by_config_options` (line 1549) → `print_object.rs:7454`
+- [x] `invalidate_step` (line 1879) → `print_object.rs:7771`
+- [x] `invalidate_all_steps` (line 1916) → `print_object.rs:7813`
+- [x] `reset_slice_surfaces` (line 1925) → `print_object.rs:9065`
+- [~] `detect_surfaces_type` (line 1951) → `print_object.rs:4080` — partial
+- [~] `process_external_surfaces` (line 2167) → `print_object.rs:7172` — divergent
+- [x] `discover_shell_for_perimeters` (line 2698) → `print_object.rs:9102`
 - [~] `object_config_from_model_object` (line 3627) → `print_apply.rs` — not in the paired file
 - [ ] `generate_support_preview` (line 3826) → `print_object.rs`
-- [x] `update_slicing_parameters` (line 3840) → `print_object.rs:7787`
-- [x] `compute_slicing_parameters` (line 3847) → `print_object.rs:7797`
-- [x] `slicing_parameters` (line 3862) → `print_object.rs:7942`
-- [x] `object_extruders` (line 3903) → `print_object.rs:7825`
-- [x] `update_layer_height_profile` (line 3925) → `print_object.rs:7846`
-- [x] `get_certain_layers` (line 3970) → `print_object.rs:7903`
-- [x] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs:7929`
-- [x] `clip_fill_surfaces` (line 4003) → `print_object.rs:8761`
-- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6631` — partial
+- [x] `update_slicing_parameters` (line 3840) → `print_object.rs:7824`
+- [x] `compute_slicing_parameters` (line 3847) → `print_object.rs:7834`
+- [x] `slicing_parameters` (line 3862) → `print_object.rs:7979`
+- [x] `object_extruders` (line 3903) → `print_object.rs:7862`
+- [x] `update_layer_height_profile` (line 3925) → `print_object.rs:7883`
+- [x] `get_certain_layers` (line 3970) → `print_object.rs:7940`
+- [x] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs:7966`
+- [x] `clip_fill_surfaces` (line 4003) → `print_object.rs:8798`
+- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6668` — partial
 - [ ] `compute_adaptive_merge_groups` (line 4312) → `print_object.rs`
 - [ ] `combine_adaptive_infill` (line 5035) → `print_object.rs`
-- [x] `combine_infill` (line 5724) → `print_object.rs:9124`
+- [x] `combine_infill` (line 5724) → `print_object.rs:9161`
 - [~] `discover_sub_top_surfaces` (line 5839) → `print_object.rs:2436` — partial
-- [~] `_generate_support_material` (line 5920) → `print_object.rs:5345` — divergent
+- [~] `_generate_support_material` (line 5920) → `print_object.rs:5382` — divergent
 - [ ] `collected_support_areas` (line 5960) → `print_object.rs`
 - [ ] `warn_uncovered_overhangs` (line 6040) → `print_object.rs`
 - [~] `remove_bridges_from_contacts` (line 6361) → `support/support_material.rs` — not in the paired file
@@ -11471,11 +11471,11 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [ ] `project_and_append_custom_facets` (line 6726) → `print_object.rs`
 - [~] `get_layer_at_printz` (line 6768) → `print.rs` — not in the paired file
 - [~] `get_layer_at_printz` (line 6775) → `print.rs` — not in the paired file
-- [x] `get_layer_at_printz` (line 6780) → `print_object.rs:5838`
+- [x] `get_layer_at_printz` (line 6780) → `print_object.rs:5875`
 - [~] `get_layer_at_printz` (line 6788) → `print.rs` — not in the paired file
-- [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5855`
-- [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5879` — partial
-- [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5897`
+- [x] `get_first_layer_bellow_printz` (line 6790) → `print_object.rs:5892`
+- [~] `get_layer_idx_get_printz` (line 6796) → `print_object.rs:5916` — partial
+- [x] `get_layer_at_bottomz` (line 6802) → `print_object.rs:5934`
 - [~] `get_layer_at_bottomz` (line 6814) → `support/tree_support.rs` — not in the paired file
 
 ### `PrintObjectSlice` (.cpp)

@@ -446,6 +446,11 @@ static void run_anchoring(FILE *fo)
         {"anchor_triangles_dense", {{"sparse_infill_pattern", "triangles"}, {"sparse_infill_density", "85%"}}},
         {"anchor_grid", {{"sparse_infill_pattern", "grid"}}},
         {"anchor_zigzag", {{"sparse_infill_pattern", "zig-zag"}}},
+        // R940: the gyroid arm of generate_sparse_infill_polylines_for_anchoring (Layer.cpp), appended so the
+        // cases above keep their inputs.
+        {"anchor_gyroid", {{"sparse_infill_pattern", "gyroid"}}},
+        {"anchor_gyroid_30", {{"sparse_infill_pattern", "gyroid"}, {"sparse_infill_density", "30%"}, {"infill_direction", "30"}}},
+        {"anchor_gyroid_dense", {{"sparse_infill_pattern", "gyroid"}, {"sparse_infill_density", "60%"}}},
     };
     static const SurfaceType types[] = {stInternal, stInternal, stInternal, stInternalSolid, stTop};
     Lcg g(0x2545f4914f6cdd1dULL);
@@ -475,7 +480,11 @@ static void run_anchoring(FILE *fo)
         const double first_layer_height = print.config().initial_layer_print_height.value;
         for (int c = 0; c < 8; ++c) {
             const size_t layer_id = (size_t) g.range(1, 9);
-            const double height   = layer_height;
+            // R940: every other gyroid layer is thinner than the object's layer height, so the sparse
+            // surface's spacing (the flow at the object's layer height, Fill.cpp:305-328) differs from the
+            // layer's flow spacing; the earlier configurations keep their inputs.
+            const bool   thin     = std::strncmp(fc.tag, "anchor_gyroid", 13) == 0 && (c % 2) == 1;
+            const double height   = thin ? 0.08 : layer_height;
             const double print_z  = first_layer_height + layer_height * double(layer_id);
             const double slice_z  = print_z - 0.5 * height;
             Layer        layer(layer_id, obj, height, print_z, slice_z);
