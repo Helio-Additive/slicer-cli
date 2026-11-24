@@ -325,6 +325,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       PATHS "${OpenCASCADE_DIR}"
       NO_DEFAULT_PATH)
 else()
+  # macOS, OrcaSlicer: the 8.0.1 with OrcaSlicer's patch that
+  # `ENGINE=orca ./install_deps.sh` builds. Windows takes it from the vcpkg
+  # overlay port (ci/vcpkg-overlays-orca/opencascade).
+  if(APPLE AND ENGINE STREQUAL "orca"
+     AND (NOT DEFINED OpenCASCADE_DIR OR OpenCASCADE_DIR STREQUAL "")
+     AND EXISTS "/opt/slicer-cli/occt-8.0/lib/cmake/opencascade/OpenCASCADEConfig.cmake")
+    set(OpenCASCADE_DIR "/opt/slicer-cli/occt-8.0/lib/cmake/opencascade"
+        CACHE PATH "Pinned OpenCASCADE 8.0.1 package directory")
+  endif()
   # OpenCASCADE — Homebrew installs as "opencascade"
   find_package(OpenCASCADE QUIET)
   if(NOT OpenCASCADE_FOUND)
@@ -833,6 +842,13 @@ if(NOT OpenCASCADE_VERSION MATCHES "^[0-9]+\\.[0-9]+")
   message(FATAL_ERROR "The OpenCASCADE package at ${OpenCASCADE_DIR} states no version.")
 endif()
 message(STATUS "  OpenCASCADE version: ${OpenCASCADE_VERSION}")
+# OrcaSlicer v2.5.2 pins 8.0.1 with one patch (deps/OCCT/OCCT.cmake at f92a7c0).
+# Another version cannot hold that patch, and some STEP files then give no layers.
+if(ENGINE STREQUAL "orca" AND NOT OpenCASCADE_VERSION VERSION_EQUAL "8.0.1")
+  message(FATAL_ERROR
+    "OrcaSlicer needs OpenCASCADE 8.0.1 with its patch; found ${OpenCASCADE_VERSION} at ${OpenCASCADE_DIR}. "
+    "Linux and macOS: ENGINE=orca ./install_deps.sh. Windows: docs/building.md.")
+endif()
 if(OpenCASCADE_VERSION VERSION_LESS "7.8")
   # Old OCCT layout (< 7.8)
   set(OCCT_LIBS

@@ -51,7 +51,7 @@ platform allows it:
 | Dependency | Bambu Studio engine | OrcaSlicer engine | Snapmaker Orca engine |
 |-|-|-|-|
 | CGAL | 5.4, commit `c58ac97e`, with Bambu's `0001-clang19.patch` | 6.2.1 on Linux and in macOS CI (the archive OrcaSlicer 2.5.2 pins); Homebrew's CGAL on a local macOS build (6.2 or newer); 6.2.1 from the overlay port `ci/vcpkg-overlays-orca/cgal` on Windows | as Bambu Studio |
-| OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | 8.0.1 static on Linux, with OrcaSlicer's `0001-BRepMesh-seam-pcurve-selection.patch`; vcpkg 7.9.3 on Windows | as Bambu Studio |
+| OpenCASCADE | 7.6.0 static on Linux; vcpkg 7.9.3 on Windows | 8.0.1 static on Linux, macOS and Windows, with OrcaSlicer's `0001-BRepMesh-seam-pcurve-selection.patch` (Windows: the overlay port `ci/vcpkg-overlays-orca/opencascade` with the triplet in `ci/vcpkg-triplets-orca`) | as Bambu Studio |
 | libnoise | bambulab/libnoise `7e7c98c0` | SoftFever/Orca-deps-libnoise `f25d5331` | as OrcaSlicer |
 | Boost | 1.84.0 static on Linux, with Bambu's process patch | the same | the same |
 | Assimp | required (model import) | not used | not used |
@@ -91,6 +91,11 @@ archive, and the configure step passes
 `-DCGAL_DIR=/opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL`. Build the same prefix
 locally when the engines' CGAL has to match.
 
+For `ENGINE=orca` the script also builds OpenCASCADE 8.0.1 with OrcaSlicer's
+patch into `/opt/slicer-cli/occt-8.0` on macOS, as on Linux, and the configure
+step takes that prefix by itself. The build stops when the OpenCASCADE it finds
+for the OrcaSlicer engine is not 8.0.1.
+
 On Linux the release build also links a static Boost 1.84.0; the
 `linux-boost` job of the workflow shows how it is built (the Boost source,
 its checksum and the Bambu patch it takes).
@@ -104,8 +109,16 @@ Dependencies come from vcpkg at the commit the workflow pins
 vcpkg install tbb eigen3 boost cgal "opencv[core]" assimp opencascade qhull cereal nlopt `
   openssl libpng zlib expat freetype libjpeg-turbo --triplet x64-windows
 # Bambu Studio and Snapmaker Orca engines: add --overlay-ports=ci/vcpkg-overlays for CGAL 5.4
-# OrcaSlicer engine: add --overlay-ports=ci/vcpkg-overlays-orca for CGAL 6.2.1
+# OrcaSlicer engine: add --overlay-ports=ci/vcpkg-overlays-orca for CGAL 6.2.1 and
+#   OpenCASCADE 8.0.1 with OrcaSlicer's patch, and --overlay-triplets=ci/vcpkg-triplets-orca
+#   so that OpenCASCADE is a static library
 ```
+
+The OrcaSlicer engine links OpenCASCADE 8.0.1 statically because the package
+holds the three programs in one folder with one set of `TK*.dll`: the 7.9.3
+of the Bambu Studio and Snapmaker Orca engines. Give the OrcaSlicer engine its
+own vcpkg install folder (or its own cache, as the workflow does): vcpkg does
+not replace an installed OpenCASCADE 7.9.3 by itself.
 
 The OrcaSlicer engine needs Visual Studio 2019 16.8 or newer: its build sets
 `/Zc:lambda` and `/bigobj`, as OrcaSlicer's own build does.

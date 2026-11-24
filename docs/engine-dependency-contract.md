@@ -15,6 +15,12 @@ contract must retain that engine's upstream version and provenance.
   7.6.0 for BambuStudio and Snapmaker Orca, and 8.0.1 with the
   `0001-BRepMesh-seam-pcurve-selection.patch` OrcaSlicer applies (deps/OCCT at
   `f92a7c0`; its second patch is for MSVC on ARM64 only).
+- OrcaSlicer uses that static OpenCASCADE 8.0.1 with the patch on macOS and
+  Windows too: `install_deps.sh` builds it on macOS, and on Windows the overlay
+  port `ci/vcpkg-overlays-orca/opencascade` builds it as static libraries
+  (`ci/vcpkg-triplets-orca`). OrcaSlicer's own Windows build makes shared
+  libraries; this package cannot, because its one folder already holds the
+  7.9.3 DLLs of the same names for the other two engines.
 - Each engine uses its own pinned libnoise source: BambuStudio v1.0.0 commit
   `7e7c98c06a67d5203dd780b45e9a25d3ec930fd8`; OrcaSlicer and Snapmaker Orca
   commit `f25d5331570ae109f0e645cb729ecab155612714` (tag 1.0 of
@@ -24,11 +30,10 @@ contract must retain that engine's upstream version and provenance.
 
 The CLI does not yet reproduce each upstream project's complete private
 dependency prefix. Ubuntu, Homebrew, and the pinned Windows vcpkg baseline
-provide non-core dependencies. Windows uses vcpkg OpenCASCADE 7.9.3 rather
-than upstream OpenCASCADE 7.6.0 (BambuStudio, Snapmaker Orca) or 8.0.1
-(OrcaSlicer); its OrcaSlicer CGAL is the pinned 6.2.1, through the overlay
-port `ci/vcpkg-overlays-orca/cgal`. macOS takes Homebrew's OpenCASCADE for
-every engine.
+provide non-core dependencies. For BambuStudio and Snapmaker Orca, Windows
+uses vcpkg OpenCASCADE 7.9.3 rather than upstream OpenCASCADE 7.6.0, and macOS
+takes Homebrew's OpenCASCADE. The Windows OrcaSlicer CGAL is the pinned 6.2.1,
+through the overlay port `ci/vcpkg-overlays-orca/cgal`.
 Those combinations are compatibility-tested by CI but are not upstream parity.
 
 Local macOS Orca setup (`ENGINE=orca ./install_deps.sh`) installs Homebrew's

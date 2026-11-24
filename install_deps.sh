@@ -192,6 +192,107 @@ install_cgal_orca() {
 echo -e "${BLUE}Installing system dependencies for slicer_cli${NC}"
 echo ""
 
+# sha256sum is not on every macOS; shasum is.
+sha256_of() {
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+# OrcaSlicer v2.5.2 pins OpenCASCADE 8.0.1 with one patch of its own
+# (references/OrcaSlicer/deps/OCCT/OCCT.cmake at f92a7c0: the archive, its
+# hash, 0001-BRepMesh-seam-pcurve-selection.patch and the module switches;
+# its second patch is for MSVC on ARM64 only). Static, as in that build.
+# Linux and macOS use this function; Windows takes the same source and patch
+# through ci/vcpkg-overlays-orca/opencascade.
+OCCT_ORCA_VERSION='8.0.1'
+OCCT_ORCA_ARCHIVE_URL='https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V8_0_1.zip'
+OCCT_ORCA_ARCHIVE_SHA256='7c033d917ee8f040c0512d289dcc5f02c148889d5bac17c3e25639accb44f0da'
+OCCT_ORCA_PATCH="$SCRIPT_DIR/references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch"
+OCCT_ORCA_PREFIX='/opt/slicer-cli/occt-8.0'
+
+install_occt_orca() {
+    local marker="$OCCT_ORCA_PREFIX/.slicer-cli-occt-${OCCT_ORCA_VERSION}-static-complete"
+    local patch_sha256
+    patch_sha256="$(sha256_of "$OCCT_ORCA_PATCH")"
+    if [ -r "$marker" ] \
+       && grep -qx "version=${OCCT_ORCA_VERSION}" "$marker" \
+       && grep -qx "source_sha256=${OCCT_ORCA_ARCHIVE_SHA256}" "$marker" \
+       && grep -qx "patch_sha256=${patch_sha256}" "$marker" \
+       && grep -qx 'library_type=static' "$marker" \
+       && [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfig.cmake" ] \
+       && [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake" ] \
+       && [ -f "$OCCT_ORCA_PREFIX/lib/libTKernel.a" ] \
+       && [ -f "$OCCT_ORCA_PREFIX/lib/libTKBRep.a" ]; then
+        echo "  ✓ OpenCASCADE ${OCCT_ORCA_VERSION} ($OCCT_ORCA_PREFIX)"
+        return
+    fi
+
+    echo "  Installing OpenCASCADE ${OCCT_ORCA_VERSION} from the pinned source archive..."
+    if [ -e "$OCCT_ORCA_PREFIX" ]; then
+        run_as_root rm -rf "$OCCT_ORCA_PREFIX"
+    fi
+    local workdir
+    workdir=$(mktemp -d)
+    local archive="$workdir/occt-${OCCT_ORCA_VERSION}.zip"
+    curl -fsSL "$OCCT_ORCA_ARCHIVE_URL" -o "$archive"
+    [ "$(sha256_of "$archive")" = "$OCCT_ORCA_ARCHIVE_SHA256" ] || {
+        echo -e "${RED}OpenCASCADE ${OCCT_ORCA_VERSION} archive hash mismatch${NC}"
+        exit 1
+    }
+    unzip -q "$archive" -d "$workdir"
+    patch -d "$workdir/OCCT-8_0_1" -p1 < "$OCCT_ORCA_PATCH"
+    # macOS: the same deployment target as the main build (CMakeLists.txt).
+    local osx_args=()
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        osx_args=(-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15)
+    fi
+    cmake -S "$workdir/OCCT-8_0_1" -B "$workdir/build" -G Ninja \
+        ${osx_args[@]+"${osx_args[@]}"} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$OCCT_ORCA_PREFIX" \
+        -DCMAKE_PREFIX_PATH="$OCCT_ORCA_PREFIX" \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+        -DCMAKE_CXX_STANDARD=17 \
+        -DBUILD_LIBRARY_TYPE=Static \
+        -DUSE_TK=OFF \
+        -DUSE_TBB=OFF \
+        -DUSE_FREETYPE=OFF \
+        -DUSE_FFMPEG=OFF \
+        -DUSE_VTK=OFF \
+        -DUSE_FREEIMAGE=OFF \
+        -DUSE_OPENGL=OFF \
+        -DUSE_GLES2=OFF \
+        -DUSE_XLIB=OFF \
+        -DBUILD_DOC_Overview=OFF \
+        -DBUILD_MODULE_ApplicationFramework=OFF \
+        -DBUILD_MODULE_Draw=OFF \
+        -DBUILD_MODULE_Visualization=OFF \
+        -DBUILD_MODULE_ModelingAlgorithms=OFF
+    cmake --build "$workdir/build" --parallel
+    run_as_root cmake --install "$workdir/build"
+    if ! [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfig.cmake" ] \
+       || ! [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake" ] \
+       || ! [ -f "$OCCT_ORCA_PREFIX/lib/libTKernel.a" ] \
+       || ! [ -f "$OCCT_ORCA_PREFIX/lib/libTKBRep.a" ]; then
+        echo -e "${RED}OpenCASCADE ${OCCT_ORCA_VERSION} installation is incomplete${NC}"
+        exit 1
+    fi
+    local marker_tmp
+    marker_tmp=$(run_as_root mktemp "$OCCT_ORCA_PREFIX/.slicer-cli-occt-${OCCT_ORCA_VERSION}-static-complete.XXXXXX")
+    {
+        printf 'version=%s\n' "$OCCT_ORCA_VERSION"
+        printf 'source_sha256=%s\n' "$OCCT_ORCA_ARCHIVE_SHA256"
+        printf 'patch_sha256=%s\n' "$patch_sha256"
+        printf 'library_type=static\n'
+    } | run_as_root tee "$marker_tmp" >/dev/null
+    run_as_root chmod 0644 "$marker_tmp"
+    run_as_root mv "$marker_tmp" "$marker"
+    rm -rf "$workdir"
+}
+
 if [[ "$OSTYPE" == "darwin"* ]]; then
     if ! command -v brew &>/dev/null; then
         echo -e "${RED}Homebrew not found. Install it from https://brew.sh${NC}"
@@ -210,6 +311,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 
     PACKAGES=(
         cmake
+        ninja         # the OpenCASCADE 8.0.1 build for ENGINE=orca
         bash          # macOS /bin/bash is 3.2; scripts/bundle-macos.sh uses declare -A
         cgal          # ENGINE=orca uses the current CGAL 6 API; Bambu gets a separate pinned 5.4 keg below
         boost
@@ -274,6 +376,12 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     if [ "${ENGINE:-bambu}" = 'bambu' ] || [ "${ENGINE:-bambu}" = 'snapmaker' ]; then
         CGAL5_PREFIX="$CELLAR/cgal@5/$CGAL5_VERSION"
         install_cgal5 "$CGAL5_PREFIX" no
+    fi
+
+    # OrcaSlicer builds with its pinned OpenCASCADE 8.0.1 and patch, not with
+    # Homebrew's opencascade (another version, without the patch).
+    if [ "${ENGINE:-bambu}" = 'orca' ]; then
+        install_occt_orca
     fi
 
     # Engine-specific pinned libnoise — not in Homebrew, build from source.
@@ -372,87 +480,6 @@ elif [[ -f /etc/debian_version ]]; then
         {
             printf 'version=%s\n' "$OCCT_VERSION"
             printf 'source_sha256=%s\n' "$OCCT_ARCHIVE_SHA256"
-            printf 'library_type=static\n'
-        } | run_as_root tee "$marker_tmp" >/dev/null
-        run_as_root chmod 0644 "$marker_tmp"
-        run_as_root mv "$marker_tmp" "$marker"
-        rm -rf "$workdir"
-    }
-
-    # OrcaSlicer v2.5.2 pins OpenCASCADE 8.0.1 with one patch of its own
-    # (references/OrcaSlicer/deps/OCCT/OCCT.cmake at f92a7c0: the archive, its
-    # hash, 0001-BRepMesh-seam-pcurve-selection.patch and the module switches;
-    # its second patch is for MSVC on ARM64 only). Static, as on Linux there.
-    OCCT_ORCA_VERSION='8.0.1'
-    OCCT_ORCA_ARCHIVE_URL='https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/V8_0_1.zip'
-    OCCT_ORCA_ARCHIVE_SHA256='7c033d917ee8f040c0512d289dcc5f02c148889d5bac17c3e25639accb44f0da'
-    OCCT_ORCA_PATCH="$SCRIPT_DIR/references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch"
-    OCCT_ORCA_PREFIX='/opt/slicer-cli/occt-8.0'
-
-    install_occt_orca() {
-        local marker="$OCCT_ORCA_PREFIX/.slicer-cli-occt-${OCCT_ORCA_VERSION}-static-complete"
-        local patch_sha256
-        patch_sha256="$(sha256sum "$OCCT_ORCA_PATCH" | awk '{print $1}')"
-        if [ -r "$marker" ] \
-           && grep -qx "version=${OCCT_ORCA_VERSION}" "$marker" \
-           && grep -qx "source_sha256=${OCCT_ORCA_ARCHIVE_SHA256}" "$marker" \
-           && grep -qx "patch_sha256=${patch_sha256}" "$marker" \
-           && grep -qx 'library_type=static' "$marker" \
-           && [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfig.cmake" ] \
-           && [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake" ] \
-           && [ -f "$OCCT_ORCA_PREFIX/lib/libTKernel.a" ] \
-           && [ -f "$OCCT_ORCA_PREFIX/lib/libTKBRep.a" ]; then
-            echo "  ✓ OpenCASCADE ${OCCT_ORCA_VERSION} ($OCCT_ORCA_PREFIX)"
-            return
-        fi
-
-        echo "  Installing OpenCASCADE ${OCCT_ORCA_VERSION} from the pinned source archive..."
-        if [ -e "$OCCT_ORCA_PREFIX" ]; then
-            run_as_root rm -rf "$OCCT_ORCA_PREFIX"
-        fi
-        local workdir
-        workdir=$(mktemp -d)
-        local archive="$workdir/occt-${OCCT_ORCA_VERSION}.zip"
-        curl -fsSL "$OCCT_ORCA_ARCHIVE_URL" -o "$archive"
-        echo "$OCCT_ORCA_ARCHIVE_SHA256  $archive" | sha256sum -c -
-        unzip -q "$archive" -d "$workdir"
-        patch -d "$workdir/OCCT-8_0_1" -p1 < "$OCCT_ORCA_PATCH"
-        cmake -S "$workdir/OCCT-8_0_1" -B "$workdir/build" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$OCCT_ORCA_PREFIX" \
-            -DCMAKE_PREFIX_PATH="$OCCT_ORCA_PREFIX" \
-            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-            -DCMAKE_CXX_STANDARD=17 \
-            -DBUILD_LIBRARY_TYPE=Static \
-            -DUSE_TK=OFF \
-            -DUSE_TBB=OFF \
-            -DUSE_FREETYPE=OFF \
-            -DUSE_FFMPEG=OFF \
-            -DUSE_VTK=OFF \
-            -DUSE_FREEIMAGE=OFF \
-            -DUSE_OPENGL=OFF \
-            -DUSE_GLES2=OFF \
-            -DUSE_XLIB=OFF \
-            -DBUILD_DOC_Overview=OFF \
-            -DBUILD_MODULE_ApplicationFramework=OFF \
-            -DBUILD_MODULE_Draw=OFF \
-            -DBUILD_MODULE_Visualization=OFF \
-            -DBUILD_MODULE_ModelingAlgorithms=OFF
-        cmake --build "$workdir/build" --parallel
-        run_as_root cmake --install "$workdir/build"
-        if ! [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfig.cmake" ] \
-           || ! [ -f "$OCCT_ORCA_PREFIX/lib/cmake/opencascade/OpenCASCADEConfigVersion.cmake" ] \
-           || ! [ -f "$OCCT_ORCA_PREFIX/lib/libTKernel.a" ] \
-           || ! [ -f "$OCCT_ORCA_PREFIX/lib/libTKBRep.a" ]; then
-            echo -e "${RED}OpenCASCADE ${OCCT_ORCA_VERSION} installation is incomplete${NC}"
-            exit 1
-        fi
-        local marker_tmp
-        marker_tmp=$(run_as_root mktemp "$OCCT_ORCA_PREFIX/.slicer-cli-occt-${OCCT_ORCA_VERSION}-static-complete.XXXXXX")
-        {
-            printf 'version=%s\n' "$OCCT_ORCA_VERSION"
-            printf 'source_sha256=%s\n' "$OCCT_ORCA_ARCHIVE_SHA256"
-            printf 'patch_sha256=%s\n' "$patch_sha256"
             printf 'library_type=static\n'
         } | run_as_root tee "$marker_tmp" >/dev/null
         run_as_root chmod 0644 "$marker_tmp"
