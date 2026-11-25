@@ -5423,19 +5423,24 @@ impl Layer {
             let s_sc = (new_flow.spacing() / 0.00001).trunc();
             let min_sc = 0.2 * s_sc * (1.0 - 0.4);
             let max_sc = 2.0 * s_sc;
-            const CLIPPER_SAFETY_OFFSET: f64 = 0.0001;
-            let opened_min = offset2_clib(
-                &gapfill_areas,
-                min_sc / 2.0 / crate::SCALING_FACTOR,
-                min_sc / 2.0 / crate::SCALING_FACTOR,
-                OffsetJoinType::Miter,
-            );
-            let wide_part = offset2_clib(
-                &gapfill_areas,
-                max_sc / 2.0 / crate::SCALING_FACTOR,
-                max_sc / 2.0 / crate::SCALING_FACTOR + CLIPPER_SAFETY_OFFSET,
-                OffsetJoinType::Miter,
-            );
+            let half_min = min_sc / 2.0;
+            let half_max = max_sc / 2.0;
+            let (opened_min, wide_part) = if crate::faithful_gate("MONOTONIC_GAP_OFFSET_FLOAT") {
+                // FillRectilinear.cpp:3705-3707. opening_ex and offset2_ex take scaled floats
+                // (ClipperUtils.hpp:428-429, ClipperUtils.cpp:581-584).
+                use crate::support::support_common::cu;
+                let offset2 = |first, second| {
+                    cu::offset2_ex(&gapfill_areas, first, second, cu::DEFAULT_JOIN_TYPE, cu::DEFAULT_MITER_LIMIT)
+                };
+                let opening = half_min as f32;
+                let wide_outer = (half_max + f64::from(cu::CLIPPER_SAFETY_OFFSET)) as f32;
+                (offset2(-opening, opening), offset2(-(half_max as f32), wide_outer))
+            } else {
+                let offset2 = |shrink, grow| offset2_clib(&gapfill_areas, shrink, grow, OffsetJoinType::Miter);
+                let min_mm = half_min / crate::SCALING_FACTOR;
+                let max_mm = half_max / crate::SCALING_FACTOR;
+                (offset2(min_mm, min_mm), offset2(max_mm, max_mm + 0.0001))
+            };
             let mut gaps_ex = difference_clib(&opened_min, &wide_part);
             // FillRectilinear.cpp:3708-3717: the gaps ordered by chain_points of their
             // contours' first points.
@@ -6680,5 +6685,53 @@ fn mpprobe(layer_id: i32, region_id: i32, surfaces: usize, holes: usize, points:
              last(layer={layer_id} region={region_id} s={surfaces} h={holes})",
             g.0, g.1, g.2, g.3
         );
+    }
+}
+
+#[cfg(test)]
+mod monotonic_gap_tests {
+    use super::{ExtrusionEntityCollection, Flow, Layer};
+    use crate::extrusion_entity::{ExtrusionEntityType, ExtrusionRole};
+    use crate::geometry::{ExPolygon, Point, Polygon};
+
+    #[test]
+    fn monotonic_gap_matches_native_narrow_island() {
+        let fixture = include_str!("../tests/data/monotonic_route/narrow_gap.txt");
+        let mut rows = fixture.lines();
+        let mut ring = rows.next().unwrap().split_whitespace();
+        assert_eq!(ring.next(), Some("ring"));
+        let count: usize = ring.next().unwrap().parse().unwrap();
+        let mut points = Vec::with_capacity(count);
+        for _ in 0..count {
+            points.push(Point::new(
+                ring.next().unwrap().parse().unwrap(),
+                ring.next().unwrap().parse().unwrap(),
+            ));
+        }
+        assert!(ring.next().is_none());
+        let areas = vec![ExPolygon::new(Polygon::from_points(points))];
+        let flow = Flow::new(0.42, 0.2, 0.4).unwrap();
+        let mut collection = ExtrusionEntityCollection::new();
+        Layer::monotonic_route_gap_fill(
+            &mut collection, &areas, &mut Vec::new(), &[0], 0.0, &flow,
+            flow.mm3_per_mm().unwrap(), flow.height() as f32, 1.0, 0.0125,
+            ExtrusionRole::TopSolidInfill, &flow, 0.0,
+        );
+        let [ExtrusionEntityType::Path(path)] = collection.entities.as_slice() else {
+            panic!("expected a single gap-fill path");
+        };
+        let mut gap = rows.next().unwrap().split_whitespace();
+        assert_eq!(gap.next(), Some("gap"));
+        assert_eq!(path.role, ExtrusionRole::GapFill);
+        assert_eq!(path.mm3_per_mm, gap.next().unwrap().parse::<f64>().unwrap());
+        assert_eq!(path.width, gap.next().unwrap().parse::<f64>().unwrap());
+        assert_eq!(path.height, gap.next().unwrap().parse::<f64>().unwrap());
+        assert_eq!(path.polyline.points.len(), gap.next().unwrap().parse::<usize>().unwrap());
+        for point in &path.polyline.points {
+            assert_eq!(point.x, gap.next().unwrap().parse::<crate::Coord>().unwrap());
+            assert_eq!(point.y, gap.next().unwrap().parse::<crate::Coord>().unwrap());
+        }
+        assert!(gap.next().is_none());
+        assert!(rows.next().is_none());
     }
 }

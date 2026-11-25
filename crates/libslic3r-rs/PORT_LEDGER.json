@@ -2488,6 +2488,7 @@
     "area": "Fill",
     "rust": "crates/libslic3r-rs/src/fill/fill_rectilinear.rs",
     "rust_exists": true,
+    "notes": "R965 checks the scaled float offsets in FillMonotonicLineWGapFill::fill_surface_extrusion (FillRectilinear.cpp 3703-3723). The eight-point native island and Layer::monotonic_route_gap_fill in layer.rs produce identical extrusion endpoints, width, height and volume per millimeter.",
     "loc": 3588,
     "status": "partial",
     "priority": 4,

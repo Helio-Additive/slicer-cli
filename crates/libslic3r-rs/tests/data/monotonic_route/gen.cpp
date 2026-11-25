@@ -3,6 +3,7 @@
 // Build: target/parity-tools/build.sh <this file> <out binary>; run: <out binary> > vectors.txt
 // and <out binary> append > vectors_append.txt: the same cases with widths on the gaps, then the entities
 // append_monotonic_route (FillRectilinear.cpp:3592-3639) assembles from the route.
+// Run <out binary> --narrow-gap > narrow_gap.txt for the H2D layer 498 regression.
 #include "libslic3r/Fill/FillRectilinear.cpp"
 #include <cstdio>
 #include <cstdint>
@@ -23,8 +24,54 @@ static void print_path(const ExtrusionPath &p)
     printf("\n");
 }
 
+// The eight-point gap at H2D layer 498. No rectilinear infill line fits this island.
+// Use fill_surface_extrusion itself so the reference includes both float offsets,
+// medial-axis widths and the final gap extrusion (FillRectilinear.cpp:3699-3746).
+static void print_narrow_gap()
+{
+    ExPolygon island;
+    island.contour.points = {
+        {-1627860, -3659870}, {-1626819, -3658377}, {-1624821, -3655297}, {-1623867, -3653708},
+        {-1620305, -3647306}, {-1619660, -3646047}, {-1640658, -3667045}, {-1635514, -3670083},
+    };
+    const Surface surface(stTop, island);
+    FillParams params;
+    params.density = 1.f;
+    params.flow = Flow(0.42f, 0.2f, 0.4f);
+    params.extrusion_role = erTopSolidInfill;
+    FillMonotonicLineWGapFill fill;
+    fill.layer_id = 0;
+    fill.z = 0.2;
+    fill.angle = 0.f;
+    fill.spacing = params.flow.spacing();
+    fill.no_overlap_expolygons = {island};
+    fill.set_bounding_box(island.contour.bounding_box());
+    ExtrusionEntitiesPtr out;
+    fill.fill_surface_extrusion(&surface, params, out);
+    printf("ring %zu", island.contour.points.size());
+    for (const Point &p : island.contour.points)
+        printf(" %lld %lld", (long long)p.x(), (long long)p.y());
+    printf("\n");
+    for (ExtrusionEntity *e : out) {
+        const auto &coll = dynamic_cast<const ExtrusionEntityCollection&>(*e);
+        for (const ExtrusionEntity *sub : coll.entities) {
+            const auto &path = dynamic_cast<const ExtrusionPath&>(*sub);
+            printf("gap %.17g %.17g %.17g %zu", path.mm3_per_mm, double(path.width),
+                double(path.height), path.polyline.points.size());
+            for (const Point &p : path.polyline.points)
+                printf(" %lld %lld", (long long)p.x(), (long long)p.y());
+            printf("\n");
+        }
+        delete e;
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--narrow-gap") {
+        print_narrow_gap();
+        return 0;
+    }
     const bool append_mode = argc > 1 && std::string(argv[1]) == "append";
     const int n_cases = 200;
     for (int c = 0; c < n_cases; ++ c) {
