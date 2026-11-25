@@ -195,8 +195,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R968 | Keep the paths from a split gyroid surface in one collection (Fill.cpp 835–847, FillBase.cpp 99–110, 127–170). ToolOrdering.cpp 3978–3988 subtracts its volume once. Native narrow- and wide-neck cases verify both path counts and the exact volume of each collection. All four C++ runs agree with the corrected purge commands on Majora. Both Benchys and H2D match R967 byte for byte. Disabling the gate reproduces all four R967 files. | `GYROID_SURFACE_COLLECTION` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same in order) |
 | R969 | Retract the remaining distance when a tool change requests a longer retraction (GCode.cpp 871–879, 8498–8522, GCodeWriter.cpp 881–946, Extruder.cpp 101–146). The writer matches 48 native cases in absolute and relative E, including shorter, equal and zero requests. On Majora all four native runs agree on the missing 1.2 mm at four tower entries. Both Benchys and H2D match R968 byte for byte. Disabling the gate reproduces all four R968 files. | `RETRACT_TO_REQUESTED_LENGTH` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 to 2,864,038 (+219) |
 | R970 | Walk the full 6.5 mm overhang filter window on short paths (PerimeterGenerator.cpp 548–590). Rust had stopped after a fixed number of neighbors even when the ring had positive length. A four-path native case reproduces the difference. All four C++ runs agree with the feed and retraction text at both changed Majora sites. Both Benchys and H2D match R969, as do all four files with the gate disabled. | `OVERHANG_FILTER_FULL_WINDOW` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,038 to 2,864,040 (+2) |
+| R971 | Traced the two differing Majora layer 173 arc moves to the order of equal-key slab segments at layer 172 (TriangleMeshSlicer.cpp 1063–1081, 1176–1205). The existing opt-in ordering reproduces the complete layer against seven native runs. The full-file scores below are for the retained default. | `TMS_CHAIN_LIBCXX_SORT` (existing opt-in) | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R971, Majora. Both engines supplied the same 33 subject points and 41
+  overhang samples at layer 173. The first difference came from the slab for
+  color 8 at layer 172. The same 380 vertices formed four rings in C++ and
+  three in Rust. Replaying the native lower outline in Rust reproduced the
+  four signed distances bit for bit. The existing libc++ tie ordering
+  reproduced the slab, the final painted region and all of layer 173 excluding
+  M73. Across the four saved oracles it raised whole-layer consensus matches
+  from 583 to 584 of 586. With that option enabled, the Majora in-order score
+  fell from 2,864,040 to 2,863,853. H2D fell from 4,614,342 to 4,614,210
+  against the first oracle and rose from 4,614,863 to 4,615,158 against the
+  second. Both Benchys stayed byte-identical. The default keeps the R970
+  scores. Across seven native runs the layer 435 outputs also vary.
 
 - R970, Majora. At layer 24 the filter receives the same four paths in both
   engines. Rust had assigned degree 2 to each. Covering the full window
