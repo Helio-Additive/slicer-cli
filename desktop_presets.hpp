@@ -6,6 +6,7 @@
 // ported here, one function per desktop rule, with the upstream lines cited.
 #pragma once
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -135,5 +136,41 @@ std::string snapmaker_default_material(const Slic3r::PresetCollection& filaments
 /// (Preset.cpp 2776-2783).
 bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const std::string& name);
 #endif
+
+#ifdef ENGINE_BAMBU
+/// Opening a Bambu Studio project, the two things the desktop keeps from the
+/// file before it loads the settings over this engine's presets: the presets
+/// saved inside the project go into `bundle` (Plater.cpp 11953-11958 at
+/// v02.09.01.70), so a process or filament the maker saved under a name of
+/// their own is found and loads over the system preset it inherits; and the
+/// file's own nozzle rack is returned (Plater.cpp 11979-11983), for
+/// NozzleInventory::open_project after the load (12160). The bundle gets
+/// copies of `presets`; the caller keeps its own.
+Slic3r::DynamicPrintConfig load_project_embedded_presets(Slic3r::PresetBundle& bundle,
+                                                         const std::vector<Slic3r::Preset*>& presets,
+                                                         const Slic3r::DynamicPrintConfig& file_config);
+#endif
+
+
+/// The settings an exported project lists as changed
+/// (different_settings_to_system), as the desktop computes them when it saves a
+/// project: each preset's values against the system preset it stands on
+/// (PresetBundle::full_fff_config -> dirty_options_without_option_list;
+/// BambuStudio PresetBundle.cpp 4810-4817, 4857-4863, 5007-5013 at
+/// v02.09.01.70; OrcaSlicer PresetBundle.cpp 3923-3931 at 8500fcd). Every app
+/// keeps only the listed settings when it opens the project, and so does this
+/// command line; the official command lines list only what a settings file
+/// stated (BambuStudio.cpp 3594-3599), so a value a flag gave was lost when
+/// the export was opened again. `bundle` holds the system presets. Only the
+/// list is written into `project`: its values stay the ones that were sliced,
+/// and the entries the list already holds are kept. `given` narrows the new
+/// entries to the settings the command line itself gave, for a run whose other
+/// values are the presets': this command line fills some preset values in its
+/// own way (an empty per-extruder list becomes one value per extruder), and
+/// those are not the user's changes. Null lists every setting that differs.
+/// False, with the reason, when the list could not be computed.
+bool record_changed_settings(Slic3r::PresetBundle& bundle, const std::string& path,
+                             Slic3r::DynamicPrintConfig& project, const std::set<std::string>* given,
+                             std::string& error);
 
 } // namespace slicer_cli

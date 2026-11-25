@@ -355,17 +355,9 @@ StepResult normative_check(const CliOptions& o, const Slic3r::DynamicPrintConfig
                     "clear post_process in the file, or slice it in the desktop app";
         return r;
     }
-#ifndef ENGINE_ORCA
-    // BambuStudio.cpp 1959-1964 (the OrcaSlicer CLI has no such check).
-    if (const auto* mixed = file_config.option<Slic3r::ConfigOptionBools>("filament_is_mixed")) {
-        if (std::any_of(mixed->values.begin(), mixed->values.end(), [](unsigned char v) { return v != 0; })) {
-            r.code    = CLI_3MF_FEATURE_NOT_SUPPORTED;
-            r.message = "The file uses a mixed filament, which the command line does not slice; "
-                        "give the project one filament per extruder, or slice it in the desktop app";
-            return r;
-        }
-    }
-#endif
+    // A mixed filament is sliced: the official check for it went with Bambu
+    // Studio 2.9.1, whose normative check is the scripts alone
+    // (BambuStudio.cpp 2130-2140 at v02.09.01.70).
     return r;
 }
 

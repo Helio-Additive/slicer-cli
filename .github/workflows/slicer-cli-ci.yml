@@ -780,6 +780,17 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh "$ENGINE_BINARY"
 
+      - name: Run --filament-map tests (${{ matrix.engine }})
+        # Engine-aware: the nozzle and grouping settings each engine takes.
+        if: runner.os != 'Windows'
+        run: bash tests/test_filament_map_flag.sh "$ENGINE_BINARY"
+
+      - name: Run official command-line parity check (${{ matrix.engine }})
+        # Every setting the pinned official command line handles is taken, or
+        # listed with its reason (tests/official-cli-refused-settings.json).
+        if: runner.os != 'Windows'
+        run: python3 tests/test_official_cli_parity.py "$ENGINE_BINARY"
+
       - name: Run structured-diagnostics event tests (${{ matrix.engine }})
         # Engine-aware: the script reads the engine from `layout capabilities`
         # and uses that engine's fixture and profiles.
@@ -1422,6 +1433,17 @@ jobs:
         if: runner.os != 'Windows' && matrix.engine == 'bambu'
         run: bash tests/test_nozzle_map_provenance.sh "$ENGINE_BINARY"
 
+      - name: Run --filament-map tests (${{ matrix.engine }})
+        # Engine-aware: the nozzle and grouping settings each engine takes.
+        if: runner.os != 'Windows'
+        run: bash tests/test_filament_map_flag.sh "$ENGINE_BINARY"
+
+      - name: Run official command-line parity check (${{ matrix.engine }})
+        # Every setting the pinned official command line handles is taken, or
+        # listed with its reason (tests/official-cli-refused-settings.json).
+        if: runner.os != 'Windows'
+        run: python3 tests/test_official_cli_parity.py "$ENGINE_BINARY"
+
       - name: Run feature-exclusion regression tests (${{ matrix.engine }})
         # Engine-aware: each engine slices its own fixtures; checks of a
         # Bambu-only feature (pressure_advance_pattern) SKIP on Orca with the reason.
@@ -1747,6 +1769,9 @@ jobs:
           # The complete slice path (--slice, --arrange, presets by name, --export-3mf,
           # --info, --list-presets) and the default-path checks, on both engines.
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
+          # Settings files and projects that name their parents, and a project
+          # moved to another printer (an H2D project given the H2D 0.6 mm printer).
+          bash tests/test-inherits-inputs.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
           # --list-settings: the settings table of both engines as JSON.
           bash tests/test_list_settings.sh dist/verify/slicer-cli/slicer_cli dist/verify/slicer-cli/slicer_cli-orcaslicer
           # --list-flags: the flags of every binary as JSON.
@@ -2101,6 +2126,7 @@ jobs:
           ulimit -c unlimited
           sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p" || echo "core_pattern not settable; no cores this run"
           bash tests/test-complete-slice-path.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
+          bash tests/test-inherits-inputs.sh dist/verify/slicer-cli/bin/slicer_cli dist/verify/slicer-cli/bin/slicer_cli-orcaslicer
 
       - name: Backtraces of crashed slicer runs (Linux)
         if: failure()

@@ -160,8 +160,11 @@ BASE_3MF="$FIXTURES/calib_base$FIXTURE_SUFFIX.3mf"
 if [ -f "$TOKEN_3MF" ]; then
     # (1) Default: slice succeeds, an audit notice is emitted, and the literal
     #     token is gone from the exported G-code.
+    #     The token is in the file's own saved start G-code, so the file's
+    #     values are sliced (--project-settings-as-saved): by default a Bambu
+    #     Studio project takes today's preset G-code, as the desktop app does.
     GC=$(mktmp_gcode)
-    run_slice "$GC" "$TOKEN_3MF"
+    run_slice "$GC" "$TOKEN_3MF" --project-settings-as-saved
     if [ "$LAST_EXIT" -eq 0 ] \
        && grep -q "LegacyGcodeTokenAliased" <<<"$LAST_OUTPUT" \
        && ! grep -q "$TOKEN" "$GC"; then
@@ -180,8 +183,9 @@ if [ -f "$TOKEN_3MF" ]; then
     #     engine an unknown variable: its placeholder parser refuses the custom
     #     G-code and no G-code is written. That is the engine's own behaviour.
     #     Snapmaker Orca (bac6fd5) is the same: its parser refuses the token.
+    #     The file's own start G-code is sliced, as in (1).
     GC=$(mktmp_gcode)
-    run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode
+    run_slice "$GC" "$TOKEN_3MF" --no-normalize-legacy-gcode --project-settings-as-saved
     if [ "$ENGINE" != bambu ]; then
         if [ "$LAST_EXIT" -ne 0 ] \
            && [[ "$LAST_OUTPUT" != *LegacyGcodeTokenAliased* ]] \
@@ -380,6 +384,404 @@ if [ -f "$BASE_3MF" ]; then
 else
     skip "calib-*" "fixture missing: $BASE_3MF"
 fi
+
+# ── A project loads the way its desktop app loads it ────────────────────────
+# Each app keeps the settings the maker changed (different_settings_to_system)
+# and takes every other value from the preset it has today, for a project it
+# made itself too (BambuStudio Plater.cpp 12155 at v02.09.01.70; OrcaSlicer
+# Plater.cpp 6063-6110, 6415 and Preset.cpp 2516-2535 at 8500fcd; Snapmaker_Orca
+# Plater.cpp 12103 and Preset.cpp 2121-2148 at bac6fd5). The fixture is this
+# engine's own project; --project-settings-as-saved slices the file's values.
+if [ -f "$BASE_3MF" ]; then
+    OWN_3MF=$(mktemp "${TMPDIR:-/tmp}/own_project.XXXXXX"); mv "$OWN_3MF" "$OWN_3MF.3mf"; OWN_3MF="$OWN_3MF.3mf"
+    python3 - "$BASE_3MF" "$OWN_3MF" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["sparse_infill_density"] = "33%"
+            d["wall_loops"] = "5"
+            diff = d.get("different_settings_to_system") or [""]
+            diff[0] = "wall_loops"
+            d["different_settings_to_system"] = diff
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    header() { sed -n "s/^; $2 = //p" "$1" | head -n 1 | tr -d '\r'; }
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$OWN_3MF"
+    DENSITY=$(header "$GC" sparse_infill_density); WALLS=$(header "$GC" wall_loops)
+    if [ "$LAST_EXIT" -eq 0 ] && [ -n "$DENSITY" ] && [ "$DENSITY" != "33%" ] && [ "$WALLS" = 5 ] \
+       && grep -q "ProjectRebasedOnSystemPresets" <<<"$LAST_OUTPUT"; then
+        record "own-project-loads-like-the-app" 1
+    else
+        record "own-project-loads-like-the-app" 0 "exit=$LAST_EXIT density='$DENSITY' (want the preset's, not 33%) wall_loops='$WALLS' (want 5)"
+    fi
+    # The run names what it did not keep: the replaced setting is in the
+    # event's list, the maker's own change is not.
+    if python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith("[[SLICER_EVENT]] ") and "ProjectRebasedOnSystemPresets" in line:
+        replaced = json.loads(line[len("[[SLICER_EVENT]] "):])["replaced_settings"]
+        assert "sparse_infill_density" in replaced and "wall_loops" not in replaced, replaced
+        break
+else:
+    raise SystemExit("no ProjectRebasedOnSystemPresets event")
+' <<<"$LAST_OUTPUT" 2>/dev/null; then
+        record "own-project-names-what-the-presets-replaced" 1
+    else
+        record "own-project-names-what-the-presets-replaced" 0 "replaced_settings does not hold sparse_infill_density without wall_loops"
+    fi
+    # result.json names a setting only when the print used a value other than
+    # the file's: here the one unlisted edit, nothing else.
+    REPLACED_DIR=$(mktemp -d "${TMPDIR:-/tmp}/replaced.XXXXXX")
+    set +e
+    "$BINARY" "$OWN_3MF" --slice 1 --outputdir "$REPLACED_DIR" > "$REPLACED_DIR.out" 2>&1
+    set -e
+    REPLACED=$(python3 -c 'import json, sys; r = json.load(open(sys.argv[1])); print(json.dumps(r.get("settings_replaced_by_presets")), json.dumps(r["sliced_plates"][0].get("settings_replaced_by_presets")))' "$REPLACED_DIR/result.json" 2>/dev/null || true)
+    # The engine's own project fixtures hold a few values older than today's
+    # presets that the maker did not list; those are replaced and printed as
+    # the preset's, and are named too.
+    WANT_REPLACED='["sparse_infill_density"]'
+    # Bambu: the edit moves brim_type off the fixture's own changed list, so
+    # the preset's brim type is used, and that is named too.
+    [ "$ENGINE" = bambu ] && WANT_REPLACED='["brim_type", "filament_cost", "sparse_infill_density"]'
+    [ "$ENGINE" = orca ] && WANT_REPLACED='["slowdown_for_curled_perimeters", "sparse_infill_density"]'
+    if [ "$REPLACED" = "$WANT_REPLACED $WANT_REPLACED" ]; then
+        record "own-project-result-names-only-what-printed-differently" 1
+    else
+        record "own-project-result-names-only-what-printed-differently" 0 "result.json run and plate lists: '$REPLACED' (want $WANT_REPLACED for both)"
+    fi
+    # A setting a flag gives is the flag's, not the presets': --infill writes
+    # sparse_infill_density, so the edit is no longer named.
+    set +e
+    "$BINARY" "$OWN_3MF" --infill 20% --slice 1 --outputdir "$REPLACED_DIR/f" > "$REPLACED_DIR.f.out" 2>&1
+    set -e
+    FLAGGED=$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1])).get("settings_replaced_by_presets")))' "$REPLACED_DIR/f/result.json" 2>/dev/null || true)
+    WANT_FLAGGED=$(python3 -c 'import json, sys; print(json.dumps([k for k in json.loads(sys.argv[1]) if k != "sparse_infill_density"]))' "$WANT_REPLACED")
+    if [ -n "$FLAGGED" ] && [ "$FLAGGED" = "$WANT_FLAGGED" ]; then
+        record "own-project-result-leaves-out-what-a-flag-set" 1
+    else
+        record "own-project-result-leaves-out-what-a-flag-set" 0 "with --infill 20%: '$FLAGGED' (want $WANT_FLAGGED)"
+    fi
+    rm -rf "$REPLACED_DIR" "$REPLACED_DIR.out" "$REPLACED_DIR.f.out"
+    run_slice "$GC" "$OWN_3MF" --project-settings-as-saved
+    DENSITY=$(header "$GC" sparse_infill_density)
+    if [ "$LAST_EXIT" -eq 0 ] && [ "$DENSITY" = "33%" ]; then
+        record "own-project-as-saved" 1
+    else
+        record "own-project-as-saved" 0 "exit=$LAST_EXIT density='$DENSITY' (want 33%)"
+    fi
+    rm -f "$GC" "$OWN_3MF"
+else
+    skip "own-project-loads-like-the-app" "fixture missing: $BASE_3MF"
+fi
+
+# ── A printer with nozzle variants ──────────────────────────────────────────
+# The presets of an H2D hold one value per nozzle variant, which the print
+# narrows to the plate's own; a project exported from them and loaded again
+# names only the setting it edited without listing it.
+if [ "$ENGINE" = bambu ]; then
+    VAR_DIR=$(mktemp -d "${TMPDIR:-/tmp}/variant_project.XXXXXX")
+    python3 - "$VAR_DIR/cube.stl" <<'PY'
+import sys
+v = [(0,0,0),(10,0,0),(10,10,0),(0,10,0),(0,0,10),(10,0,10),(10,10,10),(0,10,10)]
+f = [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid c\n")
+    for t in f:
+        o.write("facet normal 0 0 0\nouter loop\n" + "".join("vertex %g %g %g\n" % v[i] for i in t) + "endloop\nendfacet\n")
+    o.write("endsolid c\n")
+PY
+    set +e
+    "$BINARY" "$VAR_DIR/cube.stl" --printer-preset "Bambu Lab H2D 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL H2D" \
+        --slice 1 --outputdir "$VAR_DIR/a" --export-3mf p.3mf > "$VAR_DIR/a.out" 2>&1; VAR_EXPORT=$?
+    set -e
+    python3 - "$VAR_DIR/a/p.3mf" "$VAR_DIR/edited.3mf" <<'PY' 2>/dev/null || true
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
+            continue
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["sparse_infill_density"] = "33%"
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    set +e
+    "$BINARY" "$VAR_DIR/edited.3mf" --slice 1 --outputdir "$VAR_DIR/b" > "$VAR_DIR/b.out" 2>&1; VAR_EXIT=$?
+    set -e
+    VAR_REPLACED=$(python3 -c 'import json, sys; print(json.dumps(json.load(open(sys.argv[1])).get("settings_replaced_by_presets")))' "$VAR_DIR/b/result.json" 2>/dev/null || true)
+    if [ "$VAR_EXPORT" -eq 0 ] && [ "$VAR_EXIT" -eq 0 ] && [ "$VAR_REPLACED" = '["sparse_infill_density"]' ]; then
+        record "variant-printer-project-names-only-what-printed-differently" 1
+    else
+        record "variant-printer-project-names-only-what-printed-differently" 0 "export exit=$VAR_EXPORT, slice exit=$VAR_EXIT, settings_replaced_by_presets=$VAR_REPLACED (want [\"sparse_infill_density\"])"
+    fi
+    rm -rf "$VAR_DIR"
+fi
+
+# ── Bambu Studio's spelling of the flow type ────────────────────────────────
+# Bambu Studio and OrcaSlicer write "Standard" / "High Flow"; Snapmaker Orca has
+# "standard" / "high_flow" and its desktop substitutes its default for the other
+# words. slicer_cli-snapmaker reads them as the same flow type and says so; any
+# other word is still refused with --slice.
+if [ "$ENGINE" = snapmaker ] && [ -f "$BASE_3MF" ]; then
+    FLOW_DIR=$(mktemp -d "${TMPDIR:-/tmp}/flow_type.XXXXXX")
+    flow_file() {
+        python3 - "$BASE_3MF" "$1" "$2" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["nozzle_volume_type"] = sys.argv[3].split(",")
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    }
+    flow_file "$FLOW_DIR/bambu_words.3mf" "Standard,High Flow,Standard,Standard"
+    flow_file "$FLOW_DIR/unknown_word.3mf" "Standard,Turbo,Standard,Standard"
+    GC=$(mktmp_gcode)
+    set +e
+    "$BINARY" "$FLOW_DIR/bambu_words.3mf" --slice 1 --outputdir "$FLOW_DIR/a" > "$FLOW_DIR/a.out" 2>&1; FLOW_EXIT=$?
+    "$BINARY" "$FLOW_DIR/unknown_word.3mf" --slice 1 --outputdir "$FLOW_DIR/b" > "$FLOW_DIR/b.out" 2>&1; UNKNOWN_EXIT=$?
+    set -e
+    FLOW_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/a/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+    if [ "$FLOW_EXIT" -eq 0 ] && [ "$FLOW_HEADER" = "standard,high_flow,standard,standard" ] \
+       && grep -q 'FlowTypeSpellingConverted' "$FLOW_DIR/a.out"; then
+        record "flow-type-bambu-spelling-read-as-snapmaker" 1
+    else
+        record "flow-type-bambu-spelling-read-as-snapmaker" 0 "exit=$FLOW_EXIT nozzle_volume_type='$FLOW_HEADER' (want standard,high_flow,standard,standard and a FlowTypeSpellingConverted event)"
+    fi
+    if [ "$UNKNOWN_EXIT" -ne 0 ] && grep -q "'nozzle_volume_type' is 'Standard,Turbo,Standard,Standard'" "$FLOW_DIR/b.out"; then
+        record "flow-type-unknown-word-refused" 1
+    else
+        record "flow-type-unknown-word-refused" 0 "exit=$UNKNOWN_EXIT: want a refusal naming the value"
+    fi
+    # A settings file that inherits a shipped preset is read twice (its own
+    # values, then over the preset it inherits); both reads keep the flow type.
+    printf '%s\n' '{"type":"machine","name":"Flow test U1","from":"User","inherits":"Snapmaker U1 (0.4 nozzle)","nozzle_volume_type":["High Flow","Standard","Standard","Standard"]}' > "$FLOW_DIR/machine.json"
+    python3 - "$FLOW_DIR/cube.stl" <<'PY'
+import sys
+v = [(0,0,0),(10,0,0),(10,10,0),(0,10,0),(0,0,10),(10,0,10),(10,10,10),(0,10,10)]
+f = [(0,2,1),(0,3,2),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid c\n")
+    for t in f:
+        o.write("facet normal 0 0 0\nouter loop\n" + "".join("vertex %g %g %g\n" % v[i] for i in t) + "endloop\nendfacet\n")
+    o.write("endsolid c\n")
+PY
+    set +e
+    "$BINARY" "$FLOW_DIR/cube.stl" --machine "$FLOW_DIR/machine.json" --slice 1 --outputdir "$FLOW_DIR/c" > "$FLOW_DIR/c.out" 2>&1; MACHINE_EXIT=$?
+    set -e
+    MACHINE_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/c/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+    if [ "$MACHINE_EXIT" -eq 0 ] && [ "$MACHINE_HEADER" = "high_flow,standard,standard,standard" ]; then
+        record "flow-type-bambu-spelling-in-inheriting-settings-file" 1
+    else
+        record "flow-type-bambu-spelling-in-inheriting-settings-file" 0 "exit=$MACHINE_EXIT nozzle_volume_type='$MACHINE_HEADER' (want high_flow,standard,standard,standard)"
+    fi
+    # --load-settings takes a process with the printer: the engine's own U1
+    # 0.20mm Standard process file.
+    FLOW_PROCESS="$SCRIPT_DIR/../references/SnapmakerOrca/resources/profiles/Snapmaker/process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json"
+    if [ -f "$FLOW_PROCESS" ]; then
+        set +e
+        "$BINARY" "$FLOW_DIR/cube.stl" --load-settings "$FLOW_DIR/machine.json;$FLOW_PROCESS" --slice 1 --outputdir "$FLOW_DIR/d" > "$FLOW_DIR/d.out" 2>&1; LOAD_EXIT=$?
+        set -e
+        LOAD_HEADER=$(sed -n 's/^; nozzle_volume_type = //p' "$FLOW_DIR/d/plate_1.gcode" 2>/dev/null | head -n 1 | tr -d '\r' || true)
+        if [ "$LOAD_EXIT" -eq 0 ] && [ "$LOAD_HEADER" = "high_flow,standard,standard,standard" ]; then
+            record "flow-type-bambu-spelling-in-load-settings" 1
+        else
+            record "flow-type-bambu-spelling-in-load-settings" 0 "exit=$LOAD_EXIT nozzle_volume_type='$LOAD_HEADER' (want high_flow,standard,standard,standard)"
+        fi
+    else
+        skip "flow-type-bambu-spelling-in-load-settings" "engine profiles missing: $FLOW_PROCESS"
+    fi
+    rm -rf "$GC" "$FLOW_DIR"
+fi
+
+# ── Supports set on a part stay on the part ─────────────────────────────────
+# The project load replaces project-wide settings the file does not list as
+# changed; what is stored with an object (Metadata/model_settings.config) is
+# the object's own and is not part of that. A slab on a pillar, exported as a
+# project with supports off, then given enable_support on the object itself:
+# the project loaded the app's way prints supports, and without the object's
+# setting it prints none.
+PART_DIR=$(mktemp -d "${TMPDIR:-/tmp}/part_support.XXXXXX")
+python3 - "$PART_DIR/slab.stl" <<'PY'
+import sys
+def box(x0, y0, z0, x1, y1, z1):
+    v = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+    f = [(0,1,3),(0,3,2),(4,6,7),(4,7,5),(0,4,5),(0,5,1),(2,3,7),(2,7,6),(0,2,6),(0,6,4),(1,5,7),(1,7,3)]
+    return [[v[i] for i in t] for t in f]
+tris = box(12, 12, 0, 18, 18, 12) + box(0, 0, 12, 30, 30, 14)
+with open(sys.argv[1], "w") as o:
+    o.write("solid slab\n")
+    for t in tris:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for p in t:
+            o.write("vertex %g %g %g\n" % p)
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid slab\n")
+PY
+PART_PRINTER="Bambu Lab X1 Carbon 0.4 nozzle"
+[ "$ENGINE" = snapmaker ] && PART_PRINTER="Snapmaker U1 (0.4 nozzle)"
+set +e
+"$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --slice 1 --outputdir "$PART_DIR/a" --export-3mf p.3mf > "$PART_DIR/a.out" 2>&1; PART_EXPORT=$?
+set -e
+python3 - "$PART_DIR/a/p.3mf" "$PART_DIR/part.3mf" <<'PY' 2>/dev/null || true
+import re, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename.startswith("Metadata/plate_") and item.filename.endswith((".gcode", ".md5")):
+            continue
+        if item.filename == "Metadata/model_settings.config":
+            text, n = re.subn(r"(<object id=\"\d+\">)", r'\1\n    <metadata key="enable_support" value="1"/>', data.decode(), count=1)
+            assert n == 1, "no object in model_settings.config"
+            data = text.encode()
+        zout.writestr(item, data)
+PY
+support_lines() { grep -c -i -E '^; ?(FEATURE|TYPE): ?Support' "$1" 2>/dev/null || true; }
+GC=$(mktmp_gcode)
+run_slice "$GC" "$PART_DIR/a/p.3mf"
+PART_OFF_EXIT=$LAST_EXIT; PART_OFF=$(support_lines "$GC")
+run_slice "$GC" "$PART_DIR/part.3mf"
+PART_ON=$(support_lines "$GC")
+if [ "$PART_EXPORT" -eq 0 ] && [ "$PART_OFF_EXIT" -eq 0 ] && [ "$LAST_EXIT" -eq 0 ] \
+   && [ "${PART_OFF:-0}" -eq 0 ] && [ "${PART_ON:-0}" -gt 0 ] \
+   && grep -q "ProjectRebasedOnSystemPresets" <<<"$LAST_OUTPUT"; then
+    record "supports-set-on-a-part-are-kept" 1
+else
+    record "supports-set-on-a-part-are-kept" 0 "export exit=$PART_EXPORT, project exit=$PART_OFF_EXIT with ${PART_OFF:-?} support sections (want 0), with the part's setting exit=$LAST_EXIT with ${PART_ON:-?} (want more than 0)"
+fi
+rm -rf "$GC" "$PART_DIR"
+
+# ── A saved prime tower outside the plate ───────────────────────────────────
+# Bambu Studio puts a project's saved tower back inside the plate when it opens
+# the project (Plater.cpp 12270-12276 at v02.09.01.70); OrcaSlicer and
+# Snapmaker Orca keep the saved position. On the plain call and with --slice
+# alike; a position given as a flag stays as given; the exported project
+# states the position the load gave.
+if [ -f "$BASE_3MF" ]; then
+    TOWER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tower_load.XXXXXX")
+    python3 - "$BASE_3MF" "$TOWER_DIR/far.3mf" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            d["wipe_tower_x"] = ["400"]
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PY
+    tower_x() { sed -n 's/^; wipe_tower_x = //p' "$1" | head -n 1 | tr -d '\r'; }
+    inside() { python3 -c 'import sys; x = float(sys.argv[1].split(",")[0]); sys.exit(0 if 0 < x < 300 else 1)' "$1" 2>/dev/null; }
+    is_value() { python3 -c 'import sys; sys.exit(0 if float(sys.argv[1].split(",")[0]) == float(sys.argv[2]) else 1)' "$1" "$2" 2>/dev/null; }
+    GC=$(mktmp_gcode)
+    run_slice "$GC" "$TOWER_DIR/far.3mf"
+    PLAIN=$(tower_x "$GC")
+    set +e
+    "$BINARY" "$TOWER_DIR/far.3mf" --slice 1 --outputdir "$TOWER_DIR/s" --export-3mf p.3mf > "$TOWER_DIR/s.out" 2>&1; SLICE_EXIT=$?
+    set -e
+    SLICED=$(tower_x "$TOWER_DIR/s/plate_1.gcode" 2>/dev/null || true)
+    EXPORTED=$(python3 -c '
+import json, sys, zipfile
+print(json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))["wipe_tower_x"][0])' "$TOWER_DIR/s/p.3mf" 2>/dev/null || true)
+    if [ "$ENGINE" = bambu ]; then
+        if [ "$LAST_EXIT" -eq 0 ] && [ "$SLICE_EXIT" -eq 0 ] && inside "$PLAIN" && is_value "$SLICED" "$PLAIN" && is_value "$EXPORTED" "$PLAIN"; then
+            record "project-tower-put-inside-plate" 1
+        else
+            record "project-tower-put-inside-plate" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT), exported '$EXPORTED': want one position inside the plate"
+        fi
+        run_slice "$GC" "$TOWER_DIR/far.3mf" --wipe-tower-x 5
+        FLAG=$(tower_x "$GC")
+        if [ "$LAST_EXIT" -eq 0 ] && is_value "$FLAG" 5; then
+            record "project-tower-flag-stays-as-given" 1
+        else
+            record "project-tower-flag-stays-as-given" 0 "exit=$LAST_EXIT wipe_tower_x='$FLAG' (want 5)"
+        fi
+    elif [ "$LAST_EXIT" -eq 0 ] && [ "$SLICE_EXIT" -eq 0 ] && is_value "$PLAIN" 400 && is_value "$SLICED" 400; then
+        record "project-tower-kept-as-saved" 1
+    else
+        record "project-tower-kept-as-saved" 0 "plain call '$PLAIN' (exit $LAST_EXIT), --slice '$SLICED' (exit $SLICE_EXIT): want 400, as the app keeps it"
+    fi
+    rm -rf "$GC" "$TOWER_DIR"
+else
+    skip "project-tower-*" "fixture missing: $BASE_3MF"
+fi
+
+# ── An exported project slices again with the same settings ─────────────────
+# The export lists the settings the run changed, as the app lists them when it
+# saves (desktop_presets.hpp record_changed_settings), so opening the export
+# keeps them. Each case slices with --export-3mf, slices the export again with
+# no flags, and compares the two G-codes: the changed settings in both
+# headers, the same layer count and the same filament use to 1 %. The printed
+# lines themselves are not compared: one build slicing one file twice does not
+# always write the same lines (the engine's threads), which a Linux arm64 run
+# of this check showed as 10137 against 10175 lines for one print.
+RT=$(mktemp -d "${TMPDIR:-/tmp}/roundtrip.XXXXXX")
+python3 - "$RT/cube.stl" <<'PY'
+import sys
+v = [(x, y, z) for x in (0, 20) for y in (0, 20) for z in (0, 20)]
+f = [(0,1,3),(0,3,2),(4,6,7),(4,7,5),(0,4,5),(0,5,1),(2,3,7),(2,7,6),(0,2,6),(0,6,4),(1,5,7),(1,7,3)]
+with open(sys.argv[1], "w") as o:
+    o.write("solid cube\n")
+    for a, b, c in f:
+        o.write("facet normal 0 0 0\nouter loop\n")
+        for i in (a, b, c):
+            o.write("vertex %d %d %d\n" % v[i])
+        o.write("endloop\nendfacet\n")
+    o.write("endsolid cube\n")
+PY
+RT_PRINTER="Bambu Lab X1 Carbon 0.4 nozzle"
+[ "$ENGINE" = snapmaker ] && RT_PRINTER="Snapmaker U1 (0.4 nozzle)"
+roundtrip() {
+    local LABEL="$1"; shift
+    local D="$RT/$LABEL"; mkdir -p "$D"
+    set +e
+    "$BINARY" "$@" --slice 1 --outputdir "$D/a" --export-3mf p.3mf > "$D/a.out" 2>&1; local R1=$?
+    "$BINARY" "$D/a/p.3mf" --slice 1 --outputdir "$D/b" > "$D/b.out" 2>&1; local R2=$?
+    set -e
+    local DETAIL
+    DETAIL=$(python3 - "$D/a/plate_1.gcode" "$D/b/plate_1.gcode" 2>&1 <<'PY'
+import re, sys
+def read(path):
+    header, layers, grams = {}, 0, None
+    for line in open(path, errors="replace"):
+        line = line.rstrip("\r\n")
+        m = re.match(r"^; ([a-z_0-9]+) = (.*)$", line)
+        if m:
+            header.setdefault(m.group(1), m.group(2))
+        if re.match(r"^; ?(CHANGE_LAYER|LAYER_CHANGE)", line):
+            layers += 1
+        m = re.match(r"^; (?:total filament weight \[g\] ?:|filament used \[g\] ?=) *(.*)$", line)
+        if m and grams is None:
+            grams = sum(float(v) for v in m.group(1).split(","))
+    return header, layers, grams
+(a, la, ga), (b, lb, gb) = read(sys.argv[1]), read(sys.argv[2])
+for name, h in (("the first slice", a), ("the export sliced again", b)):
+    assert h.get("wall_loops") == "5" and h.get("sparse_infill_density") == "33%", (name, h.get("wall_loops"), h.get("sparse_infill_density"))
+differ = sorted(k for k in a if k in b and a[k] != b[k])
+assert la > 0 and la == lb, ("layers", la, lb, "settings that differ", differ)
+assert ga and gb and abs(ga - gb) <= 0.01 * ga, ("filament grams", ga, gb, "settings that differ", differ)
+PY
+    ) && [ "$R1" -eq 0 ] && [ "$R2" -eq 0 ] && record "export-slices-again-$LABEL" 1 \
+        || record "export-slices-again-$LABEL" 0 "export exit=$R1 re-slice exit=$R2 $DETAIL"
+}
+roundtrip "model-with-flags" "$RT/cube.stl" --printer-preset "$RT_PRINTER" --perimeters 5 --infill 33%
+if [ -f "$BASE_3MF" ]; then
+    roundtrip "project-with-flags" "$BASE_3MF" --perimeters 5 --infill 33%
+    roundtrip "project-as-saved" "$BASE_3MF" --project-settings-as-saved --perimeters 5 --infill 33%
+fi
+rm -rf "$RT"
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""

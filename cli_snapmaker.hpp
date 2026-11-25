@@ -6,6 +6,7 @@
 #ifdef ENGINE_SNAPMAKER
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,15 @@ Slic3r::MixedFilamentManager mixed_manager_from_config(const Slic3r::DynamicPrin
 
 /// The desktop's paint state map for a filament-id remap.
 Slic3r::EnforcerBlockerStateMap paint_state_map(const std::vector<unsigned int>& id_remap, size_t total);
+
+/// A nozzle or filament flow type written the way Bambu Studio and OrcaSlicer
+/// spell it ("Standard", "High Flow") is read as the same flow type in this
+/// engine's spelling ("standard", "high_flow"), and that substitution is taken
+/// out of `ctx`, with a FlowTypeSpellingConverted event. A list holding any
+/// other value is left as the loader substituted it. `announce` false: a
+/// second read of a file whose conversion was already reported.
+void convert_flow_type_spelling(Slic3r::DynamicPrintConfig& config, Slic3r::ConfigSubstitutionContext& ctx,
+                                const std::string& source, bool announce = true);
 
 /// The desktop warns when a project's schema is newer than this build, and
 /// still loads it: a NewerProjectSchema warning event, never a refusal.
@@ -67,7 +77,13 @@ void trim_filaments_for_switch(Slic3r::DynamicPrintConfig& config, Slic3r::Model
                                int plate_id, bool& paint_remapped);
 
 /// The desktop's flow-type sync before a slice (filament_volume_type).
-void sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id);
+/// Returns a refusal sentence when a filament the plate uses is set to a
+/// high-flow nozzle it cannot print with (the grouping dialog's own block,
+/// FilamentGroupDialog.cpp 424-470), else empty. `used_filaments` holds the
+/// 1-based filaments the plate's objects use (empty: every filament), and
+/// `mapping_given` says the command line gave --filament-volume-type.
+std::string sync_filament_volume_types(Slic3r::DynamicPrintConfig& config, int plate_id,
+                                       const std::set<int>& used_filaments, bool mapping_given);
 
 /// The Snapmaker U1's plate types: an unsupported plate becomes Textured PEI.
 void force_u1_bed_type(Slic3r::DynamicPrintConfig& config, int plate_id);

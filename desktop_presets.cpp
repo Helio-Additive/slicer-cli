@@ -777,4 +777,72 @@ bool preset_shipped_or_renamed(const Slic3r::PresetCollection& collection, const
 }
 #endif
 
+#ifdef ENGINE_BAMBU
+Slic3r::DynamicPrintConfig load_project_embedded_presets(Slic3r::PresetBundle& bundle,
+                                                         const std::vector<Slic3r::Preset*>& presets,
+                                                         const Slic3r::DynamicPrintConfig& file_config) {
+    std::vector<Slic3r::Preset>  copies;
+    std::vector<Slic3r::Preset*> embedded;
+    copies.reserve(presets.size());
+    for (const Slic3r::Preset* p : presets)
+        if (p) copies.push_back(*p);
+    for (Slic3r::Preset& p : copies)
+        embedded.push_back(&p);
+    if (!embedded.empty())
+        bundle.load_project_embedded_presets(embedded, Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    Slic3r::DynamicPrintConfig file_nozzle_keys;
+    for (const char* key : {"nozzle_volume_type", "extruder_nozzle_stats", "extruder_nozzle_stats_new",
+                            "extruder_nozzle_count", "extruder_nozzle_volume_type", "extruder_nozzle_diameter",
+                            "extruder_nozzle_slot"})
+        if (file_config.has(key))
+            file_nozzle_keys.apply_only(file_config, {key});
+    return file_nozzle_keys;
+}
+#endif
+
+bool record_changed_settings(Slic3r::PresetBundle& bundle, const std::string& path,
+                             Slic3r::DynamicPrintConfig& project, const std::set<std::string>* given,
+                             std::string& error) {
+    using namespace Slic3r;
+    try {
+        DynamicPrintConfig copy = project;
+        const auto* filaments = copy.option<ConfigOptionStrings>("filament_settings_id");
+        const size_t slots = (filaments ? filaments->values.size() : 1) + 2;
+        // Every key listed as changed: the load then replaces none of the
+        // sliced values with a preset's (Preset.cpp load_external_preset ->
+        // update_non_diff_values_to_base_config), and the presets the bundle
+        // ends with are the run's own settings over their system presets.
+        copy.option<ConfigOptionStrings>("different_settings_to_system", true)
+            ->values.assign(slots, escape_strings_cstyle(copy.keys()));
+        const auto version = Semver::parse(SLIC3R_VERSION);
+        bundle.load_config_model(path, std::move(copy), version ? *version : Semver());
+#ifdef ENGINE_SNAPMAKER
+        const DynamicPrintConfig full = bundle.full_config();
+#else
+        const DynamicPrintConfig full = bundle.full_config(false);
+#endif
+        std::vector<std::string> changed;
+        if (const auto* list = full.option<ConfigOptionStrings>("different_settings_to_system"))
+            changed = list->values;
+        changed.resize(slots);
+        std::vector<std::string>& listed =
+            project.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
+        listed.resize(slots);
+        for (size_t slot = 0; slot < slots; ++slot) {
+            std::vector<std::string> keys, found;
+            unescape_strings_cstyle(listed[slot], keys);
+            unescape_strings_cstyle(changed[slot], found);
+            for (const std::string& key : found)
+                if ((given == nullptr || given->count(key) != 0) &&
+                    std::find(keys.begin(), keys.end(), key) == keys.end())
+                    keys.push_back(key);
+            listed[slot] = escape_strings_cstyle(keys);
+        }
+        return true;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+}
+
 } // namespace slicer_cli

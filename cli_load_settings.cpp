@@ -27,6 +27,9 @@
 #include "cli_events.hpp"
 #include "cli_nozzle_diameter.hpp"
 #include "desktop_presets.hpp"
+#ifdef ENGINE_SNAPMAKER
+#include "cli_snapmaker.hpp"
+#endif
 
 namespace slicer_cli {
 namespace {
@@ -114,7 +117,16 @@ int load_config_file(const std::string& file, DynamicPrintConfig& config, std::s
     try {
         std::map<std::string, std::string> key_values;
         std::string reason;
+#ifdef ENGINE_SNAPMAKER
+        // The flow-type words of Bambu Studio and OrcaSlicer, read as this
+        // engine's (cli_snapmaker.hpp convert_flow_type_spelling).
+        ConfigSubstitutionContext substitutions(ForwardCompatibilitySubstitutionRule::Enable);
+        substitutions.substitutions =
+            config.load_from_json(file, ForwardCompatibilitySubstitutionRule::Enable, key_values, reason);
+        convert_flow_type_spelling(config, substitutions, file);
+#else
         config.load_from_json(file, ForwardCompatibilitySubstitutionRule::Enable, key_values, reason);
+#endif
         if (!reason.empty()) {
             why = "cannot load settings from " + file + ": " + reason;
             return CLI_CONFIG_FILE_ERROR;

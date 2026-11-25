@@ -27,6 +27,7 @@ struct CliOptions {
     bool verbose = false;
     int  plate_id = 0;  // 0 = all plates (default); >0 = slice only that plate
     bool normalize_legacy_gcode = true;
+    bool project_settings_as_saved = false;  // --project-settings-as-saved
     // slicer-cli's own short setting flags (--infill, --perimeters, --nozzle,
     // --temp, --bed-temp), applied as they always were.
     std::map<std::string, std::string> overrides;
