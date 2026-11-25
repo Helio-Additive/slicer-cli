@@ -2551,9 +2551,15 @@ impl GCodeWriter {
 
     pub fn retract(&mut self) {
         if self.retracted {
-            // GCode.cpp:7112-7124 — C++'s writer-level retract is the no-op here,
-            // NOT the lift. Emitting the lift anyway is what R637 measured as the
-            // whole remaining spiral deficit. R638.
+            // GCodeWriter.cpp:892-925, Extruder.cpp:101-132. A tool change
+            // can request a longer retraction after the normal one. The writer
+            // takes only the difference and unretract returns the total.
+            let remaining = self.retraction_length - self.m_retracted_length;
+            if remaining > 0.0 && crate::faithful_gate("RETRACT_TO_REQUESTED_LENGTH") {
+                self.write_retraction(remaining, self.config.retract_speed * 60.0);
+                self.m_retracted_length += remaining;
+            }
+            // GCode.cpp:8513-8523 runs the lift even if the length was already reached.
             if crate::faithful_gate("RETRACT_LIFT_ALWAYS") {
                 self.emit_lift_after_retract();
             }
@@ -3217,6 +3223,16 @@ impl GCodeWriter {
                     self.travel_to_z(self.z_before_lift, None);
                 }
             }
+        }
+
+        // GCodeWriter.cpp:935-946 skips the E move when Extruder::unretract
+        // returns zero, including a zero-length toolchange after a lift.
+        if self.m_retracted_length == 0.0
+            && crate::faithful_gate("UNRETRACT_RETRACTED_LENGTH")
+            && crate::faithful_gate("RETRACT_TO_REQUESTED_LENGTH")
+        {
+            self.retracted = false;
+            return;
         }
 
         let unretract_speed = self.config.deretract_speed * 60.0;

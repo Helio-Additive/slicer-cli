@@ -820,11 +820,47 @@ static void multipath_tower_tags()
     }
 }
 
+// GCodeWriter.cpp:881-925 and Extruder.cpp:101-146. A second retraction
+// can reach a different target before an unretract returns the filament.
+static void repeated_retractions()
+{
+    for (bool relative : {false, true}) {
+        for (const auto &[normal, change] : std::vector<std::pair<const char *, const char *>>{
+                {"0.8", "2"}, {"2", "0.8"}, {"0.8", "0.8"}, {"0.8", "0"}, {"0", "2"}, {"0", "0"}}) {
+            for (const std::string &steps : {std::string("NTTNU"), std::string("TNNUTU"), std::string("TU"), std::string("NU")}) {
+                DynamicPrintConfig settings;
+                for (const auto &kv : KVs{{"gcode_flavor", "marlin"}, {"retraction_length", normal},
+                                          {"retract_length_toolchange", change}, {"retract_speed", "30"},
+                                          {"deretraction_speed", "25"}, {"use_relative_e_distances", relative ? "1" : "0"}})
+                    settings.set_deserialize_strict(kv.first, kv.second);
+                PrintConfig cfg;
+                cfg.apply(settings, true);
+                GCode gg;
+                gg.apply_print_config(cfg);
+                auto &writer = gg.m_writer;
+                writer.set_extruders({0});
+                writer.toolchange(0, 0);
+                std::printf("%d %s %s %s", int(relative), normal, change, steps.c_str());
+                for (char step : steps) {
+                    const std::string out = step == 'N' ? writer.retract() :
+                                            step == 'T' ? writer.retract_for_toolchange() : writer.unretract();
+                    std::printf(" %s %s", hex(out).c_str(), f64(writer.get_extruder_retracted_length(0)).c_str());
+                }
+                std::printf("\n");
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--repeated-retractions") {
+        repeated_retractions();
+        return 0;
     }
     if (std::string(argv[1]) == "--multipath-tower-tags") {
         multipath_tower_tags();

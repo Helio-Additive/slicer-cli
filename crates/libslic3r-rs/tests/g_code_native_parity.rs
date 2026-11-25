@@ -556,3 +556,39 @@ fn multipath_tower_analyzer_tags_match_native() {
         assert_eq!(tags, expected.lines().collect::<Vec<_>>(), "{row}");
     }
 }
+
+// GCodeWriter.cpp:881-946, Extruder.cpp:101-146. Compare each move and
+// outstanding length, including an equal or shorter request before repayment.
+#[test]
+fn repeated_retractions_match_native() {
+    use slicer::print_config::PrintConfig;
+    use slicer::GCodeWriter;
+
+    for line in include_str!("data/g_code/repeated_retractions.txt").lines() {
+        let mut fields = line.split_whitespace();
+        let config = PrintConfig {
+            use_relative_e: fields.next().unwrap() == "1",
+            retract_length: fields.next().unwrap().parse().unwrap(),
+            retract_length_toolchange: fields.next().unwrap().parse().unwrap(),
+            retract_speed: 30.0,
+            deretract_speed: 25.0,
+            retract_lift: 0.0,
+            ..PrintConfig::default()
+        };
+        let mut writer = GCodeWriter::with_config(config);
+        for step in fields.next().unwrap().chars() {
+            let start = writer.get_gcode().content().len();
+            match step {
+                'N' => writer.retract(),
+                'T' => writer.retract_for_toolchange(),
+                'U' => writer.unretract(),
+                _ => panic!("unknown retraction step {step}"),
+            }
+            let expected_gcode = unhex(fields.next().unwrap());
+            let expected_length = f64of(fields.next().unwrap());
+            assert_eq!(&writer.get_gcode().content()[start..], expected_gcode, "{step} in {line}");
+            assert_eq!(writer.retracted_length_now(), expected_length, "{step} in {line}");
+        }
+        assert!(fields.next().is_none());
+    }
+}

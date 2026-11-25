@@ -1470,7 +1470,8 @@
     "loc": 1033,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R969: The live export writer in gcode/writer.rs completes a repeated E retraction to the requested length (GCodeWriter.cpp 881-946, Extruder.cpp 101-146). Native cases exercise shorter, equal, longer and zero requests, repayment and both E modes. Firmware retraction and restart-extra handling are outside these vectors."
   },
   {
     "cpp": "Arrange.cpp",
