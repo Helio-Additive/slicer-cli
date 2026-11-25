@@ -18,10 +18,60 @@ use std::path::Path;
 use crate::geometry::Point3F;
 use crate::model::FacetsAnnotation;
 use crate::print::{Print, PrintObject};
+use crate::print_config::config_def::DynamicPrintConfig;
 use crate::print_config::{PrintConfig, PrintObjectConfig};
 use crate::region_config::PrintRegionConfig;
 use crate::stl::read_stl_file as load_stl;
 use crate::triangle_mesh::{Triangle, TriangleMesh};
+
+/// PrintApply.cpp:1339-1435. Only these global options can raise the flag
+/// without an override in a model object, part or layer range.
+fn profile_can_enable_scarf(config: &DynamicPrintConfig) -> bool {
+    use crate::config::{ConfigOptionEnumsGeneric, ConfigOptionResolver};
+    (config.opt_bool("enable_circle_compensation") && config.opt_bool("apply_scarf_seam_on_circles"))
+        || config.option("seam_slope_type").and_then(|opt| opt.get_int().ok()).is_some_and(|kind| kind != 0)
+        || config.option("filament_scarf_seam_type")
+            .and_then(|opt| opt.as_any().downcast_ref::<ConfigOptionEnumsGeneric>())
+            .is_some_and(|opt| opt.values.iter().any(|&kind| kind != 0))
+}
+
+/// Apply the flag before the config block and the typed processor config are
+/// built. PrintApply.cpp:1323-1325 normalizes against the *previous* Print,
+/// which has no objects or used filaments on a fresh CLI slice.
+fn apply_model_scarf_flag(
+    settings: &mut serde_json::Value,
+    mut config: DynamicPrintConfig,
+    model: &crate::model::Model,
+) -> Result<()> {
+    config.normalize_fdm_1()?;
+    config.normalize_fdm_2(0, 0, None)?;
+    let has_scarf = config.opt_bool("has_scarf_joint_seam") || crate::print_apply::model_uses_scarf_seam(model, &config);
+    if has_scarf || settings.get("has_scarf_joint_seam").is_some() {
+        settings["has_scarf_joint_seam"] = serde_json::Value::String(u8::from(has_scarf).to_string());
+    }
+    Ok(())
+}
+
+/// bbs_3mf.cpp:2263-2331. The importer decides whether to read embedded
+/// settings and custom tool changes based on the project's generator.
+fn load_scarf_project(path: &Path) -> Result<(crate::model::Model, DynamicPrintConfig)> {
+    use crate::config::{ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
+    use crate::format::bbs_3mf::{load_bbs_3mf, LoadStrategy};
+
+    let backup = tempfile::tempdir().context("Creating the 3MF model backup directory")?;
+    let mut model = crate::model::Model::new();
+    model.set_backup_path(backup.path().to_str().context("3MF backup path is not UTF-8")?);
+    let mut config = DynamicPrintConfig::new();
+    let mut substitutions = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::Enable);
+    let loaded = load_bbs_3mf(
+        path.to_str().context("3MF model path is not UTF-8")?, &mut config, &mut substitutions,
+        &mut model, &mut Vec::new(), &mut Vec::new(), None, &mut crate::semver::Semver::new(), None,
+        LoadStrategy::LoadModel | LoadStrategy::LoadConfig, None, 0, None, None, None, None,
+    )?;
+    anyhow::ensure!(loaded, "Failed to load the model settings from {}", path.display());
+    model.set_backup_path("detach");
+    Ok((model, config))
+}
 
 /// Slice a model file to G-code using a BambuStudio `project_settings.config` JSON.
 ///
@@ -97,7 +147,20 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
     normalize_legacy_gcode_tokens(&mut settings_value);
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
-    check_config_values(&settings_value)?;
+    let config = crate::print::full_print_config_from_settings(&settings_value);
+    check_config_values(&config)?;
+    if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM") && profile_can_enable_scarf(&config) {
+        use crate::model::{Model, ModelMesh, ModelVolume, ModelVolumeType};
+        // STL.cpp:36-39, Model.cpp:605-621,3416-3466. get_extruders uses
+        // the unpainted facets of the part to include the default extruder.
+        // No convex hull is needed to read filament assignments.
+        let mut model = Model::new();
+        let object = model.add_object_new();
+        let mut part = ModelVolume::new_shared(ModelMesh::from_triangle_mesh(&mesh).into(), ModelVolumeType::ModelPart);
+        part.set_model_object(Some(object.id()));
+        object.volumes.push(part);
+        apply_model_scarf_flag(&mut settings_value, config, &model)?;
+    }
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
@@ -478,11 +541,10 @@ impl ConfigRefusal {
 /// program takes no setting on its command line, so the settings are both the checked and the file's ones
 /// (`with_overrides` and `file_only` of main.cpp are the same configuration). Gate FRONT_END_CONFIG_VALIDATE_PIN
 /// (faithful, R949); off, no check.
-fn check_config_values(settings: &serde_json::Value) -> Result<()> {
+fn check_config_values(config: &DynamicPrintConfig) -> Result<()> {
     if !crate::faithful_gate("FRONT_END_CONFIG_VALIDATE_PIN") {
         return Ok(());
     }
-    let config = crate::print::full_print_config_from_settings(settings);
     let found = config.validate(true).map_err(|e| anyhow::anyhow!("{}", e))?;
     let mut validity: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let mut noted: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -855,6 +917,8 @@ pub fn slice_3mf_to_gcode(
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
     info!("Loading 3MF...");
+    let (loaded, scoped_scarf_settings) = load_3mf_model(input, crate::faithful_gate("PRINT_APPLY_SCARF_SEAM"))
+        .with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     let Loaded3mf {
         mut mesh,
         settings_json: embedded_settings,
@@ -866,7 +930,7 @@ pub fn slice_3mf_to_gcode(
         paint_raw_vertices,
         paint_instance_matrix,
         negative_segments,
-    } = load_3mf(input).with_context(|| format!("Failed to load 3MF: {:?}", input))?;
+    } = loaded;
     info!("Loaded {} triangles", mesh.triangle_count());
     // R703 — negative volumes are loaded but NOT yet subtracted; the per-layer
     // `diff_ex` that mirrors C++ `slices_to_regions` (:403-421) is the next step.
@@ -904,7 +968,19 @@ pub fn slice_3mf_to_gcode(
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
     normalize_legacy_gcode_tokens(&mut settings_value);
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
-    check_config_values(&settings_value)?;
+    let config = crate::print::full_print_config_from_settings(&settings_value);
+    check_config_values(&config)?;
+    if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
+        && (scoped_scarf_settings || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"))
+    {
+        let (model, embedded) = load_scarf_project(input)?;
+        let config = if settings_override.is_some() {
+            config
+        } else {
+            crate::print_config::config_def::full_print_config_of(&embedded)?
+        };
+        apply_model_scarf_flag(&mut settings_value, config, &model)?;
+    }
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
@@ -1391,6 +1467,10 @@ pub struct Loaded3mf {
 /// merging them as positive solids is wrong, and true boolean subtraction
 /// is Tier-2 (needs ModelVolume).
 pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
+    Ok(load_3mf_model(path, false)?.0)
+}
+
+fn load_3mf_model(path: &Path, check_scarf: bool) -> Result<(Loaded3mf, bool)> {
     use zip::ZipArchive;
 
     let file =
@@ -1407,16 +1487,40 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         None
     };
 
-    // Parse identify_ids from Metadata/model_settings.config
-    // C++ equivalent: ModelInstance::loaded_id from _BBS_3MF_Importer::_handle_end_model_instance()
-    // The identify_id is what get_labeled_id() returns → used for ; OBJECT_ID: comments
-    let identify_ids = if let Ok(mut entry) = archive.by_name("Metadata/model_settings.config") {
-        let mut buf = String::new();
-        entry.read_to_string(&mut buf).ok();
-        parse_identify_ids_from_model_settings(&buf)
-    } else {
-        Vec::new()
+    let mut model_settings = String::new();
+    if let Ok(mut entry) = archive.by_name("Metadata/model_settings.config") {
+        entry.read_to_string(&mut model_settings).ok();
+    }
+    let identify_ids = parse_identify_ids_from_model_settings(&model_settings);
+    let negative_ids = parse_negative_part_ids_from_model_settings(&model_settings);
+
+    // Ordinary 3MFs need only the existing geometry pass. Consult the full
+    // importer when a scoped option might enable scarf. Account for XML
+    // character references and the importer's case-insensitive entry names.
+    let may_override = |xml: &str| {
+        let decoded = quick_xml::escape::unescape(xml);
+        decoded.map_or(true, |text| {
+            ["enable_circle_compensation", "apply_scarf_seam_on_circles", "seam_slope_type"]
+                .iter().any(|key| text.contains(key))
+        })
     };
+    let mut scoped_scarf = check_scarf && may_override(&model_settings);
+    if check_scarf && !scoped_scarf {
+        use crate::format::bbs_3mf::{BBS_MODEL_CONFIG_FILE, LAYER_CONFIG_RANGES_FILE};
+        let config_entries: Vec<String> = archive.file_names().filter(|name| {
+            let normalized = name.replace('\\', "/");
+            normalized.eq_ignore_ascii_case(LAYER_CONFIG_RANGES_FILE)
+                || (*name != BBS_MODEL_CONFIG_FILE && normalized.eq_ignore_ascii_case(BBS_MODEL_CONFIG_FILE))
+        }).map(str::to_owned).collect();
+        for name in config_entries {
+            let mut xml = String::new();
+            archive.by_name(&name)?.read_to_string(&mut xml)?;
+            if may_override(&xml) {
+                scoped_scarf = true;
+                break;
+            }
+        }
+    }
 
     // Read the 3D model XML
     let model_xml = {
@@ -1430,20 +1534,9 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         buf
     };
 
-    // R703 — which <object id>s are negative volumes. BambuStudio records the
-    // role in model_settings, not in 3dmodel.model (which only says
-    // type="other"), so the printable/negative/modifier distinction needs both.
-    let negative_ids = if let Ok(mut entry) = archive.by_name("Metadata/model_settings.config") {
-        let mut buf = String::new();
-        entry.read_to_string(&mut buf).ok();
-        parse_negative_part_ids_from_model_settings(&buf)
-    } else {
-        std::collections::HashSet::new()
-    };
-
     // Parse vertices, triangles, and painted-MMU state from the XML
     let parsed = parse_3mf_model_xml_with_negatives(&model_xml, &negative_ids)?;
-    Ok(Loaded3mf {
+    Ok((Loaded3mf {
         mesh: parsed.mesh,
         settings_json,
         identify_ids,
@@ -1454,7 +1547,7 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
         paint_raw_vertices: parsed.paint_raw_vertices,
         paint_instance_matrix: parsed.paint_instance_matrix,
         negative_segments: parsed.negative_segments,
-    })
+    }, scoped_scarf))
 }
 
 /// R703 — the `<object id>`s that `Metadata/model_settings.config` marks

@@ -202,8 +202,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R975 | Record pause and custom G-code option moves, correct their height on the next extrusion, and expand the first and last progress tags in the file pass. On a Benchy with an end-code pause, the in-order count rises from 190,464 to all 190,638 body lines. The entire export matches C++. All four standard fixtures reproduce R974 with either gate setting. | `PROCESSOR_PAUSE_PROGRESS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R976 | Process color-change tags for active and inactive filaments (GCodeProcessor.cpp 3525–3595). Thirteen native cases check preview colors, stop times and volume per color change. A Benchy with a color change in its end G-code gains 174 in-order body lines and matches the entire C++ file. The four standard fixtures reproduce R975 with either gate setting. | `PROCESSOR_COLOR_CHANGE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R977 | Record hardware pauses at `M400 U1` and resolve their motion time, layer and progress when finalizing the processor result (GCodeProcessor.cpp 513–542, 2858–2866, 5794–5811). All 56 native snapshots and the complete hardware-pause Benchy replay agree. The four fixture files reproduce R976 with either gate setting. | `PROCESSOR_M400_PAUSE_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R978 | Derive the scarf-seam flag in the full and typed configs from the model and its normalized settings (PrintApply.cpp 1323–1435). The 20 native model cases and 14 supplemental slice flags agree. All four standard jobs reproduce R977 with either gate setting. | `PRINT_APPLY_SCARF_SEAM` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R978, scarf-seam config. Rust previously exported zero for a circle-enabled
+  Benchy even though both engines read the circle settings as enabled. In
+  six Bambu calibration projects the two importers agreed on all 68 scoped
+  input rows, but the CLI discarded part, object and layer-range settings
+  before deriving the flag. The CLI now uses the full importer when the
+  profile or scoped metadata can enable scarf. An unmarked 3MF ignores
+  embedded global settings and still honors the part override. A bare STL's
+  unpainted triangles select filament 1. All 20 model decisions match the
+  full and typed native configs, including a plate tool change, an unused
+  filament, nonprintable objects and per-scope overrides. Across 14 STL and
+  3MF jobs nine exported flags change to the native value. Every other byte
+  reproduces R977, as does every gate-off export. H2D retains 4,614,342 and
+  4,614,863 matches in order.
 
 - R977, hardware-pause Benchy. The two processors already agreed on the
   normal and stealth totals and all three motion times of the 360-second

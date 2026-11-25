@@ -384,6 +384,58 @@ use crate::geometry::{Point, Polygon};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// BambuStudio 56a57d0, PrintApply.cpp:1339-1435. The caller only raises
+/// has_scarf_joint_seam, preserving an explicit true in the incoming config.
+pub(crate) fn model_uses_scarf_seam(model: &Model, config: &DynamicPrintConfig) -> bool {
+    use crate::config::ConfigOptionEnumsGeneric;
+    use crate::model::{GlobalFeatureFilaments, ModelConfig};
+
+    let types = config.option("filament_scarf_seam_type")
+        .and_then(|opt| opt.as_any().downcast_ref::<ConfigOptionEnumsGeneric>())
+        .map(|opt| opt.values.as_slice()).unwrap_or_default();
+    let uses_scarf = |filament: i32| {
+        usize::try_from(filament).ok().and_then(|id| id.checked_sub(1))
+            .and_then(|index| types.get(index)).is_some_and(|&kind| kind != 0)
+    };
+    if types.iter().any(|&kind| kind != 0) {
+        if model.plates_custom_gcodes.values().any(|plate| plate.gcodes.iter().any(|item| {
+            item.gcode_type == CustomGCodeType::ToolChange && uses_scarf(item.extruder)
+        })) {
+            return true;
+        }
+        let features = GlobalFeatureFilaments::from_full_config(config);
+        for object in model.objects.iter().filter(|object| object.printable) {
+            if object.volumes.iter().any(|volume| volume.get_extruders(object, &features).into_iter().any(uses_scarf))
+                || object.layer_config_ranges.values().any(|range| {
+                    range.option("extruder").and_then(|opt| opt.get_int().ok()).is_some_and(uses_scarf)
+                })
+            {
+                return true;
+            }
+        }
+    }
+
+    let enabled = |object: &ModelObject, key| {
+        object.get_config_value(config, key).and_then(|opt| opt.get_bool().ok()) == Some(true)
+    };
+    if model.objects.iter().any(|object| {
+        enabled(object, "enable_circle_compensation") && enabled(object, "apply_scarf_seam_on_circles")
+    }) {
+        return true;
+    }
+
+    let override_uses_scarf = |local: &ModelConfig| {
+        local.option("override_filament_scarf_seam_setting").and_then(|opt| opt.get_bool().ok()) == Some(true)
+            && local.option("seam_slope_type").and_then(|opt| opt.get_int().ok()).is_some_and(|kind| kind != 0)
+    };
+    model.objects.iter().any(|object| {
+        object.get_config_value(config, "seam_slope_type").and_then(|opt| opt.get_int().ok()).is_some_and(|kind| kind != 0)
+            || object.volumes.iter().any(|volume| override_uses_scarf(&volume.config))
+            || object.layer_config_ranges.values().any(override_uses_scarf)
+    })
+}
+
+
 /// `Transform3f`: Eigen `Transform<float, 3, Affine>`, its 4x4 matrix.
 pub type Transform3f = nalgebra::Matrix4<f32>;
 

@@ -11,6 +11,7 @@
 //       -include $REPO/libslic3r/bambustudio/cgal_54_compat.hpp -c $DATA/gen.cpp -o gen.o
 //   c++ gen.o $BUILD/libslic3r_core.a <the libraries libslic3r_core links> -o gen
 //   ./gen > vectors.txt
+//   ./gen --scarf-flags scarf_flags.txt
 //
 // PrintApply.cpp is compiled into this file (its helpers are static), with the private members
 // of Print, PrintObject and PrintRegion made public to read the state `Print::apply` builds.
@@ -466,8 +467,84 @@ static void dump_wipe_tower(Print &print)
     out("wt empty " + hB(wtd.wipe_tower_mesh_data.has_value()) + " " + hI((long long) wtd.wipe_tower_mesh_data->bottom.points.size()));
 }
 
-int main()
+// PrintApply.cpp:1339-1435. Both the typed and dynamic configs are populated
+// by Print::apply; take per-model option values from the same Model it sees.
+static void scarf_flags(const char *filename)
 {
+    struct Scenario {
+        const char *name;
+        const char *target;
+        const char *key;
+        const char *value;
+        const char *location;
+        const char *other_key;
+        const char *other_value;
+    };
+    const std::vector<Scenario> cases = {
+        {"defaults", "", "", "", "", "", ""},
+        {"explicit", "global", "has_scarf_joint_seam", "1", "", "", ""},
+        {"part", "global", "filament_scarf_seam_type", "external,none,none", "", "", ""},
+        {"unused", "global", "filament_scarf_seam_type", "none,external,none", "", "", ""},
+        {"volume-filament", "global", "filament_scarf_seam_type", "none,external,none", "volume", "extruder", "2"},
+        {"feature-filament", "global", "filament_scarf_seam_type", "none,all,none", "global", "wall_filament", "2"},
+        {"range-filament", "global", "filament_scarf_seam_type", "none,external,none", "range", "extruder", "2"},
+        {"toolchange", "global", "filament_scarf_seam_type", "none,external,none", "gcode", "tool", "2"},
+        {"pause", "global", "filament_scarf_seam_type", "none,external,none", "gcode", "pause", "2"},
+        {"object-ignored", "global", "filament_scarf_seam_type", "all,none,none", "object", "printable", "0"},
+        {"circle", "global", "enable_circle_compensation", "1", "global", "apply_scarf_seam_on_circles", "1"},
+        {"circle-disabled", "global", "enable_circle_compensation", "1", "global", "apply_scarf_seam_on_circles", "0"},
+        {"circle-override", "global", "enable_circle_compensation", "1", "object", "apply_scarf_seam_on_circles", "0"},
+        {"circle-object", "object", "enable_circle_compensation", "1", "object", "apply_scarf_seam_on_circles", "1"},
+        {"global-region", "global", "seam_slope_type", "all", "", "", ""},
+        {"object-region", "object", "seam_slope_type", "external", "", "", ""},
+        {"volume-with-switch", "volume", "seam_slope_type", "external", "volume", "override_filament_scarf_seam_setting", "1"},
+        {"volume-no-switch", "volume", "seam_slope_type", "external", "volume", "override_filament_scarf_seam_setting", "0"},
+        {"range-with-switch", "range", "seam_slope_type", "all", "range", "override_filament_scarf_seam_setting", "1"},
+        {"range-no-switch", "range", "seam_slope_type", "external", "", "", ""},
+    };
+    std::ofstream output(filename);
+    output.exceptions(std::ios::failbit | std::ios::badbit);
+    for (const auto &c : cases) {
+        Model model = build_model(0);
+        ModelObject &object = *model.objects.front();
+        DynamicPrintConfig config = base_config(0);
+        config.option<ConfigOptionEnumsGeneric>("filament_scarf_seam_type", true)->values = {0, 0, 0};
+        auto set = [&](std::string site, std::string key, std::string value) {
+            if (site.empty()) return;
+            if (key == "filament_scarf_seam_type") {
+                auto &types = config.option<ConfigOptionEnumsGeneric>(key, true)->values;
+                types.clear();
+                std::istringstream stream(value);
+                std::string type;
+                while (std::getline(stream, type, ',')) types.push_back(type == "all" ? 2 : type == "external" ? 1 : 0);
+                return;
+            }
+            if (site == "global") { config.set_deserialize_strict(key, value); return; }
+            if (site == "gcode") {
+                model.plates_custom_gcodes[1].gcodes.push_back({2.0, key == "tool" ? CustomGCode::ToolChange : CustomGCode::PausePrint, std::stoi(value), "", ""});
+                return;
+            }
+            if (key == "printable") { object.printable = value == "1"; return; }
+            ModelConfig &target = site == "object" ? object.config : site == "volume" ? object.volumes.front()->config : object.layer_config_ranges[{2.0, 6.0}];
+            // A per-range override is applied over an ordinary 0.2 mm layer.
+            if (site == "range") target.set("layer_height", 0.2);
+            ConfigSubstitutionContext context(ForwardCompatibilitySubstitutionRule::Disable);
+            target.set_deserialize(key, value, context);
+        };
+        set(c.target,c.key,c.value);
+        set(c.location,c.other_key,c.other_value);
+        Print print;
+        print.apply(model, config);
+        output << c.name << '|' << c.target << '|' << c.key << '|' << c.value << '|'
+               << c.location << '|' << c.other_key << '|' << c.other_value << '|'
+               << print.full_print_config().opt_bool("has_scarf_joint_seam") << '|'
+               << int(print.config().has_scarf_joint_seam.value) << std::endl;
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 3 && std::string(argv[1]) == "--scarf-flags") { scarf_flags(argv[2]); return 0; }
     for (int scenario = 0; scenario < 5; ++scenario) {
         Model model = build_model(scenario);
         DynamicPrintConfig config = base_config(scenario);

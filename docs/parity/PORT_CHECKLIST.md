@@ -17,8 +17,8 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 411 | 4.3% | 6.3% |
 | partial `[~]` | 1668 | 17.4% | 16.5% |
-| ported `[x]` | 3703 | 38.7% | 23.8% |
-| verified `[v]` | 3792 | 39.6% | 53.3% |
+| ported `[x]` | 3702 | 38.7% | 23.8% |
+| verified `[v]` | 3793 | 39.6% | 53.3% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -260,7 +260,7 @@ Entries of `port_checklist_verified.json` that match no function now: `_fill_sur
 | `MinAreaBoundingBox` | 1 | `min_area_bounding_box.rs` | partial | 7 | 0 | 1 | 6 | 0 |
 | `MinimumSpanningTree` | 3 | `minimum_spanning_tree.rs` | ported | 6 | 0 | 0 | 6 | 0 |
 | `miniz_extension` | 1 | `miniz_extension.rs` | partial | 9 | 3 | 4 | 2 | 0 |
-| `Model` | 1 | `model.rs` | partial | 374 | 0 | 66 | 163 | 145 |
+| `Model` | 1 | `model.rs` | partial | 374 | 0 | 66 | 162 | 146 |
 | `ModelArrange` | 1 | `model_arrange.rs` | partial | 14 | 7 | 5 | 2 | 0 |
 | `MTUtils` | 1 | `mt_utils.rs` | partial | 8 | 0 | 1 | 7 | 0 |
 | `MultiMaterialSegmentation` | 1 | `multi_material_segmentation.rs` | partial | 74 | 0 | 9 | 46 | 19 |
@@ -8887,7 +8887,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [x] `const_volumes` (line 397) → `model.rs:6068` — read against the C++ in R914 (the estimate says partial)
 - [x] `get_model` (line 398) → `model.rs:849`
 - [x] `get_model` (line 399) → `model.rs:6009`
-- [x] `get_config_value` (line 402) → `model.rs:7575`
+- [v] `get_config_value` (line 402) → `model.rs:7575` — R978: model_scarf_flags_match_native_print_apply compares the inherited object circle and region options with Print::apply in 20 native models. Object-level enable and disable controls and a global seam setting are also exercised through the CLI.
 - [v] `is_multiparts` (line 417) → `model.rs:6182` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [v] `has_custom_layering` (line 428) → `model.rs:6187` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `invalidate_bounding_box` (line 443) → `model.rs:6267`
@@ -11065,47 +11065,47 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **free functions**
 
-- [~] `model_volume_list_update_supports` (line 19) → `print_apply.rs:403` — partial
-- [x] `model_volume_list_copy_configs` (line 61) → `print_apply.rs:442`
-- [x] `layer_height_ranges_copy_configs` (line 94) → `print_apply.rs:472`
+- [~] `model_volume_list_update_supports` (line 19) → `print_apply.rs:455` — partial
+- [x] `model_volume_list_copy_configs` (line 61) → `print_apply.rs:494`
+- [x] `layer_height_ranges_copy_configs` (line 94) → `print_apply.rs:524`
 - [x] `transform3d_lower` (line 108) → `print_apply.rs:214`
 - [x] `transform3d_equal` (line 122) → `print_apply.rs:239`
-- [v] `print_objects_from_model_object` (line 141) → `print_apply.rs:492` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp (the body reads as partial to the estimate)
-- [v] `layer_height_ranges_equal` (line 172) → `print_apply.rs:524` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `print_objects_from_model_object` (line 141) → `print_apply.rs:544` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp (the body reads as partial to the estimate)
+- [v] `layer_height_ranges_equal` (line 172) → `print_apply.rs:576` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
 - [~] `custom_per_printz_gcodes_tool_changes_differ` (line 190) → `print_apply.rs:264` — partial
-- [v] `print_config_diffs` (line 222) → `print_apply.rs:559` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `full_print_config_diffs` (line 272) → `print_apply.rs:619` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [x] `is_printable_filament_changed` (line 300) → `print_apply.rs:649`
-- [v] `model_volume_solid_or_modifier` (line 545) → `print_apply.rs:984` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [x] `trafo_for_bbox` (line 551) → `print_apply.rs:990`
+- [v] `print_config_diffs` (line 222) → `print_apply.rs:611` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `full_print_config_diffs` (line 272) → `print_apply.rs:671` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [x] `is_printable_filament_changed` (line 300) → `print_apply.rs:701`
+- [v] `model_volume_solid_or_modifier` (line 545) → `print_apply.rs:1036` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [x] `trafo_for_bbox` (line 551) → `print_apply.rs:1042`
 - [x] `trafos_differ_in_rotation_by_z_and_mirroring_by_xy_only` (line 559) → `print_apply.rs:323`
-- [v] `transformed_its_bbox2d` (line 585) → `print_apply.rs:1011` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `transformed_its_bboxes_in_z_ranges` (line 602) → `print_apply.rs:1031` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [x] `print_objects_regions_invalidate_keep_some_volumes` (line 674) → `print_apply.rs:1113`
-- [v] `find_volume_extents` (line 706) → `print_apply.rs:1171` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `find_modifier_volume_extents` (line 713) → `print_apply.rs:1183` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [x] `print_region_ref_inc` (line 736) → `print_apply.rs:1209`
-- [x] `print_region_ref_reset` (line 737) → `print_apply.rs:1213`
-- [v] `print_region_ref_cnt` (line 738) → `print_apply.rs:1217` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `verify_update_print_object_regions` (line 743) → `print_apply.rs:1235` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `update_volume_bboxes` (line 898) → `print_apply.rs:1394` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `generate_print_object_regions` (line 973) → `print_apply.rs:1812` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `same_ams_grouping` (line 1187) → `print_apply.rs:2134` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp (the body reads as partial to the estimate)
-- [x] `collect_model_filament_materials` (line 1196) → `print_apply.rs:2141`
-- [x] `multi_nozzle_support_combo` (line 1248) → `print_apply.rs:2208`
+- [v] `transformed_its_bbox2d` (line 585) → `print_apply.rs:1063` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `transformed_its_bboxes_in_z_ranges` (line 602) → `print_apply.rs:1083` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [x] `print_objects_regions_invalidate_keep_some_volumes` (line 674) → `print_apply.rs:1165`
+- [v] `find_volume_extents` (line 706) → `print_apply.rs:1223` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `find_modifier_volume_extents` (line 713) → `print_apply.rs:1235` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [x] `print_region_ref_inc` (line 736) → `print_apply.rs:1261`
+- [x] `print_region_ref_reset` (line 737) → `print_apply.rs:1265`
+- [v] `print_region_ref_cnt` (line 738) → `print_apply.rs:1269` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `verify_update_print_object_regions` (line 743) → `print_apply.rs:1287` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `update_volume_bboxes` (line 898) → `print_apply.rs:1446` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `generate_print_object_regions` (line 973) → `print_apply.rs:1864` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `same_ams_grouping` (line 1187) → `print_apply.rs:2186` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp (the body reads as partial to the estimate)
+- [x] `collect_model_filament_materials` (line 1196) → `print_apply.rs:2193`
+- [x] `multi_nozzle_support_combo` (line 1248) → `print_apply.rs:2260`
 
 **class `LayerRanges`**
 
-- [v] `assign` (line 362) → `print_apply.rs:736` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
-- [v] `config` (line 388) → `print_apply.rs:766` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `assign` (line 362) → `print_apply.rs:788` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
+- [v] `config` (line 388) → `print_apply.rs:818` — R915: tests/print_native_parity.rs: the same four scenarios: print objects from model objects, layer ranges, print object regions with their configs and hashes, volume bounding boxes, region verification, config diffs against the pin's PrintApply.cpp
 - [~] `begin` (line 401) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
 - [~] `end` (line 402) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
-- [x] `size` (line 403) → `print_apply.rs:790`
+- [x] `size` (line 403) → `print_apply.rs:842`
 
 **class `ModelObjectStatusDB`**
 
-- [x] `add` (line 447) → `print_apply.rs:866`
-- [x] `add_if_new` (line 452) → `print_apply.rs:874`
+- [x] `add` (line 447) → `print_apply.rs:918`
+- [x] `add_if_new` (line 452) → `print_apply.rs:926`
 
 **class `Print`**
 
@@ -11113,17 +11113,17 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `PrintObjectStatusDB`**
 
-- [x] `get_range` (line 522) → `print_apply.rs:952`
+- [x] `get_range` (line 522) → `print_apply.rs:1004`
 - [~] `get_range` (line 526) → `print_apply.rs` — another overload of the name is ported
-- [x] `count` (line 530) → `print_apply.rs:964`
+- [x] `count` (line 530) → `print_apply.rs:1016`
 - [~] `begin` (line 534) → `arachne/utils/extrusion_line.rs, boost_polygon_voronoi.rs, clipper_utils.rs` — not in the paired file
 - [~] `end` (line 535) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
-- [x] `clear` (line 537) → `print_apply.rs:978`
+- [x] `clear` (line 537) → `print_apply.rs:1030`
 
 **class `PrintObjectStatusDB::iterator_range`**
 
-- [x] `begin` (line 518) → `print_apply.rs:782`
-- [x] `end` (line 519) → `print_apply.rs:786`
+- [x] `begin` (line 518) → `print_apply.rs:834`
+- [x] `end` (line 519) → `print_apply.rs:838`
 
 ### `PrintBase` (.cpp+.hpp)
 

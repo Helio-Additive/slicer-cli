@@ -65,6 +65,7 @@ env_logger = "0.10"
 clap = { version = "4.4", features = ["derive"] }
 indicatif = "0.17"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
+tempfile = "3.8"
 quick-xml = "0.31"
 # PNG codec backend for PNGReadWrite.cpp (libpng replacement).
 # C++ uses native libpng (<png.h>) which is not wasm-safe; flate2 + miniz_oxide
@@ -91,7 +92,6 @@ clipper-z-sys = { path = "../clipper-z-sys" }
 clipper2-z-sys = { path = "../clipper2-z-sys" }
 criterion = "0.5"
 approx = "0.5"
-tempfile = "3.8"
 pretty_assertions = "1.4"
 
 [[bench]]

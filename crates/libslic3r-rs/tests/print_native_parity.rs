@@ -25,6 +25,10 @@ use slicer::print_config::config_def::DynamicPrintConfig;
 use slicer::triangle_mesh::{its_make_cube, Vec3f};
 use std::rc::Rc;
 
+// The native vectors include allocation order relative to the model ID.
+// All model builders in this test binary share the process-wide ID counter.
+static MODEL_IDS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct Out {
     lines: Vec<String>,
     base: usize,
@@ -754,6 +758,7 @@ fn read_vectors() -> String {
 
 #[test]
 fn print_native_parity() {
+    let _model_ids = MODEL_IDS.lock().unwrap();
     let mut o = Out { lines: Vec::new(), base: 0 };
     for scenario in 0..5 {
         let model = build_model(scenario, &mut o);
@@ -784,3 +789,115 @@ fn print_native_parity() {
     assert_eq!(mismatches, 0);
 }
 
+
+/// PrintApply.cpp:1339-1435. Compare both configs of the actual fresh Print
+/// with Print::apply for the same global settings, tool changes and overrides.
+#[test]
+fn model_scarf_flags_match_native_print_apply() {
+    let _model_ids = MODEL_IDS.lock().unwrap();
+    use slicer::config::ConfigOptionEnumsGeneric;
+    use slicer::custom_g_code::{Item, Type};
+    use slicer::support::tree_support_3d::assemble_faithful_print;
+
+    let mut context = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::Disable);
+    for row in include_str!("data/print/scarf_flags.txt").lines() {
+        let fields: Vec<_> = row.split('|').collect();
+        let [name, site, key, value, second_site, second_key, second_value, full, typed] =
+            fields.as_slice() else { panic!("invalid native scarf vector {row}"); };
+        let mut model = build_model(0, &mut Out { lines: Vec::new(), base: 0 });
+        let mut config = base_config(0);
+        config.set_key_value("filament_scarf_seam_type", Box::new(ConfigOptionEnumsGeneric::from_values(vec![0; 3])));
+        for (site, key, value) in [(*site, *key, *value), (*second_site, *second_key, *second_value)] {
+            match site {
+                "" => (),
+                "global" if key == "filament_scarf_seam_type" => {
+                    let types = value.split(',').map(|s| match s {
+                        "none" => 0, "external" => 1, "all" => 2, _ => panic!("{row}"),
+                    }).collect();
+                    config.set_key_value(key, Box::new(ConfigOptionEnumsGeneric::from_values(types)));
+                }
+                "global" => deser(&mut config, key, value),
+                "gcode" => {
+                    let kind = if key == "tool" { Type::ToolChange } else { Type::PausePrint };
+                    model.plates_custom_gcodes.entry(1).or_default().gcodes.push(
+                        Item::new(2.0, kind, value.parse().unwrap(), String::new()));
+                }
+                "object" if key == "printable" => model.objects[0].printable = value == "1",
+                _ => {
+                    let object = &mut model.objects[0];
+                    let local = match site {
+                        "object" => &mut object.config,
+                        "volume" => &mut object.volumes[0].config,
+                        "range" => {
+                            let range = object.layer_config_ranges.entry(range_key(2.0, 6.0)).or_default();
+                            range.set_deserialize("layer_height", "0.2", &mut context, false).unwrap();
+                            range
+                        }
+                        _ => panic!("{row}"),
+                    };
+                    local.set_deserialize(key, value, &mut context, false).unwrap();
+                }
+            }
+        }
+        let print = assemble_faithful_print(&model, &config);
+        assert_eq!(print.full_print_config().opt_bool("has_scarf_joint_seam"), *full == "1", "{name} full config");
+        assert_eq!(print.m_config.opt_bool("has_scarf_joint_seam"), *typed == "1", "{name} typed config");
+    }
+}
+
+/// STL.cpp:36-39, Model.cpp:605-621, PrintApply.cpp:1339-1435 and
+/// GCodeProcessor.cpp:2081-2087. The header and processor use the same
+/// derived bit when the first filament of the unpainted STL enables scarf.
+#[test]
+fn stl_scarf_reaches_the_config_block_and_processor() {
+    let _model_ids = MODEL_IDS.lock().unwrap();
+    use slicer::app_slice::slice_stl_to_print;
+    use slicer::gcode::g_code_processor::GCodeProcessor;
+    use std::path::Path;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/rust-engine/fixtures");
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("profile.json");
+    std::fs::write(&profile, r#"{"filament_scarf_seam_type":["external"],"has_scarf_joint_seam":"0"}"#).unwrap();
+    let print = slice_stl_to_print(&root.join("Cube_25.6.stl"), &profile).unwrap();
+    assert!(print.config().has_scarf_joint_seam);
+    for settings in [print.raw_settings.as_ref(), print.config_block_settings.as_ref()] {
+        assert_eq!(settings.unwrap()["has_scarf_joint_seam"], "1");
+    }
+    let mut processor = GCodeProcessor::new();
+    processor.apply_config(print.config());
+    processor.process_buffer("; CHANGE_LAYER\nG1 X1 Y2 Z0.2 F1200\nG1 X2 E1\n; CHANGE_LAYER\nG1 Z0.4\nG1 X3 E2\n");
+    let layers: Vec<_> = processor.result().spiral_vase_layers.iter()
+        .map(|(height, moves)| (height.to_bits(), *moves)).collect();
+    // The native layer_tag_profiles.txt transition from 0 to 2.
+    assert_eq!(layers, [(0x3e4ccccd, (0, 1)), (0x3ecccccd, (1, 2))]);
+}
+
+/// bbs_3mf.cpp:2263-2331 and PrintApply.cpp:1416-1435. A layer-range seam
+/// override survives the live 3MF loader and reaches the exported config.
+#[test]
+fn project_layer_range_scarf_matches_native_export() {
+    let _model_ids = MODEL_IDS.lock().unwrap();
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::Path;
+    use zip::{write::FileOptions, ZipArchive, ZipWriter};
+
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/calib_base.3mf");
+    let dir = tempfile::tempdir().unwrap();
+    for switch in ["0", "1"] {
+        let path = dir.path().join("model.3mf");
+        let mut archive = ZipArchive::new(File::open(&fixture).unwrap()).unwrap();
+        let mut writer = ZipWriter::new(File::create(&path).unwrap());
+        for index in 0..archive.len() {
+            writer.raw_copy_file(archive.by_index(index).unwrap()).unwrap();
+        }
+        writer.start_file("Metadata/layer_config_ranges.xml", FileOptions::default()).unwrap();
+        write!(writer, r#"<objects><object id="1"><range min_z="2" max_z="6"><option opt_key="layer_height">0.2</option><option opt_key="override_filament_scarf_seam_setting">{switch}</option><option opt_key="seam_slope_type">external</option></range></object></objects>"#).unwrap();
+        writer.finish().unwrap();
+        let output = dir.path().join("out.gcode");
+        slicer::app_slice::slice_3mf_to_gcode(&path, None, &output).unwrap();
+        let gcode = std::fs::read_to_string(output).unwrap();
+        assert_eq!(gcode.lines().find_map(|line| line.strip_prefix("; has_scarf_joint_seam = ")), Some(switch));
+    }
+}

@@ -5545,5 +5545,13 @@
   "functions": [
    "GCodeProcessor::process_M400"
   ]
+ },
+ {
+  "unit": "Model",
+  "round": 978,
+  "evidence": "model_scarf_flags_match_native_print_apply compares the inherited object circle and region options with Print::apply in 20 native models. Object-level enable and disable controls and a global seam setting are also exercised through the CLI.",
+  "functions": [
+   "ModelObject::get_config_value"
+  ]
  }
 ]

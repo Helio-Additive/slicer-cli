@@ -10684,6 +10684,9 @@ pub fn assemble_faithful_print(model: &crate::model::Model, config: &crate::prin
     new_full_config.normalize_fdm_1().unwrap();
     let mut changed_keys_ori_values = crate::config::DynamicConfig::new();
     let _ = new_full_config.normalize_fdm_2(0, 0, Some(&mut changed_keys_ori_values)).unwrap();
+    if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM") && crate::print_apply::model_uses_scarf_seam(model, &new_full_config) {
+        new_full_config.set_bool("has_scarf_joint_seam", true, true).unwrap();
+    }
     // PrintApply.cpp:1438-1456: one extruder.
     let mut print_variant_index: Vec<i32> = vec![0];
     print.base.base.m_ori_full_print_config = new_full_config.clone();

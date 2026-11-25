@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 90 |
 | of the rest, 25 tokens or more | 278 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8932 |
+| Rust functions with no C++ function of that name in the pair | 8933 |
 
 By tier:
 
@@ -171,7 +171,7 @@ their function names come from, when there is one.
 |-|-|-|-|
 | `algorithm/line_segmentation/mod.rs` | module | 0 |  |
 | `algorithm/mod.rs` | module | 0 |  |
-| `app_slice.rs` | no C++ file of this name | 44 |  |
+| `app_slice.rs` | no C++ file of this name | 48 |  |
 | `arachne/beading_strategy/mod.rs` | module | 0 |  |
 | `arachne/mod.rs` | module | 0 |  |
 | `arachne/utils/mod.rs` | module | 0 |  |
@@ -8488,14 +8488,14 @@ Rust only:
 
 ### `PrintApply` (.cpp) and `print_apply.rs`
 
-Tier 1. C++ functions 44 (plus 6 constructors, 1 destructors, 4 operators), Rust functions 64. Matched 38: faithful 34, partial 4, divergent 0, stub 0.
+Tier 1. C++ functions 44 (plus 6 constructors, 1 destructors, 4 operators), Rust functions 65. Matched 38: faithful 34, partial 4, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `model_volume_list_update_supports` :19 and `model_volume_list_update_supports` :403 (48%, 0.72x)
-- partial: `print_objects_from_model_object` :141 and `print_objects_from_model_object` :492 (50%, 1.41x)
+- partial: `model_volume_list_update_supports` :19 and `model_volume_list_update_supports` :455 (48%, 0.72x)
+- partial: `print_objects_from_model_object` :141 and `print_objects_from_model_object` :544 (50%, 1.41x)
 - partial: `custom_per_printz_gcodes_tool_changes_differ` :190 and `custom_per_printz_gcodes_tool_changes_differ` :264 (43%, 1.05x)
-- partial: `same_ams_grouping` :1187 and `same_ams_grouping` :2134 (50%, 0.75x)
+- partial: `same_ams_grouping` :1187 and `same_ams_grouping` :2186 (50%, 0.75x)
 
 Missing in the Rust file:
 
@@ -8508,32 +8508,33 @@ Missing in the Rust file:
 
 Rust only:
 
-- `volume_indices_sorted_by_id` :392
-- `options_differ` :546
-- `floats_values` :551
-- `LayerRanges::new` :728
-- `ModelObjectStatus::new` :831
-- `ModelObjectStatus::drop` :844
-- `ModelObjectStatusDB::find` :861 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
-- `ModelObjectStatusDB::get` :885 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `ModelObjectStatusDB::get_mut` :891
-- `ModelObjectStatusDB::reuse` :897
-- `PrintObjectStatusDB::new` :934
-- `PrintObjectStatusDB::get_range_by_id` :957
-- `PrintObjectStatusDB::statuses` :969
-- `PrintObjectStatusDB::statuses_mut` :973
-- `transform3f_mul` :999
-- `eigen_is_approx_mat4` :1154
-- `clamp_exturder_to_default` :1490
-- `clamp_exturder_to_default_protect0` :1499 — C++ has it in `PrintObject`
-- `object_config_from_model_object` :1511 — C++ has it in `PrintObject`
-- `opt_config_int` :1540
-- `apply_to_print_region_config` :1546 — C++ has it in `PrintObject`
-- `volume_ignores_modifier_infill` :1626 — C++ has it in `PrintObject`
-- `restore_parent_internal_infill` :1640 — C++ has it in `PrintObject`
-- `region_config_from_model_volume` :1656 — C++ has it in `PrintObject`
-- `static_config_lower` :1791
-- `Print::update_print_regions_from_objects` :2275
+- `model_uses_scarf_seam` :389
+- `volume_indices_sorted_by_id` :444
+- `options_differ` :598
+- `floats_values` :603
+- `LayerRanges::new` :780
+- `ModelObjectStatus::new` :883
+- `ModelObjectStatus::drop` :896
+- `ModelObjectStatusDB::find` :913 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
+- `ModelObjectStatusDB::get` :937 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `ModelObjectStatusDB::get_mut` :943
+- `ModelObjectStatusDB::reuse` :949
+- `PrintObjectStatusDB::new` :986
+- `PrintObjectStatusDB::get_range_by_id` :1009
+- `PrintObjectStatusDB::statuses` :1021
+- `PrintObjectStatusDB::statuses_mut` :1025
+- `transform3f_mul` :1051
+- `eigen_is_approx_mat4` :1206
+- `clamp_exturder_to_default` :1542
+- `clamp_exturder_to_default_protect0` :1551 — C++ has it in `PrintObject`
+- `object_config_from_model_object` :1563 — C++ has it in `PrintObject`
+- `opt_config_int` :1592
+- `apply_to_print_region_config` :1598 — C++ has it in `PrintObject`
+- `volume_ignores_modifier_infill` :1678 — C++ has it in `PrintObject`
+- `restore_parent_internal_infill` :1692 — C++ has it in `PrintObject`
+- `region_config_from_model_volume` :1708 — C++ has it in `PrintObject`
+- `static_config_lower` :1843
+- `Print::update_print_regions_from_objects` :2327
 
 ### `PrintBase` (.cpp+.hpp) and `print_base.rs`
 
@@ -11376,8 +11377,8 @@ Rust only:
 - `live_support_layers_from_faithful` :10625
 - `faithful_layers_from_live` :10643
 - `assemble_faithful_print` :10670
-- `get_bed_shape_with_excluded_area` :10797 — C++ has it in `PrintConfig`
-- `generate_live_tree_support` :10808
+- `get_bed_shape_with_excluded_area` :10800 — C++ has it in `PrintConfig`
+- `generate_live_tree_support` :10811
 
 ### `Support/TreeSupportCommon` (.hpp) and `support/tree_support_common.rs`
 
