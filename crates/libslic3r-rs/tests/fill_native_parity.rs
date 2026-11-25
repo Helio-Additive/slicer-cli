@@ -929,3 +929,54 @@ fn fill_anchoring_polylines_native_parity() {
 // layer is 0.08 mm against the object's 0.16, and with FILL_ANCHOR_GYROID_SPACING_PIN=0 11 of the 24 gyroid
 // lines differ).
 const ANCHORING_FLOOR: usize = 80;
+
+#[test]
+fn gyroid_collections_match_native_after_offset_splits_a_surface() {
+    use slicer::extrusion_entity::ExtrusionEntityType;
+    use slicer::print_config::{PrintConfig, PrintObjectConfig};
+    use slicer::print_region::PrintRegion;
+    use slicer::region_config::PrintRegionConfig;
+    use std::sync::Arc;
+
+    let mut print = PrintConfig::default();
+    let mut object = PrintObjectConfig::default();
+    let mut region = PrintRegionConfig::default();
+    for (key, value) in [
+        ("layer_height", "0.3"), ("initial_layer_print_height", "0.3"),
+        ("sparse_infill_pattern", "gyroid"), ("sparse_infill_density", "25%"),
+        ("sparse_infill_line_width", "0.45"), ("infill_direction", "45"),
+    ] {
+        print.set_deserialize(key, value);
+        if !object.set_deserialize(key, value) {
+            object.apply_key_value(key, value);
+        }
+        region.set_deserialize(key, value);
+    }
+    let (print, object, region) = (Arc::new(print), Arc::new(object), Arc::new(PrintRegion::new(region)));
+    for line in include_str!("data/fill/gyroid_surface_collections.txt").lines() {
+        let mut row = Tok::new(line);
+        let neck = row.i();
+        let count = row.i() as usize;
+        let pts = [
+            (0, 0), (800000, 0), (800000, 400000 - neck), (1000000, 400000 - neck),
+            (1000000, 0), (1800000, 0), (1800000, 800000), (1000000, 800000),
+            (1000000, 400000 + neck), (800000, 400000 + neck), (800000, 800000), (0, 800000),
+        ];
+        let contour = Polygon::from_points(pts.into_iter().map(|(x, y)| Point::new(x, y)).collect());
+        let mut lr = LayerRegion::new(15, 0);
+        lr.set_config_hierarchy(region.clone(), object.clone(), print.clone());
+        lr.fill_surfaces.surfaces.push(Surface::new(SurfaceType::Internal, ExPolygon::new(contour)));
+        let mut layer = Layer::new(15, 0, 0.3, 4.8, 4.65);
+        layer.add_region(lr);
+        layer.set_object_configs(object.clone(), print.clone());
+        layer.make_fills_at_object_base(&[], &[], None, 0.0).unwrap();
+        let entities = &layer.regions()[0].fills.entities;
+        assert_eq!(entities.len(), count, "{line}");
+        for entity in entities {
+            let ExtrusionEntityType::Collection(c) = entity else { panic!("{line}") };
+            assert_eq!(c.entities.len(), row.i() as usize);
+            assert_eq!(hd(c.total_volume()), row.s(), "{line}");
+        }
+        assert!(row.it.next().is_none());
+    }
+}

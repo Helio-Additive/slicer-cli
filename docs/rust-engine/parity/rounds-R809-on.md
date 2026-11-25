@@ -192,8 +192,18 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R965 | Pass scaled float distances to the monotonic gap-fill offsets (FillRectilinear.cpp 3703–3707). The eight-point H2D layer 498 island yields the native path and width of 0.092880219221115112 mm. The only changed fixture line is its width comment. The other three files match R964 byte for byte, as do all four with the gate disabled. | `MONOTONIC_GAP_OFFSET_FLOAT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
 | R966 | Apply the per-filament nozzle hardness, softening temperature and cost to the processor result (GCodeProcessor.cpp 2024–2027). Both typed setters and the project settings loader reproduce all 18 native profiles, including missing and surplus rows. Older serialized profiles retain their scalar price. All four G-code fixtures match R965 byte for byte with either gate setting. | `PROCESSOR_FILAMENT_MATERIAL_INFO` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
 | R967 | Emit the forced width once for the first extrusion after a prime tower (GCode.cpp 7869–7902). Width changes and the separately forced height agree with four native multipath cases. Majora loses 71 duplicate width comments on 69 layers. All four native runs agree with the resulting seven-line window at every changed site. The two Benchys and H2D match R966 byte for byte, as do all four fixtures with the gate disabled. | `MULTIPATH_TOWER_WIDTH_ONCE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same in order) |
+| R968 | Keep the paths from a split gyroid surface in one collection (Fill.cpp 835–847, FillBase.cpp 99–110, 127–170). ToolOrdering.cpp 3978–3988 subtracts its volume once. Native narrow- and wide-neck cases verify both path counts and the exact volume of each collection. All four C++ runs agree with the corrected purge commands on Majora. Both Benchys and H2D match R967 byte for byte. Disabling the gate reproduces all four R967 files. | `GYROID_SURFACE_COLLECTION` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same in order) |
 
 ## Findings
+
+- R968, Majora. At layer 134, Rust had split the native collection of
+  22.609158145468456 mm³ into two collections. Subtracting their volumes
+  separately changed the residual purge volume by one float step. After the
+  fix, all 26 changed five-line windows on layers 15, 134, 435 and 520 agree
+  with all four native runs. Layers 15, 134 and 520 now match in full apart
+  from M73, bringing agreement to 578 of the 586 consensus layers. The
+  whole-file verbatim overlap rises by 26 to 3,022,792. H2D retains
+  4,614,342 and 4,614,863 in-order matches against the two saved runs.
 
 - R967, Majora. Excluding M73 progress, four native runs agree on 586 of 656 layers.
   Rust matches 575 of those layers, up from 517 at R966. Every changed site has one

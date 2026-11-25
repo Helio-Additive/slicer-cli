@@ -515,6 +515,43 @@ static void run_anchoring(FILE *fo)
     }
 }
 
+// Fill.cpp 835-847 and FillBase.cpp 99-110, 127-170. A narrow neck splits
+// one sparse surface into two islands at the offset. Both belong to one collection.
+static void gyroid_surface_collections()
+{
+    Model model;
+    ModelObject *o = model.add_object();
+    o->add_volume(TriangleMesh(its_make_cube(20., 20., 6.)));
+    o->add_instance()->set_offset(Vec3d(100., 100., 0.));
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    set_keys(config, {{"layer_height", "0.3"}, {"initial_layer_print_height", "0.3"},
+                      {"sparse_infill_pattern", "gyroid"}, {"sparse_infill_density", "25%"},
+                      {"sparse_infill_line_width", "0.45"}, {"infill_direction", "45"}});
+    Print print;
+    print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+    print.apply(model, config);
+    auto *obj = print.m_objects.front();
+    const PrintRegion &region = *obj->m_shared_regions->all_regions.front();
+    Layer base(0, obj, 0.3, 0.3, 0.15);
+    obj->m_layers.emplace_back(&base);
+    for (coord_t half_neck : {5000, 35000}) {
+        Layer layer(15, obj, 0.3, 4.8, 4.65);
+        auto *lr = layer.add_region(&region);
+        Points pts{{0, 0}, {800000, 0}, {800000, 400000 - half_neck}, {1000000, 400000 - half_neck},
+                   {1000000, 0}, {1800000, 0}, {1800000, 800000}, {1000000, 800000},
+                   {1000000, 400000 + half_neck}, {800000, 400000 + half_neck}, {800000, 800000}, {0, 800000}};
+        lr->fill_surfaces.surfaces.emplace_back(stInternal, ExPolygon(Polygon(pts)));
+        layer.make_fills(nullptr, nullptr, nullptr);
+        std::printf("%lld %zu", (long long) half_neck, lr->fills.entities.size());
+        for (const ExtrusionEntity *entity : lr->fills.entities) {
+            const auto &c = dynamic_cast<const ExtrusionEntityCollection &>(*entity);
+            std::printf(" %zu %s", c.entities.size(), hD(c.total_volume()).c_str());
+        }
+        std::printf("\n");
+    }
+    obj->m_layers.pop_back();
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -522,6 +559,10 @@ int main(int argc, char **argv)
         return 2;
     }
     tbb::global_control one_thread(tbb::global_control::max_allowed_parallelism, 1);
+    if (std::string(argv[1]) == "--gyroid-surface-collections") {
+        gyroid_surface_collections();
+        return 0;
+    }
     g_out = std::fopen(argv[1], "w");
     if (g_out == nullptr) return 1;
     run_group_fills();

@@ -4168,7 +4168,7 @@ impl Layer {
             } else {
                 surface_fill.params.flow.spacing()
             };
-            let surface_expolygons = if fill_pattern == InfillPattern::Gyroid
+            let (surface_expolygons, gyroid_surface_delta) = if fill_pattern == InfillPattern::Gyroid
                 && crate::faithful_gate("GYROID_FILL_SHRINK")
             {
                 // FillBase.cpp:102 float(scale_(this->overlap - 0.5 * this->spacing)), overlap 0 (Fill.cpp
@@ -4179,13 +4179,20 @@ impl Layer {
                 } else {
                     -0.5 * gyroid_spacing * crate::SCALING_FACTOR
                 };
-                crate::clipper_utils::offset_expolygons_clib_scaled(
-                    &surface_fill.expolygons,
-                    delta,
-                    crate::clipper_utils::OffsetJoinType::Miter,
-                )
+                // Fill.cpp:835-847 calls fill_surface_extrusion once per original surface.
+                // FillBase.cpp:99-110, 127-170 gathers its offset islands into one collection.
+                if crate::faithful_gate("GYROID_FSS") && crate::faithful_gate("GYROID_SURFACE_COLLECTION") {
+                    (surface_fill.expolygons, Some(delta))
+                } else {
+                    let islands = crate::clipper_utils::offset_expolygons_clib_scaled(
+                        &surface_fill.expolygons,
+                        delta,
+                        crate::clipper_utils::OffsetJoinType::Miter,
+                    );
+                    (islands, None)
+                }
             } else {
-                surface_fill.expolygons
+                (surface_fill.expolygons, None)
             };
             for expoly in surface_expolygons {
                 let dbg_area = if fsdbg {
@@ -4368,13 +4375,26 @@ impl Layer {
                         fp.anchor_length = surface_fill.params.anchor_length as f64;
                         fp.anchor_length_max = surface_fill.params.anchor_length_max as f64;
                         let mut out: Vec<crate::geometry::Polyline> = Vec::new();
-                        fill.fill_surface_single(
-                            &fp,
-                            1,
-                            &(0.0f32, crate::geometry::Point::new(0, 0)),
-                            expoly.clone(),
-                            &mut out,
-                        );
+                        let mut fill_island = |island| {
+                            fill.fill_surface_single(
+                                &fp,
+                                1,
+                                &(0.0f32, crate::geometry::Point::new(0, 0)),
+                                island,
+                                &mut out,
+                            );
+                        };
+                        if let Some(delta) = gyroid_surface_delta {
+                            for island in crate::clipper_utils::offset_expolygons_clib_scaled(
+                                std::slice::from_ref(&expoly),
+                                delta,
+                                crate::clipper_utils::OffsetJoinType::Miter,
+                            ) {
+                                fill_island(island);
+                            }
+                        } else {
+                            fill_island(expoly.clone());
+                        }
                         fss_connected = true;
                         if let Ok(v) = std::env::var("FSSOUT") {
                             if let Ok(zq) = v.parse::<f64>() {

@@ -131,7 +131,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R967) |
+| Fixture | As brought over (R808) | Now (R968) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -141,11 +141,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R967:
+missing most often. Lines of the oracle's body the port has verbatim, at R968:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
-(100.0%), Majora 3,022,766 of 3,024,752 (99.9%).
+(100.0%), Majora 3,022,792 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R967 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R968 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.
@@ -159,8 +159,10 @@ difference, header and config block included): Benchy classic since R951, Benchy
 
 R853 removed 3,339 repeated width tags after prime tower visits on Majora. R967
 removes another 71 where more than one part of the exporter prepares the first path.
-Excluding M73 progress, 575 of the 586 layers shared by four C++ runs now match,
-up from 517. The in-order count is unchanged.
+Excluding M73 progress, that brought the match from 517 to 575 of the 586 layers
+shared by four C++ runs. R968 groups gyroid paths by their original surface.
+All four runs agree with the 26 corrected purge moves on four Majora layers.
+Rust now matches 578 of the 586 shared layers. The in-order count is unchanged.
 
 The percentages of R852 are lower than R851's while the matched counts are
 higher: R852 writes the `M73 P.. R..` progress lines, which `seq_parity.py`

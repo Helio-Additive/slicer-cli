@@ -6070,11 +6070,11 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `Layer::restore_untyped_slices` :104 and `Layer::restore_untyped_slices` :3064 (31%, 0.44x)
 - divergent: `Layer::merged` :150 and `Layer::merged` :3167 (5%, 0.08x)
 - divergent: `Layer::make_perimeters` :203 and `LayerRegion::make_perimeters` :937 (0%, 0.01x)
-- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :6500 (50%, 0.53x)
-- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :6512 (53%, 0.59x)
-- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :6526 (53%, 0.59x)
+- partial: `Layer::simplify_support_path` :638 and `Layer::simplify_support_path` :6520 (50%, 0.53x)
+- partial: `Layer::simplify_support_multi_path` :653 and `Layer::simplify_support_multi_path` :6532 (53%, 0.59x)
+- partial: `Layer::simplify_support_loop` :670 and `Layer::simplify_support_loop` :6546 (53%, 0.59x)
 - partial: `Layer::get_sparse_infill_max_void_area` :694 and `Layer::get_sparse_infill_max_void_area` :3526 (36%, 1.15x)
-- stub: `get_extents` :761 and `get_extents` :6623 (0%, 0.1x)
+- stub: `get_extents` :761 and `get_extents` :6643 (0%, 0.1x)
 
 Missing in the Rust file:
 
@@ -6150,28 +6150,28 @@ Rust only:
 - `Layer::monotonic_gap_compensation_ratio` :3267
 - `Layer::record_cooling_node_for_each_extrusion` :3429
 - `Layer::make_fills_at_object_base` :3601
-- `Layer::monotonic_route_gap_fill` :5383
-- `Layer::generate_sparse_infill_polylines_for_anchoring` :5571 — C++ has it in `Fill/Fill`
-- `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base` :5578
-- `Layer::generate_solid_infill` :6022
-- `Layer::generate_sparse_infill` :6029
-- `Layer::new_f` :6038 — C++ has it in `GCodeReader`
-- `Layer::bottom_z_mm` :6050
-- `Layer::height_mm` :6056
-- `Layer::set_lower_layer` :6062
-- `Layer::set_upper_layer` :6068
-- `Layer::all_slices` :6074
-- `LayerRegion::set_slices` :6083
-- `LayerRegion::set_config_hierarchy` :6090
-- `ContinuitiousDistancer::new` :6123
-- `Layer::calculate_perimeter_continuity_pin` :6321
-- `Layer::simplify_support_print_params` :6479
-- `chain_points` :6562 — C++ has it in `ShortestPath`
-- `LayerRegion::layer_get_extents` :6609
-- `[LayerRegion]::layer_get_extents` :6615
-- `get_extents_layer_region` :6629
-- `get_extents_layer_regions` :6652
-- `mpprobe` :6674
+- `Layer::monotonic_route_gap_fill` :5403
+- `Layer::generate_sparse_infill_polylines_for_anchoring` :5591 — C++ has it in `Fill/Fill`
+- `Layer::generate_sparse_infill_polylines_for_anchoring_at_object_base` :5598
+- `Layer::generate_solid_infill` :6042
+- `Layer::generate_sparse_infill` :6049
+- `Layer::new_f` :6058 — C++ has it in `GCodeReader`
+- `Layer::bottom_z_mm` :6070
+- `Layer::height_mm` :6076
+- `Layer::set_lower_layer` :6082
+- `Layer::set_upper_layer` :6088
+- `Layer::all_slices` :6094
+- `LayerRegion::set_slices` :6103
+- `LayerRegion::set_config_hierarchy` :6110
+- `ContinuitiousDistancer::new` :6143
+- `Layer::calculate_perimeter_continuity_pin` :6341
+- `Layer::simplify_support_print_params` :6499
+- `chain_points` :6582 — C++ has it in `ShortestPath`
+- `LayerRegion::layer_get_extents` :6629
+- `[LayerRegion]::layer_get_extents` :6635
+- `get_extents_layer_region` :6649
+- `get_extents_layer_regions` :6672
+- `mpprobe` :6694
 
 ### `LayerRegion` (.cpp) and `layer_region.rs`
 

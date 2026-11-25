@@ -2455,7 +2455,8 @@
     "loc": 1105,
     "status": "partial",
     "priority": 4,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R968: Layer::make_fills keeps one gyroid extrusion collection per original surface when an offset splits it (Fill.cpp 835-847, FillBase.cpp 99-110, 127-170). The native narrow- and wide-neck cases verify both path counts and collection volumes."
   },
   {
     "cpp": "Fill/FillAdaptive.cpp",
