@@ -2167,9 +2167,15 @@ fn load_bambustudio_settings(
     let mut unrecognized = 0u32;
     if let Some(obj) = json.as_object() {
         for (key, value) in obj {
-            // Extract string value (scalar or first element of array).
             let str_val = match value {
                 serde_json::Value::String(s) => s.clone(),
+                // Config.cpp:900-939, 1030-1080. Each axis has a normal/stealth
+                // pair per nozzle. Join the entire array before deserializing it.
+                serde_json::Value::Array(arr) if crate::print_config::is_machine_axis_limit(key)
+                    && crate::faithful_gate("MACHINE_LIMITS") && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS") => {
+                    let Some(items) = arr.iter().map(|v| v.as_str()).collect::<Option<Vec<_>>>() else { continue };
+                    items.join(",")
+                }
                 serde_json::Value::Array(arr) => match arr.first() {
                     Some(serde_json::Value::String(s)) => s.clone(),
                     _ => continue,
@@ -2679,6 +2685,40 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 #[cfg(test)]
 mod circle_compensation_settings_tests {
     use super::*;
+
+    /// GCodeProcessor.cpp:2030-2036. A profile's second mode limits both X
+    /// travels in the pin's end-to-end timing vectors (gen.cpp --axis-limits).
+    #[test]
+    fn profile_axis_limits_reach_the_time_estimator() {
+        use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
+        let vectors = include_str!("../tests/data/g_code_processor/axis_limits.txt");
+        let mut cases = 0;
+        for line in vectors.lines().filter(|line| line.starts_with("time ")) {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            let json = serde_json::json!({
+                "gcode_flavor": "marlin",
+                "machine_max_speed_x": fields[1].split(',').collect::<Vec<_>>(),
+                "machine_max_acceleration_x": ["9000", "9000"],
+                "machine_max_acceleration_travel": "9000",
+                "machine_max_acceleration_extruding": "9000",
+                "machine_max_jerk_x": ["9", "9"],
+                "machine_min_travel_rate": ["0", "0"]
+            });
+            let (config, _, _) = load_bambustudio_settings(&json).unwrap();
+            let mut processor = GCodeProcessor::new();
+            processor.reset();
+            processor.apply_config(&config);
+            processor.enable_stealth_time_estimator(true);
+            processor.initialize("axis.gcode");
+            processor.process_buffer("G90\nG1 X1000 F30000\nG1 X0 F30000\n");
+            processor.finalize(false);
+            for (i, mode) in [ETimeMode::Normal, ETimeMode::Stealth].into_iter().enumerate() {
+                assert_eq!(processor.get_time(mode).to_bits(), u32::from_str_radix(fields[2 + i], 16).unwrap(), "{line}");
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 3);
+    }
 
     /// R950: the auto circle compensation options of a settings file reach the typed configs as the pin's
     /// `ConfigBase::load_from_json` gives them (Config.cpp:1030-1080: a JSON array is joined with ',' and

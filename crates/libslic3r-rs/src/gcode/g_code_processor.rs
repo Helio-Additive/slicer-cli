@@ -3269,24 +3269,24 @@ impl GCodeProcessor {
             GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware | GCodeFlavor::Klipper
         ) {
             // `machine_limits = reinterpret_cast<const MachineEnvelopeConfig&>(config)`: the
-            // port's configuration holds one value per limit, the same for both modes.
+            // per-axis rows retain normal and stealth values for each configured nozzle.
             let two = |v: f64| -> Vec<f32> { vec![v as f32, v as f32] };
             let ml = &mut self.m_time_processor.machine_limits;
-            ml.machine_max_acceleration_x = two(config.machine_max_acceleration_x);
-            ml.machine_max_acceleration_y = two(config.machine_max_acceleration_y);
-            ml.machine_max_acceleration_z = two(config.machine_max_acceleration_z);
-            ml.machine_max_acceleration_e = two(config.machine_max_acceleration_e);
+            ml.machine_max_acceleration_x = config.machine_axis_values("machine_max_acceleration_x", config.machine_max_acceleration_x);
+            ml.machine_max_acceleration_y = config.machine_axis_values("machine_max_acceleration_y", config.machine_max_acceleration_y);
+            ml.machine_max_acceleration_z = config.machine_axis_values("machine_max_acceleration_z", config.machine_max_acceleration_z);
+            ml.machine_max_acceleration_e = config.machine_axis_values("machine_max_acceleration_e", config.machine_max_acceleration_e);
             ml.machine_max_acceleration_extruding = two(config.machine_max_acceleration_extruding);
             ml.machine_max_acceleration_retracting = two(config.machine_max_acceleration_retracting);
             ml.machine_max_acceleration_travel = two(config.machine_max_acceleration_travel);
-            ml.machine_max_speed_x = two(config.machine_max_speed_x);
-            ml.machine_max_speed_y = two(config.machine_max_speed_y);
-            ml.machine_max_speed_z = two(config.machine_max_speed_z);
-            ml.machine_max_speed_e = two(config.machine_max_speed_e);
-            ml.machine_max_jerk_x = two(config.machine_max_jerk_x);
-            ml.machine_max_jerk_y = two(config.machine_max_jerk_y);
-            ml.machine_max_jerk_z = two(config.machine_max_jerk_z);
-            ml.machine_max_jerk_e = two(config.machine_max_jerk_e);
+            ml.machine_max_speed_x = config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x);
+            ml.machine_max_speed_y = config.machine_axis_values("machine_max_speed_y", config.machine_max_speed_y);
+            ml.machine_max_speed_z = config.machine_axis_values("machine_max_speed_z", config.machine_max_speed_z);
+            ml.machine_max_speed_e = config.machine_axis_values("machine_max_speed_e", config.machine_max_speed_e);
+            ml.machine_max_jerk_x = config.machine_axis_values("machine_max_jerk_x", config.machine_max_jerk_x);
+            ml.machine_max_jerk_y = config.machine_axis_values("machine_max_jerk_y", config.machine_max_jerk_y);
+            ml.machine_max_jerk_z = config.machine_axis_values("machine_max_jerk_z", config.machine_max_jerk_z);
+            ml.machine_max_jerk_e = config.machine_axis_values("machine_max_jerk_e", config.machine_max_jerk_e);
             ml.machine_min_extruding_rate = two(config.machine_min_extruding_rate);
             ml.machine_min_travel_rate = two(config.machine_min_travel_rate);
 
@@ -9686,6 +9686,55 @@ pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GCodeProcessor.cpp:6264-6303. Six lookups per profile option cover both
+    /// timing modes and in-range and missing nozzle rows.
+    #[test]
+    fn profile_axis_limits_match_native() {
+        let vectors = include_str!("../../tests/data/g_code_processor/axis_limits.txt");
+        let mut cases = 0;
+        for line in vectors.lines().filter(|line| line.starts_with("rows ")) {
+            let mut fields = line.split_whitespace();
+            fields.next();
+            let key = fields.next().unwrap();
+            let encoded = fields.next().unwrap();
+            let value = if encoded == "-" { "" } else { encoded };
+            let axis = "xyze".find(key.chars().last().unwrap()).unwrap();
+
+            for use_key_value in [false, true] {
+                let mut config = crate::print_config::PrintConfig::default();
+                config.gcode_flavor = crate::print_config::GCodeFlavor::Marlin;
+                if use_key_value {
+                    assert!(config.apply_key_value(key, value));
+                } else {
+                    assert!(config.set_deserialize(key, value));
+                }
+                let mut processor = GCodeProcessor::new();
+                processor.apply_config(&config);
+                let mut expected = fields.clone();
+                for row in 0..3 {
+                    for mode in [ETimeMode::Normal, ETimeMode::Stealth] {
+                        let limit = if key.starts_with("machine_max_speed_") {
+                            processor.get_axis_max_feedrate(mode, axis, row)
+                        } else if key.starts_with("machine_max_acceleration_") {
+                            processor.get_axis_max_acceleration(mode, axis, row)
+                        } else {
+                            processor.get_axis_max_jerk(mode, axis)
+                        };
+                        let bits = expected.next().unwrap();
+                        if bits == "nil" {
+                            assert!(limit.is_nan(), "{line}, row {row}, mode {mode:?}");
+                        } else {
+                            assert_eq!(limit.to_bits(), u32::from_str_radix(bits, 16).unwrap(), "{line}, row {row}, mode {mode:?}");
+                        }
+                    }
+                }
+                assert!(expected.next().is_none());
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 60);
+    }
 
     /// The pin's GCodeProcessor.cpp:6596-6610 over the states emitted by
     /// tests/data/g_code_processor/gen.cpp --machine-rows.

@@ -32,6 +32,11 @@ impl Default for GCodeConfig {
     }
 }
 
+/// The per-axis options of MachineEnvelopeConfig (PrintConfig.hpp:1312-1342).
+pub(crate) fn is_machine_axis_limit(key: &str) -> bool {
+    matches!(key.rsplit_once('_'), Some(("machine_max_acceleration" | "machine_max_speed" | "machine_max_jerk", "x" | "y" | "z" | "e")))
+}
+
 /// Main print configuration containing global print settings.
 ///
 /// This encompasses settings that affect the entire print, such as
@@ -489,6 +494,10 @@ pub struct PrintConfig {
     pub filament_map: Vec<i32>,
     /// BambuStudio: `nozzle_volume` per extruder (mm³) (GCodeProcessor.cpp:1975-1977).
     pub nozzle_volumes: Vec<CoordF>,
+    /// Explicit MachineEnvelopeConfig axis rows (PrintConfig.hpp:1312-1342).
+    /// An absent option uses the scalar fields below. A null slot represents C++ `nil`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub machine_axis_limit_rows: BTreeMap<String, Vec<Option<CoordF>>>,
     /// Max acceleration X (mm/s²).
     pub machine_max_acceleration_x: CoordF,
     /// Max acceleration Y (mm/s²).
@@ -832,6 +841,51 @@ pub const CIRCLE_COMPENSATION_FLOATS_KEYS: [&str; 12] = [
 ];
 
 impl PrintConfig {
+    /// PrintConfig.hpp:1312-1342, Config.hpp:918-939. Keep all axis limits while
+    /// maintaining the normal-mode scalar used by existing callers.
+    pub(crate) fn set_machine_axis_limit(&mut self, key: &str, value: &str) -> bool {
+        use crate::config::{ConfigOption, ConfigOptionFloatsNullable};
+        let scalar = match key {
+            "machine_max_acceleration_x" => &mut self.machine_max_acceleration_x,
+            "machine_max_acceleration_y" => &mut self.machine_max_acceleration_y,
+            "machine_max_acceleration_z" => &mut self.machine_max_acceleration_z,
+            "machine_max_acceleration_e" => &mut self.machine_max_acceleration_e,
+            "machine_max_speed_x" => &mut self.machine_max_speed_x,
+            "machine_max_speed_y" => &mut self.machine_max_speed_y,
+            "machine_max_speed_z" => &mut self.machine_max_speed_z,
+            "machine_max_speed_e" => &mut self.machine_max_speed_e,
+            "machine_max_jerk_x" => &mut self.machine_max_jerk_x,
+            "machine_max_jerk_y" => &mut self.machine_max_jerk_y,
+            "machine_max_jerk_z" => &mut self.machine_max_jerk_z,
+            "machine_max_jerk_e" => &mut self.machine_max_jerk_e,
+            _ => return false,
+        };
+        let mut option = ConfigOptionFloatsNullable::new();
+        if matches!(option.deserialize(value, false), Ok(true)) {
+            if let Some(&first) = option.values.first().filter(|v| !v.is_nan()) {
+                *scalar = first;
+            }
+            let rows = option.values.into_iter().map(|v| (!v.is_nan()).then_some(v)).collect();
+            self.machine_axis_limit_rows.insert(key.to_owned(), rows);
+        }
+        true
+    }
+
+    /// GCodeProcessor.cpp:115-119, 2030-2036. Convert to planner precision.
+    pub(crate) fn machine_axis_values(&self, key: &str, scalar: CoordF) -> Vec<f32> {
+        if crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS") {
+            if let Some(rows) = self.machine_axis_limit_rows.get(key) {
+                let mut values: Vec<f32> = rows.iter().map(|v| v.unwrap_or(f64::NAN) as f32).collect();
+                // A caller may edit the public scalar after loading this profile.
+                if matches!(rows.first(), Some(Some(_))) {
+                    values[0] = scalar as f32;
+                }
+                return values;
+            }
+        }
+        vec![scalar as f32; 2]
+    }
+
     /// The typed field of one of [`CIRCLE_COMPENSATION_FLOATS_KEYS`].
     pub fn circle_compensation_floats_mut(&mut self, key: &str) -> Option<&mut Vec<f64>> {
         Some(match key {
@@ -1423,6 +1477,7 @@ impl Default for PrintConfig {
             default_ams_type: -1,
             filament_map: Vec::new(),
             nozzle_volumes: Vec::new(),
+            machine_axis_limit_rows: BTreeMap::new(),
             machine_max_acceleration_x: 20000.0,
             machine_max_acceleration_y: 20000.0,
             machine_max_acceleration_z: 500.0,
@@ -2516,6 +2571,11 @@ impl PrintConfig {
     /// Apply a key-value pair from BambuStudio project_settings JSON.
     /// Returns true if the key was recognized and applied.
     pub fn set_deserialize(&mut self, key: &str, value: &str) -> bool {
+        if key.starts_with("machine_max_") && crate::faithful_gate("MACHINE_LIMITS")
+            && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS") && self.set_machine_axis_limit(key, value)
+        {
+            return true;
+        }
         match key {
             // PrintConfig.hpp:1747-1758: the twelve ConfigOptionFloats of the auto circle compensation,
             // deserialized as the pin's ConfigOptionFloats (Config.hpp:918-939).
@@ -5425,6 +5485,12 @@ impl PrintConfig {
         let parse_bool =
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
+        if key.starts_with("machine_max_") && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS")
+            && self.set_machine_axis_limit(key, value)
+        {
+            return true;
+        }
+
         match key {
             // PrintConfig.hpp:1747-1758 (ConfigOptionFloats, Config.hpp:918-939).
             k if CIRCLE_COMPENSATION_FLOATS_KEYS.contains(&k) => {
@@ -7303,6 +7369,26 @@ mod tests {
     #[test]
     fn test_support_type_default() {
         assert_eq!(SupportType::default(), SupportType::Normal);
+    }
+
+    #[test]
+    fn profile_axis_limits_preserve_scalar_configs_and_nullable_rows() {
+        let mut config = PrintConfig::default();
+        config.machine_max_speed_x = 275.0;
+        let legacy = serde_json::to_value(&config).unwrap();
+        assert!(legacy.get("machine_axis_limit_rows").is_none());
+        let mut config: PrintConfig = serde_json::from_value(legacy).unwrap();
+        assert_eq!(config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x), [275.0, 275.0]);
+
+        config.set_deserialize("machine_max_speed_x", "500,nil,120");
+        let mut config: PrintConfig = serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        config.machine_max_speed_x = 320.0;
+        let rows = config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x);
+        assert_eq!(rows.len(), 3);
+        assert_eq!((rows[0], rows[2]), (320.0, 120.0));
+        assert!(rows[1].is_nan());
+        config.apply_key_value("machine_max_speed_x", "75");
+        assert_eq!(config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x), [75.0]);
     }
 
     #[test]

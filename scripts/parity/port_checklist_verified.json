@@ -5492,5 +5492,15 @@
    "get_extruder_nozzle_stats",
    "convert_to_nvt_type"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 958,
+  "evidence": "profile_axis_limits_match_native compares both typed config entry points to 360 values emitted by tests/data/g_code_processor/gen.cpp --axis-limits: all four axes, both timing modes, three nozzle rows, empty, short and nullable profiles. profile_axis_limits_reach_the_time_estimator compares six native mode times after loading JSON settings.",
+  "functions": [
+   "GCodeProcessor::get_axis_max_feedrate",
+   "GCodeProcessor::get_axis_max_acceleration",
+   "GCodeProcessor::get_axis_max_jerk"
+  ]
  }
 ]

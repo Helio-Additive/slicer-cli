@@ -673,11 +673,60 @@ static void machine_rows()
             }
 }
 
+// PrintConfig.hpp:1312-1342 and GCodeProcessor.cpp:2030-2036, 6264-6303.
+// Exercise both modes of three nozzle rows. A short option repeats its last
+// element, an empty one has no limit, and a nullable slot stays nil.
+static void machine_axis_limits()
+{
+    using Mode = PrintEstimatedStatistics::ETimeMode;
+    for (const char *kind : {"speed", "acceleration", "jerk"})
+        for (int axis = X; axis <= E; ++axis)
+            for (const char *values : {"", "38.125", "500,200", "42,11,24,7", "nil,123.75,60,nil"}) {
+                const std::string key = std::string("machine_max_") + kind + "_" + "xyze"[axis];
+                PrintConfig cfg;
+                cfg.gcode_flavor.value = gcfMarlinFirmware;
+                cfg.set_deserialize_strict(key, values);
+                GCodeProcessor p;
+                p.apply_config(cfg);
+                std::printf("rows %s %s", key.c_str(), *values ? values : "-");
+                for (int row = 0; row < 3; ++row)
+                    for (Mode mode : {Mode::Normal, Mode::Stealth}) {
+                        const float v = std::string(kind) == "speed" ? p.get_axis_max_feedrate(mode, Axis(axis), row)
+                                      : std::string(kind) == "acceleration" ? p.get_axis_max_acceleration(mode, Axis(axis), row)
+                                      : p.get_axis_max_jerk(mode, Axis(axis));
+                        std::printf(" %s", std::isnan(v) ? "nil" : f32(v).c_str());
+                    }
+                std::putchar('\n');
+            }
+    for (const char *speeds : {"500,500", "500,200", "500,20"}) {
+        PrintConfig cfg;
+        cfg.gcode_flavor.value = gcfMarlinLegacy;
+        cfg.set_deserialize_strict("machine_max_speed_x", speeds);
+        cfg.set_deserialize_strict("machine_max_acceleration_x", "9000,9000");
+        cfg.set_deserialize_strict("machine_max_acceleration_travel", "9000,9000");
+        cfg.set_deserialize_strict("machine_max_acceleration_extruding", "9000,9000");
+        cfg.set_deserialize_strict("machine_max_jerk_x", "9,9");
+        cfg.set_deserialize_strict("machine_min_travel_rate", "0,0");
+        GCodeProcessor p;
+        p.reset();
+        p.apply_config(cfg);
+        p.enable_stealth_time_estimator(true);
+        p.initialize("axis.gcode");
+        p.process_buffer("G90\nG1 X1000 F30000\nG1 X0 F30000\n");
+        p.finalize(false);
+        std::printf("time %s %s %s\n", speeds, f32(p.get_time(Mode::Normal)).c_str(), f32(p.get_time(Mode::Stealth)).c_str());
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--axis-limits") {
+        machine_axis_limits();
+        return 0;
     }
     if (std::string(argv[1]) == "--machine-rows") {
         machine_rows();
