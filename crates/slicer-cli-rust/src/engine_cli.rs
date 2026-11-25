@@ -159,6 +159,14 @@ where
             let _ = out.flush();
             return (refusal.stderr_text(), refusal.exit_code());
         }
+        if let Some(refusal) = err.downcast_ref::<slicer::app_slice::ConfigRefusal>() {
+            // main.cpp:9583-9590: the config_refused event on stdout, the sentence on stderr, exit 1.
+            use std::io::Write;
+            let mut out = std::io::stdout();
+            let _ = out.write_all(refusal.event_record().as_bytes());
+            let _ = out.flush();
+            return (refusal.stderr_text(), refusal.exit_code());
+        }
         source = err.source();
     }
     (format!("The Rust engine could not slice: {e:#}"), CLI_SLICING_ERROR)
@@ -327,6 +335,29 @@ mod tests {
         let mut seq = refusal.clone();
         seq.exception.r#type = StringExceptionType::StringExceptObjectCollisionInSeqPrint;
         assert_eq!(seq.return_code(), -63);
+    }
+
+    #[test]
+    fn a_config_refusal_is_refused_as_slicer_cli_refuses_it() {
+        // main.cpp:9554-9590, as slicer_cli printed it for a spiral-vase job with two walls.
+        let mut settings = std::collections::BTreeMap::new();
+        settings.insert("wall_loops".to_string(), "Invalid value when spiral vase mode is enabled: 2".to_string());
+        let refusal = slicer::app_slice::ConfigRefusal::new(settings);
+        let sentence = "BambuStudio cannot print this file as it is: wall_loops: Invalid value when spiral vase mode is \
+                        enabled: 2. Give --wall-loops a value in range to override it. --allow-substitution lets the \
+                        engine use its own default for a value it does not know instead.";
+        assert_eq!(refusal.sentence, sentence);
+        assert_eq!(refusal.stderr_text(), format!("Param values in 3mf/config error: {sentence}"));
+        assert_eq!(
+            refusal.event_record(),
+            format!(
+                "\n[[SLICER_EVENT]] {{\"event\":\"config_refused\",\"message\":\"{sentence}\",\"settings\":{{\"wall_loops\":\
+                 \"Invalid value when spiral vase mode is enabled: 2\"}},\"tag\":\"InvalidValues\",\"unknown_values\":[]}}\n"
+            )
+        );
+        assert_eq!(exit_status(refusal.exit_code()), 1);
+        // CLI_INVALID_VALUES_IN_3MF (Utils.hpp)
+        assert_eq!(refusal.return_code(), -18);
     }
 
     #[test]

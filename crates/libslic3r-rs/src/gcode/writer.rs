@@ -12,6 +12,17 @@ pub fn lift_faithful_gate() -> bool {
     *GATE.get_or_init(|| crate::faithful_gate("ZSMOOTH_FAITHFUL"))
 }
 
+/// SET_SPEED_EMIT_AXIS (faithful, R949): `GCodeWriter::set_speed` writes F through
+/// `GCodeG1Formatter::emit_f` -> `emit_axis(F, XYZF_EXPORT_DIGITS = 3)`
+/// (GCodeWriter.cpp:1097-1137): `int64_t(std::round(v * 1000))`, the product rounded
+/// first, half away from zero. `format!("{:.3}")` rounds the exact binary value half to
+/// even, which differs where `v * 1000` rounds onto or off a half. `=0` keeps `{:.3}`.
+pub fn set_speed_emit_axis_gate() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| crate::faithful_gate("SET_SPEED_EMIT_AXIS"))
+}
+
+/// GCodeWriter.cpp:1097-1137 `GCodeFormatter::emit_axis` (the digits after `axis`).
 pub fn format_gcode_value(v: f64, digits: usize) -> String {
     let pow10 = 10f64.powi(digits as i32);
     let v_int = (v * pow10).round() as i64;
@@ -2566,6 +2577,13 @@ impl GCodeWriter {
                             wd = if len < crate::libslic3r::EPSILON { crate::libslic3r::EPSILON } else { len };
                         }
                         seg_ratios = Some(ip.windows(2).map(|w| seg_len(w[0], w[1]) / wd).collect());
+                        // WIPE_IP_PROBE (diagnostic only, R949): the scaled wipe polyline
+                        // after clip_end and the stored path it came from.
+                        if crate::probe_enabled("WIPE_IP_PROBE") {
+                            let src: Vec<(i64, i64)> =
+                                pts.iter().map(|p| (crate::scale(p.0), crate::scale(p.1))).collect();
+                            eprintln!("[WIPEIP] src={} wd={:e} ip={:?} pts={:?}", self.wipe_path_src, wd, ip, src);
+                        }
                         kept = ip.iter().map(|p| (p.0 as f64 * sf, p.1 as f64 * sf)).collect();
                         acc = len * sf;
                     }
@@ -2673,8 +2691,15 @@ impl GCodeWriter {
                         self.feedrate
                     };
                     if wipe_f > 0.0 {
-                        let fs = format!("{:.3}", wipe_f);
-                        let fs = fs.trim_end_matches('0').trim_end_matches('.');
+                        let fs_axis;
+                        let fs_fmt;
+                        let fs: &str = if set_speed_emit_axis_gate() {
+                            fs_axis = format_gcode_value(wipe_f, 3);
+                            &fs_axis
+                        } else {
+                            fs_fmt = format!("{:.3}", wipe_f);
+                            fs_fmt.trim_end_matches('0').trim_end_matches('.')
+                        };
                         // GCode.cpp:497-498: `(enable_cooling_markers() && !is_last)
                         // ? ";_WIPE" : ""` (GCODE_LAST_WIPE_PIN, faithful).
                         if self.m_is_last_retraction && crate::faithful_gate("GCODE_LAST_WIPE_PIN") {
@@ -3503,8 +3528,12 @@ impl GCodeWriter {
             // lines, as integers). Gated: default keeps the integer format
             // (byte-locked 147987).
             let f_str = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-                let t = format!("{:.3}", adjusted_speed);
-                t.trim_end_matches('0').trim_end_matches('.').to_string()
+                if set_speed_emit_axis_gate() {
+                    format_gcode_value(adjusted_speed, 3)
+                } else {
+                    let t = format!("{:.3}", adjusted_speed);
+                    t.trim_end_matches('0').trim_end_matches('.').to_string()
+                }
             } else {
                 format!("{:.0}", adjusted_speed)
             };
@@ -3646,6 +3675,24 @@ impl fmt::Debug for GCodeWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GCodeWriter.cpp:1103 `int64_t(std::round(v * pow_10[digits]))`: the product is rounded
+    /// to a double first, then rounded half away from zero. 9416.0045 * 1000 is exactly
+    /// 9416004.5 as a double while 9416.0045 itself lies below the half, so the pin's
+    /// `set_speed` writes F9416.005 where `format!("{:.3}")` gives 9416.004.
+    #[test]
+    fn set_speed_formats_f_as_emit_axis() {
+        let v = 9416.0045_f64;
+        assert_eq!(v * 1000.0, 9416004.5);
+        assert_eq!(format!("{:.3}", v), "9416.004");
+        assert_eq!(format_gcode_value(v, 3), "9416.005");
+        let mut writer = GCodeWriter::new();
+        writer.set_speed(v, "");
+        let line = writer.gcode().content().lines().last().unwrap_or("").to_string();
+        if set_speed_emit_axis_gate() && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            assert_eq!(line, "G1 F9416.005");
+        }
+    }
 
     #[test]
     fn test_writer_new() {

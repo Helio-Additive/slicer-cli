@@ -1,0 +1,122 @@
+CASE 0
+N 0
+CASE 1
+E layer_height	invalid value 0.000000
+N 1
+CASE 2
+E initial_layer_print_height	invalid value 0.000000
+E layer_height	invalid value -0.100000
+N 2
+CASE 3
+E filament_diameter	invalid value 1.75,0.5
+E nozzle_diameter	invalid value 0.4,0.001
+N 2
+CASE 4
+E bottom_shell_layers	invalid value -2
+E skirt_height	invalid value -1
+E top_shell_layers	invalid value -1
+E wall_loops	invalid value -1
+N 4
+CASE 5
+E gcode_flavor	--use-firmware-retraction is only supported by Marlin, Klipper, Smoothie, RepRapFirmware, Repetier and Machinekit firmware
+E wipe	--use-firmware-retraction is not compatible with --wipe
+N 2
+CASE 6
+E wipe	--use-firmware-retraction is not compatible with --wipe
+N 1
+CASE 7
+E sparse_infill_pattern	gyroid doesn't work at 100% density 
+N 1
+CASE 8
+N 0
+CASE 9
+E bridge_flow	invalid value 0.000000
+E extruder_clearance_height_to_lid	invalid value 0.000000
+E extruder_clearance_height_to_rod	invalid value -1.000000
+E extruder_clearance_max_radius	invalid value 0.000000
+E nozzle_height	invalid value 0.000000
+N 5
+CASE 10
+E filament_flow_ratio	invalid value 0.98,0
+N 1
+CASE 11
+E enable_support	Invalid value when spiral vase mode is enabled: 1
+E enforce_support_layers	Invalid value when spiral vase mode is enabled: 3
+E sparse_infill_density	Invalid value when spiral vase mode is enabled: 15.000000
+E top_shell_layers	Invalid value when spiral vase mode is enabled: 5
+E wall_loops	Invalid value when spiral vase mode is enabled: 2
+N 5
+CASE 12
+N 0
+CASE 13
+N 0
+CASE 14
+E outer_wall_line_width	too large line width 1.500000
+E skeleton_infill_line_width	too large line width 1.010000
+E support_line_width	too large line width 1.100000
+N 3
+CASE 15
+E inner_wall_line_width	too large line width 2.500000
+N 1
+CASE 16
+E bridge_flow	invalid value -1.000000
+E filament_max_volumetric_speed	-1,2 not in range [0.000000,200.000000]
+E nozzle_temperature	-5,220 not in range [0.000000,360.000000]
+E raft_layers	-1 not in range [0.000000,100.000000]
+E sparse_infill_density	150% not in range [0.000000,100.000000]
+E top_shell_thickness	-0.5 not in range [0.000000,179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.000000]
+E tree_support_wall_count	-2 not in range [-1.000000,2.000000]
+E wall_loops	invalid value -3
+N 8
+CASE 17
+E initial_layer_speed	-10 not in range [0.000000,179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.000000]
+E support_threshold_angle	120 not in range [1.000000,90.000000]
+E tree_support_wall_count	3 not in range [-1.000000,2.000000]
+N 3
+CASE 18
+E filament_is_mixed	must be set when mixed filament parameters are specified
+N 1
+CASE 19
+N 0
+CASE 20
+E filament_mixed_components	slot 3: duplicate component index 1
+N 1
+CASE 21
+E filament_mixed_components	slot 3: component 3 out of range (max physical filament index is 2); slot 4: component 4 out of range (max physical filament index is 2)
+E filament_mixed_sublayer_ratios	slot 3: ratio must be positive (got -1); slot 4: invalid ratio "x"
+N 2
+CASE 22
+E filament_mixed_components	slot 3: at least 2 components required (got 1); slot 4: invalid component index "a"
+N 1
+CASE 23
+E filament_mixed_components	slot 4: component 5 out of range (max physical filament index is 3)
+E filament_mixed_sublayer_ratios	slot 4: empty ratio value
+N 2
+CASE 24
+N 0
+CASE 25
+E filament_mixed_gradient_curve	slot 3: invalid curve (need at least 2 valid control points)
+E filament_mixed_gradient_range	slot 3: start and end ratios must be in (0, 1)
+E filament_mixed_sublayer_ratios	array size 1 does not match filament slot count 3
+N 3
+CASE 26
+E filament_mixed_gradient	array size 2 does not match filament slot count 3
+E filament_mixed_gradient_range	array size 1 does not match filament slot count 3
+E filament_mixed_sublayer_ratios	array size 1 does not match filament slot count 3
+N 3
+CASE 27
+E filament_mixed_components	array size 2 does not match filament slot count 3; slot 3: empty component list
+E filament_mixed_sublayer_ratios	array size 4 does not match filament slot count 3
+N 2
+CASE 28
+E filament_mixed_components	Mixed filament components must use the same nozzle diameter in multi-nozzle-diameter mode. Invalid slot: 3
+E filament_mixed_sublayer_ratios	array size 1 does not match filament slot count 3
+N 2
+CASE 29
+E filament_mixed_sublayer_ratios	array size 1 does not match filament slot count 3
+N 1
+CASE 30
+E enforce_support_layers	Invalid value when spiral vase mode is enabled: 2
+E gcode_flavor	invalid value marlin2
+E wipe	--use-firmware-retraction is not compatible with --wipe
+N 3

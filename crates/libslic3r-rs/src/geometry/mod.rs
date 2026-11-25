@@ -113,6 +113,12 @@ pub use polygon::{
     simplify_polygons_clipper, total_length,
 };
 pub use polyline::{foot_pt, to_lines_polylines, Polyline, Polylines};
+// Polyline.cpp:534-556 the free remove_same_neighbor(Polyline&) / remove_same_neighbor(Polylines&), Polyline.hpp:230-247
+// polylines_merge, and the C++-named Polyline::split_at (PolylineSplitAt) / remove_same_neighbor (RemoveSameNeighbor).
+pub use polyline::{
+    polylines_merge, remove_same_neighbor as remove_same_neighbor_polyline, remove_same_neighbor_polylines, PolylineSplitAt,
+    RemoveSameNeighbor,
+};
 pub use simplify::{
     douglas_peucker, douglas_peucker_polygon, douglas_peucker_polyline, remove_collinear_points,
     remove_duplicate_points, simplify_comprehensive, simplify_polygon,

@@ -579,7 +579,7 @@ impl Print {
         if self.print_regions.is_empty() {
             use crate::region_config::PrintRegionConfig;
             self.print_regions
-                .push(Arc::new(PrintRegion::new(PrintRegionConfig::default())));
+                .push(Arc::new(live_print_region(PrintRegionConfig::default(), 0)));
         }
     }
 
@@ -592,7 +592,7 @@ impl Print {
     /// configs only change inside Print::apply and any diff invalidates posSlice.
     pub fn set_default_region_config(&mut self, config: crate::region_config::PrintRegionConfig) {
         self.print_regions.clear();
-        self.print_regions.push(Arc::new(PrintRegion::new(config)));
+        self.print_regions.push(Arc::new(live_print_region(config, 0)));
     }
 
     /// Install one additional print region per painted extruder, cloned from
@@ -656,7 +656,9 @@ impl Print {
                     continue;
                 }
             }
-            self.print_regions.push(Arc::new(PrintRegion::new(cfg)));
+            // PrintApply.cpp:1036-1038: a new region's id is its index in `all_regions`.
+            let print_object_region_id = self.print_regions.len() as i32;
+            self.print_regions.push(Arc::new(live_print_region(cfg, print_object_region_id)));
         }
     }
 
@@ -2046,6 +2048,38 @@ impl Print {
                     }
                 }
 
+                // FIRST_LAYER_BBOX_WIPE_TOWER (faithful, R949): `print.first_layer_convex_hull()` also holds
+                // the tower's first-layer corners (Print.cpp:3229-3239 finalize_first_layer_convex_hull ->
+                // first_layer_wipe_tower_corners, Print.cpp:3082-3103), so the start G-code's bed-mesh area
+                // (`G29 A1 O X.. Y.. I{first_layer_print_size[0]} J..`) spans the tower. The corners are the
+                // tower box (`m_wipe_tower_data.bbx` + `rib_offset`) rotated by `wipe_tower_rotation_angle`
+                // (Eigen::Rotation2Dd, rows contracted) and moved to `wipe_tower_x/y` of the plate (plate
+                // origin 0), then `Point(scale_(x), scale_(y))` (rounded) and unscaled again (GCode.cpp:1975-1979).
+                if crate::faithful_gate("FIRST_LAYER_BBOX_WIPE_TOWER") && !self.wipe_tower_results.is_empty() {
+                    if let Some(((bx0, by0), (bx1, by1))) = self.wipe_tower_bbx {
+                        let width = bx1 - bx0;
+                        let depth = by1 - by0;
+                        let pt0 = (bx0 + self.wipe_tower_rib_offset.x as f64, by0 + self.wipe_tower_rib_offset.y as f64);
+                        let angle_deg = match obj.get("wipe_tower_rotation_angle") {
+                            Some(serde_json::Value::String(v)) => v.trim().parse::<f64>().unwrap_or(0.0),
+                            Some(serde_json::Value::Number(v)) => v.as_f64().unwrap_or(0.0),
+                            _ => 0.0,
+                        };
+                        let angle = angle_deg.to_radians();
+                        let (sin, cos) = (angle.sin(), angle.cos());
+                        for pt in [pt0, (pt0.0 + width, pt0.1), (pt0.0 + width, pt0.1 + depth), (pt0.0, pt0.1 + depth)] {
+                            let x = (-sin).mul_add(pt.1, cos * pt.0) + self.config.wipe_tower_x;
+                            let y = cos.mul_add(pt.1, sin * pt.0) + self.config.wipe_tower_y;
+                            let x = crate::unscale((x / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64);
+                            let y = crate::unscale((y / crate::libslic3r::SCALING_FACTOR).round_ties_even() as i64);
+                            min_x = min_x.min(x);
+                            min_y = min_y.min(y);
+                            max_x = max_x.max(x);
+                            max_y = max_y.max(y);
+                        }
+                    }
+                }
+
                 if min_x < f64::MAX {
                     let size_x = max_x - min_x;
                     let size_y = max_y - min_y;
@@ -2778,9 +2812,10 @@ impl Print {
 
         // Print.cpp:1415 `this->extruders()`: Print.cpp:558-576 `extruders(false)`, the object extruders (the
         // live `all_extruders`, Print.cpp:432-467) and the support extruders (Print.cpp:523-555), sorted, unique.
-        // FIDELITY-NOTE: the live object config has no support filaments and the live print config does not take
-        // them from the settings (PrintConfig::set_deserialize has no support_filament arm): the full
-        // configuration's are read (one object, no per-object override).
+        // FIDELITY-NOTE: the live object config has no support filaments; the live print config takes them from
+        // the settings with PRINT_CONFIG_SUPPORT_FILAMENT_PIN (R949) and is read then; with that gate off it keeps
+        // 0 and the full configuration's are read (one object, no per-object override).
+        let support_filaments_live = crate::faithful_gate("PRINT_CONFIG_SUPPORT_FILAMENT_PIN");
         let mut extruders: Vec<usize> = self.all_extruders();
         {
             // Print.cpp:528 `m_config.filament_diameter.size()` (the full configuration's; the live config's
@@ -2796,6 +2831,9 @@ impl Print {
                 if oc.enable_support || oc.enforce_support_layers > 0 || oc.raft_layers > 0 {
                     let support_filament_of = |key: &str, live: u32| -> u32 {
                         use crate::config::ConfigOptionResolver;
+                        if support_filaments_live {
+                            return live;
+                        }
                         full.and_then(|f| f.option(key)).and_then(|o| o.get_int().ok()).map(|v| v.max(0) as u32).unwrap_or(live)
                     };
                     for filament in [
@@ -6094,6 +6132,21 @@ fn tcr_gcode_for_append_tcr(gcode: &mut String) {
     }
 }
 
+/// A live PrintRegion as `get_create_region` makes it (PrintApply.cpp:1025-1041): `std::make_unique<PrintRegion>(config,
+/// hash, int(all_regions.size()), volume_tag)`, its `print_object_region_id` the index it gets in the object's
+/// `all_regions`, which for the live path's one object is also its index in `Print::print_regions` (the regions
+/// are made in the pin's order: the volume's region first, then the painted ones, PrintApply.cpp:1083-1146).
+/// Gate PRINT_REGION_IDS_PIN (faithful, R949); off, `PrintRegion::new` (-1). The `print_region_id`
+/// (PrintApply.cpp:2273-2291, the same index for one object) stays -1: `print_region.rs` has no setter for it.
+fn live_print_region(config: crate::region_config::PrintRegionConfig, print_object_region_id: i32) -> PrintRegion {
+    let region = PrintRegion::new(config);
+    if !crate::faithful_gate("PRINT_REGION_IDS_PIN") {
+        return region;
+    }
+    let config_hash = region.config_hash();
+    PrintRegion::with_ids(region.config().clone(), config_hash, print_object_region_id)
+}
+
 /// The full configuration made from resolved settings the way
 /// `ConfigBase::load_from_json` reads a settings file (Config.cpp:885-1243): a
 /// string value is deserialized as it is and an array is joined by
@@ -6102,7 +6155,7 @@ fn tcr_gcode_for_append_tcr(gcode: &mut String) {
 /// not know is left out, as the loader leaves it. Every option the settings do
 /// not give keeps its default (`DynamicPrintConfig::full_print_config()`,
 /// PrintConfig.cpp:8667-8670), as the PrintConfig of the print does.
-fn full_print_config_from_settings(settings: &serde_json::Value) -> crate::print_config::config_def::DynamicPrintConfig {
+pub(crate) fn full_print_config_from_settings(settings: &serde_json::Value) -> crate::print_config::config_def::DynamicPrintConfig {
     use crate::config::{
         ConfigBase, ConfigOptionResolver, ConfigOptionType, ConfigSubstitutionContext,
         ForwardCompatibilitySubstitutionRule,

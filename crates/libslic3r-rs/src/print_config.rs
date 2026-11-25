@@ -3113,6 +3113,14 @@ impl PrintConfig {
                 }
                 true
             }
+            // PrintConfig.cpp:6362-6369, 6395-6403 (`support_filament`, `support_interface_filament`, coInt, default
+            // 0, min 0): the settings' support filaments reach the live configuration, as the pin's
+            // `load_from_json` sets them (Config.cpp:885-1243). Gate PRINT_CONFIG_SUPPORT_FILAMENT_PIN (faithful,
+            // R949); off, the live configuration keeps 0 (support printed with the current filament).
+            "support_filament" | "support_interface_filament" if crate::faithful_gate("PRINT_CONFIG_SUPPORT_FILAMENT_PIN") => {
+                self.apply_key_value(key, value);
+                true
+            }
             _ => {
                 // ZSMOOTH_FAITHFUL: delegate a VETTED set of keys to
                 // apply_key_value (R170 audit: the two config-application fns
@@ -20108,5 +20116,737 @@ pub mod config_def {
         let print_extruder_id = cfg_ints(config, "printer_extruder_id");
         let variant_list = cfg_strings(config, "printer_extruder_variant");
         get_config_index_base(volume_type, extruder_type, extruder_id + 1, &variant_list, &print_extruder_id) as usize
+    }
+
+    /// `std::to_string(double)`: `%f` (six decimals; `nan` / `inf` as printf writes them).
+    fn std_to_string_f64(v: f64) -> String {
+        if v.is_nan() {
+            return if v.is_sign_negative() { "-nan".to_string() } else { "nan".to_string() };
+        }
+        if v.is_infinite() {
+            return if v < 0.0 { "-inf".to_string() } else { "inf".to_string() };
+        }
+        format!("{:.6}", v)
+    }
+
+    /// `std::map<std::string, std::string>::emplace`: keeps the first value of a key.
+    fn validate_emplace(error_message: &mut BTreeMap<String, String>, key: &str, value: String) {
+        error_message.entry(key.to_string()).or_insert(value);
+    }
+
+    /// `cfg.<key>.value` of a scalar option of the FullPrintConfig (`ConfigOptionSingle<T>::value`).
+    fn validate_single<T: 'static + Clone>(cfg: &DynamicPrintConfig, key: &str) -> T {
+        cfg.option(key)
+            .and_then(|o| o.single_value_any())
+            .and_then(|a| a.downcast_ref::<T>())
+            .cloned()
+            .unwrap_or_else(|| panic!("validate(): FullPrintConfig::{} has another value type", key))
+    }
+
+    /// `cfg.<key>.values` of a vector option of the FullPrintConfig (`ConfigOptionVector<T>::values`).
+    fn validate_vector<T: 'static + Clone>(cfg: &DynamicPrintConfig, key: &str) -> Vec<T> {
+        cfg.option(key)
+            .and_then(|o| o.vector_values_any())
+            .and_then(|a| a.downcast_ref::<Vec<T>>())
+            .cloned()
+            .unwrap_or_else(|| panic!("validate(): FullPrintConfig::{} has another value type", key))
+    }
+
+    /// `cfg.<key>.serialize()`.
+    fn validate_serialize(cfg: &DynamicPrintConfig, key: &str) -> String {
+        cfg.option(key).and_then(|o| o.serialize().ok()).unwrap_or_default()
+    }
+
+    /// The FullPrintConfig of `DynamicPrintConfig::validate` (PrintConfig.cpp:8978-8979): `FullPrintConfig fpc;
+    /// fpc.apply(*this, true);`: the defaults of every FullPrintConfig option, each option of `config` that the
+    /// FullPrintConfig has laid over it (a static config skips the others, `ignore_nonexistent`).
+    pub fn full_print_config_of(config: &DynamicPrintConfig) -> CfgResult<DynamicPrintConfig> {
+        let mut fpc: DynamicPrintConfig = static_print_config_defaults("FullPrintConfig").clone();
+        let keys: Vec<String> = config.keys().into_iter().filter(|k| fpc.has(k)).collect();
+        fpc.apply_only(config, &keys, true)?;
+        Ok(fpc)
+    }
+
+    /// PrintConfig.cpp:10641-10916 `std::map<std::string, std::string> validate(const FullPrintConfig &cfg, bool under_cli)`.
+    /// `cfg` holds the options of a FullPrintConfig (see [`full_print_config_of`]); returns every invalid value by
+    /// option key, the first finding of a key kept (`std::map::emplace`).
+    pub fn validate(cfg: &DynamicPrintConfig, under_cli: bool) -> BTreeMap<String, String> {
+        let mut error_message: BTreeMap<String, String> = BTreeMap::new();
+        let def = print_config_def();
+        let abs = |key: &str| -> f64 { cfg.get_abs_value(key).unwrap_or_else(|e| panic!("validate(): get_abs_value({}): {:?}", key, e.to_string())) };
+        let int = |key: &str| -> i32 { validate_single::<i32>(cfg, key) };
+        // --layer-height
+        if abs("layer_height") <= 0.0 {
+            validate_emplace(&mut error_message, "layer_height", L("invalid value ") + &std_to_string_f64(abs("layer_height")));
+        } else if (abs("layer_height") % crate::libslic3r::SCALING_FACTOR).abs() > 1e-4 {
+            validate_emplace(&mut error_message, "layer_height", L("invalid value ") + &std_to_string_f64(abs("layer_height")));
+        }
+
+        // --first-layer-height
+        let initial_layer_print_height = validate_single::<f64>(cfg, "initial_layer_print_height");
+        if initial_layer_print_height <= 0.0 {
+            validate_emplace(&mut error_message, "initial_layer_print_height", L("invalid value ") + &std_to_string_f64(initial_layer_print_height));
+        }
+
+        // --filament-diameter
+        for fd in validate_vector::<f64>(cfg, "filament_diameter") {
+            if fd < 1.0 {
+                validate_emplace(&mut error_message, "filament_diameter", L("invalid value ") + &validate_serialize(cfg, "filament_diameter"));
+                break;
+            }
+        }
+
+        // --nozzle-diameter
+        for nd in validate_vector::<f64>(cfg, "nozzle_diameter") {
+            if nd < 0.005 {
+                validate_emplace(&mut error_message, "nozzle_diameter", L("invalid value ") + &validate_serialize(cfg, "nozzle_diameter"));
+                break;
+            }
+        }
+
+        // --perimeters
+        if int("wall_loops") < 0 {
+            validate_emplace(&mut error_message, "wall_loops", L("invalid value ") + &int("wall_loops").to_string());
+        }
+        if int("periodic_modifier_skip_layers") < 0 {
+            validate_emplace(&mut error_message, "periodic_modifier_skip_layers", L("invalid value ") + &int("periodic_modifier_skip_layers").to_string());
+        }
+        if int("periodic_modifier_apply_layers") < 1 {
+            validate_emplace(&mut error_message, "periodic_modifier_apply_layers", L("invalid value ") + &int("periodic_modifier_apply_layers").to_string());
+        }
+        if int("conformal_link_keep_layers") < 0 {
+            validate_emplace(&mut error_message, "conformal_link_keep_layers", L("invalid value ") + &int("conformal_link_keep_layers").to_string());
+        }
+        if int("conformal_link_flip_layers") < 0 {
+            validate_emplace(&mut error_message, "conformal_link_flip_layers", L("invalid value ") + &int("conformal_link_flip_layers").to_string());
+        }
+        if int("conformal_ray_count") < 0 {
+            validate_emplace(&mut error_message, "conformal_ray_count", L("invalid value ") + &int("conformal_ray_count").to_string());
+        }
+
+        // --solid-layers
+        if int("top_shell_layers") < 0 {
+            validate_emplace(&mut error_message, "top_shell_layers", L("invalid value ") + &int("top_shell_layers").to_string());
+        }
+        if int("bottom_shell_layers") < 0 {
+            validate_emplace(&mut error_message, "bottom_shell_layers", L("invalid value ") + &int("bottom_shell_layers").to_string());
+        }
+
+        // with_firmware_retraction_flavor = { gcfSmoothie, gcfRepRapSprinter, gcfRepRapFirmware, gcfMarlinLegacy,
+        // gcfMarlinFirmware, gcfMachinekit, gcfRepetier, gcfKlipper } (by their names, s_keys_map_GCodeFlavor,
+        // PrintConfig.cpp:545-559).
+        let gcode_flavor = validate_serialize(cfg, "gcode_flavor");
+        let with_firmware_retraction_flavor = ["smoothie", "reprap", "reprapfirmware", "marlin", "marlin2", "machinekit", "repetier", "klipper"];
+        let use_firmware_retraction = validate_single::<bool>(cfg, "use_firmware_retraction");
+        if use_firmware_retraction && !with_firmware_retraction_flavor.contains(&gcode_flavor.as_str()) {
+            validate_emplace(
+                &mut error_message,
+                "gcode_flavor",
+                L("--use-firmware-retraction is only supported by Marlin, Klipper, Smoothie, RepRapFirmware, Repetier and Machinekit firmware"),
+            );
+        }
+
+        if use_firmware_retraction {
+            for wipe in validate_vector::<u8>(cfg, "wipe") {
+                if wipe != 0 {
+                    validate_emplace(&mut error_message, "wipe", L("--use-firmware-retraction is not compatible with --wipe"));
+                }
+            }
+        }
+
+        let has_enum_value = |def_key: &str, value: &str| -> bool { def.get(def_key).map_or(false, |d| d.has_enum_value(value)) };
+        // --gcode-flavor
+        if !has_enum_value("gcode_flavor", &gcode_flavor) {
+            validate_emplace(&mut error_message, "gcode_flavor", L("invalid value ") + &gcode_flavor);
+        }
+
+        // --fill-pattern, --top-fill-pattern, --bottom-fill-pattern, --soild-fill-pattern, sub_top_surface_pattern
+        for key in ["sparse_infill_pattern", "top_surface_pattern", "bottom_surface_pattern", "internal_solid_infill_pattern", "sub_top_surface_pattern"] {
+            let value = validate_serialize(cfg, key);
+            if !has_enum_value(key, &value) {
+                validate_emplace(&mut error_message, key, L("invalid value ") + &value);
+            }
+        }
+
+        // --fill-density
+        let sparse_infill_density = validate_single::<f64>(cfg, "sparse_infill_density");
+        let sparse_infill_pattern = validate_serialize(cfg, "sparse_infill_pattern");
+        if (sparse_infill_density - 100.0).abs() < crate::libslic3r::EPSILON && !has_enum_value("top_surface_pattern", &sparse_infill_pattern) {
+            // xgettext:no-c-format, no-boost-format
+            validate_emplace(&mut error_message, "sparse_infill_pattern", sparse_infill_pattern.clone() + &L(" doesn't work at 100% density "));
+        }
+
+        // --skirt-height
+        if int("skirt_height") < 0 {
+            validate_emplace(&mut error_message, "skirt_height", L("invalid value ") + &int("skirt_height").to_string());
+        }
+
+        // --bridge-flow-ratio
+        let bridge_flow = validate_single::<f64>(cfg, "bridge_flow");
+        if bridge_flow <= 0.0 {
+            validate_emplace(&mut error_message, "bridge_flow", L("invalid value ") + &std_to_string_f64(bridge_flow));
+        }
+
+        // extruder clearance
+        for key in ["extruder_clearance_max_radius", "extruder_clearance_height_to_rod", "extruder_clearance_height_to_lid", "nozzle_height"] {
+            let v = validate_single::<f64>(cfg, key);
+            if v <= 0.0 {
+                validate_emplace(&mut error_message, key, L("invalid value ") + &std_to_string_f64(v));
+            }
+        }
+
+        // --extrusion-multiplier
+        for em in validate_vector::<f64>(cfg, "filament_flow_ratio") {
+            if em <= 0.0 {
+                validate_emplace(&mut error_message, "filament_flow_ratio", L("invalid value ") + &validate_serialize(cfg, "filament_flow_ratio"));
+                break;
+            }
+        }
+
+        // --spiral-vase
+        // for non-cli case, we will popup dialog for spiral mode correction
+        if validate_single::<bool>(cfg, "spiral_mode") && under_cli {
+            if int("wall_loops") != 1 {
+                validate_emplace(&mut error_message, "wall_loops", L("Invalid value when spiral vase mode is enabled: ") + &int("wall_loops").to_string());
+            }
+            if sparse_infill_density > 0.0 {
+                validate_emplace(
+                    &mut error_message,
+                    "sparse_infill_density",
+                    L("Invalid value when spiral vase mode is enabled: ") + &std_to_string_f64(sparse_infill_density),
+                );
+            }
+            if int("top_shell_layers") > 0 {
+                validate_emplace(&mut error_message, "top_shell_layers", L("Invalid value when spiral vase mode is enabled: ") + &int("top_shell_layers").to_string());
+            }
+            // std::to_string(cfg.enable_support): the bool promoted to int.
+            let enable_support = validate_single::<bool>(cfg, "enable_support");
+            if enable_support {
+                validate_emplace(&mut error_message, "enable_support", L("Invalid value when spiral vase mode is enabled: ") + &(enable_support as i32).to_string());
+            }
+            if int("enforce_support_layers") > 0 {
+                validate_emplace(
+                    &mut error_message,
+                    "enforce_support_layers",
+                    L("Invalid value when spiral vase mode is enabled: ") + &int("enforce_support_layers").to_string(),
+                );
+            }
+        }
+
+        // extrusion widths
+        {
+            let mut max_nozzle_diameter = 0.0f64;
+            for dmr in validate_vector::<f64>(cfg, "nozzle_diameter") {
+                // std::max(max_nozzle_diameter, dmr)
+                max_nozzle_diameter = if max_nozzle_diameter < dmr { dmr } else { max_nozzle_diameter };
+            }
+            let widths = [
+                "outer_wall_line_width",
+                "inner_wall_line_width",
+                "sparse_infill_line_width",
+                "internal_solid_infill_line_width",
+                "top_surface_line_width",
+                "support_line_width",
+                "initial_layer_line_width",
+                "skin_infill_line_width",
+                "skeleton_infill_line_width",
+            ];
+            for key in widths {
+                if abs(key) > 2.5 * max_nozzle_diameter {
+                    validate_emplace(&mut error_message, key, L("too large line width ") + &std_to_string_f64(abs(key)));
+                }
+            }
+        }
+
+        // Out of range validation of numeric values.
+        for opt_key in cfg.keys() {
+            let opt = cfg.option(&opt_key).expect("validate(): opt != nullptr");
+            let optdef = def.get(&opt_key).expect("validate(): optdef != nullptr");
+            let mut out_of_range = false;
+            match opt.r#type() {
+                ConfigOptionType::CoFloat | ConfigOptionType::CoPercent | ConfigOptionType::CoFloatOrPercent => {
+                    let v = *opt.single_value_any().and_then(|a| a.downcast_ref::<f64>()).expect("ConfigOptionFloat::value");
+                    out_of_range = v < optdef.min || v > optdef.max;
+                }
+                ConfigOptionType::CoFloats | ConfigOptionType::CoPercents => {
+                    for &v in opt.vector_values_any().and_then(|a| a.downcast_ref::<Vec<f64>>()).expect("ConfigOptionVector<double>::values") {
+                        if v < optdef.min || v > optdef.max {
+                            out_of_range = true;
+                            break;
+                        }
+                    }
+                }
+                ConfigOptionType::CoInt => {
+                    let v = *opt.single_value_any().and_then(|a| a.downcast_ref::<i32>()).expect("ConfigOptionInt::value");
+                    out_of_range = (v as f64) < optdef.min || (v as f64) > optdef.max;
+                }
+                ConfigOptionType::CoInts => {
+                    for &v in opt.vector_values_any().and_then(|a| a.downcast_ref::<Vec<i32>>()).expect("ConfigOptionVector<int>::values") {
+                        if (v as f64) < optdef.min || (v as f64) > optdef.max {
+                            out_of_range = true;
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if out_of_range && !error_message.contains_key(&opt_key) {
+                let serialized = opt.serialize().unwrap_or_default();
+                error_message.insert(
+                    opt_key.clone(),
+                    serialized + &L(" not in range ") + "[" + &std_to_string_f64(optdef.min) + "," + &std_to_string_f64(optdef.max) + "]",
+                );
+            }
+        }
+
+        // Mixed-color parameter validation.
+        {
+            let is_mixed = validate_vector::<u8>(cfg, "filament_is_mixed");
+            let comp_strs = validate_vector::<String>(cfg, "filament_mixed_components");
+            let ratio_strs = validate_vector::<String>(cfg, "filament_mixed_sublayer_ratios");
+            let gradient_flags = validate_vector::<u8>(cfg, "filament_mixed_gradient");
+            let range_strs = validate_vector::<String>(cfg, "filament_mixed_gradient_range");
+            let curve_strs = validate_vector::<String>(cfg, "filament_mixed_gradient_curve");
+            let mixed_errors = filament_mixer_validate::validate_mixed_filament_params(&is_mixed, &comp_strs, &ratio_strs, &gradient_flags, &range_strs, &curve_strs);
+            for (k, v) in mixed_errors {
+                if !error_message.contains_key(&k) {
+                    error_message.insert(k, v);
+                }
+            }
+        }
+
+        // The configuration is valid.
+        error_message
+    }
+
+    impl DynamicPrintConfig {
+        /// PrintConfig.cpp:8969-9007 `std::map<std::string, std::string> DynamicPrintConfig::validate(bool under_cli)`.
+        pub fn validate(&self, under_cli: bool) -> CfgResult<BTreeMap<String, String>> {
+            // Full print config is initialized from the defaults.
+            let printer_technology = match self.option("printer_technology") {
+                None => PrinterTechnology::PtFFF,
+                Some(opt) => <PrinterTechnology as ConfigEnum>::from_int(opt.get_int()?),
+            };
+            match printer_technology {
+                PrinterTechnology::PtFFF => {
+                    let fpc = full_print_config_of(self)?;
+                    // Verify this print options through the FullPrintConfig.
+                    let mut error_message = validate(&fpc, under_cli);
+
+                    // multi_nozzle_diameter_mode is project-only and not part of FullPrintConfig, so check
+                    // it on *this*. GUI keeps soft "broken mix" marking; CLI must hard-reject.
+                    if under_cli && multi_nozzle_diameter_mode_enabled(self) {
+                        let is_mixed = self.option("filament_is_mixed").and_then(|o| o.vector_values_any()).and_then(|a| a.downcast_ref::<Vec<u8>>());
+                        let comps = self.option("filament_mixed_components").and_then(|o| o.vector_values_any()).and_then(|a| a.downcast_ref::<Vec<String>>());
+                        let dia_map = self.option("filament_diameter_map").and_then(|o| o.vector_values_any()).and_then(|a| a.downcast_ref::<Vec<String>>());
+                        if let (Some(is_mixed), Some(comps), Some(dia_map)) = (is_mixed, comps, dia_map) {
+                            let mismatch = filament_mixer_validate::check_mixed_filament_diameter_consistency(is_mixed, comps, dia_map);
+                            if !mismatch.is_empty() && !error_message.contains_key("filament_mixed_components") {
+                                error_message.insert(
+                                    "filament_mixed_components".to_string(),
+                                    L("Mixed filament components must use the same nozzle diameter in multi-nozzle-diameter mode. Invalid slot: ")
+                                        + &(mismatch[0] + 1).to_string(),
+                                );
+                            }
+                        }
+                    }
+                    Ok(error_message)
+                }
+                //FIXME no validation on SLA data?
+                _ => Ok(BTreeMap::new()),
+            }
+        }
+    }
+
+    /// FilamentMixer.cpp:535-842: the strict mixed-filament checks `validate` and `DynamicPrintConfig::validate`
+    /// call. They belong in `filament_mixer.rs` (the file paired with FilamentMixer.cpp), which is outside this
+    /// round's scope of the worker that ported `validate`: to be moved there.
+    pub mod filament_mixer_validate {
+        use crate::filament_mixer::{has_any_mixed_filament, parse_gradient_curve, parse_mixed_components};
+        use std::collections::{BTreeMap, BTreeSet};
+
+        /// `std::getline(ss, token, ',')` over a string: a trailing separator gives no empty last token.
+        fn getline_tokens(s: &str) -> Vec<&str> {
+            let mut tokens: Vec<&str> = s.split(',').collect();
+            if tokens.last().map_or(false, |t| t.is_empty()) {
+                tokens.pop();
+            }
+            tokens
+        }
+
+        /// C `isspace` in the "C" locale.
+        fn c_isspace(c: u8) -> bool {
+            matches!(c, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+        }
+
+        /// `std::stol(token)`: `strtol` base 10 over the leading integer; None where it throws
+        /// (`invalid_argument`: no digits; `out_of_range`: beyond `long`).
+        fn std_stol(token: &str) -> Option<i64> {
+            let b = token.as_bytes();
+            let mut i = 0;
+            while i < b.len() && c_isspace(b[i]) {
+                i += 1;
+            }
+            let start = i;
+            if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+                i += 1;
+            }
+            let digits_start = i;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i == digits_start {
+                return None;
+            }
+            token[start..i].parse::<i64>().ok()
+        }
+
+        /// The longest prefix `strtod` / `strtof` reads (after leading white space): decimal, `inf`/`infinity`,
+        /// `nan`; None where no conversion is performed. Hexadecimal floats are not read (see the note at
+        /// `std_stod`).
+        fn strtod_prefix(token: &str) -> Option<&str> {
+            let b = token.as_bytes();
+            let mut i = 0;
+            while i < b.len() && c_isspace(b[i]) {
+                i += 1;
+            }
+            let start = i;
+            if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+                i += 1;
+            }
+            let rest = token[i..].to_ascii_lowercase();
+            if rest.starts_with("infinity") {
+                return Some(&token[start..i + 8]);
+            }
+            if rest.starts_with("inf") || rest.starts_with("nan") {
+                return Some(&token[start..i + 3]);
+            }
+            let mut digits = 0;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+                digits += 1;
+            }
+            if i < b.len() && b[i] == b'.' {
+                i += 1;
+                while i < b.len() && b[i].is_ascii_digit() {
+                    i += 1;
+                    digits += 1;
+                }
+            }
+            if digits == 0 {
+                return None;
+            }
+            if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+                let mut j = i + 1;
+                if j < b.len() && (b[j] == b'+' || b[j] == b'-') {
+                    j += 1;
+                }
+                let exp_start = j;
+                while j < b.len() && b[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j > exp_start {
+                    i = j;
+                }
+            }
+            Some(&token[start..i])
+        }
+
+        /// `std::stod(token)`: None where it throws (`invalid_argument`: no conversion; `out_of_range`: `ERANGE`,
+        /// an overflow to infinity or an underflow to zero of a non-zero number). FIDELITY-NOTE: hexadecimal
+        /// floats (`0x1p3`) read as `0` here; the pin's `strtod` reads them whole.
+        fn std_stod(token: &str) -> Option<f64> {
+            let text = strtod_prefix(token)?;
+            let lower = text.to_ascii_lowercase();
+            let v: f64 = text.parse().ok()?;
+            let literal_inf_nan = lower.contains("inf") || lower.contains("nan");
+            if !literal_inf_nan {
+                if v.is_infinite() {
+                    return None;
+                }
+                let mantissa_nonzero = text.bytes().take_while(|c| *c != b'e' && *c != b'E').any(|c| (b'1'..=b'9').contains(&c));
+                if v == 0.0 && mantissa_nonzero {
+                    return None;
+                }
+            }
+            Some(v)
+        }
+
+        /// FilamentMixer.cpp:698-704 `static void append_error(...)`.
+        fn append_error(errors: &mut BTreeMap<String, String>, key: &str, msg: &str) {
+            match errors.get_mut(key) {
+                None => {
+                    errors.insert(key.to_string(), msg.to_string());
+                }
+                Some(v) => {
+                    *v += "; ";
+                    *v += msg;
+                }
+            }
+        }
+
+        /// FilamentMixer.cpp:706-718 `static bool has_mixed_sub_params_specified(...)`.
+        fn has_mixed_sub_params_specified(comp_strs: &[String], ratio_strs: &[String], gradient_flags: &[u8]) -> bool {
+            comp_strs.iter().any(|s| !s.is_empty()) || ratio_strs.iter().any(|s| !s.is_empty()) || gradient_flags.iter().any(|g| *g != 0)
+        }
+
+        /// FilamentMixer.cpp:720-726 `static bool mixed_string_array_was_specified(...)`.
+        fn mixed_string_array_was_specified(vals: &[String]) -> bool {
+            vals.iter().any(|s| !s.is_empty())
+        }
+
+        /// FilamentMixer.cpp:728-734 `static bool mixed_bool_array_was_specified(...)`.
+        fn mixed_bool_array_was_specified(vals: &[u8]) -> bool {
+            vals.iter().any(|v| *v != 0)
+        }
+
+        /// FilamentMixer.cpp:736-746 `static void check_mixed_array_size_required(...)`.
+        fn check_mixed_array_size_required(errors: &mut BTreeMap<String, String>, opt_key: &str, actual_size: usize, expected_size: usize) {
+            if actual_size != expected_size {
+                append_error(errors, opt_key, &format!("array size {} does not match filament slot count {}", actual_size, expected_size));
+            }
+        }
+
+        /// FilamentMixer.cpp:535-560 `std::vector<size_t> check_mixed_filament_diameter_consistency(...)`.
+        pub fn check_mixed_filament_diameter_consistency(is_mixed: &[u8], comp_strs: &[String], filament_diameters: &[String]) -> Vec<usize> {
+            let mut result = Vec::new();
+            for i in 0..is_mixed.len() {
+                if is_mixed[i] == 0 || i >= comp_strs.len() || comp_strs[i].is_empty() {
+                    continue;
+                }
+                let components = parse_mixed_components(&comp_strs[i]);
+                if components.len() < 2 {
+                    continue;
+                }
+                let mut diameters: BTreeSet<&String> = BTreeSet::new();
+                for &component in &components {
+                    if component < 1 {
+                        continue;
+                    }
+                    let index = (component - 1) as usize;
+                    if index < filament_diameters.len() {
+                        diameters.insert(&filament_diameters[index]);
+                    }
+                }
+                if diameters.len() > 1 {
+                    result.push(i);
+                }
+            }
+            result
+        }
+
+        /// FilamentMixer.cpp:597-639 `bool try_parse_mixed_components_strict(...)`.
+        pub fn try_parse_mixed_components_strict(str_: &str, components: &mut Vec<u32>, err: &mut String) -> bool {
+            components.clear();
+            if str_.is_empty() {
+                *err = "empty component list".to_string();
+                return false;
+            }
+            for token in getline_tokens(str_) {
+                if token.is_empty() {
+                    *err = "empty component index".to_string();
+                    return false;
+                }
+                match std_stol(token) {
+                    Some(val) => {
+                        if val < 1 {
+                            *err = format!("component index must be >= 1 (got {})", token);
+                            return false;
+                        }
+                        components.push(val as u32);
+                    }
+                    None => {
+                        *err = format!("invalid component index \"{}\"", token);
+                        return false;
+                    }
+                }
+            }
+            if components.len() < 2 {
+                *err = format!("at least 2 components required (got {})", components.len());
+                return false;
+            }
+            let mut seen: BTreeSet<u32> = BTreeSet::new();
+            for &c in components.iter() {
+                if !seen.insert(c) {
+                    *err = format!("duplicate component index {}", c);
+                    return false;
+                }
+            }
+            true
+        }
+
+        /// FilamentMixer.cpp:641-675 `bool try_parse_mixed_ratios_strict(...)`.
+        pub fn try_parse_mixed_ratios_strict(str_: &str, n_components: usize, err: &mut String) -> bool {
+            if str_.is_empty() {
+                return true;
+            }
+            let mut ratios: Vec<f64> = Vec::new();
+            for token in getline_tokens(str_) {
+                if token.is_empty() {
+                    *err = "empty ratio value".to_string();
+                    return false;
+                }
+                match std_stod(token) {
+                    Some(val) => {
+                        if !(val > 0.0) {
+                            *err = format!("ratio must be positive (got {})", token);
+                            return false;
+                        }
+                        ratios.push(val);
+                    }
+                    None => {
+                        *err = format!("invalid ratio \"{}\"", token);
+                        return false;
+                    }
+                }
+            }
+            if ratios.len() != n_components {
+                *err = format!("expected {} ratio(s), got {}", n_components, ratios.len());
+                return false;
+            }
+            true
+        }
+
+        /// FilamentMixer.cpp:677-696 `bool validate_gradient_range_strict(const std::string &str, std::string &err)`:
+        /// `std::sscanf(str.c_str(), "%f,%f", &v0, &v1) != 2`.
+        pub fn validate_gradient_range_strict(str_: &str, err: &mut String) -> bool {
+            if str_.is_empty() {
+                return true;
+            }
+            let scanned = (|| -> Option<(f32, f32)> {
+                let a = strtod_prefix(str_)?;
+                let a_end = str_.find(a).map(|p| p + a.len())?;
+                let v0: f32 = a.parse().ok()?;
+                let rest = &str_[a_end..];
+                let rest = rest.strip_prefix(',')?;
+                let b = strtod_prefix(rest)?;
+                let v1: f32 = b.parse().ok()?;
+                Some((v0, v1))
+            })();
+            let (v0, v1) = match scanned {
+                Some(v) => v,
+                None => {
+                    *err = "expected two comma-separated floats, e.g. \"0.10,0.90\"".to_string();
+                    return false;
+                }
+            };
+            if !(v0 > 0.0 && v0 < 1.0 && v1 > 0.0 && v1 < 1.0) {
+                *err = "start and end ratios must be in (0, 1)".to_string();
+                return false;
+            }
+            true
+        }
+
+        /// FilamentMixer.cpp:748-840 `std::map<std::string, std::string> validate_mixed_filament_params(...)`.
+        pub fn validate_mixed_filament_params(
+            is_mixed: &[u8],
+            comp_strs: &[String],
+            ratio_strs: &[String],
+            gradient_flags: &[u8],
+            gradient_range_strs: &[String],
+            gradient_curve_strs: &[String],
+        ) -> BTreeMap<String, String> {
+            let mut errors: BTreeMap<String, String> = BTreeMap::new();
+
+            if has_mixed_sub_params_specified(comp_strs, ratio_strs, gradient_flags) && !has_any_mixed_filament(is_mixed) {
+                append_error(&mut errors, "filament_is_mixed", "must be set when mixed filament parameters are specified");
+                return errors;
+            }
+
+            if !has_any_mixed_filament(is_mixed) {
+                return errors;
+            }
+
+            let slot_count = is_mixed.len();
+
+            // Rule 1: mixed filament model → components & ratios arrays must cover every slot.
+            check_mixed_array_size_required(&mut errors, "filament_mixed_components", comp_strs.len(), slot_count);
+            check_mixed_array_size_required(&mut errors, "filament_mixed_sublayer_ratios", ratio_strs.len(), slot_count);
+
+            // Rule 2: gradient passed (any slot true) → gradient & range arrays must cover every slot.
+            let gradient_specified = mixed_bool_array_was_specified(gradient_flags);
+            if gradient_specified {
+                check_mixed_array_size_required(&mut errors, "filament_mixed_gradient", gradient_flags.len(), slot_count);
+                check_mixed_array_size_required(&mut errors, "filament_mixed_gradient_range", gradient_range_strs.len(), slot_count);
+            }
+
+            // Rule 3: curve passed (any non-empty entry) → curve array must cover every slot.
+            let curve_specified = mixed_string_array_was_specified(gradient_curve_strs);
+            if curve_specified {
+                check_mixed_array_size_required(&mut errors, "filament_mixed_gradient_curve", gradient_curve_strs.len(), slot_count);
+            }
+
+            let num_physical = is_mixed.iter().filter(|v| **v == 0).count();
+
+            for i in 0..is_mixed.len() {
+                if is_mixed[i] == 0 {
+                    continue;
+                }
+
+                let slot = format!("slot {}", i + 1);
+                let comp_str = if i < comp_strs.len() { comp_strs[i].as_str() } else { "" };
+
+                let mut components: Vec<u32> = Vec::new();
+                let mut comp_err = String::new();
+                if !try_parse_mixed_components_strict(comp_str, &mut components, &mut comp_err) {
+                    append_error(&mut errors, "filament_mixed_components", &format!("{}: {}", slot, comp_err));
+                    continue;
+                }
+
+                for &c in &components {
+                    if c as usize > num_physical {
+                        append_error(
+                            &mut errors,
+                            "filament_mixed_components",
+                            &format!("{}: component {} out of range (max physical filament index is {})", slot, c, num_physical),
+                        );
+                        break;
+                    }
+                    if c as usize == i + 1 {
+                        append_error(&mut errors, "filament_mixed_components", &format!("{}: cannot reference itself as a component", slot));
+                        break;
+                    }
+                    let idx0 = c.wrapping_sub(1) as usize;
+                    if idx0 < is_mixed.len() && is_mixed[idx0] != 0 {
+                        append_error(&mut errors, "filament_mixed_components", &format!("{}: component {} references a mixed filament slot", slot, c));
+                        break;
+                    }
+                }
+
+                let mut ratio_err = String::new();
+                let ratio_str = if i < ratio_strs.len() { ratio_strs[i].as_str() } else { "" };
+                if !try_parse_mixed_ratios_strict(ratio_str, components.len(), &mut ratio_err) {
+                    append_error(&mut errors, "filament_mixed_sublayer_ratios", &format!("{}: {}", slot, ratio_err));
+                }
+
+                let gradient_on = i < gradient_flags.len() && gradient_flags[i] != 0;
+                if gradient_on {
+                    if components.len() != 2 {
+                        append_error(&mut errors, "filament_mixed_gradient", &format!("{}: gradient requires exactly 2 components", slot));
+                    }
+
+                    if gradient_specified {
+                        let mut range_err = String::new();
+                        let range_str = if i < gradient_range_strs.len() { gradient_range_strs[i].as_str() } else { "" };
+                        if !validate_gradient_range_strict(range_str, &mut range_err) {
+                            append_error(&mut errors, "filament_mixed_gradient_range", &format!("{}: {}", slot, range_err));
+                        }
+                    }
+
+                    if curve_specified {
+                        let curve_str = if i < gradient_curve_strs.len() { gradient_curve_strs[i].as_str() } else { "" };
+                        if !curve_str.is_empty() && parse_gradient_curve(curve_str).empty() {
+                            append_error(
+                                &mut errors,
+                                "filament_mixed_gradient_curve",
+                                &format!("{}: invalid curve (need at least 2 valid control points)", slot),
+                            );
+                        }
+                    }
+                }
+            }
+
+            errors
+        }
     }
 }

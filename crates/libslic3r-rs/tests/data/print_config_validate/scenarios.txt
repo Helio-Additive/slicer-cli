@@ -1,0 +1,173 @@
+CASE 1
+END
+CASE 1
+SET layer_height	0
+END
+CASE 1
+SET layer_height	-0.1
+SET initial_layer_print_height	0
+END
+CASE 1
+SET filament_diameter	1.75,0.5
+SET nozzle_diameter	0.4,0.001
+END
+CASE 1
+SET wall_loops	-1
+SET top_shell_layers	-1
+SET bottom_shell_layers	-2
+SET skirt_height	-1
+END
+CASE 1
+SET use_firmware_retraction	1
+SET gcode_flavor	teacup
+SET wipe	1
+END
+CASE 1
+SET use_firmware_retraction	1
+SET gcode_flavor	klipper
+SET wipe	0,1
+END
+CASE 1
+SET sparse_infill_density	100%
+SET sparse_infill_pattern	gyroid
+END
+CASE 1
+SET sparse_infill_density	100%
+SET sparse_infill_pattern	zig-zag
+END
+CASE 1
+SET bridge_flow	0
+SET extruder_clearance_max_radius	0
+SET extruder_clearance_height_to_rod	-1
+SET extruder_clearance_height_to_lid	0
+SET nozzle_height	0
+END
+CASE 1
+SET filament_flow_ratio	0.98,0
+END
+CASE 1
+SET spiral_mode	1
+SET wall_loops	2
+SET sparse_infill_density	15%
+SET top_shell_layers	5
+SET enable_support	1
+SET enforce_support_layers	3
+END
+CASE 0
+SET spiral_mode	1
+SET wall_loops	2
+SET sparse_infill_density	15%
+SET top_shell_layers	5
+SET enable_support	1
+SET enforce_support_layers	3
+END
+CASE 1
+SET spiral_mode	1
+SET wall_loops	1
+SET sparse_infill_density	0%
+SET top_shell_layers	0
+END
+CASE 1
+SET outer_wall_line_width	1.5
+SET support_line_width	1.1
+SET initial_layer_line_width	0.5
+SET skeleton_infill_line_width	1.01
+END
+CASE 1
+SET nozzle_diameter	0.4,0.8
+SET outer_wall_line_width	1.5
+SET inner_wall_line_width	2.5
+END
+CASE 1
+SET tree_support_wall_count	-2
+SET sparse_infill_density	150%
+SET wall_loops	-3
+SET nozzle_temperature	-5,220
+SET filament_max_volumetric_speed	-1,2
+SET raft_layers	-1
+SET top_shell_thickness	-0.5
+SET bridge_flow	-1
+END
+CASE 0
+SET tree_support_wall_count	3
+SET support_threshold_angle	120
+SET initial_layer_speed	-10
+SET retraction_length	-1
+END
+CASE 1
+SET filament_mixed_components	"1,2"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,2"
+SET filament_mixed_sublayer_ratios	"";"";"1,1"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,1"
+SET filament_mixed_sublayer_ratios	"";"";"1"
+END
+CASE 1
+SET filament_is_mixed	0,0,1,1
+SET filament_mixed_components	"";"";"3,1";"1,4"
+SET filament_mixed_sublayer_ratios	"";"";"1,-1";"x,1"
+END
+CASE 1
+SET filament_is_mixed	0,0,1,1
+SET filament_mixed_components	"";"";"1";"a,2"
+SET filament_mixed_sublayer_ratios	"";"";"";"1,2,3"
+END
+CASE 1
+SET filament_is_mixed	0,0,0,1
+SET filament_mixed_components	"";"";"";"1,5"
+SET filament_mixed_sublayer_ratios	"";"";"";"2,,1"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,2"
+SET filament_mixed_sublayer_ratios	"";"";"1,3"
+SET filament_mixed_gradient	0,0,1
+SET filament_mixed_gradient_range	"";"";"0.1,0.9"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,2"
+SET filament_mixed_gradient	0,0,1
+SET filament_mixed_gradient_range	"";"";"0.1,1.5"
+SET filament_mixed_gradient_curve	"";"";"0.5"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,2"
+SET filament_mixed_gradient	1,1
+SET filament_mixed_gradient_range	"0.2"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"1,2"
+SET filament_mixed_sublayer_ratios	"";"";"";"1"
+END
+CASE 1
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,2"
+SET multi_nozzle_diameter_mode	1
+SET filament_diameter_map	"0.4";"0.6";""
+END
+CASE 0
+SET filament_is_mixed	0,0,1
+SET filament_mixed_components	"";"";"1,2"
+SET multi_nozzle_diameter_mode	1
+SET filament_diameter_map	"0.4";"0.6";""
+END
+CASE 1
+SET layer_height	0.2
+SET outer_wall_line_width	0.42
+SET wall_loops	1
+SET spiral_mode	1
+SET top_shell_layers	0
+SET sparse_infill_density	0%
+SET enforce_support_layers	2
+SET use_firmware_retraction	1
+SET gcode_flavor	marlin2
+SET wipe	1,0
+END

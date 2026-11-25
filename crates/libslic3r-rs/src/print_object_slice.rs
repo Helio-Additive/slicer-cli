@@ -2478,7 +2478,17 @@ impl PrintObject {
                 }
                 // Merge all regions' slices to get islands, chain them by a shortest path.
                 if cfg_bool(self.config(), "enable_circle_compensation") {
-                    self.m_layers[layer_id].apply_auto_circle_compensation();
+                    // PrintObjectSlice.cpp:2386-2387 `layer->apply_auto_circle_compensation();`, which reads
+                    // `get_auto_circle_compenstaion_params()` (set from the PrintConfig, Print.cpp:2334, 2345,
+                    // 2482) and `scale_(config().circle_compensation_manual_offset)` passed as a float
+                    // (Layer.cpp:41-43). AUTO_CIRCLE_COMPENSATION_PIN (layer.rs, on unless =0) keeps the
+                    // earlier no-op when 0.
+                    let params = crate::layer_region::AutoContourHolesCompensationParams::new_from_config_values(
+                        |key| cfg_floats(print.config(), key),
+                    );
+                    let manual_offset = (cfg_float(self.config(), "circle_compensation_manual_offset")
+                        / crate::libslic3r::SCALING_FACTOR) as f32;
+                    self.m_layers[layer_id].apply_auto_circle_compensation_with(&params, manual_offset);
                 }
                 self.m_layers[layer_id].make_slices();
             }

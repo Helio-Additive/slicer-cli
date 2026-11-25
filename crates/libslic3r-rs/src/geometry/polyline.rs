@@ -478,11 +478,61 @@ impl Polyline {
     pub fn simplify_by_fitting_arc(&mut self, tolerance: f64) {
         // Polyline.cpp:155 BBS: do arc fit first, then use DP simplify on straight part.
         // C++ returns void; ignore the Rust Result.
+        // Probe ARCFIT_DUMP (diagnostic only, never changes output): `ARCFIT_DUMP=dx,dy;dx,dy;...` prints
+        // the input, the tolerance and the fitted arcs of every call that fits an arc whose chord
+        // (end - start, scaled) is within 150 units of one of the listed chords.
+        let probe_input = if crate::probe_enabled("ARCFIT_DUMP") { Some(self.points.clone()) } else { None };
         let _ = ArcFitter::do_arc_fitting_and_simplify(
             &mut self.points,
             &mut self.fitting_result,
             tolerance,
         );
+        if let Some(input) = probe_input {
+            let chords: Vec<(i64, i64)> = std::env::var("ARCFIT_DUMP")
+                .unwrap_or_default()
+                .split(';')
+                .filter_map(|c| {
+                    let mut it = c.split(',').map(|v| v.trim().parse::<i64>());
+                    match (it.next(), it.next()) {
+                        (Some(Ok(x)), Some(Ok(y))) => Some((x, y)),
+                        _ => None,
+                    }
+                })
+                .collect();
+            let hit = self.fitting_result.iter().any(|d| {
+                d.is_arc_move() && {
+                    let dx = (d.arc_data.end_point.x() - d.arc_data.start_point.x()) as i64;
+                    let dy = (d.arc_data.end_point.y() - d.arc_data.start_point.y()) as i64;
+                    chords.iter().any(|&(cx, cy)| (dx - cx).abs() <= 150 && (dy - cy).abs() <= 150)
+                }
+            });
+            if hit {
+                let mut s = format!("ARCFIT {:?} {}", tolerance.to_bits(), input.len());
+                for p in &input {
+                    s += &format!(" {} {}", p.x(), p.y());
+                }
+                s += " |";
+                for d in &self.fitting_result {
+                    s += &format!(" {} {}", d.start_point_index, d.end_point_index);
+                    if d.is_arc_move() {
+                        let a = &d.arc_data;
+                        s += &format!(
+                            " A {} {} {} {} {} {} {:?}",
+                            a.start_point.x(),
+                            a.start_point.y(),
+                            a.end_point.x(),
+                            a.end_point.y(),
+                            a.circle.center.x(),
+                            a.circle.center.y(),
+                            a.circle.radius
+                        );
+                    } else {
+                        s += " L";
+                    }
+                }
+                eprintln!("{s}");
+            }
+        }
     }
 
     /// Polyline.cpp:158-197 `Polylines Polyline::equally_spaced_lines(double distance) const`
@@ -1356,6 +1406,65 @@ pub fn remove_same_neighbor(polyline: &mut Polyline) -> bool {
     }
     // Polyline.cpp:543-544 (erase already done by dedup)
     true
+}
+
+/// Polyline.hpp:230-247 `template<typename PointsType> inline void polylines_merge(PointsType &dst, bool dst_first,
+/// PointsType &&src, bool src_first)`: merges two polylines at their end points; the orientation of the result
+/// is unknown (it may start with either piece).
+pub fn polylines_merge<T>(dst: &mut Vec<T>, dst_first: bool, mut src: Vec<T>, src_first: bool) {
+    // Polyline.hpp:238-244
+    if dst_first {
+        if src_first {
+            dst.reverse();
+        } else {
+            std::mem::swap(dst, &mut src);
+        }
+    } else if !src_first {
+        src.reverse();
+    }
+    // Polyline.hpp:246 `append(dst, std::move(src))`: libslic3r.h `append(std::vector<T> &dest,
+    // std::vector<T> &&src)` moves src into an empty dest, else appends it at the end.
+    if dst.is_empty() {
+        *dst = src;
+    } else {
+        dst.extend(src);
+    }
+}
+
+/// The two `remove_same_neighbor` overloads of Polyline.cpp:534-556 under their C++ name:
+/// `remove_same_neighbor(Polyline&)` for a Polyline and `remove_same_neighbor(Polylines&)` for a vector
+/// of them (they delegate to `remove_same_neighbor` / `remove_same_neighbor_polylines`).
+pub trait RemoveSameNeighbor {
+    fn remove_same_neighbor(&mut self) -> bool;
+}
+
+impl RemoveSameNeighbor for Polyline {
+    // Polyline.cpp:534-545
+    fn remove_same_neighbor(&mut self) -> bool {
+        remove_same_neighbor(self)
+    }
+}
+
+impl RemoveSameNeighbor for Polylines {
+    // Polyline.cpp:547-556
+    fn remove_same_neighbor(&mut self) -> bool {
+        remove_same_neighbor_polylines(self)
+    }
+}
+
+/// `void Polyline::split_at(Point &point, Polyline* p1, Polyline* p2) const` (Polyline.cpp:223-265) under
+/// its C++ name. The inherent `Polyline::split_at(index)` is the crate's index split, kept for its callers;
+/// call this one as `PolylineSplitAt::split_at(&polyline, &mut point, &mut p1, &mut p2)`. It delegates to
+/// `Polyline::split_at_point`.
+pub trait PolylineSplitAt {
+    fn split_at(&self, point: &mut Point, p1: &mut Polyline, p2: &mut Polyline);
+}
+
+impl PolylineSplitAt for Polyline {
+    // Polyline.cpp:223-265
+    fn split_at(&self, point: &mut Point, p1: &mut Polyline, p2: &mut Polyline) {
+        self.split_at_point(point, p1, p2)
+    }
 }
 
 /// Polyline.cpp:547-555 `bool remove_same_neighbor(Polylines &polylines)`

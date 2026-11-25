@@ -1830,7 +1830,22 @@ use crate::geometry::{Point, Polyline};
 use crate::libslic3r::EPSILON;
 use crate::print_config::PrintConfig;
 use crate::Result;
-use crate::{scale, unscale};
+use crate::scale;
+
+/// The pin's `unscale` and `unscaled<double>` multiply by SCALING_FACTOR (libslic3r.h 47-50;
+/// Point.hpp `unscaled`: `v.template cast<T>() * SCALING_FACTOR`), which `GCode::point_to_gcode`
+/// uses (GCode.cpp 9032). The crate root's `unscale` divides by 1e5, which differs in the last
+/// bit on some values and moves an arc's I/J or an X/Y by 0.001 on exact half-way ties.
+/// GCODE_UNSCALE_MUL (on unless =0) multiplies as the pin; =0 keeps the division.
+#[inline]
+fn unscale(v: crate::Coord) -> crate::CoordF {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *G.get_or_init(|| crate::faithful_gate("GCODE_UNSCALE_MUL")) {
+        crate::libslic3r::unscale(v)
+    } else {
+        crate::unscale(v)
+    }
+}
 
 use crate::gcode::seam_placer::SeamPlacer;
 use std::cell::Cell;
@@ -3000,7 +3015,7 @@ pub fn extrude_collection(
             let dist_sq = dx * dx + dy * dy;
             // GCode.cpp:7611 — `|| m_need_change_layer_lift_z`: the layer's first
             // path travels even from its own first point (CHANGE_LAYER_RETRACT_CPP).
-            if dist_sq > 0.001 * 0.001
+            if travel_needed_to_first_point(writer, first_pt, dist_sq, false)
                 || (writer.m_need_change_layer_lift_z
                     && crate::faithful_gate("CHANGE_LAYER_RETRACT_CPP"))
             {
@@ -3895,7 +3910,7 @@ pub fn extrude_path_with_arc_fitting(
         let tx = unscale(first_pt.x());
         let ty = unscale(first_pt.y());
         let dist_sq = (pos.x - tx) * (pos.x - tx) + (pos.y - ty) * (pos.y - ty);
-        if dist_sq > 0.001 * 0.001 {
+        if travel_needed_to_first_point(writer, *first_pt, dist_sq, true) {
             let resume_speed = writer.get_current_speed() * 60.0; // mm/s -> mm/min
 
             // Bare positioning travel — no retraction/spiral-lift decision here.
@@ -5175,6 +5190,38 @@ pub fn extrude_support(
     process_entities(&extrusions, writer, config, is_first_layer);
     if has_support_ironing {
         process_entities(&ironing_extrusions, writer, config, is_first_layer);
+    }
+}
+
+/// Whether `_extrude` travels to the path's first point before extruding it:
+/// GCode.cpp:7611 `if (!m_last_pos_defined || m_last_pos != path.first_point() || ...)`,
+/// an exact comparison of the scaled points. The port compared the writer's position
+/// in mm with a 0.001 mm tolerance, so two paths that meet within 0.001 mm but not
+/// exactly (Benchy's gap fill at layer 2, `G1 X160.824 Y157.96 F60000`) were joined
+/// without the travel the pin writes.
+/// TRAVEL_EXACT_LAST_POS (faithful, R949): the exact comparison at the entity's travel
+/// (`extrude_collection`); `=0` keeps the tolerance there.
+/// TRAVEL_EXACT_LAST_POS_PATH (opt-in, R949): the same at the travel between the paths
+/// of one entity (`extrude_path`); it stays off because the port's smooth-speed pieces
+/// and some entities' first points are 1 unit away from where the pin's meet exactly,
+/// which would add travels the pin does not write (Benchy classic -73 in order).
+fn travel_needed_to_first_point(writer: &GCodeWriter, first_pt: Point, dist_sq: f64, in_path: bool) -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    static GATE_PATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let on = if in_path {
+        *GATE_PATH.get_or_init(|| crate::opt_in_gate("TRAVEL_EXACT_LAST_POS_PATH"))
+    } else {
+        *GATE.get_or_init(|| crate::faithful_gate("TRAVEL_EXACT_LAST_POS"))
+    };
+    if on {
+        let last = writer_last_pos(writer);
+        // TRAVEL_EXACT_PROBE (diagnostic only): the travels the tolerance skipped.
+        if last != first_pt && dist_sq <= 0.001 * 0.001 && crate::probe_enabled("TRAVEL_EXACT_PROBE") {
+            eprintln!("[TRAVELX] in_path={in_path} last=({},{}) first=({},{})", last.x, last.y, first_pt.x, first_pt.y);
+        }
+        last != first_pt
+    } else {
+        dist_sq > 0.001 * 0.001
     }
 }
 

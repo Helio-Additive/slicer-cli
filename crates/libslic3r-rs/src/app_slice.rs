@@ -96,6 +96,8 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
     let mut settings_value: serde_json::Value = serde_json::from_str(&settings_str)
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
     normalize_legacy_gcode_tokens(&mut settings_value);
+    // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
+    check_config_values(&settings_value)?;
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
@@ -386,6 +388,145 @@ fn validation_refusal(validation: crate::print_base::StringObjectException) -> a
         return ValidationRefusal { exception: validation }.into();
     }
     anyhow::anyhow!("validation error: {}", validation.string)
+}
+
+/// `--flag-name` of a setting, as main.cpp:9524-9526 / 9574-9577 write it (`--` and the key with `_` as `-`).
+fn setting_flag(key: &str) -> String {
+    format!("--{}", key.replace('_', "-"))
+}
+
+/// A refusal of the configuration check (main.cpp:9549-9593): the settings `DynamicPrintConfig::validate(true)`
+/// (PrintConfig.cpp:8969-9007) finds invalid that the desktop's own check (`validate(false)`) does not find the
+/// same way: the `config_refused` event on stdout, `Param values in 3mf/config error: <sentence>` on stderr, exit
+/// 1 and CLI_INVALID_VALUES_IN_3MF (Utils.hpp) as the return code.
+#[derive(Debug, Clone)]
+pub struct ConfigRefusal {
+    /// The refused settings and why, in key order (`std::map`).
+    pub settings: std::collections::BTreeMap<String, String>,
+    /// main.cpp:9554-9582: the sentence.
+    pub sentence: String,
+}
+
+impl std::fmt::Display for ConfigRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "config refused: {}", self.sentence)
+    }
+}
+
+impl std::error::Error for ConfigRefusal {}
+
+impl ConfigRefusal {
+    /// main.cpp:9554-9582 (Bambu engine; no unknown enum values here): the engine's sentence, each refused
+    /// setting as `key: why`, then the flags that override them.
+    pub fn new(settings: std::collections::BTreeMap<String, String>) -> Self {
+        let mut sentence = String::from("BambuStudio cannot print this file as it is: ");
+        let mut first = true;
+        for (key, why) in &settings {
+            sentence += &format!("{}{}: {}", if first { "" } else { "; " }, key, why);
+            first = false;
+        }
+        sentence += ".";
+        if !settings.is_empty() {
+            let flags: Vec<String> = settings.keys().map(|k| setting_flag(k)).collect();
+            sentence += &format!(" Give {} a value in range to override it.", flags.join(", "));
+        }
+        sentence += " --allow-substitution lets the engine use its own default for a value it does not know instead.";
+        ConfigRefusal { settings, sentence }
+    }
+
+    /// main.cpp:9583-9587: the event's JSON, keys in nlohmann's (sorted) order.
+    pub fn event_payload(&self) -> String {
+        let mut items = serde_json::Map::new();
+        for (key, why) in &self.settings {
+            items.insert(key.clone(), why.clone().into());
+        }
+        let mut m = serde_json::Map::new();
+        m.insert("event".into(), "config_refused".into());
+        m.insert("message".into(), self.sentence.clone().into());
+        m.insert("settings".into(), serde_json::Value::Object(items));
+        m.insert("tag".into(), "InvalidValues".into());
+        m.insert("unknown_values".into(), serde_json::Value::Array(Vec::new()));
+        serde_json::Value::Object(m).to_string()
+    }
+
+    /// diagnostic_output.hpp:14-18 `write_event_now`: the record written to stdout.
+    pub fn event_record(&self) -> String {
+        format!("\n[[SLICER_EVENT]] {}\n", self.event_payload())
+    }
+
+    /// main.cpp:9588: the line on stderr.
+    pub fn stderr_text(&self) -> String {
+        format!("Param values in 3mf/config error: {}", self.sentence)
+    }
+
+    /// main.cpp:9589-9590 (`set_outcome_failure(outcome, CLI_INVALID_VALUES_IN_3MF, sentence); return 1;`).
+    pub fn exit_code(&self) -> i32 {
+        1
+    }
+
+    /// main.cpp:9589: the code result.json carries.
+    pub fn return_code(&self) -> i32 {
+        crate::utils::CLI_INVALID_VALUES_IN_3MF
+    }
+}
+
+/// The front end's check of the settings' values (main.cpp:9438-9593): `DynamicPrintConfig::validate(true)`
+/// (PrintConfig.cpp:8969-9007, `validate(const FullPrintConfig&, true)` :10641-10916) over the settings as the
+/// file states them; a finding the desktop's check (`validate(false)`) makes the same way is the file's own and
+/// only noted (the `InvalidValuesNoted` warning, main.cpp:9512-9547: stdout event, `Warning: <sentence>` on
+/// stderr, main.cpp:7894-7897); any other (the spiral-vase checks) refuses the job ([`ConfigRefusal`]). This
+/// program takes no setting on its command line, so the settings are both the checked and the file's ones
+/// (`with_overrides` and `file_only` of main.cpp are the same configuration). Gate FRONT_END_CONFIG_VALIDATE_PIN
+/// (faithful, R949); off, no check.
+fn check_config_values(settings: &serde_json::Value) -> Result<()> {
+    if !crate::faithful_gate("FRONT_END_CONFIG_VALIDATE_PIN") {
+        return Ok(());
+    }
+    let config = crate::print::full_print_config_from_settings(settings);
+    let found = config.validate(true).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let mut validity: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut noted: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    if !found.is_empty() {
+        let desktop = config.validate(false).map_err(|e| anyhow::anyhow!("{}", e))?;
+        for (key, why) in found {
+            if desktop.get(&key) == Some(&why) {
+                noted.insert(key, why);
+            } else {
+                validity.insert(key, why);
+            }
+        }
+    }
+    if !noted.is_empty() && validity.is_empty() {
+        // main.cpp:9512-9547: the plate is 1 for this program's one-plate default call (`checked > 0 ? checked : 1`).
+        let mut sentence = String::from("Invalid values found in the 3MF/config: ");
+        let mut items = serde_json::Map::new();
+        let mut flags = String::new();
+        for (key, why) in &noted {
+            sentence += &format!("{}{}: {}", if items.is_empty() { "" } else { "; " }, key, why);
+            items.insert(key.clone(), why.clone().into());
+            flags += &format!("{}{}", if flags.is_empty() { "" } else { ", " }, setting_flag(key));
+        }
+        sentence += &format!(
+            ". The run slices with them as they are, and the slice's own check of each object against its nozzle and \
+             plate still applies. Give {} a value in range to change it.",
+            flags
+        );
+        let mut m = serde_json::Map::new();
+        m.insert("event".into(), "warning".into());
+        m.insert("message".into(), sentence.clone().into());
+        m.insert("plate_id".into(), 1.into());
+        m.insert("settings".into(), serde_json::Value::Object(items));
+        m.insert("tag".into(), "InvalidValuesNoted".into());
+        use std::io::Write;
+        let mut out = std::io::stdout();
+        let _ = out.write_all(format!("\n[[SLICER_EVENT]] {}\n", serde_json::Value::Object(m)).as_bytes());
+        let _ = out.flush();
+        eprintln!("Warning: {sentence}");
+    }
+    if !validity.is_empty() {
+        return Err(ConfigRefusal::new(validity).into());
+    }
+    Ok(())
 }
 
 /// `slicer_cli` rewrites the placeholder `initial_no_support_filament_id` to
@@ -762,6 +903,8 @@ pub fn slice_3mf_to_gcode(
     let mut settings_value: serde_json::Value =
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
     normalize_legacy_gcode_tokens(&mut settings_value);
+    // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
+    check_config_values(&settings_value)?;
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);

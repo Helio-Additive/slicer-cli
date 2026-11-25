@@ -4637,5 +4637,121 @@
   "functions": [
    "LayerRegion::auto_circle_compensation"
   ]
+ },
+ {
+  "unit": "Polyline",
+  "round": 949,
+  "evidence": "tests/polyline_split_native_parity.rs (polyline_split_native_parity) against tests/data/polyline_split/gen.cpp (vectors.txt.gz, 1,787,501 B): 1,500 polylines of arcs and straight runs (up to 30 scaled units of noise, repeated points), 1,125 through simplify_by_fitting_arc (757 carry 1,161 arcs): simplify_by_fitting_arc 1,125, split_at 6,000 (3,026 results carry arcs), split_at_index 4,500 (2,271), split_at_length 6,000 (3,024), clip_end + clip_start 6,000, reverse 1,500, append(const Polyline&) + append(Polyline&&) 3,000, extend_end 1,500, extend_start 1,500, remove_same_neighbor(Polyline&) 1,500, remove_same_neighbor(Polylines&) 300, polylines_merge 808 (four flag combinations): 0 mismatches (points, every PathFittingData and every ArcSegment field bit for bit). The C++ names: trait PolylineSplitAt::split_at (the inherent split_at(index) stays for curve_analyzer.rs) and trait RemoveSameNeighbor for Polyline / Polylines.",
+  "functions": [
+   "Polyline::split_at",
+   "Polyline::split_at_index",
+   "Polyline::split_at_length",
+   "Polyline::split_fitting_result_before_index",
+   "Polyline::split_fitting_result_after_index",
+   "Polyline::simplify_by_fitting_arc",
+   "Polyline::clip_end",
+   "Polyline::clip_start",
+   "Polyline::reverse",
+   "Polyline::append",
+   "Polyline::extend_end",
+   "Polyline::extend_start",
+   "remove_same_neighbor",
+   "polylines_merge"
+  ]
+ },
+ {
+  "unit": "GCode/SeamPlacer",
+  "round": 949,
+  "evidence": "tests/seam_visibility_native_parity.rs (point_visibility_matches_the_pin): tests/data/seam_visibility/gen.cpp carries the pin's GlobalModelInfo::calculate_point_visibility (SeamPlacer.cpp 301-326) and CoordinateFunctor (264-271) verbatim over the pin's KDTreeIndirect<3, float> built as compute_global_occlusion builds it (611-612), on 3 LCG sample sets (500, 3,000 and 20,000 samples with random normals and visibilities, radius 3.0 / 1.5 / 0.75) and 7,500 queries, half of them at the search radius from a sample: visibility bits and find_nearby_points counts equal on all 7,500 with SEAM_VISIBILITY_EIGEN_DOT and SEAM_NEARBY_DIST_FMA on; with SEAM_VISIBILITY_EIGEN_DOT=0 606 visibilities differ, with SEAM_NEARBY_DIST_FMA=0 81 visibilities and 81 counts differ.",
+  "functions": [
+   "GlobalModelInfo::calculate_point_visibility"
+  ]
+ },
+ {
+  "unit": "GCode/SeamPlacer",
+  "round": 949,
+  "evidence": "Twin probe over a fixture: a pin twin (R948) extended with SEAMGMI (the mesh samples after compute_global_occlusion) against the port's SEAMSTAGE / SEAMGMI probes (gcode/seam_placer.rs SeamPlacer::init, diagnostic only) on the H2D Majora job (Majora on the H2D, two nozzles, with the config slicer_cli wrote), layers 280-320, raw f32 bits, binary 09:58: compute_global_occlusion's 30,000 mesh samples (positions, normals, triangle ids, visibility) and radius equal; calculate_candidates_visibility equal on all 103,923 candidates (6,854 differed in R948); gather_seam_candidates, calculate_overhangs_and_layer_embedding and pick_seam_point equal. Not equal (not claimed): align_seam_points, 62 of 1,536 final positions by at most 4 ulps (seam index and finalized equal): the curve fit (Curves.hpp fit_curve: Eigen fullPivHouseholderQr in float; geometry/curves.rs solves with a thin Householder QR).",
+  "functions": [
+   "SeamPlacer::calculate_candidates_visibility",
+   "compute_global_occlusion"
+  ]
+ },
+ {
+  "unit": "PrintConfig",
+  "round": 949,
+  "evidence": "tests/print_config_validate_native_parity.rs (config_validate_matches_the_pin): the pin's DynamicPrintConfig::validate(bool under_cli) (PrintConfig.cpp:8969-9007), which lays the configuration over a FullPrintConfig and calls validate(const FullPrintConfig&, bool under_cli) (:10641-10916), run by tests/data/print_config_validate/gen.cpp over the 31 scenarios of scenarios.txt (defaults; layer height, first layer height, filament and nozzle diameters, negative counts, firmware retraction with flavors and wipe, 100% density patterns, bridge flow and extruder clearances, flow ratios, spiral vase under the CLI and not, line widths over 2.5 nozzle diameters with one and two nozzles, out-of-range floats, percents, ints and vectors against each option's min/max, the mixed-filament checks and the multi-nozzle-diameter check): 122 lines equal (every finding's key and message, and their count); 1 passed.",
+  "functions": [
+   "validate",
+   "DynamicPrintConfig::validate"
+  ]
+ },
+ {
+  "unit": "FilamentMixer",
+  "round": 949,
+  "evidence": "tests/print_config_validate_native_parity.rs (config_validate_matches_the_pin): scenarios 18-30 of tests/data/print_config_validate/scenarios.txt run the pin's validate_mixed_filament_params (FilamentMixer.cpp:748-840) through validate(FullPrintConfig) and check_mixed_filament_diameter_consistency (:535-560) through DynamicPrintConfig::validate: sub-parameters without a mixed slot, duplicate / self / out-of-range / mixed-slot / too few / non-numeric components, empty / negative / non-numeric / miscounted ratios, gradient ranges in and out of (0,1) and of the wrong size, a one-point curve, array sizes that do not match the slot count, and two components on different nozzle diameters under the CLI and not: every message equal. The functions are in print_config.rs config_def::filament_mixer_validate (to be moved to filament_mixer.rs, the paired file, outside worker C's scope in R949).",
+  "functions": [
+   "validate_mixed_filament_params",
+   "try_parse_mixed_components_strict",
+   "try_parse_mixed_ratios_strict",
+   "validate_gradient_range_strict",
+   "check_mixed_filament_diameter_consistency",
+   "append_error",
+   "has_mixed_sub_params_specified",
+   "mixed_string_array_was_specified",
+   "mixed_bool_array_was_specified",
+   "check_mixed_array_size_required"
+  ]
+ },
+ {
+  "unit": "Config",
+  "round": 949,
+  "evidence": "tests/print_config_validate_native_parity.rs (full_print_config_defaults_serialize_as_the_pin): every option of the pin's FullPrintConfig::defaults() (602 options, tests/data/print_config_validate/gen.cpp --defaults -> vectors_defaults.txt) with its type(), nullable(), is_nil() and serialize() equal to the port's static_print_config_defaults(\"FullPrintConfig\"), incl. the nullable float, int, bool and float-or-percent vectors, points and points groups; the serialization of the 9 enum vectors (coEnums) is not compared (the pin's static default has a null keys map and its serialize() crashes); 1 passed. The out-of-range check of validate (config_validate_matches_the_pin) also serializes non-default floats, percents, ints and their vectors.",
+  "functions": [
+   "ConfigOptionFloat::type",
+   "ConfigOptionFloat::serialize",
+   "ConfigOptionFloatsTempl::type",
+   "ConfigOptionFloatsTempl::serialize",
+   "ConfigOptionFloatsTempl::is_nil",
+   "ConfigOptionInt::type",
+   "ConfigOptionInt::serialize",
+   "ConfigOptionIntsTempl::type",
+   "ConfigOptionIntsTempl::serialize",
+   "ConfigOptionIntsTempl::is_nil",
+   "ConfigOptionString::type",
+   "ConfigOptionString::serialize",
+   "ConfigOptionStrings::type",
+   "ConfigOptionStrings::serialize",
+   "ConfigOptionPercent::type",
+   "ConfigOptionPercent::serialize",
+   "ConfigOptionPercentsTempl::type",
+   "ConfigOptionPercentsTempl::serialize",
+   "ConfigOptionFloatOrPercent::type",
+   "ConfigOptionFloatOrPercent::serialize",
+   "ConfigOptionFloatsOrPercentsTempl::type",
+   "ConfigOptionFloatsOrPercentsTempl::serialize",
+   "ConfigOptionFloatsOrPercentsTempl::is_nil",
+   "ConfigOptionPoint::type",
+   "ConfigOptionPoint::serialize",
+   "ConfigOptionPoints::type",
+   "ConfigOptionBool::type",
+   "ConfigOptionBool::serialize",
+   "ConfigOptionBoolsTempl::type",
+   "ConfigOptionBoolsTempl::serialize",
+   "ConfigOptionBoolsTempl::is_nil",
+   "ConfigOptionEnum::type",
+   "ConfigOptionEnumsGenericTempl::type",
+   "ConfigOptionPointsGroups::type",
+   "ConfigOptionPointsGroups::serialize"
+  ]
+ },
+ {
+  "unit": "GCodeWriter",
+  "round": 949,
+  "evidence": "tests/gcode_emit_axis_native_parity.rs (emit_axis_matches_the_pin): the pin's GCodeFormatter::emit_axis (GCodeWriter.cpp 1097-1137: int64_t(std::round(v * pow_10[digits])), zero padding, decimal point, trailing zeros and leading zero dropped) called by tests/data/gcode_emit_axis/gen.cpp ('gen 3000 | gzip -9n') on 15,039 cases: values over six magnitudes and both signs, halves of the last digit and one ulp either side of them, feedrates speed*60, zeros, negative zero and tiny values, with 1, 3 and 5 digits. The live writer's format_gcode_value (src/gcode/writer.rs, used for every X/Y/Z/E/I/J the fixtures print) and g_code_writer::GCodeFormatter::emit_axis give the pin's text on all 15,039; the live GCodeWriter::set_speed's 'G1 F' word (with SET_SPEED_EMIT_AXIS, GCodeWriter.cpp 387-399 emit_f) on all 4,720 positive feedrates with 3 digits. In-file test gcode::writer::tests::set_speed_formats_f_as_emit_axis pins the case 9416.0045 (F9416.005, not format!'s 9416.004).",
+  "functions": [
+   "GCodeFormatter::emit_axis",
+   "GCodeFormatter::emit_f",
+   "GCodeWriter::set_speed"
+  ]
  }
 ]

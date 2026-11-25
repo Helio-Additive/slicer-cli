@@ -135,6 +135,32 @@ else
     fail support-filament-bed-sentence "$(cat "$TMP/out" "$TMP/err")"
 fi
 
+# The settings' values are checked before anything slices (main.cpp:9438-9593,
+# DynamicPrintConfig::validate(true), PrintConfig.cpp:10641-10916): spiral vase
+# mode with two walls, 15% infill and five top layers is refused as slicer_cli
+# refuses it, with the config_refused event, the sentence on stderr and exit 1.
+sed 's/"spiral_mode": "0"/"spiral_mode": "1"/' "$DATA/cube_arachne_settings.json" > "$TMP/spiral.json"
+expect_exit spiral-config-refused 1 -- "$BIN" --config "$TMP/spiral.json" -o "$TMP/spiral.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+spiral_sentence='BambuStudio cannot print this file as it is: sparse_infill_density: Invalid value when spiral vase mode is enabled: 15.000000; top_shell_layers: Invalid value when spiral vase mode is enabled: 5; wall_loops: Invalid value when spiral vase mode is enabled: 2. Give --sparse-infill-density, --top-shell-layers, --wall-loops a value in range to override it. --allow-substitution lets the engine use its own default for a value it does not know instead.'
+if grep -qxF "Param values in 3mf/config error: $spiral_sentence" "$TMP/err" \
+    && grep -qxF "[[SLICER_EVENT]] {\"event\":\"config_refused\",\"message\":\"$spiral_sentence\",\"settings\":{\"sparse_infill_density\":\"Invalid value when spiral vase mode is enabled: 15.000000\",\"top_shell_layers\":\"Invalid value when spiral vase mode is enabled: 5\",\"wall_loops\":\"Invalid value when spiral vase mode is enabled: 2\"},\"tag\":\"InvalidValues\",\"unknown_values\":[]}" "$TMP/out"; then
+    ok spiral-config-sentence
+else
+    fail spiral-config-sentence "$(cat "$TMP/out" "$TMP/err")"
+fi
+
+# A value out of range that the desktop's own check finds the same way is the
+# file's: slicer_cli warns (InvalidValuesNoted) and slices.
+sed 's/"tree_support_wall_count": "-1"/"tree_support_wall_count": "-2"/' "$DATA/cube_arachne_settings.json" > "$TMP/tswc.json"
+expect_exit out-of-range-noted 0 -- "$BIN" --config "$TMP/tswc.json" -o "$TMP/tswc.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+noted_sentence="Invalid values found in the 3MF/config: tree_support_wall_count: -2 not in range [-1.000000,2.000000]. The run slices with them as they are, and the slice's own check of each object against its nozzle and plate still applies. Give --tree-support-wall-count a value in range to change it."
+if grep -qxF "Warning: $noted_sentence" "$TMP/err" \
+    && grep -qxF "[[SLICER_EVENT]] {\"event\":\"warning\",\"message\":\"$noted_sentence\",\"plate_id\":1,\"settings\":{\"tree_support_wall_count\":\"-2 not in range [-1.000000,2.000000]\"},\"tag\":\"InvalidValuesNoted\"}" "$TMP/out"; then
+    ok out-of-range-noted-sentence
+else
+    fail out-of-range-noted-sentence "$(cat "$TMP/out" "$TMP/err")"
+fi
+
 # The same input gives the same bytes.
 "$BIN" -o "$TMP/again.gcode" "$DATA/painted_cube.3mf" >/dev/null 2>&1
 if cmp -s "$TMP/3mf/cube.gcode" "$TMP/again.gcode"; then ok deterministic; else fail deterministic "two runs differ"; fi

@@ -420,7 +420,14 @@ pub fn floating_thick_polyline_to_extrusion_paths(
         };
         // C++ `float(1. - 0.25 * PI)`: the inner expression is evaluated in double,
         // then cast to float.
-        let arg = unscaled_w + (flow.height() as f32) * ((1.0 - 0.25 * PI) as f32);
+        // FFC_WIDTH_FMA (on unless =0): the pin's compiler contracts the float sum and product
+        // to one fmaf, as at VariableWidth.cpp 66 (variable_width::spacing_to_width_scaled,
+        // VARIABLE_WIDTH_FMA); =0 rounds the product first.
+        let arg = if crate::faithful_gate("FFC_WIDTH_FMA") {
+            (flow.height() as f32).mul_add((1.0 - 0.25 * PI) as f32, unscaled_w)
+        } else {
+            unscaled_w + (flow.height() as f32) * ((1.0 - 0.25 * PI) as f32)
+        };
         let new_flow: Flow = flow
             .with_width(arg as f64)
             .expect("Flow::with_width");

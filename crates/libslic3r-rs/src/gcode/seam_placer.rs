@@ -1005,11 +1005,12 @@ impl GlobalModelInfo {
         // SeamPlacer.cpp:303 — find_nearby_points(tree, position, mesh_samples_radius).
         // C++ `find_nearby_points` uses `descent_mask(..., max_distance², CoordType(EPSILON))`
         // with CoordType = float, so the epsilon term is `float(EPSILON)`.
-        let points = find_nearby_points_eps(
+        let positions = &self.mesh_samples.positions;
+        let points = seam_find_nearby_points(
             mesh_samples_tree,
+            |index: usize, dim: usize| -> f32 { positions[index][dim] },
             position,
             self.mesh_samples_radius,
-            EPSILON as f32,
             |_| true,
         );
         // SeamPlacer.cpp:304
@@ -1017,11 +1018,16 @@ impl GlobalModelInfo {
             return 1.0;
         }
 
-        // SeamPlacer.cpp:306-309
+        // SeamPlacer.cpp:306-309: `orig_to_point.dot(plane_normal)` is Eigen's Vec3f dot
+        // (SEAM_VISIBILITY_EIGEN_DOT, see `eigen_dot3f`).
         let compute_dist_to_plane =
             |position: &Vec3f, plane_origin: &Vec3f, plane_normal: &Vec3f| -> f32 {
                 let orig_to_point = position - plane_origin;
-                orig_to_point.dot(plane_normal).abs()
+                if seam_visibility_eigen_dot_gate() {
+                    eigen_dot3f(&orig_to_point, plane_normal).abs()
+                } else {
+                    orig_to_point.dot(plane_normal).abs()
+                }
             };
 
         // SeamPlacer.cpp:311-312
@@ -1051,6 +1057,96 @@ impl GlobalModelInfo {
         // SeamPlacer.cpp:325
         total_visibility / total_weight
     }
+}
+
+/// `a.dot(b)` of two `Vec3f` with the pin's Eigen (InnerProduct.h `inner_product_impl<Evaluator, true>`
+/// over `Packet2f`, the best inner-product packet for three floats): `pmul` of the first two
+/// coordinates, `predux`, then the third through the scalar `pmadd` (`numext::madd`, `x * y + z`,
+/// contracted to one fmaf). nalgebra's `dot` adds the third product unfused.
+#[inline]
+fn eigen_dot3f(a: &Vec3f, b: &Vec3f) -> f32 {
+    a.z.mul_add(b.z, a.x * b.x + a.y * b.y)
+}
+
+/// SEAM_VISIBILITY_EIGEN_DOT (R949, on unless =0): `calculate_point_visibility`'s distance to the
+/// sample plane (SeamPlacer.cpp:306-309) through [`eigen_dot3f`]; =0 keeps nalgebra's dot.
+fn seam_visibility_eigen_dot_gate() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("SEAM_VISIBILITY_EIGEN_DOT"))
+}
+
+/// SEAM_ALIGN_EIGEN_FMA (R949, on unless =0): the alignment stage as the pin's clang and Eigen
+/// compute it: `find_next_seam_in_layer`'s `find_nearby_points` (SeamPlacer.cpp:1060) with the fused
+/// distance of [`seam_find_nearby_points`], and `align_seam_points`' `angle_3d` (SeamPlacer.cpp:1235)
+/// with Eigen's `normalized()` and Vec3f dot ([`eigen_dot3f`]). =0 keeps the unfused search and
+/// nalgebra's `normalize().dot()`.
+fn seam_align_eigen_fma_gate() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("SEAM_ALIGN_EIGEN_FMA"))
+}
+
+/// SEAM_NEARBY_DIST_FMA (R949, on unless =0), see [`seam_find_nearby_points`].
+fn seam_nearby_dist_fma_gate() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("SEAM_NEARBY_DIST_FMA"))
+}
+
+/// KDTreeIndirect.hpp:280-314 `find_nearby_points(kdtree, center, max_distance, filter)` over the seam
+/// placer's `KDTreeIndirect<3, float, ...>`. The visitor's `dist += d * d` (KDTreeIndirect.hpp:300-303)
+/// is one expression the pin's clang contracts to an fmaf per coordinate (-ffp-contract=on), so a
+/// point near the radius is kept or dropped as the pin does. SEAM_NEARBY_DIST_FMA (on unless =0);
+/// =0 calls the unfused generic `find_nearby_points_eps`. `coordinate` is the tree's own functor
+/// (KDTreeIndirect keeps it private).
+pub fn seam_find_nearby_points<F, C, Filter>(
+    kdtree: &KDTreeIndirect<3, f32, F>,
+    coordinate: C,
+    center: &Vec3f,
+    max_distance: f32,
+    filter: Filter,
+) -> Vec<usize>
+where
+    F: Fn(usize, usize) -> f32,
+    C: Fn(usize, usize) -> f32,
+    Filter: Fn(usize) -> bool,
+{
+    if !seam_nearby_dist_fma_gate() {
+        return find_nearby_points_eps(kdtree, center, max_distance, EPSILON as f32, filter);
+    }
+    seam_find_nearby_points_fused(kdtree, coordinate, center, max_distance, filter)
+}
+
+/// The fused body of [`seam_find_nearby_points`] (KDTreeIndirect.hpp:280-314), without its gate.
+fn seam_find_nearby_points_fused<F, C, Filter>(
+    kdtree: &KDTreeIndirect<3, f32, F>,
+    coordinate: C,
+    center: &Vec3f,
+    max_distance: f32,
+    filter: Filter,
+) -> Vec<usize>
+where
+    F: Fn(usize, usize) -> f32,
+    C: Fn(usize, usize) -> f32,
+    Filter: Fn(usize) -> bool,
+{
+    // KDTreeIndirect.hpp:295
+    let max_distance_squared = max_distance * max_distance;
+    let mut result = Vec::new();
+    kdtree.visit(|idx: usize, dimension: usize| -> u32 {
+        // KDTreeIndirect.hpp:298-307
+        if filter(idx) {
+            let mut dist = 0.0_f32;
+            for i in 0..3 {
+                let d = center[i] - coordinate(idx, i);
+                dist = d.mul_add(d, dist);
+            }
+            if dist < max_distance_squared {
+                result.push(idx);
+            }
+        }
+        // KDTreeIndirect.hpp:308
+        kdtree.descent_mask_eps(center[dimension], max_distance_squared, EPSILON as f32, idx, dimension)
+    });
+    result
 }
 
 /// SeamPlacer.cpp:573-642 — `compute_global_occlusion`.
@@ -3122,13 +3218,24 @@ impl SeamPlacer {
         };
         // SeamPlacer.cpp:1060
         let points_tree = layers[layer_idx].build_points_tree();
-        let nearby_points_indices = find_nearby_points_eps(
-            &points_tree,
-            projected_position,
-            max_distance,
-            EPSILON as f32,
-            |_| true,
-        );
+        let nearby_points_indices = if seam_align_eigen_fma_gate() {
+            let layer_points = &layers[layer_idx].points;
+            seam_find_nearby_points_fused(
+                &points_tree,
+                |index: usize, dim: usize| -> f32 { layer_points[index].position[dim] },
+                projected_position,
+                max_distance,
+                |_| true,
+            )
+        } else {
+            find_nearby_points_eps(
+                &points_tree,
+                projected_position,
+                max_distance,
+                EPSILON as f32,
+                |_| true,
+            )
+        };
 
         // SeamPlacer.cpp:1062
         if nearby_points_indices.is_empty() {
@@ -3372,7 +3479,11 @@ impl SeamPlacer {
 
             // SeamPlacer.cpp:1235 — angle_3d.
             let angle_3d = |a: Vec3f, b: Vec3f| -> f32 {
-                a.normalize().dot(&b.normalize()).acos().abs()
+                if seam_align_eigen_fma_gate() {
+                    eigen_dot3f(&eigen_normalized_3f(a), &eigen_normalized_3f(b)).acos().abs()
+                } else {
+                    a.normalize().dot(&b.normalize()).acos().abs()
+                }
             };
             // SeamPlacer.cpp:1237 — angle_weight.
             let angle_weight = |angle: f32| -> f32 { 1.0 / (0.1 + compute_angle_penalty(angle)) };
@@ -3740,6 +3851,25 @@ impl SeamPlacer {
             SeamPosition::spAligned | SeamPosition::spNearest
         ) {
             gather_enforcers_blockers(&mut global_model_info, po);
+        }
+        // SEAMGMI=1 with SEAMSTAGE (diagnostic only, R949): the mesh samples, their radius and
+        // visibility as the pin twin writes them (`GMI` / `GS` lines, raw f32 bits).
+        if crate::probe_enabled("SEAMGMI") && crate::probe_enabled("SEAMSTAGE") {
+            use std::fmt::Write as _;
+            let ms = &global_model_info.mesh_samples;
+            let mut o = String::new();
+            let _ = writeln!(o, "GMI n={} r={:08x} area={}", ms.positions.len(), global_model_info.mesh_samples_radius.to_bits(), ms.total_area as f64);
+            for i in 0..ms.positions.len() {
+                let (p, n) = (ms.positions[i], ms.normals[i]);
+                let _ = writeln!(
+                    o,
+                    "GS i={} p={:08x},{:08x},{:08x} n={:08x},{:08x},{:08x} v={:08x} t={}",
+                    i, p.x.to_bits(), p.y.to_bits(), p.z.to_bits(), n.x.to_bits(), n.y.to_bits(), n.z.to_bits(),
+                    global_model_info.mesh_samples_visibility.get(i).copied().unwrap_or(f32::NAN).to_bits(),
+                    ms.triangle_indices.get(i).copied().unwrap_or(usize::MAX)
+                );
+            }
+            eprint!("{}", o);
         }
         SPPROF_OCCL.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
