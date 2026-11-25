@@ -2027,10 +2027,22 @@ impl<'a> FillFloatingConcentric<'a> {
         params: &FillParams,
         out: &mut Vec<ExtrusionEntityType>,
     ) {
+        // FFCDUMP=<file> (diagnostics only, never changes output): appends this call's inputs
+        // and the paths it makes, for a pin generator that runs the override
+        // FillFloatingConcentric.cpp:880-1000 on the same inputs.
+        let mut ffc_dump = if crate::probe_enabled("FFCDUMP") {
+            Some(ffc_dump_inputs(self, params))
+        } else {
+            None
+        };
         // FillFloatingConcentric.cpp:948
         let floating_lines = self.fill_surface_arachne_floating(params);
         // FillFloatingConcentric.cpp:950-951
         if floating_lines.is_empty() {
+            if let Some(s) = ffc_dump.as_mut() {
+                s.push_str("O 0\nEND\n");
+                ffc_dump_write(s);
+            }
             return;
         }
         // FillFloatingConcentric.cpp:952
@@ -2045,6 +2057,16 @@ impl<'a> FillFloatingConcentric<'a> {
 
         // FillFloatingConcentric.cpp:962 — tolerance = float(scale_(0.05));
         let tolerance = crate::scale(0.05) as f32;
+        if let Some(s) = ffc_dump.as_mut() {
+            s.push_str(&format!(
+                "O {} {:016x} {:016x} {:016x} {:016x}\n",
+                floating_lines.len(),
+                new_flow.width().to_bits(),
+                new_flow.height().to_bits(),
+                new_flow.spacing().to_bits(),
+                new_flow.mm3_per_mm_unchecked().to_bits()
+            ));
+        }
         // FillFloatingConcentric.cpp:963-980
         for line in &floating_lines {
             // FillFloatingConcentric.cpp:964
@@ -2065,6 +2087,37 @@ impl<'a> FillFloatingConcentric<'a> {
                     line.is_floating.iter().filter(|b| **b).count(),
                     line.is_floating.len()
                 );
+            }
+            if let Some(s) = ffc_dump.as_mut() {
+                use std::fmt::Write as _;
+                let _ = write!(s, "L {}", line.points.len());
+                for q in line.points.iter() {
+                    let _ = write!(s, " {} {}", q.x(), q.y());
+                }
+                let _ = write!(s, " {}", line.width.len());
+                for w in line.width.iter() {
+                    let _ = write!(s, " {:016x}", w.to_bits());
+                }
+                let _ = write!(s, " {}", line.is_floating.len());
+                for f in line.is_floating.iter() {
+                    let _ = write!(s, " {}", *f as u8);
+                }
+                let _ = writeln!(s);
+                let _ = writeln!(s, "R {}", paths.len());
+                for p in paths.iter() {
+                    let _ = write!(s, "Q {}", p.polyline.points.len());
+                    for q in p.polyline.points.iter() {
+                        let _ = write!(s, " {} {}", q.x(), q.y());
+                    }
+                    let _ = writeln!(
+                        s,
+                        " {:016x} {:016x} {:016x} {}",
+                        p.width.to_bits(),
+                        p.mm3_per_mm.to_bits(),
+                        p.height.to_bits(),
+                        (p.get_customize_flag() == CustomizeFlag::FloatingVerticalShell) as u8
+                    );
+                }
             }
             // FillFloatingConcentric.cpp:966-979
             if !paths.is_empty() {
@@ -2087,6 +2140,73 @@ impl<'a> FillFloatingConcentric<'a> {
         // ecc stays empty because every paths set was empty — matches C++ which
         // push_backs the freshly-new'd ecc before the loop).
         out.push(ExtrusionEntityType::Collection(Box::new(ecc)));
+        if let Some(s) = ffc_dump.as_mut() {
+            s.push_str("END\n");
+            ffc_dump_write(s);
+        }
+    }
+}
+
+/// FFCDUMP probe (diagnostics only): the inputs of one fill_surface_extrusion call.
+fn ffc_dump_inputs(f: &FillFloatingConcentric, params: &FillParams) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let fl = &params.flow;
+    let detect = f
+        .print_object_config
+        .map(|c| c.detect_floating_vertical_shell)
+        .unwrap_or(false);
+    let nozzle_cfg = f.print_config.map(|c| c.nozzle_diameter).unwrap_or(0.0);
+    let _ = writeln!(
+        s,
+        "CALL {:016x} {:016x} {:016x} {:016x} {} {:016x} {:016x} {} {} {:016x}",
+        fl.width().to_bits(),
+        fl.height().to_bits(),
+        fl.nozzle_diameter().to_bits(),
+        fl.spacing().to_bits(),
+        fl.is_bridge() as u8,
+        params.layer_height.to_bits(),
+        f.spacing.to_bits(),
+        f.loop_clipping,
+        detect as u8,
+        nozzle_cfg.to_bits()
+    );
+    let poly = |s: &mut String, pts: &[Point]| {
+        let _ = write!(s, " {}", pts.len());
+        for q in pts {
+            let _ = write!(s, " {} {}", q.x(), q.y());
+        }
+    };
+    let expolys = |s: &mut String, tag: &str, v: &ExPolygons| {
+        let _ = writeln!(s, "{} {}", tag, v.len());
+        for e in v {
+            let _ = write!(s, "X");
+            poly(s, &e.contour.points);
+            let _ = write!(s, " {}", e.holes.len());
+            for h in e.holes.iter() {
+                poly(s, &h.points);
+            }
+            let _ = writeln!(s);
+        }
+    };
+    expolys(&mut s, "E", &f.no_overlap_expolygons);
+    expolys(&mut s, "U", &f.lower_layer_unsupport_areas);
+    let _ = writeln!(s, "S {}", f.lower_sparse_polys.len());
+    for p in f.lower_sparse_polys.iter() {
+        let _ = write!(s, "G");
+        poly(&mut s, &p.points);
+        let _ = writeln!(s);
+    }
+    s
+}
+
+/// FFCDUMP probe (diagnostics only): appends one call's record to the file named by FFCDUMP.
+fn ffc_dump_write(s: &str) {
+    use std::io::Write as _;
+    if let Some(path) = std::env::var_os("FFCDUMP") {
+        if let Ok(mut fh) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = fh.write_all(s.as_bytes());
+        }
     }
 }
 

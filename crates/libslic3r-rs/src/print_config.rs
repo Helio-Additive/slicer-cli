@@ -767,6 +767,22 @@ pub struct PrintConfig {
     /// [`PrintConfig::filament_velocity_adaptation_factor_at`].
     pub filament_velocity_adaptation_factor: Vec<f64>,
 
+    /// PrintConfig.hpp:1536 `printer_extruder_id` (GCodeConfig, ConfigOptionInts, default {1},
+    /// PrintConfig.cpp:5777-5781): the 1-based extruder id of each machine variant row.
+    /// GCodeProcessor::apply_config copies `.values` into `m_result.printer_extruder_id`
+    /// (GCodeProcessor.cpp:2038), read by `get_machine_config_idx` (GCodeProcessor.cpp:6596-6610).
+    pub printer_extruder_id: Vec<i32>,
+    /// PrintConfig.hpp:1538 `printer_extruder_variant` (GCodeConfig, ConfigOptionStrings, default
+    /// {"Direct Drive Standard"}, PrintConfig.cpp:5783-5787): the variant name of each machine row.
+    /// Copied into `m_result.printer_extruder_variant` (GCodeProcessor.cpp:2039).
+    pub printer_extruder_variant: Vec<String>,
+    /// PrintConfig.hpp:1519 `extruder_type` (GCodeConfig, ConfigOptionEnumsGeneric over
+    /// `ExtruderType`, keys "Direct Drive" = 0, "Bowden" = 1 (PrintConfig.cpp:891-895), default
+    /// {etDirectDrive}, PrintConfig.cpp:5646-5655): the option's int `values`, one per extruder.
+    /// `m_result.extruder_types = cast<ExtruderType>(config.extruder_type.values)`
+    /// (GCodeProcessor.cpp:2040) is [`PrintConfig::extruder_types`].
+    pub extruder_type: Vec<i32>,
+
     // === Auto circle contour-hole compensation (PrintConfig.hpp:1746-1758, all ConfigOptionFloats,
     // one value per filament; defaults PrintConfig.cpp:6944-7010). Read by
     // AutoContourHolesCompensationParams(const PrintConfig&) (Print.hpp:371-385). ===
@@ -896,6 +912,54 @@ impl PrintConfig {
         let mut opt = crate::config::ConfigOptionFloats::new();
         if matches!(opt.deserialize(value, false), Ok(true)) {
             self.filament_velocity_adaptation_factor = opt.values;
+        }
+        true
+    }
+
+    /// `cast<ExtruderType>(config.extruder_type.values)` (GCodeProcessor.cpp:2040; Config.hpp `cast`
+    /// is a `static_cast` of each value): the typed `extruder_type` as `m_result.extruder_types`.
+    pub fn extruder_types(&self) -> Vec<crate::extruder::ExtruderType> {
+        self.extruder_type.iter().map(|v| crate::extruder::ExtruderType::from_i32(*v)).collect()
+    }
+
+    /// `ConfigOptionInts::deserialize(str)` (Config.hpp, ConfigOptionIntsTempl::deserialize) into
+    /// `printer_extruder_id` (PrintConfig.hpp:1536); a failed deserialize keeps the values, as
+    /// [`PrintConfig::set_deserialize_filament_velocity_adaptation_factor`] does.
+    pub fn set_deserialize_printer_extruder_id(&mut self, value: &str) -> bool {
+        use crate::config::ConfigOption as _;
+        let mut opt = crate::config::ConfigOptionInts::new();
+        if matches!(opt.deserialize(value, false), Ok(true)) {
+            self.printer_extruder_id = opt.values;
+        }
+        true
+    }
+
+    /// `ConfigOptionStrings::deserialize(str)` (Config.hpp:1191-1196, `unescape_strings_cstyle`) into
+    /// `printer_extruder_variant` (PrintConfig.hpp:1538). A JSON array reaches it as
+    /// ConfigBase::load_from_json builds it for a coStrings option: each item quoted with
+    /// `escape_string_cstyle`, joined with ';' (Config.cpp:922-934, 1061-1063).
+    pub fn set_deserialize_printer_extruder_variant(&mut self, value: &str) -> bool {
+        use crate::config::ConfigOption as _;
+        let mut opt = crate::config::ConfigOptionStrings::new();
+        if matches!(opt.deserialize(value, false), Ok(true)) {
+            self.printer_extruder_variant = opt.values;
+        }
+        true
+    }
+
+    /// `ConfigOptionEnumsGeneric::deserialize(str)` (Config.hpp:2185-2207) with the ExtruderType keys
+    /// map (PrintConfig.cpp:891-895) into `extruder_type` (PrintConfig.hpp:1519). A key the map does
+    /// not know fails the deserialize; ConfigBase::set_deserialize_raw then substitutes the option's
+    /// default for a coEnums option (Config.cpp:692-705: `opt->set(optdef->default_value)`, here
+    /// {etDirectDrive}). A `nil` item (not nullable) throws, and the field keeps its values.
+    pub fn set_deserialize_extruder_type(&mut self, value: &str) -> bool {
+        use crate::config::ConfigOption as _;
+        let keys_map: &'static crate::config::t_config_enum_values = &*enums::s_keys_map_ExtruderType;
+        let mut opt = crate::config::ConfigOptionEnumsGeneric::new(Some(keys_map));
+        match opt.deserialize(value, false) {
+            Ok(true) => self.extruder_type = opt.values,
+            Ok(false) => self.extruder_type = vec![crate::extruder::ExtruderType::EtDirectDrive as i32],
+            Err(_) => {}
         }
         true
     }
@@ -1492,6 +1556,11 @@ impl Default for PrintConfig {
 
             // PrintConfig.cpp:3301 `set_default_value(new ConfigOptionFloats{1.0})`.
             filament_velocity_adaptation_factor: vec![1.0],
+            // PrintConfig.cpp:5780 `ConfigOptionInts { 1 }`, 5786 `ConfigOptionStrings { "Direct Drive
+            // Standard" }`, 5655 `ConfigOptionEnumsGeneric{ ExtruderType::etDirectDrive }`.
+            printer_extruder_id: vec![1],
+            printer_extruder_variant: vec!["Direct Drive Standard".to_string()],
+            extruder_type: vec![crate::extruder::ExtruderType::EtDirectDrive as i32],
 
             // Auto circle contour-hole compensation: the pin's defaults (PrintConfig.cpp:6944-7010).
             circle_compensation_speed: vec![200.0],
@@ -2457,6 +2526,10 @@ impl PrintConfig {
             "filament_velocity_adaptation_factor" => {
                 self.set_deserialize_filament_velocity_adaptation_factor(value)
             }
+            // PrintConfig.hpp:1536, 1538, 1519 (GCodeProcessor.cpp:2038-2040).
+            "printer_extruder_id" => self.set_deserialize_printer_extruder_id(value),
+            "printer_extruder_variant" => self.set_deserialize_printer_extruder_variant(value),
+            "extruder_type" => self.set_deserialize_extruder_type(value),
             // === Layer Heights ===
             "layer_height" => {
                 if let Some(v) = parse_f64(value) {
@@ -5360,6 +5433,16 @@ impl PrintConfig {
             // PrintConfig.hpp:1745 (ConfigOptionFloats, Config.hpp:918-939).
             "filament_velocity_adaptation_factor" => {
                 self.set_deserialize_filament_velocity_adaptation_factor(value);
+            }
+            // PrintConfig.hpp:1536, 1538, 1519 (GCodeProcessor.cpp:2038-2040).
+            "printer_extruder_id" => {
+                self.set_deserialize_printer_extruder_id(value);
+            }
+            "printer_extruder_variant" => {
+                self.set_deserialize_printer_extruder_variant(value);
+            }
+            "extruder_type" => {
+                self.set_deserialize_extruder_type(value);
             }
             "layer_height" => {
                 if let Some(v) = parse_f64(value) {

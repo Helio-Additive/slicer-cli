@@ -1,0 +1,70 @@
+CASE 0
+JSON {"printer_extruder_id": ["1", "2"], "printer_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"], "extruder_type": ["Direct Drive", "Direct Drive"]}
+ID 1,2
+VAR "Direct Drive Standard";"Direct Drive High Flow"
+ET 0,0
+CASE 1
+JSON {"printer_extruder_id": ["1", "1", "2", "2"], "printer_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow", "Direct Drive Standard", "Direct Drive High Flow"], "extruder_type": ["Direct Drive", "Bowden"]}
+ID 1,1,2,2
+VAR "Direct Drive Standard";"Direct Drive High Flow";"Direct Drive Standard";"Direct Drive High Flow"
+ET 0,1
+CASE 2
+JSON {"extruder_type": ["Bowden"]}
+ID 1
+VAR "Direct Drive Standard"
+ET 1
+CASE 3
+JSON {"extruder_type": ["Direct Drive", "Foo"]}
+ID 1
+VAR "Direct Drive Standard"
+ET 0
+CASE 4
+JSON {"extruder_type": ["Bowden", "Bowden", "Bowden"]}
+ID 1
+VAR "Direct Drive Standard"
+ET 1,1,1
+CASE 5
+JSON {"printer_extruder_variant": ["a;b", "c\"d", "e\\f", "g,h"]}
+ID 1
+VAR a;b;"c\"d";"e\\f";g,h
+ET 0
+CASE 6
+JSON {"printer_extruder_variant": ["Bowden Standard"]}
+ID 1
+VAR "Bowden Standard"
+ET 0
+CASE 7
+JSON {"printer_extruder_variant": []}
+ID 1
+VAR 
+ET 0
+CASE 8
+JSON {"printer_extruder_id": []}
+ID 
+VAR "Direct Drive Standard"
+ET 0
+CASE 9
+JSON {"printer_extruder_id": ["7"]}
+ID 7
+VAR "Direct Drive Standard"
+ET 0
+CASE 10
+JSON {"printer_extruder_id": ["3", "-1", "0"]}
+ID 3,-1,0
+VAR "Direct Drive Standard"
+ET 0
+CASE 11
+JSON {"printer_extruder_id": "2", "printer_extruder_variant": "Direct Drive High Flow", "extruder_type": "Bowden"}
+ID 2
+VAR "Direct Drive High Flow"
+ET 1
+CASE 12
+JSON {"printer_extruder_id": "1,2,2", "printer_extruder_variant": "\"x y\";\"z\"", "extruder_type": "Bowden,Direct Drive"}
+ID 1,2,2
+VAR "x y";z
+ET 1,0
+CASE 13
+JSON {"layer_height": "0.2"}
+ID 1
+VAR "Direct Drive Standard"
+ET 0

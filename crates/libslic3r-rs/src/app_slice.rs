@@ -2333,6 +2333,29 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
             config.set_deserialize("filament_velocity_adaptation_factor", &items.join(","));
         }
     }
+    // PrintConfig.hpp:1536 `printer_extruder_id` (coInts) and 1519 `extruder_type` (coEnums): the
+    // whole JSON array joined with ',' (Config.cpp:1030-1080); 1538 `printer_extruder_variant`
+    // (coStrings): each item quoted with escape_string_cstyle and joined with ';' (Config.cpp:922-934,
+    // 1061-1063). GCodeProcessor::apply_config copies all three into its result
+    // (GCodeProcessor.cpp:2038-2040).
+    for key in ["printer_extruder_id", "extruder_type"] {
+        if let Some(serde_json::Value::Array(arr)) = json.get(key) {
+            let items: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+            if items.len() == arr.len() {
+                config.set_deserialize(key, &items.join(","));
+            }
+        }
+    }
+    if let Some(serde_json::Value::Array(arr)) = json.get("printer_extruder_variant") {
+        let items: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| format!("\"{}\"", crate::config::escape_string_cstyle(s)))
+            .collect();
+        if items.len() == arr.len() {
+            config.set_deserialize("printer_extruder_variant", &items.join(";"));
+        }
+    }
 }
 
 /// Parse extruder_offset from JSON and set on config.
@@ -2699,5 +2722,39 @@ mod circle_compensation_settings_tests {
         // A nil item fails the (non-nullable) deserialize: the values stay.
         assert!(pc2.apply_key_value("filament_velocity_adaptation_factor", "nil"));
         assert_eq!(pc2.filament_velocity_adaptation_factor, vec![0.5, 2.0]);
+    }
+
+    /// R954: `printer_extruder_id`, `printer_extruder_variant` and `extruder_type` (PrintConfig.hpp:1536,
+    /// 1538, 1519) of a settings file reach the typed config as the pin's ConfigBase::load_from_json
+    /// reads them over FullPrintConfig's defaults (Config.cpp:885-1080), and `extruder_types()` is
+    /// GCodeProcessor.cpp:2040's `cast<ExtruderType>`. Vectors: tests/data/machine_variant_fields
+    /// (gen.cpp runs the pin's load_from_json on each document).
+    #[test]
+    fn machine_variant_fields_are_read_as_the_pin() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/machine_variant_fields/vectors.txt");
+        let text = std::fs::read_to_string(path).expect("vectors");
+        let mut want = String::new();
+        let mut got = String::new();
+        let mut cases = 0;
+        for line in text.lines() {
+            if let Some(doc) = line.strip_prefix("JSON ") {
+                let json: serde_json::Value = serde_json::from_str(doc).expect("json");
+                let (pc, _oc, _rc) = load_bambustudio_settings(&json).unwrap();
+                let ids: Vec<String> = pc.printer_extruder_id.iter().map(|v| v.to_string()).collect();
+                let ets: Vec<String> = pc.extruder_types().iter().map(|v| (*v as i32).to_string()).collect();
+                got.push_str(&format!(
+                    "ID {}\nVAR {}\nET {}\n",
+                    ids.join(","),
+                    crate::config::escape_strings_cstyle(&pc.printer_extruder_variant),
+                    ets.join(",")
+                ));
+                cases += 1;
+            } else if line.starts_with("ID ") || line.starts_with("VAR ") || line.starts_with("ET ") {
+                want.push_str(line);
+                want.push('\n');
+            }
+        }
+        assert_eq!(cases, 14);
+        assert_eq!(got, want);
     }
 }

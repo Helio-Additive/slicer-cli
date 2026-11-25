@@ -2584,6 +2584,8 @@ pub fn extrude_loop(
             smoothed.first().map(|p| p.role)
         };
         for path in &smoothed {
+            // LOOP_PATH_TRAVEL_FIRST: `_extrude` travels before the path's tags (GCode.cpp:7611).
+            loop_path_travel_first(writer, path);
             if Some(path.role) != last_path_role {
                 writer.write_comment(&format!(
                     "FEATURE: {}",
@@ -2659,6 +2661,8 @@ pub fn extrude_loop(
         paths.first().map(|p| p.role)
     };
     for path in paths {
+        // LOOP_PATH_TRAVEL_FIRST: `_extrude` travels before the path's tags (GCode.cpp:7611).
+        loop_path_travel_first(writer, path);
         // Per-path role-change FEATURE comment (Overhang wall paths within a wall loop).
         if Some(path.role) != last_path_role {
             writer.write_comment(&format!(
@@ -3420,6 +3424,23 @@ fn travel_target_for_entity(
                 return Some(fp);
             }
         }
+        // TRAVEL_TARGET_CCW_SPLIT (faithful, R954): the pin has no entity-level travel; the
+        // travel is `_extrude`'s to the first path's first point (GCode.cpp:7611), after
+        // extrude_loop turned the copy counter-clockwise (GCode.cpp:6668-6671) and placed the seam
+        // on it (6676-6682). `split_at_vertex` takes the first PATH holding a vertex within
+        // 1.5 um (ExtrusionEntity.cpp:177-180, MultiPoint.cpp:66-81 find_point),
+        // so on a clockwise loop of short Arachne paths the stored order can pick another
+        // vertex than the counter-clockwise copy does (Benchy arachne: a vertex 29 units on).
+        // So the prediction runs the same steps as extrude_loop. =0: the loop as stored.
+        let ccw_copy;
+        let l = if travel_target_ccw_split_gate() {
+            let mut c = l.clone();
+            c.make_counter_clockwise();
+            ccw_copy = c;
+            &ccw_copy
+        } else {
+            l
+        };
         let polygon = l.as_polygon();
         if let Some(seam) = active_place_seam(l, &polygon, last_pos) {
             // R228: native travels to loop.first_point() AFTER split_at
@@ -3443,6 +3464,11 @@ fn travel_target_for_entity(
         }
     }
     get_entity_first_point(entity)
+}
+
+fn travel_target_ccw_split_gate() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| crate::faithful_gate("TRAVEL_TARGET_CCW_SPLIT"))
 }
 
 /// EMPTY_LOOP_NO_TRAVEL (faithful, R951): true for a loop that `extrude_loop` would clip to
@@ -3751,6 +3777,15 @@ pub fn extrude_path_ex(
     is_first_layer: bool,
     _print_config: Option<&PrintConfig>,
 ) {
+    // TRAVEL_EXACT_PROBE (diagnostic only): the path being extruded, for the [TRAVELX] line.
+    if crate::probe_enabled("TRAVEL_EXACT_PROBE") {
+        let s = travel_probe_path_desc(path);
+        TRAVEL_PROBE_PATHS.with(|c| {
+            let mut c = c.borrow_mut();
+            c.0 = std::mem::take(&mut c.1);
+            c.1 = s;
+        });
+    }
     extrude_path_with_arc_fitting(path, writer, config, is_first_layer, None);
     // GCode.cpp:8087: `_extrude` ends with `set_last_pos(path.last_point())`, also when its
     // last segments were shorter than EPSILON and skipped (GCode.cpp:7987-7988), so the
@@ -3761,7 +3796,39 @@ pub fn extrude_path_ex(
     }
 }
 
+/// TRAVEL_EXACT_PROBE (diagnostic only): points and fitting result of a path, short form.
+fn travel_probe_path_desc(path: &ExtrusionPath) -> String {
+    let pts = path.polyline.points();
+    let n = pts.len();
+    let show: Vec<String> = pts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i < 3 || *i + 3 >= n)
+        .map(|(i, p)| format!("{}:({},{})", i, p.x, p.y))
+        .collect();
+    let fr: Vec<String> = path
+        .polyline
+        .fitting_result
+        .iter()
+        .map(|f| match f.path_type {
+            EMovePathType::LinearMove => format!("L{}-{}", f.start_point_index, f.end_point_index),
+            _ => format!(
+                "A{}-{}[({},{})->({},{})]",
+                f.start_point_index,
+                f.end_point_index,
+                f.arc_data.start_point.x(),
+                f.arc_data.start_point.y(),
+                f.arc_data.end_point.x(),
+                f.arc_data.end_point.y()
+            ),
+        })
+        .collect();
+    format!("role={:?} n={} pts=[{}] fit=[{}] smooth={}", path.role, n, show.join(" "), fr.join(" "), path.smooth_speed)
+}
+
 thread_local! {
+    /// TRAVEL_EXACT_PROBE (diagnostic only): (previous path, current path) descriptions.
+    static TRAVEL_PROBE_PATHS: std::cell::RefCell<(String, String)> = const { std::cell::RefCell::new((String::new(), String::new())) };
     /// LAST_POS_PATH_END: the pin's `GCode::m_last_pos` as `_extrude` leaves it (the
     /// path's last point, GCode.cpp:8087), with the writer position (bits) at that time.
     static EXTRUDE_LAST_POS: std::cell::Cell<Option<(Point, u64, u64)>> = const { std::cell::Cell::new(None) };
@@ -5413,15 +5480,14 @@ pub fn extrude_support(
 /// without the travel the pin writes.
 /// TRAVEL_EXACT_LAST_POS (faithful, R949): the exact comparison at the entity's travel
 /// (`extrude_collection`); `=0` keeps the tolerance there.
-/// TRAVEL_EXACT_LAST_POS_PATH (opt-in, R949): the same at the travel between the paths
-/// of one entity (`extrude_path`); it stays off because the port's smooth-speed pieces
-/// and some entities' first points are 1 unit away from where the pin's meet exactly,
-/// which would add travels the pin does not write (Benchy classic -73 in order).
+/// TRAVEL_EXACT_LAST_POS_PATH applies the same comparison between paths of one entity.
+/// Enabled in R954 after matching the clipped path end, counter-clockwise seam split,
+/// and the pin's travel before the next path's feature and speed tags.
 fn travel_needed_to_first_point(writer: &GCodeWriter, first_pt: Point, dist_sq: f64, in_path: bool) -> bool {
     static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     static GATE_PATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let on = if in_path {
-        *GATE_PATH.get_or_init(|| crate::opt_in_gate("TRAVEL_EXACT_LAST_POS_PATH"))
+        *GATE_PATH.get_or_init(|| crate::faithful_gate("TRAVEL_EXACT_LAST_POS_PATH"))
     } else {
         *GATE.get_or_init(|| crate::faithful_gate("TRAVEL_EXACT_LAST_POS"))
     };
@@ -5430,10 +5496,75 @@ fn travel_needed_to_first_point(writer: &GCodeWriter, first_pt: Point, dist_sq: 
         // TRAVEL_EXACT_PROBE (diagnostic only): the travels the tolerance skipped.
         if last != first_pt && dist_sq <= 0.001 * 0.001 && crate::probe_enabled("TRAVEL_EXACT_PROBE") {
             eprintln!("[TRAVELX] in_path={in_path} last=({},{}) first=({},{})", last.x, last.y, first_pt.x, first_pt.y);
+            TRAVEL_PROBE_PATHS.with(|c| {
+                let c = c.borrow();
+                eprintln!("[TRAVELX]   prev {}\n[TRAVELX]   cur  {}", c.0, c.1);
+            });
         }
         last != first_pt
     } else {
         dist_sq > 0.001 * 0.001
+    }
+}
+
+/// LOOP_PATH_TRAVEL_FIRST (faithful, R954): the travel to a loop path's first point, where
+/// `_extrude` makes it. The pin's `_extrude` travels first (GCode.cpp:7611-7618, `travel_to(
+/// path.first_point(), path.role(), ...)`) and only then writes the role tag (:7880), the width
+/// tag (:7886), the speed and the extrusion acceleration; its travel acceleration is
+/// `travel_to`'s, the short-travel one for an outer or overhang wall closer than
+/// retraction_minimum_travel (GCode.cpp:8270-8283). The port's in-path travel came from
+/// `extrude_path_with_arc_fitting`, after extrude_loop had written the tags and the speed, at
+/// `set_travel_acceleration`'s value (Majora: five `M204 S250` / `G1 X.. F30000` travels between
+/// two wall paths a few units apart, written by the pin after a clipped arc). Same decision as
+/// that site (`travel_needed_to_first_point`, in-path arm), so with TRAVEL_EXACT_LAST_POS_PATH
+/// off nothing changes unless the paths are more than 0.001 mm apart. =0: no travel here.
+fn loop_path_travel_first(writer: &mut GCodeWriter, path: &ExtrusionPath) {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*GATE.get_or_init(|| crate::faithful_gate("LOOP_PATH_TRAVEL_FIRST")) {
+        return;
+    }
+    let Some(first_pt) = path.polyline.points().first().copied() else {
+        return;
+    };
+    let pos = writer.position();
+    let tx = unscale(first_pt.x());
+    let ty = unscale(first_pt.y());
+    let dist_sq = (pos.x - tx) * (pos.x - tx) + (pos.y - ty) * (pos.y - ty);
+    if travel_needed_to_first_point(writer, first_pt, dist_sq, true) {
+        // `travel_to` as the entity's travel in extrude_collection makes it: the retraction
+        // decision (GCode.cpp:8363 needs_retraction, with path.role()), the lazy lift merged
+        // into one move, the unretract (GCode.cpp:8198-8360 travel_to).
+        // The pin's m_wipe.path is empty inside a loop: the travel to the loop's first path
+        // either wiped (Wipe::wipe resets it, GCode.cpp:520) or reset it (:8254), and
+        // extrude_loop sets it only after the last path (:6830-6837); the port's writer
+        // collects the extruded points instead, so a retraction here would wipe along them.
+        writer.reset_wipe_path();
+        let travel_len = dist_sq.sqrt();
+        let did_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            let from = writer_last_pos(writer);
+            let to = crate::Point::new(crate::scale(tx), crate::scale(ty));
+            if support_travel_skips_retraction(writer, from, to, path.role) {
+                false
+            } else {
+                writer.needs_retraction_faithful(from, to, path.role, travel_len)
+            }
+        } else {
+            writer.needs_retraction_for_travel(travel_len)
+        };
+        if did_retract {
+            writer.retract();
+        }
+        writer.set_travel_acceleration_for(path.role, travel_len);
+        if crate::gcode::writer::lift_faithful_gate() {
+            let zdest = if writer.nominal_z > 0.0 { writer.nominal_z } else { writer.z() };
+            writer.travel_to_xyz(tx, ty, zdest);
+            writer.m_need_change_layer_lift_z = false;
+        } else {
+            writer.travel_to(tx, ty, None);
+        }
+        if did_retract {
+            writer.unretract();
+        }
     }
 }
 
@@ -16675,6 +16806,70 @@ mod loop_role_pin_tests {
         let gap = role_to_string(ExtrusionRole::GapFill);
         assert_eq!(tags, vec![solid, gap, solid], "{out}");
         assert_eq!(writer.last_extrusion_role(), Some(ExtrusionRole::SolidInfill));
+    }
+}
+
+#[cfg(test)]
+mod loop_path_travel_first_tests {
+    //! LOOP_PATH_TRAVEL_FIRST (R954): `_extrude` travels to a path's first point before it
+    //! writes the path's role tag (GCode.cpp:7611-7618, 7880), also between two paths of one
+    //! loop that do not meet.
+    use super::*;
+    use crate::extrusion_entity::{role_to_string, ExtrusionLoopRole, ExtrusionRole};
+    use crate::geometry::{Point, Polyline};
+    use crate::print_config::PrintObjectConfig;
+
+    fn path(role: ExtrusionRole, pts: &[(f64, f64)]) -> ExtrusionPath {
+        let mut p = ExtrusionPath::new(role);
+        p.polyline =
+            Polyline::from_points(pts.iter().map(|&(x, y)| Point::new_scale(x, y)).collect());
+        p.mm3_per_mm = 0.05;
+        p.width = 0.4;
+        p.height = 0.2;
+        p
+    }
+
+    #[test]
+    fn the_travel_between_two_loop_paths_comes_before_the_role_tag() {
+        let gate = crate::faithful_gate("LOOP_PATH_TRAVEL_FIRST");
+        if !(loop_role_pin_gate()
+            && crate::faithful_gate("ZSMOOTH_FAITHFUL")
+            && crate::faithful_gate("LOOP_SPLIT_NONPERIMETER"))
+        {
+            return;
+        }
+        // A counter-clockwise loop of two non-perimeter paths (split at the nozzle,
+        // GCode.cpp:6684) whose second path starts 0.01 mm from where the first ends.
+        let l = ExtrusionLoop::new(
+            vec![
+                path(ExtrusionRole::GapFill, &[(5.0, 5.0), (15.0, 5.0), (15.0, 15.0)]),
+                path(ExtrusionRole::SolidInfill, &[(15.0, 15.01), (5.0, 15.0), (5.0, 5.0)]),
+            ],
+            ExtrusionLoopRole::DEFAULT,
+        );
+        let mut writer = GCodeWriter::new();
+        writer.travel_to(5.0, 5.0, None);
+        let mark = writer.output_mark();
+        let mut coll = ExtrusionEntityCollection::default();
+        coll.no_sort = true;
+        coll.entities.push(ExtrusionEntityType::Loop(l));
+        extrude_collection(&coll, &mut writer, &PrintObjectConfig::default(), false).unwrap();
+        let out = writer.take_output_since(mark);
+        let lines: Vec<&str> = out.lines().collect();
+        let travel = lines
+            .iter()
+            .position(|l| l.starts_with("G1 X15 Y15.01") && !l.contains(" E"))
+            .unwrap_or_else(|| panic!("no travel to the second path: {out}"));
+        let tag = format!("; FEATURE: {}", role_to_string(ExtrusionRole::SolidInfill));
+        let tag_at = lines.iter().position(|l| *l == tag).unwrap_or_else(|| panic!("no tag: {out}"));
+        if gate {
+            assert!(travel < tag_at, "{out}");
+            // A travel of 0.01 mm does not retract.
+            assert!(!lines[..tag_at].iter().any(|l| l.contains(" E-")), "{out}");
+        } else {
+            // =0: the travel comes from extrude_path, after the tag.
+            assert!(travel > tag_at, "{out}");
+        }
     }
 }
 

@@ -5340,5 +5340,140 @@
   "functions": [
    "interpolate_width"
   ]
+ },
+ {
+  "unit": "KDTreeIndirect",
+  "round": 954,
+  "evidence": "tests/kd_tree_indirect_native_parity.rs compares the node arrays and 14,400 queries on 600 float and double trees with KDTreeIndirect.hpp. The unfused distance sum changes 29 nearest and 61 nearest-three results.",
+  "functions": [
+   "find_closest_points",
+   "find_closest_point",
+   "find_nearby_points",
+   "KDTreeIndirect::build",
+   "KDTreeIndirect::build_recursive",
+   "KDTreeIndirect::partition_input",
+   "KDTreeIndirect::descent_mask",
+   "KDTreeIndirect::visit",
+   "KDTreeIndirect::visit_recursive"
+  ]
+ },
+ {
+  "unit": "Geometry/Voronoi",
+  "round": 954,
+  "evidence": "tests/voronoi_native_parity.rs compares 600 diagrams (including 80 repair attempts) and 1,600 endpoint encodings with Geometry/Voronoi.cpp. Finite vertex coordinates match bitwise. NaN coordinates are compared by classification.",
+  "functions": [
+   "construct_voronoi",
+   "VoronoiDiagram::construct_voronoi",
+   "VoronoiDiagram::get_issue_type",
+   "VoronoiDiagram::get_state",
+   "VoronoiDiagram::is_valid",
+   "VoronoiDiagram::num_vertices",
+   "VoronoiDiagram::num_edges",
+   "VoronoiDiagram::num_cells",
+   "VoronoiDiagram::copy_to_local",
+   "VoronoiDiagram::detect_known_issues",
+   "VoronoiDiagram::detect_known_voronoi_cell_issues",
+   "VoronoiDiagram::has_finite_edge_with_non_finite_vertex",
+   "VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram",
+   "VoronoiDiagram::try_to_repair_degenerated_voronoi_diagram_by_rotation",
+   "encode_input_segment_endpoint",
+   "decode_input_segment_endpoint",
+   "segment_traits<Slic3r::Geometry::VoronoiDiagram::Segment>::get"
+  ]
+ },
+ {
+  "unit": "Line",
+  "round": 954,
+  "evidence": "tests/eigen_coeff_dot3_native_parity.rs compares line transforms with the pinned Eigen build on randomized coefficients.",
+  "functions": [
+   "transform"
+  ]
+ },
+ {
+  "unit": "BoundingBox",
+  "round": 954,
+  "evidence": "tests/eigen_coeff_dot3_native_parity.rs compares transformed bounding boxes with the pinned Eigen build on randomized coefficients.",
+  "functions": [
+   "BoundingBoxf3::transformed"
+  ]
+ },
+ {
+  "unit": "Fill/FillFloatingConcentric",
+  "round": 954,
+  "evidence": "tests/ffc_fill_surface_extrusion_native_parity.rs reproduces 969 paths from 54 H2D fill calls against the compiled FillFloatingConcentric.cpp override, including points, width, mm3/mm, height and the floating-shell flag.",
+  "functions": [
+   "fill_surface_extrusion",
+   "fill_surface_arachne_floating",
+   "_fill_surface_single",
+   "resplit_order_loops",
+   "floating_thick_polyline_to_extrusion_paths",
+   "detect_floating_line",
+   "merge_lines",
+   "start_none_floating_idx",
+   "get_none_floating_prefix",
+   "get_best_loop_start",
+   "get_loop_start_candidates",
+   "smooth_floating_line",
+   "toplogic_sort_extruisons",
+   "floating_thicklines"
+  ]
+ },
+ {
+  "unit": "SLA/bicubic",
+  "round": 954,
+  "evidence": "tests/sla_bicubic_native_parity.rs compares the six coefficient sets, 1,800 kernel evaluations, 1,800 interpolations and 40 clamp calls against the kernel portion of SLA/bicubic.h with its invalid typedef corrected. The two grid interpolation functions are excluded.",
+  "functions": [
+   "clamp",
+   "CubicKernel::kernel",
+   "CubicKernel::interpolate",
+   "LinearKernel::a00",
+   "LinearKernel::a01",
+   "LinearKernel::a02",
+   "LinearKernel::a03",
+   "LinearKernel::a10",
+   "LinearKernel::a11",
+   "LinearKernel::a12",
+   "LinearKernel::a13",
+   "LinearKernel::a20",
+   "LinearKernel::a21",
+   "LinearKernel::a22",
+   "LinearKernel::a23",
+   "LinearKernel::a30",
+   "LinearKernel::a31",
+   "LinearKernel::a32",
+   "LinearKernel::a33",
+   "CubicCatmulRomKernel::a00",
+   "CubicCatmulRomKernel::a01",
+   "CubicCatmulRomKernel::a02",
+   "CubicCatmulRomKernel::a03",
+   "CubicCatmulRomKernel::a10",
+   "CubicCatmulRomKernel::a11",
+   "CubicCatmulRomKernel::a12",
+   "CubicCatmulRomKernel::a13",
+   "CubicCatmulRomKernel::a20",
+   "CubicCatmulRomKernel::a21",
+   "CubicCatmulRomKernel::a22",
+   "CubicCatmulRomKernel::a23",
+   "CubicCatmulRomKernel::a30",
+   "CubicCatmulRomKernel::a31",
+   "CubicCatmulRomKernel::a32",
+   "CubicCatmulRomKernel::a33",
+   "CubicBSplineKernel::a00",
+   "CubicBSplineKernel::a01",
+   "CubicBSplineKernel::a02",
+   "CubicBSplineKernel::a03",
+   "CubicBSplineKernel::a10",
+   "CubicBSplineKernel::a11",
+   "CubicBSplineKernel::a12",
+   "CubicBSplineKernel::a13",
+   "CubicBSplineKernel::a20",
+   "CubicBSplineKernel::a21",
+   "CubicBSplineKernel::a22",
+   "CubicBSplineKernel::a23",
+   "CubicBSplineKernel::a30",
+   "CubicBSplineKernel::a31",
+   "CubicBSplineKernel::a32",
+   "CubicBSplineKernel::a33"
+  ]
  }
 ]

@@ -44,6 +44,57 @@ use crate::utils::next_highest_power_of_2;
 /// KDTreeIndirect.hpp:29-31  enum : size_t { npos = size_t(-1) }
 pub const NPOS: usize = usize::MAX;
 
+/// KD_TREE_DIST_FMA (R954, faithful): the visitors' `dist += d * d` (KDTreeIndirect.hpp:226-227,
+/// 301-302) is one compound assignment, which the pin's clang (`-ffp-contract=on`) contracts to
+/// `fma(d, d, dist)` for a floating `CoordType` (the `double` trees of ShortestPath.cpp:105/516, the
+/// `float` trees of SeamPlacer.cpp:279/612 and SeamPlacer.hpp:115); `=0` sums the rounded square,
+/// the earlier arm. Checked against the pin by tests/kd_tree_indirect_native_parity.rs.
+#[inline]
+pub fn kd_tree_dist_fma() -> bool {
+    crate::faithful_gate("KD_TREE_DIST_FMA")
+}
+
+/// The squared-distance step of the KD tree visitors, `dist += d * d` (KDTreeIndirect.hpp:226-227,
+/// 301-302), as the pin's build evaluates it for each `CoordType`: fused for `float` / `double`
+/// when `fused` (see [`kd_tree_dist_fma`]), exact integer arithmetic otherwise.
+pub trait KdDistanceStep: Copy {
+    fn kd_add_square(dist: Self, d: Self, fused: bool) -> Self;
+}
+
+impl KdDistanceStep for f64 {
+    #[inline]
+    fn kd_add_square(dist: f64, d: f64, fused: bool) -> f64 {
+        if fused {
+            d.mul_add(d, dist)
+        } else {
+            dist + d * d
+        }
+    }
+}
+
+impl KdDistanceStep for f32 {
+    #[inline]
+    fn kd_add_square(dist: f32, d: f32, fused: bool) -> f32 {
+        if fused {
+            d.mul_add(d, dist)
+        } else {
+            dist + d * d
+        }
+    }
+}
+
+macro_rules! kd_distance_step_int {
+    ($($t:ty),*) => {$(
+        impl KdDistanceStep for $t {
+            #[inline]
+            fn kd_add_square(dist: $t, d: $t, _fused: bool) -> $t {
+                dist + d * d
+            }
+        }
+    )*};
+}
+kd_distance_step_int!(i32, i64);
+
 /// Visitor return mask controlling tree traversal
 /// KDTreeIndirect.hpp:14-18
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -433,6 +484,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
+        + KdDistanceStep
         + From<f64>,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
@@ -449,13 +501,15 @@ where
     let mut results = [(NPOS, T::from(f64::MAX)); K];
 
     // KDTreeIndirect.hpp:221-244
+    // KDTreeIndirect.hpp:226-227 / 301-302 (KD_TREE_DIST_FMA)
+    let fused = kd_tree_dist_fma();
     let visitor = |idx: usize, dimension: usize| -> u32 {
         if filter(idx) {
             // KDTreeIndirect.hpp:224-228
             let mut dist = T::default();
             for i in 0..N {
                 let d = point[i] - (kdtree.coordinate)(idx, i);
-                dist += d * d;
+                dist = T::kd_add_square(dist, d, fused);
             }
 
             // auto res = std::make_pair(idx, dist);
@@ -522,7 +576,8 @@ where
         + std::ops::AddAssign
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
-        + std::ops::Mul<Output = T>,
+        + std::ops::Mul<Output = T>
+        + KdDistanceStep,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
     Filter: Fn(usize) -> bool,
@@ -531,13 +586,15 @@ where
     let mut results = [(NPOS, max_sentinel); K];
 
     // KDTreeIndirect.hpp:221-244
+    // KDTreeIndirect.hpp:226-227 / 301-302 (KD_TREE_DIST_FMA)
+    let fused = kd_tree_dist_fma();
     let visitor = |idx: usize, dimension: usize| -> u32 {
         if filter(idx) {
             // KDTreeIndirect.hpp:224-228
             let mut dist = T::default();
             for i in 0..N {
                 let d = point[i] - (kdtree.coordinate)(idx, i);
-                dist += d * d;
+                dist = T::kd_add_square(dist, d, fused);
             }
 
             // KDTreeIndirect.hpp:230
@@ -590,7 +647,8 @@ where
         + std::ops::AddAssign
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
-        + std::ops::Mul<Output = T>,
+        + std::ops::Mul<Output = T>
+        + KdDistanceStep,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
     Filter: Fn(usize) -> bool,
@@ -618,7 +676,8 @@ where
         + std::ops::AddAssign
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
-        + std::ops::Mul<Output = T>,
+        + std::ops::Mul<Output = T>
+        + KdDistanceStep,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
     Filter: Fn(usize) -> bool,
@@ -627,13 +686,15 @@ where
     let max_distance_squared = max_distance * max_distance;
     let mut result = Vec::new();
 
+    // KDTreeIndirect.hpp:226-227 / 301-302 (KD_TREE_DIST_FMA)
+    let fused = kd_tree_dist_fma();
     let visitor = |idx: usize, dimension: usize| -> u32 {
         // KDTreeIndirect.hpp:297-307
         if filter(idx) {
             let mut dist = T::default();
             for i in 0..N {
                 let d = center[i] - (kdtree.coordinate)(idx, i);
-                dist += d * d;
+                dist = T::kd_add_square(dist, d, fused);
             }
             // KDTreeIndirect.hpp:304-306
             if dist < max_distance_squared {
@@ -662,6 +723,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
+        + KdDistanceStep
         + From<f64>,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
@@ -684,6 +746,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
+        + KdDistanceStep
         + From<f64>,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
@@ -706,6 +769,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
+        + KdDistanceStep
         + From<f64>,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
@@ -729,6 +793,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
+        + KdDistanceStep
         + From<f64>,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,
@@ -738,6 +803,8 @@ where
     let max_distance_squared = max_distance * max_distance;
     let mut result = Vec::new();
 
+    // KDTreeIndirect.hpp:226-227 / 301-302 (KD_TREE_DIST_FMA)
+    let fused = kd_tree_dist_fma();
     let visitor = |idx: usize, dimension: usize| -> u32 {
         // KDTreeIndirect.hpp:297-307  unsigned int operator()(size_t idx, size_t dimension)
         if filter(idx) {
@@ -745,7 +812,7 @@ where
             let mut dist = T::default();
             for i in 0..N {
                 let d = center[i] - (kdtree.coordinate)(idx, i);
-                dist += d * d;
+                dist = T::kd_add_square(dist, d, fused);
             }
             // KDTreeIndirect.hpp:304-306
             if dist < max_distance_squared {
@@ -776,6 +843,7 @@ where
         + std::ops::Sub<Output = T>
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
+        + KdDistanceStep
         + From<f64>,
     F: Fn(usize, usize) -> T,
     P: std::ops::Index<usize, Output = T>,

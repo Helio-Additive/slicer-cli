@@ -6398,6 +6398,20 @@ pub(crate) mod nlohmann_json {
         let mut p = Parser::new(data);
         p.sax_parse_internal()
     }
+
+    /// `json::parse(std::string)` (json.hpp `basic_json::parse(InputType&&, cb = nullptr,
+    /// allow_exceptions = true, ignore_comments = false)`: `parser(...).parse(true, result)`): the strict
+    /// flag on, so the input must be read to its end after the first value (parser.hpp:85-99: `if
+    /// (strict && (get_token() != token_type::end_of_input))` a parse_error 101 "value").
+    pub(crate) fn parse_strict(data: &[u8]) -> Result<serde_json::Value, Error> {
+        let mut p = Parser::new(data);
+        let result = p.sax_parse_internal()?;
+        // parser.hpp:92-99
+        if p.get_token() != TokenType::EndOfInput {
+            return Err(p.parse_error(TokenType::EndOfInput, "value"));
+        }
+        Ok(result)
+    }
 }
 
 /// `nlohmann::json::type_name()`.
@@ -6420,6 +6434,16 @@ pub(crate) fn nlohmann_json_parse(data: &[u8]) -> Result<serde_json::Value, (boo
         Ok(v) => Ok(v),
         Err(nlohmann_json::Error::Parse(what)) => Err((true, what)),
         Err(nlohmann_json::Error::Other(what)) => Err((false, what)),
+    }
+}
+
+/// `nlohmann::json::parse(std::string)` of nlohmann::json 3.10.4 (strict: nothing may follow the
+/// value), with the lexer's correctly rounded `strtod` for floats: `Err(what)` where it throws.
+/// Desensitize.cpp's json_log and the assembly JSON readers call it.
+pub(crate) fn nlohmann_json_parse_strict(data: &[u8]) -> Result<serde_json::Value, String> {
+    match nlohmann_json::parse_strict(data) {
+        Ok(v) => Ok(v),
+        Err(nlohmann_json::Error::Parse(what)) | Err(nlohmann_json::Error::Other(what)) => Err(what),
     }
 }
 

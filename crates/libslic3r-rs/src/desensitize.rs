@@ -380,12 +380,20 @@ pub fn mask_by_key(key: &str, value: &str) -> Option<String> {
 
 /// `nlohmann::json::parse(string_val)`; `None` where it throws.
 ///
-/// FIDELITY-NOTE: read by `serde_json`. Known differences from nlohmann's parser: serde_json
+/// Read by the port of nlohmann's parser (config.rs, gate NLOHMANN_PARSE_EXACT). With the gate at
+/// 0, FIDELITY-NOTE: read by `serde_json`. Known differences from nlohmann's parser: serde_json
 /// refuses a document nested deeper than 128 levels, and without its `float_roundtrip` feature
 /// (not enabled in this workspace) a number with more than 15 significant digits, or with a
 /// decimal exponent beyond 22, can come out one unit in the last place away from the correctly
 /// rounded double nlohmann's `strtod` gives.
 pub fn nlohmann_parse(text: &str) -> Option<Value> {
+    // R954 NLOHMANN_PARSE_EXACT (faithful): the port of nlohmann 3.10.4's lexer and parser in
+    // config.rs, strict as `json::parse(std::string)` is (parser.hpp:85-99), whose floats are the
+    // correctly rounded `strtod` of the pin (lexer.hpp scan_number); serde_json below reads a
+    // 17-digit double one ulp off.
+    if crate::faithful_gate("NLOHMANN_PARSE_EXACT") {
+        return crate::config::nlohmann_json_parse_strict(text.as_bytes()).ok();
+    }
     // nlohmann skips a byte order mark, and reads the token `-0` as the integer 0.
     let bytes = text.as_bytes();
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);

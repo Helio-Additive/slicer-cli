@@ -1467,6 +1467,54 @@ impl PolylineSplitAt for Polyline {
     }
 }
 
+/// The `Polyline::append` overloads under their C++ name, one impl per C++ parameter type. The
+/// inherent `Polyline::append(&Polyline)` (Polyline.cpp:381-388) shadows these in method-call syntax;
+/// call them as `PolylineAppend::append(&mut polyline, src)`.
+pub trait PolylineAppend<A> {
+    fn append(&mut self, src: A);
+}
+
+impl PolylineAppend<Point> for Polyline {
+    // Polyline.hpp:59-65 `void append(const Point &point)`
+    fn append(&mut self, src: Point) {
+        self.append_point(src)
+    }
+}
+
+impl<'a> PolylineAppend<&'a [Point]> for Polyline {
+    // Polyline.hpp:82-88 `void append(const Points &src)`
+    fn append(&mut self, src: &'a [Point]) {
+        self.append_points(src)
+    }
+}
+
+impl<'a> PolylineAppend<std::slice::Iter<'a, Point>> for Polyline {
+    // Polyline.hpp:89-96 `void append(const Points::const_iterator &begin, const Points::const_iterator &end)`
+    fn append(&mut self, src: std::slice::Iter<'a, Point>) {
+        self.append_iter(src.as_slice())
+    }
+}
+
+impl PolylineAppend<Vec<Point>> for Polyline {
+    // Polyline.hpp:97-101 `void append(Points &&src)`: MultiPoint::append(Points&&) (MultiPoint.hpp:85-93,
+    // no check of a repeated first point), then append_fitting_result_after_append_points().
+    fn append(&mut self, src: Vec<Point>) {
+        if self.points.is_empty() {
+            self.points = src;
+        } else {
+            self.points.extend_from_slice(&src);
+        }
+        self.append_fitting_result_after_append_points();
+    }
+}
+
+impl PolylineAppend<Polyline> for Polyline {
+    // Polyline.cpp:390-404 `void Polyline::append(Polyline &&src)`
+    fn append(&mut self, src: Polyline) {
+        self.append_move(src)
+    }
+}
+
 /// Polyline.cpp:547-555 `bool remove_same_neighbor(Polylines &polylines)`
 pub fn remove_same_neighbor_polylines(polylines: &mut Polylines) -> bool {
     // Polyline.cpp:549
