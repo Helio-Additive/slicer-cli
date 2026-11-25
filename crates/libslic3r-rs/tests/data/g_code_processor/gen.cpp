@@ -1101,11 +1101,74 @@ static void color_tags(const char *output_path)
     }
 }
 
+// BambuStudio 56a57d0 GCodeProcessor.cpp 317-325, 513-542, 2858-2866, 5794-5811.
+// Compare the planner cache, ordinary stops, hardware pauses and exported metadata.
+static void pause_times()
+{
+    PrintConfig cfg;
+    for (const auto &[key, value] : limits("marlin2")) {
+        cfg.set_deserialize_strict(key, value);
+        std::printf("%s %s\n", key.c_str(), hex(value).c_str());
+    }
+    const std::string a = "G1 X120 F60\n";
+    const std::string b = "G1 X240 F60\n";
+    const std::string c = "G1 X360 F60\n";
+    const std::string layer = "; CHANGE_LAYER\n";
+    const std::string pause = "M400 U1\n";
+    const std::vector<std::string> programs = {
+        "", pause, a + pause, layer + a + pause + b + c,
+        pause + layer + a + b + c + layer + pause,
+        a + "M400 U0.4999\nM400 U0.5\nM400 U1.4999\nM400 U1.5\nM400 U-1\n" + b + c,
+        a + pause + pause + b + c + pause,
+        a + "M400 U1 S4 P500\n" + b + "M400 P2000\n" + c,
+        a + "; PAUSE_PRINTING\n" + b + layer + pause + c,
+        a + "G1 X120\n" + pause + "G1 X120\n" + b + c,
+        a + b + "G1 X240\nG1 X240\n" + pause,
+        "G1 X0\nG1 X0\n" + pause + a + b,
+        a + "G1 X120\nG1 X120\n" + pause + b + c,
+        a + "; COLOR_CHANGE\n" + b + c,
+    };
+    GCodeProcessor p;
+    std::puts("begin");
+    for (int stealth : {0, 1}) {
+        for (const auto &program : programs) {
+            p.reset();
+            p.apply_config(cfg);
+            p.enable_stealth_time_estimator(stealth);
+            p.initialize("pause.gcode");
+            p.process_buffer(program);
+            auto emit = [&](int finalized) {
+                std::printf("%d %d %s", stealth, finalized, hex(program).c_str());
+                for (const auto &m : p.m_time_processor.machines) {
+                    std::printf(" %s %zu", f32(m.time).c_str(), m.g1_times_cache.size());
+                    for (const auto &g : m.g1_times_cache)
+                        std::printf(" %u %s", g.id, f32(g.elapsed_time).c_str());
+                    std::printf(" %zu %zu", m.stop_times.size(), m.pause_times.size());
+                    for (const auto &t : m.pause_times)
+                        std::printf(" %u %s %u", t.g1_line_id, f32(t.elapsed_time).c_str(), t.layer_id);
+                }
+                const auto &pauses = p.result().pause_printing;
+                std::printf(" %zu", pauses.size());
+                for (const auto &info : pauses)
+                    std::printf(" %d %d %u", info.percent, info.remaining_time, info.layer_id);
+                std::putchar('\n');
+            };
+            emit(0);
+            p.finalize(false);
+            emit(1);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--pause-times") {
+        pause_times();
+        return 0;
     }
     if (std::string(argv[1]) == "--color-tags") {
         if (argc != 3) return 1;

@@ -5537,5 +5537,13 @@
   "functions": [
    "GCodeProcessor::process_custom_gcode_time"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 977,
+  "evidence": "hardware_pause_times_match_native extends the R915 dwell coverage with 56 snapshots on 14 programs, including hardware pause U rounding, S/P dwell, repeated pauses, skipped motion IDs and both estimation modes. The full Benchy replay matches the native elapsed times and the exported layer-300 pause.",
+  "functions": [
+   "GCodeProcessor::process_M400"
+  ]
  }
 ]

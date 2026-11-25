@@ -506,3 +506,48 @@ fn color_tags_match_native() {
         assert_eq!(actual, fields.collect::<Vec<_>>(), "color case {case}");
     }
 }
+
+/// GCodeProcessor.cpp 513-542, 2858-2866, 5794-5811. A hardware pause
+/// records the current motion and layer, then resolves its time and percentage.
+#[test]
+fn hardware_pause_times_match_native() {
+    let vectors = include_str!("data/g_code_processor/pause_times.txt");
+    let (settings, rows) = vectors.split_once("begin\n").unwrap();
+    let profile: Vec<_> = settings.lines().map(|line| {
+        let (key, value) = line.split_once(' ').unwrap();
+        (key.to_owned(), unhex(value))
+    }).collect();
+    let config = rust_config(&profile);
+    let mut processor = GCodeProcessor::new();
+    assert_eq!(rows.lines().count(), 56);
+    for (case, row) in rows.lines().enumerate() {
+        let mut fields = row.split_whitespace();
+        let stealth = fields.next().unwrap() == "1";
+        let finalized = fields.next().unwrap() == "1";
+        let input = unhex(fields.next().unwrap());
+        processor.reset();
+        processor.apply_config(&config);
+        processor.enable_stealth_time_estimator(stealth);
+        processor.initialize("pause.gcode");
+        processor.process_buffer(&input);
+        if finalized { processor.finalize(false); }
+
+        let mut actual = Vec::new();
+        for m in &processor.time_processor().machines {
+            actual.extend([f32h(m.time), m.g1_times_cache.len().to_string()]);
+            for g in &m.g1_times_cache {
+                actual.extend([g.id.to_string(), f32h(g.elapsed_time)]);
+            }
+            actual.extend([m.stop_times.len().to_string(), m.pause_times.len().to_string()]);
+            for t in &m.pause_times {
+                actual.extend([t.g1_line_id.to_string(), f32h(t.elapsed_time), t.layer_id.to_string()]);
+            }
+        }
+        let pauses = &processor.result().pause_printing;
+        actual.push(pauses.len().to_string());
+        for p in pauses {
+            actual.extend([p.percent.to_string(), p.remaining_time.to_string(), p.layer_id.to_string()]);
+        }
+        assert_eq!(actual, fields.collect::<Vec<_>>(), "hardware pause case {case}, input={input:?}");
+    }
+}

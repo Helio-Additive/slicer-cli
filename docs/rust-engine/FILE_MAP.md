@@ -45,8 +45,8 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 7488 (83%) |
-| estimate: faithful | 6550 (87% of matched) |
-| estimate: partial | 619 (8% of matched) |
+| estimate: faithful | 6551 (87% of matched) |
+| estimate: partial | 618 (8% of matched) |
 | estimate: divergent | 287 (4% of matched) |
 | estimate: stub | 32 (0% of matched) |
 | missing in the paired Rust file | 1542 |
@@ -61,7 +61,7 @@ By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 5765 | 5043 | 489 | 213 | 20 | 1086 |
+| 1 | 180 | 180 | 6851 | 5765 | 5044 | 488 | 213 | 20 | 1086 |
 | 2 | 15 | 15 | 392 | 356 | 305 | 37 | 13 | 1 | 36 |
 | 3 | 92 | 89 | 1374 | 1119 | 982 | 74 | 57 | 6 | 255 |
 | 4 | 23 | 23 | 435 | 248 | 220 | 19 | 4 | 5 | 187 |
@@ -77,7 +77,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `utils` | `utils.rs` | 66 | 30 | 9 | 12 | 3 | 12 | 6 |
 | 1 | `PrintObject` | `print_object.rs` | 82 | 41 | 8 | 9 | 0 | 24 | 11 |
 | 1 | `Point` | `geometry/point.rs` | 103 | 53 | 10 | 13 | 0 | 27 | 0 |
-| 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 171 | 24 | 4 | 0 | 14 | 8 |
+| 1 | `GCode/GCodeProcessor` | `gcode/g_code_processor.rs` | 213 | 172 | 23 | 4 | 0 | 14 | 8 |
 | 1 | `Model` | `model.rs` | 374 | 272 | 29 | 11 | 1 | 61 | 0 |
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 183 | 20 | 7 | 2 | 6 | 0 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 119 | 10 | 9 | 0 | 3 | 0 |
@@ -3879,31 +3879,31 @@ Tier 1. C++ functions 205 (plus 16 constructors, 3 destructors, 4 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `local_tag_name` :204 and `local_tag_name` :2415 (33%, 1.12x)
-- partial: `bbs_get_attribute_value_charptr` :490 and `bbs_get_attribute_value_charptr` :1037 (50%, 0.52x)
-- partial: `bbs_has_attribute_value_int` :517 and `bbs_has_attribute_value_int` :1086 (60%, 0.43x)
-- partial: `parse_int_list` :557 and `parse_int_list` :1213 (55%, 0.8x)
-- partial: `bbs_encoded_has_dotdot_component` :714 and `bbs_encoded_has_dotdot_component` :1436 (33%, 1.13x)
-- partial: `_BBS_3MF_Importer::ObjectImporter::_stop_object_xml_parser` :1318 and `ObjectImporter::_stop_object_xml_parser` :3085 (50%, 0.46x)
-- partial: `_BBS_3MF_Importer::ObjectImporter::object_parse_error_message` :1329 and `ObjectImporter::object_parse_error_message` :3096 (33%, 1.39x)
-- partial: `_BBS_3MF_Importer::parse_error_message` :1542 and `_BBS_3MF_Importer::parse_error_message` :4152 (33%, 1.39x)
-- partial: `_BBS_3MF_Importer::get_thumbnail` :1823 and `_BBS_3MF_Importer::get_thumbnail` :3895 (54%, 0.93x)
-- partial: `mz_zip_read_istream` :1862 and `mz_zip_read_istream` :8001 (33%, 1.75x)
-- partial: `_BBS_3MF_Importer::_stop_xml_parser` :2059 and `_BBS_3MF_Importer::_stop_xml_parser` :4141 (50%, 0.46x)
-- partial: `_BBS_3MF_Importer::_load_model_from_file` :2070 and `_BBS_3MF_Importer::_load_model_from_file` :4168 (82%, 0.99x)
-- partial: `_BBS_3MF_Importer::_extract_xml_from_archive` :2905 and `_BBS_3MF_Importer::_extract_xml_from_archive` :4953 (39%, 1.41x)
-- partial: `_BBS_3MF_Importer::_extract_model_from_archive` :2950 and `_BBS_3MF_Importer::_extract_model_from_archive` :5008 (42%, 0.63x)
-- divergent: `_BBS_3MF_Importer::_extract_embossed_svg_shape_file` :3693 and `_BBS_3MF_Importer::_extract_embossed_svg_shape_file` :5618 (30%, 0.33x)
-- partial: `_BBS_3MF_Importer::_handle_start_config_metadata` :4913 and `_BBS_3MF_Importer::_handle_start_config_metadata` :6799 (82%, 1.12x)
-- partial: `_BBS_3MF_Importer::_handle_start_text_info_item` :5434 and `_BBS_3MF_Importer::_handle_start_text_info_item` :7277 (87%, 0.94x)
-- partial: `_BBS_3MF_Importer::_generate_volumes_new` :5619 and `_BBS_3MF_Importer::_generate_volumes_new` :7464 (85%, 1.01x)
-- partial: `_BBS_3MF_Importer::_generate_volumes` :5876 and `_BBS_3MF_Importer::_generate_volumes` :7726 (87%, 0.97x)
-- partial: `_BBS_3MF_Importer::ObjectImporter::_extract_object_from_archive` :6508 and `ObjectImporter::_extract_object_from_archive` :3546 (41%, 0.57x)
-- partial: `_BBS_3MF_Exporter::_add_file_to_archive` :7316 and `_BBS_3MF_Exporter::_add_file_to_archive` :8952 (46%, 0.53x)
-- partial: `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :7338 and `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :8970 (43%, 0.96x)
-- partial: `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :7446 and `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :9091 (53%, 0.86x)
-- divergent: `reset_stream` :7537 and `reset_stream` :8245 (25%, 0.28x)
-- divergent: `_BBS_3MF_Exporter::_add_model_file_to_archive` :7553 and `_BBS_3MF_Exporter::_add_model_file_to_archive` :9202 (15%, 0.12x)
+- partial: `local_tag_name` :204 and `local_tag_name` :2406 (33%, 1.12x)
+- partial: `bbs_get_attribute_value_charptr` :490 and `bbs_get_attribute_value_charptr` :1028 (50%, 0.52x)
+- partial: `bbs_has_attribute_value_int` :517 and `bbs_has_attribute_value_int` :1077 (60%, 0.43x)
+- partial: `parse_int_list` :557 and `parse_int_list` :1204 (55%, 0.8x)
+- partial: `bbs_encoded_has_dotdot_component` :714 and `bbs_encoded_has_dotdot_component` :1427 (33%, 1.13x)
+- partial: `_BBS_3MF_Importer::ObjectImporter::_stop_object_xml_parser` :1318 and `ObjectImporter::_stop_object_xml_parser` :3076 (50%, 0.46x)
+- partial: `_BBS_3MF_Importer::ObjectImporter::object_parse_error_message` :1329 and `ObjectImporter::object_parse_error_message` :3087 (33%, 1.39x)
+- partial: `_BBS_3MF_Importer::parse_error_message` :1542 and `_BBS_3MF_Importer::parse_error_message` :4143 (33%, 1.39x)
+- partial: `_BBS_3MF_Importer::get_thumbnail` :1823 and `_BBS_3MF_Importer::get_thumbnail` :3886 (54%, 0.93x)
+- partial: `mz_zip_read_istream` :1862 and `mz_zip_read_istream` :7992 (33%, 1.75x)
+- partial: `_BBS_3MF_Importer::_stop_xml_parser` :2059 and `_BBS_3MF_Importer::_stop_xml_parser` :4132 (50%, 0.46x)
+- partial: `_BBS_3MF_Importer::_load_model_from_file` :2070 and `_BBS_3MF_Importer::_load_model_from_file` :4159 (82%, 0.99x)
+- partial: `_BBS_3MF_Importer::_extract_xml_from_archive` :2905 and `_BBS_3MF_Importer::_extract_xml_from_archive` :4944 (39%, 1.41x)
+- partial: `_BBS_3MF_Importer::_extract_model_from_archive` :2950 and `_BBS_3MF_Importer::_extract_model_from_archive` :4999 (42%, 0.63x)
+- divergent: `_BBS_3MF_Importer::_extract_embossed_svg_shape_file` :3693 and `_BBS_3MF_Importer::_extract_embossed_svg_shape_file` :5609 (30%, 0.33x)
+- partial: `_BBS_3MF_Importer::_handle_start_config_metadata` :4913 and `_BBS_3MF_Importer::_handle_start_config_metadata` :6790 (82%, 1.12x)
+- partial: `_BBS_3MF_Importer::_handle_start_text_info_item` :5434 and `_BBS_3MF_Importer::_handle_start_text_info_item` :7268 (87%, 0.94x)
+- partial: `_BBS_3MF_Importer::_generate_volumes_new` :5619 and `_BBS_3MF_Importer::_generate_volumes_new` :7455 (85%, 1.01x)
+- partial: `_BBS_3MF_Importer::_generate_volumes` :5876 and `_BBS_3MF_Importer::_generate_volumes` :7717 (87%, 0.97x)
+- partial: `_BBS_3MF_Importer::ObjectImporter::_extract_object_from_archive` :6508 and `ObjectImporter::_extract_object_from_archive` :3537 (41%, 0.57x)
+- partial: `_BBS_3MF_Exporter::_add_file_to_archive` :7316 and `_BBS_3MF_Exporter::_add_file_to_archive` :8943 (46%, 0.53x)
+- partial: `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :7338 and `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :8961 (43%, 0.96x)
+- partial: `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :7446 and `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :9082 (53%, 0.86x)
+- divergent: `reset_stream` :7537 and `reset_stream` :8236 (25%, 0.28x)
+- divergent: `_BBS_3MF_Exporter::_add_model_file_to_archive` :7553 and `_BBS_3MF_Exporter::_add_model_file_to_archive` :9193 (15%, 0.12x)
 
 Missing in the Rust file:
 
@@ -3912,144 +3912,144 @@ Missing in the Rust file:
 Rust only:
 
 - `PackingTemporaryData::new` :84
-- `FilamentInfoExtra::default` :148
-- `PlateData::with_plate_id` :253
-- `PlateData::new` :270
-- `PlateData::default` :329
-- `PlateData::fmt` :335
-- `SaveStrategy::contains` :381 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
-- `SaveStrategy::bitor` :389
-- `LoadStrategy::contains` :418 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
-- `LoadStrategy::bitor` :426
-- `StoreParams::new` :525
-- `StoreParams::default` :549
-- `ConfigSubstitutionContext::new` :568
-- `ConfigSubstitutionContext::default` :576
-- `hex_wrap` :1000
-- `VersionError::new` :1012
-- `VersionError::fmt` :1020
-- `atof` :1147
-- `atoi` :1153
-- `lexically_normal` :1388
-- `Bbs3mfBase::new` :1575
-- `Bbs3mfBase::errors` :1590
-- `MzZipArchive::from_reader` :1652
-- `MzZipArchive::m_total_files` :1672
-- `open_zip_reader` :1678 — C++ has it in `miniz_extension`
-- `close_zip_reader` :1684 — C++ has it in `miniz_extension`
-- `mz_zip_reader_get_num_files` :1689
-- `mz_zip_reader_file_stat` :1694
-- `mz_zip_reader_locate_file` :1699
-- `mz_zip_reader_get_extra` :1709
-- `mz_zip_reader_extract_to_mem` :1714
-- `mz_zip_reader_extract_file_to_mem` :1722
-- `mz_zip_reader_extract_to_file` :1731
-- `open_zip_writer` :1756 — C++ has it in `miniz_extension`
-- `mz_zip_writer_init_heap` :1763
-- `mz_zip_writer_add_mem` :1768
-- `mz_zip_writer_add_from_heap` :1774
-- `mz_zip_writer_finalize_archive` :1781
-- `normalize_raw_attribute` :1822
-- `normalize_line_ends` :1843
-- `expat_attributes` :1851
-- `expat_parse` :1878
-- `PTree::empty` :1985 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
-- `PTree::get_child` :1990
-- `PTree::find` :1999 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
-- `PTree::get_string` :2004
-- `PTree::get_value` :2010 — C++ has it in `FuzzySkin`, `Measure`
-- `PTree::get_or` :2018
-- `PTree::add` :2024 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `PTree::put` :2043
-- `ptree_read_xml` :2063
-- `ptree_encode_char_entities` :2131
-- `ptree_write_xml_element` :2155
-- `ptree_write_xml` :2215
-- `ptree_double` :2223
-- `ptree_float` :2228
-- `stream_double` :2233
-- `stream_float` :2238
-- `stream_fixed` :2243
-- `stream_boolalpha` :2248
-- `stream_bool` :2257
-- `istream_boolalpha` :2267
-- `get_vector_from_string` :2279
-- `iequals` :2310
-- `istarts_with` :2315
-- `iends_with` :2320
-- `transform_is_approx` :2325
-- `vec3d_is_approx` :2331
-- `istream_hex_int` :2337
-- `fast_float_from_chars_f32` :2356
-- `Bbs3mfException::fmt` :2434
-- `Bbs3mfException::from` :2442 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `MaterialColorResources::default` :2610
-- `i32::from_f64` :2761
-- `f32::from_f64` :2766
-- `Component::new` :2787
-- `CurrentObject::new` :2857
-- `Metadata::new` :2920
-- `VolumeMetadata::with_triangles` :2941
-- `VolumeMetadata::with_subobject` :2955
-- `ObjectImporter::new` :3056
-- `_BBS_3MF_Importer::default` :3677
-- `_BBS_3MF_Importer::new` :3684
-- `_BBS_3MF_Importer::add_error` :3754 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Importer::log_errors` :3759 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Importer::errors` :3764
-- `_BBS_3MF_Importer::extract_context` :3768
-- `_BBS_3MF_Importer::curr_plater_mut` :3772
-- `_BBS_3MF_Importer::get_color_group_map` :3788
-- `_BBS_3MF_Importer::get_volume_color_data` :3804
-- `_BBS_3MF_Importer::_extract_xml_from_archive_path` :4936
-- `MzZipIstream::new` :8026
-- `MzZipIstream::read` :8035 — C++ has it in `PNGReadWrite`
-- `MzZipIstream::seek` :8043
-- `iter_json` :8077
-- `custom_gcode_type_from_int` :8087
-- `gradient_curve_is_empty` :8104
-- `sanitize_mixed_gradient_curve_array` :8134 — C++ has it in `FilamentMixer`
-- `read_emboss_shape` :8148
-- `cut_connector_type_from_int` :8191
-- `std_stoi` :8204
-- `ObjectData::new` :8277
-- `_BBS_3MF_Exporter::default` :8326
-- `_BBS_3MF_Exporter::new` :8332
-- `_BBS_3MF_Exporter::add_error` :8354 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::log_errors` :8359 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::errors` :8364
-- `_BBS_3MF_Exporter::write_image_to_png_in_memory` :8994
-- `_BBS_3MF_Exporter::_add_object_to_model_stream` :9533 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_object_components_to_stream` :9555
-- `_BBS_3MF_Exporter::_add_mesh_to_object_stream` :9614 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::add_transformation` :9763
-- `_BBS_3MF_Exporter::_add_build_to_model_stream` :9775 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_layer_height_profile_file_to_archive` :9808 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_layer_config_ranges_file_to_archive` :9841 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_brim_ear_points_file_to_archive` :9896
-- `_BBS_3MF_Exporter::_add_print_config_file_to_archive` :9937 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_project_config_file_to_archive` :9958
-- `_BBS_3MF_Exporter::_add_project_embedded_presets_to_archive` :9970
-- `_BBS_3MF_Exporter::_add_model_config_file_to_archive` :10006 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_cut_information_file_to_archive` :10515
-- `_BBS_3MF_Exporter::_add_slice_info_config_file_to_archive` :10572
-- `_BBS_3MF_Exporter::_add_gcode_file_to_archive` :10960
-- `_BBS_3MF_Exporter::_add_custom_gcode_per_print_z_file_to_archive` :11008 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_auxiliary_dir_to_archive` :11076
-- `_BBS_3MF_Exporter::_add_filament_sequence_file_to_archive` :11132
-- `_BBS_3MF_Exporter::_add_assembly_tree_file_to_archive` :11165
-- `_BBS_3MF_Exporter::_add_assembly_stpes_json_file_to_archive` :11182
-- `_BBS_3MF_Exporter::_add_assembly_model_file_to_archive` :11197
-- `std_clamp` :11215
-- `_add_text_info_to_archive` :11226
-- `get_dealed_platform_path` :11295
-- `handle_legacy_project_loaded` :11310 — C++ has it in `Format/3mf`
-- `load_bbs_3mf` :11337
-- `bbs_3mf_get_thumbnail` :11403
-- `is_bbs_project_3mf` :11415
-- `load_gcode_3mf_from_stream` :11429
-- `store_bbs_3mf` :11443
-- `release_plate_data_list` :11461
+- `FilamentInfoExtra::default` :139
+- `PlateData::with_plate_id` :244
+- `PlateData::new` :261
+- `PlateData::default` :320
+- `PlateData::fmt` :326
+- `SaveStrategy::contains` :372 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
+- `SaveStrategy::bitor` :380
+- `LoadStrategy::contains` :409 — C++ has it in `AdaptiveLayerMerge`, `BoundingBox`, `ExPolygon`
+- `LoadStrategy::bitor` :417
+- `StoreParams::new` :516
+- `StoreParams::default` :540
+- `ConfigSubstitutionContext::new` :559
+- `ConfigSubstitutionContext::default` :567
+- `hex_wrap` :991
+- `VersionError::new` :1003
+- `VersionError::fmt` :1011
+- `atof` :1138
+- `atoi` :1144
+- `lexically_normal` :1379
+- `Bbs3mfBase::new` :1566
+- `Bbs3mfBase::errors` :1581
+- `MzZipArchive::from_reader` :1643
+- `MzZipArchive::m_total_files` :1663
+- `open_zip_reader` :1669 — C++ has it in `miniz_extension`
+- `close_zip_reader` :1675 — C++ has it in `miniz_extension`
+- `mz_zip_reader_get_num_files` :1680
+- `mz_zip_reader_file_stat` :1685
+- `mz_zip_reader_locate_file` :1690
+- `mz_zip_reader_get_extra` :1700
+- `mz_zip_reader_extract_to_mem` :1705
+- `mz_zip_reader_extract_file_to_mem` :1713
+- `mz_zip_reader_extract_to_file` :1722
+- `open_zip_writer` :1747 — C++ has it in `miniz_extension`
+- `mz_zip_writer_init_heap` :1754
+- `mz_zip_writer_add_mem` :1759
+- `mz_zip_writer_add_from_heap` :1765
+- `mz_zip_writer_finalize_archive` :1772
+- `normalize_raw_attribute` :1813
+- `normalize_line_ends` :1834
+- `expat_attributes` :1842
+- `expat_parse` :1869
+- `PTree::empty` :1976 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `PTree::get_child` :1981
+- `PTree::find` :1990 — C++ has it in `MeasureUtils`, `Point`, `SLAPrintSteps`
+- `PTree::get_string` :1995
+- `PTree::get_value` :2001 — C++ has it in `FuzzySkin`, `Measure`
+- `PTree::get_or` :2009
+- `PTree::add` :2015 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `PTree::put` :2034
+- `ptree_read_xml` :2054
+- `ptree_encode_char_entities` :2122
+- `ptree_write_xml_element` :2146
+- `ptree_write_xml` :2206
+- `ptree_double` :2214
+- `ptree_float` :2219
+- `stream_double` :2224
+- `stream_float` :2229
+- `stream_fixed` :2234
+- `stream_boolalpha` :2239
+- `stream_bool` :2248
+- `istream_boolalpha` :2258
+- `get_vector_from_string` :2270
+- `iequals` :2301
+- `istarts_with` :2306
+- `iends_with` :2311
+- `transform_is_approx` :2316
+- `vec3d_is_approx` :2322
+- `istream_hex_int` :2328
+- `fast_float_from_chars_f32` :2347
+- `Bbs3mfException::fmt` :2425
+- `Bbs3mfException::from` :2433 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `MaterialColorResources::default` :2601
+- `i32::from_f64` :2752
+- `f32::from_f64` :2757
+- `Component::new` :2778
+- `CurrentObject::new` :2848
+- `Metadata::new` :2911
+- `VolumeMetadata::with_triangles` :2932
+- `VolumeMetadata::with_subobject` :2946
+- `ObjectImporter::new` :3047
+- `_BBS_3MF_Importer::default` :3668
+- `_BBS_3MF_Importer::new` :3675
+- `_BBS_3MF_Importer::add_error` :3745 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Importer::log_errors` :3750 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Importer::errors` :3755
+- `_BBS_3MF_Importer::extract_context` :3759
+- `_BBS_3MF_Importer::curr_plater_mut` :3763
+- `_BBS_3MF_Importer::get_color_group_map` :3779
+- `_BBS_3MF_Importer::get_volume_color_data` :3795
+- `_BBS_3MF_Importer::_extract_xml_from_archive_path` :4927
+- `MzZipIstream::new` :8017
+- `MzZipIstream::read` :8026 — C++ has it in `PNGReadWrite`
+- `MzZipIstream::seek` :8034
+- `iter_json` :8068
+- `custom_gcode_type_from_int` :8078
+- `gradient_curve_is_empty` :8095
+- `sanitize_mixed_gradient_curve_array` :8125 — C++ has it in `FilamentMixer`
+- `read_emboss_shape` :8139
+- `cut_connector_type_from_int` :8182
+- `std_stoi` :8195
+- `ObjectData::new` :8268
+- `_BBS_3MF_Exporter::default` :8317
+- `_BBS_3MF_Exporter::new` :8323
+- `_BBS_3MF_Exporter::add_error` :8345 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::log_errors` :8350 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::errors` :8355
+- `_BBS_3MF_Exporter::write_image_to_png_in_memory` :8985
+- `_BBS_3MF_Exporter::_add_object_to_model_stream` :9524 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_object_components_to_stream` :9546
+- `_BBS_3MF_Exporter::_add_mesh_to_object_stream` :9605 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::add_transformation` :9754
+- `_BBS_3MF_Exporter::_add_build_to_model_stream` :9766 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_layer_height_profile_file_to_archive` :9799 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_layer_config_ranges_file_to_archive` :9832 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_brim_ear_points_file_to_archive` :9887
+- `_BBS_3MF_Exporter::_add_print_config_file_to_archive` :9928 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_project_config_file_to_archive` :9949
+- `_BBS_3MF_Exporter::_add_project_embedded_presets_to_archive` :9961
+- `_BBS_3MF_Exporter::_add_model_config_file_to_archive` :9997 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_cut_information_file_to_archive` :10506
+- `_BBS_3MF_Exporter::_add_slice_info_config_file_to_archive` :10563
+- `_BBS_3MF_Exporter::_add_gcode_file_to_archive` :10951
+- `_BBS_3MF_Exporter::_add_custom_gcode_per_print_z_file_to_archive` :10999 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_auxiliary_dir_to_archive` :11067
+- `_BBS_3MF_Exporter::_add_filament_sequence_file_to_archive` :11123
+- `_BBS_3MF_Exporter::_add_assembly_tree_file_to_archive` :11156
+- `_BBS_3MF_Exporter::_add_assembly_stpes_json_file_to_archive` :11173
+- `_BBS_3MF_Exporter::_add_assembly_model_file_to_archive` :11188
+- `std_clamp` :11206
+- `_add_text_info_to_archive` :11217
+- `get_dealed_platform_path` :11286
+- `handle_legacy_project_loaded` :11301 — C++ has it in `Format/3mf`
+- `load_bbs_3mf` :11328
+- `bbs_3mf_get_thumbnail` :11394
+- `is_bbs_project_3mf` :11406
+- `load_gcode_3mf_from_stream` :11420
+- `store_bbs_3mf` :11434
+- `release_plate_data_list` :11452
 
 ### `GCode` (.cpp+.hpp) and `g_code.rs`
 
@@ -4483,38 +4483,37 @@ Rust only:
 
 ### `GCode/GCodeProcessor` (.cpp+.hpp) and `gcode/g_code_processor.rs`
 
-Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 281. Matched 199: faithful 171, partial 24, divergent 4, stub 0.
+Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 281. Matched 199: faithful 172, partial 23, divergent 4, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `get_object_label_id` :152 and `get_object_label_id` :617 (36%, 0.74x)
 - partial: `get_z_height` :167 and `get_z_height` :636 (40%, 0.71x)
 - partial: `GCodeProcessor::CachedPosition::reset` :234 and `CachedPosition::reset` :506 (50%, 0.96x)
-- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2659 (0%, 0.0x)
-- partial: `GCodeProcessor::OptionsZCorrector::set` :1077 and `OptionsZCorrector::set` :3035 (40%, 1.19x)
-- partial: `GCodeProcessor::OptionsZCorrector::update` :1082 and `OptionsZCorrector::update` :3039 (45%, 1.16x)
-- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1652 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1665 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1678 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1693 (43%, 0.71x)
-- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3239 (7%, 0.05x)
-- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3353 (51%, 1.18x)
-- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9223 (50%, 1.17x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7072 (33%, 0.62x)
-- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3807 (74%, 1.44x)
-- divergent: `parse_number` :3137 and `parse_number` :7531 (9%, 0.16x)
-- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9339 (35%, 0.9x)
-- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9398 (44%, 0.93x)
-- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9535 (41%, 0.93x)
-- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9576 (44%, 0.87x)
-- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9630 (40%, 0.83x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5807 (75%, 1.0x)
-- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6322 (86%, 1.24x)
-- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4206 (66%, 1.01x)
-- partial: `GCodeProcessor::process_M400` :5794 and `GCodeProcessor::process_m400` :5296 (38%, 1.28x)
-- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5448 (46%, 0.72x)
-- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9764 (53%, 0.74x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5750 (23%, 0.27x)
+- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2689 (0%, 0.0x)
+- partial: `GCodeProcessor::OptionsZCorrector::set` :1077 and `OptionsZCorrector::set` :3065 (40%, 1.19x)
+- partial: `GCodeProcessor::OptionsZCorrector::update` :1082 and `OptionsZCorrector::update` :3069 (45%, 1.16x)
+- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1670 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1683 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1696 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1711 (43%, 0.71x)
+- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3269 (7%, 0.05x)
+- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3383 (51%, 1.18x)
+- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9275 (50%, 1.17x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7116 (41%, 0.77x)
+- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3837 (74%, 1.44x)
+- divergent: `parse_number` :3137 and `parse_number` :7583 (9%, 0.16x)
+- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9391 (35%, 0.9x)
+- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9450 (44%, 0.93x)
+- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9587 (41%, 0.93x)
+- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9628 (44%, 0.87x)
+- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9682 (40%, 0.83x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5850 (75%, 1.0x)
+- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6365 (86%, 1.24x)
+- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4236 (66%, 1.01x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5491 (46%, 0.72x)
+- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9816 (53%, 0.74x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5793 (23%, 0.27x)
 
 Missing in the Rust file:
 
@@ -4523,7 +4522,7 @@ Missing in the Rust file:
 - `GCodeProcessor::set_filaments` :1301 (6 tokens)
 - `GCodeProcessor::TimeProcessor::handle_offsets_of_first_process` :1307 (391 tokens)
 - `GCodeProcessor::TimeProcessor::handle_offsets_of_second_process` :1367 (67 tokens)
-- `GCodeProcessorResult::reset` :1537 (182 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
+- `GCodeProcessorResult::reset` :1571 (265 tokens, overload) — in `app_config.rs`, `bounding_box.rs`, `clipper.rs`
 - `GCodeProcessor::check_multi_extruder_gcode_valid` :1785 (1503 tokens)
 - `GCodeProcessor::apply_config` :2106 (3810 tokens, overload) — in `g_code_reader.rs`, `placeholder_parser.rs`
 - `GCodeProcessor::export_config_for_render` :2659 (100 tokens)
@@ -4562,61 +4561,61 @@ Rust only:
 - `CommandProcessor::new` :916
 - `CommandProcessor::default` :967
 - `TimeBlock::default` :1050
-- `TimeMachine::default` :1313
-- `reserved_tag` :1865
-- `custom_tags` :1870
-- `trim_spaces` :1993
-- `is_end_of_word` :2192 — C++ has it in `Config`, `GCodeReader`
-- `fast_float_from_chars` :2203
-- `fast_float_from_chars_f64` :2242
-- `trim_leading_spaces_trailing_semis_spaces` :2282
-- `EMovePathType::default` :2303
-- `MoveVertex::default` :2349
-- `GCodeProcessorResult::default` :2459
-- `MachineLimits::machine_envelope_config` :2569
-- `ml_get` :2599
-- `ml_set` :2611
-- `TimeProcessor::post_process_first_pass` :2667
-- `TimeProcessor::default` :2872
-- `cmd_from_id` :2999
-- `GCodeProcessor::new` :3153
-- `GCodeProcessor::get_axis_max_acceleration_extruding` :3548
-- `GCodeProcessor::get_machine_limit_retract_acceleration` :3553
-- `GCodeProcessor::get_machine_limit_travel_acceleration` :3558
-- `GCodeProcessor::result` :3576
-- `GCodeProcessor::result_mut` :3580
-- `GCodeProcessor::process_gcode` :3801
-- `GCodeProcessor::dispatch` :3855
-- `GCodeProcessor::time_processor` :4694
-- `GCodeProcessor::process_t_command` :5489
-- `GCodeProcessor::process_filaments_tool_change` :5719
-- `GCodeProcessor::run_calculate_time` :5762
-- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6883
-- `GCodeProcessor::process_used_filaments_caches` :7164
-- `GCodeProcessor::update_mode` :7211
-- `GCodeProcessor::print_time` :7268
-- `GCodeProcessor::default` :7274
-- `emove_type_from_index` :7283
-- `extrusion_role_from_index` :7300
-- `normalize3` :7331
-- `normalized3` :7341
-- `klipper_regex_value` :7352
-- `parse_klipper_kv` :7386
-- `f32::parse_number_impl` :7497
-- `i32::parse_number_impl` :7506
-- `ExtruderUsageBlcok::default` :7561
-- `FilamentUsageBlock::new` :7652
-- `TimeProcessContext::from_config` :7708 — C++ has it in `Model`
-- `PreCoolingInjector::new` :7808
-- `PreCoolingInjector::sort_free_blocks` :7942
-- `istream_int` :8534
-- `istream_nozzle_after` :8558
-- `nozzle_change_fields` :8568
-- `toolchange_wipe_fields` :8611
-- `TimeProcessor::post_process_with_context` :8639
-- `DataChecker::new` :8989
-- `helio_regex_search` :9114
-- `GCodeProcessor::time_process_inputs` :9241
+- `TimeMachine::default` :1315
+- `reserved_tag` :1883
+- `custom_tags` :1888
+- `trim_spaces` :2011
+- `is_end_of_word` :2210 — C++ has it in `Config`, `GCodeReader`
+- `fast_float_from_chars` :2221
+- `fast_float_from_chars_f64` :2260
+- `trim_leading_spaces_trailing_semis_spaces` :2300
+- `EMovePathType::default` :2321
+- `MoveVertex::default` :2367
+- `GCodeProcessorResult::default` :2487
+- `MachineLimits::machine_envelope_config` :2599
+- `ml_get` :2629
+- `ml_set` :2641
+- `TimeProcessor::post_process_first_pass` :2697
+- `TimeProcessor::default` :2902
+- `cmd_from_id` :3029
+- `GCodeProcessor::new` :3183
+- `GCodeProcessor::get_axis_max_acceleration_extruding` :3578
+- `GCodeProcessor::get_machine_limit_retract_acceleration` :3583
+- `GCodeProcessor::get_machine_limit_travel_acceleration` :3588
+- `GCodeProcessor::result` :3606
+- `GCodeProcessor::result_mut` :3610
+- `GCodeProcessor::process_gcode` :3831
+- `GCodeProcessor::dispatch` :3885
+- `GCodeProcessor::time_processor` :4724
+- `GCodeProcessor::process_t_command` :5532
+- `GCodeProcessor::process_filaments_tool_change` :5762
+- `GCodeProcessor::run_calculate_time` :5805
+- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6926
+- `GCodeProcessor::process_used_filaments_caches` :7216
+- `GCodeProcessor::update_mode` :7263
+- `GCodeProcessor::print_time` :7320
+- `GCodeProcessor::default` :7326
+- `emove_type_from_index` :7335
+- `extrusion_role_from_index` :7352
+- `normalize3` :7383
+- `normalized3` :7393
+- `klipper_regex_value` :7404
+- `parse_klipper_kv` :7438
+- `f32::parse_number_impl` :7549
+- `i32::parse_number_impl` :7558
+- `ExtruderUsageBlcok::default` :7613
+- `FilamentUsageBlock::new` :7704
+- `TimeProcessContext::from_config` :7760 — C++ has it in `Model`
+- `PreCoolingInjector::new` :7860
+- `PreCoolingInjector::sort_free_blocks` :7994
+- `istream_int` :8586
+- `istream_nozzle_after` :8610
+- `nozzle_change_fields` :8620
+- `toolchange_wipe_fields` :8663
+- `TimeProcessor::post_process_with_context` :8691
+- `DataChecker::new` :9041
+- `helio_regex_search` :9166
+- `GCodeProcessor::time_process_inputs` :9293
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 

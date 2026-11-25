@@ -118,16 +118,7 @@ pub struct PlateMixedFilamentInfo {
     pub components: String,
 }
 
-/// GCodeProcessor.hpp:261-266 `struct GCodeProcessorResult::PausePrintInfo`.
-/// FIDELITY-NOTE: declared here because `gcode::g_code_processor` (another unit) does not carry it
-/// yet; the fields and defaults are the C++ ones.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PausePrintInfo {
-    pub percent: i32,
-    /// min
-    pub remaining_time: i32,
-    pub layer_id: u32,
-}
+pub use crate::gcode::g_code_processor::PausePrintInfo;
 
 /// The fields of ProjectTask.hpp:40-71 `struct FilamentInfo` the crate's
 /// `project_task::FilamentInfo` predates (`directly_used`, `total_load_time`, `total_unload_time`).

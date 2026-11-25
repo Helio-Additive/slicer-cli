@@ -201,8 +201,19 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R974 | Copy the printable height and the printable, excluded and clumping-detection polygons into the processor result (GCodeProcessor.cpp 1577–1590, 2072, 2089–2091). Six native states agree through both typed setters and the JSON loader, including defaults, empty areas, reapplication and reset. The four fixture files reproduce R973 with the gate enabled and disabled. | `PROCESSOR_PRINTABLE_GEOMETRY` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R975 | Record pause and custom G-code option moves, correct their height on the next extrusion, and expand the first and last progress tags in the file pass. On a Benchy with an end-code pause, the in-order count rises from 190,464 to all 190,638 body lines. The entire export matches C++. All four standard fixtures reproduce R974 with either gate setting. | `PROCESSOR_PAUSE_PROGRESS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R976 | Process color-change tags for active and inactive filaments (GCodeProcessor.cpp 3525–3595). Thirteen native cases check preview colors, stop times and volume per color change. A Benchy with a color change in its end G-code gains 174 in-order body lines and matches the entire C++ file. The four standard fixtures reproduce R975 with either gate setting. | `PROCESSOR_COLOR_CHANGE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R977 | Record hardware pauses at `M400 U1` and resolve their motion time, layer and progress when finalizing the processor result (GCodeProcessor.cpp 513–542, 2858–2866, 5794–5811). All 56 native snapshots and the complete hardware-pause Benchy replay agree. The four fixture files reproduce R976 with either gate setting. | `PROCESSOR_M400_PAUSE_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R977, hardware-pause Benchy. The two processors already agreed on the
+  normal and stealth totals and all three motion times of the 360-second
+  example. When the native processor read `M400 U1`, it saved the current
+  motion and layer. Rust first differed here. The finalized example now
+  reports 33% complete, four minutes remaining, on layer 1. An identical-file
+  replay of the 197,591-line Benchy also reproduces the native hardware pause
+  on motion 151,378, its exact elapsed time in both modes and the public
+  result of 99%, zero minutes remaining, on layer 300. The ordinary tagged
+  stop list stays empty. H2D retains 4,614,342 and 4,614,863 matches in order.
 
 - R976, color-change Benchy. A two-filament probe first differed at the
   active T0 tag. C++ recorded a color-change move and item with the supplied

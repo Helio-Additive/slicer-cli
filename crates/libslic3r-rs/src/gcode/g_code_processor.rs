@@ -1273,6 +1273,7 @@ pub struct G1LinesCacheItem {
 pub struct StopTime {
     pub g1_line_id: u32,
     pub elapsed_time: f32,
+    pub layer_id: u32,
 }
 
 /// GCodeProcessor.hpp:666  using AdditionalBufferBlock = std::pair<ExtrusionRole,float>;
@@ -1293,6 +1294,7 @@ pub struct TimeMachine {
     pub extrude_factor_override_percentage: f32,
     pub time: f32, // s
     pub stop_times: Vec<StopTime>,
+    pub pause_times: Vec<StopTime>,
     pub line_m73_main_mask: String,
     pub line_m73_stop_mask: String,
     pub curr: State,
@@ -1322,6 +1324,7 @@ impl Default for TimeMachine {
             extrude_factor_override_percentage: 1.0,
             time: 0.0,
             stop_times: Vec::new(),
+            pause_times: Vec::new(),
             line_m73_main_mask: String::new(),
             line_m73_stop_mask: String::new(),
             curr: State::default(),
@@ -1373,6 +1376,7 @@ impl TimeMachine {
         self.extrude_factor_override_percentage = 1.0;
         self.time = 0.0;
         self.stop_times = Vec::new();
+        self.pause_times.clear();
         self.curr.reset();
         self.prev.reset();
         self.gcode_time.reset();
@@ -1531,14 +1535,28 @@ impl TimeMachine {
                     elapsed_time: self.time,
                 });
             }
-            // update times for remaining time to printer stop placeholders
-            // std::lower_bound on stop_times by g1_line_id
-            let it = self
-                .stop_times
-                .partition_point(|t| t.g1_line_id < block_g1_line_id);
-            if it != self.stop_times.len() && self.stop_times[it].g1_line_id == block_g1_line_id {
-                self.stop_times[it].elapsed_time = self.time;
+            // GCodeProcessor.cpp:513-522. A stop keyed to this block has
+            // the elapsed time immediately after executing it.
+            for times in [&mut self.stop_times, &mut self.pause_times] {
+                let index = times.partition_point(|t| t.g1_line_id < block_g1_line_id);
+                if let Some(stop) = times.get_mut(index).filter(|t| t.g1_line_id == block_g1_line_id) {
+                    stop.elapsed_time = self.time;
+                }
             }
+        }
+
+        // GCodeProcessor.cpp:524-542. Zero-length moves may have no cached
+        // time. Use the nearest motion ID, choosing the earlier one on a tie.
+        let cache = &self.g1_times_cache;
+        for pause in &mut self.pause_times {
+            let index = cache.partition_point(|entry| entry.id < pause.g1_line_id);
+            let elapsed = match (cache[..index].last(), cache.get(index)) {
+                (Some(left), Some(right)) if pause.g1_line_id - left.id <= right.id - pause.g1_line_id => left.elapsed_time,
+                (_, Some(right)) => right.elapsed_time,
+                (Some(left), None) => left.elapsed_time,
+                (None, None) => break,
+            };
+            pause.elapsed_time = elapsed;
         }
 
         self.m_additional_time_buffer.clear();
@@ -2398,6 +2416,15 @@ impl MoveVertex {
 // ===========================================================================
 // GCodeProcessorResult — GCodeProcessor.hpp:181-355
 // ===========================================================================
+/// GCodeProcessor.hpp:261-266 `struct GCodeProcessorResult::PausePrintInfo`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PausePrintInfo {
+    pub percent: i32,
+    /// min
+    pub remaining_time: i32,
+    pub layer_id: u32,
+}
+
 /// GCodeProcessor.hpp:181-355  struct GCodeProcessorResult
 ///
 /// Only the fields used by the time / filament-usage parity path are modeled.
@@ -2438,6 +2465,7 @@ pub struct GCodeProcessorResult {
     pub filament_vitrification_temperature: Vec<i32>,
     pub print_statistics: PrintEstimatedStatistics,
     pub custom_gcode_per_print_z: Vec<crate::custom_g_code::Item>,
+    pub pause_printing: Vec<PausePrintInfo>,
     pub spiral_vase_layers: Vec<(f32, (usize, usize))>,
     pub warnings: Vec<SliceWarning>,
     pub skippable_part_time: HashMap<SkipType, f32>,
@@ -2485,6 +2513,7 @@ impl Default for GCodeProcessorResult {
             filament_vitrification_temperature: Vec::new(),
             print_statistics: PrintEstimatedStatistics::new(),
             custom_gcode_per_print_z: Vec::new(),
+            pause_printing: Vec::new(),
             spiral_vase_layers: Vec::new(),
             warnings: Vec::new(),
             skippable_part_time: HashMap::new(),
@@ -2528,6 +2557,7 @@ impl GCodeProcessorResult {
         // GCodeProcessor.cpp:1594-1597 resets the other four material vectors here.
         // apply_config replaces the vitrification temperatures for the next print.
         self.custom_gcode_per_print_z.clear();
+        self.pause_printing.clear();
         self.spiral_vase_layers = Vec::new();
         self.skippable_part_time.clear();
         self.warnings.clear();
@@ -5292,8 +5322,21 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:5593-5601  process_M400 — BBS dwell -> st_synchronize.
+    /// GCodeProcessor.cpp:5794-5811. Record a hardware pause and synchronize a dwell.
     fn process_m400(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if line.has_value(b'U').is_some_and(|u| u.round() == 1.0)
+            && crate::faithful_gate("PROCESSOR_M400_PAUSE_TIMES")
+        {
+            for machine in &mut self.m_time_processor.machines {
+                if machine.enabled {
+                    machine.pause_times.push(StopTime {
+                        g1_line_id: self.m_g1_line_id,
+                        elapsed_time: 0.0,
+                        layer_id: self.m_layer_id,
+                    });
+                }
+            }
+        }
         // PROCESSOR_M400_CPP (on): `line.has_value('S', value_s) || line.has_value('P', value_p)` reads
         // P only without S, and `value_s += value_p * 0.001` multiplies by the double 0.001
         // (GCodeProcessor.cpp:5808-5811). =0 adds both in float.
@@ -7063,6 +7106,7 @@ impl GCodeProcessor {
                 machine.stop_times.push(StopTime {
                     g1_line_id: self.m_g1_line_id,
                     elapsed_time: 0.0,
+                    layer_id: 0,
                 });
             }
         }
@@ -7111,6 +7155,14 @@ impl GCodeProcessor {
 
         // BLOCKED(deps): post_process / TimeProcessContext / MultiNozzleUtils +
         // PreCoolingInjector — not ported (require unported config/nozzle deps).
+
+        // GCodeProcessor.cpp:2858-2866 exports the normal estimate only.
+        let normal = &self.m_time_processor.machines[ETimeMode::Normal as usize];
+        self.m_result.pause_printing = normal.pause_times.iter().map(|pause| PausePrintInfo {
+            percent: if normal.time > 0.0 { (100.0 * pause.elapsed_time / normal.time) as i32 } else { 0 },
+            remaining_time: (((normal.time - pause.elapsed_time).max(0.0) + 0.5) / 60.0) as i32,
+            layer_id: pause.layer_id,
+        }).collect();
 
         // update layer_duration for each move (cpp:2718-2725)
         for mv in self.m_result.moves.iter_mut() {
