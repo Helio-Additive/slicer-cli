@@ -3805,37 +3805,37 @@ Rust file: `extruder.rs`. Status: **ported**. Not listed: 2 constructors, 1 dest
 
 **class `Extruder`**
 
-- [x] `reset` (line 19) → `extruder.rs:624`
-- [x] `extruder_id` (line 22) → `extruder.rs:661`
-- [x] `id` (line 32) → `extruder.rs:655`
-- [x] `retracted_slot_id` (line 36) → `extruder.rs:675`
-- [x] `E` (line 39) → `extruder.rs:932`
-- [x] `reset_E` (line 40) → `extruder.rs:942`
-- [x] `e_per_mm` (line 41) → `extruder.rs:951`
-- [x] `e_per_mm3` (line 42) → `extruder.rs:957`
-- [x] `filament_crossection` (line 49) → `extruder.rs:996`
-- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1139`
-- [x] `is_share_extruder` (line 61) → `extruder.rs:1127`
-- [x] `nozzle_id` (line 62) → `extruder.rs:713`
-- [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:700`
-- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1133`
-- [x] `extrude` (line 71) → `extruder.rs:757`
-- [x] `retract` (line 100) → `extruder.rs:813`
-- [x] `unretract` (line 133) → `extruder.rs:892`
-- [x] `extruded_volume` (line 152) → `extruder.rs:963`
-- [x] `used_filament` (line 164) → `extruder.rs:976`
-- [x] `filament_diameter` (line 175) → `extruder.rs:989`
-- [x] `filament_density` (line 180) → `extruder.rs:1002`
-- [x] `filament_cost` (line 185) → `extruder.rs:1009`
-- [x] `filament_flow_ratio` (line 190) → `extruder.rs:1016`
-- [x] `retract_before_wipe` (line 196) → `extruder.rs:1026`
-- [x] `retraction_length` (line 201) → `extruder.rs:1039`
-- [x] `retract_speed` (line 206) → `extruder.rs:1057`
-- [x] `deretract_speed` (line 211) → `extruder.rs:1069`
-- [x] `retract_restart_extra` (line 217) → `extruder.rs:1087`
-- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1149`
-- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1097`
-- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1112`
+- [x] `reset` (line 19) → `extruder.rs:636`
+- [x] `extruder_id` (line 22) → `extruder.rs:673`
+- [x] `id` (line 32) → `extruder.rs:667`
+- [x] `retracted_slot_id` (line 36) → `extruder.rs:687`
+- [x] `E` (line 39) → `extruder.rs:944`
+- [x] `reset_E` (line 40) → `extruder.rs:954`
+- [x] `e_per_mm` (line 41) → `extruder.rs:963`
+- [x] `e_per_mm3` (line 42) → `extruder.rs:969`
+- [x] `filament_crossection` (line 49) → `extruder.rs:1008`
+- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1151`
+- [x] `is_share_extruder` (line 61) → `extruder.rs:1139`
+- [x] `nozzle_id` (line 62) → `extruder.rs:725`
+- [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:712`
+- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1145`
+- [x] `extrude` (line 71) → `extruder.rs:769`
+- [x] `retract` (line 100) → `extruder.rs:825`
+- [x] `unretract` (line 133) → `extruder.rs:904`
+- [x] `extruded_volume` (line 152) → `extruder.rs:975`
+- [x] `used_filament` (line 164) → `extruder.rs:988`
+- [x] `filament_diameter` (line 175) → `extruder.rs:1001`
+- [x] `filament_density` (line 180) → `extruder.rs:1014`
+- [x] `filament_cost` (line 185) → `extruder.rs:1021`
+- [x] `filament_flow_ratio` (line 190) → `extruder.rs:1028`
+- [x] `retract_before_wipe` (line 196) → `extruder.rs:1038`
+- [x] `retraction_length` (line 201) → `extruder.rs:1051`
+- [x] `retract_speed` (line 206) → `extruder.rs:1069`
+- [x] `deretract_speed` (line 211) → `extruder.rs:1081`
+- [x] `retract_restart_extra` (line 217) → `extruder.rs:1099`
+- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1161`
+- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1109`
+- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1124`
 
 ### `ExtrusionEntity` (.cpp+.hpp)
 

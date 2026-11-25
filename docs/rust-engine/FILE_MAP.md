@@ -2697,30 +2697,30 @@ Rust only:
 - `get_valid_nozzle_volume_type` :108 — C++ has it in `PrintConfig`
 - `get_extruder_variant_string` :128 — C++ has it in `PrintConfig`
 - `get_config_index_base` :161 — C++ has it in `PrintConfig`
-- `get_extruder_index` :188 — C++ has it in `PrintConfig`
-- `get_filament_config_idx` :207 — C++ has it in `Layer`, `Print`, `PrintConfig`
-- `get_process_config_idx` :233 — C++ has it in `Layer`, `Print`, `PrintConfig`
-- `ConfigOptionVector::new` :271
-- `ConfigOptionVector::get_at` :275 — C++ has it in `Config`
-- `ConfigOptionVector::size` :284 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
-- `gcode_flavor_from_int` :348
-- `option_vector_values` :368
-- `GCodeConfig::defaults` :442
-- `GCodeConfig::new` :451
-- `GCodeConfig::apply` :465 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `GCodeConfig::apply_only` :472 — C++ has it in `Config`, `PlaceholderParser`
-- `GCodeConfig::is_nil` :539 — C++ has it in `Config`
-- `extruder_pin` :562
-- `Extruder::new` :592
-- `Extruder::config` :616 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `Extruder::share_retracted` :690
-- `Extruder::exclusive_nozzle` :707
-- `Extruder::volume_type` :727 — C++ has it in `NozzleInventory`
-- `Extruder::extruder_type` :741
-- `Extruder::retract_lift` :1049
-- `Extruder::eq` :1173
-- `Extruder::partial_cmp` :1179
-- `Extruder::cmp` :1184
+- `get_extruder_index` :200 — C++ has it in `PrintConfig`
+- `get_filament_config_idx` :219 — C++ has it in `Layer`, `Print`, `PrintConfig`
+- `get_process_config_idx` :245 — C++ has it in `Layer`, `Print`, `PrintConfig`
+- `ConfigOptionVector::new` :283
+- `ConfigOptionVector::get_at` :287 — C++ has it in `Config`
+- `ConfigOptionVector::size` :296 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
+- `gcode_flavor_from_int` :360
+- `option_vector_values` :380
+- `GCodeConfig::defaults` :454
+- `GCodeConfig::new` :463
+- `GCodeConfig::apply` :477 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `GCodeConfig::apply_only` :484 — C++ has it in `Config`, `PlaceholderParser`
+- `GCodeConfig::is_nil` :551 — C++ has it in `Config`
+- `extruder_pin` :574
+- `Extruder::new` :604
+- `Extruder::config` :628 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `Extruder::share_retracted` :702
+- `Extruder::exclusive_nozzle` :719
+- `Extruder::volume_type` :739 — C++ has it in `NozzleInventory`
+- `Extruder::extruder_type` :753
+- `Extruder::retract_lift` :1061
+- `Extruder::eq` :1185
+- `Extruder::partial_cmp` :1191
+- `Extruder::cmp` :1196
 
 ### `ExtrusionEntity` (.cpp+.hpp) and `extrusion_entity.rs`
 

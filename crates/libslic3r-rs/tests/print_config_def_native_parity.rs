@@ -467,6 +467,14 @@ mod functions {
             for v in 0..NozzleVolumeType::NvtCount as i32 {
                 for e in 0..2 {
                     for id in 0..=4 {
+                        let row = get_config_index_base(nvt(v), et(e), id, &variants, &ids);
+                        // The extruder and pre-cooling paths must return the same native row
+                        // for every nozzle type their representation accepts.
+                        if v <= slicer::extruder::NVT_MAX_NOZZLE_VOLUME_TYPE {
+                            let volume = slicer::extruder::NozzleVolumeType::from_i32(v);
+                            assert_eq!(slicer::extruder::get_config_index_base(volume, et(e), id, &variants, &ids),
+                                       row, "volume {v}, extruder {e}, owner {id}");
+                        }
                         emit(vec![
                             "fn".into(),
                             "get_config_index_base".into(),
@@ -474,7 +482,7 @@ mod functions {
                             e.to_string(),
                             id.to_string(),
                             "=>".into(),
-                            get_config_index_base(nvt(v), et(e), id, &variants, &ids).to_string(),
+                            row.to_string(),
                         ]);
                     }
                 }

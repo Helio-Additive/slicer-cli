@@ -165,6 +165,18 @@ pub fn get_config_index_base(
     variant_list: &[String],
     variant_ids_1based: &[i32],
 ) -> i32 {
+    // PrintConfig.cpp:993-1008 at the pin: when the requested volume has
+    // no exact variant, use the first row owned by this filament or extruder.
+    if crate::faithful_gate("EXTRUDER_CONFIG_ROW_FALLBACK") {
+        return crate::print_config::config_def::get_config_index_base(
+            crate::print_config::enums::NozzleVolumeType::from_i32(volume_type as i32),
+            extruder_type,
+            variant_id_1based,
+            variant_list,
+            variant_ids_1based,
+        );
+    }
+    // Previous exact-match-only implementation.
     // PrintConfig.cpp:551  assert(variant_list.size() == variant_ids_1based.size());
     debug_assert!(variant_list.len() == variant_ids_1based.len());
     // PrintConfig.cpp:552
