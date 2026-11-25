@@ -783,11 +783,52 @@ static void path_end_wipes()
     }
 }
 
+// GCode.cpp 6884-6889, 7869-7902. Reuse the exporter across multipaths.
+// Each path's first point meets the previous path's end, as on the job.
+static void multipath_tower_tags()
+{
+    Layer layer(54, nullptr, 0.3, 16.5, 16.35);
+    GCode gg;
+    gg.apply_print_config(PrintConfig{});
+    gg.m_writer.set_extruders({0});
+    gg.m_writer.toolchange(0, 0);
+    gg.m_layer = &layer;
+    gg.set_last_pos(Point(0, 0));
+    coord_t x = 0;
+    for (const auto &[tower, widths] : std::vector<std::pair<bool, std::vector<float>>>{
+            {true, {0.53380054235458374f, 0.53380054235458374f, 0.42f}},
+            {false, {0.42f, 0.42f}}, {true, {0.42f}}, {false, {0.52f, 0.42f}}}) {
+        if (tower)
+            gg.m_last_processor_extrusion_role = erWipeTower;
+        ExtrusionMultiPath paths;
+        for (float width : widths) {
+            ExtrusionPath path(erInternalInfill, 0.1, width, 0.3f);
+            path.polyline = Polyline(Points{Point(x, 0), Point(x + 1000000, 0)});
+            x += 1000000;
+            paths.paths.push_back(path);
+        }
+        const std::string gcode = gg.extrude_multi_path(paths, "infill", 40.);
+        std::printf("%d %zu", int(tower), widths.size());
+        for (float width : widths)
+            std::printf(" %s", f32(width).c_str());
+        std::string tags, line;
+        std::istringstream in(gcode);
+        while (std::getline(in, line))
+            if (line.rfind("; LINE_WIDTH: ", 0) == 0 || line.rfind("; LAYER_HEIGHT: ", 0) == 0)
+                tags += line + "\n";
+        std::printf(" %s\n", hex(tags).c_str());
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--multipath-tower-tags") {
+        multipath_tower_tags();
+        return 0;
     }
     if (std::string(argv[1]) == "--path-end-wipes") {
         path_end_wipes();

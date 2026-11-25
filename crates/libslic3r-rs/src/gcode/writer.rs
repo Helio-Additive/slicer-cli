@@ -1287,6 +1287,13 @@ impl GCodeWriter {
         self.force_analyzer_tags
     }
 
+    /// GCode.cpp:7869-7889 emits one forced width for the first path after a tower.
+    /// The collection and the path can both prepare that path before extrusion.
+    pub(crate) fn forced_width_tag_pending(&self) -> bool {
+        self.peek_force_analyzer_tags()
+            && (!self.forced_width_tag_written || !crate::faithful_gate("MULTIPATH_TOWER_WIDTH_ONCE"))
+    }
+
     /// WIDTH_TAG_FORCE_ONCE: note that the armed `_extrude`'s Width tag is out.
     pub fn mark_forced_width_tag_written(&mut self) {
         self.forced_width_tag_written = true;

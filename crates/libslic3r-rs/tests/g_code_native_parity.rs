@@ -508,3 +508,51 @@ fn g_code_functions() {
     assert!(n >= 300, "only {n} lines: {per_tag:?}");
     assert!(bad.is_empty(), "{} of {} lines differ:\n{}", bad.len(), n, bad.join("\n"));
 }
+
+// GCode.cpp:6884-6889, 7869-7902. Compare consecutive multipaths emitted
+// by one exporter, including the first paths after two tower visits.
+#[test]
+fn multipath_tower_analyzer_tags_match_native() {
+    use slicer::extrusion_entity::{
+        ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionMultiPath, ExtrusionPath, ExtrusionRole,
+    };
+    use slicer::g_code::extrude_collection;
+    use slicer::GCodeWriter;
+    use slicer::print_config::PrintObjectConfig;
+
+    let mut writer = GCodeWriter::new();
+    let mut x = 0;
+    for row in include_str!("data/g_code/multipath_tower_tags.txt").lines() {
+        let fields: Vec<_> = row.split_whitespace().collect();
+        if fields[0] == "1" {
+            writer.set_force_analyzer_tags();
+        }
+        let count: usize = fields[1].parse().unwrap();
+        let mut paths = ExtrusionMultiPath::new();
+        for width in &fields[2..2 + count] {
+            let mut path = ExtrusionPath::new(ExtrusionRole::InternalInfill);
+            path.mm3_per_mm = 0.1;
+            path.width = f64::from(f32of(width));
+            path.height = f64::from(0.3_f32);
+            path.polyline = Polyline::from_points(vec![
+                Point::new(x, 0),
+                Point::new(x + slicer::scale(1.0), 0),
+            ]);
+            x += slicer::scale(1.0);
+            paths.paths.push(path);
+        }
+        let mut collection = ExtrusionEntityCollection::new();
+        collection.no_sort = true;
+        collection.entities.push(ExtrusionEntityType::MultiPath(paths));
+        let mark = writer.get_gcode().content().len();
+        extrude_collection(&collection, &mut writer, &PrintObjectConfig::default(), false).unwrap();
+        let content = writer.get_gcode().content();
+        let gcode = &content[mark..];
+        let tags: Vec<_> = gcode
+            .lines()
+            .filter(|s| s.starts_with("; LINE_WIDTH: ") || s.starts_with("; LAYER_HEIGHT: "))
+            .collect();
+        let expected = unhex(fields[2 + count]);
+        assert_eq!(tags, expected.lines().collect::<Vec<_>>(), "{row}");
+    }
+}

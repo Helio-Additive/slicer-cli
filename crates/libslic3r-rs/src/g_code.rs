@@ -8151,7 +8151,7 @@ fn width_tag_before_speed(writer: &mut GCodeWriter, path: &ExtrusionPath) {
         let force = *ONCE.get_or_init(|| {
             crate::faithful_gate("WIDTH_TAG_FORCE_ONCE")
                 && crate::faithful_gate("WIPE_TOWER_FORCE_TAGS")
-        }) && writer.peek_force_analyzer_tags();
+        }) && writer.forced_width_tag_pending();
         if writer.width_tag_changed(path.width) | force {
             writer.write_comment(&format!("LINE_WIDTH: {}", fmt_g6(path.width)));
             if force {

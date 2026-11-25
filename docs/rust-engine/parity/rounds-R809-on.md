@@ -191,8 +191,16 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R964 | Start each wipe at the logical end of the last extrusion path, including after a segment shorter than EPSILON (GCode.cpp 477–483, 7987–7988, 8087). Each writer tracks its own endpoint until its next XY movement. Two wipe retractions at Majora layer 4 and two at H2D layer 319 now match the C++ bytes. The three-decimal motion scores stay flat. The disabled gate reproduces all four R963 files. | `WIPE_PATH_END` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (+2 verbatim) |
 | R965 | Pass scaled float distances to the monotonic gap-fill offsets (FillRectilinear.cpp 3703–3707). The eight-point H2D layer 498 island yields the native path and width of 0.092880219221115112 mm. The only changed fixture line is its width comment. The other three files match R964 byte for byte, as do all four with the gate disabled. | `MONOTONIC_GAP_OFFSET_FLOAT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
 | R966 | Apply the per-filament nozzle hardness, softening temperature and cost to the processor result (GCodeProcessor.cpp 2024–2027). Both typed setters and the project settings loader reproduce all 18 native profiles, including missing and surplus rows. Older serialized profiles retain their scalar price. All four G-code fixtures match R965 byte for byte with either gate setting. | `PROCESSOR_FILAMENT_MATERIAL_INFO` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
+| R967 | Emit the forced width once for the first extrusion after a prime tower (GCode.cpp 7869–7902). Width changes and the separately forced height agree with four native multipath cases. Majora loses 71 duplicate width comments on 69 layers. All four native runs agree with the resulting seven-line window at every changed site. The two Benchys and H2D match R966 byte for byte, as do all four fixtures with the gate disabled. | `MULTIPATH_TOWER_WIDTH_ONCE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same in order) |
 
 ## Findings
+
+- R967, Majora. Excluding M73 progress, four native runs agree on 586 of 656 layers.
+  Rust matches 575 of those layers, up from 517 at R966. Every changed site has one
+  width tag in C++. The whole-file unordered verbatim count against the saved run goes
+  from 3,022,768 to 3,022,766 of 3,024,752. Rust now emits 5,009 instances of width
+  0.404381 and that C++ run emits 5,011. Removing 23 duplicates of this width accounts
+  for the two fewer unordered matches. All 23 resulting sites agree with all four runs.
 
 - R966, H2D heating and cooling. Replaying the single-worker C++ file through the Rust
   processor reproduces every temperature command and its placement in all 984 blocks
