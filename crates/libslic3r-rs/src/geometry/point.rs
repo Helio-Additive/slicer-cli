@@ -2878,3 +2878,17 @@ mod tests {
         assert!(!lookup.erase(&Point::new(0, 0)));
     }
 }
+
+/// `Point::projection_onto(const MultiPoint &poly)` (Point.cpp:141-155) under the C++ name, for any
+/// MultiPoint (a Polygon's `lines()` include the closing edge, a Polyline's do not); the `(const Line&)`
+/// overload is the inherent `Point::projection_onto`. Verified by tests/point_projection_native_parity.rs.
+pub trait PointProjectionOntoMultiPoint<T: ?Sized> {
+    fn projection_onto(&self, poly: &T) -> Point;
+}
+
+impl<T: crate::multi_point::MultiPoint> PointProjectionOntoMultiPoint<T> for Point {
+    fn projection_onto(&self, poly: &T) -> Point {
+        // Point.cpp:143 `poly.first_point()`, 146 `poly.lines()`
+        self.projection_onto_multi_point_overload(poly.points()[0], &poly.lines())
+    }
+}

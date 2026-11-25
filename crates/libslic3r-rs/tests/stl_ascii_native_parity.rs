@@ -4,11 +4,10 @@
 //! `stl::read_stl_file` (STL_ASCII_ADMESH on) must give the same vertices (float bit patterns), the
 //! same triangles, and fail where the pin fails.
 //!
-//! `tube24_e_seam.stl` is REPORTED, not asserted: its seam vertices differ by 2.4e-16 (`%e` of
-//! sin(2 pi) vs sin(0)), so only admesh's tolerance merge `stl_check_facets_nearby`
-//! (connect.cpp:481-505, called by TriangleMesh.cpp:122-140) connects it, and `stl_repair.rs` does not
-//! port that stage (nor stl_remove_unconnected_facets, stl_fix_normal_directions, stl_fix_normal_values,
-//! stl_calculate_volume, TriangleMesh.cpp:143-197); binary files have the same gap.
+//! `tube24_e_seam.stl`: its seam vertices differ by 2.4e-16 (`%e` of sin(2 pi) vs sin(0)), so only
+//! admesh's tolerance merge `stl_check_facets_nearby` (connect.cpp:481-505, called by
+//! TriangleMesh.cpp:122-140) connects it; asserted since R952 (STL_ADMESH_REPAIR_PIN, the whole import
+//! repair in `stl_repair.rs`).
 
 use std::collections::BTreeMap;
 
@@ -57,7 +56,7 @@ fn stl_ascii_reader_matches_admesh() {
     let dir = format!("{}/tests/data/stl_ascii", env!("CARGO_MANIFEST_DIR"));
     let exp = vectors();
     assert_eq!(exp.len(), 8);
-    const REPORTED: &[&str] = &["tube24_e_seam.stl"];
+    const REPORTED: &[&str] = &[];
     let mut mismatches = 0;
     let mut reported = 0;
     for (name, e) in &exp {

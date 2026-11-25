@@ -460,6 +460,10 @@ pub struct GCodeWriter {
     /// left at a tool change; read for `new_extruder_retracted_length` (GCode.cpp:982,
     /// GCodeWriter.cpp:957-969). Written by the export's tool changes only.
     pub m_share_retracted: Vec<f64>,
+    /// The retraction slot of the filament a tower tool change switches to (the export's
+    /// `new_extruder_retracted_length` block in g_code.rs records it), taken by
+    /// `after_custom_gcode` once the change G-code is written (TOOLCHANGE_SLOT_RETRACTED).
+    pub m_share_pending_slot: Option<usize>,
     /// GCode.cpp m_last_width — persistent LINE_WIDTH tag dedup state.
     last_width_tag: f32,
 
@@ -565,6 +569,7 @@ impl GCodeWriter {
             wipe_tower_bbx: None,
             m_retracted_length: 0.0,
             m_share_retracted: vec![0.0, 0.0],
+            m_share_pending_slot: None,
             last_width_tag: 0.0,
             gcode_origin_x: 0.0,
             gcode_origin_y: 0.0,
@@ -728,6 +733,21 @@ impl GCodeWriter {
     /// it has one, becomes the Z of the position.
     pub(crate) fn after_custom_gcode(&mut self, last_z: Option<CoordF>) {
         self.m_is_current_pos_clear = false;
+        // TOOLCHANGE_SLOT_RETRACTED (faithful): after the tool change the writer's filament is
+        // the new one (GCodeWriter::toolchange switches m_curr_filament_extruder,
+        // GCodeWriter.cpp:419-425), and with single_extruder_multi_material its retracted length
+        // is its slot's (Extruder::retract / unretract on share_retracted(retracted_slot_id()),
+        // Extruder.cpp:96-148), not what the old filament's tool-change retract left: a slot no
+        // tool change has left holds 0, so the travel to the tower retracts and the unretract
+        // gives back the ordinary length (H2D L1: `G1 E-.8` / `G1 E.8`, where the one writer
+        // state gave `G1 E2`). =0 keeps the old filament's state.
+        if let Some(slot) = self.m_share_pending_slot.take() {
+            if crate::faithful_gate("TOOLCHANGE_SLOT_RETRACTED") {
+                let v = self.m_share_retracted.get(slot).copied().unwrap_or(0.0);
+                self.m_retracted_length = v;
+                self.retracted = v > 0.0;
+            }
+        }
         // `is_current_position_clear` reads this one unless
         // WRITER_POS_CLEAR_CPP=1; the next travel sets both again.
         self.position_known = false;
@@ -3847,6 +3867,31 @@ mod tests {
         } else {
             assert_eq!(zs, vec![0.8, 1.0, 1.2]);
         }
+    }
+
+    /// TOOLCHANGE_SLOT_RETRACTED: after a tower tool change the writer takes the new
+    /// filament's slot share (Extruder.cpp:96-148): a slot no tool change has left is not
+    /// retracted, a slot left retracted by 2 gives back 2.
+    #[test]
+    fn toolchange_takes_the_new_slot_retracted_length() {
+        let mut writer = GCodeWriter::new();
+        writer.retracted = true;
+        writer.m_retracted_length = 2.0;
+        writer.m_share_retracted = vec![2.0, 0.0];
+        writer.m_share_pending_slot = Some(1);
+        writer.after_custom_gcode(None);
+        assert!(writer.m_share_pending_slot.is_none());
+        if crate::faithful_gate("TOOLCHANGE_SLOT_RETRACTED") {
+            assert!(!writer.is_retracted());
+            assert_eq!(writer.retracted_length_now(), 0.0);
+        } else {
+            assert!(writer.is_retracted());
+            assert_eq!(writer.retracted_length_now(), 2.0);
+        }
+        writer.m_share_pending_slot = Some(0);
+        writer.after_custom_gcode(None);
+        assert!(writer.is_retracted());
+        assert_eq!(writer.retracted_length_now(), 2.0);
     }
 
     #[test]

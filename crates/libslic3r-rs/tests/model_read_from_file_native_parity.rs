@@ -3,9 +3,13 @@
 //! (Default), 1 (AddDefaultInstances) and 12 (LoadModel | LoadConfig). Vectors from
 //! `tests/data/model_read_from_file/gen.cpp`, run from this crate's directory with the same relative paths
 //! (they become `ModelObject::input_file`): the exception message, or the objects' names, input files,
-//! volume and instance counts, and per volume the facet and vertex counts, the vertex sums and an index checksum.
-//! 36 of the 48 cases are equal and asserted; the 12 STL / AMF cases that differ in how the loaders build the
-//! object are reported (see the test).
+//! volume and instance counts, per instance its offset, rotation, scaling factor, mirror and printable flag, and
+//! per volume the facet and vertex counts, the vertex sums, an index checksum, its name, source file, type,
+//! source indices, source mesh offset and offset. `multi.amf` has two objects, two named volumes over one
+//! vertex list, a flipped winding, a material and three instances (one a clone of its object); `multi_zip.amf`
+//! is it in a zip archive (load_amf_archive / extract_model_from_archive), `notamf_zip.amf` an archive without an
+//! .amf entry and `bad_zip.amf` one whose model the parser stops on.
+//! All 60 cases are equal and asserted (R952: the 9 STL cases through `load_stl`'s Model::add_object).
 use slicer::format::bbs_3mf::LoadStrategy;
 use slicer::model::Model;
 
@@ -70,6 +74,13 @@ fn rust_case(path: &str, options: u32) -> Vec<String> {
             ));
             for o in &model.objects {
                 out.push(format!("obj {} {} {} {}", hex(&o.name), hex(&o.input_file), o.volumes.len(), o.instances.len()));
+                for i in &o.instances {
+                    let (off, rot, sc, mir) = (i.get_offset(), i.get_rotation(), i.get_scaling_factor(), i.get_mirror());
+                    out.push(format!(
+                        "ins {:e} {:e} {:e} {:e} {:e} {:e} {:e} {:e} {:e} {:e} {:e} {:e} {}",
+                        off.x, off.y, off.z, rot.x, rot.y, rot.z, sc.x, sc.y, sc.z, mir.x, mir.y, mir.z, i.printable as i32
+                    ));
+                }
                 for v in &o.volumes {
                     let its = &v.mesh().its;
                     let (mut sx, mut sy, mut sz) = (0f64, 0f64, 0f64);
@@ -83,6 +94,21 @@ fn rust_case(path: &str, options: u32) -> Vec<String> {
                         si += f[0] as i64 * 3 + f[1] as i64 * 5 + f[2] as i64 * 7;
                     }
                     out.push(format!("vol {} {} {:e} {:e} {:e} {}", its.indices.len(), its.vertices.len(), sx, sy, sz, si));
+                    let (mo, vo) = (v.source.mesh_offset, v.get_offset());
+                    out.push(format!(
+                        "src {} {} {} {} {} {:e} {:e} {:e} {:e} {:e} {:e}",
+                        hex(&v.name),
+                        hex(&v.source.input_file),
+                        v.type_() as i32,
+                        v.source.object_idx,
+                        v.source.volume_idx,
+                        mo.x,
+                        mo.y,
+                        mo.z,
+                        vo.x,
+                        vo.y,
+                        vo.z
+                    ));
                 }
             }
         }
@@ -95,6 +121,16 @@ fn normalize(line: &str) -> String {
     if let Some(rest) = line.strip_prefix("vol ") {
         let f: Vec<&str> = rest.split(' ').collect();
         return format!("vol {} {} {:e} {:e} {:e} {}", f[0], f[1], hexf(f[2]), hexf(f[3]), hexf(f[4]), f[5]);
+    }
+    if let Some(rest) = line.strip_prefix("ins ") {
+        let f: Vec<&str> = rest.split(' ').collect();
+        let v: Vec<String> = f[..12].iter().map(|x| format!("{:e}", hexf(x))).collect();
+        return format!("ins {} {}", v.join(" "), f[12]);
+    }
+    if let Some(rest) = line.strip_prefix("src ") {
+        let f: Vec<&str> = rest.split(' ').collect();
+        let v: Vec<String> = f[5..11].iter().map(|x| format!("{:e}", hexf(x))).collect();
+        return format!("src {} {} {} {} {} {}", f[0], f[1], f[2], f[3], f[4], v.join(" "));
     }
     line.to_string()
 }
@@ -115,13 +151,12 @@ fn read_from_file_matches_the_pin() {
             cases.last_mut().unwrap().2.push(normalize(line));
         }
     }
-    assert_eq!(cases.len(), 48);
+    assert_eq!(cases.len(), 60);
     // NOT EQUAL YET (reported, not asserted): the STL loader builds its object with the port's
     // `ModelObject::new(name, mesh)` (stl.rs `load_stl`) where the pin calls `Model::add_object(name, path, mesh)`
     // (STL.cpp:38; model.rs `add_object_with_mesh`: one volume centred by `center_geometry_after_creation`, no
-    // instance until `add_default_instances`), and the AMF loader leaves its object without volumes
-    // (format/amf.rs). Those cases are counted; every other case (OBJ, errors, messages, 3MF through
-    // load_bbs_3mf) must be equal.
+    // instance until `add_default_instances`). Those cases are counted; every other case (OBJ, AMF, errors,
+    // messages, 3MF through load_bbs_3mf) must be equal.
     let mut bad = Vec::new();
     let mut loader_object_build = Vec::new();
     for (path, options, want) in &cases {
@@ -143,5 +178,8 @@ fn read_from_file_matches_the_pin() {
         loader_object_build
     );
     assert!(bad.is_empty(), "{} of {} cases differ:\n{}", bad.len(), cases.len(), bad.join("\n"));
-    assert!(loader_object_build.len() <= 12, "more cases differ in the loaders' object build than in R951");
+    // R951: 12 (STL and AMF); R952: 9, the STL cases only (the AMF loader builds its volumes as AMF.cpp does).
+    // R952 (worker A): 0, stl.rs `load_stl` builds the object with Model::add_object(name, path, mesh) as
+    // STL.cpp:38 does (STL_LOAD_ADD_OBJECT_PIN) and the STL repair is admesh's (STL_ADMESH_REPAIR_PIN).
+    assert!(loader_object_build.is_empty(), "cases differ in the loaders' object build: {loader_object_build:?}");
 }

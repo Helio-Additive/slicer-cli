@@ -4969,5 +4969,150 @@
    "fit_cubic_bspline",
    "CubicKernelWrapper::kernel"
   ]
+ },
+ {
+  "unit": "TriangleMesh",
+  "round": 952,
+  "evidence": "tests/stl_repair_native_parity.rs (stl_repair_native_parity) against tests/data/stl_repair/gen.cpp (vectors.txt.gz), which runs the pin's admesh calls in TriangleMesh.cpp:102-197's order on stl_open's stl_file and checks that TriangleMesh::ReadSTLFile(path, true) gives the same indexed set (M 1 for every file): 10 binary STLs from mk_inputs.py (a clean icosphere, four jittered copies that need stl_check_facets_nearby over one or two iterations and stl_remove_unconnected_facets, a sphere with a third of the facets flipped and garbage normals, an inside-out box with zero normals (stl_reverse_all_facets), two boxes with an isolated and two degenerate facets (number_of_parts 2), a jittered and flipped sphere with a NaN facet, a box with a sliver that collapses after the merge); per file 9 comparisons, 90 in all, 0 mismatches: the stats after stl_open (min, max, size, bounding_diameter, shortest_edge as float bits), the 27 stats after the repair (connected edges and facets, facets_w_*_bad_edge, edges_fixed, degenerate_facets, facets_removed, facets_reversed, backwards_edges, normals_fixed, number_of_parts, volume), every repaired facet's vertices and normal (float bits) and neighbors (neighbor, which_vertex_not), its_volume, the shared vertices and triangles of from_stl, and the same mesh through stl::read_stl_file. Also tests/stl_ascii_native_parity.rs: 8 ASCII files against TriangleMesh::ReadSTLFile, 0 mismatches, tube24_e_seam.stl (closes only through the nearby merge) now asserted. Rust: trianglemesh_repair_on_import and TriangleMesh::from_stl in triangle_mesh.rs; the admesh functions they call (stl_check_facets_exact, stl_check_facets_nearby with HashTableEdges::insert_edge, load_exact, load_nearby, record_neighbors, match_neighbors_nearby, change_vertices; stl_remove_unconnected_facets with remove_facet, remove_degenerate; stl_fix_normal_directions, reverse_facet, check_normal_vector, stl_fix_normal_values, stl_reverse_all_facets; get_area, get_volume, stl_calculate_volume; stl_verify_neighbors; stl_facet_stats; stl_generate_shared_vertices; stl_calculate_normal, stl_normalize_vector) in stl_repair.rs (admesh is not a libslic3r unit of the checklist).",
+  "functions": [
+   "trianglemesh_repair_on_import",
+   "TriangleMesh::from_stl"
+  ]
+ },
+ {
+  "unit": "Format/STL",
+  "round": 952,
+  "evidence": "tests/model_read_from_file_native_parity.rs (worker C's test, vectors from tests/data/model_read_from_file/gen.cpp: the pin's Model::read_from_file) now 51 of 51 cases equal and asserted: the 9 STL cases (ASCII cube_text.stl and tube24_f6.stl, binary Cube_25.6.stl, LoadStrategy 0, 1 and 12) through stl.rs load_stl, which builds the object with Model::add_object(name, path, mesh) as STL.cpp:38 does (STL_LOAD_ADD_OBJECT_PIN) on the admesh-repaired mesh (STL_ADMESH_REPAIR_PIN): object name, input file, volume and instance counts, per volume the facet and vertex counts, vertex sums, index checksum, name, source file, type, source indices, source offset and offset. With either gate at 0 the 9 cases differ.",
+  "functions": [
+   "load_stl"
+  ]
+ },
+ {
+  "unit": "Geometry",
+  "round": 952,
+  "evidence": "tests/geometry_cpp_names_native_parity.rs (geometry_cpp_names_native_parity) against tests/data/geometry_cpp_names/gen.cpp (vectors.txt.gz, 1.1 MB): 16 groups of 3,000 LCG cases each (48,000 comparisons), results bit-equal (doubles as %a), 0 mismatches: directions_parallel and directions_perpendicular (Geometry.cpp:28-40; a quarter of the angle pairs within 1e-3 of a multiple of 90 degrees, max_diff 0 or up to 0.2), rad2deg_dir (52-57; every tenth input exactly PI), linint (72-75; every fiftieth with oldmin == oldmax), segments_intersect (Geometry.hpp:117-167; coordinates up to 3e7, a fifth collinear), foot_pt(Vec2d...) and foot_pt(Line, Point) (169-180; zero directions included), ray_point_distance_squared and ray_point_distance in both forms (182-200), liang_barsky_line_clipping_interval (202-252), liang_barsky_line_clipping in place and src/clip (254-288; every seventh segment vertical), is_rotation_ninety_degrees(double) and (Vec3d) (512-524). Rust in geometry/geometry.rs under the C++ names; the Line overloads are trait GeometryLinePoint, the src/clip overload trait LiangBarskyLineClippingSrc, the two is_rotation_ninety_degrees overloads trait IsRotationNinetyDegrees. The Eigen 2-vector reductions are unfused (packet multiply and horizontal add).",
+  "functions": [
+   "directions_parallel",
+   "directions_perpendicular",
+   "rad2deg_dir",
+   "linint",
+   "segments_intersect",
+   "foot_pt",
+   "ray_point_distance_squared",
+   "ray_point_distance",
+   "liang_barsky_line_clipping_interval",
+   "liang_barsky_line_clipping",
+   "is_rotation_ninety_degrees"
+  ]
+ },
+ {
+  "unit": "Point",
+  "round": 952,
+  "evidence": "tests/point_projection_native_parity.rs (point_projection_native_parity) against tests/data/point_projection/gen.cpp (vectors.txt.gz, 423 KB): 4,000 LCG cases at three coordinate scales (50, 1e5, 2e7), 0 mismatches: Point::projection_onto(const Line&) (Point.cpp:157-180; every seventeenth line degenerate), Point::projection_onto(const MultiPoint&) (141-155) on a Polygon (lines with the closing edge) and on a Polyline of the same 1-9 points (every eleventh with a repeated point), get_extents<false> and get_extents<true>(const Points&) (251-259), get_extents<false> and get_extents<true>(const VecOfPoints&) (263-272; 0-3 point lists of 0-4 points, two-point lists on a vertical line). Rust: the inherent Point::projection_onto(Line), the trait PointProjectionOntoMultiPoint (the MultiPoint overload under the C++ name), get_extents and get_extents_vec_of_points in geometry/point.rs.",
+  "functions": [
+   "Point::projection_onto",
+   "get_extents"
+  ]
+ },
+ {
+  "unit": "GCode",
+  "round": 952,
+  "evidence": "Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).",
+  "functions": [
+   "GCode::mapping_speed",
+   "GCode::get_speed_coor_x",
+   "GCode::split_and_mapping_speed",
+   "GCode::set_speed_transition",
+   "GCode::merge_same_speed_paths",
+   "GCode::smooth_speed_discontinuity_area"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 952,
+  "evidence": "Native test tests/g_code_processor_helpers_native_parity.rs (vectors tests/data/g_code_processor_helpers/g_code_processor_helpers.txt.gz from gen.cpp beside it, which includes the pin's GCodeProcessor.cpp): 451 comment strings (fixed edge cases: signs, padding, overflow of int, inf/nan, hexadecimal floats, float overflow and underflow, line ends; and 400 LCG-made '; Z_HEIGHT:' / '; OBJECT_ID:' / layer strings) through get_object_label_id (GCodeProcessor.cpp:152-165), get_z_height (167-177; result bits), skip_whitespaces (2649-2652) and remove_eols (2654-2657). 0 mismatches with PROCESSOR_STOF_PIN on (default); 7 with it =0 (inf, -INF, nan, 0x1p3, 0x.8 read as 0 and 1e40 / 3.4028236e38 as inf where the pin's stof throws and get_z_height keeps 0).",
+  "functions": [
+   "get_object_label_id",
+   "get_z_height",
+   "skip_whitespaces",
+   "remove_eols"
+  ]
+ },
+ {
+  "unit": "ArcFitter",
+  "round": 952,
+  "evidence": "Replay of live inputs (Majora fixture, binary of this round): the ARCFIT_DUMP probe (geometry/polyline.rs, diagnostic) over the chords of the 14 arcs at layers 86, 174 and 344 whose I/J differ from the oracle's (slicer_cli's) Majora G-code with equal end points dumped 14 do_arc_fitting_and_simplify calls; the pin's ArcFitter::do_arc_fitting_and_simplify (the R949 replay generator, linked against the pin's libslic3r) gives the same segments, centres and radii on all 14 (compared numerically). So those arc centres differ in the fit's input polylines, not in the fitter or the G-code writer.",
+  "functions": [
+   "ArcFitter::do_arc_fitting_and_simplify"
+  ]
+ },
+ {
+  "unit": "Format/AMF",
+  "round": 952,
+  "evidence": "tests/model_read_from_file_native_parity.rs (read_from_file_matches_the_pin; vectors from tests/data/model_read_from_file/gen.cpp calling the pin's Model::read_from_file, which calls load_amf -> load_amf_file -> expat with AMFParserContext's handlers, then endDocument): cube.amf and the new multi.amf (two objects whose ids sort against the file order, two named volumes over one vertex list, a flipped winding, a material, three constellation instances of which one clones its object, deltax/y/z, rx/ry/rz, scale x/y/z, mirror x, printable 0) with LoadStrategy 0, 1 and 12: object names, input files, volume and instance counts, per instance offset/rotation/scaling factor/mirror/printable, per volume facets, vertices, vertex sums, index checksum, name, source file, type, source object/volume index, source mesh offset and offset all equal (6 cases); multi_zip.amf (the same model in a zip archive with a text entry before it) through load_amf's PK check, load_amf_archive and extract_model_from_archive equal on every line, notamf_zip.amf (no .amf entry: the pin's empty-model error) and bad_zip.amf (an object without id: the parser stops, 'Loading of a model file failed.') equal (9 cases). format/amf.rs now builds ModelVolumes as AMF.cpp:372-377, 622-673, 836-839, 853-883, 937-944 does (was merged into the object's legacy mesh). 1 passed, 60 of 60 cases equal.",
+  "functions": [
+   "load_amf",
+   "load_amf_file",
+   "AMFParserContext::startElement",
+   "AMFParserContext::endElement",
+   "AMFParserContext::characters",
+   "AMFParserContext::endDocument",
+   "AMFParserContext::get_attribute",
+   "AMFParserContext::Instance::anything_set",
+   "load_amf_archive",
+   "extract_model_from_archive",
+   "AMFParserContext::stop"
+  ]
+ },
+ {
+  "unit": "Format/OBJ",
+  "round": 952,
+  "evidence": "tests/obj_textured_native_parity.rs (obj_to_textured_mesh_matches_the_pin; vectors from tests/data/obj_textured/gen.cpp calling the pin's load_obj(path, Model*, ObjInfo&, message, nullptr, false, &mtl_data), obj_to_textured_mesh and Model::read_from_file): 4 files (textured.obj: UVs, a quad, five usemtl ranges, a texture shared by two materials, a missing texture, a colour-only material, mtllib ./; plain.obj: UVs without a texture; ngon.obj: a pentagon and a hexagon triangulated as fans, a corner without a texture coordinate; bad_uv.obj: a texture coordinate index past the table, refused): load result, has_uv_png, per-face UVs, usemtl ranges, material count, and the textured mesh both direct and as read_from_file builds it after the Y-up to Z-up turn (vertices, faces, UV pool, UV faces, material colours, texture map, per-face material ids, per texture width/height/channels/size/byte sum, precomputed face colours count): 354 lines equal, floats bit for bit. load_obj's polygon loop, UV validation and messages now follow the pin (OBJ.cpp:78-150, 165-230; the port had the older quads-only loop and gave a quad's second triangle the first one's UVs). Also tests/model_read_from_file_native_parity.rs: cube.obj, cube_vertex_colors.obj with LoadStrategy 0/1/12 equal. 1 passed.",
+  "functions": [
+   "load_obj",
+   "obj_to_textured_mesh"
+  ]
+ },
+ {
+  "unit": "Format/objparser",
+  "round": 952,
+  "evidence": "tests/obj_textured_native_parity.rs (as above): the pin's ObjParser::objparse / mtlparse results as load_obj consumes them (vertices, vt pairs, faces with v/vt and v//vn corners, polygons of 3 to 6 corners, usemtl face ranges, mtllib; newmtl, Kd, Ka, d, Tr, map_Kd) give equal per-face UVs, usemtl ranges (face_start/face_end), material orders, colours and texture names on 4 files. objparser.rs's face parse now follows objparser.cpp:229-271 (normal index optional after //, negative texture index rebased on the pair count, face_end += n - 2 for any polygon; the port counted triangles and quads only). 1 passed, 354 lines equal.",
+  "functions": [
+   "objparse",
+   "obj_parseline",
+   "mtlparse",
+   "mtl_parseline"
+  ]
+ },
+ {
+  "unit": "Model",
+  "round": 952,
+  "evidence": "tests/model_read_from_file_native_parity.rs (read_from_file_matches_the_pin; vectors from tests/data/model_read_from_file/gen.cpp calling the pin's Model::read_from_file): all 60 cases equal and asserted (OBJ plain and vertex-coloured, AMF cube, multi-object and zipped (valid, no model entry, stopped parser), STL ASCII/binary/empty/malformed/missing, unknown extension, 3MF through load_bbs_3mf, LoadStrategy 0, 1 and 12), each with object names, input files, volume and instance counts, per instance get_offset/get_rotation/get_scaling_factor/get_mirror/printable after AMF's set_offset/set_rotation/set_scaling_factor/set_mirror (rotations about x, y and z, non-uniform scale, a mirror), per volume facets, vertices, vertex sums, index checksum, name, source file, type, source indices, source mesh offset and get_offset (set_mesh then center_geometry_after_creation). The 9 STL cases are equal with worker A's STL_LOAD_ADD_OBJECT_PIN (stl.rs); with it off they differ (the test then fails, as worker A set it). tests/obj_textured_native_parity.rs: the texture mesh read_from_file builds after ModelVolume::transform_this_mesh(Matrix3d) (Model.cpp:350-370) has the pin's vertices bit for bit (3 textured files). 1 + 1 passed.",
+  "functions": [
+   "Model::read_from_file",
+   "ModelInstance::get_offset",
+   "ModelInstance::get_rotation",
+   "ModelInstance::get_scaling_factor",
+   "ModelInstance::get_mirror",
+   "ModelInstance::set_offset",
+   "ModelInstance::set_rotation",
+   "ModelInstance::set_scaling_factor",
+   "ModelInstance::set_mirror",
+   "ModelVolume::get_offset",
+   "ModelVolume::set_mesh",
+   "ModelVolume::transform_this_mesh"
+  ]
+ },
+ {
+  "unit": "Color",
+  "round": 952,
+  "evidence": "tests/color_overloads_native_parity.rs (color_overloads_match_the_pin; vectors from tests/data/color_overloads/gen.cpp calling the pin's Color.cpp): the ColorRGB and ColorRGBA overloads under their C++ names (color.rs trait ColorOverloads, each impl calling the port of that overload): complementary and saturate (factors 0..3, through RGBtoHSV/HSVtoRGB) and encode_color on 300 colours incl. greys and hue edges; decode_color on 136 strings (7- and 9-character forms, both cases, bad digits leaving channels black, wrong lengths, no '#', empty) into RGB and RGBA; decode_colors on 45 groups of four (an early failure leaves the rest black, sizes reset). 481 lines equal, floats bit for bit; 1 passed.",
+  "functions": [
+   "complementary",
+   "saturate",
+   "decode_color",
+   "decode_colors",
+   "encode_color"
+  ]
  }
 ]

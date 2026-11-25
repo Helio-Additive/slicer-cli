@@ -1103,6 +1103,68 @@ pub fn encode_color_rgba(color: &ColorRGBA) -> String {
     encode_color_rgb(&to_rgb(color))
 }
 
+/// Color.hpp:158-171 / Color.cpp:306-454: the C++ overloads on `ColorRGB` and `ColorRGBA` under their C++ names
+/// (`complementary`, `saturate`, `decode_color`, `decode_colors`, `encode_color`); each impl calls the port of
+/// that overload (`*_rgb` / `*_rgba`).
+pub trait ColorOverloads: Sized {
+    /// Color.cpp:306-314
+    fn complementary(color: &Self) -> Self;
+    /// Color.cpp:316-329
+    fn saturate(color: &Self, factor: f32) -> Self;
+    /// Color.cpp:380-425
+    fn decode_color(color_in: &str, color_out: &mut Self) -> bool;
+    /// Color.cpp:427-445
+    fn decode_colors(colors_in: &[String], colors_out: &mut Vec<Self>) -> bool;
+    /// Color.cpp:447-454
+    fn encode_color(color: &Self) -> String;
+}
+
+impl ColorOverloads for ColorRGB {
+    // Color.cpp:306-309
+    fn complementary(color: &Self) -> Self {
+        complementary_rgb(color)
+    }
+    // Color.cpp:316-324
+    fn saturate(color: &Self, factor: f32) -> Self {
+        saturate_rgb(color, factor)
+    }
+    // Color.cpp:380-388
+    fn decode_color(color_in: &str, color_out: &mut Self) -> bool {
+        decode_color_rgb(color_in, color_out)
+    }
+    // Color.cpp:427-435
+    fn decode_colors(colors_in: &[String], colors_out: &mut Vec<Self>) -> bool {
+        decode_colors_rgb(colors_in, colors_out)
+    }
+    // Color.cpp:447-452
+    fn encode_color(color: &Self) -> String {
+        encode_color_rgb(color)
+    }
+}
+
+impl ColorOverloads for ColorRGBA {
+    // Color.cpp:311-314
+    fn complementary(color: &Self) -> Self {
+        complementary_rgba(color)
+    }
+    // Color.cpp:326-329
+    fn saturate(color: &Self, factor: f32) -> Self {
+        saturate_rgba(color, factor)
+    }
+    // Color.cpp:390-425
+    fn decode_color(color_in: &str, color_out: &mut Self) -> bool {
+        decode_color_rgba(color_in, color_out)
+    }
+    // Color.cpp:437-445
+    fn decode_colors(colors_in: &[String], colors_out: &mut Vec<Self>) -> bool {
+        decode_colors_rgba(colors_in, colors_out)
+    }
+    // Color.cpp:454
+    fn encode_color(color: &Self) -> String {
+        encode_color_rgba(color)
+    }
+}
+
 // Color.cpp:456  ColorRGB to_rgb(const ColorRGBA& other_rgba)
 pub fn to_rgb(other_rgba: &ColorRGBA) -> ColorRGB {
     ColorRGB::new(other_rgba.r(), other_rgba.g(), other_rgba.b())

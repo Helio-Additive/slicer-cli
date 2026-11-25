@@ -1157,7 +1157,17 @@ pub fn get_none_floating_prefix(
             if !floating_bboxs[idx].contains_point(p) {
                 continue;
             }
-            if floating_areas[idx].contains_point(p) {
+            // FFC_FLOATING_CONTAINS_BORDER (faithful): `ExPolygon::contains(point)` takes
+            // border_result = true, so a point on a HOLE's boundary is inside the ExPolygon
+            // (`contains(hole, point, !border_result)`, ExPolygon.cpp:109-119); the boundary
+            // points detect_floating_line inserts on a floating area's hole are floating.
+            // =0 keeps contains_point, which counts a hole's boundary as in the hole.
+            let inside = if crate::faithful_gate("FFC_FLOATING_CONTAINS_BORDER") {
+                floating_areas[idx].contains(p, true)
+            } else {
+                floating_areas[idx].contains_point(p)
+            };
+            if inside {
                 return true;
             }
         }
@@ -1777,6 +1787,46 @@ impl<'a> FillFloatingConcentric<'a> {
                         }
                     }
                 }
+                // FFC_LOOP_PROBE=x,y (diagnostic only): the loop passing within 3000 units of
+                // (x, y), its input, the floating flags after smoothing and the chosen start.
+                if let Some((px, py)) = std::env::var("FFC_LOOP_PROBE").ok().and_then(|v| {
+                    let mut it = v.split(',').map(|s| s.trim().parse::<i64>().ok());
+                    Some((it.next()??, it.next()??))
+                }) {
+                    if thick_line_with_floating.points.iter().any(|p| (p.x - px).abs() < 3000 && (p.y - py).abs() < 3000) {
+                        let mut s = format!(
+                            "FFCLOOP idx {} curr {} {} split {} force {} in {}",
+                            idx, curr_point.x, curr_point.y, split_idx, force_no_detect as i32, thick_polyline.points.len()
+                        );
+                        for (k, p) in thick_polyline.points.iter().enumerate() {
+                            s.push_str(&format!(" {} {} {:e} {:e}", p.x, p.y,
+                                thick_polyline.widths.get(2 * k).copied().unwrap_or(0.0),
+                                thick_polyline.widths.get(2 * k + 1).copied().unwrap_or(0.0)));
+                        }
+                        s.push_str(&format!(" out {}", thick_line_with_floating.points.len()));
+                        for (k, p) in thick_line_with_floating.points.iter().enumerate() {
+                            s.push_str(&format!(" {} {} {}", p.x, p.y, thick_line_with_floating.is_floating.get(k).map(|b| *b as i32).unwrap_or(-1)));
+                        }
+                        s.push_str(&format!(" fa {}", floating_areas.len()));
+                        for ex in floating_areas.iter() {
+                            s.push_str(&format!(" ex {}", ex.holes.len()));
+                            for poly in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+                                s.push_str(&format!(" ring {}", poly.points.len()));
+                                for p in &poly.points {
+                                    s.push_str(&format!(" {} {}", p.x, p.y));
+                                }
+                            }
+                        }
+                        s.push_str(&format!(" sp {}", sparse_polys.len()));
+                        for poly in sparse_polys.iter() {
+                            s.push_str(&format!(" ring {}", poly.points.len()));
+                            for p in &poly.points {
+                                s.push_str(&format!(" {} {}", p.x, p.y));
+                            }
+                        }
+                        eprintln!("{}", s);
+                    }
+                }
                 // FillFloatingConcentric.cpp:719-721
                 result.push(thick_line_with_floating.rebase_at(split_idx as usize));
             } else {
@@ -2031,5 +2081,39 @@ impl<'a> FillFloatingConcentric<'a> {
         // ecc stays empty because every paths set was empty — matches C++ which
         // push_backs the freshly-new'd ecc before the loop).
         out.push(ExtrusionEntityType::Collection(Box::new(ecc)));
+    }
+}
+
+#[cfg(test)]
+mod floating_prefix_tests {
+    use super::*;
+    use crate::geometry::{ExPolygon, Point, Polygon};
+
+    fn square(x0: i64, y0: i64, x1: i64, y1: i64, ccw: bool) -> Polygon {
+        let mut pts = vec![Point::new(x0, y0), Point::new(x1, y0), Point::new(x1, y1), Point::new(x0, y1)];
+        if !ccw {
+            pts.reverse();
+        }
+        Polygon::from_points(pts)
+    }
+
+    /// FFC_FLOATING_CONTAINS_BORDER: a point on the boundary of a floating area's hole is
+    /// floating, as `ExPolygon::contains(point)` (border_result = true) says
+    /// (ExPolygon.cpp:109-119); a point inside the hole is not.
+    #[test]
+    fn hole_boundary_point_is_floating() {
+        let mut area = ExPolygon::new(square(0, 0, 1000, 1000, true));
+        area.holes.push(square(400, 400, 600, 600, false));
+        let floating = vec![area];
+        // points: outside the area, on the hole's boundary, inside the hole, inside the area
+        let points = vec![Point::new(-100, 500), Point::new(400, 500), Point::new(500, 500), Point::new(200, 500)];
+        let mut len = Vec::new();
+        let mut count = Vec::new();
+        get_none_floating_prefix(&points, &floating, &Vec::new(), &mut len, &mut count);
+        if crate::faithful_gate("FFC_FLOATING_CONTAINS_BORDER") {
+            assert_eq!(count, vec![1, 0, 1, 0]);
+        } else {
+            assert_eq!(count, vec![1, 2, 3, 0]);
+        }
     }
 }

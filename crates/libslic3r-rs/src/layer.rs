@@ -5446,8 +5446,15 @@ impl Layer {
             for i in order {
                 gaps_ex_sorted.push(std::mem::take(&mut gaps_ex[i]));
             }
-            // FillRectilinear.cpp:3719-3723
-            let simplify_resolution = crate::scale(resolution) as f64 * 0.1;
+            // FillRectilinear.cpp:3719-3723. GAP_DP_SCALED_RESOLUTION (faithful): the pin
+            // simplifies with the constant `SCALED_RESOLUTION * 0.1` (libslic3r.h:63-64,
+            // RESOLUTION / SCALING_FACTOR = 1250, so 125), not the print's `resolution`
+            // (0.012 on the Benchy jobs gave 120). =0 keeps the earlier tolerance.
+            let simplify_resolution = if crate::faithful_gate("GAP_DP_SCALED_RESOLUTION") {
+                (0.0125 / crate::libslic3r::SCALING_FACTOR) * 0.1
+            } else {
+                crate::scale(resolution) as f64 * 0.1
+            };
             for ex in &mut gaps_ex_sorted {
                 ex.douglas_peucker(simplify_resolution);
                 // ExPolygon::medial_axis (ExPolygon.cpp:263-371): the C++ `width` array kept
@@ -5466,6 +5473,33 @@ impl Layer {
                     tp.endpoints = [pl.endpoints.0, pl.endpoints.1];
                     gap_polylines.push(tp);
                 }
+            }
+            // GAPMONO_PROBE (diagnostic only): the gap-fill areas, the scaled spacing and the
+            // medial-axis output, to compare with the pin (FillRectilinear.cpp:3699-3723).
+            if crate::probe_enabled("GAPMONO_PROBE") {
+                let mut s = format!("GAPMONO areas {} s_sc {} res {}\n", gapfill_areas.len(), s_sc, resolution);
+                for ex in &gapfill_areas {
+                    s.push_str(&format!("GAPMONO ex {}", ex.holes.len()));
+                    for poly in std::iter::once(&ex.contour).chain(ex.holes.iter()) {
+                        s.push_str(&format!(" ring {}", poly.points.len()));
+                        for p in &poly.points {
+                            s.push_str(&format!(" {} {}", p.x, p.y));
+                        }
+                    }
+                    s.push('\n');
+                }
+                for tp in &gap_polylines {
+                    s.push_str(&format!("GAPMONO tp {} {} {}", tp.points.len(), tp.endpoints[0] as i32, tp.endpoints[1] as i32));
+                    for p in &tp.points {
+                        s.push_str(&format!(" {} {}", p.x, p.y));
+                    }
+                    s.push_str(&format!(" w {}", tp.widths.len()));
+                    for w in &tp.widths {
+                        s.push_str(&format!(" {:e}", w));
+                    }
+                    s.push('\n');
+                }
+                eprint!("{}", s);
             }
             // FillRectilinear.cpp:3725-3734: tiny gaps dropped (filter_out_gap_fill is never
             // set by Fill.cpp: 0), none for a bridge.

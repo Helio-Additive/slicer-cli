@@ -669,6 +669,13 @@ fn parse_stoi(s: &str) -> Option<i32> {
 /// Mirror of `std::stof`: parse a leading floating-point prefix; throws
 /// (returns None) if no conversion could be performed.
 fn parse_stof(s: &str) -> Option<f32> {
+    // Gate PROCESSOR_STOF_PIN (faithful): `std::stof` as libc++ runs it (strtof, then out_of_range when
+    // errno is ERANGE): it also reads "inf"/"infinity"/"nan" and hexadecimal floats, and an overflow to
+    // infinity throws (get_z_height's catch then keeps 0). Checked against the pin by
+    // tests/g_code_processor_helpers_native_parity.rs. =0: the earlier decimal-only reader below.
+    if crate::faithful_gate("PROCESSOR_STOF_PIN") {
+        return parse_stof_pin(s);
+    }
     let trimmed = s.trim_start();
     // Find the longest leading prefix that parses as a float. std::stof parses
     // the leading numeric token and ignores trailing characters.
@@ -702,6 +709,133 @@ fn parse_stof(s: &str) -> Option<f32> {
         return None;
     }
     trimmed[..end].parse::<f32>().ok()
+}
+
+/// `std::stof(str)` (libc++: `strtof` over the C string, `invalid_argument` when nothing is read,
+/// `out_of_range` when errno is ERANGE): leading C-locale white space, a sign, then "inf"/"infinity",
+/// "nan", a hexadecimal float (`0x` digits, '.', binary exponent `p`) or a decimal float. None for the
+/// two exceptions. An underflow keeps what the decimal reader gives (the pin's vectors agree with it for
+/// the smallest normal and a subnormal input).
+fn parse_stof_pin(s: &str) -> Option<f32> {
+    let b = s.as_bytes();
+    let mut i = 0usize;
+    while i < b.len() && matches!(b[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        neg = b[i] == b'-';
+        i += 1;
+    }
+    let rest = &b[i..];
+    let lower_starts = |w: &[u8]| rest.len() >= w.len() && rest[..w.len()].eq_ignore_ascii_case(w);
+    let signed = |v: f32| if neg { -v } else { v };
+    if lower_starts(b"inf") {
+        return Some(signed(f32::INFINITY));
+    }
+    if lower_starts(b"nan") {
+        return Some(signed(f32::NAN));
+    }
+    // Hexadecimal float: "0x" then at least one hex digit (before or after the point).
+    if rest.len() >= 2 && rest[0] == b'0' && (rest[1] == b'x' || rest[1] == b'X') {
+        let mut j = 2usize;
+        let mut mant: u64 = 0;
+        let mut exp: i64 = 0;
+        let mut any = false;
+        let mut sticky = false;
+        let mut seen_dot = false;
+        while j < rest.len() {
+            let c = rest[j];
+            if c == b'.' && !seen_dot {
+                seen_dot = true;
+                j += 1;
+                continue;
+            }
+            let d = match (c as char).to_digit(16) {
+                Some(d) => d as u64,
+                None => break,
+            };
+            any = true;
+            if mant >> 56 == 0 {
+                mant = (mant << 4) | d;
+                if seen_dot {
+                    exp -= 4;
+                }
+            } else {
+                sticky |= d != 0;
+                if !seen_dot {
+                    exp += 4;
+                }
+            }
+            j += 1;
+        }
+        if any {
+            if j < rest.len() && (rest[j] == b'p' || rest[j] == b'P') {
+                let mut k = j + 1;
+                let mut eneg = false;
+                if k < rest.len() && (rest[k] == b'+' || rest[k] == b'-') {
+                    eneg = rest[k] == b'-';
+                    k += 1;
+                }
+                let ds = k;
+                let mut e: i64 = 0;
+                while k < rest.len() && rest[k].is_ascii_digit() {
+                    e = (e * 10 + (rest[k] - b'0') as i64).min(1 << 20);
+                    k += 1;
+                }
+                if k > ds {
+                    exp += if eneg { -e } else { e };
+                }
+            }
+            if sticky {
+                mant |= 1;
+            }
+            // One rounding to float (u64 -> f32), then an exact scaling by a power of two in double.
+            let v = ((mant as f32) as f64 * 2f64.powi(exp.clamp(-2000, 2000) as i32)) as f32;
+            if v.is_infinite() {
+                return None; // ERANGE: std::out_of_range
+            }
+            return Some(signed(v));
+        }
+        // "0x" without digits: strtof reads the "0".
+        return Some(signed(0.0));
+    }
+    // Decimal: digits, an optional point and digits (at least one digit), an exponent only when digits
+    // follow it.
+    let mut j = 0usize;
+    let mut digits = 0usize;
+    while j < rest.len() && rest[j].is_ascii_digit() {
+        j += 1;
+        digits += 1;
+    }
+    if j < rest.len() && rest[j] == b'.' {
+        j += 1;
+        while j < rest.len() && rest[j].is_ascii_digit() {
+            j += 1;
+            digits += 1;
+        }
+    }
+    if digits == 0 {
+        return None; // std::invalid_argument
+    }
+    if j < rest.len() && (rest[j] == b'e' || rest[j] == b'E') {
+        let mut k = j + 1;
+        if k < rest.len() && (rest[k] == b'+' || rest[k] == b'-') {
+            k += 1;
+        }
+        if k < rest.len() && rest[k].is_ascii_digit() {
+            while k < rest.len() && rest[k].is_ascii_digit() {
+                k += 1;
+            }
+            j = k;
+        }
+    }
+    let text = std::str::from_utf8(&rest[..j]).ok()?;
+    let v = text.parse::<f32>().ok()?;
+    if v.is_infinite() {
+        return None; // ERANGE: std::out_of_range
+    }
+    Some(signed(v))
 }
 
 /// GCodeProcessor.cpp:3135-3170  `parse_number<float>`: `std::from_chars`, which
@@ -7030,6 +7164,15 @@ impl MachineLimitOption for crate::config::ConfigOptionFloatsNullable {
             *self.values.last().unwrap() as f32
         }
     }
+}
+
+/// GCodeProcessor.cpp:2649-2652 `static inline const char* skip_whitespaces(const char *begin, const char
+/// *end)`: the first position of `s[begin..end]` that is not a blank or a tab.
+pub fn skip_whitespaces(s: &[u8], mut begin: usize, end: usize) -> usize {
+    while begin != end && (s[begin] == b' ' || s[begin] == b'\t') {
+        begin += 1;
+    }
+    begin
 }
 
 /// GCodeProcessor.cpp:2654-2657 `static inline const char* remove_eols(const char *begin, const char

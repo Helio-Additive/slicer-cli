@@ -3384,6 +3384,72 @@ pub struct TriangleMesh {
     bounding_box: Option<BoundingBox3F>,
 }
 
+/// TriangleMesh.cpp:102-197 `trianglemesh_repair_on_import`.
+pub fn trianglemesh_repair_on_import(stl: &mut crate::stl_repair::StlFile) {
+    if stl.stats.number_of_facets == 0 {
+        return;
+    }
+    crate::stl_repair::stl_check_facets_exact(stl);
+    stl.stats.facets_w_1_bad_edge = stl.stats.connected_facets_2_edge - stl.stats.connected_facets_3_edge;
+    stl.stats.facets_w_2_bad_edge = stl.stats.connected_facets_1_edge - stl.stats.connected_facets_2_edge;
+    stl.stats.facets_w_3_bad_edge = stl.stats.number_of_facets as i32 - stl.stats.connected_facets_1_edge;
+    // TriangleMesh.cpp:124-142
+    let mut tolerance = stl.stats.shortest_edge;
+    let increment = stl.stats.bounding_diameter / 10000.0f32;
+    let iterations = 2;
+    if stl.stats.connected_facets_3_edge < stl.stats.number_of_facets as i32 {
+        for _ in 0..iterations {
+            if stl.stats.connected_facets_3_edge < stl.stats.number_of_facets as i32 {
+                crate::stl_repair::stl_check_facets_nearby(stl, tolerance);
+                tolerance += increment;
+            } else {
+                break;
+            }
+        }
+    }
+    // TriangleMesh.cpp:146-152
+    if stl.stats.connected_facets_3_edge < stl.stats.number_of_facets as i32 {
+        crate::stl_repair::stl_remove_unconnected_facets(stl);
+    }
+    // TriangleMesh.cpp:167-187
+    crate::stl_repair::stl_fix_normal_directions(stl);
+    crate::stl_repair::stl_fix_normal_values(stl);
+    crate::stl_repair::stl_calculate_volume(stl);
+    crate::stl_repair::stl_verify_neighbors(stl);
+    // TriangleMesh.cpp:190-191
+    let nr_degenerated = stl.stats.degenerate_facets;
+    if stl.stats.number_of_facets > 0 && nr_degenerated > 0 {
+        crate::stl_repair::stl_check_facets_exact(stl);
+    }
+}
+
+impl TriangleMesh {
+    /// TriangleMesh.cpp:204-235 `bool TriangleMesh::from_stl(stl_file& stl, bool repair)`: admesh's
+    /// import repair, `stl_generate_shared_vertices` (shared.cpp:34-122) and the flip when
+    /// `its_volume(its) < 0` (TriangleMesh.cpp:231-232).
+    pub fn from_stl(&mut self, stl: &mut crate::stl_repair::StlFile, repair: bool) -> bool {
+        if repair {
+            trianglemesh_repair_on_import(stl);
+        }
+        let (vertices, mut indices) = crate::stl_repair::stl_generate_shared_vertices(stl);
+        let its = indexed_triangle_set {
+            vertices: vertices.iter().map(|v| StlVertex::new(v[0], v[1], v[2])).collect(),
+            indices: indices.iter().map(|t| StlTriangleVertexIndices::new(t[0], t[1], t[2])).collect(),
+        };
+        if (its_volume(&its) as f64) < 0.0 {
+            // its_flip_triangles: std::swap(face(1), face(2))
+            for t in indices.iter_mut() {
+                t.swap(1, 2);
+            }
+        }
+        *self = TriangleMesh::from_parts(
+            vertices.iter().map(|v| Point3F::new(v[0] as f64, v[1] as f64, v[2] as f64)).collect(),
+            indices.iter().map(|t| Triangle::new(t[0] as u32, t[1] as u32, t[2] as u32)).collect(),
+        );
+        true
+    }
+}
+
 impl TriangleMesh {
     // Create a new empty mesh.
     #[inline]

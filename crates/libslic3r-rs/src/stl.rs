@@ -173,6 +173,31 @@ fn read_stl_binary(data: &[u8], header_size: usize) -> Result<TriangleMesh> {
             f32::from_le_bytes([body[vo + 8], body[vo + 9], body[vo + 10], body[vo + 11]]),
         ]
     };
+    if crate::faithful_gate("STL_ADMESH_REPAIR_PIN") {
+        // STL_ADMESH_REPAIR_PIN (on unless =0): stl_read's binary branch keeps the
+        // facet normal (stlinit.cpp:249-262) and leaves a facet with a NaN vertex
+        // as the zero facet (stlinit.cpp:319-328), then TriangleMesh::from_stl runs
+        // admesh's whole import repair (TriangleMesh.cpp:102-235, stl_repair.rs).
+        let read_f = |vo: usize| -> f32 {
+            f32::from_le_bytes([body[vo], body[vo + 1], body[vo + 2], body[vo + 3]])
+        };
+        let mut facets = Vec::with_capacity(num_facets);
+        for i in 0..num_facets {
+            let o = i * SIZEOF_STL_FACET;
+            let f = crate::stl_repair::StlFacet::new(
+                [read_f(o), read_f(o + 4), read_f(o + 8)],
+                read_v(o + 12),
+                read_v(o + 24),
+                read_v(o + 36),
+            );
+            let nan = f.vertex.iter().any(|p| p.iter().any(|c| c.is_nan()));
+            facets.push(if nan { None } else { Some(f) });
+        }
+        let mut stl = crate::stl_repair::StlFile::from_read_facets(facets);
+        let mut mesh = TriangleMesh::new();
+        mesh.from_stl(&mut stl, true);
+        return Ok(mesh);
+    }
     let mut facet_soup = Vec::with_capacity(num_facets);
     for i in 0..num_facets {
         let o = i * SIZEOF_STL_FACET + 12;
@@ -455,6 +480,8 @@ fn stl_ascii_count_facets(data: &[u8]) -> usize {
 fn read_stl_ascii_admesh(data: &[u8]) -> Result<TriangleMesh> {
     let facets_num = stl_ascii_count_facets(data);
     let mut sc = StdioScan { data, pos: 0 };
+    let full_repair = crate::faithful_gate("STL_ADMESH_REPAIR_PIN");
+    let mut facets: Vec<Option<crate::stl_repair::StlFacet>> = Vec::with_capacity(facets_num);
     let mut facet_soup = Vec::with_capacity(facets_num);
     let syntax_error =
         || Error::Mesh("Something is syntactically very wrong with this ASCII STL! ".into());
@@ -466,12 +493,17 @@ fn read_stl_ascii_admesh(data: &[u8]) -> Result<TriangleMesh> {
             }
         }
         // stlinit.cpp:268: fscanf(fp, " facet normal %31s %31s %31s", ...)
+        let mut normal_buf: Vec<Vec<u8>> = Vec::new();
         let res_normal = if sc.match_lit(b" facet normal") {
             let mut n = 0;
             for _ in 0..3 {
+                let start = sc.pos;
                 if !sc.scan_str(31) {
                     break;
                 }
+                let tok = &sc.data[start..sc.pos];
+                let lead = tok.iter().take_while(|&&c| StdioScan::is_space(c)).count();
+                normal_buf.push(tok[lead..].to_vec());
                 n += 1;
             }
             n
@@ -517,13 +549,44 @@ fn read_stl_ascii_admesh(data: &[u8]) -> Result<TriangleMesh> {
         }
         // stlinit.cpp:319-330
         let someone_is_nan = v.iter().any(|p| p.iter().any(|c| c.is_nan()));
+        if full_repair {
+            // stlinit.cpp:302-310: each normal string through sscanf("%f"); a
+            // mangled one resets the whole normal to zero.
+            let mut normal = [0.0f32; 3];
+            let mut ok = true;
+            for k in 0..3 {
+                let mut ns = StdioScan { data: &normal_buf[k], pos: 0 };
+                match ns.scan_float() {
+                    Some(x) => normal[k] = x,
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                normal = [0.0; 3];
+            }
+            facets.push(if someone_is_nan {
+                None
+            } else {
+                Some(crate::stl_repair::StlFacet::new(normal, v[0], v[1], v[2]))
+            });
+            continue;
+        }
         if someone_is_nan {
             facet_soup.push(crate::stl_repair::make_facet([0.0; 3], [0.0; 3], [0.0; 3]));
             continue;
         }
         facet_soup.push(crate::stl_repair::make_facet(v[0], v[1], v[2]));
     }
-    let (vertices, idx, _stats) = crate::stl_repair::repair_and_index(facet_soup);
+    let (vertices, idx) = if full_repair {
+        let mut stl = crate::stl_repair::StlFile::from_read_facets(facets);
+        crate::stl_repair::from_stl(&mut stl, true)
+    } else {
+        let (vertices, idx, _stats) = crate::stl_repair::repair_and_index(facet_soup);
+        (vertices, idx)
+    };
     if vertices.is_empty() || idx.is_empty() {
         return Err(Error::Mesh("ASCII STL contains no geometry".into()));
     }
@@ -599,6 +662,19 @@ pub fn load_stl(
     // `input_file`, builds a `ModelVolume` with a `source`, and forces the
     // extruder to 1 — bookkeeping the Rust `Model`/`ModelObject` do not yet
     // model. We faithfully set the object name and mesh.
+    if crate::faithful_gate("STL_LOAD_ADD_OBJECT_PIN") {
+        // STL_LOAD_ADD_OBJECT_PIN (on unless =0): Model::add_object(name, path, &&mesh)
+        // (Model.cpp:603-622): one model part named after the object, the
+        // object's and the volume's input file, the default extruder 1, no
+        // instance until add_default_instances.
+        let path_str = path.to_string_lossy();
+        model.add_object_with_mesh(
+            &object_name,
+            &path_str,
+            crate::model::ModelMesh::from_triangle_mesh(&mesh),
+        );
+        return true;
+    }
     let object = ModelObject::new(object_name, mesh);
     model.add_object(object);
 

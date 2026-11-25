@@ -2,6 +2,9 @@
 // paths relative to it (they become ModelObject::input_file). For each file and LoadStrategy value prints
 // the exception message or the model: objects, volumes, instances, mesh sizes and vertex sums.
 //
+// Per instance: offset, rotation, scaling factor, mirror, printable; per volume also its name, source file, type,
+// source object/volume index, source mesh offset and the volume's offset.
+//
 //   gen <options> <temporary dir> <path>...   (the temporary dir is where load_bbs_3mf puts its backup)
 //
 // Build with the engine's compile and link line (target/parity-tools/build.sh in a checkout).
@@ -38,6 +41,11 @@ int main(int argc, char **argv) {
                 printf(" ");
                 print_hex(o->input_file);
                 printf(" %zu %zu\n", o->volumes.size(), o->instances.size());
+                for (const ModelInstance *i : o->instances) {
+                    const Vec3d off = i->get_offset(), rot = i->get_rotation(), sc = i->get_scaling_factor(), mir = i->get_mirror();
+                    printf("ins %a %a %a %a %a %a %a %a %a %a %a %a %d\n", off.x(), off.y(), off.z(), rot.x(), rot.y(), rot.z(),
+                           sc.x(), sc.y(), sc.z(), mir.x(), mir.y(), mir.z(), (int) i->printable);
+                }
                 for (const ModelVolume *v : o->volumes) {
                     const indexed_triangle_set &its = v->mesh().its;
                     double sx = 0, sy = 0, sz = 0;
@@ -45,6 +53,13 @@ int main(int argc, char **argv) {
                     long long si = 0;
                     for (const auto &f : its.indices) si += (long long) f[0] * 3 + f[1] * 5 + f[2] * 7;
                     printf("vol %zu %zu %a %a %a %lld\n", its.indices.size(), its.vertices.size(), sx, sy, sz, si);
+                    printf("src ");
+                    print_hex(v->name);
+                    printf(" ");
+                    print_hex(v->source.input_file);
+                    const Vec3d vo = v->get_offset();
+                    printf(" %d %d %d %a %a %a %a %a %a\n", int(v->type()), v->source.object_idx, v->source.volume_idx,
+                           v->source.mesh_offset.x(), v->source.mesh_offset.y(), v->source.mesh_offset.z(), vo.x(), vo.y(), vo.z());
                 }
             }
         } catch (const std::exception &e) {

@@ -15,33 +15,25 @@
 //! - All numeric character data is parsed with C `atof` / `atoi` semantics
 //!   (leading whitespace skipped, longest valid prefix, `0` when no conversion
 //!   is performed) via `objparser::strtod` — NOT Rust's strict `str::parse`.
-//! - BLOCKED(model): the crate's `crate::model::Model` is still the simplified
-//!   model (one `TriangleMesh` per `ModelObject`; no `ModelVolume`,
-//!   `ModelMaterial`, or full `ModelInstance`). The blocked side effects are
-//!   marked `BLOCKED(model)` inline:
-//!     * per-volume meshes are merged into the object's single mesh (the C++
-//!       `center_geometry_after_creation()` net world-space effect is identity,
-//!       so merged world-space geometry matches the C++ exactly);
-//!     * `ModelVolume::source.*`, per-volume `name`, and
-//!       `calculate_convex_hull()` cannot be stored;
-//!     * material attributes are collected in the parser context (mirroring
-//!       `ModelMaterial::attributes`) but cannot be attached to `Model`;
-//!     * instance `rx`/`ry` rotations and `mirror{x,y,z}` cannot be represented
-//!       by the simplified `Instance` (only Z rotation, scale, offset,
-//!       printable).
+//! - The objects, volumes, materials and instances are the `crate::model` ports of
+//!   ModelObject, ModelVolume, ModelMaterial and ModelInstance, built as AMF.cpp builds
+//!   them (`add_object`, `add_volume`, `set_mesh`, `center_geometry_after_creation`,
+//!   `calculate_convex_hull`, `add_material`, `add_instance` and its setters). The
+//!   instances also carry the port's loader fields (`position`, `rotation_z`, `scale`);
+//!   the material attributes are also kept in the parser context.
 //! - AMF export (`store_amf`) is removed in BambuStudio (AMF.hpp:12-15,
 //!   AMF.cpp:1117-1395 are commented out) and is therefore not ported.
 
 use crate::calib::DynamicPrintConfig;
 use crate::format::bbs_3mf::ConfigSubstitutionContext;
 use crate::format::objparser;
-use crate::geometry::geometry::Transform3d;
+use crate::geometry::geometry::{Transform3d, Transformation};
 use crate::geometry::Point3F;
 use crate::locales_utils::{is_decimal_separator_point, CNumericLocalesSetter};
-use crate::model::{Model, ModelObject};
+use crate::model::{Model, ModelMesh, ModelVolume, ModelVolumeType};
 use crate::normal_utils::{indexed_triangle_set, StlTriangleVertexIndices, StlVertex};
 use crate::triangle_mesh::{
-    its_compactify_vertices, its_flip_triangles, its_volume, Triangle, TriangleMesh,
+    its_compactify_vertices, its_flip_triangles, its_volume,
 };
 
 use log::error;
@@ -356,10 +348,8 @@ struct AMFParserContext<'a> {
     /// AMF.cpp:246-247 — `std::vector<Vec3f>`
     object_vertices: Vec<StlVertex>,
     /// Current volume allocated for an amf/object/mesh/volume subtree.
-    /// AMF.cpp:248-249 — C++ holds a `ModelVolume*`. BLOCKED(model): the
-    /// simplified `Model` has no volumes; this flag tracks whether a volume
-    /// subtree is open, and the finished volume mesh is merged into the
-    /// object's single mesh at `</volume>`.
+    /// AMF.cpp:248-249 — C++ holds a `ModelVolume*`; this flag tells whether a
+    /// volume subtree is open, the volume is the object's last (`volume_mut`).
     volume: bool,
     /// Faces collected for the current m_volume.
     /// AMF.cpp:250-251 — `std::vector<Vec3i>`
@@ -371,12 +361,10 @@ struct AMFParserContext<'a> {
     /// commented out).
     volume_transform: Transform3d,
     /// Current material allocated for an amf/metadata subtree.
-    /// AMF.cpp:254-255 — C++ holds a `ModelMaterial*`. BLOCKED(model): the
-    /// simplified `Model` has no materials; the id keys into `materials`.
+    /// AMF.cpp:254-255 — C++ holds a `ModelMaterial*`; the id keys into
+    /// `Model::materials` (and `materials`).
     material: Option<String>,
-    /// Stand-in for `ModelMaterial::attributes` of all materials parsed so far
-    /// (`m_model.add_material(...)` destinations). BLOCKED(model): cannot be
-    /// attached to the simplified `Model`.
+    /// A context-local copy of the materials' attributes (`ModelMaterial::attributes`).
     #[allow(dead_code)]
     materials: BTreeMap<String, BTreeMap<String, String>>,
     /// Current instance allocated for an amf/constellation/instance subtree.
@@ -465,6 +453,16 @@ impl<'a> AMFParserContext<'a> {
             .get_mut(*i)
     }
 
+    /// The C++ `m_volume` pointer (AMF.cpp:248-249): the current object's last volume while a
+    /// volume subtree is open (`add_volume` appends it, AMF.cpp:374).
+    fn volume_mut(&mut self) -> Option<&mut ModelVolume> {
+        if !self.volume {
+            return None;
+        }
+        let object_idx = self.object?;
+        self.model.objects[object_idx].volumes.last_mut()
+    }
+
     /// AMF.cpp:271-462 — `void AMFParserContext::startElement(const char *name, const char **atts)`
     fn start_element(&mut self, name: &str, atts: &[(String, String)]) {
         // AMF.cpp:273
@@ -494,8 +492,8 @@ impl<'a> AMFParserContext<'a> {
                 } else if name == "material" {
                     // AMF.cpp:291-294 — m_material = m_model.add_material(id or "_")
                     let material_id = get_attribute(atts, "id").unwrap_or("_").to_string();
-                    // BLOCKED(model): no `Model::add_material`; mirror
-                    // ModelMaterial creation in the context-local map.
+                    self.model.add_material(&material_id);
+                    // The context-local copy of the attributes is kept too.
                     self.materials.entry(material_id.clone()).or_default();
                     self.material = Some(material_id);
                     node_type_new = AMFNodeType::Material;
@@ -507,12 +505,8 @@ impl<'a> AMFParserContext<'a> {
                             // AMF.cpp:300
                             debug_assert!(self.object_vertices.is_empty());
                             // AMF.cpp:301 — m_object = m_model.add_object();
-                            // C++ Model::add_object() creates a ModelObject with
-                            // NO instances; the crate's ModelObject::new injects
-                            // one default instance, so clear it.
-                            let mut object = ModelObject::new("", TriangleMesh::new());
-                            object.instances.clear();
-                            self.model.add_object(object);
+                            // (Model.cpp:581-585: no instances, no volumes)
+                            self.model.add_object_new();
                             self.object = Some(self.model.objects.len() - 1);
                             // AMF.cpp:302 — m_object_instances_map[object_id].idx = int(m_model.objects.size())-1;
                             self.object_instances_map
@@ -584,8 +578,15 @@ impl<'a> AMFParserContext<'a> {
                         // AMF.cpp:372-377
                         debug_assert!(!self.volume);
                         // AMF.cpp:374 — m_volume = m_object->add_volume(TriangleMesh());
-                        // BLOCKED(model): no ModelVolume; mark a volume subtree
-                        // open. Its mesh is merged into the object at </volume>.
+                        // (the rvalue overload, Model.cpp:1463-1474: a model part,
+                        // centred); m_volume is the object's last volume.
+                        if let Some(object_idx) = self.object {
+                            self.model.objects[object_idx].add_volume_mesh(
+                                ModelMesh::new(),
+                                ModelVolumeType::ModelPart,
+                                true,
+                            );
+                        }
                         self.volume = true;
                         // AMF.cpp:375 — m_volume_transform = Transform3d::Identity();
                         self.volume_transform = Transform3d::identity();
@@ -997,27 +998,8 @@ impl<'a> AMFParserContext<'a> {
                         its_flip_triangles(&mut its);
                     }
                     // AMF.cpp:654 — m_volume->set_mesh(std::move(its));
-                    // BLOCKED(model): no ModelVolume; merge this volume's mesh
-                    // into the object's single TriangleMesh. World-space
-                    // geometry matches the C++ (see module notes).
-                    if let Some(object_idx) = self.object {
-                        let object = &mut self.model.objects[object_idx];
-                        let base = object.mesh.vertices().len() as u32;
-                        let mut vertices = object.mesh.vertices().to_vec();
-                        let mut indices = object.mesh.indices().to_vec();
-                        vertices.extend(
-                            its.vertices
-                                .iter()
-                                .map(|v| Point3F::new(v[0] as f64, v[1] as f64, v[2] as f64)),
-                        );
-                        indices.extend(its.indices.iter().map(|f| {
-                            Triangle::new(
-                                base + f[0] as u32,
-                                base + f[1] as u32,
-                                base + f[2] as u32,
-                            )
-                        }));
-                        object.mesh = TriangleMesh::from_parts(vertices, indices);
+                    if let Some(v) = self.volume_mut() {
+                        v.set_mesh(ModelMesh::from_its(its));
                     }
                 }
 
@@ -1029,8 +1011,10 @@ impl<'a> AMFParserContext<'a> {
                     !transform_is_approx(&self.volume_transform, &Transform3d::identity(), 1e-10);
                 if has_transform {
                     // AMF.cpp:659 — m_volume->source.transform = Transformation(m_volume_transform);
-                    // BLOCKED(model): no ModelVolume::source. Unreachable in
-                    // practice (see above).
+                    let t = Transformation::from_transform(self.volume_transform);
+                    if let Some(v) = self.volume_mut() {
+                        v.source.transform = t;
+                    }
                 }
 
                 // AMF.cpp:661-667 —
@@ -1039,13 +1023,25 @@ impl<'a> AMFParserContext<'a> {
                 //       m_volume->center_geometry_after_creation();
                 //   } else
                 //       m_volume->center_geometry_after_creation(m_volume->source.input_file.empty());
-                // BLOCKED(model): no ModelVolume. `center_geometry_after_creation`
-                // translates the volume mesh to its bounding-box center and
-                // stores the inverse offset in the volume matrix — the net
-                // world-space geometry is unchanged, so skipping it preserves
-                // world-space geometry exactly.
-                // AMF.cpp:669 — m_volume->calculate_convex_hull();
-                // BLOCKED(model): no per-volume convex hull on the simplified Model.
+                let objects_len = self.model.objects.len() as i32;
+                if let Some(object_idx) = self.object {
+                    let volumes_len = self.model.objects[object_idx].volumes.len() as i32;
+                    if let Some(v) = self.volume_mut() {
+                        if v.source.input_file.is_empty() && v.type_() == ModelVolumeType::ModelPart {
+                            // AMF.cpp:662-664
+                            v.source.object_idx = objects_len - 1;
+                            v.source.volume_idx = volumes_len - 1;
+                            v.center_geometry_after_creation(true);
+                        } else {
+                            // AMF.cpp:666-667 — pass false if the mesh offset has
+                            // been already taken from the data
+                            let update = v.source.input_file.is_empty();
+                            v.center_geometry_after_creation(update);
+                        }
+                        // AMF.cpp:669 — m_volume->calculate_convex_hull();
+                        v.calculate_convex_hull();
+                    }
+                }
 
                 // AMF.cpp:670-671
                 self.volume_facets.clear();
@@ -1085,8 +1081,9 @@ impl<'a> AMFParserContext<'a> {
                     if self.path[1] == AMFNodeType::Material {
                         // AMF.cpp:829-831 — m_material->attributes[m_value[0]] = m_value[1];
                         if let Some(material_id) = self.material.clone() {
-                            // BLOCKED(model): stored in the context-local map,
-                            // not on Model (no ModelMaterial).
+                            if let Some(m) = self.model.materials.get_mut(&material_id) {
+                                m.attributes.insert(self.value[0].clone(), self.value[1].clone());
+                            }
                             self.materials
                                 .entry(material_id)
                                 .or_default()
@@ -1103,10 +1100,11 @@ impl<'a> AMFParserContext<'a> {
                     }
                 } else if self.path.len() == 5 && self.path[3] == AMFNodeType::Volume {
                     // AMF.cpp:836-839 — m_volume->name = std::move(m_value[1]);
-                    // BLOCKED(model): the simplified Model has no ModelVolume,
-                    // so the parsed volume name is dropped.
                     if self.volume && self.value[0] == "name" {
-                        let _volume_name = std::mem::take(&mut self.value[1]);
+                        let name = std::mem::take(&mut self.value[1]);
+                        if let Some(v) = self.volume_mut() {
+                            v.name = name;
+                        }
                     }
                 }
                 // AMF.cpp:840-842 — SLIC3RPE_AMF_VERSION handling is commented
@@ -1147,18 +1145,23 @@ impl<'a> AMFParserContext<'a> {
                 if index > 1 {
                     // AMF.cpp:864-868 — clone the object for additional
                     // instances and clear the clone's instances.
-                    let mut new_model_object = self.model.objects[model_object_idx].clone();
-                    // new_model_object->clear_instances();
-                    new_model_object.instances.clear();
-                    self.model.add_object(new_model_object);
+                    // ModelObject *new_model_object = m_model.add_object(*model_object);
+                    // (Model.cpp:623-644: new ids, default extruder 1)
+                    let source = self.model.objects[model_object_idx].clone();
+                    self.model.add_object_clone(&source);
                     model_object_idx = self.model.objects.len() - 1;
+                    // new_model_object->clear_instances();
+                    self.model.objects[model_object_idx].clear_instances();
                 }
 
                 // AMF.cpp:870-880
                 if instance.anything_set() {
                     let model_object = &mut self.model.objects[model_object_idx];
-                    // AMF.cpp:871-873 — mi->set_offset(Vec3d(...));
-                    let mi_idx = model_object.add_instance_at(Point3F::new(
+                    // AMF.cpp:871 — ModelInstance *mi = model_object->add_instance();
+                    // (Model.cpp:1603-1612); AMF.cpp:872-873 — mi->set_offset(Vec3d(...));
+                    let mi_idx = model_object.instances.len();
+                    model_object.add_instance();
+                    model_object.instances[mi_idx].position = Point3F::new(
                         if instance.deltax_set {
                             instance.deltax as f64
                         } else {
@@ -1174,13 +1177,11 @@ impl<'a> AMFParserContext<'a> {
                         } else {
                             0.0
                         },
-                    ));
+                    );
                     let mi = &mut model_object.instances[mi_idx];
                     // AMF.cpp:874 — mi->set_rotation(Vec3d(rx, ry, rz)) in
-                    // radians. BLOCKED(model): the simplified Instance models
-                    // only the Z rotation and stores it in degrees; rx/ry are
-                    // dropped, rz is converted radians -> degrees so the
-                    // resulting transform matches the C++.
+                    // radians (the setters below); the port's loader field
+                    // `rotation_z` keeps rz in degrees.
                     mi.rotation_z = (if instance.rz_set {
                         instance.rz as f64
                     } else {
@@ -1206,8 +1207,7 @@ impl<'a> AMFParserContext<'a> {
                         },
                     ];
                     // AMF.cpp:877-878 — mi->set_mirror(Vec3d(...));
-                    // BLOCKED(model): the simplified Instance has no mirror
-                    // factors; mirror{x,y,z} are dropped.
+                    // (the setters below)
                     // AMF.cpp:879
                     mi.printable = instance.printable;
                     // AMF.cpp:872-878 on the instance's C++ member (model::ModelInstance).
@@ -1235,6 +1235,22 @@ impl<'a> AMFParserContext<'a> {
 // ---------------------------------------------------------------------------
 // XML driver (expat replacement)
 // ---------------------------------------------------------------------------
+
+/// AMF.cpp:97-101 — the static expat trampoline `startElement(void *userData, name, atts)`.
+fn start_element(ctx: &mut AMFParserContext, name: &str, atts: &[(String, String)]) {
+    ctx.start_element(name, atts);
+}
+
+/// AMF.cpp:103-107 — the static expat trampoline `endElement(void *userData, name)`; the member
+/// does not read the name (AMF.cpp:509).
+fn end_element(ctx: &mut AMFParserContext, _name: &str) {
+    ctx.end_element();
+}
+
+/// AMF.cpp:109-114 — the static expat trampoline `characters(void *userData, s, len)`.
+fn characters(ctx: &mut AMFParserContext, s: &str) {
+    ctx.characters(s);
+}
 
 /// AMF.cpp:118-127 — `static const char* get_attribute(const char **atts, const char *id)`
 fn get_attribute<'a>(atts: &'a [(String, String)], id: &str) -> Option<&'a str> {
@@ -1285,27 +1301,28 @@ fn parse_buffer(ctx: &mut AMFParserContext, data: &[u8]) -> Result<(), (usize, S
                 let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
                 let atts = collect_attributes(&e);
                 // AMF.cpp:99-103 — startElement callback
-                ctx.start_element(&name, &atts);
+                start_element(ctx, &name, &atts);
             }
             Ok(Event::Empty(e)) => {
                 // expat reports `<tag/>` as startElement followed by endElement.
                 let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
                 let atts = collect_attributes(&e);
-                ctx.start_element(&name, &atts);
+                start_element(ctx, &name, &atts);
                 if !ctx.error() {
-                    ctx.end_element();
+                    end_element(ctx, &name);
                 }
             }
-            Ok(Event::End(_)) => {
+            Ok(Event::End(e)) => {
                 // AMF.cpp:105-109 — endElement callback
-                ctx.end_element();
+                let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+                end_element(ctx, &name);
             }
             Ok(Event::Text(e)) => {
                 // AMF.cpp:111-116 — characters callback; expat delivers decoded
                 // entities and only reports character data inside the root.
                 if !ctx.path.is_empty() {
                     match e.unescape() {
-                        Ok(t) => ctx.characters(&t),
+                        Ok(t) => characters(ctx, &t),
                         Err(err) => {
                             return Err((line_at(&text, pos_before), err.to_string()));
                         }
@@ -1316,7 +1333,7 @@ fn parse_buffer(ctx: &mut AMFParserContext, data: &[u8]) -> Result<(), (usize, S
                 // expat reports CDATA through the character data handler.
                 if !ctx.path.is_empty() {
                     let t = e.into_inner();
-                    ctx.characters(&String::from_utf8_lossy(&t));
+                    characters(ctx, &String::from_utf8_lossy(&t));
                 }
             }
             // XML declaration, comments, processing instructions and DOCTYPE
@@ -1402,10 +1419,21 @@ pub fn load_amf_file(
     //       for (ModelVolume* v : o->volumes)
     //           if (v->source.input_file.empty() && v->type() == MODEL_PART)
     //               v->source.input_file = path;
-    // BLOCKED(model): the simplified Model has no ModelVolume::source.
+    set_volumes_input_file(model, path);
 
     // AMF.cpp:946
     result
+}
+
+/// AMF.cpp:937-944 / 1086-1089: the model parts that carry no source file get `path`.
+fn set_volumes_input_file(model: &mut Model, path: &str) {
+    for o in model.objects.iter_mut() {
+        for v in o.volumes.iter_mut() {
+            if v.source.input_file.is_empty() && v.type_() == ModelVolumeType::ModelPart {
+                v.source.input_file = path.to_string();
+            }
+        }
+    }
 }
 
 /// BBS: add inches logic
@@ -1552,7 +1580,7 @@ pub fn load_amf_archive(
     //       for (ModelVolume *v : o->volumes)
     //           if (v->source.input_file.empty() && v->type() == MODEL_PART)
     //               v->source.input_file = path;
-    // BLOCKED(model): the simplified Model has no ModelVolume::source.
+    set_volumes_input_file(model, path);
 
     // AMF.cpp:1091
     true
@@ -1687,8 +1715,10 @@ mod tests {
         assert!(!ctx.use_inches);
         assert_eq!(model.objects.len(), 1);
         assert_eq!(model.objects[0].name, "tri");
-        assert_eq!(model.objects[0].mesh.vertices().len(), 3);
-        assert_eq!(model.objects[0].mesh.indices().len(), 1);
+        // AMF.cpp:374, 654: one volume holding the triangle.
+        assert_eq!(model.objects[0].volumes.len(), 1);
+        assert_eq!(model.objects[0].volumes[0].mesh().its.vertices.len(), 3);
+        assert_eq!(model.objects[0].volumes[0].mesh().its.indices.len(), 1);
         // One constellation instance with offset (10, 20, 0).
         assert_eq!(model.objects[0].instances.len(), 1);
         let instance = &model.objects[0].instances[0];

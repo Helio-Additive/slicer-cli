@@ -3189,3 +3189,236 @@ mod tests {
         assert!(approx(t[(3, 2)], 7.0));
     }
 }
+
+// ===========================================================================
+// Geometry.hpp / Geometry.cpp free functions under their C++ names (R952).
+// Vec2d here is the crate's `PointF` (BoundingBoxf's corner type); the Eigen
+// 2-vector reductions (squaredNorm, dot) are one packet multiply and a
+// horizontal add at the pin (NEON, two doubles), so they are not fused.
+// Verified by tests/geometry_cpp_names_native_parity.rs.
+// ===========================================================================
+
+type GVec2d = crate::geometry::PointF;
+
+/// Geometry.cpp:28-33 `bool directions_parallel(double angle1, double angle2, double max_diff = 0)`
+pub fn directions_parallel(angle1: f64, angle2: f64, mut max_diff: f64) -> bool {
+    let diff = (angle1 - angle2).abs();
+    max_diff += EPSILON;
+    diff < max_diff || (diff - std::f64::consts::PI).abs() < max_diff
+}
+
+/// Geometry.cpp:35-40 `bool directions_perpendicular(double angle1, double angle2, double max_diff = 0)`
+pub fn directions_perpendicular(angle1: f64, angle2: f64, mut max_diff: f64) -> bool {
+    let diff = (angle1 - angle2).abs();
+    max_diff += EPSILON;
+    let pi = std::f64::consts::PI;
+    (diff - 0.5 * pi).abs() < max_diff || (diff - 1.5 * pi).abs() < max_diff
+}
+
+/// Geometry.cpp:52-57 `double rad2deg_dir(double angle)`; rad2deg is `T(180.0) * angle / T(PI)` (Geometry.hpp:293).
+pub fn rad2deg_dir(mut angle: f64) -> f64 {
+    let pi = std::f64::consts::PI;
+    angle = if angle < pi { -angle + pi / 2.0 } else { angle + pi / 2.0 };
+    if angle < 0.0 {
+        angle += pi;
+    }
+    180.0 * angle / pi
+}
+
+/// Geometry.cpp:72-75 `double linint(double value, double oldmin, double oldmax, double newmin, double newmax)`
+pub fn linint(value: f64, oldmin: f64, oldmax: f64, newmin: f64, newmax: f64) -> f64 {
+    (value - oldmin) * (newmax - newmin) / (oldmax - oldmin) + newmin
+}
+
+/// Geometry.hpp:117-167 `bool segments_intersect(const Point &ip1, const Point &ip2, const Point &jp1, const Point &jp2)`.
+/// The differences are taken in coord_t (int32 at the pin) and cast to int64 for the cross products.
+pub fn segments_intersect(ip1: &Point, ip2: &Point, jp1: &Point, jp2: &Point) -> bool {
+    // Geometry.hpp:124-137
+    let segments_could_intersect = |ip1: &Point, ip2: &Point, jp1: &Point, jp2: &Point| -> (i32, i32) {
+        let d = |a: &Point, b: &Point| -> (i64, i64) {
+            (((a.x as i32).wrapping_sub(b.x as i32)) as i64, ((a.y as i32).wrapping_sub(b.y as i32)) as i64)
+        };
+        let iv = d(ip2, ip1);
+        let vij1 = d(jp1, ip1);
+        let vij2 = d(jp2, ip1);
+        let tij1 = iv.0 * vij1.1 - iv.1 * vij1.0;
+        let tij2 = iv.0 * vij2.1 - iv.1 * vij2.0;
+        let sg = |t: i64| if t > 0 { 1 } else if t < 0 { -1 } else { 0 };
+        (sg(tij1), sg(tij2))
+    };
+    // Geometry.hpp:139-142
+    let sign1 = segments_could_intersect(ip1, ip2, jp1, jp2);
+    let sign2 = segments_could_intersect(jp1, jp2, ip1, ip2);
+    let test1 = sign1.0 * sign1.1;
+    let test2 = sign2.0 * sign2.1;
+    // Geometry.hpp:143-165
+    if test1 <= 0 && test2 <= 0 {
+        if test1 != 0 || test2 != 0 {
+            return true;
+        }
+        if sign1.0 == 0 && sign1.1 == 0 {
+            // Geometry.hpp:152-163: collinear, project on the longer coordinate of vi.
+            let vi = ((ip2.x as i32).wrapping_sub(ip1.x as i32), (ip2.y as i32).wrapping_sub(ip1.y as i32));
+            let axis = if vi.0.abs() > vi.1.abs() { 0 } else { 1 };
+            let c = |p: &Point| if axis == 0 { p.x as i32 } else { p.y as i32 };
+            let (mut i, mut j, mut k, mut l) = (c(ip1), c(ip2), c(jp1), c(jp2));
+            if i > j {
+                std::mem::swap(&mut i, &mut j);
+            }
+            if k > l {
+                std::mem::swap(&mut k, &mut l);
+            }
+            return (k >= i && k <= j) || (i >= k && i <= l);
+        }
+    }
+    false
+}
+
+/// Geometry.hpp:169-175 `template<typename T> T foot_pt(const T &line_pt, const T &line_dir, const T &pt)` (T = Vec2d).
+pub fn foot_pt(line_pt: &GVec2d, line_dir: &GVec2d, pt: &GVec2d) -> GVec2d {
+    let v = GVec2d::new(pt.x - line_pt.x, pt.y - line_pt.y);
+    let l2 = line_dir.x * line_dir.x + line_dir.y * line_dir.y;
+    let t = if l2 == 0.0 { 0.0 } else { (v.x * line_dir.x + v.y * line_dir.y) / l2 };
+    GVec2d::new(line_pt.x + line_dir.x * t, line_pt.y + line_dir.y * t)
+}
+
+/// Geometry.hpp:182-185 `ray_point_distance_squared(const T &ray_pt, const T &ray_dir, const T &pt)` (T = Vec2d).
+pub fn ray_point_distance_squared(ray_pt: &GVec2d, ray_dir: &GVec2d, pt: &GVec2d) -> f64 {
+    let f = foot_pt(ray_pt, ray_dir, pt);
+    let (dx, dy) = (f.x - pt.x, f.y - pt.y);
+    dx * dx + dy * dy
+}
+
+/// Geometry.hpp:187-190 `ray_point_distance(const T &ray_pt, const T &ray_dir, const T &pt)` (T = Vec2d).
+pub fn ray_point_distance(ray_pt: &GVec2d, ray_dir: &GVec2d, pt: &GVec2d) -> f64 {
+    ray_point_distance_squared(ray_pt, ray_dir, pt).sqrt()
+}
+
+/// The `(const Line &iline, const Point &ipt)` overloads of Geometry.hpp:177-200.
+pub trait GeometryLinePoint {
+    /// Geometry.hpp:177-180 `Vec2d foot_pt(const Line &iline, const Point &ipt)`
+    fn foot_pt(&self, ipt: &Point) -> GVec2d;
+    /// Geometry.hpp:192-195 `double ray_point_distance_squared(const Line &iline, const Point &ipt)`
+    fn ray_point_distance_squared(&self, ipt: &Point) -> f64;
+    /// Geometry.hpp:197-200 `double ray_point_distance(const Line &iline, const Point &ipt)`
+    fn ray_point_distance(&self, ipt: &Point) -> f64;
+}
+
+impl GeometryLinePoint for crate::geometry::Line {
+    fn foot_pt(&self, ipt: &Point) -> GVec2d {
+        // (iline.b - iline.a) in coord_t, then cast to double.
+        let dir = GVec2d::new(
+            (self.b.x as i32).wrapping_sub(self.a.x as i32) as f64,
+            (self.b.y as i32).wrapping_sub(self.a.y as i32) as f64,
+        );
+        foot_pt(&GVec2d::new(self.a.x as f64, self.a.y as f64), &dir, &GVec2d::new(ipt.x as f64, ipt.y as f64))
+    }
+    fn ray_point_distance_squared(&self, ipt: &Point) -> f64 {
+        let f = GeometryLinePoint::foot_pt(self, ipt);
+        let (dx, dy) = (f.x - ipt.x as f64, f.y - ipt.y as f64);
+        dx * dx + dy * dy
+    }
+    fn ray_point_distance(&self, ipt: &Point) -> f64 {
+        GeometryLinePoint::ray_point_distance_squared(self, ipt).sqrt()
+    }
+}
+
+/// Geometry.hpp:202-252 `liang_barsky_line_clipping_interval(x0, v, bbox, out_interval)` (T = double).
+pub fn liang_barsky_line_clipping_interval(
+    x0: &GVec2d,
+    v: &GVec2d,
+    bbox: &crate::bounding_box::BoundingBoxf,
+    out_interval: &mut (f64, f64),
+) -> bool {
+    let mut t0 = 0.0f64;
+    let mut t1 = 1.0f64;
+    let mut clip_side = |p: f64, q: f64| -> bool {
+        if p == 0.0 {
+            if q < 0.0 {
+                return false;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                if r > t1 {
+                    return false;
+                }
+                if r > t0 {
+                    t0 = r;
+                }
+            } else {
+                if r < t0 {
+                    return false;
+                }
+                if r < t1 {
+                    t1 = r;
+                }
+            }
+        }
+        true
+    };
+    if clip_side(-v.x, -bbox.min.x + x0.x)
+        && clip_side(v.x, bbox.max.x - x0.x)
+        && clip_side(-v.y, -bbox.min.y + x0.y)
+        && clip_side(v.y, bbox.max.y - x0.y)
+    {
+        out_interval.0 = t0;
+        out_interval.1 = t1;
+        return true;
+    }
+    false
+}
+
+/// Geometry.hpp:254-271 `liang_barsky_line_clipping(Vec2d &x0, Vec2d &x1, const BoundingBoxf &bbox)` (in place).
+pub fn liang_barsky_line_clipping(x0: &mut GVec2d, x1: &mut GVec2d, bbox: &crate::bounding_box::BoundingBoxf) -> bool {
+    let v = GVec2d::new(x1.x - x0.x, x1.y - x0.y);
+    let mut interval = (0.0f64, 0.0f64);
+    if liang_barsky_line_clipping_interval(x0, &v, bbox, &mut interval) {
+        *x1 = GVec2d::new(x0.x + interval.1 * v.x, x0.y + interval.1 * v.y);
+        *x0 = GVec2d::new(x0.x + interval.0 * v.x, x0.y + interval.0 * v.y);
+        return true;
+    }
+    false
+}
+
+/// Geometry.hpp:273-288 `liang_barsky_line_clipping(x0src, x1src, bbox, x0clip, x1clip)`.
+pub trait LiangBarskyLineClippingSrc {
+    fn liang_barsky_line_clipping(
+        &self,
+        bbox: &crate::bounding_box::BoundingBoxf,
+        x0clip: &mut GVec2d,
+        x1clip: &mut GVec2d,
+    ) -> bool;
+}
+
+impl LiangBarskyLineClippingSrc for (GVec2d, GVec2d) {
+    fn liang_barsky_line_clipping(
+        &self,
+        bbox: &crate::bounding_box::BoundingBoxf,
+        x0clip: &mut GVec2d,
+        x1clip: &mut GVec2d,
+    ) -> bool {
+        *x0clip = self.0;
+        *x1clip = self.1;
+        liang_barsky_line_clipping(x0clip, x1clip, bbox)
+    }
+}
+
+/// The two `is_rotation_ninety_degrees` overloads (Geometry.hpp:511-524) under the C++ name.
+pub trait IsRotationNinetyDegrees {
+    fn is_rotation_ninety_degrees(&self) -> bool;
+}
+
+impl IsRotationNinetyDegrees for f64 {
+    /// Geometry.hpp:512-518 `bool is_rotation_ninety_degrees(double a)`
+    fn is_rotation_ninety_degrees(&self) -> bool {
+        is_rotation_ninety_degrees_angle(*self)
+    }
+}
+
+impl IsRotationNinetyDegrees for Vec3d {
+    /// Geometry.hpp:521-524 `bool is_rotation_ninety_degrees(const Vec3d &rotation)`
+    fn is_rotation_ninety_degrees(&self) -> bool {
+        is_rotation_ninety_degrees(self)
+    }
+}

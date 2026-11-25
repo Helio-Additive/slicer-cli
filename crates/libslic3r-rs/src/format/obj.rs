@@ -173,12 +173,24 @@ impl ObjDialogInOut {
 // ---------------------------------------------------------------------------
 
 /// Load an OBJ file into a `TriangleMesh`, filling `obj_info` with material/colour data.
-/// OBJ.cpp:25-245
+/// OBJ.cpp:25-245 with `out_mtl = nullptr`.
 pub fn load_obj(
     path: &Path,
     obj_info: &mut ObjInfo,
     message: &mut String,
     do_gamma_correct: bool,
+) -> Result<TriangleMesh> {
+    load_obj_with_mtl(path, obj_info, message, do_gamma_correct, None)
+}
+
+/// OBJ.cpp:25-245 `load_obj(path, TriangleMesh*, ObjInfo&, message, gamma_correct, ObjParser::MtlData *out_mtl)`:
+/// on success the parsed materials are copied to `out_mtl` (OBJ.cpp:244-245).
+pub fn load_obj_with_mtl(
+    path: &Path,
+    obj_info: &mut ObjInfo,
+    message: &mut String,
+    do_gamma_correct: bool,
+    out_mtl: Option<&mut MtlData>,
 ) -> Result<TriangleMesh> {
     let mut data = ObjData::new();
     let mut mtl_data = MtlData::new();
@@ -206,16 +218,21 @@ pub fn load_obj(
                 mtl_name_cleaned = mtl_name_cleaned[2..].to_string();
             }
 
-            // Try as absolute path first, then relative to OBJ directory
-            let mtl_abs = Path::new(&mtl_name_cleaned);
-            let mtl_path = if mtl_abs.exists() {
-                mtl_abs.to_path_buf()
+            // OBJ.cpp:59-63: an absolute name is resolved as it is, a relative one against the OBJ's
+            // directory, both case-insensitively (empty when nothing exists).
+            let requested_mtl_path = Path::new(&mtl_name_cleaned);
+            let obj_dir = path.parent().unwrap_or(Path::new(""));
+            let mtl_path = if requested_mtl_path.is_absolute() {
+                crate::format::resource_path_utils::resolve_existing_path_case_insensitive(requested_mtl_path, "load_obj: mtllib")
             } else {
-                let parent = path.parent().unwrap_or(Path::new(""));
-                parent.join(&mtl_name_cleaned)
+                crate::format::resource_path_utils::resolve_existing_relative_path_case_insensitive(
+                    obj_dir,
+                    requested_mtl_path,
+                    "load_obj: mtllib",
+                )
             };
 
-            if mtl_path.exists() {
+            if !mtl_path.as_os_str().is_empty() {
                 if !objparser::mtlparse(&mtl_path, &mut mtl_data) {
                     error!("load_obj:load_mtl: failed to parse {:?}", mtl_path);
                     *message = "load mtl in obj: failed to parse".to_string();
@@ -227,37 +244,25 @@ pub fn load_obj(
         }
     }
 
-    // Count faces and verify they are triangles or quads.
-    let mut num_faces: usize = 0;
-    let mut num_quads: usize = 0;
+    // OBJ.cpp:78-93 — count the generated triangles and verify that all faces are valid polygons
+    // (any polygon of 3 or more vertices, triangulated as a fan below).
+    let mut num_triangles: usize = 0;
     {
         let mut i = 0;
         while i < data.vertices.len() {
+            // Find the end of face.
             let mut j = i;
             while j < data.vertices.len() && data.vertices[j].coord_idx != -1 {
                 j += 1;
             }
             let num_face_vertices = j - i;
             if num_face_vertices > 0 {
-                if num_face_vertices > 4 {
-                    error!(
-                        "load_obj: failed to parse {:?}. Polygons with >4 vertices.",
-                        path
-                    );
-                    *message = "The file contains polygons with more than 4 vertices.".to_string();
-                    return Err(Error::Mesh(message.clone()));
-                } else if num_face_vertices < 3 {
-                    error!(
-                        "load_obj: failed to parse {:?}. Polygons with <3 vertices.",
-                        path
-                    );
-                    *message = "The file contains polygons with less than 2 vertices.".to_string();
+                if num_face_vertices < 3 {
+                    error!("failed to parse {:?}. The file contains polygons with less than 3 vertices.", path);
+                    *message = "The file contains polygons with less than 3 vertices.".to_string();
                     return Err(Error::Mesh(message.clone()));
                 }
-                if num_face_vertices == 4 {
-                    num_quads += 1;
-                }
-                num_faces += 1;
+                num_triangles += num_face_vertices - 2;
                 i = j;
             }
             i += 1;
@@ -267,11 +272,13 @@ pub fn load_obj(
     // Build indexed triangle set.
     let num_vertices = data.coordinates.len() / OBJ_VERTEX_LENGTH;
     let mut vertices: Vec<Point3F> = Vec::with_capacity(num_vertices);
-    let mut indices: Vec<Triangle> = Vec::with_capacity(num_faces + num_quads);
+    let mut indices: Vec<Triangle> = Vec::with_capacity(num_triangles);
 
+    // OBJ.cpp:98-103
     if exist_mtl {
         obj_info.is_single_mtl = data.usemtls.len() == 1 && mtl_data.new_mtl_unmap.len() == 1;
-        obj_info.face_colors.reserve(num_faces + num_quads);
+        obj_info.face_colors.reserve(num_triangles);
+        obj_info.uvs.reserve(num_triangles);
         obj_info.usemtls = data.usemtls.clone();
     }
 
@@ -304,58 +311,44 @@ pub fn load_obj(
         }
     }
 
-    let mut local_indices = [0i32; 4];
-    let mut local_uvs = [0i32; 4];
-
+    // OBJ.cpp:119-150
     let mut vi = 0;
     while vi < data.vertices.len() {
         if data.vertices[vi].coord_idx == -1 {
             vi += 1;
             continue;
         }
-        let mut cnt = 0usize;
+        let mut local_indices: Vec<i32> = Vec::new();
+        let mut local_uvs: Vec<i32> = Vec::new();
         while vi < data.vertices.len() {
-            // OBJ.cpp:137 — const ObjVertex &vertex = data.vertices[i++];
             let vertex = data.vertices[vi];
             vi += 1;
-            // OBJ.cpp:137-138 — if (vertex.coordIdx == -1) break;
             if vertex.coord_idx == -1 {
                 break;
             }
-            // OBJ.cpp:140 — assert(cnt < OBJ_VERTEX_LENGTH);
-            // The upstream face-count validation (OBJ.cpp:82-103) rejects any
-            // face with >4 vertices, so cnt never exceeds ONE_FACE_SIZE (4) here.
-            debug_assert!(cnt < OBJ_VERTEX_LENGTH);
-            // OBJ.cpp:141-145 — invalid vertex index check (runs for every vertex).
+            // OBJ.cpp:129-133
             if vertex.coord_idx < 0 || vertex.coord_idx >= vertices.len() as i32 {
-                error!("load_obj: invalid vertex index in {:?}", path);
+                error!("failed to parse {:?}. The file contains invalid vertex index.", path);
                 *message = "The file contains invalid vertex index.".to_string();
                 return Err(Error::Mesh(message.clone()));
             }
-            // OBJ.cpp:146-148 — indices[cnt]=coordIdx; uvs[cnt]=textureCoordIdx; cnt++;
-            // `local_*` mirror C++ `int indices[ONE_FACE_SIZE]` / `int uvs[ONE_FACE_SIZE]`
-            // (ONE_FACE_SIZE == 4); guard the write to avoid a Rust panic on the
-            // (validation-unreachable) path where cnt would reach 4.
-            if cnt < local_indices.len() {
-                local_indices[cnt] = vertex.coord_idx;
-                local_uvs[cnt] = vertex.texture_coord_idx;
+            // OBJ.cpp:134-144 — reject UV indices outside the parsed texture coordinate table up front
+            // (-1 is "no texture coordinate"; with an empty table the UV references are inert).
+            if !data.texture_coordinates.is_empty()
+                && vertex.texture_coord_idx != -1
+                && (vertex.texture_coord_idx < 0
+                    || (vertex.texture_coord_idx as usize) * 2 + 1 >= data.texture_coordinates.len())
+            {
+                error!("failed to parse {:?}. The file contains invalid texture coordinate index.", path);
+                *message = "The file contains invalid texture coordinate index.".to_string();
+                return Err(Error::Mesh(message.clone()));
             }
-            cnt += 1;
+            // OBJ.cpp:145-146
+            local_indices.push(vertex.coord_idx);
+            local_uvs.push(vertex.texture_coord_idx);
         }
-        // OBJ.cpp:150 — if (cnt) { assert(cnt == 3 || cnt == 4); ... }
-        // The earlier face-count validation (OBJ.cpp:82-103) guarantees every
-        // face has exactly 3 or 4 vertices, so cnt is always 3 or 4 here; mirror
-        // the C++ `if (cnt)` guard (any nonzero count).
-        if cnt != 0 {
-            debug_assert!(cnt == 3 || cnt == 4);
-            // First triangle
-            indices.push(Triangle::new(
-                local_indices[0] as u32,
-                local_indices[1] as u32,
-                local_indices[2] as u32,
-            ));
-            let current_face_index = indices.len() as i32 - 1;
-
+        // OBJ.cpp:148
+        if !local_indices.is_empty() {
             // OBJ.cpp:155-170 — get_face_color lambda.
             let get_face_color = |mtl_name: &str, fc: &mut RGBA| -> bool {
                 // OBJ.cpp:156
@@ -396,6 +389,7 @@ pub fn load_obj(
 
             let set_face_color = |face_index: i32,
                                   mtl_name: &str,
+                                  tri_uvs: [i32; 3],
                                   obj_info: &mut ObjInfo,
                                   data: &ObjData,
                                   mtl_data: &MtlData| {
@@ -438,19 +432,16 @@ pub fn load_obj(
                     // OBJ.cpp:181 — if (data.textureCoordinates.size() > 0)
                     if !data.texture_coordinates.is_empty() {
                         let tc = &data.texture_coordinates;
-                        // OBJ.cpp:182-185
-                        let uv0 = [
-                            tc[local_uvs[0] as usize * 2],
-                            tc[local_uvs[0] as usize * 2 + 1],
-                        ];
-                        let uv1 = [
-                            tc[local_uvs[1] as usize * 2],
-                            tc[local_uvs[1] as usize * 2 + 1],
-                        ];
-                        let uv2 = [
-                            tc[local_uvs[2] as usize * 2],
-                            tc[local_uvs[2] as usize * 2 + 1],
-                        ];
+                        // OBJ.cpp:176-183 — get_uv: (0, 0) outside the table
+                        let get_uv = |uv_idx: i32| -> [f32; 2] {
+                            if uv_idx < 0 || (uv_idx as usize) * 2 + 1 >= tc.len() {
+                                return [0.0, 0.0];
+                            }
+                            [tc[uv_idx as usize * 2], tc[uv_idx as usize * 2 + 1]]
+                        };
+                        let uv0 = get_uv(tri_uvs[0]);
+                        let uv1 = get_uv(tri_uvs[1]);
+                        let uv2 = get_uv(tri_uvs[2]);
                         // OBJ.cpp:186
                         obj_info.uvs.push([uv0, uv1, uv2]);
                     }
@@ -464,11 +455,12 @@ pub fn load_obj(
             };
 
             let set_face_color_by_mtl =
-                |face_index: i32, obj_info: &mut ObjInfo, data: &ObjData, mtl_data: &MtlData| {
+                |face_index: i32, tri_uvs: [i32; 3], obj_info: &mut ObjInfo, data: &ObjData, mtl_data: &MtlData| {
                     if data.usemtls.len() == 1 {
                         set_face_color(
                             face_index,
                             &data.usemtls[0].name.clone(),
+                            tri_uvs,
                             obj_info,
                             data,
                             mtl_data,
@@ -480,6 +472,7 @@ pub fn load_obj(
                                 set_face_color(
                                     face_index,
                                     &data.usemtls[k].name.clone(),
+                                    tri_uvs,
                                     obj_info,
                                     data,
                                     mtl_data,
@@ -505,20 +498,22 @@ pub fn load_obj(
                         }
                     }
                 }
-                set_face_color_by_mtl(current_face_index, obj_info, &data, &mtl_data);
             }
 
-            // Second triangle for quads
-            if cnt == 4 {
+            // OBJ.cpp:222-229 — a fan over the polygon
+            let mut tri = 0usize;
+            while tri + 2 < local_indices.len() {
                 indices.push(Triangle::new(
                     local_indices[0] as u32,
-                    local_indices[2] as u32,
-                    local_indices[3] as u32,
+                    local_indices[tri + 1] as u32,
+                    local_indices[tri + 2] as u32,
                 ));
-                let quad_face_index = indices.len() as i32 - 1;
+                let face_index = indices.len() as i32 - 1;
                 if exist_mtl {
-                    set_face_color_by_mtl(quad_face_index, obj_info, &data, &mtl_data);
+                    let tri_uvs = [local_uvs[0], local_uvs[tri + 1], local_uvs[tri + 2]];
+                    set_face_color_by_mtl(face_index, tri_uvs, obj_info, &data, &mtl_data);
                 }
+                tri += 1;
             }
         }
     }
@@ -571,7 +566,11 @@ pub fn load_obj(
             }
         }
     }
-    // OBJ.cpp:244
+    // OBJ.cpp:244-245 — if (out_mtl) *out_mtl = mtl_data;
+    if let Some(out_mtl) = out_mtl {
+        *out_mtl = mtl_data;
+    }
+    // OBJ.cpp:246
     Ok(mesh)
 }
 
@@ -584,7 +583,19 @@ pub fn load_obj_to_model(
     object_name: Option<&str>,
     do_gamma_correct: bool,
 ) -> Result<Model> {
-    let mesh = load_obj(path, obj_info, message, do_gamma_correct)?;
+    load_obj_to_model_with_mtl(path, obj_info, message, object_name, do_gamma_correct, None)
+}
+
+/// OBJ.cpp:248-264 `load_obj(path, Model*, ObjInfo&, message, object_name, gamma_correct, MtlData *out_mtl)`.
+pub fn load_obj_to_model_with_mtl(
+    path: &Path,
+    obj_info: &mut ObjInfo,
+    message: &mut String,
+    object_name: Option<&str>,
+    do_gamma_correct: bool,
+    out_mtl: Option<&mut MtlData>,
+) -> Result<Model> {
+    let mesh = load_obj_with_mtl(path, obj_info, message, do_gamma_correct, out_mtl)?;
 
     let name = match object_name {
         Some(n) => n.to_string(),
@@ -602,6 +613,149 @@ pub fn load_obj_to_model(
     let mut model = Model::new();
     model.add_object_with_mesh(&name, &path.to_string_lossy(), crate::model::ModelMesh::from_triangle_mesh(&mesh));
     Ok(model)
+}
+
+/// OBJ.cpp:287-420 `obj_to_textured_mesh(obj_info, its, mtl_data, obj_directory, out)`: the textured mesh of an
+/// OBJ whose materials map a texture (`map_Kd`): vertices and faces of `its`, per-face UVs with V flipped, the
+/// materials' colours and textures (the files' raw bytes, case-insensitively resolved against `obj_directory`)
+/// and per-face material ids from the `usemtl` ranges. False when nothing is textured or no texture loads.
+pub fn obj_to_textured_mesh(
+    obj_info: &ObjInfo,
+    its: &indexed_triangle_set,
+    mtl_data: &MtlData,
+    obj_directory: &str,
+    out: &mut crate::texture_painting::TexturedMesh,
+) -> bool {
+    use crate::texture_painting::TextureImage;
+    use std::collections::BTreeMap;
+    // OBJ.cpp:294-295
+    if its.vertices.is_empty() || its.indices.is_empty() || !obj_info.has_uv_png {
+        return false;
+    }
+
+    let nv = its.vertices.len();
+    let nf = its.indices.len();
+
+    // 1. Copy vertices (OBJ.cpp:300-303)
+    out.vertices = (0..nv).map(|i| [its.vertices[i][0], its.vertices[i][1], its.vertices[i][2]]).collect();
+
+    // 2. Copy face indices (OBJ.cpp:305-308)
+    out.indices = (0..nf).map(|i| [its.indices[i][0], its.indices[i][1], its.indices[i][2]]).collect();
+
+    // 3. Build per-face UV (uv_coords + uv_indices), V flipped (OBJ.cpp:310-330)
+    if !obj_info.uvs.is_empty() {
+        let uv_face_count = obj_info.uvs.len();
+        out.uv_coords.resize(uv_face_count * 3, [0.0, 0.0]);
+        out.uv_indices.resize(nf, [0, 0, 0]);
+        for fi in 0..nf {
+            if fi < uv_face_count {
+                let base = (fi * 3) as i32;
+                let b = base as usize;
+                for k in 0..3 {
+                    out.uv_coords[b + k] = [obj_info.uvs[fi][k][0], 1.0f32 - obj_info.uvs[fi][k][1]];
+                }
+                out.uv_indices[fi] = [base, base + 1, base + 2];
+            } else {
+                out.uv_indices[fi] = [0, 0, 0];
+            }
+        }
+    }
+
+    // 4. Build material list and load textures from disk (OBJ.cpp:332-397)
+    // Map: material name -> material index (std::map: the last of equal names wins)
+    let mut mtl_name_to_idx: BTreeMap<String, i32> = BTreeMap::new();
+    for (i, name) in mtl_data.mtl_orders.iter().enumerate() {
+        mtl_name_to_idx.insert(name.clone(), i as i32);
+    }
+
+    let num_materials = mtl_data.mtl_orders.len();
+    out.material_colors.resize(num_materials, [1.0, 1.0, 1.0, 1.0]);
+    out.material_texture_map.resize(num_materials, -1);
+
+    // Map: texture filename -> index in out.textures
+    let mut png_to_tex_idx: BTreeMap<String, i32> = BTreeMap::new();
+
+    for mi in 0..num_materials {
+        let name = &mtl_data.mtl_orders[mi];
+        let mtl = match mtl_data.new_mtl_unmap.get(name) {
+            Some(m) => m,
+            None => continue,
+        };
+
+        // Material color from Kd (OBJ.cpp:352-353)
+        out.material_colors[mi] = [mtl.kd[0], mtl.kd[1], mtl.kd[2], mtl.tr];
+
+        // Texture from map_Kd (OBJ.cpp:355-363)
+        if mtl.map_kd.is_empty() {
+            continue;
+        }
+
+        if let Some(&idx) = png_to_tex_idx.get(&mtl.map_kd) {
+            out.material_texture_map[mi] = idx;
+            continue;
+        }
+
+        // Resolve texture file path (OBJ.cpp:365-375).
+        let requested_tex_path = Path::new(&mtl.map_kd);
+        let tex_path = if requested_tex_path.is_absolute() {
+            crate::format::resource_path_utils::resolve_existing_path_case_insensitive(
+                requested_tex_path,
+                "obj_to_textured_mesh: map_Kd",
+            )
+        } else {
+            crate::format::resource_path_utils::resolve_existing_relative_path_case_insensitive(
+                Path::new(obj_directory),
+                requested_tex_path,
+                "obj_to_textured_mesh: map_Kd",
+            )
+        };
+
+        if tex_path.as_os_str().is_empty() {
+            log::warn!("texture not found: {:?}", requested_tex_path);
+            continue;
+        }
+
+        // Read raw file bytes (OBJ.cpp:377-392)
+        let data = match std::fs::read(&tex_path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        if data.is_empty() {
+            continue;
+        }
+
+        let ti = TextureImage { width: -1, height: -1, channels: 0, data };
+
+        let new_idx = out.textures.len() as i32;
+        out.textures.push(ti);
+        png_to_tex_idx.insert(mtl.map_kd.clone(), new_idx);
+        out.material_texture_map[mi] = new_idx;
+    }
+
+    // 5. Build per-face material_ids from usemtls ranges (OBJ.cpp:399-414)
+    out.material_ids.resize(nf, -1);
+    if !obj_info.usemtls.is_empty() {
+        for fi in 0..nf {
+            let face_idx = fi as i32;
+            for um in &obj_info.usemtls {
+                if face_idx >= um.face_start && face_idx <= um.face_end {
+                    if let Some(&idx) = mtl_name_to_idx.get(&um.name) {
+                        out.material_ids[fi] = idx;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // OBJ.cpp:416-419
+    if out.textures.is_empty() {
+        log::warn!("no textures loaded");
+        return false;
+    }
+
+    log::info!("{} faces, {} textures, {} materials", nf, out.textures.len(), num_materials);
+    true
 }
 
 /// Store a `TriangleMesh` to an OBJ file.

@@ -4188,9 +4188,8 @@ impl Model {
     ///
     /// FIDELITY-NOTE: the AMF importer takes the placeholder `calib::DynamicPrintConfig` (as in
     /// `read_from_archive`): the model is read as the C++ reads it, its configuration is not merged into
-    /// `config`. An OBJ with a UV-mapped PNG is turned Y-up to Z-up as the C++ does (Model.cpp:350-363), but
-    /// its textured mesh (`obj_to_textured_mesh`, OBJ.cpp:287-420) is not built: `format/obj.rs` has no
-    /// counterpart and its `load_obj` does not return the MtlData; `texture_mesh` stays empty there.
+    /// `config`. An OBJ with a UV-mapped PNG is turned Y-up to Z-up and gets its textured mesh
+    /// (`obj_to_textured_mesh`, OBJ.cpp:287-420) as the C++ does (Model.cpp:350-370).
     #[allow(clippy::too_many_arguments)]
     pub fn read_from_file(
         input_file: &str,
@@ -4258,8 +4257,16 @@ impl Model {
         } else if iends_with(input_file, ".obj") {
             // Model.cpp:344-347
             let mut obj_info = crate::format::obj::ObjInfo::new();
+            let mut mtl_data = crate::format::objparser::MtlData::new();
             let gamma = matches!(is_xxx, Some(ref b) if **b);
-            match crate::format::obj::load_obj_to_model(std::path::Path::new(input_file), &mut obj_info, &mut message, None, gamma) {
+            match crate::format::obj::load_obj_to_model_with_mtl(
+                std::path::Path::new(input_file),
+                &mut obj_info,
+                &mut message,
+                None,
+                gamma,
+                Some(&mut mtl_data),
+            ) {
                 Ok(loaded) => {
                     for o in loaded.objects {
                         model.add_object(o);
@@ -4280,7 +4287,18 @@ impl Model {
                         }
                         obj.invalidate_bounding_box();
                     }
-                    // Model.cpp:364-370 obj_to_textured_mesh: not ported (see the FIDELITY-NOTE above).
+                    // Model.cpp:364-370
+                    let mut tex_mesh = crate::texture_painting::TexturedMesh::default();
+                    let obj_dir = std::path::Path::new(input_file).parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+                    if crate::format::obj::obj_to_textured_mesh(
+                        &obj_info,
+                        &model.objects.last().unwrap().volumes[0].mesh().its,
+                        &mtl_data,
+                        &obj_dir,
+                        &mut tex_mesh,
+                    ) {
+                        model.texture_mesh = Some(Arc::new(tex_mesh));
+                    }
                 } else if !model.objects.is_empty() && !model.objects.last().unwrap().volumes.is_empty() {
                     // Model.cpp:371-383
                     let build_tex_mesh_geometry = |model: &Model| {
@@ -5827,6 +5845,71 @@ pub struct ModelObject {
     /// Model.hpp:659 `Model *m_model = nullptr;`: the parent model, held as its ID
     /// (FIDELITY-NOTE (back pointers) at the top of this file).
     m_model: Option<ObjectID>,
+}
+
+/// Model.hpp:1853-1856: `Model::add_object`'s C++ overloads under the C++ name, each calling the port of that
+/// overload (the inherent `Model::add_object` is the loaders' form taking a built object). Called as
+/// `<Model as ModelAddObject<A>>::add_object(model, args)`.
+pub trait ModelAddObject<A> {
+    fn add_object<'m>(model: &'m mut Model, args: A) -> &'m mut ModelObject;
+}
+
+impl ModelAddObject<()> for Model {
+    // Model.cpp:581-585 `add_object()`
+    fn add_object<'m>(model: &'m mut Model, _args: ()) -> &'m mut ModelObject {
+        model.add_object_new()
+    }
+}
+
+impl<'a> ModelAddObject<(&'a str, &'a str, &'a ModelMesh)> for Model {
+    // Model.cpp:587-603 `add_object(const char *name, const char *path, const TriangleMesh &mesh)`: the body of
+    // the moving overload with `add_volume(mesh)` copying the mesh (a model part, centred).
+    fn add_object<'m>(model: &'m mut Model, args: (&'a str, &'a str, &'a ModelMesh)) -> &'m mut ModelObject {
+        model.add_object_with_mesh(args.0, args.1, args.2.clone())
+    }
+}
+
+impl<'a> ModelAddObject<(&'a str, &'a str, ModelMesh)> for Model {
+    // Model.cpp:605-621 `add_object(const char *name, const char *path, TriangleMesh &&mesh)`
+    fn add_object<'m>(model: &'m mut Model, args: (&'a str, &'a str, ModelMesh)) -> &'m mut ModelObject {
+        model.add_object_with_mesh(args.0, args.1, args.2)
+    }
+}
+
+impl<'a> ModelAddObject<&'a ModelObject> for Model {
+    // Model.cpp:623-644 `add_object(const ModelObject &other)`
+    fn add_object<'m>(model: &'m mut Model, other: &'a ModelObject) -> &'m mut ModelObject {
+        model.add_object_clone(other)
+    }
+}
+
+/// Model.hpp:409-412: `ModelObject::add_volume`'s C++ overloads under the C++ name, each calling the port of that
+/// overload (the inherent `ModelObject::add_volume` is `add_volume(const ModelVolume &, TriangleMesh &&)`).
+/// Called as `<ModelObject as ModelObjectAddVolume<A>>::add_volume(object, args)`.
+pub trait ModelObjectAddVolume<A> {
+    fn add_volume<'m>(object: &'m mut ModelObject, args: A) -> &'m mut ModelVolume;
+}
+
+impl<'a> ModelObjectAddVolume<(&'a ModelMesh, bool)> for ModelObject {
+    // Model.cpp:1450-1461 `add_volume(const TriangleMesh &mesh, bool modify_to_center_geometry)`: a model part
+    // built from a copy of the mesh.
+    fn add_volume<'m>(object: &'m mut ModelObject, args: (&'a ModelMesh, bool)) -> &'m mut ModelVolume {
+        object.add_volume_mesh(args.0.clone(), ModelVolumeType::ModelPart, args.1)
+    }
+}
+
+impl ModelObjectAddVolume<(ModelMesh, ModelVolumeType, bool)> for ModelObject {
+    // Model.cpp:1463-1474 `add_volume(TriangleMesh &&mesh, ModelVolumeType type, bool modify_to_center_geometry)`
+    fn add_volume<'m>(object: &'m mut ModelObject, args: (ModelMesh, ModelVolumeType, bool)) -> &'m mut ModelVolume {
+        object.add_volume_mesh(args.0, args.1, args.2)
+    }
+}
+
+impl<'a> ModelObjectAddVolume<(&'a ModelVolume, ModelVolumeType)> for ModelObject {
+    // Model.cpp:1476-1491 `add_volume(const ModelVolume &other, ModelVolumeType type)`
+    fn add_volume<'m>(object: &'m mut ModelObject, args: (&'a ModelVolume, ModelVolumeType)) -> &'m mut ModelVolume {
+        object.add_volume_copy(args.0, args.1)
+    }
 }
 
 /// ModelObject methods for geometry and instance management.

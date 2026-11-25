@@ -1,0 +1,17 @@
+newmtl wood
+Kd 0.8 0.6 0.4
+Ka 0.1 0.1 0.1
+d 1
+map_Kd wood.png
+newmtl stone
+Kd 0.5 0.5 0.55
+map_Kd stone.png
+newmtl missing
+Kd 0.2 0.3 0.4
+Tr 0.25
+map_Kd nowhere.png
+newmtl wood2
+Kd 0.9 0.1 0.1
+map_Kd wood.png
+newmtl plain
+Kd 0.1 0.7 0.2

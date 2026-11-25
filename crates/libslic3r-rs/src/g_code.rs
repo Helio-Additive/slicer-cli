@@ -795,6 +795,9 @@ pub(crate) fn append_tcr(
                     writer.m_share_retracted[old_slot] = retracted.max(length);
                 }
                 let new_slot = gp.get_extruder_id(new_filament_id);
+                // The new filament's slot, for the writer's state after the change (writer.rs
+                // after_custom_gcode, TOOLCHANGE_SLOT_RETRACTED).
+                writer.m_share_pending_slot = Some(new_slot);
                 Some(writer.m_share_retracted.get(new_slot).copied().unwrap_or(0.0) as f32)
             } else {
                 None
@@ -2051,7 +2054,7 @@ fn overhang_fan_marker_needed(
         || is_bridge_role
 }
 
-fn overhang_degree_corr_speed(
+pub fn overhang_degree_corr_speed(
     config: &crate::print_config::PrintObjectConfig,
     normal_speed: f64,
     path_degree: f64,
@@ -2105,6 +2108,12 @@ fn overhang_degree_corr_speed(
         upper_speed_bound = normal_speed;
     }
     // GCode.cpp:5961 — speed_out = lower + (upper-lower)*(path_degree - lower_degree_bound)
+    // (GCode.cpp:7200 at the pin). One expression `a + b * c`, which clang (-ffp-contract=on) fuses
+    // into fma(b, c, a): gate OVERHANG_SPEED_FMA (faithful); =0: the product rounded first.
+    if crate::faithful_gate("OVERHANG_SPEED_FMA") {
+        return (upper_speed_bound - lower_speed_bound)
+            .mul_add(path_degree - lower_degree_bound as f64, lower_speed_bound);
+    }
     lower_speed_bound
         + (upper_speed_bound - lower_speed_bound) * (path_degree - lower_degree_bound as f64)
 }
@@ -2423,7 +2432,16 @@ pub fn extrude_loop(
             | Some(ExtrusionRole::Perimeter)
             | Some(ExtrusionRole::OverhangPerimeter)
     );
-    let smooth_coeff = config.smooth_coefficient;
+    // GCode.hpp:252, 659: `float m_smooth_coefficient`, set by `set_smooth_coff(float filamet_melting)` as
+    // `filamet_melting * m_config.smooth_coefficient` (a double product stored into the float member;
+    // GCode.cpp:6779/6809 pass FILAMENT_CONFIG(filament_velocity_adaptation_factor)). Gate SMOOTH_COEFF_F32
+    // (faithful): the coefficient rounded to float as the pin keeps it (the factor is still taken as 1.0:
+    // the live PrintConfig does not carry filament_velocity_adaptation_factor); =0: the double option.
+    let smooth_coeff = if crate::faithful_gate("SMOOTH_COEFF_F32") {
+        (1.0f32 as f64 * config.smooth_coefficient) as f32 as f64
+    } else {
+        config.smooth_coefficient
+    };
     // R536 probe (SMOOTHPROBE=1): count each sub-condition of the smoothing gate
     // separately, so a closed gate names its own cause instead of being guessed at.
     if crate::probe_enabled("SMOOTHPROBE") {
@@ -12958,7 +12976,7 @@ fn path_from(polyline: Polyline, src: &ExtrusionPath) -> ExtrusionPath {
 
 /// GCode.cpp:5918-5923 — `double GCode::mapping_speed(double dist)` ; f(x)=coeff*x^2.
 #[inline]
-fn mapping_speed(coeff: f64, dist: f64) -> f64 {
+pub fn mapping_speed(coeff: f64, dist: f64) -> f64 {
     // GCode.cpp:5920-5921
     if dist <= 0.0 {
         return 0.0;
@@ -12968,7 +12986,7 @@ fn mapping_speed(coeff: f64, dist: f64) -> f64 {
 
 /// GCode.cpp:5925-5929 — `double GCode::get_speed_coor_x(double speed)`.
 #[inline]
-fn get_speed_coor_x(coeff: f64, speed: f64) -> f64 {
+pub fn get_speed_coor_x(coeff: f64, speed: f64) -> f64 {
     // GCode.cpp:5927-5928
     let temp = speed / coeff;
     temp.sqrt()

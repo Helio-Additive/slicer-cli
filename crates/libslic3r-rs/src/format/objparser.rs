@@ -831,16 +831,19 @@ fn obj_parseline(line: &[u8], data: &mut ObjData) -> bool {
                         p = endptr;
                     }
                     if at(line, p) == b'/' {
-                        // Parse normal index.
-                        // objparser.cpp:232-236
+                        // objparser.cpp:229-237 — normal index is optional after "//" (e.g. "1//" or
+                        // "1// 2//"); skip strtol when omitted.
                         p += 1;
-                        let (ni, endptr) = strtol(line, p);
-                        vertex.normal_idx = ni as i32;
-                        let e = at(line, endptr);
-                        if e != b' ' && e != b'\t' && e != 0 {
-                            return false;
+                        let c = at(line, p);
+                        if c != 0 && c != b' ' && c != b'\t' {
+                            let (ni, endptr) = strtol(line, p);
+                            vertex.normal_idx = ni as i32;
+                            let e = at(line, endptr);
+                            if endptr == p || (e != b' ' && e != b'\t' && e != 0) {
+                                return false;
+                            }
+                            p = endptr;
                         }
-                        p = endptr;
                     }
                 }
                 // objparser.cpp:239-242
@@ -855,10 +858,10 @@ fn obj_parseline(line: &[u8], data: &mut ObjData) -> bool {
                 } else {
                     vertex.normal_idx -= 1;
                 }
-                // objparser.cpp:247-250 — note: textureCoordinates are stored 2 floats
-                // per entry but C++ divides by 3; the quirk is preserved.
+                // objparser.cpp:246-251 — texture coordinates are stored as u/v pairs, so a negative
+                // (relative) index is rebased against the pair count.
                 if vertex.texture_coord_idx < 0 {
-                    vertex.texture_coord_idx += (data.texture_coordinates.len() as i32) / 3;
+                    vertex.texture_coord_idx += (data.texture_coordinates.len() as i32) / 2;
                 } else {
                     vertex.texture_coord_idx -= 1;
                 }
@@ -883,13 +886,9 @@ fn obj_parseline(line: &[u8], data: &mut ObjData) -> bool {
                     face_index_count += 1;
                     i -= 1;
                 }
-                if face_index_count == 3 {
-                    // tri (objparser.cpp:265-266)
-                    data.usemtls.last_mut().unwrap().face_end += 1;
-                } else if face_index_count == 4 {
-                    // quad (objparser.cpp:267-270)
-                    data.usemtls.last_mut().unwrap().face_end += 1;
-                    data.usemtls.last_mut().unwrap().face_end += 1;
+                // objparser.cpp:269-271 — a polygon of n vertices is n - 2 triangles
+                if face_index_count >= 3 {
+                    data.usemtls.last_mut().unwrap().face_end += face_index_count - 2;
                 }
             }
             // objparser.cpp:272-275 — face delimiter

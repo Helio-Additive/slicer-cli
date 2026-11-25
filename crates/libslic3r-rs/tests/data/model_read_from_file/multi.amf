@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<amf unit="millimeter">
+  <metadata type="cad">gen</metadata>
+  <material id="m1"><metadata type="name">red</metadata><metadata type="color">1 0 0</metadata></material>
+  <object id="b">
+    <metadata type="name">two_parts</metadata>
+    <mesh>
+      <vertices>
+        <vertex><coordinates><x>10</x><y>20</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>15</x><y>20</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>10</x><y>25</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>15</x><y>25</y><z>0</z></coordinates></vertex>
+        <vertex><coordinates><x>10</x><y>20</y><z>5</z></coordinates></vertex>
+        <vertex><coordinates><x>15</x><y>20</y><z>5</z></coordinates></vertex>
+        <vertex><coordinates><x>10</x><y>25</y><z>5</z></coordinates></vertex>
+        <vertex><coordinates><x>15</x><y>25</y><z>5</z></coordinates></vertex>
+        <vertex><coordinates><x>30.5</x><y>-4.25</y><z>2.0</z></coordinates></vertex>
+        <vertex><coordinates><x>33.0</x><y>-4.25</y><z>2.0</z></coordinates></vertex>
+        <vertex><coordinates><x>30.5</x><y>-1.75</y><z>2.0</z></coordinates></vertex>
+        <vertex><coordinates><x>33.0</x><y>-1.75</y><z>2.0</z></coordinates></vertex>
+        <vertex><coordinates><x>30.5</x><y>-4.25</y><z>4.5</z></coordinates></vertex>
+        <vertex><coordinates><x>33.0</x><y>-4.25</y><z>4.5</z></coordinates></vertex>
+        <vertex><coordinates><x>30.5</x><y>-1.75</y><z>4.5</z></coordinates></vertex>
+        <vertex><coordinates><x>33.0</x><y>-1.75</y><z>4.5</z></coordinates></vertex>
+      </vertices>
+      <volume materialid="m1">
+        <metadata type="name">part_one</metadata>
+        <triangle><v1>0</v1><v2>2</v2><v3>1</v3></triangle>
+        <triangle><v1>1</v1><v2>2</v2><v3>3</v3></triangle>
+        <triangle><v1>4</v1><v2>5</v2><v3>6</v3></triangle>
+        <triangle><v1>5</v1><v2>7</v2><v3>6</v3></triangle>
+        <triangle><v1>0</v1><v2>1</v2><v3>4</v3></triangle>
+        <triangle><v1>1</v1><v2>5</v2><v3>4</v3></triangle>
+        <triangle><v1>2</v1><v2>6</v2><v3>3</v3></triangle>
+        <triangle><v1>3</v1><v2>6</v2><v3>7</v3></triangle>
+        <triangle><v1>0</v1><v2>4</v2><v3>2</v3></triangle>
+        <triangle><v1>2</v1><v2>4</v2><v3>6</v3></triangle>
+        <triangle><v1>1</v1><v2>3</v2><v3>5</v3></triangle>
+        <triangle><v1>3</v1><v2>7</v2><v3>5</v3></triangle>
+      </volume>
+      <volume materialid="m1">
+        <metadata type="name">part_two</metadata>
+        <triangle><v1>8</v1><v2>10</v2><v3>9</v3></triangle>
+        <triangle><v1>9</v1><v2>10</v2><v3>11</v3></triangle>
+        <triangle><v1>12</v1><v2>13</v2><v3>14</v3></triangle>
+        <triangle><v1>13</v1><v2>15</v2><v3>14</v3></triangle>
+        <triangle><v1>8</v1><v2>9</v2><v3>12</v3></triangle>
+        <triangle><v1>9</v1><v2>13</v2><v3>12</v3></triangle>
+        <triangle><v1>10</v1><v2>14</v2><v3>11</v3></triangle>
+        <triangle><v1>11</v1><v2>14</v2><v3>15</v3></triangle>
+        <triangle><v1>8</v1><v2>12</v2><v3>10</v3></triangle>
+        <triangle><v1>10</v1><v2>12</v2><v3>14</v3></triangle>
+        <triangle><v1>9</v1><v2>11</v2><v3>13</v3></triangle>
+        <triangle><v1>11</v1><v2>15</v2><v3>13</v3></triangle>
+      </volume>
+    </mesh>
+  </object>
+  <object id="a">
+    <metadata type="name">flipped</metadata>
+    <mesh>
+      <vertices>
+        <vertex><coordinates><x>-3</x><y>-3</y><z>1</z></coordinates></vertex>
+        <vertex><coordinates><x>3</x><y>-3</y><z>1</z></coordinates></vertex>
+        <vertex><coordinates><x>-3</x><y>3</y><z>1</z></coordinates></vertex>
+        <vertex><coordinates><x>3</x><y>3</y><z>1</z></coordinates></vertex>
+        <vertex><coordinates><x>-3</x><y>-3</y><z>7</z></coordinates></vertex>
+        <vertex><coordinates><x>3</x><y>-3</y><z>7</z></coordinates></vertex>
+        <vertex><coordinates><x>-3</x><y>3</y><z>7</z></coordinates></vertex>
+        <vertex><coordinates><x>3</x><y>3</y><z>7</z></coordinates></vertex>
+      </vertices>
+      <volume materialid="m1">
+        <triangle><v1>0</v1><v2>1</v2><v3>2</v3></triangle>
+        <triangle><v1>1</v1><v2>3</v2><v3>2</v3></triangle>
+        <triangle><v1>4</v1><v2>6</v2><v3>5</v3></triangle>
+        <triangle><v1>5</v1><v2>6</v2><v3>7</v3></triangle>
+        <triangle><v1>0</v1><v2>4</v2><v3>1</v3></triangle>
+        <triangle><v1>1</v1><v2>4</v2><v3>5</v3></triangle>
+        <triangle><v1>2</v1><v2>3</v2><v3>6</v3></triangle>
+        <triangle><v1>3</v1><v2>7</v2><v3>6</v3></triangle>
+        <triangle><v1>0</v1><v2>2</v2><v3>4</v3></triangle>
+        <triangle><v1>2</v1><v2>6</v2><v3>4</v3></triangle>
+        <triangle><v1>1</v1><v2>5</v2><v3>3</v3></triangle>
+        <triangle><v1>3</v1><v2>5</v2><v3>7</v3></triangle>
+      </volume>
+    </mesh>
+  </object>
+  <constellation id="c">
+    <instance objectid="b"><deltax>100</deltax><deltay>50.5</deltay><deltaz>1</deltaz><rz>0.5</rz></instance>
+    <instance objectid="b"><deltax>-20</deltax><scalex>2</scalex><scaley>0.5</scaley><scalez>1.5</scalez><mirrorx>-1</mirrorx></instance>
+    <instance objectid="a"><deltay>7.25</deltay><rx>0.25</rx><ry>-0.125</ry><printable>0</printable></instance>
+  </constellation>
+</amf>

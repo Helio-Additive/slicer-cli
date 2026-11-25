@@ -101,6 +101,10 @@ pub use point::{
     AlignToGrid, AnyComp, HasDuplicatePoints, NearestPointIndex, NewScale, PointCcw, PointRotate, PointRotated,
     Scaled as PointScaled, Unscaled as PointUnscaled,
 };
+// Point.cpp projection_onto(MultiPoint) and get_extents (R952).
+pub use point::{
+    get_extents as get_extents_points, get_extents_vec_of_points, PointProjectionOntoMultiPoint,
+};
 pub use polygon::{Polygon, Polygons};
 // Polygon.hpp overloads as traits under the C++ names (R950).
 pub use polygon::{
