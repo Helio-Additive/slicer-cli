@@ -410,6 +410,10 @@ pub struct GCodeWriter {
     /// Last emitted travel acceleration (M204 S value), for deduplication.
     /// 0 means "not set yet" — always emit on first call.
     last_travel_accel: f64,
+    /// TRAVEL_ACCEL_AFTER_XY_UNCLEAR (R950): the travel acceleration chosen by the caller while the
+    /// writer's position is not clear, written by the next travel where the pin's GCodeWriter writes it
+    /// (see `set_travel_acceleration_for`).
+    deferred_travel_accel: Option<u32>,
     /// R234: native m_last_height (GCode.cpp:6619) — per-path LAYER_HEIGHT
     /// tag register; layer changes also set it (GCode.cpp:4065).
     pub last_height_tag: f64,
@@ -550,6 +554,7 @@ impl GCodeWriter {
             m_is_last_retraction: false,
             wipe_distance: 2.0, // Default wipe distance (mm); overridden from settings
             last_travel_accel: 0.0,
+            deferred_travel_accel: None,
             last_height_tag: 0.0,
             is_first_layer: false,
             pending_accel: 0,
@@ -1102,9 +1107,50 @@ impl GCodeWriter {
             accel
         };
         let effective_u = effective as u32;
+        // TRAVEL_ACCEL_AFTER_XY_UNCLEAR (faithful, R950): when the position is not clear (the first
+        // travel of the print, after a tool change), GCodeWriter::travel_to_xyz writes the XY line first
+        // and `_travel_to_z`, which begins with `set_travel_acceleration()` (GCodeWriter.cpp:762-779),
+        // writes the M204 between the XY and the Z line; the `set_travel_acceleration(use_short)` prefix
+        // of travel_to_xyz's result is evaluated after that and finds the register set
+        // (GCodeWriter.cpp:715-742). So the value is held here and written by the travel. Only when it is
+        // the regular travel acceleration (`use_short` off, always on the first layer): the short one
+        // would be printed as the prefix. =0 writes it before the travel.
+        if crate::faithful_gate("TRAVEL_ACCEL_AFTER_XY_UNCLEAR")
+            && !self.is_current_position_clear()
+            && effective_u == self.regular_travel_acceleration_u32()
+        {
+            self.deferred_travel_accel = Some(effective_u);
+            return;
+        }
         if (self.last_travel_accel as u32) != effective_u {
             self.write_raw(&format!("M204 S{}", effective_u));
             self.last_travel_accel = effective;
+        }
+    }
+
+    /// GCodeWriter::set_travel_acceleration(false) (GCodeWriter.cpp:261-285): the first-layer or the
+    /// regular travel acceleration, clamped to the machine maximum as `set_acceleration_impl` does
+    /// (GCodeWriter.cpp:288-292); the value `set_travel_acceleration_for` picks when the short travel
+    /// acceleration does not apply.
+    fn regular_travel_acceleration_u32(&self) -> u32 {
+        let accel = if self.is_first_layer && self.config.initial_layer_travel_acceleration > 0.0 {
+            self.config.initial_layer_travel_acceleration
+        } else {
+            self.config.travel_acceleration
+        };
+        let max_accel = self.config.machine_max_acceleration_extruding;
+        let effective = if max_accel > 0.0 && accel > max_accel { max_accel } else { accel };
+        effective as u32
+    }
+
+    /// TRAVEL_ACCEL_AFTER_XY_UNCLEAR: write the held travel acceleration through the register
+    /// (`set_acceleration_impl`, GCodeWriter.cpp:288-296: nothing when it equals the last one).
+    fn flush_deferred_travel_accel(&mut self) {
+        if let Some(v) = self.deferred_travel_accel.take() {
+            if v > 0 && (self.last_travel_accel as u32) != v {
+                self.write_raw(&format!("M204 S{}", v));
+                self.last_travel_accel = v as f64;
+            }
         }
     }
 
@@ -1555,6 +1601,9 @@ impl GCodeWriter {
 
     /// Travel move (no extrusion).
     pub fn travel_to(&mut self, x: CoordF, y: CoordF, feedrate: Option<CoordF>) {
+        // TRAVEL_ACCEL_AFTER_XY_UNCLEAR: GCodeWriter::travel_to_xy prefixes its line with the
+        // travel acceleration (GCodeWriter.cpp:464-478).
+        self.flush_deferred_travel_accel();
         let f = feedrate.unwrap_or(self.config.travel_speed * 60.0);
 
         // Track travel distance and time
@@ -1897,6 +1946,12 @@ impl GCodeWriter {
     /// (current layer z). Plate offsets are 0 in this pipeline.
     pub fn travel_to_xyz(&mut self, x: CoordF, y: CoordF, z: CoordF) {
         const EPSILON: CoordF = 1e-4;
+        // TRAVEL_ACCEL_AFTER_XY_UNCLEAR: with the position clear the acceleration is the prefix
+        // of the result (GCodeWriter.cpp:715, 742); with it unclear `travel_to_z` writes it after
+        // the XY line (`_travel_to_z`'s own prefix, GCodeWriter.cpp:762-779).
+        if self.is_current_position_clear() {
+            self.flush_deferred_travel_accel();
+        }
         let travel_f = self.config.travel_speed * 60.0;
         if self.m_to_lift.abs() > EPSILON {
             let mut dest_z = z;
@@ -2042,6 +2097,10 @@ impl GCodeWriter {
 
     /// Travel move to a specific Z height.
     pub fn travel_to_z(&mut self, z: CoordF, feedrate: Option<CoordF>) {
+        // TRAVEL_ACCEL_AFTER_XY_UNCLEAR: `_travel_to_z` begins with `set_travel_acceleration()`
+        // (GCodeWriter.cpp:762-779); here only the value a caller held back (see
+        // `set_travel_acceleration_for`) is written.
+        self.flush_deferred_travel_accel();
         let f = feedrate.unwrap_or(self.config.travel_speed * 60.0);
 
         // Track Z travel time
@@ -3692,6 +3751,41 @@ mod tests {
         if set_speed_emit_axis_gate() && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
             assert_eq!(line, "G1 F9416.005");
         }
+    }
+
+    /// TRAVEL_ACCEL_AFTER_XY_UNCLEAR: with the position not clear, GCodeWriter::travel_to_xyz writes
+    /// the XY line, then `_travel_to_z`'s `set_travel_acceleration()` and the Z line; the prefix of the
+    /// result finds the register already set (GCodeWriter.cpp:715-742, 762-779). The pin's Benchy first
+    /// layer: `G1 X175.112 Y162.228 F60000` / `M204 S6000` / `G1 Z.4`.
+    #[test]
+    fn travel_accel_after_xy_when_position_unclear() {
+        let mut writer = GCodeWriter::new();
+        writer.config.initial_layer_travel_acceleration = 6000.0;
+        writer.config.travel_acceleration = 10000.0;
+        writer.config.machine_max_acceleration_extruding = 20000.0;
+        writer.is_first_layer = true;
+        assert!(!writer.is_current_position_clear());
+        let mark = writer.output_mark();
+        writer.set_travel_acceleration_for(crate::extrusion_entity::ExtrusionRole::ExternalPerimeter, 5.0);
+        writer.travel_to_xyz(175.112, 162.228, 0.4);
+        let out = writer.take_output_since(mark);
+        let lines: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
+        let xy = lines.iter().position(|l| l.starts_with("G1 X175.112 Y162.228")).expect("xy line");
+        let acc = lines.iter().position(|l| *l == "M204 S6000").expect("M204 line");
+        let z = lines.iter().position(|l| l.starts_with("G1 Z.4")).expect("z line");
+        if crate::faithful_gate("TRAVEL_ACCEL_AFTER_XY_UNCLEAR") {
+            assert!(xy < acc && acc < z, "{lines:?}");
+        } else {
+            assert!(acc < xy && xy < z, "{lines:?}");
+        }
+        // A second travel with the position clear: the acceleration is the prefix again.
+        writer.is_first_layer = false;
+        let mark = writer.output_mark();
+        writer.set_travel_acceleration_for(crate::extrusion_entity::ExtrusionRole::Perimeter, 5.0);
+        writer.travel_to_xyz(180.0, 160.0, 0.4);
+        let out = writer.take_output_since(mark);
+        let lines: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.first().copied(), Some("M204 S10000"), "{lines:?}");
     }
 
     #[test]

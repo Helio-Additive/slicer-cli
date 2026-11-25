@@ -872,6 +872,12 @@ impl PrintObject {
                 eprintln!("[SLICEPTS] A holes by layer: {}", head.join(" "));
             }
         }
+        // AUTO_CIRCLE_COMPENSATION_LIVE: without the segmentation below this is each layer's last
+        // make_slices, so the compensation goes right before it (PrintObjectSlice.cpp:2385-2388).
+        let circle_comp_after_mms = num_regions > 1 && !self.painted_submeshes.is_empty();
+        if !circle_comp_after_mms {
+            self.apply_circle_compensation_live_all_layers();
+        }
         for layer in &mut self.layers {
             layer.make_slices();
         }
@@ -950,6 +956,9 @@ impl PrintObject {
             // NOT byte-equivalent: the safety-offset union keeps region-boundary
             // vertices (Majora layer 2: 1,403 v 1,845 points), and lslices feed
             // overhang/bridge detection and the fills.
+            // AUTO_CIRCLE_COMPENSATION_LIVE: the pin compensates after the segmentation (it runs in
+            // slice_volumes, before the per-layer loop of PrintObjectSlice.cpp:2280-2390).
+            self.apply_circle_compensation_live_all_layers();
             if crate::faithful_gate("LSLICES_POST_MMS") {
                 let __t = std::time::Instant::now();
                 for layer in &mut self.layers {
@@ -1147,6 +1156,13 @@ impl PrintObject {
                             })
                             .collect();
                 }
+                // :2385-2387 AUTO_CIRCLE_COMPENSATION_LIVE: the first layer is compensated after its
+                // Elephant foot trimming (deferred by `apply_circle_compensation_live_all_layers`).
+                if circle_compensation_live_gate() && self.config.enable_circle_compensation {
+                    let (params, manual_offset) = circle_compensation_live_params(&self.config, &self.print_config);
+                    self.layers[0].apply_auto_circle_compensation_with(&params, manual_offset);
+                }
+                let layer = &mut self.layers[0];
                 // :2384
                 layer.make_slices();
                 // :2391-2408 the first layer keeps the uncompensated lslices,
@@ -2072,6 +2088,13 @@ impl PrintObject {
         // object's layers are copied for Layer.cpp:304-351 (the pin compensates while slicing, so its
         // get_layer(0) slices are the compensated ones). No other layer's perimeters read layer 0's region
         // slices, so running it first changes nothing else.
+        // AUTO_CIRCLE_COMPENSATION_LIVE: what the first layer's compensation reads, when it follows the
+        // Elephant foot step below.
+        let circle_comp_l0 = if circle_compensation_live_gate() && self.config.enable_circle_compensation {
+            Some(circle_compensation_live_params(&self.config, &self.print_config))
+        } else {
+            None
+        };
         let efc_step = |idx: usize, layer: &mut Layer| {
             // FIDELITY-NOTE: elephant-foot compensation has no counterpart in C++
             // PrintObject::make_perimeters — in BambuStudio it is applied during
@@ -2148,7 +2171,14 @@ impl PrintObject {
                     region.elephant_foot_compensation_step(efc_value);
                 }
             }
-
+            // AUTO_CIRCLE_COMPENSATION_LIVE: the pin compensates the first layer after its Elephant foot
+            // step (PrintObjectSlice.cpp:2295-2313, then 2385-2387); here that step runs for one region,
+            // so the compensation follows it (`apply_circle_compensation_live_all_layers` skips layer 0).
+            if idx == 0 && !l0_efc_done_in_slice && object_config.elephant_foot_compensation > 0.0 {
+                if let Some((params, manual_offset)) = &circle_comp_l0 {
+                    layer.apply_auto_circle_compensation_with(params, *manual_offset);
+                }
+            }
         };
         // R935: `this->object()->get_layer(i)` for Layer::make_perimeters (Layer.cpp:304-351): a read-only
         // copy of every layer, taken only when a region carries adaptive merge patches (PrintObject.cpp:4312
@@ -9792,6 +9822,57 @@ fn boi_stage_dump(layers: &[crate::layer::Layer], name: &str) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// AUTO_CIRCLE_COMPENSATION_LIVE (faithful, R950): the live slice compensates circles as
+/// PrintObjectSlice.cpp:2385-2387 does (`if (this->config().enable_circle_compensation)
+/// layer->apply_auto_circle_compensation();` right before each layer's `make_slices`, after the
+/// first layer's Elephant foot step). =0 leaves the slices uncompensated (the earlier arm).
+fn circle_compensation_live_gate() -> bool {
+    crate::faithful_gate("AUTO_CIRCLE_COMPENSATION_LIVE")
+}
+
+/// What Layer.cpp:41-43 reads: `get_auto_circle_compenstaion_params()`, set from the print config's
+/// twelve float vectors (Print.cpp:2334, 2345, 2482; `AutoContourHolesCompensationParams`,
+/// Print.hpp:369-385), and `scale_(config().circle_compensation_manual_offset)` passed as a float.
+fn circle_compensation_live_params(
+    config: &PrintObjectConfig,
+    print_config: &PrintConfig,
+) -> (crate::layer_region::AutoContourHolesCompensationParams, f32) {
+    let params = crate::layer_region::AutoContourHolesCompensationParams::new_from_config_values(|key| {
+        print_config.circle_compensation_floats(key)
+    });
+    // libslic3r.h `scale_(v)` is `v / SCALING_FACTOR` (0.00001); the float parameter takes it as float.
+    let manual_offset = (config.circle_compensation_manual_offset / crate::libslic3r::SCALING_FACTOR) as f32;
+    (params, manual_offset)
+}
+
+impl PrintObject {
+    /// AUTO_CIRCLE_COMPENSATION_LIVE: every layer's regions go through
+    /// `Layer::apply_auto_circle_compensation_with` (PrintObjectSlice.cpp:2385-2387), except the first
+    /// layer when it has an Elephant foot step still to come (the multi-region branch of the live slice,
+    /// or `efc_step` in make_perimeters for one region): the pin compensates after that step
+    /// (:2295-2387), and those places do it.
+    fn apply_circle_compensation_live_all_layers(&mut self) {
+        if !circle_compensation_live_gate() || !self.config.enable_circle_compensation {
+            return;
+        }
+        // The first layer is compensated after its Elephant foot step: by the multi-region branch of
+        // the live slice (L0_EFC_MULTI_REGION) or after the single-region step in make_perimeters
+        // (`efc_step`); both run only with a compensation value.
+        let efc_l0 = self.config.elephant_foot_compensation > 0.0;
+        let (params, manual_offset) = circle_compensation_live_params(&self.config, &self.print_config);
+        // LayerRegion::auto_circle_compensation reads `region().config().wall_filament`
+        // (LayerRegion.cpp:72); the live slice wires the hierarchy only at its end, so wire it here
+        // too (the stamping is idempotent).
+        self.wire_layer_hierarchy();
+        for (li, layer) in self.layers.iter_mut().enumerate() {
+            if li == 0 && efc_l0 {
+                continue;
+            }
+            layer.apply_auto_circle_compensation_with(&params, manual_offset);
         }
     }
 }

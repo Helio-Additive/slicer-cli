@@ -4753,5 +4753,165 @@
    "GCodeFormatter::emit_f",
    "GCodeWriter::set_speed"
   ]
+ },
+ {
+  "unit": "Point",
+  "round": 950,
+  "evidence": "tests/point_cpp_names_native_parity.rs (point_cpp_names_match_the_pin) against tests/data/point_cpp_names/gen.cpp (vectors.txt.gz, 1,271,689 B): 28 groups, 0 mismatches, bit for bit: align_to_grid x4 (4,000 each, coords to +-2e6, spacing 1-50,000, base +-3e5), scaled<double>(double) / scaled<float>(float) / scaled<coord_t>(double) / scaled<coord_t>(Vec2d) (4,000 each incl. 16 literals 0.5, 1, 0.005, 0.01 ...), unscaled<double> / unscaled<float> (coord_t) / unscaled(Point) (4,000 each, coords to +-2e9), Point::new_scale x3 (4,000 each), has_duplicate_points(const Points&) (2,000), Point::rotate x3 and Point::rotated x3 (6,000 each, fused as clang), Point::ccw x2 (6,000 each), Point::any_comp x2 (6,000 each), Point::nearest_point_index x3 (3,000 each). C++ overloads are trait impls in geometry/point.rs: AlignToGrid, Scaled, Unscaled, HasDuplicatePoints, PointRotate, PointRotated, PointCcw, NewScale, AnyComp, NearestPointIndex.",
+  "functions": [
+   "align_to_grid",
+   "scaled",
+   "unscaled",
+   "has_duplicate_points",
+   "Point::rotate",
+   "Point::rotated",
+   "Point::ccw",
+   "Point::new_scale",
+   "Point::any_comp",
+   "Point::nearest_point_index"
+  ]
+ },
+ {
+  "unit": "MultiPoint",
+  "round": 950,
+  "evidence": "tests/multi_point_cpp_names_native_parity.rs (multi_point_cpp_names_match_the_pin) against tests/data/multi_point_cpp_names/gen.cpp (vectors.txt.gz, 1,869,220 B): 3,000 shapes (1,500 Polygons, 1,500 Polylines; 300 with 0-2 points), 22 groups x 3,000 cases, 0 mismatches: MultiPoint::scale x2, translate x2, rotate x3 (fused as clang), reverse, size, empty, is_valid, closest_point_index, closest_point, distance_to (bit for bit), clear, append x4, intersection, first_intersection, intersections (1,711 lines hit, 1,239 with several intersections). trait MultiPoint (lines() the pure virtual, impls for Polygon and Polyline) and MultiPointScale / MultiPointTranslate / MultiPointRotate / MultiPointAppend in multi_point.rs.",
+  "functions": [
+   "MultiPoint::scale",
+   "MultiPoint::translate",
+   "MultiPoint::rotate",
+   "MultiPoint::reverse",
+   "MultiPoint::size",
+   "MultiPoint::empty",
+   "MultiPoint::is_valid",
+   "MultiPoint::closest_point_index",
+   "MultiPoint::closest_point",
+   "MultiPoint::distance_to",
+   "MultiPoint::clear",
+   "MultiPoint::append",
+   "MultiPoint::intersection",
+   "MultiPoint::first_intersection",
+   "MultiPoint::intersections"
+  ]
+ },
+ {
+  "unit": "Polygon",
+  "round": 950,
+  "evidence": "tests/polygon_cpp_names_native_parity.rs (polygon_cpp_names_match_the_pin) against tests/data/polygon_cpp_names/gen.cpp (vectors.txt.gz, 484,508 B): 3,000 sets of 1-4 polygons (3-9 points, repeated points in 1,665 first polygons), 12 groups x 3,000 cases, 0 mismatches: contains(const Polygon&, Point, bool) and contains(const Polygons&, Point, bool) (both border results; a quarter of the points on a vertex), area(const Polygons&) bit for bit, has_duplicate_points(const Polygon&), to_lines(const Polygons&), to_polylines(Polygons&&), to_polygons(const std::vector<Points>&) and (std::vector<Points>&&) (empty paths included), polygons_append copy and move, remove_same_neighbor(Polygon&) and (Polygons&). Traits PolygonContains, PolygonsArea, PolygonsAppend, PolygonsToLines, PolygonsToPolylines, PathsToPolygons in geometry/polygon.rs; RemoveSameNeighbor and HasDuplicatePoints impls for Polygon / Polygons.",
+  "functions": [
+   "contains",
+   "area",
+   "has_duplicate_points",
+   "to_lines",
+   "to_polylines",
+   "to_polygons",
+   "polygons_append",
+   "remove_same_neighbor"
+  ]
+ },
+ {
+  "unit": "BoundingBox",
+  "round": 950,
+  "evidence": "tests/bounding_box_cpp_names_native_parity.rs (bounding_box_cpp_names_match_the_pin) against tests/data/bounding_box_cpp_names/gen.cpp (vectors.txt.gz, 654,052 B): 4,000 cases (degenerate axes, defined forced true on inverted boxes), 8 groups, 0 mismatches: empty() of BoundingBoxBase<Vec2d>, BoundingBox3Base<Vec3d>, BoundingBoxBase<Point>, BoundingBox3Base<Vec3crd> (BoundingBox.hpp:248-258), scaled(const BoundingBoxf&) / scaled(const BoundingBoxf3&) (corners truncated to coord_t, `defined` from the (min, max) constructor), unscaled(const BoundingBox&) / unscaled(const BoundingBox3&) bit for bit (BoundingBox.hpp:260-263). Traits BoundingBoxEmpty, BoundingBoxScaled, BoundingBoxUnscaled in bounding_box.rs. cast<Tout> (BoundingBox.hpp:265-277) not done.",
+  "functions": [
+   "empty",
+   "scaled",
+   "unscaled"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 950,
+  "evidence": "Replay over the pin's own output (probe PROCESSOR_REPLAY in print.rs, diagnostic only): the export's processor set-up (print's nozzle group context, apply_config of the H2D Majora job) run over slicer_cli's G-code of the H2D job less its post-processed lines (M73, M632, M633, ';Multi extruder pre'): print time 499681.3 s = 5d 18h 48m 1s, prepare 328.67 s, model time 5d 18h 42m 32s = the pin's header exactly; TimeProcessor::post_process (M73 P/R) over that text equals the pin's M73 P/R lines on every line of 5.06 million (diff = the pin's 983 'M73 L<n>' lines and the first/last placeholders, written elsewhere by the port); post_process_with_context with the job's pre-heating context gives back the pin's file line for line except 894 doubled 'M400' (the M400 the pin's pre-cooling injection writes before each of its 894 '...pre cooling' lines, which the strip left in). .",
+  "functions": [
+   "GCodeProcessor::TimeMachine::simulate_st_synchronize",
+   "GCodeProcessor::simulate_st_synchronize",
+   "GCodeProcessor::update_estimated_times_stats"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 950,
+  "evidence": "Fixture: HEADER_USED_FILAMENT_PROCESSOR (print.rs header_used_filament_lines, GCodeProcessor.cpp 661-673, 728-766, from print_statistics.total_volumes_per_extruder): Benchy classic header '; total filament length [mm] : 3994.07' / volume 9606.86 / weight 12.10 and Benchy arachne 3958.04 / 9520.20 / 12.00 equal the oracle's (target/parity-ref); the gate at 0 gives the writer's 3984.04 / 3948.02. nu3mf and the H2D job now write the pin's per-filament lists (H2D weights equal on all 8 filaments; lengths/volumes within 0.3 mm3 where the bodies differ). Binary 11:33, fx r950c / r950c_off. Unit test print::tests::test_header_used_filament_lines_r950 (format, std::map order, filament not in the writer's list skipped).",
+  "functions": [
+   "GCodeProcessor::update_estimated_times_stats"
+  ]
+ },
+ {
+  "unit": "GCode",
+  "round": 950,
+  "evidence": "Fixture: FIRST_FILAMENTS_TOOL_ORDERING (print.rs export: ToolOrdering from the printed layer tools + the print's nozzle group, cal_non_support_filaments as GCode.cpp 2783-2788, 2840-2847; lists handed to ExportPlaceholderInputs::from_settings): the H2D job's start G-code 'M620.17 T0 S220 L4' (twice, lines 1032 and 1042) equals cpp_single.gcode; =0 gives L0. Lib tests g_code::first_filaments_tests (2: cal_non_support_filaments over H2D-like layer tools -> [0,4]; from_settings reads the injected lists). Binary 11:33, h2d_c_on / h2d_c_off.",
+  "functions": [
+   "ToolOrdering::cal_non_support_filaments"
+  ]
+ },
+ {
+  "unit": "Config",
+  "round": 950,
+  "evidence": "tests/print_config_validate_native_parity.rs (option_type_under_the_cpp_name + full_print_config_defaults_serialize_as_the_pin): config.rs now has type() under its C++ name (`type_`, Config.hpp:829-1897, `return static_type();`) on the option classes (the trait's `r#type` is not matched by the checklist: letters('r#type') = 'rtype'); type_ equals r#type for all 20 classes, and r#type equals the pin's type() over every option of the pin's FullPrintConfig::defaults() (602 options, vectors_defaults.txt written by tests/data/print_config_validate/gen.cpp --defaults), which has options of these 18 classes (ConfigOptionPoint3 and ConfigOptionIntsGroups are not in FullPrintConfig and are not listed); 4 passed.",
+  "functions": [
+   "ConfigOptionBool::type",
+   "ConfigOptionBoolsTempl::type",
+   "ConfigOptionEnum::type",
+   "ConfigOptionEnumGeneric::type",
+   "ConfigOptionEnumsGenericTempl::type",
+   "ConfigOptionFloat::type",
+   "ConfigOptionFloatOrPercent::type",
+   "ConfigOptionFloatsOrPercentsTempl::type",
+   "ConfigOptionFloatsTempl::type",
+   "ConfigOptionInt::type",
+   "ConfigOptionIntsTempl::type",
+   "ConfigOptionPercent::type",
+   "ConfigOptionPercentsTempl::type",
+   "ConfigOptionPoint::type",
+   "ConfigOptionPoints::type",
+   "ConfigOptionPointsGroups::type",
+   "ConfigOptionString::type",
+   "ConfigOptionStrings::type"
+  ]
+ },
+ {
+  "unit": "Config",
+  "round": 950,
+  "evidence": "tests/config_native_parity.rs (R910 vectors, 23,250 cases against the pin's Config.cpp): the vector classes' clear()/size()/empty() now run through ConfigOptionVector::clear/size/empty (Config.hpp:725-727, config.rs), and the test's vector cases (empty() before and after clear(), size() of every vector option) stay equal to the pin; 5 passed.",
+  "functions": [
+   "ConfigOptionVector::clear",
+   "ConfigOptionVector::size",
+   "ConfigOptionVector::empty"
+  ]
+ },
+ {
+  "unit": "FilamentMixer",
+  "round": 950,
+  "evidence": "tests/print_config_validate_native_parity.rs (config_validate_matches_the_pin, 31 scenarios, 122 lines equal to the pin's validate / DynamicPrintConfig::validate output incl. the mixed-filament scenarios 18-30): the strict mixed-filament checks (FilamentMixer.cpp:535-842) moved in R950 from print_config.rs config_def::filament_mixer_validate into filament_mixer.rs (the file paired with FilamentMixer.cpp) under their C++ names; the old path re-exports them; still 1 passed with no change of body.",
+  "functions": [
+   "validate_mixed_filament_params",
+   "try_parse_mixed_components_strict",
+   "try_parse_mixed_ratios_strict",
+   "validate_gradient_range_strict",
+   "check_mixed_filament_diameter_consistency",
+   "append_error",
+   "has_mixed_sub_params_specified",
+   "mixed_string_array_was_specified",
+   "mixed_bool_array_was_specified",
+   "check_mixed_array_size_required"
+  ]
+ },
+ {
+  "unit": "GCodeWriter",
+  "round": 950,
+  "evidence": "TRAVEL_ACCEL_AFTER_XY_UNCLEAR (gcode/writer.rs): with the writer's position not clear, travel_to_xyz writes the XY line, then travel_to_z writes the travel acceleration the caller chose (the pin's _travel_to_z prefix set_travel_acceleration(), GCodeWriter.cpp 762-779), then the Z line; the prefix of travel_to_xyz's result (GCodeWriter.cpp 715-742) finds the register set. Compared with the pin's G-code: Benchy classic and arachne first layer 'G1 X175.112 Y162.228 F60000 / M204 S6000 / M73 / G1 Z.4' equal to target/parity-ref (was M204 before the XY line), Majora's travels after a tool change 'G1 X180.18 Y202.797 F30000 / M204 S10000 / G1 Z27.6' equal to the reference (ref line 452742-452744); one binary, gate on vs off: Benchy classic 190,608 -> 190,653 in order, arachne 243,090 -> 243,141, Majora 2,862,885 -> 2,862,890. In-file test gcode::writer::tests::travel_accel_after_xy_when_position_unclear pins the order (and the prefix order once the position is clear).",
+  "functions": [
+   "GCodeWriter::travel_to_xyz",
+   "GCodeWriter::travel_to_z",
+   "GCodeWriter::set_travel_acceleration"
+  ]
+ },
+ {
+  "unit": "Layer",
+  "round": 950,
+  "evidence": "AUTO_CIRCLE_COMPENSATION_LIVE (print_object.rs): the live PrintObject::slice calls Layer::apply_auto_circle_compensation_with (Layer.cpp 39-44 over LayerRegion::auto_circle_compensation, verified in R948 by tests/auto_circle_compensation_native_parity.rs) before each layer's last make_slices, as PrintObjectSlice.cpp 2385-2387. Compared with slicer_cli on worker A's tube job (a binary STL tube with a hole and a cylinder, H2D 0.20 Standard, enable_circle_compensation 1, slicer_cli's output): wall radii on layers 0, 1 and 5 equal (layer 0 outer 9.6628 / hole 4.4971 with the first layer compensated after its Elephant foot step; layers 1 and 5 outer 9.8541, cylinder 5.8335 / 5.8337, hole 4.3076 / 4.3078 mm; 9.7898 / 5.7895 / 4.2100 without compensation); whole G-code 99.97% in order (15,828 of 15,832) against slicer_cli c1, 15.95% before the wiring; with the gate at 0, 99.99% against slicer_cli c0. The pin's PerimeterGenerator copies the surfaces (PerimeterGenerator.cpp 919, 1517) with Surface's copy constructor, which drops counter_circle_compensation / holes_circle_compensation (Surface.hpp 50-54), so the flag consumers see no flag at the pin either.",
+  "functions": [
+   "Layer::apply_auto_circle_compensation"
+  ]
  }
 ]

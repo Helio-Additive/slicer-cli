@@ -542,9 +542,37 @@ pub fn scale(v: CoordF) -> Coord {
 
 #[inline]
 /// Unscale an integer coordinate to floating-point
-/// libslic3r.h:47-50
+/// libslic3r.h:112 (`unscale<T>(v)`: `T(v) * T(SCALING_FACTOR)`), Point.hpp:560-563
+/// (`unscaled<double>(v)`: `Tout(v) * Tout(SCALING_FACTOR)`): a MULTIPLICATION by the
+/// double 1e-5, which differs from a division by 1e5 in the last bit for some values
+/// (an exact half-way tie in a printed coordinate then rounds the other way).
+/// UNSCALE_MUL (on unless =0) multiplies as the pin; =0 keeps the division.
+/// Cached: this is called on every hot path of the crate.
 pub fn unscale(v: Coord) -> CoordF {
-    v as CoordF / SCALING_FACTOR
+    if unscale_mul() {
+        v as CoordF * 0.00001_f64
+    } else {
+        v as CoordF / SCALING_FACTOR
+    }
+}
+
+/// The UNSCALE_MUL gate (see [`unscale`]), cached once per process.
+#[inline]
+pub fn unscale_mul() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| faithful_gate("UNSCALE_MUL"))
+}
+
+/// `unscale_(val)` (libslic3r.h:82, `((val) * SCALING_FACTOR)`) of a double, under the
+/// UNSCALE_MUL gate: for the sites that unscale a value that is already a double
+/// (`x / crate::SCALING_FACTOR` in the port).
+#[inline]
+pub fn unscale_f64(v: CoordF) -> CoordF {
+    if unscale_mul() {
+        v * 0.00001_f64
+    } else {
+        v / SCALING_FACTOR
+    }
 }
 
 #[inline]
@@ -580,7 +608,7 @@ pub fn scaled_f(v: CoordF) -> CoordF {
 
 #[inline]
 /// Unscale an integer coordinate to floating-point (same as unscale, for compatibility)
-/// libslic3r.h:57-60
+/// Point.hpp:555-563 (`unscaled<double>`: `Tout(v) * Tout(SCALING_FACTOR)`), under UNSCALE_MUL
 pub fn unscaled(v: Coord) -> CoordF {
     unscale(v)
 }

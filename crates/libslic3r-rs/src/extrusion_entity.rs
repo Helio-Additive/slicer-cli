@@ -1106,6 +1106,11 @@ impl ExtrusionLoop {
                     // ExtrusionEntity.cpp:217
                     std::mem::swap(&mut self.paths, &mut new_paths);
                 }
+                // LOOP_SPLIT_PROBE (diagnostic only).
+                if crate::probe_enabled("LOOP_SPLIT_PROBE") {
+                    let fp = self.paths.first().and_then(|pa| pa.polyline.points().first().copied()).unwrap_or_default();
+                    eprintln!("[LOOPSPLIT] split_at_vertex pt=({},{}) eps={} first=({},{}) paths={}", point.x, point.y, scaled_epsilon, fp.x, fp.y, self.paths.len());
+                }
                 // ExtrusionEntity.cpp:219
                 return true;
             }
@@ -1276,6 +1281,11 @@ impl ExtrusionLoop {
         // split at the new vertex
         // ExtrusionEntity.cpp:305 — this->split_at_vertex(p); (default scaled_epsilon = scaled<double>(0.001))
         self.split_at_vertex(&p, scale(0.001) as f64);
+        // LOOP_SPLIT_PROBE (diagnostic only): the point asked for and the loop's first point after the split.
+        if crate::probe_enabled("LOOP_SPLIT_PROBE") {
+            let fp = self.paths.first().and_then(|pa| pa.polyline.points().first().copied()).unwrap_or_default();
+            eprintln!("[LOOPSPLIT] split_at pt=({},{}) p=({},{}) first=({},{}) paths={}", point.x, point.y, p.x, p.y, fp.x, fp.y, self.paths.len());
+        }
     }
 
     // ExtrusionEntity.cpp:308-323 `void ExtrusionLoop::clip_end(double distance, ExtrusionPaths* paths) const`

@@ -621,6 +621,274 @@ impl MultiPoint3 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// `class MultiPoint` (MultiPoint.hpp:17-115) as a trait under the C++ names: the abstract base of
+// Polygon and Polyline, with the pure virtual `lines()`; the overloaded members are impls of one
+// generic trait each, for every MultiPoint.
+// ---------------------------------------------------------------------------
+
+/// `class MultiPoint` (MultiPoint.hpp:17-115).
+pub trait MultiPoint {
+    fn points(&self) -> &Vec<Point>;
+    fn points_mut(&mut self) -> &mut Vec<Point>;
+    /// `virtual Lines lines() const = 0` (MultiPoint.hpp:39)
+    fn lines(&self) -> Vec<Line>;
+
+    /// MultiPoint.hpp:33 (`std::reverse(points.begin(), points.end())`)
+    fn reverse(&mut self) {
+        self.points_mut().reverse();
+    }
+    /// MultiPoint.hpp:40
+    fn size(&self) -> usize {
+        self.points().len()
+    }
+    /// MultiPoint.hpp:41
+    fn empty(&self) -> bool {
+        self.points().is_empty()
+    }
+    /// MultiPoint.hpp:43
+    fn is_valid(&self) -> bool {
+        self.points().len() >= 2
+    }
+    /// MultiPoint.hpp:52-66: the first point at the smallest `(p - point).cast<double>().norm()`.
+    fn closest_point_index(&self, point: &Point) -> i32 {
+        let pts = self.points();
+        let mut idx: i32 = -1;
+        if !pts.is_empty() {
+            idx = 0;
+            let mut dist_min = eigen_norm2d(point.x - pts[0].x, point.y - pts[0].y);
+            for i in 1..pts.len() {
+                let d = eigen_norm2d(pts[i].x - point.x, pts[i].y - point.y);
+                if d < dist_min {
+                    dist_min = d;
+                    idx = i as i32;
+                }
+            }
+        }
+        idx
+    }
+    /// MultiPoint.hpp:67
+    fn closest_point(&self, point: &Point) -> Option<&Point> {
+        if self.points().is_empty() {
+            None
+        } else {
+            Some(&self.points()[self.closest_point_index(point) as usize])
+        }
+    }
+    /// MultiPoint.hpp:70-73 (the C++ dereferences the closest point without a check)
+    fn distance_to(&self, point: &Point) -> f64 {
+        let cl = *self.closest_point(point).expect("MultiPoint::distance_to of an empty MultiPoint");
+        eigen_norm2d(cl.x - point.x, cl.y - point.y)
+    }
+    /// MultiPoint.hpp:81
+    fn clear(&mut self) {
+        self.points_mut().clear();
+    }
+    /// MultiPoint.cpp:136-143: the first line of `lines()` that intersects `line`.
+    fn intersection(&self, line: &Line, intersection: &mut Point) -> bool {
+        for it in self.lines() {
+            if let Some(ip) = it.intersection(line) {
+                *intersection = ip;
+                return true;
+            }
+        }
+        false
+    }
+    /// MultiPoint.cpp:145-166: the intersection nearest to `line.a`.
+    fn first_intersection(&self, line: &Line, intersection: &mut Point) -> bool {
+        let mut found = false;
+        let mut dmin = 0.0_f64;
+        for l in self.lines() {
+            if let Some(ip) = l.intersection(line) {
+                if !found {
+                    found = true;
+                    dmin = eigen_norm2d(line.a.x - ip.x, line.a.y - ip.y);
+                    *intersection = ip;
+                } else {
+                    let d = eigen_norm2d(line.a.x - ip.x, line.a.y - ip.y);
+                    if d < dmin {
+                        dmin = d;
+                        *intersection = ip;
+                    }
+                }
+            }
+        }
+        found
+    }
+    /// MultiPoint.cpp:168-177: appends every intersection, true when any was added.
+    fn intersections(&self, line: &Line, intersections: &mut Vec<Point>) -> bool {
+        let intersections_size = intersections.len();
+        for polygon_line in self.lines() {
+            if let Some(ip) = polygon_line.intersection(line) {
+                intersections.push(ip);
+            }
+        }
+        intersections.len() > intersections_size
+    }
+}
+
+/// `(a - b).cast<double>().norm()` of a Vec2crd: the coord_t difference (int32 at the pin), then
+/// Eigen's `sqrt(x*x + y*y)` with the two products rounded before the sum.
+#[inline]
+fn eigen_norm2d(dx: Coord, dy: Coord) -> f64 {
+    let x = dx as i32 as f64;
+    let y = dy as i32 as f64;
+    (x * x + y * y).sqrt()
+}
+
+impl MultiPoint for crate::geometry::Polygon {
+    fn points(&self) -> &Vec<Point> {
+        &self.points
+    }
+    fn points_mut(&mut self) -> &mut Vec<Point> {
+        &mut self.points
+    }
+    /// Polygon::lines (Polygon.cpp:79-82)
+    fn lines(&self) -> Vec<Line> {
+        crate::geometry::Polygon::lines(self)
+    }
+}
+
+impl MultiPoint for crate::geometry::Polyline {
+    fn points(&self) -> &Vec<Point> {
+        &self.points
+    }
+    fn points_mut(&mut self) -> &mut Vec<Point> {
+        &mut self.points
+    }
+    /// Polyline::lines (Polyline.cpp:99-108)
+    fn lines(&self) -> Vec<Line> {
+        crate::geometry::Polyline::lines(self)
+    }
+}
+
+/// `MultiPoint::scale` (MultiPoint.cpp:6-19): the two overloads.
+pub trait MultiPointScale<A> {
+    fn scale(&mut self, args: A);
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointScale<f64> for T {
+    /// MultiPoint.cpp:6-10: `pt *= factor` (Point.hpp:197, `coord_t(x * rhs)`, truncating).
+    fn scale(&mut self, factor: f64) {
+        for pt in self.points_mut().iter_mut() {
+            pt.x = ((pt.x as i32) as f64 * factor) as i32 as Coord;
+            pt.y = ((pt.y as i32) as f64 * factor) as i32 as Coord;
+        }
+    }
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointScale<(f64, f64)> for T {
+    /// MultiPoint.cpp:12-19
+    fn scale(&mut self, (factor_x, factor_y): (f64, f64)) {
+        for pt in self.points_mut().iter_mut() {
+            pt.x = ((pt.x as i32) as f64 * factor_x) as i32 as Coord;
+            pt.y = ((pt.y as i32) as f64 * factor_y) as i32 as Coord;
+        }
+    }
+}
+
+/// `MultiPoint::translate` (MultiPoint.hpp:28-29, MultiPoint.cpp:21-25): the two overloads.
+pub trait MultiPointTranslate<A> {
+    fn translate(&mut self, args: A);
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointTranslate<&Point> for T {
+    /// MultiPoint.cpp:21-25: `pt += v`, in coord_t (int32 at the pin).
+    fn translate(&mut self, v: &Point) {
+        for pt in self.points_mut().iter_mut() {
+            pt.x = (pt.x as i32).wrapping_add(v.x as i32) as Coord;
+            pt.y = (pt.y as i32).wrapping_add(v.y as i32) as Coord;
+        }
+    }
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointTranslate<(f64, f64)> for T {
+    /// MultiPoint.hpp:28: `translate(Point(coord_t(x), coord_t(y)))`, truncating.
+    fn translate(&mut self, (x, y): (f64, f64)) {
+        let v = Point::new(x as i32 as Coord, y as i32 as Coord);
+        MultiPointTranslate::<&Point>::translate(self, &v);
+    }
+}
+
+/// `MultiPoint::rotate` (MultiPoint.hpp:30-32, MultiPoint.cpp:27-46): the three overloads.
+pub trait MultiPointRotate<A> {
+    fn rotate(&mut self, args: A);
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointRotate<(f64, f64)> for T {
+    /// MultiPoint.cpp:27-35: `coord_t(round(cos * x - sin * y))`, `coord_t(round(cos * y + sin * x))`,
+    /// the left product of each fused by clang.
+    fn rotate(&mut self, (cos_angle, sin_angle): (f64, f64)) {
+        for pt in self.points_mut().iter_mut() {
+            let cur_x = (pt.x as i32) as f64;
+            let cur_y = (pt.y as i32) as f64;
+            pt.x = cos_angle.mul_add(cur_x, -(sin_angle * cur_y)).round() as i32 as Coord;
+            pt.y = cos_angle.mul_add(cur_y, sin_angle * cur_x).round() as i32 as Coord;
+        }
+    }
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointRotate<f64> for T {
+    /// MultiPoint.hpp:30: `rotate(cos(angle), sin(angle))`
+    fn rotate(&mut self, angle: f64) {
+        MultiPointRotate::<(f64, f64)>::rotate(self, (angle.cos(), angle.sin()));
+    }
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointRotate<(f64, &Point)> for T {
+    /// MultiPoint.cpp:37-46: `v = pt - center` (coord_t), `round(center.x + c * v.x - s * v.y)`,
+    /// `round(center.y + c * v.y + s * v.x)`, each fused twice by clang.
+    fn rotate(&mut self, (angle, center): (f64, &Point)) {
+        let s = angle.sin();
+        let c = angle.cos();
+        let cx = (center.x as i32) as f64;
+        let cy = (center.y as i32) as f64;
+        for pt in self.points_mut().iter_mut() {
+            let vx = (pt.x as i32).wrapping_sub(center.x as i32) as f64;
+            let vy = (pt.y as i32).wrapping_sub(center.y as i32) as f64;
+            pt.x = (-s).mul_add(vy, c.mul_add(vx, cx)).round() as i32 as Coord;
+            pt.y = s.mul_add(vx, c.mul_add(vy, cy)).round() as i32 as Coord;
+        }
+    }
+}
+
+/// `MultiPoint::append` (MultiPoint.hpp:82-93): the four overloads.
+pub trait MultiPointAppend<A> {
+    fn append(&mut self, args: A);
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointAppend<&Point> for T {
+    /// MultiPoint.hpp:82
+    fn append(&mut self, point: &Point) {
+        self.points_mut().push(*point);
+    }
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointAppend<&[Point]> for T {
+    /// MultiPoint.hpp:83 (`append(const Points &src)`)
+    fn append(&mut self, src: &[Point]) {
+        self.points_mut().extend_from_slice(src);
+    }
+}
+
+impl<'a, T: MultiPoint + ?Sized> MultiPointAppend<std::slice::Iter<'a, Point>> for T {
+    /// MultiPoint.hpp:84 (`append(const_iterator begin, const_iterator end)`)
+    fn append(&mut self, range: std::slice::Iter<'a, Point>) {
+        self.points_mut().extend(range.copied());
+    }
+}
+
+impl<T: MultiPoint + ?Sized> MultiPointAppend<Vec<Point>> for T {
+    /// MultiPoint.hpp:85-93 (`append(Points &&src)`): takes the vector when empty.
+    fn append(&mut self, src: Vec<Point>) {
+        if self.points().is_empty() {
+            *self.points_mut() = src;
+        } else {
+            self.points_mut().extend_from_slice(&src);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

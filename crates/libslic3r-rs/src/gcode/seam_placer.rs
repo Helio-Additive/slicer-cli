@@ -4237,6 +4237,20 @@ impl SeamPlacer {
                         perimeter_point.local_ccw_angle, projected.foot_pt.x, projected.foot_pt.y,
                         seam_point.x, seam_point.y, depth, factor, final_pos.x, final_pos.y
                     );
+                    {
+                        let pts = loop_ref.paths[projected.path_idx].polyline.points();
+                        let (a, b) = (pts[projected.segment_idx], pts[projected.segment_idx + 1]);
+                        eprintln!("SEAMCORNERSEG a=({},{}) b=({},{}) seam_pt=({},{}) foot=({},{})", a.x, a.y, b.x, b.y, seam_point.x, seam_point.y, projected.foot_pt.x, projected.foot_pt.y);
+                    }
+                    eprintln!(
+                        "SEAMCORNERX seam_pos={:?},{:?} cand={:?},{:?} prev={:?},{:?} next={:?},{:?} ang={:?} depth={:?} angle_factor={:?} factor={:?} dir={:?},{:?} final={:?},{:?}",
+                        seam_position.x, seam_position.y,
+                        perimeter_point.position.x, perimeter_point.position.y,
+                        layer.points[index_of_prev].position.x, layer.points[index_of_prev].position.y,
+                        layer.points[index_of_next].position.x, layer.points[index_of_next].position.y,
+                        perimeter_point.local_ccw_angle, depth, angle_factor, factor, dir_to_middle.x, dir_to_middle.y,
+                        final_pos.x, final_pos.y
+                    );
                 }
                 // SeamPlacer.cpp:1518
                 seam_point = Point::new(

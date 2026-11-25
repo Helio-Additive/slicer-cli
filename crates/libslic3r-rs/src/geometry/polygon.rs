@@ -2171,6 +2171,159 @@ pub(crate) fn expolygon_scale_pin() -> bool {
     *GATE.get_or_init(|| crate::faithful_gate("EXPOLYGON_SCALE_PIN"))
 }
 
+// ---------------------------------------------------------------------------
+// Polygon.hpp / Polygon.cpp overloads under the C++ names (R950): one trait per overloaded name,
+// delegating to the free functions above that port each body.
+// ---------------------------------------------------------------------------
+
+/// `contains` (Polygon.cpp:708-727): the Polygon and the Polygons overloads.
+pub trait PolygonContains {
+    fn contains(&self, p: &Point, border_result: bool) -> bool;
+}
+
+impl PolygonContains for Polygon {
+    /// Polygon.cpp:708-715
+    #[inline]
+    fn contains(&self, p: &Point, border_result: bool) -> bool {
+        contains_polygon(self, p, border_result)
+    }
+}
+
+impl PolygonContains for [Polygon] {
+    /// Polygon.cpp:717-727
+    #[inline]
+    fn contains(&self, p: &Point, border_result: bool) -> bool {
+        contains_polygons(self, p, border_result)
+    }
+}
+
+/// `area(const Polygons &polys)` (Polygon.hpp:132-138).
+pub trait PolygonsArea {
+    fn area(&self) -> CoordF;
+}
+
+impl PolygonsArea for [Polygon] {
+    #[inline]
+    fn area(&self) -> CoordF {
+        area_polygons(self)
+    }
+}
+
+/// `polygons_append` (Polygon.hpp:151-162): the copy and the move overloads.
+pub trait PolygonsAppend<A> {
+    fn polygons_append(&mut self, src: A);
+}
+
+impl PolygonsAppend<&[Polygon]> for Polygons {
+    /// Polygon.hpp:151
+    #[inline]
+    fn polygons_append(&mut self, src: &[Polygon]) {
+        polygons_append(self, src);
+    }
+}
+
+impl PolygonsAppend<Polygons> for Polygons {
+    /// Polygon.hpp:153-162: takes the vector when `dst` is empty, else moves the polygons over.
+    #[inline]
+    fn polygons_append(&mut self, src: Polygons) {
+        if self.is_empty() {
+            *self = src;
+        } else {
+            self.extend(src);
+        }
+    }
+}
+
+/// `to_lines(const Polygons &polys)` (Polygon.hpp:221-236).
+pub trait PolygonsToLines {
+    fn to_lines(&self) -> Vec<Line>;
+}
+
+impl PolygonsToLines for [Polygon] {
+    #[inline]
+    fn to_lines(&self) -> Vec<Line> {
+        to_lines_polygons(self)
+    }
+}
+
+/// `to_polylines(Polygons &&polys)` (Polygon.hpp:254-266): moves the points, closes each polyline.
+pub trait PolygonsToPolylines {
+    fn to_polylines(self) -> Vec<Polyline>;
+}
+
+impl PolygonsToPolylines for Polygons {
+    fn to_polylines(self) -> Vec<Polyline> {
+        let mut polylines: Vec<Polyline> = Vec::with_capacity(self.len());
+        for poly in self {
+            let mut pl = Polyline::new();
+            pl.points = poly.points;
+            // pl.points.push_back(pl.points.front()) (an empty polygon is UB at the pin)
+            if let Some(&f) = pl.points.first() {
+                pl.points.push(f);
+            }
+            polylines.push(pl);
+        }
+        polylines
+    }
+}
+
+/// `to_polygons(const std::vector<Points> &paths)` / `to_polygons(std::vector<Points> &&paths)`
+/// (Polygon.hpp:276-292): one polygon per path, empty paths included.
+pub trait PathsToPolygons {
+    fn to_polygons(self) -> Polygons;
+}
+
+impl PathsToPolygons for &[Vec<Point>] {
+    /// Polygon.hpp:276-283
+    fn to_polygons(self) -> Polygons {
+        self.iter()
+            .map(|path| {
+                let mut p = Polygon::new();
+                p.points = path.clone();
+                p
+            })
+            .collect()
+    }
+}
+
+impl PathsToPolygons for Vec<Vec<Point>> {
+    /// Polygon.hpp:285-292
+    fn to_polygons(self) -> Polygons {
+        self.into_iter()
+            .map(|path| {
+                let mut p = Polygon::new();
+                p.points = path;
+                p
+            })
+            .collect()
+    }
+}
+
+/// `remove_same_neighbor(Polygon&)` / `remove_same_neighbor(Polygons&)` (Polygon.cpp:508-560) under
+/// the trait of Polyline.hpp's overloads.
+impl super::polyline::RemoveSameNeighbor for Polygon {
+    #[inline]
+    fn remove_same_neighbor(&mut self) -> bool {
+        remove_same_neighbor(self)
+    }
+}
+
+impl super::polyline::RemoveSameNeighbor for Polygons {
+    #[inline]
+    fn remove_same_neighbor(&mut self) -> bool {
+        remove_same_neighbor_polygons(self)
+    }
+}
+
+/// `has_duplicate_points(const Polygon &poly)` (Polygon.hpp:116): the points copied, sorted and
+/// checked (Point.cpp:225-232).
+impl super::point::HasDuplicatePoints for Polygon {
+    #[inline]
+    fn has_duplicate_points(&self) -> bool {
+        super::point::has_duplicate_points(self.points.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

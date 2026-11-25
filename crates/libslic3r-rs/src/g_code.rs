@@ -1968,6 +1968,21 @@ fn apply_seam_split(l: &mut crate::extrusion_entity::ExtrusionLoop, seam: &Point
     } else {
         l.split_at(seam, false, crate::scale(0.0015) as f64);
     }
+    // SEAMSPLIT probe (diagnostic only): the seam point and the loop's first point after the split.
+    if crate::probe_enabled("SEAMSPLIT") {
+        let fp = l.first_point();
+        let lp = l.last_point();
+        eprintln!(
+            "SEAMSPLIT role={:?} seam=({},{}) first=({},{}) last=({},{}) paths={}",
+            l.role(), seam.x, seam.y, fp.x, fp.y, lp.x, lp.y, l.paths.len()
+        );
+        if crate::probe_enabled("SEAMSPLITPTS") {
+            let pts: Vec<Point> = l.paths.iter().flat_map(|p| p.polyline.points().iter().copied()).collect();
+            let n = pts.len();
+            let show: Vec<String> = pts.iter().enumerate().filter(|(i, _)| *i < 3 || *i + 3 >= n).map(|(_, p)| format!("({},{})", p.x, p.y)).collect();
+            eprintln!("SEAMSPLITPTS n={} {}", n, show.join(" "));
+        }
+    }
 }
 
 /// Configuration for travel moves.
@@ -4860,6 +4875,19 @@ pub fn extrude_infill_entities(
             // also clears the initial/carried retracted state.
             writer.unretract();
         }
+        // INFILL_BUCKET_SPLIT_ONCE (faithful, R950): the pin splits a loop of the infill once, in
+        // extrude_loop from `m_last_pos` BEFORE the travel, which `_extrude` of its first path makes
+        // (GCode.cpp:6677-6682 `loop.split_at(last_pos, false)`, :7611). The bucket travel above went
+        // to that split point; the first entity must split from the same pre-travel position, not again
+        // from the point the travel reached (the second split's projection is truncated one unit off,
+        // e.g. Benchy's gap-fill ring: (-285242,-86350) then (-285242,-86349), an extra 1-unit travel).
+        // =0: the first entity splits from the post-travel position.
+        let infill_split_once = crate::faithful_gate("ZSMOOTH_FAITHFUL")
+            && crate::faithful_gate("INFILL_BUCKET_SPLIT_ONCE")
+            && matches!(extrusions.first(), Some(ExtrusionEntityType::Loop(_)));
+        if infill_split_once {
+            BUCKET_PRE_TRAVEL_POS.with(|c| c.set(Some(m_last_pos)));
+        }
         for fill in &extrusions {
             match fill {
                 ExtrusionEntityType::Collection(eec) => {
@@ -4879,6 +4907,10 @@ pub fn extrude_infill_entities(
                     let _ = extrude_collection(&single, writer, config, is_first_layer);
                 }
             }
+        }
+        // INFILL_BUCKET_SPLIT_ONCE: never leaks past this bucket.
+        if infill_split_once {
+            BUCKET_PRE_TRAVEL_POS.with(|c| c.set(None));
         }
     }
 }
@@ -10884,7 +10916,18 @@ const PP_OVERRIDE_KEYS: [(&str, char); 18] = [
 /// The keys the export adds to the settings that the C++ sets on the parser itself
 /// (`first_layer_print_min` / `_size`, GCode.cpp:2994-2996): they come in through
 /// [`ExportPlaceholderInputs::first_layer_bbox`].
-const PP_SET_KEYS: [&str; 2] = ["first_layer_print_min", "first_layer_print_size"];
+const PP_SET_KEYS: [&str; 4] = [
+    "first_layer_print_min",
+    "first_layer_print_size",
+    EXPORT_FIRST_FILAMENTS_KEY,
+    EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY,
+];
+
+/// The keys the export adds to the settings with `first_filaments` / `first_non_support_filaments`
+/// as `tool_ordering.cal_non_support_filaments` found them (GCode.cpp:2783-2788, 2846;
+/// FIRST_FILAMENTS_TOOL_ORDERING in print.rs): read by [`ExportPlaceholderInputs::from_settings`].
+pub const EXPORT_FIRST_FILAMENTS_KEY: &str = "__export_first_filaments";
+pub const EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY: &str = "__export_first_non_support_filaments";
 
 /// The template names `placeholder_parser_process` is called with, by the setting that holds the
 /// template (GCode.cpp:3184, 3232, 3618, 3629, 4780, 5019, 5094, ...).
@@ -10991,6 +11034,24 @@ impl ExportPlaceholderInputs {
         let e = extruder_of(initial).min(num_nozzles - 1);
         inputs.first_filaments[e] = initial as i32;
         inputs.first_non_support_filaments[e] = initial as i32;
+        // FIRST_FILAMENTS_TOOL_ORDERING (print.rs): the lists `cal_non_support_filaments` found over the
+        // print's layer tools (GCode.cpp:2846), one per nozzle, when the export handed them over.
+        let injected_list = |key: &str| -> Option<Vec<i32>> {
+            match settings.get(key)? {
+                serde_json::Value::Array(a) => a.iter().map(|v| injected_number(v).map(|n| n as i32)).collect(),
+                _ => None,
+            }
+        };
+        if let Some(list) = injected_list(EXPORT_FIRST_FILAMENTS_KEY) {
+            if list.len() == inputs.first_filaments.len() {
+                inputs.first_filaments = list;
+            }
+        }
+        if let Some(list) = injected_list(EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY) {
+            if list.len() == inputs.first_non_support_filaments.len() {
+                inputs.first_non_support_filaments = list;
+            }
+        }
         inputs.extruders = (0..num_filaments as u32).collect();
         inputs.used_filaments = inputs.extruders.clone();
         inputs.first_layer_filaments = inputs.extruders.clone();
@@ -11026,6 +11087,65 @@ impl ExportPlaceholderInputs {
             &inputs.used_filaments,
         );
         inputs
+    }
+}
+
+#[cfg(test)]
+mod first_filaments_tests {
+    use super::*;
+
+    /// A two-nozzle job with eight filaments, mapped 1,2,2,1,2,2,2,1 (the H2D Majora job).
+    fn h2d_like_settings() -> serde_json::Value {
+        serde_json::json!({
+            "nozzle_diameter": ["0.4", "0.4"],
+            "filament_type": ["PLA", "PLA", "PLA", "PLA", "PLA", "PLA", "PLA", "PLA"],
+            "filament_is_support": ["0", "0", "0", "0", "0", "0", "0", "0"],
+            "filament_map": ["1", "2", "2", "1", "2", "2", "2", "1"],
+        })
+    }
+
+    /// GCode.cpp:2783-2788, 2846 / ToolOrdering.cpp:1489-1546: the first filament of each nozzle is the
+    /// first one the layer tools print on it; with the first layer printing 0, 4, 1, ... the second
+    /// nozzle's first (non-support) filament is 4 (the H2D start G-code's `M620.17 T0 S220 L4`, T0 being
+    /// physical extruder 0 = logical extruder 1).
+    #[test]
+    fn cal_non_support_filaments_over_layer_tools() {
+        use crate::gcode::tool_ordering::{LayerTools, ToolOrdering, ToolOrderingConfig};
+        let cfg = full_print_config_from_settings(&h2d_like_settings());
+        let mut tool_ordering = ToolOrdering::new(ToolOrderingConfig::default());
+        for (z, tools) in [(0.2, vec![0u32, 4, 1, 3]), (0.4, vec![3, 2, 7])] {
+            let mut lt = LayerTools::new(z);
+            lt.extruders = tools;
+            tool_ordering.layer_tools_mut().push(lt);
+        }
+        tool_ordering.collect_extruder_statistics(false);
+        let mut first_non_support = vec![-1i32; 2];
+        let mut first = vec![-1i32; 2];
+        let mut initial_non_support = u32::MAX;
+        tool_ordering.cal_non_support_filaments(&cfg, &mut initial_non_support, &mut first_non_support, &mut first);
+        assert_eq!(first, vec![0, 4]);
+        assert_eq!(first_non_support, vec![0, 4]);
+        assert_eq!(initial_non_support, 0);
+    }
+
+    /// FIRST_FILAMENTS_TOOL_ORDERING: `from_settings` takes the lists the export injected; without them
+    /// only the initial filament's nozzle is set (the earlier arm).
+    #[test]
+    fn from_settings_reads_the_injected_first_filaments() {
+        let mut settings = h2d_like_settings();
+        let full = full_print_config_from_settings(&settings);
+        let plain = ExportPlaceholderInputs::from_settings(&full, &settings, 10.0);
+        assert_eq!(plain.first_filaments, vec![0, -1]);
+        assert_eq!(plain.first_non_support_filaments, vec![0, -1]);
+        let obj = settings.as_object_mut().unwrap();
+        obj.insert(EXPORT_FIRST_FILAMENTS_KEY.to_string(), serde_json::json!([0, 4]));
+        obj.insert(EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY.to_string(), serde_json::json!([0, 4]));
+        let injected = ExportPlaceholderInputs::from_settings(&full, &settings, 10.0);
+        assert_eq!(injected.first_filaments, vec![0, 4]);
+        assert_eq!(injected.first_non_support_filaments, vec![0, 4]);
+        // The keys are the export's own: they are taken out before the configuration is made.
+        assert!(PP_SET_KEYS.contains(&EXPORT_FIRST_FILAMENTS_KEY));
+        assert!(PP_SET_KEYS.contains(&EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY));
     }
 }
 

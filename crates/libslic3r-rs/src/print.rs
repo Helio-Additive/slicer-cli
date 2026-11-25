@@ -662,6 +662,16 @@ impl Print {
         }
     }
 
+    /// Print.hpp:1130 `size_t num_print_regions() const throw() { return m_print_regions.size(); }`
+    pub fn num_print_regions(&self) -> usize {
+        self.print_regions.len()
+    }
+
+    /// Print.hpp:1131 `const PrintRegion& get_print_region(size_t idx) const { return *m_print_regions[idx]; }`
+    pub fn get_print_region(&self, idx: usize) -> &PrintRegion {
+        &self.print_regions[idx]
+    }
+
     /// Get reference to objects
     pub fn objects(&self) -> &[PrintObject] {
         &self.objects
@@ -2098,6 +2108,57 @@ impl Print {
                         serde_json::json!([fmt(size_x), fmt(size_y)]),
                     );
                 }
+
+                // FIRST_FILAMENTS_TOOL_ORDERING (faithful, R950): `_do_export` finds the first filament and
+                // the first non-support filament of each nozzle with `tool_ordering.cal_non_support_filaments`
+                // over the print's layer tools (GCode.cpp:2783-2788, 2840-2847; ToolOrdering.cpp:1489-1546),
+                // which the start G-code reads (`M620.17 T0 S.. L{first_non_support_filaments[0] ..}`).
+                // The layer tools are the ones the export prints (`optimized_layer_tools`); the export's
+                // placeholder inputs take the two lists from the keys below
+                // (`ExportPlaceholderInputs::from_settings`). Without a planned order (one filament) the
+                // inputs keep the initial filament on its nozzle, which is what the call gives there.
+                // =0 leaves only the initial filament's nozzle set.
+                if crate::faithful_gate("FIRST_FILAMENTS_TOOL_ORDERING") && !self.optimized_layer_tools.is_empty() {
+                    use crate::gcode::tool_ordering::{LayerTools, ToolOrdering, ToolOrderingConfig};
+                    let cfg = crate::g_code::full_print_config_from_settings(&serde_json::Value::Object(obj.clone()));
+                    let mut tool_ordering = ToolOrdering::new(ToolOrderingConfig::default());
+                    for (print_z, tools) in &self.optimized_layer_tools {
+                        let mut lt = LayerTools::new(*print_z);
+                        lt.extruders = tools.iter().map(|&t| t as u32).collect();
+                        tool_ordering.layer_tools_mut().push(lt);
+                    }
+                    tool_ordering.collect_extruder_statistics(false);
+                    if let Some(group) = self.nozzle_group_result.as_deref() {
+                        tool_ordering.nozzle_group_result = group.clone();
+                    }
+                    // `print.config().nozzle_diameter.size()` (GCode.cpp:2787-2788).
+                    let num_nozzles = match obj.get("nozzle_diameter") {
+                        Some(serde_json::Value::Array(a)) => a.len(),
+                        Some(serde_json::Value::String(v)) => v.split(',').count(),
+                        _ => 1,
+                    }
+                    .max(1);
+                    let mut first_non_support_filaments = vec![-1i32; num_nozzles];
+                    let mut first_filaments = vec![-1i32; num_nozzles];
+                    let mut initial_non_support_extruder_id = u32::MAX;
+                    // GCode.cpp:2841-2847: only when the ordering has a first extruder.
+                    if tool_ordering.first_extruder().is_some() {
+                        tool_ordering.cal_non_support_filaments(
+                            &cfg,
+                            &mut initial_non_support_extruder_id,
+                            &mut first_non_support_filaments,
+                            &mut first_filaments,
+                        );
+                        obj.insert(
+                            crate::g_code::EXPORT_FIRST_FILAMENTS_KEY.to_string(),
+                            serde_json::json!(first_filaments),
+                        );
+                        obj.insert(
+                            crate::g_code::EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY.to_string(),
+                            serde_json::json!(first_non_support_filaments),
+                        );
+                    }
+                }
             }
         }
 
@@ -2258,6 +2319,77 @@ impl Print {
         header.used_filaments = self.export_header_used_filaments();
         header.filament_nozzle_map = self.export_header_filament_nozzle_map();
         let header_str = header.generate_complete_header();
+        // HEADER_USED_FILAMENT_PROCESSOR (faithful, R950): the header's three used-filament lines are the
+        // placeholders `TimeProcessor::post_process` fills from the processor's
+        // `used_filaments.total_volumes_per_filament` (GCodeProcessor.cpp:728-766), which counts every
+        // extrusion the processor read (the start G-code's too) and the flushes; =0 keeps the export
+        // writer's extruded length.
+        let header_str = if crate::faithful_gate("HEADER_USED_FILAMENT_PROCESSOR") {
+            self.header_used_filament_lines(header_str, &processor.result().print_statistics.total_volumes_per_extruder)
+        } else {
+            header_str
+        };
+        // PROCESSOR_REPLAY probe (diagnostic only, writes nothing into the export): the export's processor
+        // set-up run over another G-code file (`PROCESSOR_REPLAY_FILE`, e.g. the pin's G-code of the same
+        // job) less its post-processed lines (`M73 `, the pre-heating `M632` / `M633` / `;Multi extruder
+        // pre`), printing the estimate; with `PROCESSOR_REPLAY_OUT` the M73 P/R post-process of that text
+        // is written there, to set against the file's own M73 lines.
+        if crate::probe_enabled("PROCESSOR_REPLAY") {
+            if let Ok(path) = std::env::var("PROCESSOR_REPLAY_FILE") {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
+                    let stripped: String = text
+                        .split_inclusive('\n')
+                        .filter(|l| {
+                            !(l.starts_with("M73 ")
+                                || l.starts_with("M632")
+                                || l.starts_with("M633")
+                                || l.contains(";Multi extruder pre"))
+                        })
+                        .collect();
+                    let mut replay = GCodeProcessor::new();
+                    if crate::faithful_gate("PROCESSOR_NOZZLE_GROUP_CONTEXT") {
+                        if let Some(group) = self.nozzle_group_result.as_deref() {
+                            replay.initialize_from_context(Some(group.clone()));
+                        }
+                    }
+                    replay.apply_config(&self.config);
+                    replay.process_gcode(&stripped);
+                    eprintln!(
+                        "PROCESSOR_REPLAY file={} time={:?} ({}) prepare={:?}",
+                        path,
+                        replay.result().print_time,
+                        crate::utils::get_time_dhms(replay.result().print_time),
+                        replay.get_prepare_time(ETimeMode::Normal)
+                    );
+                    if let Ok(out) = std::env::var("PROCESSOR_REPLAY_OUT") {
+                        let _ = std::fs::write(&out, replay.time_processor().post_process(&stripped));
+                        // The whole post-process with the pre-heating injection, as the export runs it.
+                        let cfg = self
+                            .full_print_config
+                            .clone()
+                            .or_else(|| self.raw_settings.as_ref().map(full_print_config_from_settings));
+                        if let Some(cfg) = cfg {
+                            use crate::config::ConfigOptionResolver;
+                            if cfg.opt_bool("enable_pre_heating") {
+                                let (proc_group, moves) = replay.time_process_inputs();
+                                let group = self
+                                    .nozzle_group_result
+                                    .as_ref()
+                                    .map(|g| (**g).clone())
+                                    .or_else(|| proc_group.cloned());
+                                if let Some(group) = group {
+                                    let context =
+                                        crate::gcode::g_code_processor::TimeProcessContext::from_config(&cfg, group);
+                                    let text = replay.time_processor().post_process_with_context(&stripped, &moves, &context, true);
+                                    let _ = std::fs::write(format!("{}.pre", out), text);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Write to file: final header first, then the assembled body.
         let mut file = std::fs::File::create(output_path)?;
@@ -6136,15 +6268,25 @@ fn tcr_gcode_for_append_tcr(gcode: &mut String) {
 /// hash, int(all_regions.size()), volume_tag)`, its `print_object_region_id` the index it gets in the object's
 /// `all_regions`, which for the live path's one object is also its index in `Print::print_regions` (the regions
 /// are made in the pin's order: the volume's region first, then the painted ones, PrintApply.cpp:1083-1146).
-/// Gate PRINT_REGION_IDS_PIN (faithful, R949); off, `PrintRegion::new` (-1). The `print_region_id`
-/// (PrintApply.cpp:2273-2291, the same index for one object) stays -1: `print_region.rs` has no setter for it.
+/// Gate PRINT_REGION_IDS_PIN (faithful, R949); off, `PrintRegion::new` (-1).
+/// The `print_region_id` is what `Print::apply` gives when it rebuilds `m_print_regions` (PrintApply.cpp:2273-2291):
+/// `region_set` is never inserted into, so every region of every object's `all_regions` gets the next index of
+/// `m_print_regions`; for the live path's one object (one shared region list) that is the region's index in
+/// `Print::print_regions`, i.e. its `print_object_region_id`. (With several objects the pin numbers the second
+/// object's regions after the first's; the live path shares one region list between its objects.)
+/// Gate PRINT_REGION_PRINT_ID_PIN (faithful, R950); off, -1 (read as `usize::MAX` by tree_support_3d.rs's
+/// split of the overhangs by region, TreeSupport3D.cpp:1253-1262, which then skipped every region).
 fn live_print_region(config: crate::region_config::PrintRegionConfig, print_object_region_id: i32) -> PrintRegion {
-    let region = PrintRegion::new(config);
-    if !crate::faithful_gate("PRINT_REGION_IDS_PIN") {
-        return region;
+    let mut region = PrintRegion::new(config);
+    if crate::faithful_gate("PRINT_REGION_IDS_PIN") {
+        let config_hash = region.config_hash();
+        region = PrintRegion::with_ids(region.config().clone(), config_hash, print_object_region_id);
     }
-    let config_hash = region.config_hash();
-    PrintRegion::with_ids(region.config().clone(), config_hash, print_object_region_id)
+    if crate::faithful_gate("PRINT_REGION_PRINT_ID_PIN") {
+        // PrintApply.cpp:2284-2286
+        region.set_print_region_id(print_object_region_id);
+    }
+    region
 }
 
 /// The full configuration made from resolved settings the way
@@ -6324,6 +6466,30 @@ impl Print {
     /// that is not sequential, which `export_set_extruders_ids` gives. `None` (the configured count)
     /// for a sequential print, whose list is the union of the objects' orderings (Print.cpp:2637-2665),
     /// not ported here.
+    /// GCodeProcessor.cpp:661-673, 728-766 (`TimeProcessor::post_process`, the
+    /// `Used_Filament_Weight/Volume/Length_Placeholder` lines): per filament of
+    /// `total_volumes_per_filament` (std::map order) that is in `context.filament_lists` (the export
+    /// writer's filaments, `m_writer.extruders()`, GCode.cpp `set_filaments`), the weight
+    /// `volume * filament_density * 0.001`, the volume, and the length
+    /// `volume / (PI * sqr(0.5 * filament_diameter))`, each `%.2f`, comma-separated. The three
+    /// lines of `header` the port's header wrote are replaced by these.
+    fn header_used_filament_lines(
+        &self,
+        header: String,
+        total_volumes_per_filament: &std::collections::BTreeMap<usize, f64>,
+    ) -> String {
+        let filament_lists = self.export_set_extruders_ids();
+        let diameter_of = |id: usize| -> f64 {
+            self.config.filament_diameters.get(id).copied().unwrap_or(self.config.filament_diameter)
+        };
+        let density_of = |id: usize| -> f64 {
+            self.config.filament_densities.get(id).copied().unwrap_or(self.config.filament_density)
+        };
+        let filaments: Vec<(usize, f64, f64)> =
+            filament_lists.iter().map(|&f| (f as usize, diameter_of(f as usize), density_of(f as usize))).collect();
+        header_used_filament_lines(header, total_volumes_per_filament, &filaments)
+    }
+
     fn export_header_used_filaments(&self) -> Option<Vec<u32>> {
         let sequential = self.config.print_sequence == crate::print_config::PrintSequence::ByObject && self.objects.len() > 1;
         if sequential {
@@ -12388,9 +12554,90 @@ impl Default for Print {
     }
 }
 
+/// GCodeProcessor.cpp:661-673, 728-766 (`TimeProcessor::post_process`, the
+/// `Used_Filament_Weight/Volume/Length_Placeholder` lines): per filament of
+/// `total_volumes_per_filament` (std::map order) that is in `filament_lists` (`(id, filament_diameter,
+/// filament_density)` of `context.filament_lists`, the export writer's filaments), the weight
+/// `volume * filament_density * 0.001`, the volume, and the length
+/// `volume / (PI * sqr(0.5 * filament_diameter))`, each `%.2f`, comma-separated. The first
+/// `; total filament length [mm] : `, `volume [cm^3]` and `weight [g]` lines of `header` are replaced.
+pub fn header_used_filament_lines(
+    header: String,
+    total_volumes_per_filament: &std::collections::BTreeMap<usize, f64>,
+    filament_lists: &[(usize, f64, f64)],
+) -> String {
+    // :661-673 format_filament_used_info
+    let format_filament_used_info = |info: &str, val_per_extruder: &std::collections::BTreeMap<usize, f64>| -> String {
+        let mut buf = format!("; {} : ", info);
+        for (idx, item) in val_per_extruder.values().enumerate() {
+            if idx == 0 {
+                buf.push_str(&format!("{:.2}", item));
+            } else {
+                buf.push_str(&format!(",{:.2}", item));
+            }
+        }
+        buf.push('\n');
+        buf
+    };
+    let mut total_weight_per_extruder = std::collections::BTreeMap::new();
+    let mut total_volume_per_extruder = std::collections::BTreeMap::new();
+    let mut total_length_per_extruder = std::collections::BTreeMap::new();
+    for (&filament_id, &volume) in total_volumes_per_filament {
+        // :733-736 find_if(filament_lists, id == filament_id); `continue` when absent
+        let Some(&(_, diameter, density)) = filament_lists.iter().find(|f| f.0 == filament_id) else {
+            continue;
+        };
+        // :738
+        let weight = volume * density * 0.001;
+        *total_weight_per_extruder.entry(filament_id).or_insert(0.0) += weight;
+        // :752
+        *total_volume_per_extruder.entry(filament_id).or_insert(0.0) += volume;
+        // :764 `double length = volume / (PI * sqr(0.5 * iter->filament_diameter()));`
+        let half = 0.5 * diameter;
+        let length = volume / (std::f64::consts::PI * (half * half));
+        *total_length_per_extruder.entry(filament_id).or_insert(0.0) += length;
+    }
+    let replacements = [
+        ("; total filament length [mm] : ", format_filament_used_info("total filament length [mm]", &total_length_per_extruder)),
+        ("; total filament volume [cm^3] : ", format_filament_used_info("total filament volume [cm^3]", &total_volume_per_extruder)),
+        ("; total filament weight [g] : ", format_filament_used_info("total filament weight [g]", &total_weight_per_extruder)),
+    ];
+    let mut out = String::with_capacity(header.len() + 256);
+    let mut done = [false; 3];
+    for line in header.split_inclusive('\n') {
+        match replacements.iter().position(|(prefix, _)| line.starts_with(prefix)) {
+            Some(i) if !done[i] => {
+                done[i] = true;
+                out.push_str(&replacements[i].1);
+            }
+            _ => out.push_str(line),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// HEADER_USED_FILAMENT_PROCESSOR: GCodeProcessor.cpp:661-673, 728-766 — std::map order, a filament
+    /// not in the writer's list skipped, `%.2f` comma-separated, the other header lines kept.
+    #[test]
+    fn test_header_used_filament_lines_r950() {
+        let header = "; HEADER_BLOCK_START\n; total layer number: 3\n; total filament length [mm] : 1.00\n; total filament volume [cm^3] : 2.00\n; total filament weight [g] : 3.00\n; filament_density: 1.24\n".to_string();
+        let mut totals = std::collections::BTreeMap::new();
+        totals.insert(4usize, 2405.28_f64);
+        totals.insert(0usize, 1000.0_f64);
+        totals.insert(9usize, 77.0_f64);
+        let lists = [(0usize, 1.75, 1.26), (4usize, 1.75, 1.24)];
+        let out = header_used_filament_lines(header, &totals, &lists);
+        let len = |v: f64| v / (std::f64::consts::PI * (0.875 * 0.875));
+        let expected = format!(
+            "; HEADER_BLOCK_START\n; total layer number: 3\n; total filament length [mm] : {:.2},{:.2}\n; total filament volume [cm^3] : 1000.00,2405.28\n; total filament weight [g] : {:.2},{:.2}\n; filament_density: 1.24\n",
+            len(1000.0), len(2405.28), 1000.0 * 1.26 * 0.001, 2405.28 * 1.24 * 0.001
+        );
+        assert_eq!(out, expected);
+    }
 
     #[test]
     fn test_print_new() {

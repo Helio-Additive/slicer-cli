@@ -1578,6 +1578,110 @@ fn align_to_grid(coord: i64, spacing: i64) -> i64 {
     aligned
 }
 
+// ---------------------------------------------------------------------------
+// BoundingBox.hpp:248-263 free functions under the C++ names (R950), one trait per overloaded name.
+// ---------------------------------------------------------------------------
+
+/// `empty(const BoundingBoxBase<VT>&)` / `empty(const BoundingBox3Base<VT>&)` (BoundingBox.hpp:248-258).
+pub trait BoundingBoxEmpty {
+    fn empty(&self) -> bool;
+}
+
+impl BoundingBoxEmpty for BoundingBox {
+    /// BoundingBox.hpp:248-252
+    #[inline]
+    fn empty(&self) -> bool {
+        !self.defined || self.min.x >= self.max.x || self.min.y >= self.max.y
+    }
+}
+
+impl BoundingBoxEmpty for BoundingBoxf {
+    /// BoundingBox.hpp:248-252
+    #[inline]
+    fn empty(&self) -> bool {
+        !self.defined || self.min.x >= self.max.x || self.min.y >= self.max.y
+    }
+}
+
+impl BoundingBoxEmpty for BoundingBox3 {
+    /// BoundingBox.hpp:254-258
+    #[inline]
+    fn empty(&self) -> bool {
+        !self.defined || self.min.x >= self.max.x || self.min.y >= self.max.y || self.min.z >= self.max.z
+    }
+}
+
+impl BoundingBoxEmpty for BoundingBoxf3 {
+    /// BoundingBox.hpp:254-258
+    #[inline]
+    fn empty(&self) -> bool {
+        !self.defined || self.min.x >= self.max.x || self.min.y >= self.max.y || self.min.z >= self.max.z
+    }
+}
+
+/// `(v / SCALING_FACTOR).cast<coord_t>()` (Point.hpp:544-552): truncating to the pin's int32 coord_t.
+#[inline]
+fn scaled_coord(v: f64) -> crate::Coord {
+    (v / crate::libslic3r::SCALING_FACTOR) as i32 as crate::Coord
+}
+
+/// `v.cast<double>() * SCALING_FACTOR` (Point.hpp:567-577).
+#[inline]
+fn unscaled_coord(v: crate::Coord) -> f64 {
+    (v as i32) as f64 * crate::libslic3r::SCALING_FACTOR
+}
+
+/// `scaled(const BoundingBoxf&)` / `scaled(const BoundingBoxf3&)` (BoundingBox.hpp:260-261): the corners
+/// scaled, then the (min, max) constructor (BoundingBox.hpp:21-22, 110-112) sets `defined`.
+pub trait BoundingBoxScaled<Tout> {
+    fn scaled(&self) -> Tout;
+}
+
+impl BoundingBoxScaled<BoundingBox> for BoundingBoxf {
+    /// BoundingBox.hpp:260
+    fn scaled(&self) -> BoundingBox {
+        let min = Point::new(scaled_coord(self.min.x), scaled_coord(self.min.y));
+        let max = Point::new(scaled_coord(self.max.x), scaled_coord(self.max.y));
+        let defined = min.x < max.x && min.y < max.y;
+        BoundingBox { min, max, defined }
+    }
+}
+
+impl BoundingBoxScaled<BoundingBox3> for BoundingBoxf3 {
+    /// BoundingBox.hpp:261
+    fn scaled(&self) -> BoundingBox3 {
+        let min = Point3::new(scaled_coord(self.min.x), scaled_coord(self.min.y), scaled_coord(self.min.z));
+        let max = Point3::new(scaled_coord(self.max.x), scaled_coord(self.max.y), scaled_coord(self.max.z));
+        let defined = min.x < max.x && min.y < max.y && !(min.z >= max.z);
+        BoundingBox3 { min, max, defined }
+    }
+}
+
+/// `unscaled(const BoundingBox&)` / `unscaled(const BoundingBox3&)` (BoundingBox.hpp:262-263).
+pub trait BoundingBoxUnscaled<Tout> {
+    fn unscaled(&self) -> Tout;
+}
+
+impl BoundingBoxUnscaled<BoundingBoxf> for BoundingBox {
+    /// BoundingBox.hpp:262
+    fn unscaled(&self) -> BoundingBoxf {
+        let min = Vec2d::new(unscaled_coord(self.min.x), unscaled_coord(self.min.y));
+        let max = Vec2d::new(unscaled_coord(self.max.x), unscaled_coord(self.max.y));
+        let defined = min.x < max.x && min.y < max.y;
+        BoundingBoxf { min, max, defined }
+    }
+}
+
+impl BoundingBoxUnscaled<BoundingBoxf3> for BoundingBox3 {
+    /// BoundingBox.hpp:263
+    fn unscaled(&self) -> BoundingBoxf3 {
+        let min = Vec3d::new(unscaled_coord(self.min.x), unscaled_coord(self.min.y), unscaled_coord(self.min.z));
+        let max = Vec3d::new(unscaled_coord(self.max.x), unscaled_coord(self.max.y), unscaled_coord(self.max.z));
+        let defined = min.x < max.x && min.y < max.y && !(min.z >= max.z);
+        BoundingBoxf3 { min, max, defined }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

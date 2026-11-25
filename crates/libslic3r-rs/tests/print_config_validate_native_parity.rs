@@ -87,3 +87,121 @@ fn full_print_config_defaults_serialize_as_the_pin() {
     }
     assert_eq!(differ, 0, "{differ} lines differ from the pin ({} options in the pin, {} in the port)", want_lines.len(), got_lines.len());
 }
+
+/// The typed fields of the auto circle compensation (PrintConfig.hpp:1109-1110, 1747-1758; R950): their
+/// defaults serialize as the pin's FullPrintConfig defaults (`vectors_defaults.txt`, written by the pin), and
+/// the typed `set_deserialize` / `apply_key_value` read a value as the configuration option of the same key
+/// does (this crate's DynamicPrintConfig, whose option classes the two tests above verify against the pin).
+#[test]
+fn typed_circle_compensation_fields_as_the_pin() {
+    use slicer::config::{ConfigOption, ConfigOptionBool, ConfigOptionFloat, ConfigOptionFloats, ConfigOptionResolver};
+    use slicer::print_config::{PrintConfig, PrintObjectConfig, CIRCLE_COMPENSATION_FLOATS_KEYS};
+    let want = data("vectors_defaults.txt");
+    let pin_default = |key: &str| -> String {
+        let head = format!("D {key}\t");
+        want.lines()
+            .find(|l| l.starts_with(&head))
+            .map(|l| l.rsplit('\t').next().unwrap().to_string())
+            .unwrap_or_else(|| panic!("{key} is not among the pin's defaults"))
+    };
+    let floats = |v: Vec<f64>| ConfigOptionFloats::from_values(v).serialize().unwrap();
+    let pc = PrintConfig::default();
+    for key in CIRCLE_COMPENSATION_FLOATS_KEYS {
+        assert_eq!(floats(pc.circle_compensation_floats(key)), pin_default(key), "default of {key}");
+    }
+    let oc = PrintObjectConfig::default();
+    assert_eq!(ConfigOptionBool { value: oc.enable_circle_compensation }.serialize().unwrap(), pin_default("enable_circle_compensation"));
+    assert_eq!(
+        ConfigOptionFloat { value: oc.circle_compensation_manual_offset }.serialize().unwrap(),
+        pin_default("circle_compensation_manual_offset")
+    );
+
+    let dynamic = |key: &str, value: &str| -> String {
+        let mut config = DynamicPrintConfig::new();
+        let mut ctxt = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::Disable);
+        config.set_deserialize(key, value, &mut ctxt, false).unwrap_or_else(|e| panic!("{key}={value}: {e:?}"));
+        config.option(key).expect("option").serialize().unwrap()
+    };
+    let mut n = 0;
+    for value in ["0.1,0.2,-0.3", "200", "1e-3", " 0.5 , 7", "0.025,0.025,0.025,0.025"] {
+        for key in CIRCLE_COMPENSATION_FLOATS_KEYS {
+            let mut a = PrintConfig::default();
+            assert!(a.set_deserialize(key, value));
+            let mut b = PrintConfig::default();
+            assert!(b.apply_key_value(key, value));
+            assert_eq!(floats(a.circle_compensation_floats(key)), dynamic(key, value), "{key}={value:?}");
+            assert_eq!(a.circle_compensation_floats(key), b.circle_compensation_floats(key), "{key}={value:?}");
+            n += 1;
+        }
+    }
+    for value in ["1", "0"] {
+        let mut a = PrintObjectConfig::default();
+        assert!(a.set_deserialize("enable_circle_compensation", value));
+        assert_eq!(ConfigOptionBool { value: a.enable_circle_compensation }.serialize().unwrap(), dynamic("enable_circle_compensation", value));
+        let mut b = PrintObjectConfig::default();
+        assert!(b.apply_key_value("enable_circle_compensation", value));
+        assert_eq!(a.enable_circle_compensation, b.enable_circle_compensation);
+        n += 1;
+    }
+    for value in ["0.05", "-0.1", "0", "1e-2"] {
+        let mut a = PrintObjectConfig::default();
+        assert!(a.set_deserialize("circle_compensation_manual_offset", value));
+        assert_eq!(
+            ConfigOptionFloat { value: a.circle_compensation_manual_offset }.serialize().unwrap(),
+            dynamic("circle_compensation_manual_offset", value)
+        );
+        let mut b = PrintObjectConfig::default();
+        assert!(b.apply_key_value("circle_compensation_manual_offset", value));
+        assert_eq!(a.circle_compensation_manual_offset.to_bits(), b.circle_compensation_manual_offset.to_bits());
+        n += 1;
+    }
+    assert_eq!(n, 66);
+}
+
+/// `type()` of the twenty option classes under its C++ name (`type_`, Config.hpp:829-1897; R950): equal to the
+/// trait's `r#type`, which `full_print_config_defaults_serialize_as_the_pin` compares with the pin's `type()` over
+/// every option of FullPrintConfig; the codes of the classes that FullPrintConfig has are looked up in the pin's
+/// vectors.
+#[test]
+fn option_type_under_the_cpp_name() {
+    use slicer::config::*;
+    let want = data("vectors_defaults.txt");
+    let pin_types: std::collections::BTreeSet<i32> =
+        want.lines().filter_map(|l| l.split('\t').nth(1)).filter_map(|t| t.parse().ok()).collect();
+    let mut got: Vec<(i32, i32)> = Vec::new();
+    macro_rules! check {
+        ($x:expr) => {{
+            let x = $x;
+            got.push((x.type_() as i32, ConfigOption::r#type(&x) as i32));
+        }};
+    }
+    check!(ConfigOptionBool::new());
+    check!(ConfigOptionBools::new());
+    check!(ConfigOptionEnum::<PrinterTechnology>::new());
+    check!(ConfigOptionEnumGeneric::new(None));
+    check!(ConfigOptionEnumsGeneric::new(None));
+    check!(ConfigOptionFloat::new());
+    check!(ConfigOptionFloatOrPercent::new());
+    check!(ConfigOptionFloatsOrPercents::new());
+    check!(ConfigOptionFloats::new());
+    check!(ConfigOptionInt::new());
+    check!(ConfigOptionIntsGroups::new());
+    check!(ConfigOptionInts::new());
+    check!(ConfigOptionPercent::new());
+    check!(ConfigOptionPercents::new());
+    check!(ConfigOptionPoint::new());
+    check!(ConfigOptionPoint3::new());
+    check!(ConfigOptionPoints::new());
+    check!(ConfigOptionPointsGroups::new());
+    check!(ConfigOptionString::new());
+    check!(ConfigOptionStrings::new());
+    assert_eq!(got.len(), 20);
+    let mut in_pin = 0;
+    for (a, b) in &got {
+        assert_eq!(a, b);
+        in_pin += pin_types.contains(a) as usize;
+    }
+    // FullPrintConfig has an option of every class but ConfigOptionPoint3 (coPoint3) and ConfigOptionIntsGroups
+    // (coIntsGroups).
+    assert_eq!(in_pin, 18, "type codes among the pin's FullPrintConfig types {pin_types:?}");
+}

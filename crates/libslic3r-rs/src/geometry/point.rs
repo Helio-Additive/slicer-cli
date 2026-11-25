@@ -2133,6 +2133,350 @@ impl Unscale for Point3F {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Point.hpp free functions and Point members under the C++ names. The C++ overloads become impls
+// of one trait each (Rust has no overloading); the inherent methods with other names stay as they
+// are for their callers. `coord_t` is int32_t at the pin (libslic3r.h:38-40): a double converted to
+// coord_t truncates to 32 bits (`as i32`).
+// ---------------------------------------------------------------------------
+
+/// `align_to_grid` (Point.hpp:583-596): the four overloads.
+pub trait AlignToGrid<A> {
+    fn align_to_grid(self, args: A) -> Self;
+}
+
+impl AlignToGrid<Coord> for Coord {
+    /// Point.hpp:583-590 (`align_to_grid(coord_t coord, coord_t spacing)`): rounds toward minus
+    /// infinity for negative coordinates.
+    #[inline]
+    fn align_to_grid(self, spacing: Coord) -> Coord {
+        let coord = self as i32;
+        let spacing = spacing as i32;
+        let aligned = if coord < 0 {
+            (coord.wrapping_sub(spacing).wrapping_add(1) / spacing).wrapping_mul(spacing)
+        } else {
+            (coord / spacing).wrapping_mul(spacing)
+        };
+        aligned as Coord
+    }
+}
+
+impl AlignToGrid<Point> for Point {
+    /// Point.hpp:591-592 (`align_to_grid(Point coord, Point spacing)`)
+    #[inline]
+    fn align_to_grid(self, spacing: Point) -> Point {
+        Point::new(self.x.align_to_grid(spacing.x), self.y.align_to_grid(spacing.y))
+    }
+}
+
+impl AlignToGrid<(Coord, Coord)> for Coord {
+    /// Point.hpp:593-594 (`align_to_grid(coord_t coord, coord_t spacing, coord_t base)`)
+    #[inline]
+    fn align_to_grid(self, (spacing, base): (Coord, Coord)) -> Coord {
+        let base32 = base as i32;
+        let rel = (self as i32).wrapping_sub(base32) as Coord;
+        (base32.wrapping_add(rel.align_to_grid(spacing) as i32)) as Coord
+    }
+}
+
+impl AlignToGrid<(Point, Point)> for Point {
+    /// Point.hpp:595-596 (`align_to_grid(Point coord, Point spacing, Point base)`)
+    #[inline]
+    fn align_to_grid(self, (spacing, base): (Point, Point)) -> Point {
+        Point::new(
+            self.x.align_to_grid((spacing.x, base.x)),
+            self.y.align_to_grid((spacing.y, base.y)),
+        )
+    }
+}
+
+/// `scaled<Tout>(v)` (Point.hpp:524-552): the floating, the `coord_t` and the Eigen vector forms.
+pub trait Scaled<Tout> {
+    fn scaled(self) -> Tout;
+}
+
+impl Scaled<f64> for f64 {
+    /// Point.hpp:524-530: `Tout(v / Tin(SCALING_FACTOR))` for double.
+    #[inline]
+    fn scaled(self) -> f64 {
+        self / crate::libslic3r::SCALING_FACTOR
+    }
+}
+
+impl Scaled<f32> for f32 {
+    /// Point.hpp:524-530 for float: the division is done in float (`Tin(SCALING_FACTOR)`).
+    #[inline]
+    fn scaled(self) -> f32 {
+        self / (crate::libslic3r::SCALING_FACTOR as f32)
+    }
+}
+
+impl Scaled<Coord> for f64 {
+    /// Point.hpp:536-541: `Tout(v / Tin(SCALING_FACTOR))` with `Tout = coord_t`, truncating.
+    #[inline]
+    fn scaled(self) -> Coord {
+        (self / crate::libslic3r::SCALING_FACTOR) as i32 as Coord
+    }
+}
+
+impl Scaled<Point> for PointF {
+    /// Point.hpp:544-552: `(v / SCALING_FACTOR).template cast<coord_t>()`, truncating.
+    #[inline]
+    fn scaled(self) -> Point {
+        Point::new(
+            (self.x / crate::libslic3r::SCALING_FACTOR) as i32 as Coord,
+            (self.y / crate::libslic3r::SCALING_FACTOR) as i32 as Coord,
+        )
+    }
+}
+
+/// `unscaled<Tout>(v)` (Point.hpp:555-577): the scalar and the Eigen vector forms.
+pub trait Unscaled<Tout> {
+    fn unscaled(self) -> Tout;
+}
+
+impl Unscaled<f64> for Coord {
+    /// Point.hpp:555-563: `Tout(v) * Tout(SCALING_FACTOR)`.
+    #[inline]
+    fn unscaled(self) -> f64 {
+        (self as i32) as f64 * crate::libslic3r::SCALING_FACTOR
+    }
+}
+
+impl Unscaled<f32> for Coord {
+    /// Point.hpp:555-563 with `Tout = float`: both factors are floats.
+    #[inline]
+    fn unscaled(self) -> f32 {
+        (self as i32) as f32 * (crate::libslic3r::SCALING_FACTOR as f32)
+    }
+}
+
+impl Unscaled<PointF> for Point {
+    /// Point.hpp:567-577: `v.template cast<Tout>() * Tout(SCALING_FACTOR)`.
+    #[inline]
+    fn unscaled(self) -> PointF {
+        PointF::new(
+            (self.x as i32) as f64 * crate::libslic3r::SCALING_FACTOR,
+            (self.y as i32) as f64 * crate::libslic3r::SCALING_FACTOR,
+        )
+    }
+}
+
+/// `has_duplicate_points(const std::vector<Point> &pts)` (Point.hpp:285-289): copies the points
+/// and runs the `&&` overload (`has_duplicate_points(Vec<Point>)`, Point.cpp:225-232).
+pub trait HasDuplicatePoints {
+    fn has_duplicate_points(&self) -> bool;
+}
+
+impl HasDuplicatePoints for [Point] {
+    #[inline]
+    fn has_duplicate_points(&self) -> bool {
+        let cpy: Vec<Point> = self.to_vec();
+        has_duplicate_points(cpy)
+    }
+}
+
+/// `Point::rotate` (Point.hpp:225-231, Point.cpp:48-58): the three overloads, in place.
+pub trait PointRotate<A> {
+    fn rotate(&mut self, args: A);
+}
+
+impl PointRotate<CoordF> for Point {
+    /// Point.hpp:225: `this->rotate(std::cos(angle), std::sin(angle))`.
+    #[inline]
+    fn rotate(&mut self, angle: CoordF) {
+        PointRotate::<(CoordF, CoordF)>::rotate(self, (angle.cos(), angle.sin()));
+    }
+}
+
+impl PointRotate<(CoordF, CoordF)> for Point {
+    /// Point.hpp:226-231: `x = round(cos_a * cur_x - sin_a * cur_y)`, `y = round(cos_a * cur_y +
+    /// sin_a * cur_x)`; clang fuses the left product of each expression.
+    #[inline]
+    fn rotate(&mut self, (cos_a, sin_a): (CoordF, CoordF)) {
+        let cur_x = self.x as i32 as CoordF;
+        let cur_y = self.y as i32 as CoordF;
+        self.x = cos_a.mul_add(cur_x, -(sin_a * cur_y)).round() as i32 as Coord;
+        self.y = cos_a.mul_add(cur_y, sin_a * cur_x).round() as i32 as Coord;
+    }
+}
+
+impl PointRotate<(CoordF, &Point)> for Point {
+    /// Point.cpp:48-58: `round(center.x + c * dx - s * dy)`, `round(center.y + c * dy + s * dx)`,
+    /// each fused twice by clang.
+    #[inline]
+    fn rotate(&mut self, (angle, center): (CoordF, &Point)) {
+        let cur_x = self.x as i32 as CoordF;
+        let cur_y = self.y as i32 as CoordF;
+        let s = angle.sin();
+        let c = angle.cos();
+        let dx = cur_x - center.x as i32 as CoordF;
+        let dy = cur_y - center.y as i32 as CoordF;
+        self.x = (-s).mul_add(dy, c.mul_add(dx, center.x as i32 as CoordF)).round() as i32 as Coord;
+        self.y = s.mul_add(dx, c.mul_add(dy, center.y as i32 as CoordF)).round() as i32 as Coord;
+    }
+}
+
+/// `Point::rotated` (Point.hpp:234-236): a rotated copy, the three overloads.
+pub trait PointRotated<A> {
+    fn rotated(&self, args: A) -> Point;
+}
+
+impl PointRotated<CoordF> for Point {
+    /// Point.hpp:234
+    #[inline]
+    fn rotated(&self, angle: CoordF) -> Point {
+        let mut res = *self;
+        PointRotate::<CoordF>::rotate(&mut res, angle);
+        res
+    }
+}
+
+impl PointRotated<(CoordF, CoordF)> for Point {
+    /// Point.hpp:235
+    #[inline]
+    fn rotated(&self, args: (CoordF, CoordF)) -> Point {
+        let mut res = *self;
+        PointRotate::<(CoordF, CoordF)>::rotate(&mut res, args);
+        res
+    }
+}
+
+impl PointRotated<(CoordF, &Point)> for Point {
+    /// Point.hpp:236
+    #[inline]
+    fn rotated(&self, args: (CoordF, &Point)) -> Point {
+        let mut res = *self;
+        PointRotate::<(CoordF, &Point)>::rotate(&mut res, args);
+        res
+    }
+}
+
+/// `Point::ccw` (Point.cpp:118-128): the two overloads.
+pub trait PointCcw<A> {
+    fn ccw(&self, args: A) -> CoordF;
+}
+
+impl PointCcw<(&Point, &Point)> for Point {
+    /// Point.cpp:118-123 (see the inherent `ccw`).
+    #[inline]
+    fn ccw(&self, (p1, p2): (&Point, &Point)) -> CoordF {
+        Point::ccw(self, p1, p2)
+    }
+}
+
+impl PointCcw<&crate::geometry::Line> for Point {
+    /// Point.cpp:125-128: `this->ccw(line.a, line.b)`.
+    #[inline]
+    fn ccw(&self, line: &crate::geometry::Line) -> CoordF {
+        Point::ccw(self, &line.a, &line.b)
+    }
+}
+
+/// `Point::new_scale` (Point.hpp:186-188): `Point(coord_t(scale_(x)), coord_t(scale_(y)))`.
+pub trait NewScale<A> {
+    fn new_scale(args: A) -> Point;
+}
+
+impl NewScale<(CoordF, CoordF)> for Point {
+    /// Point.hpp:186
+    #[inline]
+    fn new_scale((x, y): (CoordF, CoordF)) -> Point {
+        Point::new(
+            (x / crate::libslic3r::SCALING_FACTOR) as i32 as Coord,
+            (y / crate::libslic3r::SCALING_FACTOR) as i32 as Coord,
+        )
+    }
+}
+
+impl NewScale<PointF> for Point {
+    /// Point.hpp:187 (`new_scale(const Vec2d &v)`)
+    #[inline]
+    fn new_scale(v: PointF) -> Point {
+        <Point as NewScale<(CoordF, CoordF)>>::new_scale((v.x, v.y))
+    }
+}
+
+impl NewScale<(f32, f32)> for Point {
+    /// Point.hpp:188 (`new_scale(const Vec2f &v)`): the float is promoted, the division is double.
+    #[inline]
+    fn new_scale((x, y): (f32, f32)) -> Point {
+        <Point as NewScale<(CoordF, CoordF)>>::new_scale((x as f64, y as f64))
+    }
+}
+
+/// `Point::any_comp` (Point.hpp:208-223): the two overloads.
+pub trait AnyComp<A> {
+    fn any_comp(&self, rhs: A, op: &str) -> bool;
+}
+
+impl AnyComp<&Point> for Point {
+    /// Point.hpp:208-215
+    #[inline]
+    fn any_comp(&self, rhs: &Point, op: &str) -> bool {
+        Point::any_comp(self, rhs, op)
+    }
+}
+
+impl AnyComp<Coord> for Point {
+    /// Point.hpp:216-223
+    #[inline]
+    fn any_comp(&self, val: Coord, op: &str) -> bool {
+        Point::any_comp_val(self, val, op)
+    }
+}
+
+/// `Point::nearest_point_index` (Point.cpp:60-101): the three overloads; the `Points` and
+/// `PointPtrs` ones collect `const Point*` and run the `PointConstPtrs` one.
+pub trait NearestPointIndex<A: ?Sized> {
+    fn nearest_point_index(&self, points: &A) -> i32;
+}
+
+impl NearestPointIndex<[Point]> for Point {
+    /// Point.cpp:60-67
+    #[inline]
+    fn nearest_point_index(&self, points: &[Point]) -> i32 {
+        let p: Vec<&Point> = points.iter().collect();
+        NearestPointIndex::<[&Point]>::nearest_point_index(self, &p[..])
+    }
+}
+
+impl NearestPointIndex<[&Point]> for Point {
+    /// Point.cpp:69-92 (`PointConstPtrs`): the same body as the inherent slice version.
+    fn nearest_point_index(&self, points: &[&Point]) -> i32 {
+        let mut idx: i32 = -1;
+        let mut distance: CoordF = -1.0;
+        for (i, it) in points.iter().enumerate() {
+            // Point.cpp:77: sqr<double>((*this)(0) - (*it)->x()), the difference in coord_t
+            let dx = (self.x as i32).wrapping_sub(it.x as i32) as CoordF;
+            let mut d = dx * dx;
+            if distance != -1.0 && d > distance {
+                continue;
+            }
+            let dy = (self.y as i32).wrapping_sub(it.y as i32) as CoordF;
+            d += dy * dy;
+            if distance != -1.0 && d > distance {
+                continue;
+            }
+            idx = i as i32;
+            distance = d;
+            if distance < crate::libslic3r::EPSILON {
+                break;
+            }
+        }
+        idx
+    }
+}
+
+impl NearestPointIndex<[&mut Point]> for Point {
+    /// Point.cpp:94-101 (`PointPtrs`)
+    #[inline]
+    fn nearest_point_index(&self, points: &[&mut Point]) -> i32 {
+        let p: Vec<&Point> = points.iter().map(|q| &**q).collect();
+        NearestPointIndex::<[&Point]>::nearest_point_index(self, &p[..])
+    }
+}
+
 /// Eigen's `determinant()` of a 4x4 matrix (Eigen/src/LU/Determinant.h, `determinant_impl<Derived, 4>`):
 /// the 2x2 minors of the first two columns, the 3x3 cofactors through `pmadd` (fused), the sum of two
 /// `pmadd`s. `m(r, c)` reads the coefficient of row r, column c.

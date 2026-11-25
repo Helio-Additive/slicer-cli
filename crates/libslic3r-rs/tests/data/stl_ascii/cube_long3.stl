@@ -1,0 +1,86 @@
+solid cube_long3.stl
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 0.000000                                                                                                              
+      vertex 0.000000 0.000000 25.600000                                                                                                              
+      vertex 0.000000 25.600000 25.600000                                                                                                              
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 0.000000
+      vertex 0.000000 25.600000 25.600000
+      vertex 0.000000 25.600000 0.000000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 25.600000 0.000000 0.000000
+      vertex 25.600000 25.600000 0.000000
+      vertex 25.600000 25.600000 25.600000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 25.600000 0.000000 0.000000
+      vertex 25.600000 25.600000 25.600000
+      vertex 25.600000 0.000000 25.600000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 0.000000
+      vertex 25.600000 0.000000 0.000000
+      vertex 25.600000 0.000000 25.600000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 0.000000
+      vertex 25.600000 0.000000 25.600000
+      vertex 0.000000 0.000000 25.600000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 25.600000 0.000000
+      vertex 0.000000 25.600000 25.600000
+      vertex 25.600000 25.600000 25.600000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 25.600000 0.000000
+      vertex 25.600000 25.600000 25.600000
+      vertex 25.600000 25.600000 0.000000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 0.000000
+      vertex 0.000000 25.600000 0.000000
+      vertex 25.600000 25.600000 0.000000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 0.000000
+      vertex 25.600000 25.600000 0.000000
+      vertex 25.600000 0.000000 0.000000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 25.600000
+      vertex 25.600000 0.000000 25.600000
+      vertex 25.600000 25.600000 25.600000
+    endloop
+  endfacet
+  facet normal 0 0 0
+    outer loop
+      vertex 0.000000 0.000000 25.600000
+      vertex 25.600000 25.600000 25.600000
+      vertex 0.000000 25.600000 25.600000
+    endloop
+  endfacet
+endsolid cube_long3.stl

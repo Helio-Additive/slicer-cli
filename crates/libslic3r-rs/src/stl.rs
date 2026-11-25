@@ -122,6 +122,12 @@ pub fn read_stl_file_with_header_length(
 
     if is_binary {
         read_stl_binary(&data, header_size)
+    } else if crate::faithful_gate("STL_ASCII_ADMESH") {
+        // STL_ASCII_ADMESH (on unless =0): read the ASCII facets as admesh does
+        // (stlinit.cpp:126-148, 261-330) and run the same repair as the binary
+        // reader (TriangleMesh::from_stl(repair=true)); =0 keeps the bit-pattern
+        // vertex dedup without repair.
+        read_stl_ascii_admesh(&data)
     } else {
         read_stl_ascii(&data)
     }
@@ -229,6 +235,299 @@ fn read_stl_ascii(data: &[u8]) -> Result<TriangleMesh> {
         return Err(Error::Mesh("ASCII STL contains no geometry".into()));
     }
 
+    Ok(TriangleMesh::from_parts(vertices, indices))
+}
+
+// admesh/stl.h:37 — `#define ASCII_LINES_PER_FACET 7`
+const ASCII_LINES_PER_FACET: usize = 7;
+
+/// The stdio calls admesh's ASCII reader makes (`fgets`, `fscanf` with literal,
+/// `%*[^\n]`, `%31s` and `%f` directives), over the file's bytes. The file is
+/// opened in text mode (stlinit.cpp:116): no newline translation on POSIX.
+struct StdioScan<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> StdioScan<'a> {
+    #[inline]
+    fn is_space(c: u8) -> bool {
+        // isspace() in the "C" locale (stl_open sets CNumericLocalesSetter).
+        matches!(c, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+    }
+    #[inline]
+    fn at_eof(&self) -> bool {
+        self.pos >= self.data.len()
+    }
+    /// A whitespace directive of a scanf format: skips any amount of whitespace.
+    fn skip_ws(&mut self) {
+        while self.pos < self.data.len() && Self::is_space(self.data[self.pos]) {
+            self.pos += 1;
+        }
+    }
+    /// Literal characters of a scanf format (whitespace in `lit` is a whitespace
+    /// directive). The matched prefix stays consumed on a mismatch, the
+    /// mismatching character does not (one character of push-back).
+    fn match_lit(&mut self, lit: &[u8]) -> bool {
+        for &c in lit {
+            if Self::is_space(c) {
+                self.skip_ws();
+            } else if self.pos < self.data.len() && self.data[self.pos] == c {
+                self.pos += 1;
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+    /// `%*[^\n]`: at least one character that is not a newline.
+    fn skip_not_newline(&mut self) -> bool {
+        let start = self.pos;
+        while self.pos < self.data.len() && self.data[self.pos] != b'\n' {
+            self.pos += 1;
+        }
+        self.pos > start
+    }
+    /// `%31s`: skips whitespace, then 1 to 31 non-whitespace characters.
+    fn scan_str(&mut self, max: usize) -> bool {
+        self.skip_ws();
+        let start = self.pos;
+        while self.pos < self.data.len()
+            && self.pos - start < max
+            && !Self::is_space(self.data[self.pos])
+        {
+            self.pos += 1;
+        }
+        self.pos > start
+    }
+    /// `%f` into a `float`: skips whitespace, takes the longest prefix that is a
+    /// decimal floating-point number (or `inf` / `infinity` / `nan`, any case) and
+    /// converts it with `strtof` (correctly rounded; Rust's `parse::<f32>` is too).
+    /// Hexadecimal floats are not taken (no STL writer emits them).
+    fn scan_float(&mut self) -> Option<f32> {
+        self.skip_ws();
+        let d = self.data;
+        let start = self.pos;
+        let mut p = self.pos;
+        if p < d.len() && (d[p] == b'+' || d[p] == b'-') {
+            p += 1;
+        }
+        let word = |p: usize, w: &[u8]| -> bool {
+            d.len() >= p + w.len() && d[p..p + w.len()].eq_ignore_ascii_case(w)
+        };
+        let neg = p > start && d[start] == b'-';
+        if word(p, b"infinity") || word(p, b"inf") {
+            self.pos = p + if word(p, b"infinity") { 8 } else { 3 };
+            return Some(if neg { f32::NEG_INFINITY } else { f32::INFINITY });
+        }
+        if word(p, b"nan") {
+            p += 3;
+            // `nan(n-char-sequence)`
+            if p < d.len() && d[p] == b'(' {
+                let mut q = p + 1;
+                while q < d.len() && (d[q].is_ascii_alphanumeric() || d[q] == b'_') {
+                    q += 1;
+                }
+                if q < d.len() && d[q] == b')' {
+                    p = q + 1;
+                }
+            }
+            self.pos = p;
+            return Some(f32::NAN);
+        }
+        let digits_start = p;
+        while p < d.len() && d[p].is_ascii_digit() {
+            p += 1;
+        }
+        let mut ndigits = p - digits_start;
+        if p < d.len() && d[p] == b'.' {
+            p += 1;
+            let f0 = p;
+            while p < d.len() && d[p].is_ascii_digit() {
+                p += 1;
+            }
+            ndigits += p - f0;
+        }
+        if ndigits == 0 {
+            return None;
+        }
+        if p < d.len() && (d[p] == b'e' || d[p] == b'E') {
+            let mut q = p + 1;
+            if q < d.len() && (d[q] == b'+' || d[q] == b'-') {
+                q += 1;
+            }
+            let e0 = q;
+            while q < d.len() && d[q].is_ascii_digit() {
+                q += 1;
+            }
+            if q > e0 {
+                p = q;
+            }
+        }
+        let s = std::str::from_utf8(&d[start..p]).ok()?;
+        // Rust's parser does not take a leading '+'.
+        let s = s.strip_prefix('+').unwrap_or(s);
+        let v = s.parse::<f32>().ok()?;
+        self.pos = p;
+        Some(v)
+    }
+    /// `fgets(buf, n, fp)`: up to `n - 1` bytes, through the first newline.
+    /// `None` at end of file with nothing read.
+    fn fgets(&mut self, n: usize) -> Option<&'a [u8]> {
+        if self.at_eof() {
+            return None;
+        }
+        let start = self.pos;
+        while self.pos < self.data.len() && self.pos - start < n - 1 {
+            let c = self.data[self.pos];
+            self.pos += 1;
+            if c == b'\n' {
+                break;
+            }
+        }
+        Some(&self.data[start..self.pos])
+    }
+    /// `fscanf(fp, " <lit> %f %f %f")` with or without a trailing whitespace
+    /// directive: the number of conversions, or -1 (EOF) on an input failure
+    /// before the first one.
+    fn scan_lit_3f(&mut self, lit: &[u8], trailing_ws: bool, out: &mut [f32; 3]) -> i32 {
+        self.skip_ws();
+        if self.at_eof() {
+            return -1;
+        }
+        if !self.match_lit(lit) {
+            return 0;
+        }
+        let mut n = 0;
+        for o in out.iter_mut() {
+            match self.scan_float() {
+                Some(v) => {
+                    *o = v;
+                    n += 1;
+                }
+                None => {
+                    if n == 0 && self.at_eof() {
+                        return -1;
+                    }
+                    return n;
+                }
+            }
+        }
+        if trailing_ws {
+            self.skip_ws();
+        }
+        n
+    }
+}
+
+/// `stl_open_count_facets`'s ASCII branch (stlinit.cpp:126-148): the lines read
+/// with `fgets(linebuf, 100, fp)` (a longer line is read in pieces, each counted),
+/// not counting pieces of 4 characters or fewer nor those starting with `solid` /
+/// `endsolid`, starting from 1, divided by `ASCII_LINES_PER_FACET`.
+fn stl_ascii_count_facets(data: &[u8]) -> usize {
+    let mut sc = StdioScan { data, pos: 0 };
+    let mut num_lines: usize = 1;
+    while let Some(line) = sc.fgets(100) {
+        // strlen stops at an embedded NUL
+        let len = line.iter().position(|&c| c == 0).unwrap_or(line.len());
+        if len <= 4 {
+            continue;
+        }
+        if line.starts_with(b"solid") || line.starts_with(b"endsolid") {
+            continue;
+        }
+        num_lines += 1;
+    }
+    num_lines / ASCII_LINES_PER_FACET
+}
+
+/// Parse an ASCII STL as admesh does, then repair it as the binary reader does.
+///
+/// admesh/stlinit.cpp:126-148 (facet count), 157-330 (`stl_read`, ASCII branch:
+/// per facet `endsolid` / `solid` skipped, `facet normal %31s %31s %31s`,
+/// `outer loop`, three `vertex %f %f %f`, `endloop` and `endfacet` checked by
+/// `fgets`; a syntax error fails the read; a facet with a NaN vertex keeps the
+/// zero-initialised slot of `stl_allocate`, stlinit.cpp:319-328, 359-364), then
+/// `TriangleMesh::from_stl(repair=true)` (TriangleMesh.cpp:215-221) through
+/// `stl_repair::repair_and_index`, which maps -0 to +0 in the edge keys
+/// (connect.cpp:72-84) as for binary files. The normals are parsed by admesh only
+/// to be recomputed by the repair; the port's mesh does not keep them.
+fn read_stl_ascii_admesh(data: &[u8]) -> Result<TriangleMesh> {
+    let facets_num = stl_ascii_count_facets(data);
+    let mut sc = StdioScan { data, pos: 0 };
+    let mut facet_soup = Vec::with_capacity(facets_num);
+    let syntax_error =
+        || Error::Mesh("Something is syntactically very wrong with this ASCII STL! ".into());
+    for _ in 0..facets_num {
+        // stlinit.cpp:265-266: fscanf(fp, " endsolid%*[^\n]\n"), fscanf(fp, " solid%*[^\n]\n")
+        for lit in [&b" endsolid"[..], &b" solid"[..]] {
+            if sc.match_lit(lit) && sc.skip_not_newline() {
+                sc.skip_ws();
+            }
+        }
+        // stlinit.cpp:268: fscanf(fp, " facet normal %31s %31s %31s", ...)
+        let res_normal = if sc.match_lit(b" facet normal") {
+            let mut n = 0;
+            for _ in 0..3 {
+                if !sc.scan_str(31) {
+                    break;
+                }
+                n += 1;
+            }
+            n
+        } else {
+            0
+        };
+        // stlinit.cpp:270: fscanf(fp, " outer loop") == 0
+        sc.skip_ws();
+        let res_outer_loop = if sc.at_eof() {
+            -1
+        } else {
+            sc.match_lit(b"outer loop");
+            0
+        };
+        // stlinit.cpp:272-277
+        let mut v = [[0.0_f32; 3]; 3];
+        let res_vertex1 = sc.scan_lit_3f(b"vertex", false, &mut v[0]);
+        let res_vertex2 = sc.scan_lit_3f(b"vertex", false, &mut v[1]);
+        let res_vertex3 = sc.scan_lit_3f(b"vertex", true, &mut v[2]);
+        // stlinit.cpp:280-288
+        let line_ok = |buf: Option<&[u8]>, word: &[u8]| -> bool {
+            match buf {
+                Some(b) => {
+                    b.len() > word.len()
+                        && b.starts_with(word)
+                        && matches!(b[word.len()], b'\r' | b'\n' | b' ' | b'\t')
+                }
+                None => false,
+            }
+        };
+        let endloop_ok = line_ok(sc.fgets(2047), b"endloop");
+        sc.skip_ws();
+        let endfacet_ok = line_ok(sc.fgets(2047), b"endfacet");
+        if res_normal != 3
+            || res_outer_loop != 0
+            || res_vertex1 != 3
+            || res_vertex2 != 3
+            || res_vertex3 != 3
+            || !endloop_ok
+            || !endfacet_ok
+        {
+            return Err(syntax_error());
+        }
+        // stlinit.cpp:319-330
+        let someone_is_nan = v.iter().any(|p| p.iter().any(|c| c.is_nan()));
+        if someone_is_nan {
+            facet_soup.push(crate::stl_repair::make_facet([0.0; 3], [0.0; 3], [0.0; 3]));
+            continue;
+        }
+        facet_soup.push(crate::stl_repair::make_facet(v[0], v[1], v[2]));
+    }
+    let (vertices, idx, _stats) = crate::stl_repair::repair_and_index(facet_soup);
+    if vertices.is_empty() || idx.is_empty() {
+        return Err(Error::Mesh("ASCII STL contains no geometry".into()));
+    }
+    let indices: Vec<Triangle> = idx.iter().map(|t| Triangle::new(t[0], t[1], t[2])).collect();
     Ok(TriangleMesh::from_parts(vertices, indices))
 }
 

@@ -96,7 +96,16 @@ pub use point::{
     is_approx as point_is_approx, lerp as point_lerp, to_3d as point_to_3d, Cross2, GetBase, IsApprox, Perp,
     Unscale,
 };
+// Point.hpp overloads as traits under the C++ names (R950).
+pub use point::{
+    AlignToGrid, AnyComp, HasDuplicatePoints, NearestPointIndex, NewScale, PointCcw, PointRotate, PointRotated,
+    Scaled as PointScaled, Unscaled as PointUnscaled,
+};
 pub use polygon::{Polygon, Polygons};
+// Polygon.hpp overloads as traits under the C++ names (R950).
+pub use polygon::{
+    PathsToPolygons, PolygonContains, PolygonsAppend, PolygonsArea, PolygonsToLines, PolygonsToPolylines,
+};
 // Polygon.cpp free functions. Names that would collide with the ExPolygon-variant
 // re-exports (get_extents, count_points, to_lines, to_points, to_polylines,
 // to_polygons, polygons_append, remove_same_neighbor, get_extents_vector, area,

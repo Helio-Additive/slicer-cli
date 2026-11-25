@@ -2313,6 +2313,18 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
     };
     config.filament_map = get_f64_list("filament_map").into_iter().map(|v| v as i32).collect();
     config.nozzle_volumes = get_f64_list("nozzle_volume");
+    // PrintConfig.hpp:1747-1758: the twelve ConfigOptionFloats of the auto circle compensation take
+    // the whole JSON array, joined with ',' and deserialized as ConfigBase::load_from_json does for an
+    // array value (Config.cpp:1030-1080, parse_str_arr + set_deserialize); the loop above handed
+    // `set_deserialize` only element 0.
+    for key in crate::print_config::CIRCLE_COMPENSATION_FLOATS_KEYS {
+        if let Some(serde_json::Value::Array(arr)) = json.get(key) {
+            let items: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+            if items.len() == arr.len() {
+                config.set_deserialize(key, &items.join(","));
+            }
+        }
+    }
 }
 
 /// Parse extruder_offset from JSON and set on config.
@@ -2631,4 +2643,30 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
         b[3] * a[9] + b[4] * a[10] + b[5] * a[11] + b[10],
         b[6] * a[9] + b[7] * a[10] + b[8] * a[11] + b[11],
     ]
+}
+
+#[cfg(test)]
+mod circle_compensation_settings_tests {
+    use super::*;
+
+    /// R950: the auto circle compensation options of a settings file reach the typed configs as the pin's
+    /// `ConfigBase::load_from_json` gives them (Config.cpp:1030-1080: a JSON array is joined with ',' and
+    /// deserialized as a ConfigOptionFloats; a string as it is).
+    #[test]
+    fn circle_compensation_options_are_read_whole() {
+        let json = serde_json::json!({
+            "enable_circle_compensation": "1",
+            "circle_compensation_manual_offset": "0.05",
+            "counter_coef_2": ["0.008", "0.009", "0.01"],
+            "hole_limit_max": ["0.2"],
+        });
+        let (pc, oc, _rc) = load_bambustudio_settings(&json).unwrap();
+        assert!(oc.enable_circle_compensation);
+        assert_eq!(oc.circle_compensation_manual_offset, 0.05);
+        assert_eq!(pc.counter_coef_2, vec![0.008, 0.009, 0.01]);
+        assert_eq!(pc.hole_limit_max, vec![0.2]);
+        // Not in the file: the pin's default (PrintConfig.cpp:6951-6954).
+        assert_eq!(pc.counter_coef_1, vec![0.0]);
+        assert_eq!(pc.circle_compensation_floats("counter_coef_2"), vec![0.008, 0.009, 0.01]);
+    }
 }

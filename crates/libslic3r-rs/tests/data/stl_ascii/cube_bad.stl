@@ -1,0 +1,86 @@
+solid cube_text.stl
+  facet normal 0 0 0
+    outer_loop
+      vertex 0 0 0
+      vertex 0 0 25.6
+      vertex 0 25.6 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 25.6 25.6
+      vertex 0 25.6 0
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 25.6 0 0
+      vertex 25.6 25.6 0
+      vertex 25.6 25.6 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 25.6 0 0
+      vertex 25.6 25.6 25.6
+      vertex 25.6 0 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 25.6 0 0
+      vertex 25.6 0 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 25.6 0 25.6
+      vertex 0 0 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 25.6 0
+      vertex 0 25.6 25.6
+      vertex 25.6 25.6 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 25.6 0
+      vertex 25.6 25.6 25.6
+      vertex 25.6 25.6 0
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 25.6 0
+      vertex 25.6 25.6 0
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 25.6 25.6 0
+      vertex 25.6 0 0
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 25.6
+      vertex 25.6 0 25.6
+      vertex 25.6 25.6 25.6
+    endloop by writer
+  endfacet	x
+  facet normal 0 0 0
+    outer loop
+      vertex 0 0 25.6
+      vertex 25.6 25.6 25.6
+      vertex 0 25.6 25.6
+    endloop by writer
+  endfacet	x
+endsolid cube_text.stl

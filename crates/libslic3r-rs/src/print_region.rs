@@ -104,6 +104,13 @@ impl PrintRegion {
         self.print_object_region_id
     }
 
+    /// PrintApply.cpp:2283-2288 `print_region->m_print_region_id = print_region_id;` (Print is a friend of
+    /// PrintRegion, Print.hpp:139-141): the region's index in `Print::m_print_regions`, set when
+    /// `Print::apply` rebuilds that list.
+    pub fn set_print_region_id(&mut self, print_region_id: i32) {
+        self.print_region_id = print_region_id;
+    }
+
     // 1-based extruder identifier for this region and role.
     // PrintRegion.cpp:7
     pub fn extruder(&self, role: FlowRole) -> Result<u32, String> {

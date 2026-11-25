@@ -1910,6 +1910,21 @@ impl<T: ConfigValue> ConfigOptionVector<T> {
         this_type as i32 - ConfigOptionType::CoVectorType as i32
     }
 
+    /// Config.hpp:725 `void clear() override { this->values.clear(); }`
+    pub fn clear(values: &mut Vec<T>) {
+        values.clear();
+    }
+
+    /// Config.hpp:726 `size_t size() const override { return this->values.size(); }`
+    pub fn size(values: &[T]) -> usize {
+        values.len()
+    }
+
+    /// Config.hpp:727 `bool empty() const override { return this->values.empty(); }`
+    pub fn empty(values: &[T]) -> bool {
+        values.is_empty()
+    }
+
     /// Config.hpp:400-406 `void set(const ConfigOption *rhs) override`
     pub fn set(values: &mut Vec<T>, this_type: ConfigOptionType, rhs: &dyn ConfigOption) -> CfgResult<()> {
         if rhs.r#type() != this_type {
@@ -2553,13 +2568,13 @@ macro_rules! cfg_vector_base_methods {
             ConfigOptionVector::<$t>::resize(&mut self.values, this_type, n, opt_default)
         }
         fn clear(&mut self) {
-            self.values.clear();
+            ConfigOptionVector::<$t>::clear(&mut self.values)
         }
         fn size(&self) -> usize {
-            self.values.len()
+            ConfigOptionVector::<$t>::size(&self.values)
         }
         fn empty(&self) -> bool {
-            self.values.is_empty()
+            ConfigOptionVector::<$t>::empty(&self.values)
         }
     };
 }
@@ -2594,6 +2609,11 @@ pub struct ConfigOptionFloat {
 }
 
 impl ConfigOptionFloat {
+    /// Config.hpp:829 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:825 `ConfigOptionFloat() : ConfigOptionSingle<double>(0) {}`
     pub fn new() -> Self {
         ConfigOptionFloat { value: 0.0 }
@@ -2660,6 +2680,11 @@ pub type ConfigOptionFloats = ConfigOptionFloatsTempl<false>;
 pub type ConfigOptionFloatsNullable = ConfigOptionFloatsTempl<true>;
 
 impl<const NULLABLE: bool> ConfigOptionFloatsTempl<NULLABLE> {
+    /// Config.hpp:872 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:865
     pub fn new() -> Self {
         Self { values: Vec::new() }
@@ -2858,6 +2883,11 @@ pub struct ConfigOptionInt {
 }
 
 impl ConfigOptionInt {
+    /// Config.hpp:1000 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:995
     pub fn new() -> Self {
         ConfigOptionInt { value: 0 }
@@ -2929,6 +2959,11 @@ pub type ConfigOptionInts = ConfigOptionIntsTempl<false>;
 pub type ConfigOptionIntsNullable = ConfigOptionIntsTempl<true>;
 
 impl<const NULLABLE: bool> ConfigOptionIntsTempl<NULLABLE> {
+    /// Config.hpp:1043 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1036
     pub fn new() -> Self {
         Self { values: Vec::new() }
@@ -3076,6 +3111,11 @@ pub struct ConfigOptionString {
 }
 
 impl ConfigOptionString {
+    /// Config.hpp:1132 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1128
     pub fn new() -> Self {
         ConfigOptionString { value: String::new() }
@@ -3134,6 +3174,11 @@ pub struct ConfigOptionStrings {
 }
 
 impl ConfigOptionStrings {
+    /// Config.hpp:1166 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1159
     pub fn new() -> Self {
         ConfigOptionStrings { values: Vec::new() }
@@ -3217,6 +3262,11 @@ pub struct ConfigOptionPercent {
 }
 
 impl ConfigOptionPercent {
+    /// Config.hpp:1210 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1206
     pub fn new() -> Self {
         ConfigOptionPercent { value: 0.0 }
@@ -3289,6 +3339,11 @@ pub type ConfigOptionPercents = ConfigOptionPercentsTempl<false>;
 pub type ConfigOptionPercentsNullable = ConfigOptionPercentsTempl<true>;
 
 impl<const NULLABLE: bool> ConfigOptionPercentsTempl<NULLABLE> {
+    /// Config.hpp:1252 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1245
     pub fn new() -> Self {
         Self { values: Vec::new() }
@@ -3415,6 +3470,11 @@ pub struct ConfigOptionFloatOrPercent {
 }
 
 impl ConfigOptionFloatOrPercent {
+    /// Config.hpp:1305 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1301
     pub fn new() -> Self {
         ConfigOptionFloatOrPercent { value: 0.0, percent: false }
@@ -3526,6 +3586,11 @@ pub type ConfigOptionFloatsOrPercents = ConfigOptionFloatsOrPercentsTempl<false>
 pub type ConfigOptionFloatsOrPercentsNullable = ConfigOptionFloatsOrPercentsTempl<true>;
 
 impl<const NULLABLE: bool> ConfigOptionFloatsOrPercentsTempl<NULLABLE> {
+    /// Config.hpp:1366 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1359
     pub fn new() -> Self {
         Self { values: Vec::new() }
@@ -3742,6 +3807,11 @@ pub struct ConfigOptionPoint {
 }
 
 impl ConfigOptionPoint {
+    /// Config.hpp:1497 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1493
     pub fn new() -> Self {
         ConfigOptionPoint { value: Vec2d::new(0.0, 0.0) }
@@ -3803,6 +3873,11 @@ pub struct ConfigOptionPoints {
 }
 
 impl ConfigOptionPoints {
+    /// Config.hpp:1534 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1528
     pub fn new() -> Self {
         ConfigOptionPoints { values: Vec::new() }
@@ -3903,6 +3978,11 @@ pub struct ConfigOptionPoint3 {
 }
 
 impl ConfigOptionPoint3 {
+    /// Config.hpp:1612 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1608
     pub fn new() -> Self {
         ConfigOptionPoint3 { value: Vec3d::new(0.0, 0.0, 0.0) }
@@ -3968,6 +4048,11 @@ pub struct ConfigOptionPointsGroups {
 }
 
 impl ConfigOptionPointsGroups {
+    /// Config.hpp:1651 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1646
     pub fn new() -> Self {
         ConfigOptionPointsGroups { values: Vec::new() }
@@ -4089,6 +4174,11 @@ pub struct ConfigOptionIntsGroups {
 }
 
 impl ConfigOptionIntsGroups {
+    /// Config.hpp:1750 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1745
     pub fn new() -> Self {
         ConfigOptionIntsGroups { values: Vec::new() }
@@ -4226,6 +4316,11 @@ pub struct ConfigOptionBool {
 }
 
 impl ConfigOptionBool {
+    /// Config.hpp:1854 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1850
     pub fn new() -> Self {
         ConfigOptionBool { value: false }
@@ -4296,6 +4391,11 @@ pub type ConfigOptionBools = ConfigOptionBoolsTempl<false>;
 pub type ConfigOptionBoolsNullable = ConfigOptionBoolsTempl<true>;
 
 impl<const NULLABLE: bool> ConfigOptionBoolsTempl<NULLABLE> {
+    /// Config.hpp:1897 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:1889
     pub fn new() -> Self {
         Self { values: Vec::new() }
@@ -4477,6 +4577,11 @@ pub struct ConfigOptionEnum<T: ConfigEnum> {
 }
 
 impl<T: ConfigEnum> ConfigOptionEnum<T> {
+    /// Config.hpp:2012 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:2008: by default, use the first value (0) of the T enum type
     pub fn new() -> Self {
         ConfigOptionEnum { value: T::from_int(0) }
@@ -4589,6 +4694,11 @@ pub struct ConfigOptionEnumGeneric {
 }
 
 impl ConfigOptionEnumGeneric {
+    /// Config.hpp:2084 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:2078 `ConfigOptionEnumGeneric(const t_config_enum_values* keys_map = nullptr)`
     pub fn new(keys_map: Option<&'static t_config_enum_values>) -> Self {
         ConfigOptionEnumGeneric { value: 0, keys_map }
@@ -4704,6 +4814,11 @@ pub type ConfigOptionEnumsGeneric = ConfigOptionEnumsGenericTempl<false>;
 pub type ConfigOptionEnumsGenericNullable = ConfigOptionEnumsGenericTempl<true>;
 
 impl<const NULLABLE: bool> ConfigOptionEnumsGenericTempl<NULLABLE> {
+    /// Config.hpp:2142 `ConfigOptionType type() const override { return static_type(); }` (the `ConfigOption`
+    /// trait has it as `r#type`; this is the C++ name with the keyword suffix).
+    pub fn type_(&self) -> ConfigOptionType {
+        <Self as ConfigOptionStaticType>::static_type()
+    }
     /// Config.hpp:2133 `ConfigOptionEnumsGenericTempl(const t_config_enum_values *keys_map = nullptr)`
     pub fn new(keys_map: Option<&'static t_config_enum_values>) -> Self {
         Self { values: Vec::new(), keys_map }
