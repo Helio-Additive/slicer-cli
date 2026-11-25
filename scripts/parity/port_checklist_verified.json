@@ -5502,5 +5502,14 @@
    "GCodeProcessor::get_axis_max_acceleration",
    "GCodeProcessor::get_axis_max_jerk"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 959,
+  "evidence": "profile_motion_limits_match_native compares both typed setters with gen.cpp --motion-limits on modern Marlin, legacy Marlin and Klipper. Its 75 profiles cover both minimum feedrates in both modes, including empty, short and nullable settings.",
+  "functions": [
+   "GCodeProcessor::minimum_feedrate",
+   "GCodeProcessor::minimum_travel_feedrate"
+  ]
  }
 ]

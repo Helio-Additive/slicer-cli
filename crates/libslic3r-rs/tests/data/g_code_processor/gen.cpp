@@ -718,11 +718,66 @@ static void machine_axis_limits()
     }
 }
 
+// PrintConfig.hpp:1328-1342 and GCodeProcessor.cpp:2030-2036, 2055-2066,
+// 6248-6262. Travel acceleration on legacy Marlin uses the extruding option.
+static void machine_motion_limits()
+{
+    using Mode = PrintEstimatedStatistics::ETimeMode;
+    for (auto flavor : {gcfMarlinFirmware, gcfMarlinLegacy, gcfKlipper})
+        for (const char *key : {"machine_max_acceleration_extruding", "machine_max_acceleration_retracting",
+                                "machine_max_acceleration_travel", "machine_min_extruding_rate", "machine_min_travel_rate"})
+            for (const char *values : {"", "38.125", "9000,50", "nil,123.75", "40,nil,20"}) {
+                PrintConfig cfg;
+                cfg.gcode_flavor.value = flavor;
+                cfg.set_deserialize_strict("machine_max_acceleration_extruding", "1100,700");
+                cfg.set_deserialize_strict("machine_max_acceleration_retracting", "2100,800");
+                cfg.set_deserialize_strict("machine_max_acceleration_travel", "3100,900");
+                cfg.set_deserialize_strict("machine_min_extruding_rate", "10,8");
+                cfg.set_deserialize_strict("machine_min_travel_rate", "11,9");
+                cfg.set_deserialize_strict(key, values);
+                GCodeProcessor p;
+                p.apply_config(cfg);
+                const char *name = flavor == gcfMarlinFirmware ? "marlin2" : flavor == gcfMarlinLegacy ? "marlin" : "klipper";
+                std::printf("rows %s %s %s", name, key, *values ? values : "-");
+                for (Mode mode : {Mode::Normal, Mode::Stealth}) {
+                    const auto &machine = p.m_time_processor.machines[size_t(mode)];
+                    for (float v : {machine.max_acceleration, machine.max_retract_acceleration, machine.max_travel_acceleration,
+                                    p.minimum_feedrate(mode, 9.5f), p.minimum_travel_feedrate(mode, 9.5f)})
+                        std::printf(" %s", std::isnan(v) ? "nil" : f32(v).c_str());
+                }
+                std::putchar('\n');
+            }
+    for (auto flavor : {gcfMarlinFirmware, gcfMarlinLegacy})
+        for (const char *acceleration : {"9000", "9000,9000", "9000,50"}) {
+            PrintConfig cfg;
+            cfg.gcode_flavor.value = flavor;
+            cfg.set_deserialize_strict("machine_max_speed_x", "500,500");
+            cfg.set_deserialize_strict("machine_max_acceleration_x", "9000,9000");
+            cfg.set_deserialize_strict("machine_max_acceleration_extruding", "9000,9000");
+            cfg.set_deserialize_strict("machine_max_acceleration_travel", acceleration);
+            cfg.set_deserialize_strict("machine_max_jerk_x", "9,9");
+            cfg.set_deserialize_strict("machine_min_travel_rate", "0,0");
+            GCodeProcessor p;
+            p.reset();
+            p.apply_config(cfg);
+            p.enable_stealth_time_estimator(true);
+            p.initialize("motion.gcode");
+            p.process_buffer("G90\nG1 X1000 F30000\nG1 X0 F30000\n");
+            p.finalize(false);
+            std::printf("time %s %s %s %s\n", flavor == gcfMarlinFirmware ? "marlin2" : "marlin", acceleration,
+                        f32(p.get_time(Mode::Normal)).c_str(), f32(p.get_time(Mode::Stealth)).c_str());
+        }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--motion-limits") {
+        machine_motion_limits();
+        return 0;
     }
     if (std::string(argv[1]) == "--axis-limits") {
         machine_axis_limits();

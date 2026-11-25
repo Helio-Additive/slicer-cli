@@ -2169,10 +2169,9 @@ fn load_bambustudio_settings(
         for (key, value) in obj {
             let str_val = match value {
                 serde_json::Value::String(s) => s.clone(),
-                // Config.cpp:900-939, 1030-1080. Each axis has a normal/stealth
-                // pair per nozzle. Join the entire array before deserializing it.
-                serde_json::Value::Array(arr) if crate::print_config::is_machine_axis_limit(key)
-                    && crate::faithful_gate("MACHINE_LIMITS") && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS") => {
+                // Config.cpp:900-939, 1030-1080. Preserve the machine envelope's
+                // full array, including each mode and any additional nozzle rows.
+                serde_json::Value::Array(arr) if crate::print_config::profile_machine_limit_rows_enabled(key) => {
                     let Some(items) = arr.iter().map(|v| v.as_str()).collect::<Option<Vec<_>>>() else { continue };
                     items.join(",")
                 }
@@ -2685,6 +2684,40 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 #[cfg(test)]
 mod circle_compensation_settings_tests {
     use super::*;
+
+    /// GCodeProcessor.cpp:2030-2036, 2055-2066. Modern Marlin has separate
+    /// travel accelerations in the two modes. Legacy Marlin uses extrusion's.
+    #[test]
+    fn profile_motion_limits_reach_the_time_estimator() {
+        use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
+        let vectors = include_str!("../tests/data/g_code_processor/motion_limits.txt");
+        let mut cases = 0;
+        for line in vectors.lines().filter(|line| line.starts_with("time ")) {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            let json = serde_json::json!({
+                "gcode_flavor": fields[1],
+                "machine_max_speed_x": ["500", "500"],
+                "machine_max_acceleration_x": ["9000", "9000"],
+                "machine_max_acceleration_travel": fields[2].split(',').collect::<Vec<_>>(),
+                "machine_max_acceleration_extruding": "9000,9000",
+                "machine_max_jerk_x": ["9", "9"],
+                "machine_min_travel_rate": ["0", "0"]
+            });
+            let (config, _, _) = load_bambustudio_settings(&json).unwrap();
+            let mut processor = GCodeProcessor::new();
+            processor.reset();
+            processor.apply_config(&config);
+            processor.enable_stealth_time_estimator(true);
+            processor.initialize("motion.gcode");
+            processor.process_buffer("G90\nG1 X1000 F30000\nG1 X0 F30000\n");
+            processor.finalize(false);
+            for (i, mode) in [ETimeMode::Normal, ETimeMode::Stealth].into_iter().enumerate() {
+                assert_eq!(processor.get_time(mode).to_bits(), u32::from_str_radix(fields[3 + i], 16).unwrap(), "{line}");
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 6);
+    }
 
     /// GCodeProcessor.cpp:2030-2036. A profile's second mode limits both X
     /// travels in the pin's end-to-end timing vectors (gen.cpp --axis-limits).

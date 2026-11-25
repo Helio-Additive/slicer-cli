@@ -33,8 +33,27 @@ impl Default for GCodeConfig {
 }
 
 /// The per-axis options of MachineEnvelopeConfig (PrintConfig.hpp:1312-1342).
-pub(crate) fn is_machine_axis_limit(key: &str) -> bool {
+fn is_machine_axis_limit(key: &str) -> bool {
     matches!(key.rsplit_once('_'), Some(("machine_max_acceleration" | "machine_max_speed" | "machine_max_jerk", "x" | "y" | "z" | "e")))
+}
+
+// PrintConfig.hpp:1312-1342. The axis options and M204/M205 motion
+// options gained typed rows in separate rounds. Keep the original switches
+// for the profile keys that previously supplied the normal-mode scalar.
+fn machine_limit_rows_enabled(key: &str) -> bool {
+    let option_enabled = match key {
+        "machine_max_acceleration_extruding" => true,
+        "machine_max_acceleration_retracting" | "machine_max_acceleration_travel" => {
+            crate::faithful_gate("MACHINE_ACCEL_KEYS")
+        }
+        "machine_min_extruding_rate" | "machine_min_travel_rate" => crate::faithful_gate("MACHINE_LIMITS"),
+        _ => return is_machine_axis_limit(key) && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS"),
+    };
+    option_enabled && crate::faithful_gate("MACHINE_MOTION_LIMIT_ROWS")
+}
+
+pub(crate) fn profile_machine_limit_rows_enabled(key: &str) -> bool {
+    machine_limit_rows_enabled(key) && (!is_machine_axis_limit(key) || crate::faithful_gate("MACHINE_LIMITS"))
 }
 
 /// Main print configuration containing global print settings.
@@ -494,7 +513,7 @@ pub struct PrintConfig {
     pub filament_map: Vec<i32>,
     /// BambuStudio: `nozzle_volume` per extruder (mm³) (GCodeProcessor.cpp:1975-1977).
     pub nozzle_volumes: Vec<CoordF>,
-    /// Explicit MachineEnvelopeConfig axis rows (PrintConfig.hpp:1312-1342).
+    /// Explicit MachineEnvelopeConfig axis and motion rows (PrintConfig.hpp:1312-1342).
     /// An absent option uses the scalar fields below. A null slot represents C++ `nil`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub machine_axis_limit_rows: BTreeMap<String, Vec<Option<CoordF>>>,
@@ -841,9 +860,9 @@ pub const CIRCLE_COMPENSATION_FLOATS_KEYS: [&str; 12] = [
 ];
 
 impl PrintConfig {
-    /// PrintConfig.hpp:1312-1342, Config.hpp:918-939. Keep all axis limits while
+    /// PrintConfig.hpp:1312-1342, Config.hpp:918-939. Keep all configured limits while
     /// maintaining the normal-mode scalar used by existing callers.
-    pub(crate) fn set_machine_axis_limit(&mut self, key: &str, value: &str) -> bool {
+    fn set_machine_limit_rows(&mut self, key: &str, value: &str) -> bool {
         use crate::config::{ConfigOption, ConfigOptionFloatsNullable};
         let scalar = match key {
             "machine_max_acceleration_x" => &mut self.machine_max_acceleration_x,
@@ -858,6 +877,11 @@ impl PrintConfig {
             "machine_max_jerk_y" => &mut self.machine_max_jerk_y,
             "machine_max_jerk_z" => &mut self.machine_max_jerk_z,
             "machine_max_jerk_e" => &mut self.machine_max_jerk_e,
+            "machine_max_acceleration_extruding" => &mut self.machine_max_acceleration_extruding,
+            "machine_max_acceleration_retracting" => &mut self.machine_max_acceleration_retracting,
+            "machine_max_acceleration_travel" => &mut self.machine_max_acceleration_travel,
+            "machine_min_extruding_rate" => &mut self.machine_min_extruding_rate,
+            "machine_min_travel_rate" => &mut self.machine_min_travel_rate,
             _ => return false,
         };
         let mut option = ConfigOptionFloatsNullable::new();
@@ -872,8 +896,8 @@ impl PrintConfig {
     }
 
     /// GCodeProcessor.cpp:115-119, 2030-2036. Convert to planner precision.
-    pub(crate) fn machine_axis_values(&self, key: &str, scalar: CoordF) -> Vec<f32> {
-        if crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS") {
+    pub(crate) fn machine_limit_values(&self, key: &str, scalar: CoordF) -> Vec<f32> {
+        if machine_limit_rows_enabled(key) {
             if let Some(rows) = self.machine_axis_limit_rows.get(key) {
                 let mut values: Vec<f32> = rows.iter().map(|v| v.unwrap_or(f64::NAN) as f32).collect();
                 // A caller may edit the public scalar after loading this profile.
@@ -2571,9 +2595,7 @@ impl PrintConfig {
     /// Apply a key-value pair from BambuStudio project_settings JSON.
     /// Returns true if the key was recognized and applied.
     pub fn set_deserialize(&mut self, key: &str, value: &str) -> bool {
-        if key.starts_with("machine_max_") && crate::faithful_gate("MACHINE_LIMITS")
-            && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS") && self.set_machine_axis_limit(key, value)
-        {
+        if profile_machine_limit_rows_enabled(key) && self.set_machine_limit_rows(key, value) {
             return true;
         }
         match key {
@@ -3269,30 +3291,6 @@ impl PrintConfig {
                 if crate::faithful_gate("MACHINE_LIMITS") {
                     if let Some(v) = value.split(',').next().and_then(parse_f64) {
                         self.machine_max_acceleration_e = v;
-                    }
-                }
-                true
-            }
-            "machine_max_acceleration_extruding" => {
-                if crate::faithful_gate("MACHINE_LIMITS") {
-                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
-                        self.machine_max_acceleration_extruding = v;
-                    }
-                }
-                true
-            }
-            "machine_max_acceleration_retracting" => {
-                if crate::faithful_gate("MACHINE_LIMITS") {
-                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
-                        self.machine_max_acceleration_retracting = v;
-                    }
-                }
-                true
-            }
-            "machine_max_acceleration_travel" => {
-                if crate::faithful_gate("MACHINE_LIMITS") {
-                    if let Some(v) = value.split(',').next().and_then(parse_f64) {
-                        self.machine_max_acceleration_travel = v;
                     }
                 }
                 true
@@ -5485,9 +5483,7 @@ impl PrintConfig {
         let parse_bool =
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
-        if key.starts_with("machine_max_") && crate::faithful_gate("MACHINE_AXIS_LIMIT_ROWS")
-            && self.set_machine_axis_limit(key, value)
-        {
+        if machine_limit_rows_enabled(key) && self.set_machine_limit_rows(key, value) {
             return true;
         }
 
@@ -7378,17 +7374,37 @@ mod tests {
         let legacy = serde_json::to_value(&config).unwrap();
         assert!(legacy.get("machine_axis_limit_rows").is_none());
         let mut config: PrintConfig = serde_json::from_value(legacy).unwrap();
-        assert_eq!(config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x), [275.0, 275.0]);
+        assert_eq!(config.machine_limit_values("machine_max_speed_x", config.machine_max_speed_x), [275.0, 275.0]);
 
         config.set_deserialize("machine_max_speed_x", "500,nil,120");
         let mut config: PrintConfig = serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
         config.machine_max_speed_x = 320.0;
-        let rows = config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x);
+        let rows = config.machine_limit_values("machine_max_speed_x", config.machine_max_speed_x);
         assert_eq!(rows.len(), 3);
         assert_eq!((rows[0], rows[2]), (320.0, 120.0));
         assert!(rows[1].is_nan());
         config.apply_key_value("machine_max_speed_x", "75");
-        assert_eq!(config.machine_axis_values("machine_max_speed_x", config.machine_max_speed_x), [75.0]);
+        assert_eq!(config.machine_limit_values("machine_max_speed_x", config.machine_max_speed_x), [75.0]);
+    }
+
+    #[test]
+    fn profile_motion_limits_preserve_serialized_configs_and_public_scalars() {
+        let mut config = PrintConfig::default();
+        config.machine_max_acceleration_travel = 2400.0;
+        let legacy = serde_json::to_value(&config).unwrap();
+        assert!(legacy.get("machine_axis_limit_rows").is_none());
+        let mut config: PrintConfig = serde_json::from_value(legacy).unwrap();
+        let key = "machine_max_acceleration_travel";
+        assert_eq!(config.machine_limit_values(key, config.machine_max_acceleration_travel), [2400.0; 2]);
+
+        assert!(config.set_deserialize(key, "9000,nil"));
+        let mut config: PrintConfig = serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        assert_eq!(config.machine_max_acceleration_travel, 9000.0);
+        config.machine_max_acceleration_travel = 3900.0;
+        let rows = config.machine_limit_values(key, config.machine_max_acceleration_travel);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], 3900.0);
+        assert!(rows[1].is_nan());
     }
 
     #[test]
