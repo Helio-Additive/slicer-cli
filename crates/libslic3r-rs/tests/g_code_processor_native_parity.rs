@@ -551,3 +551,45 @@ fn hardware_pause_times_match_native() {
         assert_eq!(actual, fields.collect::<Vec<_>>(), "hardware pause case {case}, input={input:?}");
     }
 }
+
+/// GCodeProcessor.cpp 2881–2885, 6456–6507. A height visited twice forms
+/// two runs when the preview slider has more ticks than the logical layer list.
+#[test]
+fn finalized_preview_layer_times_match_native() {
+    let vectors = include_str!("data/g_code_processor/preview_layer_times.txt");
+    let (settings, rows) = vectors.split_once("begin\n").unwrap();
+    let profile: Vec<_> = settings.lines().map(|line| {
+        let (key, value) = line.split_once(' ').unwrap();
+        (key.to_owned(), unhex(value))
+    }).collect();
+    let mut config = rust_config(&profile);
+    let mut processor = GCodeProcessor::new();
+    let temp = tempfile::tempdir().unwrap();
+    let filename = temp.path().join("preview.gcode");
+    assert_eq!(rows.lines().count(), 120);
+    for (case, row) in rows.lines().enumerate() {
+        let mut fields = row.split_whitespace();
+        let tags = fields.next().unwrap();
+        config.spiral_vase = tags == "spiral_mode";
+        config.has_scarf_joint_seam = tags == "has_scarf_joint_seam";
+        let stealth = fields.next().unwrap() == "1";
+        let post = fields.next().unwrap() == "1";
+        let input = unhex(fields.next().unwrap());
+        processor.reset();
+        processor.apply_config(&config);
+        processor.enable_stealth_time_estimator(stealth);
+        if post { std::fs::write(&filename, &input).unwrap(); }
+        processor.initialize(&filename.to_string_lossy());
+        processor.process_buffer(&input);
+        processor.finalize(post);
+
+        let mut actual = Vec::new();
+        for mode in &processor.result().print_statistics.modes {
+            actual.extend([f32h(mode.time), mode.layers_times.len().to_string()]);
+            actual.extend(mode.layers_times.iter().copied().map(f32h));
+            actual.push(mode.preview_layers_times.len().to_string());
+            actual.extend(mode.preview_layers_times.iter().copied().map(f32h));
+        }
+        assert_eq!(actual, fields.collect::<Vec<_>>(), "preview case {case}, input={input:?}");
+    }
+}

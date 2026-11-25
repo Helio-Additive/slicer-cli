@@ -7143,7 +7143,7 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:2653-2731  void GCodeProcessor::finalize(bool post_process)
+    /// GCodeProcessor.cpp:2793-2885  void GCodeProcessor::finalize(bool post_process)
     pub fn finalize(&mut self, _post_process: bool) {
         // update width/height of wipe moves
         for move_v in self.m_result.moves.iter_mut() {
@@ -7184,8 +7184,8 @@ impl GCodeProcessor {
             0.0
         };
 
-        // BLOCKED(deps): post_process / TimeProcessContext / MultiNozzleUtils +
-        // PreCoolingInjector — not ported (require unported config/nozzle deps).
+        // The export writes the post-processed file in Print::export_gcode.
+        // finalize(true) does not yet apply its file offsets to the result moves.
 
         // GCodeProcessor.cpp:2858-2866 exports the normal estimate only.
         let normal = &self.m_time_processor.machines[ETimeMode::Normal as usize];
@@ -7207,6 +7207,12 @@ impl GCodeProcessor {
             } else {
                 mv.layer_duration = 0.0;
             }
+        }
+
+        // GCodeProcessor.cpp:2881-2883. The preview uses the finalized move
+        // times to split logical layers at successive extrusion heights.
+        if crate::faithful_gate("PROCESSOR_PREVIEW_LAYER_TIMES") {
+            self.update_preview_layers_times_stats();
         }
 
         // BLOCKED(deps): update_slice_warnings — needs config/bed warnings.

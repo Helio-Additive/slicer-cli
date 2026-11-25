@@ -5564,5 +5564,13 @@
    "GCodeProcessor::process_M109",
    "GCodeProcessor::process_VM109"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 980,
+  "evidence": "finalized_preview_layer_times_match_native checks both modes against 120 native snapshots. Both modes of the 128-layer native mixed-color export also reproduce all 381 per-height times exactly.",
+  "functions": [
+   "GCodeProcessor::update_preview_layers_times_stats"
+  ]
  }
 ]

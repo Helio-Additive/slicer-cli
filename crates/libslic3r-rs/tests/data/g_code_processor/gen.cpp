@@ -1194,11 +1194,67 @@ static void temperature_targets()
     }
 }
 
+// BambuStudio 56a57d0 GCodeProcessor.cpp 1131-1143, 2881-2885, 6456-6507.
+static void preview_layer_times(const std::string &dir)
+{
+    PrintConfig cfg;
+    for (const auto &[key, value] : limits("marlin2")) {
+        cfg.set_deserialize_strict(key, value);
+        std::printf("%s %s\n", key.c_str(), hex(value).c_str());
+    }
+    const std::string start = "G90\nM83\nG1 X10 Z0.2 F600\n";
+    const std::string layer = "; CHANGE_LAYER\n";
+    const std::string mixed = start + layer + "G1 X20 E1\nG1 Z0.3\nG1 X30 E1\nG1 Z0.2\nG1 X40 E1\n"
+        + layer + "G1 Z0.4\nG1 X50 E1\nG1 X60\n";
+    const std::vector<std::string> programs = {
+        mixed, "", start, start + layer + "G1 X20 E1\nG1 X30 E1\n",
+        start + layer + "G1 X20 E1\n" + layer + "G1 X30 Z0.4 E1\n",
+        start + layer + "G1 X20 E1\nG1 X30 Z0.20009 E1\nG1 X40 Z0.20011 E1\n",
+        start + layer + "G1 X20 E1\n; PAUSE_PRINTING\nG1 X30 Z0.4 E1\n; PAUSE_PRINTING\n",
+        start + layer + "G1 X20 E1\n" + layer + "G1 X30 Z0.4 E1\nG1 X40 Z0.2 E1\nG1 X50 Z0.4 E1\n",
+        start + layer + "G1 X20 E1\nG1 Z0.4\nG1 Z0.2\nG1 X30 E1\n",
+        start + layer + "G1 X20 E1\nG1 X30 Z0.3 E1\nG1 X40 Z0.4 E1\nM400 S3\n"
+    };
+    const std::string path = dir + "/preview.gcode";
+    std::puts("begin");
+    GCodeProcessor p;
+    for (const auto &program : programs) {
+        for (const char *tags : {"none", "spiral_mode", "has_scarf_joint_seam"}) {
+            cfg.spiral_mode.value = std::string(tags) == "spiral_mode";
+            cfg.has_scarf_joint_seam.value = std::string(tags) == "has_scarf_joint_seam";
+            for (int stealth : {0, 1}) {
+                for (int post : {0, 1}) {
+                    { std::ofstream f(path, std::ios::binary); f << program; }
+                    p.reset();
+                    p.apply_config(cfg);
+                    p.enable_stealth_time_estimator(stealth);
+                    p.initialize(path);
+                    p.process_buffer(program);
+                    p.finalize(post);
+                    std::printf("%s %d %d %s", tags, stealth, post, hex(program).c_str());
+                    for (const auto &mode : p.result().print_statistics.modes) {
+                        std::printf(" %s %zu", f32(mode.time).c_str(), mode.layers_times.size());
+                        for (float t : mode.layers_times) std::printf(" %s", f32(t).c_str());
+                        std::printf(" %zu", mode.preview_layers_times.size());
+                        for (float t : mode.preview_layers_times) std::printf(" %s", f32(t).c_str());
+                    }
+                    std::putchar('\n');
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--preview-layer-times") {
+        if (argc != 3) return 1;
+        preview_layer_times(argv[2]);
+        return 0;
     }
     if (std::string(argv[1]) == "--temperature-targets") { temperature_targets(); return 0; }
     if (std::string(argv[1]) == "--pause-times") {

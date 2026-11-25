@@ -204,8 +204,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R977 | Record hardware pauses at `M400 U1` and resolve their motion time, layer and progress when finalizing the processor result (GCodeProcessor.cpp 513–542, 2858–2866, 5794–5811). All 56 native snapshots and the complete hardware-pause Benchy replay agree. The four fixture files reproduce R976 with either gate setting. | `PROCESSOR_M400_PAUSE_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R978 | Derive the scarf-seam flag in the full and typed configs from the model and its normalized settings (PrintApply.cpp 1323–1435). The 20 native model cases and 14 supplemental slice flags agree. All four standard jobs reproduce R977 with either gate setting. | `PRINT_APPLY_SCARF_SEAM` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R979 | Apply the S temperature on M104, M109 and their virtual commands to the filament indicated by I, to every filament on the physical extruder indicated by T, or to the active filament (GCodeProcessor.cpp 5449–5485, 5534–5542). All 400 native command/profile cases agree. | `PROCESSOR_TEMPERATURE_TARGETS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R980 | Finalize preview times for consecutive extrusion heights (GCodeProcessor.cpp 2881–2883, 6456–6507). The native mixed-color cube export has 381 preview runs for 128 logical layers. All run times agree in both modes. | `PROCESSOR_PREVIEW_LAYER_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R980, mixed-color preview. A two-layer program revisiting the same height
+  had matching total and logical-layer times. The native result also had four
+  durations for the preview slider, while Rust returned an empty list.
+  Calling the existing per-height calculation at the end of finalization
+  reproduces every duration. All 120 native snapshots agree across normal
+  and stealth timing, both file-processing options, scarf and spiral modes,
+  small Z changes, travel, pauses and repeated heights. On the same
+  86,731-line native mixed-color export, all 381 durations per mode match
+  bit for bit. The Rust slicer still omits the tool changes on that model.
+  Both gate settings reproduce the four R979 files. H2D retains 4,614,342
+  and 4,614,863 matches in order.
 
 - R979, H2D temperature preview. The 1,400-line startup replay has 128
   preview moves. The first differing temperature was on line 838 at
