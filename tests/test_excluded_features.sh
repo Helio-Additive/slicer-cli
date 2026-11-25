@@ -698,6 +698,10 @@ if [ "$ENGINE" = orca ]; then
     # The model is named as in the s0 run: the warning names the object as it was given.
     "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" -o "$PART_DIR/s3.gcode" > "$PART_DIR/s3.out" 2>&1; STRICT_FILE_OFF=$?
     "$BINARY" "$PART_DIR/slab.stl" --printer-preset "$PART_PRINTER" --strict -o "$PART_DIR/s4.gcode" > "$PART_DIR/s4.out" 2>&1; STRICT_FILE_ON=$?
+    # A run that fails before a plate is prepared (the model file is missing)
+    # reports the flag too (OrcaSlicer.cpp 1420-1421 at f92a7c0).
+    "$BINARY" "$PART_DIR/no-such-model.stl" --printer-preset "$PART_PRINTER" --slice 1 --strict --outputdir "$PART_DIR/s5" > "$PART_DIR/s5.out" 2>&1
+    "$BINARY" "$PART_DIR/no-such-model.stl" --printer-preset "$PART_PRINTER" --slice 1 --outputdir "$PART_DIR/s6" > "$PART_DIR/s6.out" 2>&1
     set -e
     if STRICT_DETAIL=$(python3 - "$PART_DIR" "$STRICT_OFF" "$STRICT_ON" "$STRICT_PAIR" "$STRICT_FILE_OFF" "$STRICT_FILE_ON" <<'PY' 2>&1
 import json, os, sys
@@ -709,6 +713,9 @@ assert w and w[0]["plate_id"] == 1 and w[0]["text"], r0["warnings"]
 assert on != 0 and r1["return_code"] == -100 and r1["strict_mode"] is True, (on, r1["return_code"], r1.get("strict_mode"))
 assert [x for x in r1["warnings"] if x["class"] == "slicing_warning_non_critical"], r1["warnings"]
 assert pair != 0 and r2["return_code"] == -2 and "--strict cannot be combined with --no-check" in json.dumps(r2), (pair, r2["return_code"])
+r5 = json.load(open(d + "/s5/result.json")); r6 = json.load(open(d + "/s6/result.json"))
+assert r5["return_code"] != 0 and r5["strict_mode"] is True, ("early failure with --strict", r5["return_code"], r5.get("strict_mode"))
+assert r6["return_code"] != 0 and r6["strict_mode"] is False, ("early failure without --strict", r6["return_code"], r6.get("strict_mode"))
 assert file_off == 0 and os.path.getsize(d + "/s3.gcode") > 0, ("-o without --strict", file_off)
 assert file_on != 0, "-o with --strict sliced a model that warns"
 said = [line for line in open(d + "/s4.out", encoding="utf-8", errors="replace").read().splitlines() if line.startswith("Error: ")]

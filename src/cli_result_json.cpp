@@ -278,7 +278,14 @@ bool write_result_json(CliRunContext& context, const std::string& outputdir, int
     // failed; under --strict it ends the run. OrcaSlicer writes its result.json
     // on Linux only; slicer-cli writes it on every system.
     {
+        // The flag is read from the command line, so that a run that fails
+        // before a plate is prepared reports it too (OrcaSlicer.cpp 1420-1421
+        // at f92a7c0: "Read up front so result.json reports it for early
+        // failures too").
         bool strict = false;
+        if (const CliOptions* options = context.g_result_json_options;
+            options != nullptr && context.g_command_line_parsed && options->given_flag("strict"))
+            strict = options->cli.opt_bool("strict");
         json classes = json::array();
         for (const json& w : recorded_config_substitutions())
             classes.push_back(w);
