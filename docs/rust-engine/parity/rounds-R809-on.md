@@ -200,8 +200,19 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R973 | The typed processor profile enables layer-tag detection for spiral mode and scarf seams (GCodeProcessor.cpp 2081–2087). An ordinary profile clears it. All 16 native profile transitions reproduce the float heights and move indices of the two tagged layers. All four fixture files match R970 with the gate enabled and disabled. | `PROCESSOR_LAYER_TAG_PROFILES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R974 | Copy the printable height and the printable, excluded and clumping-detection polygons into the processor result (GCodeProcessor.cpp 1577–1590, 2072, 2089–2091). Six native states agree through both typed setters and the JSON loader, including defaults, empty areas, reapplication and reset. The four fixture files reproduce R973 with the gate enabled and disabled. | `PROCESSOR_PRINTABLE_GEOMETRY` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R975 | Record pause and custom G-code option moves, correct their height on the next extrusion, and expand the first and last progress tags in the file pass. On a Benchy with an end-code pause, the in-order count rises from 190,464 to all 190,638 body lines. The entire export matches C++. All four standard fixtures reproduce R974 with either gate setting. | `PROCESSOR_PAUSE_PROGRESS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R976 | Process color-change tags for active and inactive filaments (GCodeProcessor.cpp 3525–3595). Thirteen native cases check preview colors, stop times and volume per color change. A Benchy with a color change in its end G-code gains 174 in-order body lines and matches the entire C++ file. The four standard fixtures reproduce R975 with either gate setting. | `PROCESSOR_COLOR_CHANGE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R976, color-change Benchy. A two-filament probe first differed at the
+  active T0 tag. C++ recorded a color-change move and item with the supplied
+  color, then assigned preview color 3 to inactive T1 before its next travel.
+  Both moves now carry the native color. The generated programs cover the
+  rotating default palette, malformed tool and color fields, consecutive
+  delimiters, a 255-count wrap, time in both modes and filament volume.
+  On the supplemental slice the native file is 4,639,237 bytes. The enabled
+  gate reproduces every byte, and the disabled gate reproduces R975.
+  H2D retains 4,614,342 and 4,614,863 in-order matches.
 
 - R975, pause-print Benchy. The same two-move probe first differed at the pause
   tag. Rust omitted the option move and stop time. With those restored, the

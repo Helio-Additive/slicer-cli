@@ -3130,6 +3130,7 @@ pub struct GCodeProcessor {
     m_g1_line_id: u32,
     m_layer_id: u32,
     m_cp_color: CpColor,
+    m_last_default_color_id: usize,
     m_options_z_corrector: OptionsZCorrector,
     m_seams_count: i32,
     m_detect_layer_based_on_tag: bool,
@@ -3208,6 +3209,7 @@ impl GCodeProcessor {
             m_g1_line_id: 0,
             m_layer_id: 0,
             m_cp_color: CpColor::default(),
+            m_last_default_color_id: 0,
             m_options_z_corrector: OptionsZCorrector::default(),
             m_seams_count: 0,
             m_detect_layer_based_on_tag: false,
@@ -3307,6 +3309,7 @@ impl GCodeProcessor {
         self.m_g1_line_id = 0;
         self.m_layer_id = 0;
         self.m_cp_color.reset();
+        self.m_last_default_color_id = 0;
         self.m_options_z_corrector.reset();
 
         self.m_time_processor.reset();
@@ -3903,7 +3906,6 @@ impl GCodeProcessor {
     /// GCodeProcessor.cpp:3381-3632  process_tags.
     ///
     /// PROCESS_TAGS (on); =0 ignores every tag, as the port did before R846.
-    /// Color change tags (:3525-3594) are still ignored.
     /// The producers' tags run only with `producers_enabled`
     /// (G-code loaded from a file), never for the G-code the port writes.
     fn process_tags(&mut self, comment: &str, producers_enabled: bool) {
@@ -4046,6 +4048,59 @@ impl GCodeProcessor {
                 let _ = parse_number(rest, &mut self.m_forced_width);
             } else if let Some(v) = parse_number_f32(rest) {
                 self.m_forced_width = v;
+            }
+            return;
+        }
+
+        // GCodeProcessor.cpp:3525-3595. An inactive filament gets its preview
+        // color immediately, but only the active filament records a stop.
+        if comment.starts_with(reserved_tag(ETags::ColorChange))
+            && crate::faithful_gate("PROCESSOR_COLOR_CHANGE")
+        {
+            const DEFAULT_COLORS: [&str; 6] = [
+                "#0B2C7A", "#1C8891", "#AAF200", "#F5CE0A", "#D16830", "#942616",
+            ];
+            let tokens = crate::print_config::config_def::boost_split_token_compress(comment, ',');
+            let mut filament_id = 0;
+            if let Some(tool) = tokens.get(1).and_then(|token| token.strip_prefix('T')) {
+                if !parse_number(tool, &mut filament_id) || !(0..=255).contains(&filament_id) {
+                    log::error!("GCodeProcessor encountered an invalid value for Color_Change ({}).", comment);
+                    return;
+                }
+            }
+            let color = if let Some(value) = tokens.get(2) {
+                let bytes = value.as_bytes();
+                if bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(u8::is_ascii_hexdigit) {
+                    value.as_str()
+                } else {
+                    DEFAULT_COLORS[0]
+                }
+            } else {
+                let value = DEFAULT_COLORS[self.m_last_default_color_id];
+                self.m_last_default_color_id = (self.m_last_default_color_id + 1) % DEFAULT_COLORS.len();
+                value
+            };
+
+            let color_id = (self.m_extruder_offsets.len() as u8).wrapping_add(self.m_cp_color.counter);
+            self.m_cp_color.counter += 1;
+            if self.m_cp_color.counter == u8::MAX {
+                self.m_cp_color.counter = 0;
+            }
+            if let Some(slot) = self.m_extruder_colors.get_mut(filament_id as usize) {
+                *slot = color_id;
+                if self.get_filament_id(true) == filament_id {
+                    self.m_cp_color.current = color_id;
+                    self.store_move_vertex(EMoveType::ColorChange, EMovePathType::NoopMove);
+                    self.m_result.custom_gcode_per_print_z.push(crate::custom_g_code::Item::new(
+                        self.m_end_position[crate::g_code_reader::Axis::Z as usize],
+                        CustomGCodeType::ColorChange,
+                        filament_id + 1,
+                        color.to_owned(),
+                    ));
+                    self.m_options_z_corrector.set(&self.m_result);
+                    self.process_custom_gcode_time(CustomGCodeType::ColorChange);
+                    self.process_filaments(CustomGCodeType::ColorChange);
+                }
             }
             return;
         }

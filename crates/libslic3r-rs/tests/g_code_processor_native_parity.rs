@@ -454,3 +454,55 @@ fn pause_and_custom_tags_match_native() {
         assert_eq!(actual, fields.collect::<Vec<_>>(), "finish={finish}, input={input:?}");
     }
 }
+
+/// GCodeProcessor.cpp 3525-3595. Exercise the preview color sequence and the
+/// stop and volume recorded for the active filament, including the 255 wrap.
+#[test]
+fn color_tags_match_native() {
+    let vectors = include_str!("data/g_code_processor/color_tags.txt");
+    let (settings, rows) = vectors.split_once("begin\n").unwrap();
+    let profile: Vec<_> = settings.lines().map(|line| {
+        let (key, value) = line.split_once(' ').unwrap();
+        (key.to_owned(), unhex(value))
+    }).collect();
+    let mut config = rust_config(&profile);
+    config.filament_diameters = vec![1.75; 2];
+    let mut processor = GCodeProcessor::new();
+    assert_eq!(rows.lines().count(), 13);
+    for (case, row) in rows.lines().enumerate() {
+        let mut fields = row.split_whitespace();
+        let input = unhex(fields.next().unwrap());
+        processor.reset();
+        processor.apply_config(&config);
+        processor.enable_stealth_time_estimator(true);
+        processor.initialize("colors.gcode");
+        processor.process_buffer(&input);
+        processor.finalize(false);
+
+        let result = processor.result();
+        let mut actual = vec![result.custom_gcode_per_print_z.len().to_string()];
+        for item in &result.custom_gcode_per_print_z {
+            actual.extend([f64h(item.print_z), (item.gcode_type as i32).to_string(),
+                           item.extruder.to_string(), hex(&item.color)]);
+        }
+        actual.push(result.moves.len().to_string());
+        for m in &result.moves {
+            actual.extend([m.gcode_id.to_string(), (m.move_type as i32).to_string(), m.cp_color_id.to_string()]);
+        }
+        let volumes = &result.print_statistics.volumes_per_color_change;
+        actual.push(volumes.len().to_string());
+        actual.extend(volumes.iter().map(|&v| f64h(v)));
+        for machine in &processor.time_processor().machines {
+            actual.push(machine.stop_times.len().to_string());
+            for stop in &machine.stop_times {
+                actual.extend([stop.g1_line_id.to_string(), f32h(stop.elapsed_time)]);
+            }
+            let custom = &machine.gcode_time;
+            actual.extend([u8::from(custom.needed).to_string(), f32h(custom.cache), custom.times.len().to_string()]);
+            for &(code, duration) in &custom.times {
+                actual.extend([(code as i32).to_string(), f32h(duration)]);
+            }
+        }
+        assert_eq!(actual, fields.collect::<Vec<_>>(), "color case {case}");
+    }
+}

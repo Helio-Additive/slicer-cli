@@ -5529,5 +5529,13 @@
    "GCodeProcessor::OptionsZCorrector::update",
    "GCodeProcessor::OptionsZCorrector::reset"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 976,
+  "evidence": "color_tags_match_native compares the custom-time flag, cache and duration of each event in both modes against 13 native programs, including successive color changes, a pause, inactive filament changes and reset. The end-code color-change Benchy matches the complete native export.",
+  "functions": [
+   "GCodeProcessor::process_custom_gcode_time"
+  ]
  }
 ]

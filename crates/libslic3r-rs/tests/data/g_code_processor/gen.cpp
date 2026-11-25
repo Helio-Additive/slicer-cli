@@ -1037,11 +1037,80 @@ static void option_tags()
     }
 }
 
+// GCodeProcessor.cpp 3525-3595, 6212-6221, 6401-6414. Observe the exporter's
+// color sequence, timed stops and filament totals after real G-code parsing.
+static void color_tags(const char *output_path)
+{
+    std::ofstream out(output_path);
+    out.exceptions(std::ios::badbit | std::ios::failbit);
+    const std::string tag = "; COLOR_CHANGE";
+    const std::string head = "G1 X10 Y10 Z0.2 F600\nG1 X15 E1 F600\n";
+    const std::string end = "G1 X17 Y10 Z0.4 F600\nG1 X20 E2 F600\n";
+    std::string cycle;
+    for (int i = 0; i < 256; ++i) cycle += tag + ",T1\n";
+    std::vector<std::string> bodies = {
+        tag + "\n", tag + ",T1\n", tag + ",T0,#aB12eF\n",
+        tag + ",T1,#ABCDEF\nT1\n" + tag + ",T1,#000001\n",
+        tag + ",T0,#aB12eF\n" + tag + ",T1\nG1 X16 E1.5 F600\nT1\n",
+        tag + ",T0,bad\n" + tag + "\n" + tag + ",T0,#12345Z\n" + tag + "\n",
+        tag + ",,,T0,,#abcdef,x\n" + tag + ",T0,\n" + tag + ",,\n",
+        tag + "extra,not-a-tool,#A0B0C0\n" + tag + ",t1,#123456\n",
+        tag + ",T-1\n" + tag + ",T256\n" + tag + ",T\n" + tag + ",T+0\n" + tag + ",T1x\n" + tag + "\n",
+        tag + ",T255\n" + tag + ",T2\n" + tag + ",T00\n",
+        tag + "\n; PAUSE_PRINTING\n" + tag + ",T0,#123456\n",
+        cycle + tag + ",T0\nT1\n",
+    };
+    std::string palette;
+    for (int i = 0; i < 8; ++i) palette += tag + "\n";
+    bodies.push_back(palette);
+    PrintConfig cfg;
+    for (auto [key, value] : limits("marlin2")) {
+        if (key == "filament_diameter") value = "1.75,1.75";
+        cfg.set_deserialize_strict(key, value);
+        out << key << ' ' << hex(value) << '\n';
+    }
+    out << "begin\n";
+    GCodeProcessor p;
+    for (const auto &body : bodies) {
+        const std::string program = head + body + end;
+        p.reset();
+        p.apply_config(cfg);
+        p.enable_stealth_time_estimator(true);
+        p.initialize("colors.gcode");
+        p.process_buffer(program);
+        p.finalize(false);
+        const auto &result = p.result();
+        out << hex(program) << ' ' << result.custom_gcode_per_print_z.size();
+        for (const auto &item : result.custom_gcode_per_print_z)
+            out << ' ' << f64(item.print_z) << ' ' << int(item.type) << ' ' << item.extruder << ' ' << hex(item.color);
+        out << ' ' << result.moves.size();
+        for (const auto &move : result.moves)
+            out << ' ' << move.gcode_id << ' ' << int(move.type) << ' ' << unsigned(move.cp_color_id);
+        const auto &volumes = result.print_statistics.volumes_per_color_change;
+        out << ' ' << volumes.size();
+        for (double v : volumes) out << ' ' << f64(v);
+        for (const auto &machine : p.m_time_processor.machines) {
+            out << ' ' << machine.stop_times.size();
+            for (const auto &stop : machine.stop_times) out << ' ' << stop.g1_line_id << ' ' << f32(stop.elapsed_time);
+            out << ' ' << int(machine.gcode_time.needed) << ' ' << f32(machine.gcode_time.cache)
+                << ' ' << machine.gcode_time.times.size();
+            for (const auto &[type, duration] : machine.gcode_time.times)
+                out << ' ' << int(type) << ' ' << f32(duration);
+        }
+        out << '\n';
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--color-tags") {
+        if (argc != 3) return 1;
+        color_tags(argv[2]);
+        return 0;
     }
     if (std::string(argv[1]) == "--option-tags") {
         option_tags();
