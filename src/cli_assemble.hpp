@@ -55,6 +55,7 @@ struct AssemblePlate {
     std::string                        plate_name;
     bool                               need_arrange = false;
     int                                filaments_count = 0;   // the filaments the plate's objects use
+    std::map<int, std::string>         asked_filaments;       // each filament number the list gave an object, and the first such object's path
     std::map<std::string, std::string> plate_params;
     std::vector<AssembleObject>        objects;
     std::vector<Slic3r::ModelObject*>  loaded_obj_list;       // in AssembleList::model
@@ -90,6 +91,16 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Slic3r::M
                                    std::vector<Slic3r::DynamicPrintConfig>& plate_configs,
                                    std::vector<Slic3r::RGBA>& all_colours,
                                    std::vector<std::string>& sources);
+
+/// A filament number the built list gave an object (asked_filaments) that is past the
+/// filaments the run has, as a refusal sentence; "" when every number has a
+/// filament. The official command line has this rule for --load-filament-ids
+/// ("invalid filament_id", CLI_INVALID_PARAMS: BambuStudio.cpp 2289 at
+/// 56a57d0; OrcaSlicer.cpp 1956 at f92a7c0; Snapmaker_Orca.cpp 1543 at
+/// bac6fd5) and none for the list: the
+/// engine then prints the object with the first filament and says nothing.
+/// 0 is the default filament.
+std::string assemble_filament_refusal(const std::vector<AssemblePlate>& plates, size_t filament_count);
 
 /// Both, then model.add_default_instances() (BambuStudio.cpp 2165-2188;
 /// OrcaSlicer.cpp 1812-1834): an exception while building is
