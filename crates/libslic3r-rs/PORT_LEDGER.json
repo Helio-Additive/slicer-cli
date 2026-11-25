@@ -1613,7 +1613,8 @@
     "loc": 1906,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R970: smooth_overhang_level traverses nonzero paths across the full 6.5 mm window, including many passes around a short wall (PerimeterGenerator.cpp 548-590). The four Majora paths and the 401 native smoothing vectors agree."
   },
   {
     "cpp": "Config.cpp",

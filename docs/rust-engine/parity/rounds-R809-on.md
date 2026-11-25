@@ -194,8 +194,19 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R967 | Emit the forced width once for the first extrusion after a prime tower (GCode.cpp 7869–7902). Width changes and the separately forced height agree with four native multipath cases. Majora loses 71 duplicate width comments on 69 layers. All four native runs agree with the resulting seven-line window at every changed site. The two Benchys and H2D match R966 byte for byte, as do all four fixtures with the gate disabled. | `MULTIPATH_TOWER_WIDTH_ONCE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same in order) |
 | R968 | Keep the paths from a split gyroid surface in one collection (Fill.cpp 835–847, FillBase.cpp 99–110, 127–170). ToolOrdering.cpp 3978–3988 subtracts its volume once. Native narrow- and wide-neck cases verify both path counts and the exact volume of each collection. All four C++ runs agree with the corrected purge commands on Majora. Both Benchys and H2D match R967 byte for byte. Disabling the gate reproduces all four R967 files. | `GYROID_SURFACE_COLLECTION` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same in order) |
 | R969 | Retract the remaining distance when a tool change requests a longer retraction (GCode.cpp 871–879, 8498–8522, GCodeWriter.cpp 881–946, Extruder.cpp 101–146). The writer matches 48 native cases in absolute and relative E, including shorter, equal and zero requests. On Majora all four native runs agree on the missing 1.2 mm at four tower entries. Both Benchys and H2D match R968 byte for byte. Disabling the gate reproduces all four R968 files. | `RETRACT_TO_REQUESTED_LENGTH` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 to 2,864,038 (+219) |
+| R970 | Walk the full 6.5 mm overhang filter window on short paths (PerimeterGenerator.cpp 548–590). Rust had stopped after a fixed number of neighbors even when the ring had positive length. A four-path native case reproduces the difference. All four C++ runs agree with the feed and retraction text at both changed Majora sites. Both Benchys and H2D match R969, as do all four files with the gate disabled. | `OVERHANG_FILTER_FULL_WINDOW` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,038 to 2,864,040 (+2) |
 
 ## Findings
+
+- R970, Majora. At layer 24 the filter receives the same four paths in both
+  engines. Rust had assigned degree 2 to each. Covering the full window
+  yields native degree 3 and the wall runs at 30 mm/s. At layers 24 and 150
+  the redundant F3000 and the F1800 word on the subsequent retraction both
+  disappear. All four C++ runs reproduce every changed window. Excluding M73,
+  layer 24 matches all four and layer 150 matches two. Full matches rise to
+  583 of 586 consensus layers and 650 of 656 layers seen in any run. The
+  whole-file unordered verbatim overlap falls by one to 3,022,796. H2D
+  retains 4,614,342 and 4,614,863 in-order matches.
 
 - R969, Majora. At layer 91 the tool change requests 2.0 mm after the ordinary
   retraction has already taken 0.8 mm. Rust now emits the native

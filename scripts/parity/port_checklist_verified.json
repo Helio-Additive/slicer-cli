@@ -5511,5 +5511,13 @@
    "GCodeProcessor::minimum_feedrate",
    "GCodeProcessor::minimum_travel_feedrate"
   ]
+ },
+ {
+  "unit": "PerimeterGenerator",
+  "round": 970,
+  "evidence": "perimeter_generator_native_parity compares all 401 smooth_overhang_level cases with the pinned PerimeterGenerator.cpp. The four short paths from Majora layer 24 reproduce the native degree 3 on every path when the filter wraps repeatedly to cover 6.5 mm.",
+  "functions": [
+   "smooth_overhang_level"
+  ]
  }
 ]

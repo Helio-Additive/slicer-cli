@@ -7155,9 +7155,9 @@ Tier 1. C++ functions 29 (plus 3 constructors, 0 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `is_enable_overhang_speed` :272 and `is_enable_overhang_speed` :5925 (50%, 4.42x)
-- divergent: `fuzzy_skin_allows_overhang_slowdown` :282 and `fuzzy_skin_allows_overhang_slowdown` :5956 (28%, 1.11x)
-- divergent: `PerimeterRegion::has_compatible_perimeter_regions` :1917 and `PerimeterRegion::has_compatible_perimeter_regions` :6103 (18%, 1.89x)
+- partial: `is_enable_overhang_speed` :272 and `is_enable_overhang_speed` :5929 (50%, 4.42x)
+- divergent: `fuzzy_skin_allows_overhang_slowdown` :282 and `fuzzy_skin_allows_overhang_slowdown` :5960 (28%, 1.11x)
+- divergent: `PerimeterRegion::has_compatible_perimeter_regions` :1917 and `PerimeterRegion::has_compatible_perimeter_regions` :6107 (18%, 1.89x)
 
 Missing in the Rust file:
 
@@ -7204,38 +7204,38 @@ Rust only:
 - `expolygons_to_polygons` :5578
 - `apply_fuzzy_skin_to_entity` :5590
 - `lastprobe` :5651
-- `pg_cfg_int` :5822
-- `PerimeterRegion::new` :6082
-- `pg_cfg_bool` :6196
-- `PerimeterGeneratorArachneMembers::from_configs` :6245
-- `union_ex` :6568 — C++ has it in `ClipperUtils`
-- `union_ex_2` :6572 — C++ has it in `Clipper2Utils`
-- `offset2_ex` :6576 — C++ has it in `ClipperUtils`
-- `opening_ex` :6580 — C++ has it in `ClipperUtils`
-- `offset` :6584 — C++ has it in `BoundingBox`, `ClipperUtils`, `Geometry/VoronoiOffset`
-- `offset_polygons` :6588
-- `offset_ex_expolygon` :6592
-- `offset_ex` :6596 — C++ has it in `ClipperUtils`
-- `diff_ex` :6600 — C++ has it in `ClipperUtils`
-- `diff_ex_ep` :6604
-- `diff_ex_pp` :6608
-- `intersection_ex` :6612 — C++ has it in `ClipperUtils`
-- `simplify_p` :6618 — C++ has it in `ExPolygon`
-- `pg_scale_` :6626
-- `pg_scaled_float` :6632
-- `pg_thick_polyline` :7251
-- `pg_polyline_length` :7265
-- `pg_variable_width` :7277
-- `pg_generate_lower_polygons_series` :7285
-- `pg_dist_boundary` :7305
-- `offset_ex_polygons` :7587
-- `union_ex_expolygons` :7591
-- `offset_ex_jt` :7595
-- `offset2_ex_jt` :7599
-- `offset_polygon` :7603
-- `PerimeterGenerator::m_scaled_resolution` :7611
-- `PerimeterGenerator::pa_pex` :7623
-- `PerimeterGenerator::pa_probe` :7657
+- `pg_cfg_int` :5826
+- `PerimeterRegion::new` :6086
+- `pg_cfg_bool` :6200
+- `PerimeterGeneratorArachneMembers::from_configs` :6249
+- `union_ex` :6572 — C++ has it in `ClipperUtils`
+- `union_ex_2` :6576 — C++ has it in `Clipper2Utils`
+- `offset2_ex` :6580 — C++ has it in `ClipperUtils`
+- `opening_ex` :6584 — C++ has it in `ClipperUtils`
+- `offset` :6588 — C++ has it in `BoundingBox`, `ClipperUtils`, `Geometry/VoronoiOffset`
+- `offset_polygons` :6592
+- `offset_ex_expolygon` :6596
+- `offset_ex` :6600 — C++ has it in `ClipperUtils`
+- `diff_ex` :6604 — C++ has it in `ClipperUtils`
+- `diff_ex_ep` :6608
+- `diff_ex_pp` :6612
+- `intersection_ex` :6616 — C++ has it in `ClipperUtils`
+- `simplify_p` :6622 — C++ has it in `ExPolygon`
+- `pg_scale_` :6630
+- `pg_scaled_float` :6636
+- `pg_thick_polyline` :7255
+- `pg_polyline_length` :7269
+- `pg_variable_width` :7281
+- `pg_generate_lower_polygons_series` :7289
+- `pg_dist_boundary` :7309
+- `offset_ex_polygons` :7591
+- `union_ex_expolygons` :7595
+- `offset_ex_jt` :7599
+- `offset2_ex_jt` :7603
+- `offset_polygon` :7607
+- `PerimeterGenerator::m_scaled_resolution` :7615
+- `PerimeterGenerator::pa_pex` :7627
+- `PerimeterGenerator::pa_probe` :7661
 
 ### `PlaceholderParser` (.cpp+.hpp) and `placeholder_parser.rs`
 

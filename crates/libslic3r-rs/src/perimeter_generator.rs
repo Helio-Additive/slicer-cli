@@ -5698,8 +5698,12 @@ pub fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
         // don't need to do filtering if only has one path in vector
         return;
     }
-    // PerimeterGenerator.cpp:526 `paths[i].get_overhang_degree()`: 0 for a role that is neither a
-    // perimeter nor a support (the paths of the live path are perimeters).
+    // PerimeterGenerator.cpp:548-580 walks around the paths until the full
+    // filter range is covered. Retain the bound for a ring of zero-length paths.
+    let cover_window = crate::faithful_gate("OVERHANG_FILTER_FULL_WINDOW")
+        && paths.iter().any(|path| path.length() > 0.0);
+    let neighbor_limit = if cover_window { i64::MAX } else { 4 * path_num + 8 };
+    // PerimeterGenerator.cpp:526 snapshots the integer degree of each path.
     let old: Vec<i32> = paths.iter().map(|p| p.get_overhang_degree()).collect();
     let is_wall = |r: ExtrusionRole| {
         r == ExtrusionRole::Perimeter || r == ExtrusionRole::ExternalPerimeter
@@ -5746,7 +5750,7 @@ pub fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
                 j = index;
                 j -= 1;
                 guard += 1;
-                if guard > 4 * path_num + 8 {
+                if guard > neighbor_limit {
                     break; // all-zero-length loop: native would spin here
                 }
             }
@@ -5767,7 +5771,7 @@ pub fn smooth_overhang_level(paths: &mut [ExtrusionPath]) {
                 right_total_length -= temp_length;
                 j += 1;
                 guard += 1;
-                if guard > 4 * path_num + 8 {
+                if guard > neighbor_limit {
                     break;
                 }
             }

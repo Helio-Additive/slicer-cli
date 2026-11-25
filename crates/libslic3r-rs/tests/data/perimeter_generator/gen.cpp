@@ -249,6 +249,20 @@ static void run_filters()
         smooth_overhang_level(paths);
         out("smooth " + in + " => " + PATHS(paths));
     }
+
+    // A short open wall can wrap repeatedly inside the 6.5 mm filter window
+    // (PerimeterGenerator.cpp:548-580). Coordinates are relative to its start.
+    const Points points{Point(0, 0), Point(-1980, 1806), Point(-4399, 4011), Point(-6818, 6217), Point(-8836, 8058)};
+    ExtrusionPaths paths;
+    for (size_t i = 1; i < points.size(); ++i) {
+        ExtrusionPath path(erExternalPerimeter);
+        path.overhang_degree = 3.0 + 0.25 * double(i - 1);
+        path.polyline.points = {points[i - 1], points[i]};
+        paths.push_back(path);
+    }
+    const std::string in = PATHS(paths);
+    smooth_overhang_level(paths);
+    out("smooth " + in + " => " + PATHS(paths));
 }
 
 // ---------------------------------------------------------------------------------------------
