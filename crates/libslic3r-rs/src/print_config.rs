@@ -56,6 +56,15 @@ pub(crate) fn profile_machine_limit_rows_enabled(key: &str) -> bool {
     machine_limit_rows_enabled(key) && (!is_machine_axis_limit(key) || crate::faithful_gate("MACHINE_LIMITS"))
 }
 
+/// The six per-AMS scalar options in PrintConfig.hpp:1423-1428.
+fn is_ams_filament_time(key: &str) -> bool {
+    matches!(key,
+        "ams_filament_load_time_ams" | "ams_filament_unload_time_ams"
+        | "ams_filament_load_time_ams_lite" | "ams_filament_unload_time_ams_lite"
+        | "ams_filament_load_time_n3f_s" | "ams_filament_unload_time_n3f_s"
+    )
+}
+
 /// Main print configuration containing global print settings.
 ///
 /// This encompasses settings that affect the entire print, such as
@@ -509,6 +518,10 @@ pub struct PrintConfig {
     /// BambuStudio: `default_ams_type`; -1 selects the legacy load and unload
     /// times (MultiNozzleUtils.cpp:1152-1176).
     pub default_ams_type: i32,
+    /// Explicit per-AMS load and unload times in seconds (PrintConfig.hpp:1423-1428).
+    /// The six options default to zero (PrintConfig.cpp:3144-3190).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ams_filament_times: BTreeMap<String, f64>,
     /// BambuStudio: `filament_map`, 1-based extruder per filament (coInts).
     pub filament_map: Vec<i32>,
     /// BambuStudio: `nozzle_volume` per extruder (mm³) (GCodeProcessor.cpp:1975-1977).
@@ -1499,6 +1512,7 @@ impl Default for PrintConfig {
             machine_hotend_change_time: 0.0,
             handle_hotend_as_extruder: false,
             default_ams_type: -1,
+            ams_filament_times: BTreeMap::new(),
             filament_map: Vec::new(),
             nozzle_volumes: Vec::new(),
             machine_axis_limit_rows: BTreeMap::new(),
@@ -3410,6 +3424,14 @@ impl PrintConfig {
             }
             "handle_hotend_as_extruder" => {
                 self.handle_hotend_as_extruder = parse_bool(value).unwrap_or(false);
+                true
+            }
+            k if is_ams_filament_time(k) && crate::faithful_gate("PROCESSOR_AMS_TIMES") => {
+                use crate::config::{ConfigOption, ConfigOptionFloat};
+                let mut option = ConfigOptionFloat::new();
+                if matches!(option.deserialize(value, false), Ok(true)) {
+                    self.ams_filament_times.insert(k.to_owned(), option.value);
+                }
                 true
             }
             "default_ams_type" => {
@@ -5483,6 +5505,13 @@ impl PrintConfig {
         let parse_bool =
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
+        if (is_ams_filament_time(key)
+            || matches!(key, "default_ams_type" | "machine_load_filament_time" | "machine_unload_filament_time"))
+            && crate::faithful_gate("PROCESSOR_AMS_TIMES")
+        {
+            return self.set_deserialize(key, value);
+        }
+
         if machine_limit_rows_enabled(key) && self.set_machine_limit_rows(key, value) {
             return true;
         }
@@ -7365,6 +7394,19 @@ mod tests {
     #[test]
     fn test_support_type_default() {
         assert_eq!(SupportType::default(), SupportType::Normal);
+    }
+
+    #[test]
+    fn ams_times_survive_loading_older_and_newer_configs() {
+        let key = "ams_filament_load_time_ams_lite";
+        let legacy = serde_json::to_value(PrintConfig::default()).unwrap();
+        assert!(legacy.get("ams_filament_times").is_none());
+        let mut config: PrintConfig = serde_json::from_value(legacy).unwrap();
+        assert!(config.set_deserialize(key, "32.125"));
+        assert!(config.set_deserialize(key, "invalid"));
+        let stored = serde_json::to_value(config).unwrap();
+        let loaded: PrintConfig = serde_json::from_value(stored).unwrap();
+        assert_eq!(loaded.ams_filament_times.get(key), Some(&32.125));
     }
 
     #[test]
@@ -16526,7 +16568,7 @@ pub mod config_def {
 
     /// PrintConfig.cpp:1085-1105: gather the per-type scalar options into a table that can be
     /// indexed by AmsTimeType. Types without an option (external spool, unknown values) keep 0.
-    fn gather_ams_times(config: &(impl ConfigOptionResolver + ?Sized), unload: bool) -> Vec<f64> {
+    pub(crate) fn gather_ams_times(unload: bool, get_float: impl Fn(&str) -> Option<f64>) -> Vec<f64> {
         let ams_types = get_ams_time_types();
 
         let mut max_type = 0i32;
@@ -16542,8 +16584,8 @@ pub mod config_def {
             if key.is_empty() {
                 continue;
             }
-            if let Some(v) = opt_value::<f64>(config, &key, ConfigOptionType::CoFloat) {
-                times[ams_type as usize] = *v;
+            if let Some(v) = get_float(&key) {
+                times[ams_type as usize] = v;
             }
         }
         times
@@ -16551,12 +16593,12 @@ pub mod config_def {
 
     /// PrintConfig.cpp:1107
     pub fn get_ams_load_times(config: &(impl ConfigOptionResolver + ?Sized)) -> Vec<f64> {
-        gather_ams_times(config, false)
+        gather_ams_times(false, |key| opt_value::<f64>(config, key, ConfigOptionType::CoFloat).copied())
     }
 
     /// PrintConfig.cpp:1108
     pub fn get_ams_unload_times(config: &(impl ConfigOptionResolver + ?Sized)) -> Vec<f64> {
-        gather_ams_times(config, true)
+        gather_ams_times(true, |key| opt_value::<f64>(config, key, ConfigOptionType::CoFloat).copied())
     }
 
     /// PrintConfig.cpp:1110-1124

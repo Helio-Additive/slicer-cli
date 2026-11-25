@@ -2685,6 +2685,67 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 mod circle_compensation_settings_tests {
     use super::*;
 
+    /// PrintConfig.cpp:1085-1108 and GCodeProcessor.cpp:2042-2051.
+    /// The last three vector fields are native load, unload and T0/T1/T0 print times.
+    #[test]
+    fn ams_profile_times_reach_the_processor() {
+        use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};
+        let base = serde_json::json!({
+            "gcode_flavor": "marlin2",
+            "machine_max_speed_x": ["500", "500"],
+            "machine_max_acceleration_x": ["9000", "9000"],
+            "machine_max_acceleration_travel": ["9000", "9000"],
+            "machine_max_jerk_x": ["9", "9"],
+            "filament_diameter": ["1.75", "1.75"],
+            "filament_map": ["1", "1"]
+        });
+        let vectors = include_str!("../tests/data/g_code_processor/ams_times.txt");
+        let mut cases = 0;
+        for line in vectors.lines() {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            let mut settings = vec![
+                ("default_ams_type", fields[1]),
+                ("machine_load_filament_time", "5.5"),
+                ("machine_unload_filament_time", "8.25"),
+            ];
+            if fields[0] != "0" {
+                settings.extend([("ams_filament_load_time_ams", "31.5"), ("ams_filament_unload_time_ams_lite", "46.75")]);
+            }
+            if fields[0] == "2" {
+                settings.extend([
+                    ("ams_filament_unload_time_ams", "41.25"),
+                    ("ams_filament_load_time_ams_lite", "32.125"),
+                    ("ams_filament_load_time_n3f_s", "33.75"),
+                    ("ams_filament_unload_time_n3f_s", "43.5"),
+                ]);
+            }
+            let mut profile = base.clone();
+            let (mut direct, _, _) = load_bambustudio_settings(&base).unwrap();
+            for (key, value) in settings {
+                profile[key] = value.into();
+                direct.apply_key_value(key, value);
+            }
+            let (loaded, _, _) = load_bambustudio_settings(&profile).unwrap();
+            let expected: Vec<_> = fields[2..].iter().map(|s| u32::from_str_radix(s, 16).unwrap()).collect();
+            for config in [loaded, direct] {
+                let mut p = GCodeProcessor::new();
+                p.reset();
+                p.apply_config(&config);
+                p.initialize("ams.gcode");
+                p.process_buffer("T0\nG1 X10 F600\nT1\nG1 X0 F600\nT0\nG1 X10 F600\n");
+                p.finalize(false);
+                let times = [
+                    p.time_processor().filament_load_times,
+                    p.time_processor().filament_unload_times,
+                    p.get_time(ETimeMode::Normal),
+                ];
+                assert_eq!(times.map(f32::to_bits).as_slice(), expected, "{line}");
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 18);
+    }
+
     /// GCodeProcessor.cpp:2030-2036, 2055-2066. Modern Marlin has separate
     /// travel accelerations in the two modes. Legacy Marlin uses extrusion's.
     #[test]

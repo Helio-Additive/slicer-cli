@@ -769,11 +769,56 @@ static void machine_motion_limits()
         }
 }
 
+// PrintConfig.cpp:1062-1115, GCodeProcessor.cpp:2042-2051.
+// 0 is the external spool slot; -1 and out-of-range types take legacy times.
+static void ams_times()
+{
+    for (int profile = 0; profile < 3; ++profile) {
+        for (int type : {-1, 0, 1, 2, 3, 4}) {
+            PrintConfig config;
+            config.set_deserialize_strict("gcode_flavor", "marlin2");
+            config.set_deserialize_strict("machine_max_speed_x", "500,500");
+            config.set_deserialize_strict("machine_max_acceleration_x", "9000,9000");
+            config.set_deserialize_strict("machine_max_acceleration_travel", "9000,9000");
+            config.set_deserialize_strict("machine_max_jerk_x", "9,9");
+            config.machine_load_filament_time.value = 5.5;
+            config.machine_unload_filament_time.value = 8.25;
+            config.default_ams_type.value = type;
+            if (profile >= 1) {
+                config.ams_filament_load_time_ams.value = 31.5;
+                config.ams_filament_unload_time_ams_lite.value = 46.75;
+            }
+            if (profile == 2) {
+                config.ams_filament_unload_time_ams.value = 41.25;
+                config.ams_filament_load_time_ams_lite.value = 32.125;
+                config.ams_filament_load_time_n3f_s.value = 33.75;
+                config.ams_filament_unload_time_n3f_s.value = 43.5;
+            }
+            config.filament_diameter.values = {1.75, 1.75};
+            config.filament_map.values = {1, 1};
+            GCodeProcessor p;
+            p.reset();
+            p.apply_config(config);
+            p.initialize("ams.gcode");
+            p.process_buffer("T0\nG1 X10 F600\nT1\nG1 X0 F600\nT0\nG1 X10 F600\n");
+            p.finalize(false);
+            std::printf("%d %d %s %s %s\n", profile, type,
+                        f32(p.m_time_processor.filament_load_times).c_str(),
+                        f32(p.m_time_processor.filament_unload_times).c_str(),
+                        f32(p.get_time(PrintEstimatedStatistics::ETimeMode::Normal)).c_str());
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--ams-times") {
+        ams_times();
+        return 0;
     }
     if (std::string(argv[1]) == "--motion-limits") {
         machine_motion_limits();

@@ -3331,11 +3331,20 @@ impl GCodeProcessor {
                 .map(|i| get_at(&config.filament_densities, i, config.filament_density) as f32)
                 .collect();
             self.m_extruder_temps.resize(filament_count, 0.0);
-            // :2045-2053 — no AMS time tables in the port's config: with
-            // `default_ams_type` -1 the legacy times are taken, as in C++.
+            // GCodeProcessor.cpp:2042-2051, PrintConfig.cpp:1085-1108. The
+            // selected AMS has its own load/unload times, including zero.
+            let (loads, unloads) = if crate::faithful_gate("PROCESSOR_AMS_TIMES") && config.default_ams_type >= 0 {
+                let get_float = |key: &str| config.ams_filament_times.get(key).copied();
+                (
+                    crate::print_config::config_def::gather_ams_times(false, get_float),
+                    crate::print_config::config_def::gather_ams_times(true, get_float),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
             let (_, load, unload) = crate::multi_nozzle_utils::resolve_ams_load_unload(
-                &[],
-                &[],
+                &loads,
+                &unloads,
                 config.default_ams_type,
                 config.machine_load_filament_time as f32,
                 config.machine_unload_filament_time as f32,
