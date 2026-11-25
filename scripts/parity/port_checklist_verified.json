@@ -4913,5 +4913,61 @@
   "functions": [
    "Layer::apply_auto_circle_compensation"
   ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 951,
+  "evidence": "tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.",
+  "functions": [
+   "to_linesf",
+   "to_polylines",
+   "to_polygons",
+   "to_expolygons",
+   "polygons_append",
+   "expolygons_append",
+   "get_extents",
+   "get_extents_rotated",
+   "ExPolygon::scale",
+   "ExPolygon::translate",
+   "ExPolygon::rotate",
+   "ExPolygon::clear",
+   "ExPolygon::empty",
+   "ExPolygon::is_valid",
+   "ExPolygon::num_contours",
+   "ExPolygon::simplify_p",
+   "ExPolygon::simplify"
+  ]
+ },
+ {
+  "unit": "BoundingBox",
+  "round": 951,
+  "evidence": "tests/bounding_box_cast_native_parity.rs (bounding_box_cast_native_parity) against tests/data/bounding_box_cpp_names/gen_cast.cpp (cast_vectors.txt.gz, 292,806 B): 2,000 cases (a third with corners within +-500, the rest within +-1e8; every fifth with min.z == max.z, every seventh with min.y == max.y on the double box), 0 mismatches over 5 groups, bit for bit: the BoundingBox3 and BoundingBoxf3 two-point constructors' `defined`, cast<double>(BoundingBox3Base<Vec3crd>), cast<coord_t>(BoundingBox3Base<Vec3d>) (truncating), cast<double>(BoundingBoxBase<Vec3crd>) (x/y `defined` only). Trait impls in bounding_box.rs: BoundingBoxCast (BoundingBox.hpp:272-277), BoundingBoxCastBase (265-270).",
+  "functions": [
+   "cast"
+  ]
+ },
+ {
+  "unit": "Format/3mf",
+  "round": 951,
+  "evidence": "tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed.",
+  "functions": [
+   "PrusaFileParser::check_3mf_from_prusa",
+   "PrusaFileParser::_start_element_handler",
+   "PrusaFileParser::_characters_handler",
+   "PrusaFileParser::start_element_handler",
+   "PrusaFileParser::characters_handler",
+   "PrusaFileParser::get_attribute_value_charptr",
+   "PrusaFileParser::get_attribute_value_string"
+  ]
+ },
+ {
+  "unit": "Geometry/Curves",
+  "round": 951,
+  "evidence": "CURVES_FULLPIV_QR (faithful, geometry/curves.rs): fit_curve solves T with FullPivHouseholderQrF32, a port of Eigen 5.0.1's FullPivHouseholderQR<MatrixXf> computeInPlace / _solve_impl as the pin's build runs them (float, NEON 4-lane packets with FMA: the redux sum with two packet accumulators, the InnerProduct dot with four, the row-major GEMV of applyHouseholderOnTheLeft, the coefficient-based product of the solve, the column-major GEMV with alpha -1 inside the panel-8 triangular solve, maxCoeff's first occurrence). CURVES_KERNEL_F32 (R938) made faithful: the kernel in float as Bicubic.hpp 198-213. Native test tests/curves_fullpiv_qr_native_parity.rs against tests/data/curves_fullpiv_qr/gen.cpp (the pin's Eigen and Curves.hpp): 160 solves of dense, banded, rank-deficient and small-integer matrices (2-121 rows, 1-40 columns) bit-equal, ranks equal, and 160 Dimension-2 seam-string fits (6-305 points) bit-equal (400 + 400 in the full run); tests/curves_native_parity.rs's 200 Dimension-3 fits now equal in coefficients and fitted values (asserted; were 200 of 200 different). One binary: both gates 0 = the R950 bytes; on: Benchy classic in order 190,653 -> 190,680 of 190,680 and the whole file byte-identical to target/parity-ref/benchy-016.gcode (cmp), Benchy arachne 243,141 -> 243,147 (verbatim 248,149 -> 248,180), Majora same bytes (nearest seam).",
+  "functions": [
+   "fit_curve",
+   "fit_cubic_bspline",
+   "CubicKernelWrapper::kernel"
+  ]
  }
 ]

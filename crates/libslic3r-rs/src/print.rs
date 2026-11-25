@@ -561,7 +561,27 @@ impl Print {
             // painted regions from install_painted_regions), preserving order —
             // C++ PrintObjectRegions::all_regions holds every region the apply
             // step created, painted ones included (PrintApply.cpp:1062-1078).
-            let regions: Vec<Arc<PrintRegion>> = self.print_regions.clone();
+            let mut regions: Vec<Arc<PrintRegion>> = self.print_regions.clone();
+            // Gate PRINT_REGION_IDS_PER_OBJECT (faithful, R951): a further object gets regions of its own, as
+            // every ModelObject gets its own PrintObjectRegions (PrintApply.cpp:2214-2263), numbered in its own
+            // `all_regions` (`print_object_region_id`, PrintApply.cpp:1036-1038) and after the previous objects'
+            // regions in `m_print_regions` (`print_region_id`, PrintApply.cpp:2273-2291: `region_set` is never
+            // inserted into, so every region of every object gets the next index). Off, every object shares the
+            // first object's regions and ids.
+            if !self.objects.is_empty() && crate::faithful_gate("PRINT_REGION_IDS_PER_OBJECT") {
+                let n0 = self.objects[0].num_printing_regions().min(self.print_regions.len());
+                let base = self.print_regions.len();
+                regions = Vec::with_capacity(n0);
+                for i in 0..n0 {
+                    let mut region = live_print_region(self.print_regions[i].config().clone(), i as i32);
+                    if crate::faithful_gate("PRINT_REGION_PRINT_ID_PIN") {
+                        // PrintApply.cpp:2283-2286
+                        region.set_print_region_id((base + i) as i32);
+                    }
+                    regions.push(Arc::new(region));
+                }
+                self.print_regions.extend(regions.iter().cloned());
+            }
             if !regions.is_empty() {
                 let shared_regions = Arc::new(
                     crate::print_object::PrintObjectRegions::with_regions(regions),

@@ -9,6 +9,10 @@ It reads the same data as scripts/parity/file_map.py (same parser, same pairing,
 adds two things kept by hand in scripts/parity/port_checklist_verified.json: the functions that are
 verified, each with its evidence, and nothing else. Regenerate it in every round.
 
+The pairing includes file_map.py's RUST_STEM_ALIASES: a C++ file whose name starts with a digit has a
+Rust file that spells the number out (a Rust module name cannot start with a digit), so `Format/3mf`
+is paired with `format/three_mf.rs`.
+
 Status of a function:
   not started  no Rust function of that name anywhere, or the unit has no Rust file
   partial      a Rust function of that name exists but not in the file named after the C++ file, or
@@ -284,6 +288,9 @@ def render(files, stale, shims):
     w("the end; the goal is none.\n")
     w("## How to read it\n")
     w("- A file here is a C++ unit: a `.cpp` with the header of the same name, or a header on its own.")
+    w("  Its Rust file has the same name in snake_case; where the C++ name starts with a digit, which a Rust")
+    w("  module name cannot, the Rust name spells the number out (`Format/3mf` is `format/three_mf.rs`;")
+    w("  the list is `RUST_STEM_ALIASES` in `scripts/parity/file_map.py`).")
     w("- `[ ]` **not started**: no Rust function of that name anywhere, or the unit has no Rust file.")
     w("- `[~]` **partial**: the name exists in Rust but not in the file named after the C++ file, or only another")
     w("  overload is ported, or the body is estimated *partial*, *divergent* or a *stub*.")

@@ -321,7 +321,13 @@ impl SmoothCalculator {
                     remap_data = remap_node.filter_feedrate as f64;
                 }
 
-                conv_sum += self.guassian_filter[filter_pos_idx as usize] * remap_data;
+                // SMOOTHING_CONV_FMA (faithful, R951): clang contracts `conv_sum += g * d` into one
+                // fma (Smoothing.cpp:156, -ffp-contract=on); =0 rounds the product first.
+                if smoothing_conv_fma() {
+                    conv_sum = self.guassian_filter[filter_pos_idx as usize].mul_add(remap_data, conv_sum);
+                } else {
+                    conv_sum += self.guassian_filter[filter_pos_idx as usize] * remap_data;
+                }
             }
             // Smoothing.cpp:158-159  double filter_res = conv_sum / filter_sum;
             //   if (filter_res < node.filter_feedrate) node.filter_feedrate = filter_res;
@@ -395,7 +401,12 @@ impl SmoothCalculator {
                         self.layers_cooling_time[remap_data_pos as usize]
                     };
 
-                conv_sum += self.guassian_filter[filter_pos_idx as usize] * data_temp as f64;
+                // SMOOTHING_CONV_FMA: Smoothing.cpp:196 `conv_sum += g * data_temp` as one fma.
+                if smoothing_conv_fma() {
+                    conv_sum = self.guassian_filter[filter_pos_idx as usize].mul_add(data_temp as f64, conv_sum);
+                } else {
+                    conv_sum += self.guassian_filter[filter_pos_idx as usize] * data_temp as f64;
+                }
             }
             let mut filter_res = conv_sum / self.filter_sum;
             filter_res = if filter_res > self.layer_time_smoothing_threshold as f64 {
@@ -500,4 +511,12 @@ fn exclude_participate_in_speed_slowdown(
     }
 
     rate
+}
+
+/// SMOOTHING_CONV_FMA (faithful_gate, R951): the Gaussian convolutions of SmoothCalculator
+/// (Smoothing.cpp:156 layer_speed_filter, :196 filter_layer_time) accumulate with a fused
+/// multiply-add, as clang compiles `conv_sum += guassian_filter[i] * data` with
+/// -ffp-contract=on. =0 keeps the separate product and sum.
+fn smoothing_conv_fma() -> bool {
+    crate::faithful_gate("SMOOTHING_CONV_FMA")
 }

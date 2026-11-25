@@ -803,8 +803,19 @@ impl GCodeWriter {
         // GCode.cpp:6977-6981 — `const float protect_z = 0.4;`
         const PROTECT_Z: CoordF = 0.4;
         self.layer_overhangs.push_back((print_z, overhangs.to_vec()));
+        // OVERHANG_WINDOW_F32 (faithful, R951): the window's low end is FLOAT arithmetic at the pin,
+        // `z_range.second = m_layer->print_z; z_range.first = std::max(0.f, z_range.second - protect_z)`
+        // with `const float protect_z = 0.4` (GCode.cpp:8376-8380), and a layer is skipped when
+        // `layer->print_z < start` (PrintObject::get_certain_layers, PrintObject.cpp; start a float).
+        // float(1.2) - 0.4f = 0.80000004 drops the layer at 0.8 that the double 1.2 - 0.4 keeps.
+        // =0 keeps the double window.
+        let start = if crate::faithful_gate("OVERHANG_WINDOW_F32") {
+            (0.0f32).max(print_z as f32 - 0.4f32) as CoordF
+        } else {
+            print_z - PROTECT_Z
+        };
         while let Some((z, _)) = self.layer_overhangs.front() {
-            if *z < print_z - PROTECT_Z {
+            if *z < start {
                 self.layer_overhangs.pop_front();
             } else {
                 break;
@@ -1983,6 +1994,11 @@ impl GCodeWriter {
                     let dirx = delta.0 / delta_no_z_norm;
                     let diry = delta.1 / delta_no_z_norm;
                     let (ijx, ijy) = (-radius * diry, radius * dirx);
+                    // TRAVEL_TO_Z_TRAVEL_ACCEL (faithful, R951): `_spiral_travel_to_z` returns
+                    // `set_travel_acceleration() + "G17\n" + ..` (GCodeWriter.cpp:783-800).
+                    if crate::faithful_gate("TRAVEL_TO_Z_TRAVEL_ACCEL") {
+                        self.set_travel_acceleration(0.0);
+                    }
                     self.write_command(&GCodeCommand::SelectXYPlane);
                     // native _spiral_travel_to_z: "G3 Z<z> I<i> J<j> P1  F<f>"
                     // (TWO spaces before F: emit_string("P1 ") + emit_f " F").
@@ -2101,6 +2117,14 @@ impl GCodeWriter {
         // (GCodeWriter.cpp:762-779); here only the value a caller held back (see
         // `set_travel_acceleration_for`) is written.
         self.flush_deferred_travel_accel();
+        // TRAVEL_TO_Z_TRAVEL_ACCEL (faithful, R951): `_travel_to_z` returns
+        // `set_travel_acceleration() + w.string()` (GCodeWriter.cpp:765-780), `use_short` off, so
+        // every Z move it makes (lift, unlift, layer change) first puts the regular travel
+        // acceleration into the shared register (set_acceleration_impl, GCodeWriter.cpp:288-296).
+        // =0 writes only the value a caller held back.
+        if crate::faithful_gate("TRAVEL_TO_Z_TRAVEL_ACCEL") {
+            self.set_travel_acceleration(0.0);
+        }
         let f = feedrate.unwrap_or(self.config.travel_speed * 60.0);
 
         // Track Z travel time
@@ -3786,6 +3810,43 @@ mod tests {
         let out = writer.take_output_since(mark);
         let lines: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
         assert_eq!(lines.first().copied(), Some("M204 S10000"), "{lines:?}");
+    }
+
+    /// TRAVEL_TO_Z_TRAVEL_ACCEL (R951): `_travel_to_z` returns `set_travel_acceleration() + w.string()`
+    /// (GCodeWriter.cpp:765-780), so a Z move after an extrusion acceleration writes the travel one first.
+    #[test]
+    fn travel_to_z_writes_the_travel_acceleration_first() {
+        let mut writer = GCodeWriter::new();
+        writer.config.travel_acceleration = 10000.0;
+        writer.config.machine_max_acceleration_extruding = 20000.0;
+        writer.last_travel_accel = 5000.0;
+        let mark = writer.output_mark();
+        writer.travel_to_z(1.4, None);
+        let out = writer.take_output_since(mark);
+        let lines: Vec<&str> = out.lines().filter(|l| !l.trim().is_empty()).collect();
+        if crate::faithful_gate("TRAVEL_TO_Z_TRAVEL_ACCEL") && crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+            assert_eq!(lines.first().copied(), Some("M204 S10000"), "{lines:?}");
+            assert!(lines[1].starts_with("G1 Z1.4"), "{lines:?}");
+        } else {
+            assert!(lines[0].starts_with("G1 Z1.4"), "{lines:?}");
+        }
+    }
+
+    /// OVERHANG_WINDOW_F32 (R951): is_through_overhang's window starts at `float(print_z) - 0.4f`
+    /// (GCode.cpp:8376-8380) and get_certain_layers skips `print_z < start`: float(1.2) - 0.4f is
+    /// 0.80000007, so the layer at 0.8 is outside the pin's window at 1.2.
+    #[test]
+    fn overhang_window_low_end_is_float() {
+        let mut writer = GCodeWriter::new();
+        for z in [0.8, 1.0, 1.2] {
+            writer.set_layer_overhangs(z, &[]);
+        }
+        let zs: Vec<f64> = writer.layer_overhangs.iter().map(|(z, _)| *z).collect();
+        if crate::faithful_gate("OVERHANG_WINDOW_F32") {
+            assert_eq!(zs, vec![1.0, 1.2]);
+        } else {
+            assert_eq!(zs, vec![0.8, 1.0, 1.2]);
+        }
     }
 
     #[test]

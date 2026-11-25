@@ -1925,3 +1925,46 @@ mod tests {
         assert_eq!(out.max, Vec3d::new(4.0, 5.0, 6.0));
     }
 }
+
+/// BoundingBox.hpp:265-277 `template<class Tout, class Tin> auto cast(const BoundingBoxBase<Tin>&)` and
+/// `cast(const BoundingBox3Base<Tin>&)`: the corners through Eigen's `cast<Tout>()` (`static_cast`, a
+/// double to int conversion truncates), then the two-point constructor, which sets `defined` from
+/// `min < max` in x and y (BoundingBox.hpp:21-22) and, for the 3D base, clears it when `min.z >= max.z`
+/// (110-112). The `BoundingBoxBase<Tin>` overload builds a `BoundingBoxBase<Vec<3, Tout>>` from the
+/// corners, so it only compiles for a 3D `Tin`; the port has no `BoundingBoxBase<Vec3>` type, and its
+/// instances are the [`BoundingBoxCastBase`] impls (the x/y test only).
+pub trait BoundingBoxCast<Tout> {
+    fn cast(&self) -> Tout;
+}
+impl BoundingBoxCast<BoundingBoxf3> for BoundingBox3 {
+    // BoundingBox.hpp:272-277, Tout = double
+    fn cast(&self) -> BoundingBoxf3 {
+        BoundingBoxf3::new_from_points(
+            Vec3d::new(self.min.x as f64, self.min.y as f64, self.min.z as f64),
+            Vec3d::new(self.max.x as f64, self.max.y as f64, self.max.z as f64),
+        )
+    }
+}
+impl BoundingBoxCast<BoundingBox3> for BoundingBoxf3 {
+    // BoundingBox.hpp:272-277, Tout = coord_t (int32 at the pin: static_cast truncates toward zero)
+    fn cast(&self) -> BoundingBox3 {
+        BoundingBox3::new_from_points(
+            Point3::new(self.min.x as i32 as crate::Coord, self.min.y as i32 as crate::Coord, self.min.z as i32 as crate::Coord),
+            Point3::new(self.max.x as i32 as crate::Coord, self.max.y as i32 as crate::Coord, self.max.z as i32 as crate::Coord),
+        )
+    }
+}
+
+/// The `BoundingBoxBase<Vec3>` instances of BoundingBox.hpp:265-270 (see [`BoundingBoxCast`]): the
+/// base two-point constructor's `defined` (x and y only, BoundingBox.hpp:21-22), with no z test.
+pub trait BoundingBoxCastBase<Tout> {
+    fn cast(&self) -> Tout;
+}
+impl BoundingBoxCastBase<BoundingBoxf3> for BoundingBox3 {
+    // BoundingBox.hpp:265-270, Tout = double
+    fn cast(&self) -> BoundingBoxf3 {
+        let min = Vec3d::new(self.min.x as f64, self.min.y as f64, self.min.z as f64);
+        let max = Vec3d::new(self.max.x as f64, self.max.y as f64, self.max.z as f64);
+        BoundingBoxf3 { min, max, defined: min.x < max.x && min.y < max.y }
+    }
+}

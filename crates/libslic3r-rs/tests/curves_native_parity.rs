@@ -2,9 +2,9 @@
 //! and Geometry/Curves.hpp `fit_cubic_bspline` / `get_fitted_value` (Curves.hpp:66-170, Dimension 3, float),
 //! against vectors printed by `tests/data/curves/gen.cpp` (the pin's own templates).
 //!
-//! The kernel is asserted bit-equal (`cubic_kernel_f32`, R938). The fit is REPORTED, not asserted:
-//! the pin solves with Eigen's `fullPivHouseholderQr` (Curves.hpp:166-169), the port with a thin
-//! Householder QR, so the coefficients differ in the last float bits.
+//! The kernel is asserted bit-equal (`cubic_kernel_f32`, R938). The fit is asserted bit-equal since
+//! R951: the port solves with `FullPivHouseholderQrF32`, Eigen's `fullPivHouseholderQr` as the pin's
+//! build runs it (Curves.hpp:168-173; gates CURVES_FULLPIV_QR and CURVES_KERNEL_F32, both faithful).
 
 use slicer::geometry::bicubic::{CubicBSplineKernel, CubicCatmulRomKernel, LinearKernel};
 use slicer::geometry::curves::{cubic_kernel_f32, fit_cubic_bspline};
@@ -124,8 +124,11 @@ fn curves_native_parity() {
         }
     }
     eprintln!(
-        "curves: kernel {k_cases} cases, {k_bad} differ; fit {fit_cases} cases: coefficients differ in {fit_coef_bad}, fitted values differ in {fit_value_bad} (reported, not asserted: Eigen fullPivHouseholderQr vs thin QR)"
+        "curves: kernel {k_cases} cases, {k_bad} differ; fit {fit_cases} cases: coefficients differ in {fit_coef_bad}, fitted values differ in {fit_value_bad} "
     );
     assert!(k_cases > 0 && fit_cases > 0);
     assert_eq!(k_bad, 0, "cubic_kernel_f32 differs from the pin");
+    // R951: Curves.hpp:168-173 solved as Eigen's FullPivHouseholderQR (FullPivHouseholderQrF32).
+    assert_eq!(fit_coef_bad, 0, "fit_cubic_bspline coefficients differ from the pin");
+    assert_eq!(fit_value_bad, 0, "get_fitted_value differs from the pin");
 }

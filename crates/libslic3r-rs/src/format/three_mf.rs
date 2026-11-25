@@ -454,10 +454,10 @@ pub fn is_valid_object_type(type_: &str) -> bool {
 /// PrusaFileParser is used to check 3mf file is from Prusa
 /// 3mf.hpp:7-27
 pub struct PrusaFileParser {
-    /// 3mf.hpp:24
-    m_from_prusa: bool,
-    /// 3mf.hpp:25
-    m_is_application_key: bool,
+    /// 3mf.hpp:24 (private in the C++; public here so the native test reads it)
+    pub m_from_prusa: bool,
+    /// 3mf.hpp:25 (private in the C++; public here so the native test reads it)
+    pub m_is_application_key: bool,
     // 3mf.hpp:26 — XML_Parser m_parser: the expat handle has no Rust
     // counterpart; `parse_prusa_buffer` drives the handlers below.
 }
@@ -471,9 +471,20 @@ impl PrusaFileParser {
         }
     }
 
-    // 3mf.cpp:274-284 — the static `start_element_handler` / `characters_handler`
-    // expat trampolines (userData -> this) are realized by the dispatch loop in
-    // `parse_prusa_buffer`.
+    /// 3mf.cpp:274-278 — the static expat trampoline: `userData` is the parser
+    /// (`PrusaFileParser *prusa_parser = (PrusaFileParser *) userData;`), a null one is skipped.
+    pub fn start_element_handler(user_data: Option<&mut PrusaFileParser>, name: &str, attributes: &[(String, String)]) {
+        if let Some(prusa_parser) = user_data {
+            prusa_parser._start_element_handler(name, attributes);
+        }
+    }
+
+    /// 3mf.cpp:280-284 — the static expat trampoline for character data.
+    pub fn characters_handler(user_data: Option<&mut PrusaFileParser>, s: &str) {
+        if let Some(prusa_parser) = user_data {
+            prusa_parser._characters_handler(s);
+        }
+    }
 
     /// 3mf.cpp:286-323
     /// C++: `bool PrusaFileParser::check_3mf_from_prusa(const std::string filename)`
@@ -526,7 +537,6 @@ impl PrusaFileParser {
                 self.m_from_prusa = true;
             }
         }
-        // NOTE: C++ never resets m_is_application_key — replicated here.
     }
 
     /// 3mf.cpp:333-341
@@ -534,11 +544,10 @@ impl PrusaFileParser {
     pub fn _start_element_handler(&mut self, name: &str, attributes: &[(String, String)]) {
         if name == "metadata" {
             // 3mf.cpp:336 — XML_GetSpecifiedAttributeCount
-            // 3mf.cpp:338-339
+            // 3mf.cpp:338-340 — only the current metadata node is eligible: every metadata element
+            // sets the flag, so a Description after the Application node turns it off again.
             let str_name = Self::get_attribute_value_string(attributes, "name");
-            if !str_name.is_empty() && str_name.contains("Application") {
-                self.m_is_application_key = true;
-            }
+            self.m_is_application_key = !str_name.is_empty() && str_name.contains("Application");
         }
     }
 
@@ -573,36 +582,124 @@ impl PrusaFileParser {
     }
 
     /// expat driver for `check_3mf_from_prusa`: dispatches start-element and
-    /// character-data events (3mf.cpp:302-305 registers only those handlers).
-    fn parse_prusa_buffer(&mut self, data: &[u8]) {
+    /// character-data events (3mf.cpp:302-305 registers only those handlers; 3mf.cpp:316
+    /// `XML_ParseBuffer(m_parser, size, 1)` parses the whole model file as one final buffer).
+    ///
+    /// Character data reaches `_characters_handler` in expat's pieces, because the handler
+    /// searches each piece on its own (3mf.cpp:328-329): a run of literal characters, each
+    /// entity or character reference decoded on its own, each line end as one "\n" (CR LF and a
+    /// lone CR normalized), and only inside the root element (expat reports no prolog or epilog
+    /// text). Parsing stops where expat stops: at an undefined or unterminated reference, or the
+    /// first error.
+    pub fn parse_prusa_buffer(&mut self, data: &[u8]) {
         use quick_xml::events::Event;
         use quick_xml::reader::Reader;
 
         let text = String::from_utf8_lossy(data);
         let mut reader = Reader::from_str(&text);
+        let mut depth = 0usize;
         loop {
             match reader.read_event() {
-                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                Ok(Event::Start(e)) => {
                     let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
                     let atts = collect_attributes(&e);
-                    self._start_element_handler(&name, &atts);
+                    PrusaFileParser::start_element_handler(Some(&mut *self), &name, &atts);
+                    depth += 1;
+                }
+                Ok(Event::Empty(e)) => {
+                    let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+                    let atts = collect_attributes(&e);
+                    PrusaFileParser::start_element_handler(Some(&mut *self), &name, &atts);
+                }
+                Ok(Event::End(_)) => {
+                    depth = depth.saturating_sub(1);
                 }
                 Ok(Event::Text(e)) => {
-                    let s = e
-                        .unescape()
-                        .map(|v| v.into_owned())
-                        .unwrap_or_else(|_| String::from_utf8_lossy(&e).into_owned());
-                    self._characters_handler(&s);
+                    if depth == 0 {
+                        continue;
+                    }
+                    let (pieces, stopped) = expat_character_pieces(&e, true);
+                    for piece in &pieces {
+                        PrusaFileParser::characters_handler(Some(&mut *self), piece);
+                    }
+                    if stopped {
+                        break;
+                    }
                 }
                 Ok(Event::CData(e)) => {
-                    let s = String::from_utf8_lossy(&e.into_inner()).into_owned();
-                    self._characters_handler(&s);
+                    let raw = e.into_inner();
+                    let (pieces, _) = expat_character_pieces(&raw, false);
+                    for piece in &pieces {
+                        PrusaFileParser::characters_handler(Some(&mut *self), piece);
+                    }
                 }
                 Ok(Event::Eof) | Err(_) => break,
                 _ => {}
             }
         }
     }
+}
+
+/// The pieces in which expat hands a run of character data to the character-data handler
+/// (expat's `doContent` / `doCdataSection`): literal runs, each reference decoded alone (only when
+/// `decode_refs`, i.e. outside CDATA), each line end as "\n". The flag is true where expat stops
+/// with an error (a reference it cannot resolve or that does not end).
+fn expat_character_pieces(raw: &[u8], decode_refs: bool) -> (Vec<String>, bool) {
+    let mut pieces = Vec::new();
+    let mut run: Vec<u8> = Vec::new();
+    let flush = |run: &mut Vec<u8>, pieces: &mut Vec<String>| {
+        if !run.is_empty() {
+            pieces.push(String::from_utf8_lossy(run).into_owned());
+            run.clear();
+        }
+    };
+    let mut i = 0usize;
+    while i < raw.len() {
+        let c = raw[i];
+        if c == b'\r' || c == b'\n' {
+            flush(&mut run, &mut pieces);
+            pieces.push("\n".to_string());
+            if c == b'\r' && i + 1 < raw.len() && raw[i + 1] == b'\n' {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        if c == b'&' && decode_refs {
+            flush(&mut run, &mut pieces);
+            let Some(len) = raw[i + 1..].iter().position(|&b| b == b';') else {
+                return (pieces, true);
+            };
+            let name = &raw[i + 1..i + 1 + len];
+            let decoded = match name {
+                b"amp" => Some("&".to_string()),
+                b"lt" => Some("<".to_string()),
+                b"gt" => Some(">".to_string()),
+                b"quot" => Some("\"".to_string()),
+                b"apos" => Some("'".to_string()),
+                _ if name.first() == Some(&b'#') => {
+                    let num = std::str::from_utf8(&name[1..]).ok();
+                    let code = match num {
+                        Some(n) if n.starts_with('x') => u32::from_str_radix(&n[1..], 16).ok(),
+                        Some(n) => n.parse::<u32>().ok(),
+                        None => None,
+                    };
+                    code.and_then(char::from_u32).map(|ch| ch.to_string())
+                }
+                _ => None,
+            };
+            match decoded {
+                Some(d) => pieces.push(d),
+                None => return (pieces, true),
+            }
+            i += len + 2;
+            continue;
+        }
+        run.push(c);
+        i += 1;
+    }
+    flush(&mut run, &mut pieces);
+    (pieces, false)
 }
 
 impl Default for PrusaFileParser {

@@ -4177,6 +4177,275 @@ impl Model {
         Ok(model)
     }
 
+    /// Model.cpp:306-488 `Model::read_from_file(input_file, config, config_substitutions, options, plate_data,
+    /// project_presets, is_xxx, file_version, proFn, stlFn, project, plate_id)`: a model of a geometry or project
+    /// file, chosen by the extension. `Err` is the exception the C++ throws (`Slic3r::RuntimeError`, or one of
+    /// the loaders'). The pointer arguments are `Option`s; a `None` takes the temporary the C++ makes
+    /// (Model.cpp:321-335). `is_xxx` is `is_inches` for AMF, `is_bbs_3mf` for 3MF and the gamma switch for OBJ.
+    ///
+    /// `load_assimp_textured_model` is the assimp reader of .glb / .gltf / .fbx (AssimpImport.cpp, the assimp
+    /// core is not in the port): `None` reads as a failed load with no message.
+    ///
+    /// FIDELITY-NOTE: the AMF importer takes the placeholder `calib::DynamicPrintConfig` (as in
+    /// `read_from_archive`): the model is read as the C++ reads it, its configuration is not merged into
+    /// `config`. An OBJ with a UV-mapped PNG is turned Y-up to Z-up as the C++ does (Model.cpp:350-363), but
+    /// its textured mesh (`obj_to_textured_mesh`, OBJ.cpp:287-420) is not built: `format/obj.rs` has no
+    /// counterpart and its `load_obj` does not return the MtlData; `texture_mesh` stays empty there.
+    #[allow(clippy::too_many_arguments)]
+    pub fn read_from_file(
+        input_file: &str,
+        config: Option<&mut DynamicPrintConfig>,
+        config_substitutions: Option<&mut crate::config::ConfigSubstitutionContext>,
+        options: crate::format::bbs_3mf::LoadStrategy,
+        plate_data: Option<&mut crate::format::bbs_3mf::PlateDataPtrs>,
+        project_presets: Option<&mut Vec<crate::preset::Preset>>,
+        is_xxx: Option<&mut bool>,
+        file_version: Option<&mut crate::semver::Semver>,
+        pro_fn: Option<&crate::format::bbs_3mf::Import3mfProgressFn>,
+        stl_fn: Option<crate::stl::ImportStlProgressFn>,
+        project: Option<&mut crate::project_task::BBLProject>,
+        plate_id: i32,
+        load_assimp_textured_model: Option<&dyn Fn(&str, &mut crate::texture_painting::TexturedMesh, &mut String) -> bool>,
+    ) -> Result<Model, crate::exception::Exception> {
+        use crate::exception::{Exception, RuntimeError};
+        use crate::format::bbs_3mf::{load_bbs_3mf, LoadStrategy};
+
+        let iends_with = |s: &str, suffix: &str| s.to_lowercase().ends_with(&suffix.to_lowercase());
+
+        // Model.cpp:319
+        let mut model = Model::new();
+
+        // Model.cpp:321-335
+        let mut temp_config = DynamicPrintConfig::new();
+        let mut temp_config_substitutions_context =
+            crate::config::ConfigSubstitutionContext::new(crate::config::ForwardCompatibilitySubstitutionRule::EnableSilent);
+        let config: &mut DynamicPrintConfig = match config {
+            Some(c) => c,
+            None => &mut temp_config,
+        };
+        let config_substitutions: &mut crate::config::ConfigSubstitutionContext = match config_substitutions {
+            Some(c) => c,
+            None => &mut temp_config_substitutions_context,
+        };
+        //BBS: plate_data
+        let mut temp_plate_data = crate::format::bbs_3mf::PlateDataPtrs::new();
+        let mut temp_version = crate::semver::Semver::default();
+        let plate_data = match plate_data {
+            Some(p) => p,
+            None => &mut temp_plate_data,
+        };
+        let file_version = match file_version {
+            Some(v) => v,
+            None => &mut temp_version,
+        };
+        // load_bbs_3mf takes the presets by reference (a null pointer is skipped there).
+        let mut temp_presets: Vec<crate::preset::Preset> = Vec::new();
+        let project_presets = match project_presets {
+            Some(p) => p,
+            None => &mut temp_presets,
+        };
+
+        // Model.cpp:337-339
+        let mut result = false;
+        let is_cb_cancel = false;
+        let mut message = String::new();
+        if iends_with(input_file, ".stl") {
+            // Model.cpp:340-341
+            result = crate::stl::load_stl(std::path::Path::new(input_file), &mut model, None, stl_fn, 80);
+        } else if iends_with(input_file, ".oltp") {
+            // Model.cpp:342-343
+            result = crate::stl::load_stl(std::path::Path::new(input_file), &mut model, None, stl_fn, 256);
+        } else if iends_with(input_file, ".obj") {
+            // Model.cpp:344-347
+            let mut obj_info = crate::format::obj::ObjInfo::new();
+            let gamma = matches!(is_xxx, Some(ref b) if **b);
+            match crate::format::obj::load_obj_to_model(std::path::Path::new(input_file), &mut obj_info, &mut message, None, gamma) {
+                Ok(loaded) => {
+                    for o in loaded.objects {
+                        model.add_object(o);
+                    }
+                    result = true;
+                }
+                Err(_) => result = false,
+            }
+            if result {
+                if obj_info.has_uv_png && !obj_info.uvs.is_empty() && !model.objects.is_empty() {
+                    // Model.cpp:350-363: same mapping as AssimpImport: (x, y, z) -> (x, -z, y).
+                    let y_up_to_z_up = Matrix3d::new(1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0);
+                    for obj in model.objects.iter_mut() {
+                        for volume in obj.volumes.iter_mut() {
+                            if !volume.mesh().empty() {
+                                volume.transform_this_mesh_matrix3(&y_up_to_z_up, false);
+                            }
+                        }
+                        obj.invalidate_bounding_box();
+                    }
+                    // Model.cpp:364-370 obj_to_textured_mesh: not ported (see the FIDELITY-NOTE above).
+                } else if !model.objects.is_empty() && !model.objects.last().unwrap().volumes.is_empty() {
+                    // Model.cpp:371-383
+                    let build_tex_mesh_geometry = |model: &Model| {
+                        let mut tex_mesh = crate::texture_painting::TexturedMesh::default();
+                        let its = &model.objects.last().unwrap().volumes[0].mesh().its;
+                        tex_mesh.vertices = its.vertices.iter().map(|v| [v.x, v.y, v.z]).collect();
+                        tex_mesh.indices = its.indices.iter().map(|f| [f[0], f[1], f[2]]).collect();
+                        tex_mesh
+                    };
+                    if !obj_info.vertex_colors.is_empty() {
+                        // Model.cpp:384-401
+                        let mut tex_mesh = build_tex_mesh_geometry(&model);
+                        let its = &model.objects.last().unwrap().volumes[0].mesh().its;
+                        tex_mesh.precomputed_face_colors = Vec::with_capacity(its.indices.len());
+                        for f in &its.indices {
+                            let avg = |ch: usize| -> usize {
+                                let v: f32 = (obj_info.vertex_colors[f[0] as usize][ch]
+                                    + obj_info.vertex_colors[f[1] as usize][ch]
+                                    + obj_info.vertex_colors[f[2] as usize][ch])
+                                    / 3.0f32
+                                    * 255.0f32;
+                                v.clamp(0.0f32, 255.0f32) as usize
+                            };
+                            tex_mesh.precomputed_face_colors.push([avg(0), avg(1), avg(2)]);
+                        }
+                        tex_mesh.precomputed_vertex_colors = obj_info.vertex_colors.clone();
+                        model.texture_mesh = Some(Arc::new(tex_mesh));
+                    } else if !obj_info.face_colors.is_empty() && !obj_info.has_uv_png {
+                        // Model.cpp:402-420
+                        let mut tex_mesh = build_tex_mesh_geometry(&model);
+                        let nf = tex_mesh.indices.len();
+                        tex_mesh.precomputed_face_colors = Vec::with_capacity(nf);
+                        for i in 0..nf {
+                            if i < obj_info.face_colors.len() {
+                                let c = &obj_info.face_colors[i];
+                                tex_mesh.precomputed_face_colors.push([
+                                    (c[0] * 255.0f32).clamp(0.0f32, 255.0f32) as usize,
+                                    (c[1] * 255.0f32).clamp(0.0f32, 255.0f32) as usize,
+                                    (c[2] * 255.0f32).clamp(0.0f32, 255.0f32) as usize,
+                                ]);
+                            } else {
+                                tex_mesh.precomputed_face_colors.push([128, 128, 128]);
+                            }
+                        }
+                        model.texture_mesh = Some(Arc::new(tex_mesh));
+                    }
+                }
+            }
+        } else if iends_with(input_file, ".glb") || iends_with(input_file, ".gltf") || iends_with(input_file, ".fbx") {
+            // Model.cpp:424-437
+            let mut tex_mesh = crate::texture_painting::TexturedMesh::default();
+            result = match load_assimp_textured_model {
+                Some(load) => load(input_file, &mut tex_mesh, &mut message),
+                None => false,
+            };
+            if result {
+                add_textured_mesh_to_model(&mut model, &tex_mesh, input_file);
+                model.texture_mesh = Some(Arc::new(tex_mesh));
+            } else if !message.is_empty() {
+                log::error!("Assimp: failed to load model: {}, path={}", message, input_file);
+                message = "The file format is incompatible and cannot be parsed.".to_string();
+            }
+        } else if iends_with(input_file, ".amf") {
+            // Model.cpp:438-442: is_xxx is used for is_inches when load amf
+            let mut amf_config = crate::calib::DynamicPrintConfig::default();
+            let mut amf_substitutions = crate::format::bbs_3mf::ConfigSubstitutionContext::new();
+            result = crate::format::amf::load_amf(input_file, Some(&mut amf_config), Some(&mut amf_substitutions), &mut model, is_xxx);
+        } else if iends_with(input_file, ".3mf") {
+            // Model.cpp:443-448: is_xxx is used for is_bbs_3mf when load 3mf
+            result = load_bbs_3mf(
+                input_file,
+                config,
+                config_substitutions,
+                &mut model,
+                plate_data,
+                project_presets,
+                is_xxx,
+                file_version,
+                pro_fn,
+                options,
+                project,
+                plate_id,
+                None,
+                None,
+                None,
+                None,
+            )
+            .map_err(|e| Exception::new(e.0))?;
+        } else if cfg!(target_os = "macos")
+            && (iends_with(input_file, ".usd")
+                || iends_with(input_file, ".usda")
+                || iends_with(input_file, ".usdc")
+                || iends_with(input_file, ".usdz")
+                || iends_with(input_file, ".abc")
+                || iends_with(input_file, ".ply"))
+        {
+            // Model.cpp:449-459 (#ifdef __APPLE__)
+            let temp_stl = crate::format::model_io::make_temp_stl_with_modelio(input_file);
+            if temp_stl.is_empty() {
+                return Err(RuntimeError::new("Failed to convert asset to STL via ModelIO.".to_string()).into());
+            }
+            result = crate::stl::load_stl(std::path::Path::new(&temp_stl), &mut model, None, None, 80);
+            crate::format::model_io::delete_temp_file(&temp_stl);
+        } else {
+            // Model.cpp:460-462
+            return Err(RuntimeError::new(
+                "Unknown file format. Input file must have .stl, .obj, .amf(.xml), .gltf, .glb, .fbx extension.".to_string(),
+            )
+            .into());
+        }
+
+        // Model.cpp:464-467
+        if is_cb_cancel {
+            return Ok(Model::new());
+        }
+
+        // Model.cpp:469-474
+        if !result {
+            if message.is_empty() {
+                return Err(RuntimeError::new("Loading of a model file failed.".to_string()).into());
+            } else {
+                return Err(RuntimeError::new(message).into());
+            }
+        }
+
+        // Model.cpp:476-477
+        if model.objects.is_empty() {
+            return Err(RuntimeError::new("The supplied file couldn't be read because it's empty".to_string()).into());
+        }
+
+        // Model.cpp:479-480
+        for o in &mut model.objects {
+            o.input_file = input_file.to_string();
+        }
+
+        // Model.cpp:482-483
+        if options.contains(LoadStrategy::AddDefaultInstances) {
+            model.add_default_instances();
+        }
+
+        // Model.cpp:485-489
+        //BBS
+        //CustomGCode::update_custom_gcode_per_print_z_from_config(model.custom_gcode_per_print_z, config);
+        for plate_gcodes in model.plates_custom_gcodes.values_mut() {
+            crate::custom_g_code::check_mode_for_custom_gcode_per_print_z(plate_gcodes);
+        }
+
+        // Model.cpp:491 sort_remove_duplicates(config_substitutions->substitutions): std::sort by operator< then
+        // std::unique by operator== (libslic3r.h:204-209, Config.hpp:2433-2439), with libc++'s sort.
+        let subs = std::mem::take(&mut config_substitutions.substitutions);
+        let mut order: Vec<usize> = (0..subs.len()).collect();
+        crate::clipper::libcxx_sort(&mut order, |&a, &b| subs[a].operator_lt(&subs[b]));
+        let mut slots: Vec<Option<crate::config::ConfigSubstitution>> = subs.into_iter().map(Some).collect();
+        let mut sorted: Vec<crate::config::ConfigSubstitution> = order.iter().map(|&i| slots[i].take().unwrap()).collect();
+        let mut kept: Vec<crate::config::ConfigSubstitution> = Vec::with_capacity(sorted.len());
+        for sub in sorted.drain(..) {
+            if kept.last().map_or(false, |last| last.operator_eq(&sub)) {
+                continue;
+            }
+            kept.push(sub);
+        }
+        config_substitutions.substitutions = kept;
+        Ok(model)
+    }
+
     /// Model.cpp:494-579 `read_from_archive(input_file, config, config_substitutions, out_file_type,
     /// options, plate_data, project_presets, file_version, proFn, project, color_group_map,
     /// volume_color_data, has_textures, has_unit)`: a model of a project file (3MF or zipped AMF).

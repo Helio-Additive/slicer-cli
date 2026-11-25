@@ -43,9 +43,18 @@ fn scaled_f64(v: f64) -> f64 {
 /// `unscaled<double>(v)`: unscale a double-precision coordinate.
 /// libslic3r.h: `template<class T> coordf_t unscaled(coordf_t v) { return v * SCALING_FACTOR; }`
 /// Crate convention: `unscaled(v) = v / SCALING_FACTOR`.
+/// BUILD_VOLUME_UNSCALE_MUL (on unless =0): Point.hpp:560-563 `Tout(v) * Tout(SCALING_FACTOR)`, a
+/// product with 0.00001 as the pin (BuildVolume.cpp:73, 526); =0 keeps the division by 100000.
+/// (The pin's `unscaled<float>` sites, BuildVolume.cpp:386, 441, 525, 575, are float products; the port
+/// computes them in double through this helper.)
 #[inline]
 fn unscaled_f64(v: f64) -> f64 {
-    v / SCALING_FACTOR
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *G.get_or_init(|| crate::faithful_gate("BUILD_VOLUME_UNSCALE_MUL")) {
+        v * crate::libslic3r::SCALING_FACTOR
+    } else {
+        v / SCALING_FACTOR
+    }
 }
 
 /// `sqr(x)` — libslic3r.h

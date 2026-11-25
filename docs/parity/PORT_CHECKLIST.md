@@ -11,20 +11,20 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**75.6% of the named C++ functions are ported or verified (7240 of 9574); 75.2% by size of body.**
+**76.8% of the named C++ functions are ported or verified (7354 of 9574); 75.8% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 443 | 4.6% | 6.7% |
-| partial `[~]` | 1891 | 19.8% | 18.1% |
-| ported `[x]` | 3715 | 38.8% | 24.6% |
-| verified `[v]` | 3525 | 36.8% | 50.6% |
+| partial `[~]` | 1777 | 18.6% | 17.6% |
+| ported `[x]` | 3790 | 39.6% | 25.0% |
+| verified `[v]` | 3564 | 37.2% | 50.8% |
 
 | Files (C++ units) | Count |
 |-|-|
 | all | 317 |
-| no Rust file of that name | 4 |
-| partial | 237 |
+| no Rust file of that name | 3 |
+| partial | 238 |
 | every named function ported | 61 |
 | every named function verified | 15 |
 
@@ -34,6 +34,9 @@ the end; the goal is none.
 ## How to read it
 
 - A file here is a C++ unit: a `.cpp` with the header of the same name, or a header on its own.
+  Its Rust file has the same name in snake_case; where the C++ name starts with a digit, which a Rust
+  module name cannot, the Rust name spells the number out (`Format/3mf` is `format/three_mf.rs`;
+  the list is `RUST_STEM_ALIASES` in `scripts/parity/file_map.py`).
 - `[ ]` **not started**: no Rust function of that name anywhere, or the unit has no Rust file.
 - `[~]` **partial**: the name exists in Rust but not in the file named after the C++ file, or only another
   overload is ported, or the body is estimated *partial*, *divergent* or a *stub*.
@@ -50,7 +53,7 @@ the end; the goal is none.
 - The percentage counts every named function with a body, accessors included, in all four tiers (tier 4 is
   SLA, which `slicer_cli` does not use).
 
-Entries of `port_checklist_verified.json` that match no function now: `append_monotonic_route` in `Fill/FillRectilinear`, `plan_monotonic_route` in `Fill/FillRectilinear`, `ToolOrdering::cal_non_support_filaments` in `GCode`, `AsPath` in `clipper2/clipper.core`, `Contains` in `clipper2/clipper.core`, `Height` in `clipper2/clipper.core`, `Intersects` in `clipper2/clipper.core`, `InvalidRect` in `clipper2/clipper.core`, `IsEmpty` in `clipper2/clipper.core`, `IsValid` in `clipper2/clipper.core`, `Negate` in `clipper2/clipper.core`, `Width` in `clipper2/clipper.core`, `AddChild` in `clipper2/clipper.engine`, `AddClip` in `clipper2/clipper.engine`, `AddLocalMaxPoly` in `clipper2/clipper.engine`, `AddLocalMinPoly` in `clipper2/clipper.engine`, `AddNewIntersectNode` in `clipper2/clipper.engine`, `AddOpenSubject` in `clipper2/clipper.engine`, `AddOutPt` in `clipper2/clipper.engine`, `AddPath` in `clipper2/clipper.engine`, `AddPaths` in `clipper2/clipper.engine`, `AddSubject` in `clipper2/clipper.engine`, `AddTrialHorzJoin` in `clipper2/clipper.engine`, `AdjustCurrXAndCopyToSEL` in `clipper2/clipper.engine`, `BuildIntersectList` in `clipper2/clipper.engine`, `BuildPaths64` in `clipper2/clipper.engine`, `BuildTree64` in `clipper2/clipper.engine`, `CheckBounds` in `clipper2/clipper.engine`, `CheckJoinLeft` in `clipper2/clipper.engine`, `CheckJoinRight` in `clipper2/clipper.engine`, `CheckSplitOwner` in `clipper2/clipper.engine`, `Child` in `clipper2/clipper.engine`, `CleanCollinear` in `clipper2/clipper.engine`, `CleanUp` in `clipper2/clipper.engine`, `Clear` in `clipper2/clipper.engine`, `ConvertHorzSegsToJoins` in `clipper2/clipper.engine`, `Count` in `clipper2/clipper.engine`, `DeleteEdges` in `clipper2/clipper.engine`, `DeleteFromAEL` in `clipper2/clipper.engine`, `DisposeAllOutRecs` in `clipper2/clipper.engine`, `DisposeVerticesAndLocalMinima` in `clipper2/clipper.engine`, `DoHorizontal` in `clipper2/clipper.engine`, `DoIntersections` in `clipper2/clipper.engine`, `DoMaxima` in `clipper2/clipper.engine`, `DoSplitOp` in `clipper2/clipper.engine`, `DoTopOfScanbeam` in `clipper2/clipper.engine`, `ErrorCode` in `clipper2/clipper.engine`, `Execute` in `clipper2/clipper.engine`, `ExecuteInternal` in `clipper2/clipper.engine`, `FixSelfIntersects` in `clipper2/clipper.engine`, `InsertLeftEdge` in `clipper2/clipper.engine`, `InsertLocalMinimaIntoAEL` in `clipper2/clipper.engine`, `InsertScanline` in `clipper2/clipper.engine`, `IntersectEdges` in `clipper2/clipper.engine`, `IsContributingClosed` in `clipper2/clipper.engine`, `IsContributingOpen` in `clipper2/clipper.engine`, `IsHole` in `clipper2/clipper.engine`, `JoinOutrecPaths` in `clipper2/clipper.engine`, `Level` in `clipper2/clipper.engine`, `NewOutRec` in `clipper2/clipper.engine`, `PopHorz` in `clipper2/clipper.engine`, `PopLocalMinima` in `clipper2/clipper.engine`, `PopScanline` in `clipper2/clipper.engine`, `PreserveCollinear` in `clipper2/clipper.engine`, `ProcessHorzJoins` in `clipper2/clipper.engine`, `ProcessIntersectList` in `clipper2/clipper.engine`, `PushHorz` in `clipper2/clipper.engine`, `RecursiveCheckOwners` in `clipper2/clipper.engine`, `Reset` in `clipper2/clipper.engine`, `ResetHorzDirection` in `clipper2/clipper.engine`, `ReverseSolution` in `clipper2/clipper.engine`, `SetWindCountForClosedPathEdge` in `clipper2/clipper.engine`, `SetWindCountForOpenPathEdge` in `clipper2/clipper.engine`, `SetZ` in `clipper2/clipper.engine`, `SetZCallback` in `clipper2/clipper.engine`, `Split` in `clipper2/clipper.engine`, `StartOpenPath` in `clipper2/clipper.engine`, `SwapPositionsInAEL` in `clipper2/clipper.engine`, `UpdateEdgeIntoAEL` in `clipper2/clipper.engine`.
+Entries of `port_checklist_verified.json` that match no function now: `append_monotonic_route` in `Fill/FillRectilinear`, `plan_monotonic_route` in `Fill/FillRectilinear`, `ToolOrdering::cal_non_support_filaments` in `GCode`, `CubicKernelWrapper::kernel` in `Geometry/Curves`, `AsPath` in `clipper2/clipper.core`, `Contains` in `clipper2/clipper.core`, `Height` in `clipper2/clipper.core`, `Intersects` in `clipper2/clipper.core`, `InvalidRect` in `clipper2/clipper.core`, `IsEmpty` in `clipper2/clipper.core`, `IsValid` in `clipper2/clipper.core`, `Negate` in `clipper2/clipper.core`, `Width` in `clipper2/clipper.core`, `AddChild` in `clipper2/clipper.engine`, `AddClip` in `clipper2/clipper.engine`, `AddLocalMaxPoly` in `clipper2/clipper.engine`, `AddLocalMinPoly` in `clipper2/clipper.engine`, `AddNewIntersectNode` in `clipper2/clipper.engine`, `AddOpenSubject` in `clipper2/clipper.engine`, `AddOutPt` in `clipper2/clipper.engine`, `AddPath` in `clipper2/clipper.engine`, `AddPaths` in `clipper2/clipper.engine`, `AddSubject` in `clipper2/clipper.engine`, `AddTrialHorzJoin` in `clipper2/clipper.engine`, `AdjustCurrXAndCopyToSEL` in `clipper2/clipper.engine`, `BuildIntersectList` in `clipper2/clipper.engine`, `BuildPaths64` in `clipper2/clipper.engine`, `BuildTree64` in `clipper2/clipper.engine`, `CheckBounds` in `clipper2/clipper.engine`, `CheckJoinLeft` in `clipper2/clipper.engine`, `CheckJoinRight` in `clipper2/clipper.engine`, `CheckSplitOwner` in `clipper2/clipper.engine`, `Child` in `clipper2/clipper.engine`, `CleanCollinear` in `clipper2/clipper.engine`, `CleanUp` in `clipper2/clipper.engine`, `Clear` in `clipper2/clipper.engine`, `ConvertHorzSegsToJoins` in `clipper2/clipper.engine`, `Count` in `clipper2/clipper.engine`, `DeleteEdges` in `clipper2/clipper.engine`, `DeleteFromAEL` in `clipper2/clipper.engine`, `DisposeAllOutRecs` in `clipper2/clipper.engine`, `DisposeVerticesAndLocalMinima` in `clipper2/clipper.engine`, `DoHorizontal` in `clipper2/clipper.engine`, `DoIntersections` in `clipper2/clipper.engine`, `DoMaxima` in `clipper2/clipper.engine`, `DoSplitOp` in `clipper2/clipper.engine`, `DoTopOfScanbeam` in `clipper2/clipper.engine`, `ErrorCode` in `clipper2/clipper.engine`, `Execute` in `clipper2/clipper.engine`, `ExecuteInternal` in `clipper2/clipper.engine`, `FixSelfIntersects` in `clipper2/clipper.engine`, `InsertLeftEdge` in `clipper2/clipper.engine`, `InsertLocalMinimaIntoAEL` in `clipper2/clipper.engine`, `InsertScanline` in `clipper2/clipper.engine`, `IntersectEdges` in `clipper2/clipper.engine`, `IsContributingClosed` in `clipper2/clipper.engine`, `IsContributingOpen` in `clipper2/clipper.engine`, `IsHole` in `clipper2/clipper.engine`, `JoinOutrecPaths` in `clipper2/clipper.engine`, `Level` in `clipper2/clipper.engine`, `NewOutRec` in `clipper2/clipper.engine`, `PopHorz` in `clipper2/clipper.engine`, `PopLocalMinima` in `clipper2/clipper.engine`, `PopScanline` in `clipper2/clipper.engine`, `PreserveCollinear` in `clipper2/clipper.engine`, `ProcessHorzJoins` in `clipper2/clipper.engine`, `ProcessIntersectList` in `clipper2/clipper.engine`, `PushHorz` in `clipper2/clipper.engine`, `RecursiveCheckOwners` in `clipper2/clipper.engine`, `Reset` in `clipper2/clipper.engine`, `ResetHorzDirection` in `clipper2/clipper.engine`, `ReverseSolution` in `clipper2/clipper.engine`, `SetWindCountForClosedPathEdge` in `clipper2/clipper.engine`, `SetWindCountForOpenPathEdge` in `clipper2/clipper.engine`, `SetZ` in `clipper2/clipper.engine`, `SetZCallback` in `clipper2/clipper.engine`, `Split` in `clipper2/clipper.engine`, `StartOpenPath` in `clipper2/clipper.engine`, `SwapPositionsInAEL` in `clipper2/clipper.engine`, `UpdateEdgeIntoAEL` in `clipper2/clipper.engine`.
 
 ## Files
 
@@ -93,7 +96,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Arrange` | 1 | `arrange.rs` | partial | 44 | 7 | 12 | 0 | 25 |
 | `AStar` | 3 | `a_star.rs` | partial | 6 | 0 | 4 | 2 | 0 |
 | `BlacklistedLibraryCheck` | 1 | `blacklisted_library_check.rs` | partial | 5 | 0 | 1 | 4 | 0 |
-| `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 20 | 5 | 30 |
+| `BoundingBox` | 1 | `bounding_box.rs` | partial | 55 | 0 | 18 | 5 | 32 |
 | `BridgeDetector` | 1 | `bridge_detector.rs` | partial | 11 | 0 | 3 | 0 | 8 |
 | `Brim` | 2 | `brim.rs` | ported | 32 | 0 | 0 | 5 | 27 |
 | `BrimEarsPoint` | 2 | `brim_ears_point.rs` | partial | 3 | 0 | 1 | 2 | 0 |
@@ -141,7 +144,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Execution/Execution` | 3 | `execution/execution.rs` | partial | 6 | 0 | 3 | 3 | 0 |
 | `Execution/ExecutionSeq` | 3 | `execution/execution_seq.rs` | partial | 7 | 2 | 0 | 5 | 0 |
 | `Execution/ExecutionTBB` | 3 | `execution/execution_tbb.rs` | partial | 5 | 2 | 2 | 1 | 0 |
-| `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 0 | 32 | 12 | 49 |
+| `ExPolygon` | 1 | `ex_polygon.rs` | partial | 93 | 0 | 2 | 14 | 77 |
 | `ExPolygonCollection` | 1 | `ex_polygon_collection.rs` | partial | 11 | 0 | 2 | 9 | 0 |
 | `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `ExPolygonsIndex` | 1 | `ex_polygons_index.rs` | partial | 7 | 0 | 1 | 6 | 0 |
@@ -180,7 +183,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `FlushVolCalc` | 1 | `flush_vol_calc.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `FlushVolPredictor` | 3 | `flush_vol_predictor.rs` | partial | 14 | 3 | 1 | 10 | 0 |
 | `format` | 1 | `format/format.rs` | partial | 4 | 0 | 2 | 0 | 2 |
-| `Format/3mf` | 3 | none | not started | 111 | 4 | 107 | 0 | 0 |
+| `Format/3mf` | 3 | `format/three_mf.rs` | partial | 111 | 4 | 25 | 75 | 7 |
 | `Format/AMF` | 3 | `format/amf.rs` | partial | 16 | 0 | 10 | 6 | 0 |
 | `Format/AssemblyStepsJson` | 3 | `format/assembly_steps_json.rs` | partial | 82 | 0 | 1 | 18 | 63 |
 | `Format/AssemblyTreeJson` | 3 | `format/assembly_tree_json.rs` | ported | 6 | 0 | 0 | 2 | 4 |
@@ -222,7 +225,7 @@ Entries of `port_checklist_verified.json` that match no function now: `append_mo
 | `Geometry/Bicubic` | 1 | `geometry/bicubic.rs` | ported | 53 | 0 | 0 | 53 | 0 |
 | `Geometry/Circle` | 1 | `geometry/circle.rs` | partial | 24 | 0 | 6 | 16 | 2 |
 | `Geometry/ConvexHull` | 1 | `geometry/convex_hull.rs` | partial | 21 | 2 | 11 | 8 | 0 |
-| `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 7 | 0 |
+| `Geometry/Curves` | 1 | `geometry/curves.rs` | ported | 7 | 0 | 0 | 5 | 2 |
 | `Geometry/MedialAxis` | 1 | `geometry/medial_axis.rs` | partial | 16 | 2 | 11 | 3 | 0 |
 | `Geometry/Voronoi` | 1 | `geometry/voronoi.rs` | partial | 19 | 0 | 19 | 0 | 0 |
 | `Geometry/VoronoiOffset` | 1 | `geometry/voronoi_offset.rs` | partial | 39 | 5 | 11 | 23 | 0 |
@@ -1198,8 +1201,8 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [v] `scaled` (line 261) → `bounding_box.rs:1642` — R950: tests/bounding_box_cpp_names_native_parity.rs (bounding_box_cpp_names_match_the_pin) against tests/data/bounding_box_cpp_names/gen.cpp (vectors.txt.gz, 654,052 B): 4,000 cases (degenerate axes, defined forced true on inverted boxes), 8 groups, 0 mismatches: empty() of BoundingBoxBase<Vec2d>, BoundingBox3Base<Vec3d>, BoundingBoxBase<Point>, BoundingBox3Base<Vec3crd> (BoundingBox.hpp:248-258), scaled(const BoundingBoxf&) / scaled(const BoundingBoxf3&) (corners truncated to coord_t, `defined` from the (min, max) constructor), unscaled(const BoundingBox&) / unscaled(const BoundingBox3&) bit for bit (BoundingBox.hpp:260-263). Traits BoundingBoxEmpty, BoundingBoxScaled, BoundingBoxUnscaled in bounding_box.rs. cast<Tout> (BoundingBox.hpp:265-277) not done.
 - [v] `unscaled` (line 262) → `bounding_box.rs:1677` — R950: tests/bounding_box_cpp_names_native_parity.rs (bounding_box_cpp_names_match_the_pin) against tests/data/bounding_box_cpp_names/gen.cpp (vectors.txt.gz, 654,052 B): 4,000 cases (degenerate axes, defined forced true on inverted boxes), 8 groups, 0 mismatches: empty() of BoundingBoxBase<Vec2d>, BoundingBox3Base<Vec3d>, BoundingBoxBase<Point>, BoundingBox3Base<Vec3crd> (BoundingBox.hpp:248-258), scaled(const BoundingBoxf&) / scaled(const BoundingBoxf3&) (corners truncated to coord_t, `defined` from the (min, max) constructor), unscaled(const BoundingBox&) / unscaled(const BoundingBox3&) bit for bit (BoundingBox.hpp:260-263). Traits BoundingBoxEmpty, BoundingBoxScaled, BoundingBoxUnscaled in bounding_box.rs. cast<Tout> (BoundingBox.hpp:265-277) not done.
 - [v] `unscaled` (line 263) → `bounding_box.rs:1667` — R950: tests/bounding_box_cpp_names_native_parity.rs (bounding_box_cpp_names_match_the_pin) against tests/data/bounding_box_cpp_names/gen.cpp (vectors.txt.gz, 654,052 B): 4,000 cases (degenerate axes, defined forced true on inverted boxes), 8 groups, 0 mismatches: empty() of BoundingBoxBase<Vec2d>, BoundingBox3Base<Vec3d>, BoundingBoxBase<Point>, BoundingBox3Base<Vec3crd> (BoundingBox.hpp:248-258), scaled(const BoundingBoxf&) / scaled(const BoundingBoxf3&) (corners truncated to coord_t, `defined` from the (min, max) constructor), unscaled(const BoundingBox&) / unscaled(const BoundingBox3&) bit for bit (BoundingBox.hpp:260-263). Traits BoundingBoxEmpty, BoundingBoxScaled, BoundingBoxUnscaled in bounding_box.rs. cast<Tout> (BoundingBox.hpp:265-277) not done.
-- [~] `cast` (line 266) → `geometry/voronoi_visual_utils.rs` — not in the paired file
-- [~] `cast` (line 273) → `geometry/voronoi_visual_utils.rs` — not in the paired file
+- [v] `cast` (line 266) → `bounding_box.rs:1950` — R951: tests/bounding_box_cast_native_parity.rs (bounding_box_cast_native_parity) against tests/data/bounding_box_cpp_names/gen_cast.cpp (cast_vectors.txt.gz, 292,806 B): 2,000 cases (a third with corners within +-500, the rest within +-1e8; every fifth with min.z == max.z, every seventh with min.y == max.y on the double box), 0 mismatches over 5 groups, bit for bit: the BoundingBox3 and BoundingBoxf3 two-point constructors' `defined`, cast<double>(BoundingBox3Base<Vec3crd>), cast<coord_t>(BoundingBox3Base<Vec3d>) (truncating), cast<double>(BoundingBoxBase<Vec3crd>) (x/y `defined` only). Trait impls in bounding_box.rs: BoundingBoxCast (BoundingBox.hpp:272-277), BoundingBoxCastBase (265-270).
+- [v] `cast` (line 273) → `bounding_box.rs:1941` — R951: tests/bounding_box_cast_native_parity.rs (bounding_box_cast_native_parity) against tests/data/bounding_box_cpp_names/gen_cast.cpp (cast_vectors.txt.gz, 292,806 B): 2,000 cases (a third with corners within +-500, the rest within +-1e8; every fifth with min.z == max.z, every seventh with min.y == max.y on the double box), 0 mismatches over 5 groups, bit for bit: the BoundingBox3 and BoundingBoxf3 two-point constructors' `defined`, cast<double>(BoundingBox3Base<Vec3crd>), cast<coord_t>(BoundingBox3Base<Vec3d>) (truncating), cast<double>(BoundingBoxBase<Vec3crd>) (x/y `defined` only). Trait impls in bounding_box.rs: BoundingBoxCast (BoundingBox.hpp:272-277), BoundingBoxCastBase (265-270).
 - [~] `serialize` (line 283) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `serialize` (line 284) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `serialize` (line 285) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
@@ -1213,7 +1216,7 @@ Rust file: `bounding_box.rs`. Status: **partial**. Not listed: 19 constructors, 
 - [~] `rotated` (line 46) → `geometry/bounding_box.rs, geometry/expolygon.rs, geometry/point.rs` — not in the paired file
 - [x] `scaled` (line 56) → `bounding_box.rs:487`
 - [x] `rotate` (line 205) → `bounding_box.rs:452`
-- [~] `rotate` (line 206) → `arrange.rs, ex_polygon_collection.rs, fill/fill_adaptive.rs` — not in the paired file
+- [~] `rotate` (line 206) → `arrange.rs, ex_polygon.rs, ex_polygon_collection.rs` — not in the paired file
 - [v] `inflated` (line 215) → `bounding_box.rs:1348` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 - [v] `align_to_grid` (line 257) → `bounding_box.rs:472` — R928: tests/bounding_box_native_parity.rs: 4,000 generated cases, 144,332 asserted results against the pin's BoundingBox.cpp / BoundingBox.hpp for the 2D integer box, none differ: the constructor from points, area, center, radius, overlap, merge with a point and with a box, offset, inflated, both rotated overloads, polygon, align_to_grid. Not listed: size and contains (the port asks for a defined box where the pin does not: 376 / 64 / 361 results differ, reported), scale and scaled (equal only with the opt-in gate BOUNDING_BOX_SCALE_PIN).
 
@@ -1337,28 +1340,28 @@ Rust file: `build_volume.rs`. Status: **partial**. Not listed: 2 constructors.
 **free functions**
 
 - [ ] `rectangle_test` (line 181) → `build_volume.rs`
-- [x] `object_state_templ` (line 286) → `build_volume.rs:1429`
-- [x] `all_inside_vertices_normals_interleaved` (line 548) → `build_volume.rs:1643`
+- [x] `object_state_templ` (line 286) → `build_volume.rs:1438`
+- [x] `all_inside_vertices_normals_interleaved` (line 548) → `build_volume.rs:1652`
 
 **class `BuildVolume`**
 
-- [x] `printable_height` (line 63) → `build_volume.rs:724`
+- [x] `printable_height` (line 63) → `build_volume.rs:733`
 - [~] `type` (line 69) → `config.rs, geometry/build_volume.rs, model.rs` — not in the paired file
-- [x] `type_name` (line 72) → `build_volume.rs:779`
-- [x] `valid` (line 73) → `build_volume.rs:785`
-- [x] `bounding_volume2d` (line 80) → `build_volume.rs:809`
-- [x] `bed_center` (line 84) → `build_volume.rs:819`
-- [x] `get_extruder_area_count` (line 125) → `build_volume.rs:964`
-- [x] `object_state` (line 368) → `build_volume.rs:840`
-- [x] `volume_state_bbox` (line 403) → `build_volume.rs:930`
-- [x] `check_object_state_with_extruder_area` (line 422) → `build_volume.rs:981`
-- [x] `check_object_state_with_extruder_areas` (line 459) → `build_volume.rs:1064`
-- [x] `check_volume_bbox_state_with_extruder_area` (line 477) → `build_volume.rs:1105`
-- [x] `check_volume_bbox_state_with_extruder_areas` (line 487) → `build_volume.rs:1127`
-- [x] `all_paths_inside` (line 506) → `build_volume.rs:1300`
-- [x] `all_paths_inside_vertices_and_normals_interleaved` (line 559) → `build_volume.rs:1168`
+- [x] `type_name` (line 72) → `build_volume.rs:788`
+- [x] `valid` (line 73) → `build_volume.rs:794`
+- [x] `bounding_volume2d` (line 80) → `build_volume.rs:818`
+- [x] `bed_center` (line 84) → `build_volume.rs:828`
+- [x] `get_extruder_area_count` (line 125) → `build_volume.rs:973`
+- [x] `object_state` (line 368) → `build_volume.rs:849`
+- [x] `volume_state_bbox` (line 403) → `build_volume.rs:939`
+- [x] `check_object_state_with_extruder_area` (line 422) → `build_volume.rs:990`
+- [x] `check_object_state_with_extruder_areas` (line 459) → `build_volume.rs:1073`
+- [x] `check_volume_bbox_state_with_extruder_area` (line 477) → `build_volume.rs:1114`
+- [x] `check_volume_bbox_state_with_extruder_areas` (line 487) → `build_volume.rs:1136`
+- [x] `all_paths_inside` (line 506) → `build_volume.rs:1309`
+- [x] `all_paths_inside_vertices_and_normals_interleaved` (line 559) → `build_volume.rs:1177`
 - [~] `type_name` (line 593) → `format/assembly_steps_json.rs` — not in the paired file
-- [x] `bounding_mesh` (line 608) → `build_volume.rs:1264`
+- [x] `bounding_mesh` (line 608) → `build_volume.rs:1273`
 
 ### `ByObjectPrintData` (.cpp+.hpp)
 
@@ -3645,44 +3648,44 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 - [v] `number_polygons` (line 114) → `ex_polygon.rs:1177` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [v] `to_lines` (line 122) → `ex_polygon.rs:1191` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [v] `to_lines` (line 135) → `ex_polygon.rs:1207` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [~] `to_linesf` (line 152) → `emboss.rs` — not in the paired file
+- [v] `to_linesf` (line 152) → `ex_polygon.rs:1289` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
 - [v] `to_unscaled_linesf` (line 180) → `ex_polygon.rs:1266` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).
 - [v] `overlaps` (line 186) → `ex_polygon.rs:577` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
 - [v] `overlaps` (line 197) → `ex_polygon.rs:595` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
 - [v] `to_points` (line 201) → `ex_polygon.rs:1248` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [v] `projection_onto` (line 206) → `ex_polygon.rs:620` — R931: tests/ex_polygon_native_parity.rs: ExPolygon::scale (uniform and per axis) on 2,000 LCG cases each with factors in [0.25, 2.25], truncating as the pin (MultiPoint.cpp 6-19), 0 mismatches; projection_onto of expolygons 2,000 of 2,000 equal (each ring's closing edge included, ExPolygon.cpp 206-223).
-- [v] `to_polylines` (line 214) → `ex_polygon.rs:1533` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as stub to the estimate)
-- [~] `to_polylines` (line 231) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [~] `to_polylines` (line 250) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [~] `to_polylines` (line 267) → `geometry/expolygon.rs, geometry/polygon.rs, geometry/polyline.rs` — not in the paired file
-- [v] `to_polygons` (line 286) → `ex_polygon.rs:1550` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
-- [~] `to_polygons` (line 295) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [v] `to_polygon_ptrs` (line 306) → `ex_polygon.rs:1560` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `to_polygon_ptrs` (line 316) → `ex_polygon.rs:1571` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [~] `to_polygons` (line 328) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `to_polygons` (line 339) → `brim.rs, clipper_utils.rs, ex_polygon_collection.rs` — not in the paired file
-- [v] `to_expolygons` (line 352) → `ex_polygon.rs:1609` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
-- [~] `to_expolygons` (line 361) → `print_object_slice.rs, sla/concave_hull.rs, surface.rs` — not in the paired file
+- [v] `to_polylines` (line 214) → `ex_polygon.rs:1517` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `to_polylines` (line 231) → `ex_polygon.rs:1528` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `to_polylines` (line 250) → `ex_polygon.rs:1546` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `to_polylines` (line 267) → `ex_polygon.rs:1557` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `to_polygons` (line 286) → `ex_polygon.rs:1579` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `to_polygons` (line 295) → `ex_polygon.rs:1588` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `to_polygon_ptrs` (line 306) → `ex_polygon.rs:1633` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_polygon_ptrs` (line 316) → `ex_polygon.rs:1644` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `to_polygons` (line 328) → `ex_polygon.rs:1604` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `to_polygons` (line 339) → `ex_polygon.rs:1613` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `to_expolygons` (line 352) → `ex_polygon.rs:1666` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as divergent to the estimate)
+- [v] `to_expolygons` (line 361) → `ex_polygon.rs:1677` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as divergent to the estimate)
 - [v] `to_points` (line 370) → `ex_polygon.rs:1237` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `translate` (line 380) → `ex_polygon.rs:1362` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `polygons_append` (line 385) → `ex_polygon.rs:1415` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as divergent to the estimate)
-- [~] `polygons_append` (line 392) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
-- [~] `polygons_append` (line 401) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
-- [~] `polygons_append` (line 410) → `geometry/expolygon.rs, geometry/polygon.rs, support/support_common.rs` — not in the paired file
-- [v] `expolygons_append` (line 421) → `ex_polygon.rs:1445` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify. (the body reads as partial to the estimate)
-- [~] `expolygons_append` (line 426) → `geometry/expolygon.rs` — not in the paired file
-- [v] `expolygons_rotate` (line 437) → `ex_polygon.rs:1450` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `expolygons_contain` (line 443) → `ex_polygon.rs:1458` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
-- [v] `expolygons_simplify` (line 451) → `ex_polygon.rs:1618` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `translate` (line 380) → `ex_polygon.rs:1398` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `polygons_append` (line 385) → `ex_polygon.rs:1411` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `polygons_append` (line 392) → `ex_polygon.rs:1419` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `polygons_append` (line 401) → `ex_polygon.rs:1434` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `polygons_append` (line 410) → `ex_polygon.rs:1442` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `expolygons_append` (line 421) → `ex_polygon.rs:1481` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as partial to the estimate)
+- [v] `expolygons_append` (line 426) → `ex_polygon.rs:1472` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here. (the body reads as divergent to the estimate)
+- [v] `expolygons_rotate` (line 437) → `ex_polygon.rs:1486` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `expolygons_contain` (line 443) → `ex_polygon.rs:1494` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
+- [v] `expolygons_simplify` (line 451) → `ex_polygon.rs:1691` — R935: tests/ex_polygon_rest_native_parity.rs: 400 cases, 9,375 asserted calls (and a 1,500-case run) against the pin's ExPolygon.hpp 93-458, 0 mismatches: count_points, number_polygons, to_lines, to_points, to_polylines, to_polygons, to_polygon_ptrs, to_expolygons, translate of ExPolygons, polygons_append, expolygons_append, expolygons_rotate, expolygons_contain, expolygons_simplify.
 - [v] `get_expolygons_area` (line 455) → `ex_polygon.rs:660` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [v] `is_narrow_expolygon` (line 462) → `ex_polygon.rs:669` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0). (the body reads as partial to the estimate)
 - [v] `expolygons_match` (line 480) → `ex_polygon.rs:713` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).
 - [v] `area` (line 487) → `ex_polygon.rs:993` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
 - [v] `area` (line 488) → `ex_polygon.rs:1001` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
-- [~] `get_extents` (line 490) → `emboss.rs, ex_polygon_collection.rs, fill/fill_conformal.rs` — not in the paired file
-- [v] `get_extents` (line 495) → `ex_polygon.rs:743` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
-- [~] `get_extents_rotated` (line 506) → `bridge_detector.rs, geometry/polygon.rs, internal_bridge_detector.rs` — not in the paired file
-- [v] `get_extents_rotated` (line 511) → `ex_polygon.rs:768` — R947: tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity): the pin's to_unscaled_linesf, get_extents_rotated, is_narrow_expolygon (ExPolygon.cpp 462-475 through offset_ex with jtMiter 3, IS_NARROW_EXPOLYGON_PIN) and expolygons_match from tests/data/ex_polygon/gen_ops.cpp on 1,500 cases: 0 differ (is_narrow_expolygon differs in 1,477 with its gate at 0).
+- [v] `get_extents` (line 490) → `ex_polygon.rs:1709` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `get_extents` (line 495) → `ex_polygon.rs:1715` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `get_extents_rotated` (line 506) → `ex_polygon.rs:1734` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `get_extents_rotated` (line 511) → `ex_polygon.rs:768` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
 - [v] `get_extents_vector` (line 522) → `ex_polygon.rs:786` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [v] `has_duplicate_points` (line 531) → `ex_polygon.rs:806` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
 - [v] `has_duplicate_points` (line 555) → `ex_polygon.rs:836` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
@@ -3693,33 +3696,33 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `ExPolygon`**
 
-- [~] `scale` (line 17) → `arrange.rs, bounding_box.rs, brim.rs` — not in the paired file
-- [~] `scale` (line 24) → `arrange.rs, bounding_box.rs, brim.rs` — not in the paired file
-- [~] `translate` (line 31) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
-- [~] `clear` (line 38) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
-- [~] `rotate` (line 38) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `translate` (line 41) → `arrange.rs, bounding_box.rs, emboss.rs` — not in the paired file
-- [~] `rotate` (line 45) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
-- [~] `empty` (line 46) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
+- [v] `scale` (line 17) → `ex_polygon.rs:1764` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `scale` (line 24) → `ex_polygon.rs:1773` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `translate` (line 31) → `ex_polygon.rs:1787` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `clear` (line 38) → `ex_polygon.rs:1834` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `rotate` (line 38) → `ex_polygon.rs:1808` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `translate` (line 41) → `ex_polygon.rs:1796` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `rotate` (line 45) → `ex_polygon.rs:1817` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `empty` (line 46) → `ex_polygon.rs:1839` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
 - [v] `area` (line 52) → `ex_polygon.rs:144` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
-- [~] `is_valid` (line 60) → `aabb_mesh.rs, aabb_tree_indirect.rs, aabb_tree_lines.rs` — not in the paired file
+- [v] `is_valid` (line 60) → `ex_polygon.rs:1843` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
 - [v] `douglas_peucker` (line 69) → `ex_polygon.rs:128` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
-- [~] `medial_axis` (line 75) → `geometry/expolygon.rs` — not in the paired file
+- [x] `medial_axis` (line 75) → `ex_polygon.rs:1956`
 - [v] `contains` (line 76) → `ex_polygon.rs:190` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
 - [v] `contains` (line 81) → `ex_polygon.rs:200` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
-- [~] `num_contours` (line 82) → `geometry/expolygon.rs` — not in the paired file
+- [v] `num_contours` (line 82) → `ex_polygon.rs:1855` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
 - [v] `contains` (line 92) → `ex_polygon.rs:233` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp. (the body reads as partial to the estimate)
 - [v] `contains` (line 109) → `ex_polygon.rs:247` — R948: tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.
 - [v] `on_boundary` (line 121) → `ex_polygon.rs:272` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [v] `point_projection` (line 132) → `ex_polygon.rs:295` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [v] `symmetric_y` (line 151) → `ex_polygon.rs:338` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [v] `overlaps` (line 158) → `ex_polygon.rs:349` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000). (the body reads as partial to the estimate)
-- [~] `simplify_p` (line 225) → `geometry/expolygon.rs, perimeter_generator.rs` — not in the paired file
-- [~] `simplify_p` (line 231) → `geometry/expolygon.rs, perimeter_generator.rs` — not in the paired file
-- [~] `simplify` (line 253) → `arachne/utils/extrusion_line.rs, arachne/wall_tool_paths.rs, clipper_utils.rs` — not in the paired file
-- [~] `simplify` (line 258) → `arachne/utils/extrusion_line.rs, arachne/wall_tool_paths.rs, clipper_utils.rs` — not in the paired file
-- [~] `medial_axis` (line 263) → `geometry/expolygon.rs` — not in the paired file
-- [~] `medial_axis` (line 373) → `geometry/expolygon.rs` — not in the paired file
+- [v] `simplify_p` (line 225) → `ex_polygon.rs:1893` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `simplify_p` (line 231) → `ex_polygon.rs:1869` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `simplify` (line 253) → `ex_polygon.rs:1908` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [v] `simplify` (line 258) → `ex_polygon.rs:1917` — R951: tests/ex_polygon_members_native_parity.rs (ex_polygon_members_native_parity) against tests/data/ex_polygon/gen_members.cpp (members_vectors.txt.gz, 1.8 MB): 1,000 cases of random star-shaped ExPolygons with 0-2 holes (a quarter snapped to a 5 mm grid, every seventh with a CCW hole, every thirteenth with a CW contour), 34 result lines per case (34,000), every line rebuilt from the Rust results and compared as text, 0 mismatches: ExPolygon::scale(double) / scale(double, double), translate(const Point&) / translate(double, double) (truncating), rotate(double) / rotate(double, const Point&), clear, empty, is_valid, num_contours, simplify_p(double) / simplify_p(double, Polygons*), simplify(double) / simplify(double, ExPolygons*) (into an empty and a non-empty vector), to_polylines x4, to_polygons x4, to_expolygons x2, polygons_append x4, expolygons_append x2 (3 calls), get_extents x2, get_extents_rotated x2, to_linesf (count 0 and count_points). C++ overloads are trait impls in ex_polygon.rs: ExPolygonScale, ExPolygonTranslate, ExPolygonRotate, ExPolygonMembers, ExPolygonSimplifyP, ExPolygonSimplify, GetExtents, GetExtentsRotated, and the source traits of the free functions (ToPolylinesSrc, ToPolygonsSrc, ToExpolygonsSrc, PolygonsAppendSrc, ExPolygonsAppendSrc), whose methods now carry the C++ names. The three ExPolygon::medial_axis overloads (ExPolygonMedialAxis) run through the boost-voronoi shim and are not covered here.
+- [~] `medial_axis` (line 263) → `ex_polygon.rs:1937` — divergent
+- [x] `medial_axis` (line 373) → `ex_polygon.rs:1944`
 - [v] `split_expoly_with_holes` (line 382) → `ex_polygon.rs:374` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
 - [x] `map_moment_to_expansion` (line 416) → `ex_polygon.rs:464`
 - [v] `lines` (line 433) → `ex_polygon.rs:516` — R929: tests/ex_polygon_native_parity.rs: 2,000 generated cases, 80,000 asserted results in 38 families against the pin's ExPolygon.cpp / ExPolygon.hpp, none differ: area, is_valid, douglas_peucker, contains (a line, a polyline, polylines, a point with and without the border), on_boundary, point_projection, symmetric_y, overlaps, simplify_p, simplify, split_expoly_with_holes, lines, remove_colinear_points, translate, and the free functions count_points, number_polygons, to_lines, to_points, to_polygons, get_extents, get_extents_vector, area, get_expolygons_area, expolygons_simplify, expolygons_contain, overlaps, has_duplicate_points, remove_small_and_small_holes, keep_largest_contour_only. Not listed (reported, not equal): scale (rounds where the pin truncates), projection_onto of expolygons (126 of 2,000).
@@ -3731,23 +3734,23 @@ Rust file: `ex_polygon.rs`. Status: **partial**. Not listed: 10 constructors, 2 
 
 **class `polygon_set_traits<Slic3r::ExPolygons>`**
 
-- [x] `begin` (line 576) → `ex_polygon.rs:1339`
-- [x] `end` (line 580) → `ex_polygon.rs:1343`
-- [x] `clean` (line 585) → `ex_polygon.rs:1347`
-- [x] `sorted` (line 586) → `ex_polygon.rs:1351`
+- [x] `begin` (line 576) → `ex_polygon.rs:1375`
+- [x] `end` (line 580) → `ex_polygon.rs:1379`
+- [x] `clean` (line 585) → `ex_polygon.rs:1383`
+- [x] `sorted` (line 586) → `ex_polygon.rs:1387`
 
 **class `polygon_traits<Slic3r::ExPolygon>`**
 
-- [x] `begin_points` (line 505) → `ex_polygon.rs:1299`
-- [x] `end_points` (line 510) → `ex_polygon.rs:1303`
-- [x] `size` (line 515) → `ex_polygon.rs:1307`
-- [x] `winding` (line 520) → `ex_polygon.rs:1311`
+- [x] `begin_points` (line 505) → `ex_polygon.rs:1335`
+- [x] `end_points` (line 510) → `ex_polygon.rs:1339`
+- [x] `size` (line 515) → `ex_polygon.rs:1343`
+- [x] `winding` (line 520) → `ex_polygon.rs:1347`
 
 **class `polygon_with_holes_traits<Slic3r::ExPolygon>`**
 
-- [x] `begin_holes` (line 545) → `ex_polygon.rs:1321`
-- [x] `end_holes` (line 548) → `ex_polygon.rs:1325`
-- [x] `size_holes` (line 551) → `ex_polygon.rs:1329`
+- [x] `begin_holes` (line 545) → `ex_polygon.rs:1357`
+- [x] `end_holes` (line 548) → `ex_polygon.rs:1361`
+- [x] `size_holes` (line 551) → `ex_polygon.rs:1365`
 
 ### `ExPolygonCollection` (.cpp+.hpp)
 
@@ -4804,91 +4807,91 @@ Rust file: `fill/fill_rectilinear.rs`. Status: **partial**. Not listed: 2 constr
 - [x] `is_contour_ccw` (line 525) → `fill/fill_rectilinear.rs:816`
 - [v] `bounding_box_src` (line 527) → `fill/fill_rectilinear.rs:832` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [x] `bounding_box_outer` (line 529) → `fill/fill_rectilinear.rs:824`
-- [v] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs:5731` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `bounding_box_inner` (line 531) → `fill/fill_rectilinear.rs:5769` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 - [~] `export_to_svg` (line 535) → `surface.rs, surface_collection.rs` — not in the paired file
 
 **class `Fill2DLattice`**
 
-- [x] `clone` (line 205) → `fill/fill_rectilinear.rs:8162`
-- [x] `_layer_angle` (line 211) → `fill/fill_rectilinear.rs:6316`
+- [x] `clone` (line 205) → `fill/fill_rectilinear.rs:8200`
+- [x] `_layer_angle` (line 211) → `fill/fill_rectilinear.rs:6354`
 
 **class `FillAlignedRectilinear`**
 
 - [~] `clone` (line 39) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [v] `_layer_angle` (line 44) → `fill/fill_rectilinear.rs:5856` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `_layer_angle` (line 44) → `fill/fill_rectilinear.rs:5894` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillCrossZag`**
 
 - [~] `clone` (line 171) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs:6366`
+- [x] `has_consistent_pattern` (line 174) → `fill/fill_rectilinear.rs:6404`
 
 **class `FillCubic`**
 
 - [~] `clone` (line 107) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 110) → `fill/fill_rectilinear.rs:6289`
-- [v] `_layer_angle` (line 114) → `fill/fill_rectilinear.rs:6265` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 110) → `fill/fill_rectilinear.rs:6327`
+- [v] `_layer_angle` (line 114) → `fill/fill_rectilinear.rs:6303` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillGlobalMonotonicLine`**
 
 - [~] `clone` (line 152) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [v] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs:6433` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `global_monotonic_sweep` (line 156) → `fill/fill_rectilinear.rs:6471` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillGrid`**
 
 - [~] `clone` (line 68) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 71) → `fill/fill_rectilinear.rs:6207`
-- [v] `_layer_angle` (line 75) → `fill/fill_rectilinear.rs:6165` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 71) → `fill/fill_rectilinear.rs:6245`
+- [v] `_layer_angle` (line 75) → `fill/fill_rectilinear.rs:6203` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillLockedZag`**
 
 - [~] `clone` (line 180) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs:8166`
-- [x] `set_lock_region_param` (line 188) → `fill/fill_rectilinear.rs:8170`
-- [x] `set_skin_and_skeleton_pattern` (line 196) → `fill/fill_rectilinear.rs:8175`
+- [x] `has_consistent_pattern` (line 187) → `fill/fill_rectilinear.rs:8204`
+- [x] `set_lock_region_param` (line 188) → `fill/fill_rectilinear.rs:8208`
+- [x] `set_skin_and_skeleton_pattern` (line 196) → `fill/fill_rectilinear.rs:8213`
 
 **class `FillMonotonic`**
 
 - [~] `clone` (line 50) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `no_sort` (line 53) → `fill/fill_rectilinear.rs:6176`
+- [x] `no_sort` (line 53) → `fill/fill_rectilinear.rs:6214`
 
 **class `FillMonotonicLine`**
 
 - [~] `clone` (line 59) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `no_sort` (line 62) → `fill/fill_rectilinear.rs:6191`
+- [x] `no_sort` (line 62) → `fill/fill_rectilinear.rs:6229`
 
 **class `FillMonotonicLineWGapFill`**
 
-- [x] `is_self_crossing` (line 134) → `fill/fill_rectilinear.rs:6422`
+- [x] `is_self_crossing` (line 134) → `fill/fill_rectilinear.rs:6460`
 - [~] `clone` (line 139) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `no_sort` (line 140) → `fill/fill_rectilinear.rs:6427`
-- [v] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs:6411` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `no_sort` (line 140) → `fill/fill_rectilinear.rs:6465`
+- [v] `global_monotonic_sweep` (line 143) → `fill/fill_rectilinear.rs:6449` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillRectilinear`**
 
 - [~] `clone` (line 15) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 18) → `fill/fill_rectilinear.rs:5849`
+- [x] `is_self_crossing` (line 18) → `fill/fill_rectilinear.rs:5887`
 
 **class `FillStars`**
 
 - [~] `clone` (line 94) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 97) → `fill/fill_rectilinear.rs:6261`
-- [v] `_layer_angle` (line 101) → `fill/fill_rectilinear.rs:6239` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 97) → `fill/fill_rectilinear.rs:6299`
+- [v] `_layer_angle` (line 101) → `fill/fill_rectilinear.rs:6277` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillSupportBase`**
 
 - [~] `clone` (line 120) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [v] `_layer_angle` (line 126) → `fill/fill_rectilinear.rs:6293` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [v] `_layer_angle` (line 126) → `fill/fill_rectilinear.rs:6331` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillTriangles`**
 
 - [~] `clone` (line 81) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `is_self_crossing` (line 84) → `fill/fill_rectilinear.rs:6235`
-- [v] `_layer_angle` (line 88) → `fill/fill_rectilinear.rs:6211` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
+- [x] `is_self_crossing` (line 84) → `fill/fill_rectilinear.rs:6273`
+- [v] `_layer_angle` (line 88) → `fill/fill_rectilinear.rs:6249` — R922: tests/fill_rectilinear_native_parity.rs: 1,352 lines against the pin's FillRectilinear.cpp compiled into the generator, none differ: fill_surface of FillRectilinear, FillMonotonic, FillMonotonicLine, FillAlignedRectilinear, FillGrid, FillTriangles, FillStars, FillCubic, FillSupportBase, FillZigZag and FillCrossZag (11 x 40: the spacing left and the polylines in order), the stages of fill_surface_by_lines one at a time on 96 surfaces (the offset contours, the vertical lines, their links, the polylines of the graph traversal, the pinched lines, the monotonic regions, their chain and its polylines), make_fill_lines 48, sample_grid_pattern 24, and fill_surface_by_lines of FillMonotonicLineWGapFill and FillGlobalMonotonicLine 96.
 
 **class `FillZigZag`**
 
 - [~] `clone` (line 162) → `aabb_mesh.rs, clonable_ptr.rs, config.rs` — not in the paired file
-- [x] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs:6355`
+- [x] `has_consistent_pattern` (line 165) → `fill/fill_rectilinear.rs:6393`
 
 **class `SegmentIntersection`**
 
@@ -5141,145 +5144,145 @@ Rust file: `format/format.rs`. Status: **partial**.
 
 ### `Format/3mf` (.cpp+.hpp)
 
-Rust file: none. Status: **not started**.
+Rust file: `format/three_mf.rs`. Status: **partial**. Not listed: 13 constructors, 2 destructors.
 
 **free functions**
 
-- [~] `get_attribute_value_charptr` (line 165) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_attribute_value_string` (line 178) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_attribute_value_float` (line 184) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_attribute_value_int` (line 192) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_attribute_value_bool` (line 200) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_transform_from_3mf_specs_string` (line 206) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_unit_factor` (line 235) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `is_valid_object_type` (line 254) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `type_from_string` (line 364) → `format/three_mf.rs, model.rs` — a function of this name is in another Rust file
-- [~] `check_painting_version` (line 1841) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `reset_stream` (line 2509) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `handle_legacy_project_loaded` (line 3244) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `load_3mf` (line 3255) → `app_slice.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `store_3mf` (line 3269) → `format/three_mf.rs` — a function of this name is in another Rust file
+- [~] `get_attribute_value_charptr` (line 165) → `format/three_mf.rs:280` — partial
+- [x] `get_attribute_value_string` (line 178) → `format/three_mf.rs:300`
+- [x] `get_attribute_value_float` (line 184) → `format/three_mf.rs:313`
+- [x] `get_attribute_value_int` (line 192) → `format/three_mf.rs:328`
+- [x] `get_attribute_value_bool` (line 200) → `format/three_mf.rs:362`
+- [x] `get_transform_from_3mf_specs_string` (line 206) → `format/three_mf.rs:372`
+- [x] `get_unit_factor` (line 235) → `format/three_mf.rs:406`
+- [x] `is_valid_object_type` (line 254) → `format/three_mf.rs:426`
+- [x] `type_from_string` (line 364) → `format/three_mf.rs:713`
+- [x] `check_painting_version` (line 1841) → `format/three_mf.rs:3431`
+- [~] `reset_stream` (line 2509) → `format/three_mf.rs:3536` — divergent
+- [~] `handle_legacy_project_loaded` (line 3244) → `format/three_mf.rs:4653` — stub
+- [x] `load_3mf` (line 3255) → `format/three_mf.rs:4670`
+- [x] `store_3mf` (line 3269) → `format/three_mf.rs:4696`
 
 **class `PrusaFileParser`**
 
-- [~] `start_element_handler` (line 274) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `characters_handler` (line 280) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `check_3mf_from_prusa` (line 286) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_characters_handler` (line 328) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_start_element_handler` (line 336) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_attribute_value_charptr` (line 347) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `get_attribute_value_string` (line 358) → `format/three_mf.rs` — a function of this name is in another Rust file
+- [v] `start_element_handler` (line 274) → `format/three_mf.rs:476` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed.
+- [v] `characters_handler` (line 280) → `format/three_mf.rs:483` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed.
+- [v] `check_3mf_from_prusa` (line 286) → `format/three_mf.rs:491` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed. (the body reads as divergent to the estimate)
+- [v] `_characters_handler` (line 328) → `format/three_mf.rs:532` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed.
+- [v] `_start_element_handler` (line 336) → `format/three_mf.rs:544` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed. (the body reads as partial to the estimate)
+- [v] `get_attribute_value_charptr` (line 347) → `format/three_mf.rs:557` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed. (the body reads as partial to the estimate)
+- [v] `get_attribute_value_string` (line 358) → `format/three_mf.rs:577` — R951: tests/three_mf_native_parity.rs (prusa_file_parser_handlers_match_the_pin, check_3mf_from_prusa_matches_the_pin; vectors from tests/data/three_mf/gen.cpp linking the pin's 3mf.cpp): 600 generated model documents (metadata names and texts with entity and character references, CDATA, mixed content, comments, processing instructions, truncated documents) parsed by expat with PrusaFileParser's own handlers as check_3mf_from_prusa does (3mf.cpp:301-316) give the pin's m_from_prusa and m_is_application_key; check_3mf_from_prusa equals the pin on 13 files (8 crafted 3MFs incl. a model rels file, an upper-case model path, a Description after the Application node, an empty model, a missing model, not a zip, a missing file; painted_cube.3mf, tests/fixtures/calib_base.3mf and legacy_token.3mf; the Majora fixture where present). The port now resets m_is_application_key on every metadata element (3mf.cpp:338-340) and hands character data in expat's pieces; 2 passed.
 
 **class `_3MF_Base`**
 
-- [~] `add_error` (line 384) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `clear_errors` (line 385) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `log_errors` (line 388) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
+- [x] `add_error` (line 384) → `format/three_mf.rs:850`
+- [x] `clear_errors` (line 385) → `format/three_mf.rs:855`
+- [x] `log_errors` (line 388) → `format/three_mf.rs:860`
 
 **class `_3MF_Exporter`**
 
-- [~] `save_model_to_file` (line 2326) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_save_model_to_file` (line 2334) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_content_types_file_to_archive` (line 2453) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_thumbnail_file_to_archive` (line 2473) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_relationships_file_to_archive` (line 2490) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_model_file_to_archive` (line 2520) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_object_to_model_stream` (line 2623) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_mesh_to_object_stream` (line 2686) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_build_to_model_stream` (line 2852) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_layer_height_profile_file_to_archive` (line 2879) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_layer_config_ranges_file_to_archive` (line 2913) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_sla_support_points_file_to_archive` (line 2971) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_sla_drain_holes_file_to_archive` (line 3006) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_print_config_file_to_archive` (line 3057) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_model_config_file_to_archive` (line 3078) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_add_custom_gcode_per_print_z_file_to_archive` (line 3189) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
+- [x] `save_model_to_file` (line 2326) → `format/three_mf.rs:3567`
+- [x] `_save_model_to_file` (line 2334) → `format/three_mf.rs:3585`
+- [~] `_add_content_types_file_to_archive` (line 2453) → `format/three_mf.rs:3713` — partial
+- [x] `_add_thumbnail_file_to_archive` (line 2473) → `format/three_mf.rs:3741`
+- [x] `_add_relationships_file_to_archive` (line 2490) → `format/three_mf.rs:3774`
+- [~] `_add_model_file_to_archive` (line 2520) → `format/three_mf.rs:3811` — partial
+- [x] `_add_object_to_model_stream` (line 2623) → `format/three_mf.rs:3978`
+- [~] `_add_mesh_to_object_stream` (line 2686) → `format/three_mf.rs:4053` — partial
+- [x] `_add_build_to_model_stream` (line 2852) → `format/three_mf.rs:4201`
+- [~] `_add_layer_height_profile_file_to_archive` (line 2879) → `format/three_mf.rs:4248` — partial
+- [~] `_add_layer_config_ranges_file_to_archive` (line 2913) → `format/three_mf.rs:4286` — divergent
+- [~] `_add_sla_support_points_file_to_archive` (line 2971) → `format/three_mf.rs:4326` — partial
+- [~] `_add_sla_drain_holes_file_to_archive` (line 3006) → `format/three_mf.rs:4368` — partial
+- [~] `_add_print_config_file_to_archive` (line 3057) → `format/three_mf.rs:4412` — partial
+- [~] `_add_model_config_file_to_archive` (line 3078) → `format/three_mf.rs:4444` — partial
+- [x] `_add_custom_gcode_per_print_z_file_to_archive` (line 3189) → `format/three_mf.rs:4615`
 
 **class `_3MF_Importer`**
 
-- [~] `version` (line 559) → `format/bbs_3mf.rs, format/three_mf.rs, libslic3r.rs` — a function of this name is in another Rust file
-- [~] `parse_error` (line 565) → `config.rs, format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `parse_error_message` (line 566) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `load_model_from_file` (line 681) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_destroy_xml_parser` (line 708) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_stop_xml_parser` (line 716) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_load_model_from_file` (line 726) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_model_from_archive` (line 959) → `format/amf.rs, format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_print_config_from_archive` (line 1023) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_layer_heights_profile_config_from_archive` (line 1046) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_layer_config_ranges_from_archive` (line 1108) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_sla_support_points_from_archive` (line 1165) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_sla_drain_holes_from_archive` (line 1247) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_model_config_from_archive` (line 1332) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_extract_custom_gcode_per_print_z_from_archive` (line 1374) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_model_xml_element` (line 1433) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_model_xml_element` (line 1472) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_model_xml_characters` (line 1510) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config_xml_element` (line 1515) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config_xml_element` (line 1538) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_model` (line 1560) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_model` (line 1566) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_resources` (line 1596) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_resources` (line 1602) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_object` (line 1608) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_object` (line 1633) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_mesh` (line 1674) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_mesh` (line 1681) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_vertices` (line 1687) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_vertices` (line 1694) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_vertex` (line 1700) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_vertex` (line 1711) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_triangles` (line 1717) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_triangles` (line 1724) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_triangle` (line 1730) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_triangle` (line 1752) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_components` (line 1758) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_components` (line 1765) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_component` (line 1771) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_component` (line 1790) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_build` (line 1796) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_build` (line 1802) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_item` (line 1808) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_item` (line 1824) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_metadata` (line 1830) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_metadata` (line 1847) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_create_object_instance` (line 1879) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_apply_transform` (line 1925) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config` (line 1935) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config` (line 1941) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config_object` (line 1947) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config_object` (line 1964) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config_volume` (line 1970) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config_volume_mesh` (line 1987) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config_volume` (line 2012) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config_volume_mesh` (line 2018) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config_metadata` (line 2024) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config_metadata` (line 2071) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_generate_volumes` (line 2077) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_model_xml_element` (line 2221) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_model_xml_element` (line 2228) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_model_xml_characters` (line 2235) → `format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_start_config_xml_element` (line 2242) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
-- [~] `_handle_end_config_xml_element` (line 2249) → `format/bbs_3mf.rs, format/three_mf.rs` — a function of this name is in another Rust file
+- [x] `version` (line 559) → `format/three_mf.rs:1177`
+- [x] `parse_error` (line 565) → `format/three_mf.rs:1241`
+- [~] `parse_error_message` (line 566) → `format/three_mf.rs:1248` — divergent
+- [x] `load_model_from_file` (line 681) → `format/three_mf.rs:1184`
+- [x] `_destroy_xml_parser` (line 708) → `format/three_mf.rs:1219`
+- [x] `_stop_xml_parser` (line 716) → `format/three_mf.rs:1227`
+- [~] `_load_model_from_file` (line 726) → `format/three_mf.rs:1259` — partial
+- [~] `_extract_model_from_archive` (line 959) → `format/three_mf.rs:1567` — partial
+- [~] `_extract_print_config_from_archive` (line 1023) → `format/three_mf.rs:1700` — divergent
+- [x] `_extract_layer_heights_profile_config_from_archive` (line 1046) → `format/three_mf.rs:1736`
+- [~] `_extract_layer_config_ranges_from_archive` (line 1108) → `format/three_mf.rs:1821` — divergent
+- [x] `_extract_sla_support_points_from_archive` (line 1165) → `format/three_mf.rs:1959`
+- [x] `_extract_sla_drain_holes_from_archive` (line 1247) → `format/three_mf.rs:2081`
+- [~] `_extract_model_config_from_archive` (line 1332) → `format/three_mf.rs:2198` — divergent
+- [x] `_extract_custom_gcode_per_print_z_from_archive` (line 1374) → `format/three_mf.rs:2292`
+- [x] `_handle_start_model_xml_element` (line 1433) → `format/three_mf.rs:2303`
+- [x] `_handle_end_model_xml_element` (line 1472) → `format/three_mf.rs:2355`
+- [x] `_handle_model_xml_characters` (line 1510) → `format/three_mf.rs:2405`
+- [x] `_handle_start_config_xml_element` (line 1515) → `format/three_mf.rs:2411`
+- [x] `_handle_end_config_xml_element` (line 1538) → `format/three_mf.rs:2441`
+- [x] `_handle_start_model` (line 1560) → `format/three_mf.rs:2470`
+- [x] `_handle_end_model` (line 1566) → `format/three_mf.rs:2477`
+- [x] `_handle_start_resources` (line 1596) → `format/three_mf.rs:2538`
+- [x] `_handle_end_resources` (line 1602) → `format/three_mf.rs:2544`
+- [x] `_handle_start_object` (line 1608) → `format/three_mf.rs:2550`
+- [x] `_handle_end_object` (line 1633) → `format/three_mf.rs:2584`
+- [x] `_handle_start_mesh` (line 1674) → `format/three_mf.rs:2640`
+- [x] `_handle_end_mesh` (line 1681) → `format/three_mf.rs:2648`
+- [x] `_handle_start_vertices` (line 1687) → `format/three_mf.rs:2654`
+- [x] `_handle_end_vertices` (line 1694) → `format/three_mf.rs:2662`
+- [x] `_handle_start_vertex` (line 1700) → `format/three_mf.rs:2668`
+- [x] `_handle_end_vertex` (line 1711) → `format/three_mf.rs:2681`
+- [x] `_handle_start_triangles` (line 1717) → `format/three_mf.rs:2687`
+- [x] `_handle_end_triangles` (line 1724) → `format/three_mf.rs:2695`
+- [x] `_handle_start_triangle` (line 1730) → `format/three_mf.rs:2701`
+- [x] `_handle_end_triangle` (line 1752) → `format/three_mf.rs:2738`
+- [x] `_handle_start_components` (line 1758) → `format/three_mf.rs:2744`
+- [x] `_handle_end_components` (line 1765) → `format/three_mf.rs:2752`
+- [x] `_handle_start_component` (line 1771) → `format/three_mf.rs:2758`
+- [x] `_handle_end_component` (line 1790) → `format/three_mf.rs:2785`
+- [x] `_handle_start_build` (line 1796) → `format/three_mf.rs:2791`
+- [x] `_handle_end_build` (line 1802) → `format/three_mf.rs:2797`
+- [x] `_handle_start_item` (line 1808) → `format/three_mf.rs:2803`
+- [x] `_handle_end_item` (line 1824) → `format/three_mf.rs:2824`
+- [x] `_handle_start_metadata` (line 1830) → `format/three_mf.rs:2830`
+- [x] `_handle_end_metadata` (line 1847) → `format/three_mf.rs:2845`
+- [x] `_create_object_instance` (line 1879) → `format/three_mf.rs:2896`
+- [~] `_apply_transform` (line 1925) → `format/three_mf.rs:2973` — partial
+- [x] `_handle_start_config` (line 1935) → `format/three_mf.rs:2998`
+- [x] `_handle_end_config` (line 1941) → `format/three_mf.rs:3004`
+- [x] `_handle_start_config_object` (line 1947) → `format/three_mf.rs:3010`
+- [x] `_handle_end_config_object` (line 1964) → `format/three_mf.rs:3029`
+- [x] `_handle_start_config_volume` (line 1970) → `format/three_mf.rs:3035`
+- [x] `_handle_start_config_volume_mesh` (line 1987) → `format/three_mf.rs:3064`
+- [x] `_handle_end_config_volume` (line 2012) → `format/three_mf.rs:3107`
+- [x] `_handle_end_config_volume_mesh` (line 2018) → `format/three_mf.rs:3113`
+- [x] `_handle_start_config_metadata` (line 2024) → `format/three_mf.rs:3119`
+- [x] `_handle_end_config_metadata` (line 2071) → `format/three_mf.rs:3181`
+- [~] `_generate_volumes` (line 2077) → `format/three_mf.rs:3191` — partial
+- [~] `_handle_start_model_xml_element` (line 2221) → `format/bbs_3mf.rs` — not in the paired file
+- [~] `_handle_end_model_xml_element` (line 2228) → `format/bbs_3mf.rs` — not in the paired file
+- [~] `_handle_model_xml_characters` (line 2235) → `format/three_mf.rs` — another overload of the name is ported
+- [~] `_handle_start_config_xml_element` (line 2242) → `format/bbs_3mf.rs` — not in the paired file
+- [~] `_handle_end_config_xml_element` (line 2249) → `format/bbs_3mf.rs` — not in the paired file
 
 **class `_3MF_Importer::CurrentObject`**
 
-- [~] `reset` (line 448) → `app_config.rs, bounding_box.rs, clipper.rs` — a function of this name is in another Rust file
+- [x] `reset` (line 448) → `format/three_mf.rs:963`
 
 **class `_3MF_Importer::Geometry`**
 
-- [~] `empty` (line 425) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — a function of this name is in another Rust file
-- [~] `reset` (line 427) → `app_config.rs, bounding_box.rs, clipper.rs` — a function of this name is in another Rust file
+- [x] `empty` (line 425) → `format/three_mf.rs:919`
+- [x] `reset` (line 427) → `format/three_mf.rs:924`
 
 **class `coordinate_policy_fixed`**
 
-- [ ] `floatfield` (line 2670)
-- [ ] `precision` (line 2672)
-- [ ] `trailing_zeros` (line 2674)
+- [ ] `floatfield` (line 2670) → `format/three_mf.rs`
+- [ ] `precision` (line 2672) → `format/three_mf.rs`
+- [ ] `trailing_zeros` (line 2674) → `format/three_mf.rs`
 
 **class `coordinate_policy_scientific`**
 
-- [ ] `floatfield` (line 2679)
+- [ ] `floatfield` (line 2679) → `format/three_mf.rs`
 
 ### `Format/AMF` (.cpp+.hpp)
 
@@ -5736,7 +5739,7 @@ Rust file: `format/obj.rs`. Status: **partial**.
 
 - [x] `load_obj` (line 31) → `format/obj.rs:177`
 - [~] `load_obj` (line 249) → `obj.rs` — not in the paired file
-- [x] `store_obj` (line 268) → `format/obj.rs:614`
+- [x] `store_obj` (line 268) → `format/obj.rs:615`
 - [~] `store_obj` (line 275) → `format/obj.rs` — another overload of the name is ported
 - [~] `store_obj` (line 281) → `format/obj.rs` — another overload of the name is ported
 - [ ] `obj_to_textured_mesh` (line 287) → `format/obj.rs`
@@ -5939,179 +5942,179 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **free functions**
 
-- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:13414` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:9804`
-- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:9824`
-- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:13453`
+- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:13535` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:9925`
+- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:9945`
+- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:13574`
 - [v] `check_add_eol` (line 298) → `g_code.rs:49` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `custom_gcode_changes_tool` (line 306) → `g_code.rs:58` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `transform_gcode` (line 378) → `g_code.rs:133` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `get_wipe_avoid_pos_x` (line 428) → `g_code.rs:224` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:13584`
-- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:9881`
-- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:13621` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:15923`
-- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:15616` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:13705`
+- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:10002`
+- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:13742` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:16044`
+- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:15737` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
 - [ ] `init_gcode_processor` (line 2193) → `g_code.rs`
 - [ ] `autospeed_volumetric_limit` (line 2207) → `g_code.rs`
 - [ ] `init_ooze_prevention` (line 2266) → `g_code.rs`
 - [ ] `export_thumbnails_to_file` (line 2301) → `g_code.rs`
-- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:15975`
-- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:16018` — partial
-- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:16037` — partial
+- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:16096`
+- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:16139` — partial
+- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:16158` — partial
 - [~] `to_bambu_bed_type` (line 2461) → `g_code.rs:1578` — divergent
-- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:15853`
-- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:15702`
-- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:15728`
-- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:15791`
-- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:15817`
-- [x] `get_instance_name` (line 4568) → `g_code.rs:13761` — read against the C++ in R915 (the estimate says partial)
+- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:15974`
+- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:15823`
+- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:15849`
+- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:15912`
+- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:15938`
+- [x] `get_instance_name` (line 4568) → `g_code.rs:13882` — read against the C++ in R915 (the estimate says partial)
 - [~] `get_instance_name` (line 4576) → `g_code.rs` — another overload of the name is ported
 - [ ] `calculate_layer_edge_grid` (line 6543) → `g_code.rs`
-- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:15596` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `need_smooth_speed` (line 7205) → `g_code.rs:12858`
-- [v] `encodeBase64` (line 8091) → `g_code.rs:13715` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
-- [x] `polygon_to_string` (line 8993) → `g_code.rs:16080`
+- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:15717` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `need_smooth_speed` (line 7205) → `g_code.rs:12979`
+- [v] `encodeBase64` (line 8091) → `g_code.rs:13836` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `polygon_to_string` (line 8993) → `g_code.rs:16201`
 
 **class `GCode`**
 
-- [x] `set_gcode_offset` (line 211) → `g_code.rs:14357`
-- [v] `set_origin` (line 216) → `g_code.rs:15199` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `layer` (line 223) → `g_code.rs:14427`
-- [x] `enable_cooling_markers` (line 231) → `g_code.rs:14447`
-- [x] `layer_count` (line 234) → `g_code.rs:14452`
-- [x] `set_layer_count` (line 235) → `g_code.rs:14457`
-- [x] `set_smooth_coff` (line 252) → `g_code.rs:14501`
-- [x] `set_last_pos` (line 420) → `g_code.rs:14506`
-- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:14512`
-- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:14517`
-- [x] `last_pos_defined` (line 423) → `g_code.rs:14522`
-- [x] `on_first_layer` (line 713) → `g_code.rs:15164`
-- [x] `path_touches_bed` (line 716) → `g_code.rs:15173`
-- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:15181`
-- [x] `object_layer_over_raft` (line 725) → `g_code.rs:15192`
+- [x] `set_gcode_offset` (line 211) → `g_code.rs:14478`
+- [v] `set_origin` (line 216) → `g_code.rs:15320` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `layer` (line 223) → `g_code.rs:14548`
+- [x] `enable_cooling_markers` (line 231) → `g_code.rs:14568`
+- [x] `layer_count` (line 234) → `g_code.rs:14573`
+- [x] `set_layer_count` (line 235) → `g_code.rs:14578`
+- [x] `set_smooth_coff` (line 252) → `g_code.rs:14622`
+- [x] `set_last_pos` (line 420) → `g_code.rs:14627`
+- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:14633`
+- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:14638`
+- [x] `last_pos_defined` (line 423) → `g_code.rs:14643`
+- [x] `on_first_layer` (line 713) → `g_code.rs:15285`
+- [x] `path_touches_bed` (line 716) → `g_code.rs:15294`
+- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:15302`
+- [x] `object_layer_over_raft` (line 725) → `g_code.rs:15313`
 - [ ] `collect_layers_to_print` (line 1576) → `g_code.rs`
 - [ ] `collect_layers_to_print` (line 1769) → `g_code.rs`
-- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:14493`
-- [x] `unretract` (line 1959) → `g_code.rs:14487`
-- [v] `first_layer_projection` (line 1965) → `g_code.rs:16097` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
+- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:14614`
+- [x] `unretract` (line 1959) → `g_code.rs:14608`
+- [v] `first_layer_projection` (line 1965) → `g_code.rs:16218` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
 - [ ] `do_export` (line 1986) → `g_code.rs`
 - [ ] `_do_export` (line 2478) → `g_code.rs`
 - [ ] `export_layer_filaments` (line 3670) → `g_code.rs`
-- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:10860`
-- [x] `get_extruder_id` (line 3793) → `g_code.rs:10357`
-- [x] `get_filament_config_index` (line 3802) → `g_code.rs:10370`
-- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:10376`
-- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:14574`
+- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:10981`
+- [x] `get_extruder_id` (line 3793) → `g_code.rs:10478`
+- [x] `get_filament_config_index` (line 3802) → `g_code.rs:10491`
+- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:10497`
+- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:14695`
 - [ ] `process_layers` (line 3830) → `g_code.rs`
 - [ ] `process_layers` (line 3973) → `g_code.rs`
-- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:10827`
-- [v] `print_machine_envelope` (line 4132) → `g_code.rs:14588` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
-- [x] `get_bed_temperature` (line 4173) → `g_code.rs:10382`
-- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:10390`
-- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:14651`
-- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:14692`
+- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:10948`
+- [v] `print_machine_envelope` (line 4132) → `g_code.rs:14709` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `get_bed_temperature` (line 4173) → `g_code.rs:10503`
+- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:10511`
+- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:14772`
+- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:14813`
 - [ ] `sort_print_object_instances` (line 4284) → `g_code.rs`
 - [ ] `compute_farthest_point` (line 4582) → `g_code.rs`
 - [ ] `generate_timelapse_gcode` (line 4735) → `g_code.rs`
 - [ ] `filament_in_first_layer_phase` (line 4844) → `g_code.rs`
 - [~] `process_layer` (line 4919) → `gcode/cooling.rs, gcode/spiral_vase.rs` — not in the paired file
-- [v] `apply_print_config` (line 6403) → `g_code.rs:16149` — R942: tests/g_code_native_parity.rs (tags apc, ctor, wipe): the pin's GCode::apply_print_config (GCode.cpp 6403-6408) on 3 configurations, the GCode() constructor's FullPrintConfig defaults before and after it (602 keys and 9 object, region and print options), and Wipe::wipe with retraction during the wipe (retract_before_wipe 0/30/0/70 %, 4 cases with an E per segment) from tests/data/g_code/gen.cpp: every line equal.
-- [v] `append_full_config` (line 6410) → `g_code.rs:14464` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `set_extruders` (line 6433) → `g_code.rs:14528`
-- [v] `set_origin` (line 6446) → `g_code.rs:14368` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `preamble` (line 6458) → `g_code.rs:14543`
-- [~] `change_layer` (line 6473) → `g_code.rs:6133` — partial
-- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:14738` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:14770` — read against the C++ in R915 (the estimate says partial)
-- [x] `get_path_speed` (line 6615) → `g_code.rs:14787` — read against the C++ in R915 (the estimate says partial)
+- [v] `apply_print_config` (line 6403) → `g_code.rs:16270` — R942: tests/g_code_native_parity.rs (tags apc, ctor, wipe): the pin's GCode::apply_print_config (GCode.cpp 6403-6408) on 3 configurations, the GCode() constructor's FullPrintConfig defaults before and after it (602 keys and 9 object, region and print options), and Wipe::wipe with retraction during the wipe (retract_before_wipe 0/30/0/70 %, 4 cases with an E per segment) from tests/data/g_code/gen.cpp: every line equal.
+- [v] `append_full_config` (line 6410) → `g_code.rs:14585` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `set_extruders` (line 6433) → `g_code.rs:14649`
+- [v] `set_origin` (line 6446) → `g_code.rs:14489` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `preamble` (line 6458) → `g_code.rs:14664`
+- [~] `change_layer` (line 6473) → `g_code.rs:6254` — partial
+- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:14859` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:14891` — read against the C++ in R915 (the estimate says partial)
+- [x] `get_path_speed` (line 6615) → `g_code.rs:14908` — read against the C++ in R915 (the estimate says partial)
 - [~] `extrude_loop` (line 6664) → `g_code.rs:2170` — divergent
 - [ ] `extrude_multi_path` (line 6884) → `g_code.rs`
-- [x] `extrude_entity` (line 6914) → `g_code.rs:4207`
-- [~] `extrude_path` (line 6927) → `g_code.rs:3666` — divergent
-- [~] `extrude_perimeters` (line 6959) → `g_code.rs:4491` — divergent
-- [x] `extrude_infill` (line 6983) → `g_code.rs:4555`
-- [~] `extrude_support` (line 7011) → `g_code.rs:5011` — partial
-- [x] `mapping_speed` (line 7158) → `g_code.rs:12840`
-- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:12850`
-- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:14839`
-- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:12877`
-- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:13131` — partial
-- [x] `set_speed_transition` (line 7403) → `g_code.rs:13181`
-- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:13344`
-- [x] `slowDownByHeight` (line 7513) → `g_code.rs:14914`
-- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:14985` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `extrude_entity` (line 6914) → `g_code.rs:4246`
+- [~] `extrude_path` (line 6927) → `g_code.rs:3705` — divergent
+- [~] `extrude_perimeters` (line 6959) → `g_code.rs:4530` — divergent
+- [x] `extrude_infill` (line 6983) → `g_code.rs:4594`
+- [~] `extrude_support` (line 7011) → `g_code.rs:5132` — partial
+- [x] `mapping_speed` (line 7158) → `g_code.rs:12961`
+- [x] `get_speed_coor_x` (line 7165) → `g_code.rs:12971`
+- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:14960`
+- [x] `split_and_mapping_speed` (line 7213) → `g_code.rs:12998`
+- [~] `merge_same_speed_paths` (line 7363) → `g_code.rs:13252` — partial
+- [x] `set_speed_transition` (line 7403) → `g_code.rs:13302`
+- [x] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:13465`
+- [x] `slowDownByHeight` (line 7513) → `g_code.rs:15035`
+- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:15106` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [~] `_extrude` (line 7587) → `extruder.rs, gcode/extruder.rs, gcode/wipe_tower.rs` — not in the paired file
-- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:15016` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:15036`
-- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:15041` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:15050` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:15069`
-- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:15099` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:15107`
-- [~] `travel_to` (line 8198) → `g_code.rs:5281` — divergent
-- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:15119`
-- [x] `to_lift_type` (line 8348) → `g_code.rs:6098`
+- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:15137` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:15157`
+- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:15162` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:15171` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:15190`
+- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:15220` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:15228`
+- [~] `travel_to` (line 8198) → `g_code.rs:5402` — divergent
+- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:15240`
+- [x] `to_lift_type` (line 8348) → `g_code.rs:6219`
 - [ ] `needs_retraction` (line 8363) → `g_code.rs`
-- [x] `retract` (line 8498) → `g_code.rs:15125`
-- [x] `update_layer_related_config` (line 8531) → `g_code.rs:16162`
-- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:10733` — partial
-- [~] `set_extruder` (line 8617) → `g_code.rs:5686` — divergent
-- [x] `set_object_info` (line 9007) → `g_code.rs:16191`
-- [x] `point_to_gcode` (line 9029) → `g_code.rs:14398`
-- [x] `gcode_to_point` (line 9036) → `g_code.rs:14408`
+- [x] `retract` (line 8498) → `g_code.rs:15246`
+- [x] `update_layer_related_config` (line 8531) → `g_code.rs:16283`
+- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:10854` — partial
+- [~] `set_extruder` (line 8617) → `g_code.rs:5807` — divergent
+- [x] `set_object_info` (line 9007) → `g_code.rs:16312`
+- [x] `point_to_gcode` (line 9029) → `g_code.rs:14519`
+- [x] `gcode_to_point` (line 9036) → `g_code.rs:14529`
 
 **class `GCode::GCodeOutputStream`**
 
-- [x] `is_open` (line 300) → `g_code.rs:14110`
-- [x] `write` (line 311) → `g_code.rs:14149`
-- [x] `is_error` (line 7082) → `g_code.rs:14115`
-- [x] `get_last_error` (line 7087) → `g_code.rs:14120`
-- [x] `flush` (line 7092) → `g_code.rs:14129`
-- [x] `close` (line 7098) → `g_code.rs:14142`
+- [x] `is_open` (line 300) → `g_code.rs:14231`
+- [x] `write` (line 311) → `g_code.rs:14270`
+- [x] `is_error` (line 7082) → `g_code.rs:14236`
+- [x] `get_last_error` (line 7087) → `g_code.rs:14241`
+- [x] `flush` (line 7092) → `g_code.rs:14250`
+- [x] `close` (line 7098) → `g_code.rs:14263`
 - [~] `write` (line 7106) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
-- [x] `writeln` (line 7119) → `g_code.rs:14167`
-- [v] `write_format` (line 7125) → `g_code.rs:14180` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `writeln` (line 7119) → `g_code.rs:14288`
+- [v] `write_format` (line 7125) → `g_code.rs:14301` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
 
 **class `GCode::LayerToPrint`**
 
-- [x] `layer` (line 261) → `g_code.rs:14017`
-- [x] `object` (line 272) → `g_code.rs:14031`
-- [x] `print_z` (line 276) → `g_code.rs:14036`
+- [x] `layer` (line 261) → `g_code.rs:14138`
+- [x] `object` (line 272) → `g_code.rs:14152`
+- [x] `print_z` (line 276) → `g_code.rs:14157`
 
 **class `GCode::ObjectByExtruder::Island::Region`**
 
-- [x] `append` (line 9106) → `g_code.rs:15433`
+- [x] `append` (line 9106) → `g_code.rs:15554`
 
 **class `OozePrevention`**
 
-- [x] `pre_toolchange` (line 332) → `g_code.rs:13787`
-- [x] `post_toolchange` (line 362) → `g_code.rs:13821`
-- [x] `_get_temp` (line 369) → `g_code.rs:13832`
+- [x] `pre_toolchange` (line 332) → `g_code.rs:13908`
+- [x] `post_toolchange` (line 362) → `g_code.rs:13942`
+- [x] `_get_temp` (line 369) → `g_code.rs:13953`
 
 **class `Wipe`**
 
-- [x] `has_path` (line 63) → `g_code.rs:13863`
-- [x] `reset_path` (line 64) → `g_code.rs:13868`
-- [v] `wipe` (line 440) → `g_code.rs:13875` — R941: tests/g_code_native_parity.rs (tag wipe): the pin's Wipe::wipe (GCode.cpp 440-525) on 5 cases from tests/data/g_code/gen.cpp (role-based wipe speed, the travel_speed x wipe_speed fallback when the current speed is 0, path clipping, last position, has_path): output equal. retract_before_wipe 100 % leaves dE untested.
+- [x] `has_path` (line 63) → `g_code.rs:13984`
+- [x] `reset_path` (line 64) → `g_code.rs:13989`
+- [v] `wipe` (line 440) → `g_code.rs:13996` — R941: tests/g_code_native_parity.rs (tag wipe): the pin's Wipe::wipe (GCode.cpp 440-525) on 5 cases from tests/data/g_code/gen.cpp (role-based wipe speed, the travel_speed x wipe_speed fallback when the current speed is 0, path clipping, last position, has_path): output equal. retract_before_wipe 100 % leaves dE untested.
 
 **class `WipeTowerIntegration`**
 
-- [x] `next_layer` (line 106) → `g_code.rs:15304`
-- [x] `is_first_print` (line 112) → `g_code.rs:15363`
-- [x] `set_is_first_print` (line 113) → `g_code.rs:15368`
-- [x] `enable_timelapse_print` (line 115) → `g_code.rs:15373`
-- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:15378`
-- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:15383`
-- [x] `set_rib_offset` (line 118) → `g_code.rs:15388`
+- [x] `next_layer` (line 106) → `g_code.rs:15425`
+- [x] `is_first_print` (line 112) → `g_code.rs:15484`
+- [x] `set_is_first_print` (line 113) → `g_code.rs:15489`
+- [x] `enable_timelapse_print` (line 115) → `g_code.rs:15494`
+- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:15499`
+- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:15504`
+- [x] `set_rib_offset` (line 118) → `g_code.rs:15509`
 - [x] `generate_path_to_wipe_tower` (line 623) → `g_code.rs:258`
 - [~] `append_tcr` (line 741) → `g_code.rs:655` — divergent
 - [~] `post_process_wipe_tower_moves` (line 1383) → `g_code.rs:503` — divergent
-- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:15351`
-- [x] `prime` (line 1477) → `g_code.rs:15299` — read against the C++ in R915 (the estimate says divergent)
+- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:15472`
+- [x] `prime` (line 1477) → `g_code.rs:15420` — read against the C++ in R915 (the estimate says divergent)
 - [~] `tool_change` (line 1489) → `g_code_writer.rs, gcode/tool_ordering.rs, gcode/wipe_tower.rs` — not in the paired file
-- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:15311`
-- [~] `finalize` (line 1554) → `g_code.rs:15345` — stub
+- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:15432`
+- [~] `finalize` (line 1554) → `g_code.rs:15466` — stub
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp)
 
@@ -6766,23 +6769,23 @@ Rust file: `gcode/smoothing.rs`. Status: **partial**. Not listed: 2 constructors
 
 **free functions**
 
-- [x] `exclude_participate_in_speed_slowdown` (line 46) → `gcode/smoothing.rs:473`
+- [x] `exclude_participate_in_speed_slowdown` (line 46) → `gcode/smoothing.rs:484`
 
 **class `SmoothCalculator`**
 
 - [x] `build_node` (line 5) → `gcode/smoothing.rs:126`
 - [x] `append_data` (line 50) → `gcode/smoothing.rs:115`
 - [~] `append_data` (line 56) → `gcode/smoothing.rs` — another overload of the name is ported
-- [x] `guassian_function` (line 69) → `gcode/smoothing.rs:450`
+- [x] `guassian_function` (line 69) → `gcode/smoothing.rs:461`
 - [x] `recaculate_layer_time` (line 71) → `gcode/smoothing.rs:177`
-- [x] `guassian_filter_generator` (line 73) → `gcode/smoothing.rs:455`
+- [x] `guassian_filter_generator` (line 73) → `gcode/smoothing.rs:466`
 - [x] `init_object_node_range` (line 90) → `gcode/smoothing.rs:226`
 - [x] `smooth_layer_speed` (line 108) → `gcode/smoothing.rs:246`
 - [x] `layer_speed_filter` (line 125) → `gcode/smoothing.rs:265`
-- [x] `speed_filter_continue` (line 163) → `gcode/smoothing.rs:344`
-- [x] `filter_layer_time` (line 177) → `gcode/smoothing.rs:370`
-- [x] `layer_time_filter_continue` (line 204) → `gcode/smoothing.rs:413`
-- [x] `smooth_layer_time` (line 215) → `gcode/smoothing.rs:441`
+- [x] `speed_filter_continue` (line 163) → `gcode/smoothing.rs:350`
+- [x] `filter_layer_time` (line 177) → `gcode/smoothing.rs:376`
+- [x] `layer_time_filter_continue` (line 204) → `gcode/smoothing.rs:424`
+- [x] `smooth_layer_time` (line 215) → `gcode/smoothing.rs:452`
 
 ### `GCode/SpiralVase` (.cpp+.hpp)
 
@@ -7718,10 +7721,10 @@ Rust file: `geometry/curves.rs`. Status: **ported**.
 **free functions**
 
 - [x] `fit_polynomial` (line 30) → `geometry/curves.rs:98`
-- [x] `fit_curve` (line 97) → `geometry/curves.rs:313`
-- [x] `fit_linear_spline` (line 180) → `geometry/curves.rs:484`
-- [x] `fit_cubic_bspline` (line 192) → `geometry/curves.rs:507`
-- [x] `fit_catmul_rom_spline` (line 204) → `geometry/curves.rs:530`
+- [v] `fit_curve` (line 97) → `geometry/curves.rs:315` — R951: CURVES_FULLPIV_QR (faithful, geometry/curves.rs): fit_curve solves T with FullPivHouseholderQrF32, a port of Eigen 5.0.1's FullPivHouseholderQR<MatrixXf> computeInPlace / _solve_impl as the pin's build runs them (float, NEON 4-lane packets with FMA: the redux sum with two packet accumulators, the InnerProduct dot with four, the row-major GEMV of applyHouseholderOnTheLeft, the coefficient-based product of the solve, the column-major GEMV with alpha -1 inside the panel-8 triangular solve, maxCoeff's first occurrence). CURVES_KERNEL_F32 (R938) made faithful: the kernel in float as Bicubic.hpp 198-213. Native test tests/curves_fullpiv_qr_native_parity.rs against tests/data/curves_fullpiv_qr/gen.cpp (the pin's Eigen and Curves.hpp): 160 solves of dense, banded, rank-deficient and small-integer matrices (2-121 rows, 1-40 columns) bit-equal, ranks equal, and 160 Dimension-2 seam-string fits (6-305 points) bit-equal (400 + 400 in the full run); tests/curves_native_parity.rs's 200 Dimension-3 fits now equal in coefficients and fitted values (asserted; were 200 of 200 different). One binary: both gates 0 = the R950 bytes; on: Benchy classic in order 190,653 -> 190,680 of 190,680 and the whole file byte-identical to target/parity-ref/benchy-016.gcode (cmp), Benchy arachne 243,141 -> 243,147 (verbatim 248,149 -> 248,180), Majora same bytes (nearest seam).
+- [x] `fit_linear_spline` (line 180) → `geometry/curves.rs:506`
+- [v] `fit_cubic_bspline` (line 192) → `geometry/curves.rs:529` — R951: CURVES_FULLPIV_QR (faithful, geometry/curves.rs): fit_curve solves T with FullPivHouseholderQrF32, a port of Eigen 5.0.1's FullPivHouseholderQR<MatrixXf> computeInPlace / _solve_impl as the pin's build runs them (float, NEON 4-lane packets with FMA: the redux sum with two packet accumulators, the InnerProduct dot with four, the row-major GEMV of applyHouseholderOnTheLeft, the coefficient-based product of the solve, the column-major GEMV with alpha -1 inside the panel-8 triangular solve, maxCoeff's first occurrence). CURVES_KERNEL_F32 (R938) made faithful: the kernel in float as Bicubic.hpp 198-213. Native test tests/curves_fullpiv_qr_native_parity.rs against tests/data/curves_fullpiv_qr/gen.cpp (the pin's Eigen and Curves.hpp): 160 solves of dense, banded, rank-deficient and small-integer matrices (2-121 rows, 1-40 columns) bit-equal, ranks equal, and 160 Dimension-2 seam-string fits (6-305 points) bit-equal (400 + 400 in the full run); tests/curves_native_parity.rs's 200 Dimension-3 fits now equal in coefficients and fitted values (asserted; were 200 of 200 different). One binary: both gates 0 = the R950 bytes; on: Benchy classic in order 190,653 -> 190,680 of 190,680 and the whole file byte-identical to target/parity-ref/benchy-016.gcode (cmp), Benchy arachne 243,141 -> 243,147 (verbatim 248,149 -> 248,180), Majora same bytes (nearest seam).
+- [x] `fit_catmul_rom_spline` (line 204) → `geometry/curves.rs:552`
 
 **class `PiecewiseFittedCurve`**
 
@@ -7758,7 +7761,7 @@ Rust file: `geometry/medial_axis.rs`. Status: **partial**. Not listed: 2 constru
 - [~] `discretize` (line 39) → `arachne/skeletal_trapezoidation.rs, geometry/voronoi_visual_utils.rs` — not in the paired file
 - [~] `parabola_y` (line 129) → `geometry/voronoi_visual_utils.rs` — not in the paired file
 - [~] `get_point_projection` (line 143) → `geometry/voronoi_visual_utils.rs` — not in the paired file
-- [~] `cast` (line 171) → `geometry/voronoi_visual_utils.rs` — not in the paired file
+- [~] `cast` (line 171) → `bounding_box.rs, geometry/voronoi_visual_utils.rs` — not in the paired file
 
 ### `Geometry/Voronoi` (.cpp+.hpp)
 
@@ -8183,7 +8186,7 @@ Rust file: `libslic3r.rs`. Status: **partial**. Not listed: 1 constructors.
 - [ ] `clear_and_shrink` (line 153) → `libslic3r.rs`
 - [ ] `append_reversed` (line 163) → `libslic3r.rs`
 - [ ] `append_reversed` (line 173) → `libslic3r.rs`
-- [~] `cast` (line 187) → `geometry/voronoi_visual_utils.rs` — not in the paired file
+- [~] `cast` (line 187) → `bounding_box.rs, geometry/voronoi_visual_utils.rs` — not in the paired file
 - [ ] `remove_nulls` (line 197) → `libslic3r.rs`
 - [~] `sort_remove_duplicates` (line 205) → `filament_group_utils.rs, preset_bundle.rs, print.rs` — not in the paired file
 - [ ] `make_unique` (line 213) → `libslic3r.rs`
@@ -8670,33 +8673,33 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **free functions**
 
-- [v] `new_clone` (line 139) → `model.rs:5611` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
-- [~] `make_clone` (line 146) → `model.rs:5618` — divergent
-- [x] `add_textured_mesh_to_model` (line 284) → `model.rs:7373`
-- [x] `auto_extruder_id` (line 920) → `model.rs:7363`
-- [x] `add_cut_volume` (line 1295) → `model.rs:7473`
+- [v] `new_clone` (line 139) → `model.rs:5880` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
+- [~] `make_clone` (line 146) → `model.rs:5887` — divergent
+- [x] `add_textured_mesh_to_model` (line 284) → `model.rs:7642`
+- [x] `auto_extruder_id` (line 920) → `model.rs:7632`
+- [x] `add_cut_volume` (line 1295) → `model.rs:7742`
 - [x] `model_volumes_sort_by_id` (line 1434) → `model.rs:3159`
 - [x] `model_volume_find_by_id` (line 1439) → `model.rs:3164`
-- [x] `invalidate_translations` (line 2434) → `model.rs:7348`
-- [x] `reset_instance_transformation` (line 2447) → `model.rs:7390`
+- [x] `invalidate_translations` (line 2434) → `model.rs:7617`
+- [x] `reset_instance_transformation` (line 2447) → `model.rs:7659`
 - [x] `get_real_filament_id` (line 4182) → `model.rs:3673`
 - [v] `getadhesionCoeff` (line 4481) → `model.rs:3636` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [v] `getTemperatureFromExtruder` (line 4498) → `model.rs:3652` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_object_list_equal` (line 4744) → `model.rs:7506` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_object_list_extended` (line 4756) → `model.rs:7519` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_object_list_equal` (line 4744) → `model.rs:7775` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_object_list_extended` (line 4756) → `model.rs:7788` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `model_volume_list_changed` (line 4767) → `model.rs` — another overload of the name is ported
-- [v] `model_volume_list_changed` (line 4804) → `model.rs:7575` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_volume_list_changed` (line 4804) → `model.rs:7844` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `model_volume_list_changed` (line 4809) → `model.rs` — another overload of the name is ported
-- [x] `model_property_changed` (line 4817) → `model.rs:7585`
-- [v] `model_custom_supports_data_changed` (line 4841) → `model.rs:7615` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_custom_fuzzy_skin_data_changed` (line 4848) → `model.rs:7622` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_custom_seam_data_changed` (line 4855) → `model.rs:7629` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_mmu_segmentation_data_changed` (line 4862) → `model.rs:7636` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_brim_points_data_changed` (line 4869) → `model.rs:7643` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_has_multi_part_objects` (line 4880) → `model.rs:7656` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `model_has_advanced_features` (line 4888) → `model.rs:7666` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `check_model_ids_validity` (line 4907) → `model.rs:7687`
-- [x] `check_model_ids_equal` (line 4931) → `model.rs:7713`
+- [x] `model_property_changed` (line 4817) → `model.rs:7854`
+- [v] `model_custom_supports_data_changed` (line 4841) → `model.rs:7884` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_custom_fuzzy_skin_data_changed` (line 4848) → `model.rs:7891` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_custom_seam_data_changed` (line 4855) → `model.rs:7898` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_mmu_segmentation_data_changed` (line 4862) → `model.rs:7905` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_brim_points_data_changed` (line 4869) → `model.rs:7912` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_has_multi_part_objects` (line 4880) → `model.rs:7925` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `model_has_advanced_features` (line 4888) → `model.rs:7935` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `check_model_ids_validity` (line 4907) → `model.rs:7956`
+- [x] `check_model_ids_equal` (line 4931) → `model.rs:7982`
 
 **class `CutConnector`**
 
@@ -8749,74 +8752,74 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [x] `update_links_bottom_up_recursive` (line 194) → `model.rs:4078`
 - [x] `clear_assembly_artifacts` (line 207) → `model.rs:4096`
 - [x] `read_from_step` (line 226) → `model.rs:4116`
-- [~] `read_from_file` (line 306) → `g_code.rs` — not in the paired file
-- [x] `read_from_archive` (line 494) → `model.rs:4193`
-- [v] `add_object` (line 581) → `model.rs:4317` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [~] `read_from_file` (line 306) → `model.rs:4195` — partial
+- [x] `read_from_archive` (line 494) → `model.rs:4462`
+- [v] `add_object` (line 581) → `model.rs:4586` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `add_object` (line 587) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
 - [~] `add_object` (line 605) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
 - [~] `add_object` (line 623) → `format/assembly_steps_json.rs, print.rs` — not in the paired file
-- [x] `set_assembly_pos` (line 646) → `model.rs:4381`
-- [v] `delete_object` (line 674) → `model.rs:4410` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `set_assembly_pos` (line 646) → `model.rs:4650`
+- [v] `delete_object` (line 674) → `model.rs:4679` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
 - [~] `delete_object` (line 683) → `model.rs` — another overload of the name is ported
 - [~] `delete_object` (line 701) → `model.rs` — another overload of the name is ported
-- [v] `clear_objects` (line 719) → `model.rs:4426` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `collect_reusable_objects` (line 735) → `model.rs:5423` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `set_object_backup_id` (line 751) → `model.rs:4435`
+- [v] `clear_objects` (line 719) → `model.rs:4695` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `collect_reusable_objects` (line 735) → `model.rs:5692` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_object_backup_id` (line 751) → `model.rs:4704`
 - [~] `get_object_backup_id` (line 757) → `model.rs` — another overload of the name is ported
-- [x] `get_object_backup_id` (line 766) → `model.rs:4443`
-- [v] `delete_material` (line 771) → `model.rs:4453` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `clear_materials` (line 780) → `model.rs:4458` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `add_material` (line 787) → `model.rs:4463` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_object_backup_id` (line 766) → `model.rs:4712`
+- [v] `delete_material` (line 771) → `model.rs:4722` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `clear_materials` (line 780) → `model.rs:4727` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `add_material` (line 787) → `model.rs:4732` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `add_material` (line 796) → `model.rs` — another overload of the name is ported
-- [v] `add_default_instances` (line 810) → `model.rs:4490` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `bounding_box` (line 820) → `model.rs:4501` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `bounding_box_in_assembly_view` (line 828) → `model.rs:4511`
-- [v] `update_print_volume_state` (line 840) → `model.rs:5472` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `center_instances_around_point` (line 852) → `model.rs:4523` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `mesh` (line 874) → `model.rs:4557` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `duplicate_objects_grid` (line 882) → `model.rs:4566` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `looks_like_multipart_object` (line 900) → `model.rs:4589` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_multipart_object` (line 928) → `model.rs:4611` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `looks_like_imperial_units` (line 981) → `model.rs:4672` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_from_imperial_units` (line 1006) → `model.rs:4702` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `looks_like_saved_in_meters` (line 1028) → `model.rs:4724` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_from_meters` (line 1040) → `model.rs:4739` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `removed_objects_with_zero_volume` (line 1063) → `model.rs:4762` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `adjust_min_z` (line 1077) → `model.rs:4781` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `propose_export_file_name_and_path` (line 1098) → `model.rs:4797` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `get_auxiliary_file_temp_path` (line 1117) → `model.rs:4816`
+- [v] `add_default_instances` (line 810) → `model.rs:4759` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `bounding_box` (line 820) → `model.rs:4770` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `bounding_box_in_assembly_view` (line 828) → `model.rs:4780`
+- [v] `update_print_volume_state` (line 840) → `model.rs:5741` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `center_instances_around_point` (line 852) → `model.rs:4792` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `mesh` (line 874) → `model.rs:4826` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `duplicate_objects_grid` (line 882) → `model.rs:4835` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `looks_like_multipart_object` (line 900) → `model.rs:4858` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_multipart_object` (line 928) → `model.rs:4880` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `looks_like_imperial_units` (line 981) → `model.rs:4941` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_from_imperial_units` (line 1006) → `model.rs:4971` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `looks_like_saved_in_meters` (line 1028) → `model.rs:4993` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_from_meters` (line 1040) → `model.rs:5008` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `removed_objects_with_zero_volume` (line 1063) → `model.rs:5031` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `adjust_min_z` (line 1077) → `model.rs:5050` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `propose_export_file_name_and_path` (line 1098) → `model.rs:5066` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_auxiliary_file_temp_path` (line 1117) → `model.rs:5085`
 - [~] `get_backup_path` (line 1123) → `model.rs` — another overload of the name is ported
-- [x] `remove_backup_path_if_exist` (line 1191) → `model.rs:4860`
-- [~] `get_backup_path` (line 1204) → `model.rs:4825` — partial
-- [~] `set_backup_path` (line 1218) → `model.rs:4884` — divergent
-- [x] `load_from` (line 1234) → `model.rs:5439`
-- [x] `set_need_backup` (line 1269) → `model.rs:4896`
+- [x] `remove_backup_path_if_exist` (line 1191) → `model.rs:5129`
+- [~] `get_backup_path` (line 1204) → `model.rs:5094` — partial
+- [~] `set_backup_path` (line 1218) → `model.rs:5153` — divergent
+- [x] `load_from` (line 1234) → `model.rs:5708`
+- [x] `set_need_backup` (line 1269) → `model.rs:5165`
 - [~] `propose_export_file_name_and_path` (line 1274) → `model.rs` — another overload of the name is ported
-- [v] `is_fdm_support_painted` (line 1279) → `model.rs:4914` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `is_seam_painted` (line 1284) → `model.rs:4919` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `is_mm_painted` (line 1289) → `model.rs:4924` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `SetDesigner` (line 1745) → `model.rs:4929`
-- [x] `set_assembly_tree_data` (line 1756) → `model.rs:4942`
-- [x] `set_assembly_tree_json_str` (line 1760) → `model.rs:4974`
-- [x] `set_assembly_steps_tree_data` (line 1765) → `model.rs:4950`
-- [x] `set_assembly_steps_json_str` (line 1769) → `model.rs:4978`
-- [x] `set_assembly_model_json_str` (line 1776) → `model.rs:4982`
-- [x] `note_loaded_assembly_steps_meta` (line 1779) → `model.rs:4954`
-- [x] `get_curr_plate_custom_gcodes` (line 1792) → `model.rs:4987`
+- [v] `is_fdm_support_painted` (line 1279) → `model.rs:5183` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `is_seam_painted` (line 1284) → `model.rs:5188` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `is_mm_painted` (line 1289) → `model.rs:5193` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `SetDesigner` (line 1745) → `model.rs:5198`
+- [x] `set_assembly_tree_data` (line 1756) → `model.rs:5211`
+- [x] `set_assembly_tree_json_str` (line 1760) → `model.rs:5243`
+- [x] `set_assembly_steps_tree_data` (line 1765) → `model.rs:5219`
+- [x] `set_assembly_steps_json_str` (line 1769) → `model.rs:5247`
+- [x] `set_assembly_model_json_str` (line 1776) → `model.rs:5251`
+- [x] `note_loaded_assembly_steps_meta` (line 1779) → `model.rs:5223`
+- [x] `get_curr_plate_custom_gcodes` (line 1792) → `model.rs:5256`
 - [x] `getBedPolygon` (line 1841) → `model.rs:600`
-- [x] `get_material` (line 1870) → `model.rs:4485` — read against the C++ in R914 (the estimate says partial)
-- [v] `translate` (line 1886) → `model.rs:4550` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `print_info` (line 1903) → `model.rs:4995`
-- [x] `is_need_backup` (line 1917) → `model.rs:4901`
+- [x] `get_material` (line 1870) → `model.rs:4754` — read against the C++ in R914 (the estimate says partial)
+- [v] `translate` (line 1886) → `model.rs:4819` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `print_info` (line 1903) → `model.rs:5264`
+- [x] `is_need_backup` (line 1917) → `model.rs:5170`
 - [~] `load` (line 1940) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `save` (line 1944) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [x] `setPrintSpeedTable` (line 4091) → `model.rs:5314`
-- [v] `setExtruderParams` (line 4151) → `model.rs:5386` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `obj_import_color_deal` (line 4191) → `model.rs:5006`
-- [x] `obj_import_vertex_color_deal` (line 4224) → `model.rs:5046`
-- [x] `obj_import_face_color_deal` (line 4340) → `model.rs:5180`
-- [v] `findMaxSpeed` (line 4368) → `model.rs:5220` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `getThermalLength` (line 4405) → `model.rs:5280` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `setPrintSpeedTable` (line 4091) → `model.rs:5583`
+- [v] `setExtruderParams` (line 4151) → `model.rs:5655` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `obj_import_color_deal` (line 4191) → `model.rs:5275`
+- [x] `obj_import_vertex_color_deal` (line 4224) → `model.rs:5315`
+- [x] `obj_import_face_color_deal` (line 4340) → `model.rs:5449`
+- [v] `findMaxSpeed` (line 4368) → `model.rs:5489` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `getThermalLength` (line 4405) → `model.rs:5549` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `getThermalLength` (line 4426) → `model.rs` — another overload of the name is ported
 
 **class `ModelConfigObject`**
@@ -8881,94 +8884,94 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 
 **class `ModelObject`**
 
-- [x] `const_volumes` (line 397) → `model.rs:5716` — read against the C++ in R914 (the estimate says partial)
+- [x] `const_volumes` (line 397) → `model.rs:5985` — read against the C++ in R914 (the estimate says partial)
 - [x] `get_model` (line 398) → `model.rs:849`
-- [x] `get_model` (line 399) → `model.rs:5657`
-- [x] `get_config_value` (line 402) → `model.rs:7223`
-- [v] `is_multiparts` (line 417) → `model.rs:5830` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `has_custom_layering` (line 428) → `model.rs:5835` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `invalidate_bounding_box` (line 443) → `model.rs:5915`
+- [x] `get_model` (line 399) → `model.rs:5926`
+- [x] `get_config_value` (line 402) → `model.rs:7492`
+- [v] `is_multiparts` (line 417) → `model.rs:6099` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `has_custom_layering` (line 428) → `model.rs:6104` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `invalidate_bounding_box` (line 443) → `model.rs:6184`
 - [v] `translate` (line 478) → `model.rs:1058` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `scale` (line 481) → `model.rs:1032`
 - [~] `scale` (line 482) → `arrange.rs, bounding_box.rs, brim.rs` — not in the paired file
-- [v] `is_cut` (line 499) → `model.rs:6337` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `set_new_unique_id` (line 650) → `model.rs:5630`
-- [x] `set_model` (line 673) → `model.rs:5663`
+- [v] `is_cut` (line 499) → `model.rs:6606` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `set_new_unique_id` (line 650) → `model.rs:5899`
+- [x] `set_model` (line 673) → `model.rs:5932`
 - [~] `save` (line 686) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `load` (line 695) → `app_config.rs, config.rs, format/assembly_steps_json.rs` — not in the paired file
-- [v] `assign_new_unique_ids_recursive` (line 1407) → `model.rs:5668` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `get_backup_id` (line 1426) → `model.rs:5680`
-- [x] `make_boolean` (line 1429) → `model.rs:5692`
+- [v] `assign_new_unique_ids_recursive` (line 1407) → `model.rs:5937` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `get_backup_id` (line 1426) → `model.rs:5949`
+- [x] `make_boolean` (line 1429) → `model.rs:5961`
 - [~] `add_volume` (line 1450) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_volume` (line 1463) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_volume` (line 1476) → `format/assembly_steps_json.rs` — not in the paired file
-- [v] `add_volume` (line 1493) → `model.rs:5749` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `add_volume_with_shared_mesh` (line 1504) → `model.rs:5759`
-- [v] `delete_volume` (line 1518) → `model.rs:5772` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `clear_volumes` (line 1557) → `model.rs:5804` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `is_fdm_support_painted` (line 1567) → `model.rs:5810` — read against the C++ in R914 (the estimate says partial)
-- [x] `is_seam_painted` (line 1572) → `model.rs:5815` — read against the C++ in R914 (the estimate says partial)
-- [v] `is_mm_painted` (line 1577) → `model.rs:5820` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [~] `is_fuzzy_skin_painted` (line 1582) → `model.rs:5825` — partial
-- [v] `sort_volumes` (line 1587) → `model.rs:5841` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `add_instance` (line 1603) → `model.rs:5851` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `add_volume` (line 1493) → `model.rs:6018` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `add_volume_with_shared_mesh` (line 1504) → `model.rs:6028`
+- [v] `delete_volume` (line 1518) → `model.rs:6041` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `clear_volumes` (line 1557) → `model.rs:6073` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `is_fdm_support_painted` (line 1567) → `model.rs:6079` — read against the C++ in R914 (the estimate says partial)
+- [x] `is_seam_painted` (line 1572) → `model.rs:6084` — read against the C++ in R914 (the estimate says partial)
+- [v] `is_mm_painted` (line 1577) → `model.rs:6089` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [~] `is_fuzzy_skin_painted` (line 1582) → `model.rs:6094` — partial
+- [v] `sort_volumes` (line 1587) → `model.rs:6110` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `add_instance` (line 1603) → `model.rs:6120` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `add_instance` (line 1614) → `format/assembly_steps_json.rs` — not in the paired file
 - [~] `add_instance` (line 1622) → `format/assembly_steps_json.rs` — not in the paired file
-- [v] `delete_instance` (line 1632) → `model.rs:5888` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [v] `delete_last_instance` (line 1640) → `model.rs:5894` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `clear_instances` (line 1645) → `model.rs:5899` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `mesh` (line 1677) → `model.rs:5953` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `raw_mesh` (line 1692) → `model.rs:5965` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `raw_indexed_triangle_set` (line 1708) → `model.rs:5978` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `full_raw_mesh_bounding_box` (line 1750) → `model.rs:6033` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `instance_bounding_box` (line 1777) → `model.rs:6064` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
+- [v] `delete_instance` (line 1632) → `model.rs:6157` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [v] `delete_last_instance` (line 1640) → `model.rs:6163` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `clear_instances` (line 1645) → `model.rs:6168` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `mesh` (line 1677) → `model.rs:6222` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `raw_mesh` (line 1692) → `model.rs:6234` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `raw_indexed_triangle_set` (line 1708) → `model.rs:6247` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `full_raw_mesh_bounding_box` (line 1750) → `model.rs:6302` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `instance_bounding_box` (line 1777) → `model.rs:6333` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as divergent to the estimate)
 - [~] `instance_bounding_box` (line 1789) → `model.rs` — another overload of the name is ported
-- [v] `instance_convex_hull_bounding_box` (line 1800) → `model.rs:6081` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `instance_convex_hull_bounding_box` (line 1800) → `model.rs:6350` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [~] `instance_convex_hull_bounding_box` (line 1805) → `model.rs` — another overload of the name is ported
-- [x] `convex_hull_2d` (line 1820) → `model.rs:6099` — read against the C++ in R914 (the estimate says partial)
-- [v] `center_around_origin` (line 1870) → `model.rs:6111` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `ensure_on_bed` (line 1883) → `model.rs:6124` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate_instances` (line 1907) → `model.rs:6150` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate_instance` (line 1914) → `model.rs:6157` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `translate` (line 1922) → `model.rs:6171` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `scale` (line 1932) → `model.rs:6184`
-- [~] `rotate` (line 1940) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
-- [x] `rotate` (line 1949) → `model.rs:6209`
-- [x] `mirror` (line 1964) → `model.rs:6224`
-- [v] `scale_mesh_after_creation` (line 1973) → `model.rs:6232` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `convert_units` (line 1982) → `model.rs:6245` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `materials_count` (line 2049) → `model.rs:6309` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `facets_count` (line 2057) → `model.rs:6315` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `parts_count` (line 2066) → `model.rs:6326` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `has_connectors` (line 2075) → `model.rs:6342` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_connector_mesh` (line 2084) → `model.rs:6353` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `apply_cut_connectors` (line 2126) → `model.rs:6382` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `invalidate_cut` (line 2156) → `model.rs:6425` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `delete_connectors` (line 2163) → `model.rs:6433` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `synchronize_model_after_cut` (line 2171) → `model.rs:6445`
-- [v] `apply_cut_attributes` (line 2180) → `model.rs:6458` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `clone_for_cut` (line 2204) → `model.rs:6489` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `calculate_cut_plane_inverse_matrix` (line 2238) → `model.rs:6498`
-- [x] `process_connector_cut` (line 2268) → `model.rs:6584`
-- [x] `process_modifier_cut` (line 2345) → `model.rs:6542`
-- [x] `process_volume_cut` (line 2373) → `model.rs:6687`
-- [x] `process_solid_part_cut` (line 2401) → `model.rs:6722`
+- [x] `convex_hull_2d` (line 1820) → `model.rs:6368` — read against the C++ in R914 (the estimate says partial)
+- [v] `center_around_origin` (line 1870) → `model.rs:6380` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `ensure_on_bed` (line 1883) → `model.rs:6393` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate_instances` (line 1907) → `model.rs:6419` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate_instance` (line 1914) → `model.rs:6426` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `translate` (line 1922) → `model.rs:6440` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `scale` (line 1932) → `model.rs:6453`
+- [~] `rotate` (line 1940) → `arrange.rs, bounding_box.rs, ex_polygon.rs` — not in the paired file
+- [x] `rotate` (line 1949) → `model.rs:6478`
+- [x] `mirror` (line 1964) → `model.rs:6493`
+- [v] `scale_mesh_after_creation` (line 1973) → `model.rs:6501` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `convert_units` (line 1982) → `model.rs:6514` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `materials_count` (line 2049) → `model.rs:6578` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `facets_count` (line 2057) → `model.rs:6584` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `parts_count` (line 2066) → `model.rs:6595` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `has_connectors` (line 2075) → `model.rs:6611` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_connector_mesh` (line 2084) → `model.rs:6622` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `apply_cut_connectors` (line 2126) → `model.rs:6651` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `invalidate_cut` (line 2156) → `model.rs:6694` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `delete_connectors` (line 2163) → `model.rs:6702` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `synchronize_model_after_cut` (line 2171) → `model.rs:6714`
+- [v] `apply_cut_attributes` (line 2180) → `model.rs:6727` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `clone_for_cut` (line 2204) → `model.rs:6758` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `calculate_cut_plane_inverse_matrix` (line 2238) → `model.rs:6767`
+- [x] `process_connector_cut` (line 2268) → `model.rs:6853`
+- [x] `process_modifier_cut` (line 2345) → `model.rs:6811`
+- [x] `process_volume_cut` (line 2373) → `model.rs:6956`
+- [x] `process_solid_part_cut` (line 2401) → `model.rs:6991`
 - [~] `cut` (line 2509) → `cut_utils.rs` — not in the paired file
 - [~] `segment` (line 2616) → `edge_grid.rs, mesh_boolean.rs` — not in the paired file
-- [v] `split` (line 2720) → `model.rs:6771` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `merge` (line 2840) → `model.rs:6898` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `merge_volumes` (line 2860) → `model.rs:6919`
-- [x] `bake_xy_rotation_into_meshes` (line 2943) → `model.rs:7012`
-- [v] `get_min_z` (line 2995) → `model.rs:7066` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_max_z` (line 3008) → `model.rs:7079` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_instance_min_z` (line 3021) → `model.rs:7092` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_instance_max_z` (line 3057) → `model.rs:7124` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `update_instances_print_volume_state` (line 3078) → `model.rs:7150` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
-- [x] `print_info` (line 3148) → `model.rs:7233`
-- [v] `get_export_filename` (line 3193) → `model.rs:7281` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_object_stl_stats` (line 3213) → `model.rs:7304` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [v] `get_repaired_errors_count` (line 3241) → `model.rs:7332` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [x] `scale_to_fit` (line 3842) → `model.rs:6193`
+- [v] `split` (line 2720) → `model.rs:7040` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `merge` (line 2840) → `model.rs:7167` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `merge_volumes` (line 2860) → `model.rs:7188`
+- [x] `bake_xy_rotation_into_meshes` (line 2943) → `model.rs:7281`
+- [v] `get_min_z` (line 2995) → `model.rs:7335` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_max_z` (line 3008) → `model.rs:7348` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_instance_min_z` (line 3021) → `model.rs:7361` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_instance_max_z` (line 3057) → `model.rs:7393` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `update_instances_print_volume_state` (line 3078) → `model.rs:7419` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted) (the body reads as partial to the estimate)
+- [x] `print_info` (line 3148) → `model.rs:7502`
+- [v] `get_export_filename` (line 3193) → `model.rs:7550` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_object_stl_stats` (line 3213) → `model.rs:7573` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [v] `get_repaired_errors_count` (line 3241) → `model.rs:7601` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
+- [x] `scale_to_fit` (line 3842) → `model.rs:6462`
 
 **class `ModelVolume`**
 
@@ -9060,7 +9063,7 @@ Rust file: `model.rs`. Status: **partial**. Not listed: 33 constructors, 2 destr
 - [v] `translate` (line 3832) → `model.rs:2955` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
 - [x] `scale` (line 3837) → `model.rs:2961`
 - [v] `assign_new_unique_ids_recursive` (line 3855) → `model.rs:2967` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
-- [~] `rotate` (line 3865) → `arrange.rs, bounding_box.rs, ex_polygon_collection.rs` — not in the paired file
+- [~] `rotate` (line 3865) → `arrange.rs, bounding_box.rs, ex_polygon.rs` — not in the paired file
 - [x] `rotate` (line 3876) → `model.rs:2986` — read against the C++ in R914 (the estimate says partial)
 - [x] `mirror` (line 3881) → `model.rs:2993`
 - [v] `scale_geometry_after_creation` (line 3895) → `model.rs:3005` — R914: tests/model_native_parity.rs: against the pin's Model.cpp linked from the engine build: three models, 7 instances with random affine transforms including mirrors, about 20 operation scenarios (objects, volumes, instances, materials, bounding boxes, unit conversion, splits and merges, cut attributes, print volume states, facet annotations, change detection); 1,038 lines equal, doubles and floats bit for bit (lines that depend on Transformation's SVD decomposition or on other units are reported, not counted)
@@ -10777,22 +10780,22 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **free functions**
 
-- [v] `layered_print_cleareance_valid` (line 1124) → `print.rs:12250` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
-- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:12518`
-- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:12536`
-- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:11561`
-- [x] `getObjectExtruderMap` (line 2150) → `print.rs:11594`
-- [x] `convex_outline_gap` (line 3749) → `print.rs:11622`
-- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:11638`
-- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:11671`
-- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:11691`
-- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:11741`
-- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:11779`
-- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:12402`
-- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:12416`
-- [x] `print_instance_hull` (line 3912) → `print.rs:12422`
-- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:12449`
-- [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:6095`
+- [v] `layered_print_cleareance_valid` (line 1124) → `print.rs:12270` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
+- [x] `compacted_tower_half_clearance` (line 1369) → `print.rs:12538`
+- [x] `compacted_tower_body_tier` (line 1422) → `print.rs:12556`
+- [x] `multi_diameter_brim_flow_on_nozzle` (line 1946) → `print.rs:11581`
+- [x] `getObjectExtruderMap` (line 2150) → `print.rs:11614`
+- [x] `convex_outline_gap` (line 3749) → `print.rs:11642`
+- [x] `compacted_tower_footprint_padding` (line 3763) → `print.rs:11658`
+- [x] `compacted_wipe_tower_rings` (line 3782) → `print.rs:11691`
+- [x] `compacted_wipe_tower_zone` (line 3790) → `print.rs:11711`
+- [x] `compacted_wipe_tower_clearance` (line 3839) → `print.rs:11761`
+- [x] `compacted_wipe_tower_offender_outline` (line 3883) → `print.rs:11799`
+- [x] `should_show_height_limit_lines` (line 3893) → `print.rs:12422`
+- [x] `compacted_wipe_tower_clearance_error` (line 3905) → `print.rs:12436`
+- [x] `print_instance_hull` (line 3912) → `print.rs:12442`
+- [x] `estimated_wipe_tower_footprint` (line 3930) → `print.rs:12469`
+- [x] `seed_emitted_tower_foundation` (line 4148) → `print.rs:6115`
 - [~] `to_json` (line 4596) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4604) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
 - [~] `to_json` (line 4611) → `arrange.rs, debug/validation.rs, format/assembly_steps_json.rs` — not in the paired file
@@ -10820,7 +10823,7 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 
 **class `CompactedTowerZone`**
 
-- [x] `empty` (line 1387) → `print.rs:11665`
+- [x] `empty` (line 1387) → `print.rs:11685`
 
 **class `ConstVectorOfPtrsAdaptor`**
 
@@ -10828,233 +10831,233 @@ Rust file: `print.rs`. Status: **partial**. Not listed: 12 constructors, 1 destr
 - [~] `end` (line 208) → `arachne/utils/extrusion_line.rs, clipper_utils.rs, edge_grid.rs` — not in the paired file
 - [~] `front` (line 209) → `arachne/utils/extrusion_line.rs, edge_grid.rs, gcode/tool_ordering.rs` — not in the paired file
 - [~] `back` (line 211) → `arachne/utils/extrusion_line.rs, edge_grid.rs, gcode/tool_ordering.rs` — not in the paired file
-- [x] `size` (line 212) → `print.rs:7821`
+- [x] `size` (line 212) → `print.rs:7841`
 - [~] `empty` (line 213) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
-- [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, model.rs` — not in the paired file
+- [~] `at` (line 215) → `format/objparser.rs, g_code_reader.rs, geometry/curves.rs` — not in the paired file
 - [~] `vector` (line 216) → `geometry/line.rs, texture_to_color/cgal_utils.rs` — not in the paired file
 
 **class `FakeWipeTower`**
 
-- [x] `set_fake_extrusion_data` (line 733) → `print.rs:8155`
-- [x] `set_pos` (line 744) → `print.rs:8166`
-- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:8172`
-- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:8210`
+- [x] `set_fake_extrusion_data` (line 733) → `print.rs:8175`
+- [x] `set_pos` (line 744) → `print.rs:8186`
+- [x] `getFakeExtrusionPathsFromWipeTower` (line 746) → `print.rs:8192`
+- [x] `getTrueExtrusionLayersFromWipeTower` (line 5854) → `print.rs:8230`
 
 **class `Print`**
 
-- [x] `clear` (line 60) → `print.rs:8947`
-- [x] `has_tpu_filament` (line 74) → `print.rs:8964`
-- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:8977` — read against the C++ in R915 (the estimate says partial)
-- [x] `set_calib_params` (line 449) → `print.rs:9122`
-- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:9127`
-- [x] `invalidate_step` (line 459) → `print.rs:9132`
-- [x] `is_step_done` (line 470) → `print.rs:8129` — read against the C++ in R915 (the estimate says partial)
-- [v] `object_extruders` (line 482) → `print.rs:9164` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `support_material_extruders` (line 523) → `print.rs:9198` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `extruders` (line 558) → `print.rs:9234` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `printed_filaments` (line 578) → `print.rs:10591` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:9255` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:10623` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `num_object_instances` (line 713) → `print.rs:9299` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `max_allowed_layer_height` (line 721) → `print.rs:9308` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `print_object_ids` (line 732) → `print.rs:9318`
-- [v] `has_infinite_skirt` (line 742) → `print.rs:9327` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_skirt` (line 747) → `print.rs:9333` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_brim` (line 752) → `print.rs:9339` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `layers_sorted_for_object` (line 758) → `print.rs:10708`
-- [v] `sequential_print_clearance_valid` (line 777) → `print.rs:11124` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
-- [x] `technology` (line 910) → `print.rs:9344`
-- [v] `empty` (line 918) → `print.rs:9349` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_step_done` (line 933) → `print.rs:9142`
-- [x] `finished` (line 937) → `print.rs:9354`
-- [v] `has_auto_brim` (line 943) → `print.rs:9359` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:9364`
-- [x] `objects` (line 994) → `print.rs:9381`
-- [x] `get_object` (line 995) → `print.rs:9385`
+- [x] `clear` (line 60) → `print.rs:8967`
+- [x] `has_tpu_filament` (line 74) → `print.rs:8984`
+- [x] `invalidate_state_by_config_options` (line 87) → `print.rs:8997` — read against the C++ in R915 (the estimate says partial)
+- [x] `set_calib_params` (line 449) → `print.rs:9142`
+- [x] `set_nozzle_loaded_filament_info` (line 454) → `print.rs:9147`
+- [x] `invalidate_step` (line 459) → `print.rs:9152`
+- [x] `is_step_done` (line 470) → `print.rs:8149` — read against the C++ in R915 (the estimate says partial)
+- [v] `object_extruders` (line 482) → `print.rs:9184` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `support_material_extruders` (line 523) → `print.rs:9218` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `extruders` (line 558) → `print.rs:9254` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `printed_filaments` (line 578) → `print.rs:10611` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `uses_multiple_nozzle_diameters` (line 606) → `print.rs:9275` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `resolve_single_diameter_layering_nozzle` (line 646) → `print.rs:10643` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `num_object_instances` (line 713) → `print.rs:9319` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `max_allowed_layer_height` (line 721) → `print.rs:9328` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `print_object_ids` (line 732) → `print.rs:9338`
+- [v] `has_infinite_skirt` (line 742) → `print.rs:9347` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_skirt` (line 747) → `print.rs:9353` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_brim` (line 752) → `print.rs:9359` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `layers_sorted_for_object` (line 758) → `print.rs:10728`
+- [v] `sequential_print_clearance_valid` (line 777) → `print.rs:11144` — R946: tests/print_clearance_native_parity.rs (clearance_checks_match_the_pin): the pin's Print::sequential_print_clearance_valid (Print.cpp 777-1122) and layered_print_cleareance_valid (1123-1241) from tests/data/print_clearance/gen.cpp after the pin's Print::apply on 8 scenarios (by object with skirt, exclusion area, rotated instance and tall objects; by layer with the prime tower near objects, rotated, in a clumping area and inside the exclusion area): all 72 lines equal (messages, objects, collision and height polygons, warnings, arrange_order). (the body reads as partial to the estimate)
+- [x] `technology` (line 910) → `print.rs:9364`
+- [v] `empty` (line 918) → `print.rs:9369` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_step_done` (line 933) → `print.rs:9162`
+- [x] `finished` (line 937) → `print.rs:9374`
+- [v] `has_auto_brim` (line 943) → `print.rs:9379` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `single_diameter_layering_nozzle` (line 984) → `print.rs:9384`
+- [x] `objects` (line 994) → `print.rs:9401`
+- [x] `get_object` (line 995) → `print.rs:9405`
 - [~] `get_object` (line 996) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
 - [~] `get_object` (line 999) → `brim.rs, model.rs, texture_painting.rs` — not in the paired file
-- [x] `statistics_by_extruder` (line 1027) → `print.rs:9390`
-- [v] `is_sequential_print` (line 1038) → `print.rs:9400` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_extruder_filament_info` (line 1072) → `print.rs:9409`
-- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:9413`
-- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:9417`
-- [x] `set_filament_print_time` (line 1080) → `print.rs:9421`
-- [x] `get_filament_print_time` (line 1081) → `print.rs:9425`
-- [x] `set_nozzle_group_result` (line 1083) → `print.rs:9429`
-- [x] `get_nozzle_group_result` (line 1084) → `print.rs:9433`
-- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:9437`
-- [x] `set_slice_used_filaments` (line 1090) → `print.rs:9441`
-- [x] `get_slice_used_filaments` (line 1094) → `print.rs:9446`
-- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:9454`
-- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:9462`
-- [v] `num_print_regions` (line 1130) → `print.rs:9471` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `set_plate_origin` (line 1135) → `print.rs:9479`
-- [x] `get_plate_origin` (line 1136) → `print.rs:9483`
-- [x] `get_modified_count` (line 1142) → `print.rs:9487`
-- [x] `is_support_used` (line 1144) → `print.rs:9491`
-- [x] `is_BBL_Printer` (line 1145) → `print.rs:9495`
-- [x] `set_BBL_Printer` (line 1146) → `print.rs:9499`
-- [x] `get_conflict_string` (line 1147) → `print.rs:9503`
-- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:9511`
-- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:9515`
-- [x] `get_rib_offset` (line 1173) → `print.rs:9519`
-- [~] `is_all_objects_are_short` (line 1192) → `print.rs:9528` — partial
-- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:4954`
-- [x] `is_filaments_compatible` (line 1268) → `print.rs:4986`
-- [x] `get_compatible_filament_type` (line 1285) → `print.rs:5010`
-- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:9534` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_indx` (line 1319) → `print.rs:9552`
-- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:9562`
-- [x] `get_nozzle_config_index` (line 1355) → `print.rs:9593`
+- [x] `statistics_by_extruder` (line 1027) → `print.rs:9410`
+- [v] `is_sequential_print` (line 1038) → `print.rs:9420` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_extruder_filament_info` (line 1072) → `print.rs:9429`
+- [x] `set_geometric_unprintable_filaments` (line 1077) → `print.rs:9433`
+- [x] `get_geometric_unprintable_filaments` (line 1078) → `print.rs:9437`
+- [x] `set_filament_print_time` (line 1080) → `print.rs:9441`
+- [x] `get_filament_print_time` (line 1081) → `print.rs:9445`
+- [x] `set_nozzle_group_result` (line 1083) → `print.rs:9449`
+- [x] `get_nozzle_group_result` (line 1084) → `print.rs:9453`
+- [x] `get_layered_nozzle_group_result` (line 1085) → `print.rs:9457`
+- [x] `set_slice_used_filaments` (line 1090) → `print.rs:9461`
+- [x] `get_slice_used_filaments` (line 1094) → `print.rs:9466`
+- [x] `set_slice_used_mixed_filaments` (line 1097) → `print.rs:9474`
+- [x] `set_slice_directly_used_filaments` (line 1103) → `print.rs:9482`
+- [v] `num_print_regions` (line 1130) → `print.rs:9491` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `set_plate_origin` (line 1135) → `print.rs:9499`
+- [x] `get_plate_origin` (line 1136) → `print.rs:9503`
+- [x] `get_modified_count` (line 1142) → `print.rs:9507`
+- [x] `is_support_used` (line 1144) → `print.rs:9511`
+- [x] `is_BBL_Printer` (line 1145) → `print.rs:9515`
+- [x] `set_BBL_Printer` (line 1146) → `print.rs:9519`
+- [x] `get_conflict_string` (line 1147) → `print.rs:9523`
+- [x] `get_wipe_tower_depth` (line 1171) → `print.rs:9531`
+- [x] `get_wipe_tower_bbx` (line 1172) → `print.rs:9535`
+- [x] `get_rib_offset` (line 1173) → `print.rs:9539`
+- [~] `is_all_objects_are_short` (line 1192) → `print.rs:9548` — partial
+- [x] `check_multi_filaments_compatibility` (line 1243) → `print.rs:4974`
+- [x] `is_filaments_compatible` (line 1268) → `print.rs:5006`
+- [x] `get_compatible_filament_type` (line 1285) → `print.rs:5030`
+- [v] `is_dynamic_group_reorder` (line 1306) → `print.rs:9554` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_indx` (line 1319) → `print.rs:9572`
+- [x] `update_filament_self_index_cache` (line 1324) → `print.rs:9582`
+- [x] `get_nozzle_config_index` (line 1355) → `print.rs:9613`
 - [~] `get_config_index` (line 1360) → `print.rs` — another overload of the name is ported
-- [x] `get_config_index` (line 1385) → `print.rs:9605`
-- [v] `validate` (line 1413) → `print.rs:11823` — R947: tests/print_clearance_native_parity.rs (validate_matches_the_pin): the pin's Print::validate (Print.cpp 1413-1844) from tests/data/print_clearance/gen.cpp (validate mode) after the pin's Print::apply on 20 cases (the clearance scenarios plus smooth timelapse and clumping by object, layer heights over the nozzle, spiral vase on two objects, a plate that does not support the filament, the precise outer wall warning, line widths too large and too small, the prime tower's relative-E, ooze prevention and precise Z checks): 60 lines equal (messages, warnings, polygons).
-- [x] `bounding_box` (line 1849) → `print.rs:10738`
-- [x] `total_bounding_box` (line 1864) → `print.rs:10754`
-- [v] `skirt_first_layer_height` (line 1903) → `print.rs:9644` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `brim_flow` (line 1918) → `print.rs:10797` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:10832` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:10848` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `skirt_flow` (line 2001) → `print.rs:10882` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `get_config_index` (line 1385) → `print.rs:9625`
+- [v] `validate` (line 1413) → `print.rs:11843` — R947: tests/print_clearance_native_parity.rs (validate_matches_the_pin): the pin's Print::validate (Print.cpp 1413-1844) from tests/data/print_clearance/gen.cpp (validate mode) after the pin's Print::apply on 20 cases (the clearance scenarios plus smooth timelapse and clumping by object, layer heights over the nozzle, spiral vase on two objects, a plate that does not support the filament, the precise outer wall warning, line widths too large and too small, the prime tower's relative-E, ooze prevention and precise Z checks): 60 lines equal (messages, warnings, polygons).
+- [x] `bounding_box` (line 1849) → `print.rs:10758`
+- [x] `total_bounding_box` (line 1864) → `print.rs:10774`
+- [v] `skirt_first_layer_height` (line 1903) → `print.rs:9664` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `brim_flow` (line 1918) → `print.rs:10817` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_brim_flow` (line 1967) → `print.rs:10852` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `multi_diameter_support_brim_flow` (line 1978) → `print.rs:10868` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `skirt_flow` (line 2001) → `print.rs:10902` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 - [~] `skirt_flow` (line 2017) → `print.rs` — another overload of the name is ported
 - [~] `skirt_flow` (line 2022) → `print.rs` — another overload of the name is ported
-- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:10924` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
-- [v] `has_support_material` (line 2048) → `print.rs:9660` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `auto_assign_extruders` (line 2058) → `print.rs:9672`
-- [~] `process` (line 2178) → `print.rs:3223` — divergent
-- [~] `export_gcode` (line 2839) → `print.rs:741` — partial
-- [~] `_make_skirt` (line 2869) → `print.rs:4556` — divergent
-- [x] `first_layer_islands` (line 3061) → `print.rs:10937`
-- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:10340`
-- [x] `translate_to_print_space` (line 3107) → `print.rs:9687`
+- [v] `multi_diameter_skirt_flow_on_brim_layer` (line 2037) → `print.rs:10944` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [v] `has_support_material` (line 2048) → `print.rs:9680` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `auto_assign_extruders` (line 2058) → `print.rs:9692`
+- [~] `process` (line 2178) → `print.rs:3243` — divergent
+- [~] `export_gcode` (line 2839) → `print.rs:761` — partial
+- [~] `_make_skirt` (line 2869) → `print.rs:4576` — divergent
+- [x] `first_layer_islands` (line 3061) → `print.rs:10957`
+- [x] `first_layer_wipe_tower_corners` (line 3082) → `print.rs:10360`
+- [x] `translate_to_print_space` (line 3107) → `print.rs:9707`
 - [~] `translate_to_print_space` (line 3112) → `print.rs` — another overload of the name is ported
-- [~] `get_filament_temp_type` (line 3116) → `print.rs:4922` — divergent
-- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:9703` — divergent
-- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:10964` — partial
-- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:11019`
-- [v] `update_filament_maps_to_config` (line 3241) → `print.rs:9723` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
-- [v] `resolve_manual_nozzle_map` (line 3322) → `print.rs:9865` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
-- [v] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs:9913` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
-- [x] `apply_config_for_render` (line 3402) → `print.rs:10009`
-- [v] `get_filament_maps` (line 3407) → `print.rs:10016` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:10020`
-- [v] `get_filament_volume_maps` (line 3417) → `print.rs:10024` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_filament_map_mode` (line 3422) → `print.rs:10028` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:10033` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:10059`
-- [v] `get_filament_usage_type` (line 3474) → `print.rs:10082` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:10136` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:10174`
-- [x] `get_extruder_printable_height` (line 3568) → `print.rs:10211`
-- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:10225` — partial
-- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:10235`
-- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:6604`
-- [v] `get_extruder_id` (line 3609) → `print.rs:10247` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `get_filament_config_idx` (line 3618) → `print.rs:10256`
-- [x] `get_process_config_idx` (line 3623) → `print.rs:10262`
-- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:10281` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [v] `has_wipe_tower` (line 3655) → `print.rs:10311` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
-- [v] `enable_timelapse_print` (line 3742) → `print.rs:10333` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:11365`
-- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:11440`
-- [x] `_make_wipe_tower` (line 4157) → `print.rs:6645`
-- [x] `output_filename` (line 4402) → `print.rs:10371`
-- [~] `set_gcode_file_ready` (line 4414) → `print.rs:10382` — partial
-- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:10388`
+- [~] `get_filament_temp_type` (line 3116) → `print.rs:4942` — divergent
+- [~] `get_hrc_by_nozzle_type` (line 3155) → `print.rs:9723` — divergent
+- [~] `get_incompatible_filaments_by_nozzle` (line 3188) → `print.rs:10984` — partial
+- [x] `finalize_first_layer_convex_hull` (line 3229) → `print.rs:11039`
+- [v] `update_filament_maps_to_config` (line 3241) → `print.rs:9743` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
+- [v] `resolve_manual_nozzle_map` (line 3322) → `print.rs:9885` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
+- [v] `update_to_config_by_nozzle_group_result` (line 3347) → `print.rs:9933` — R945: tests/print_filament_maps_native_parity.rs (update_filament_maps_to_config_matches_the_pin): the pin's Print::update_filament_maps_to_config (Print.cpp 3241-3320), Print::update_to_config_by_nozzle_group_result (3347-3400) and Print::resolve_manual_nozzle_map (3322-3345, its early return, write-back and throw) from tests/data/print_filament_maps/gen.cpp, run after the pin's Print::apply on the H2D job's project settings in three configurations (the job; two variants per filament with retraction and z-hop overrides; manual nozzle mapping with two nozzles on one extruder): 14 scenarios, every option of m_config, m_ori_full_print_config, m_full_print_config and the placeholder parser equal, and the thrown text; tests/tool_ordering_h2d_order.rs (h2d_majora_filament_maps_to_config_equal_pin_block): the live H2D path's maps equal slicer_cli's config block for the same job.
+- [x] `apply_config_for_render` (line 3402) → `print.rs:10029`
+- [v] `get_filament_maps` (line 3407) → `print.rs:10036` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_nozzle_maps` (line 3412) → `print.rs:10040`
+- [v] `get_filament_volume_maps` (line 3417) → `print.rs:10044` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_filament_map_mode` (line 3422) → `print.rs:10048` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_available_filament_map_modes` (line 3427) → `print.rs:10053` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_full_filament_extruder_variants` (line 3452) → `print.rs:10079`
+- [v] `get_filament_usage_type` (line 3474) → `print.rs:10102` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `get_physical_unprintable_filaments` (line 3504) → `print.rs:10156` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_unprintable_flow` (line 3537) → `print.rs:10194`
+- [x] `get_extruder_printable_height` (line 3568) → `print.rs:10231`
+- [~] `get_extruder_printable_polygons` (line 3573) → `print.rs:10245` — partial
+- [x] `get_extruder_unprintable_polygons` (line 3584) → `print.rs:10255`
+- [x] `get_extruder_shared_printable_polygon` (line 3597) → `print.rs:6624`
+- [v] `get_extruder_id` (line 3609) → `print.rs:10267` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `get_filament_config_idx` (line 3618) → `print.rs:10276`
+- [x] `get_process_config_idx` (line 3623) → `print.rs:10282`
+- [v] `support_material_on_wipe_tower` (line 3628) → `print.rs:10301` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [v] `has_wipe_tower` (line 3655) → `print.rs:10331` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines) (the body reads as partial to the estimate)
+- [v] `enable_timelapse_print` (line 3742) → `print.rs:10353` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `compacted_wipe_tower_clearance_valid` (line 3984) → `print.rs:11385`
+- [x] `validate_compacted_wipe_tower_clearance` (line 4052) → `print.rs:11460`
+- [x] `_make_wipe_tower` (line 4157) → `print.rs:6665`
+- [x] `output_filename` (line 4402) → `print.rs:10391`
+- [~] `set_gcode_file_ready` (line 4414) → `print.rs:10402` — partial
+- [x] `set_gcode_file_invalidated` (line 4421) → `print.rs:10408`
 - [ ] `export_gcode_from_previous_file` (line 4428) → `print.rs`
 - [~] `export_cached_data` (line 5316) → `print_base.rs` — not in the paired file
 - [~] `load_cached_data` (line 5597) → `print_base.rs` — not in the paired file
 
 **class `PrintInstance`**
 
-- [x] `get_bounding_box` (line 5836) → `print.rs:7533`
+- [x] `get_bounding_box` (line 5836) → `print.rs:7553`
 - [~] `get_convex_hull_2d` (line 5840) → `model.rs` — not in the paired file
-- [x] `shift_without_plate_offset` (line 5847) → `print.rs:7526`
+- [x] `shift_without_plate_offset` (line 5847) → `print.rs:7546`
 
 **class `PrintObject`**
 
-- [x] `configBrimWidth` (line 416) → `print.rs:7829`
-- [x] `layers` (line 417) → `print.rs:7833`
-- [x] `support_layers` (line 418) → `print.rs:7837`
-- [~] `trafo_centered` (line 421) → `print.rs:7892` — partial
-- [x] `bounding_box` (line 442) → `print.rs:7906`
-- [x] `height` (line 445) → `print.rs:7913`
-- [x] `max_z` (line 446) → `print.rs:7917`
-- [v] `has_brim` (line 457) → `print.rs:7925` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `total_layer_count` (line 472) → `print.rs:7933`
-- [x] `layer_count` (line 473) → `print.rs:7937`
+- [x] `configBrimWidth` (line 416) → `print.rs:7849`
+- [x] `layers` (line 417) → `print.rs:7853`
+- [x] `support_layers` (line 418) → `print.rs:7857`
+- [~] `trafo_centered` (line 421) → `print.rs:7912` — partial
+- [x] `bounding_box` (line 442) → `print.rs:7926`
+- [x] `height` (line 445) → `print.rs:7933`
+- [x] `max_z` (line 446) → `print.rs:7937`
+- [v] `has_brim` (line 457) → `print.rs:7945` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `total_layer_count` (line 472) → `print.rs:7953`
+- [x] `layer_count` (line 473) → `print.rs:7957`
 - [~] `get_layer` (line 475) → `gcode/multi_material.rs` — not in the paired file
-- [x] `get_layer` (line 476) → `print.rs:7941`
-- [x] `clear_tree_support_preview_cache` (line 497) → `print.rs:7980`
-- [x] `support_layer_count` (line 499) → `print.rs:7945`
-- [x] `get_support_layer` (line 501) → `print.rs:8117`
-- [x] `num_printing_regions` (line 518) → `print.rs:7949`
-- [x] `shared_regions` (line 522) → `print.rs:7964`
-- [x] `has_support` (line 524) → `print.rs:7968`
-- [x] `has_raft` (line 525) → `print.rs:7972`
-- [v] `has_support_material` (line 526) → `print.rs:7976` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
-- [x] `is_mm_painted` (line 530) → `print.rs:8003`
+- [x] `get_layer` (line 476) → `print.rs:7961`
+- [x] `clear_tree_support_preview_cache` (line 497) → `print.rs:8000`
+- [x] `support_layer_count` (line 499) → `print.rs:7965`
+- [x] `get_support_layer` (line 501) → `print.rs:8137`
+- [x] `num_printing_regions` (line 518) → `print.rs:7969`
+- [x] `shared_regions` (line 522) → `print.rs:7984`
+- [x] `has_support` (line 524) → `print.rs:7988`
+- [x] `has_raft` (line 525) → `print.rs:7992`
+- [v] `has_support_material` (line 526) → `print.rs:7996` — R915: tests/print_native_parity.rs: four scenarios (instances incl. rotated, part and object filaments, modifiers, negative volume, layer ranges, support, prime tower, timelapse, by-object) built with the pin's Print::apply; extruder queries, skirt/brim/support/tower flags, filament maps, regions and config diffs equal (274 lines)
+- [x] `is_mm_painted` (line 530) → `print.rs:8023`
 - [~] `is_fuzzy_skin_painted` (line 532) → `model.rs` — not in the paired file
-- [v] `slice_support_blockers` (line 544) → `print.rs:7986` — R948: tests/print_object_slice_native_parity.rs (print_object_slice_native_parity): for every scenario of the vectors (tests/data/print_object_slice/gen.cpp, models with SupportEnforcer and SupportBlocker volumes), PrintObject::slice_support_enforcers and slice_support_blockers (Print.hpp:544-545, which return slice_support_volumes(SUPPORT_ENFORCER / SUPPORT_BLOCKER)) are asserted equal to slice_support_volumes, whose per-layer polygons the pin's lines check; 1 passed.
-- [v] `slice_support_enforcers` (line 545) → `print.rs:7991` — R948: tests/print_object_slice_native_parity.rs (print_object_slice_native_parity): for every scenario of the vectors (tests/data/print_object_slice/gen.cpp, models with SupportEnforcer and SupportBlocker volumes), PrintObject::slice_support_enforcers and slice_support_blockers (Print.hpp:544-545, which return slice_support_volumes(SUPPORT_ENFORCER / SUPPORT_BLOCKER)) are asserted equal to slice_support_volumes, whose per-layer polygons the pin's lines check; 1 passed.
-- [x] `get_shared_object` (line 560) → `print.rs:8007`
-- [x] `get_klipper_object_id` (line 578) → `print.rs:8011`
-- [x] `set_klipper_object_id` (line 579) → `print.rs:8015`
-- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:8019`
-- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:8023`
-- [x] `config_apply` (line 591) → `print.rs:8027`
-- [x] `config_apply_only` (line 592) → `print.rs:8033`
-- [x] `set_shared_object` (line 2073) → `print.rs:8037`
-- [~] `clear_shared_object` (line 2079) → `print.rs:8041` — partial
-- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:8054`
-- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:8071`
-- [x] `get_first_layer_bbox` (line 2125) → `print.rs:8084`
+- [v] `slice_support_blockers` (line 544) → `print.rs:8006` — R948: tests/print_object_slice_native_parity.rs (print_object_slice_native_parity): for every scenario of the vectors (tests/data/print_object_slice/gen.cpp, models with SupportEnforcer and SupportBlocker volumes), PrintObject::slice_support_enforcers and slice_support_blockers (Print.hpp:544-545, which return slice_support_volumes(SUPPORT_ENFORCER / SUPPORT_BLOCKER)) are asserted equal to slice_support_volumes, whose per-layer polygons the pin's lines check; 1 passed.
+- [v] `slice_support_enforcers` (line 545) → `print.rs:8011` — R948: tests/print_object_slice_native_parity.rs (print_object_slice_native_parity): for every scenario of the vectors (tests/data/print_object_slice/gen.cpp, models with SupportEnforcer and SupportBlocker volumes), PrintObject::slice_support_enforcers and slice_support_blockers (Print.hpp:544-545, which return slice_support_volumes(SUPPORT_ENFORCER / SUPPORT_BLOCKER)) are asserted equal to slice_support_volumes, whose per-layer polygons the pin's lines check; 1 passed.
+- [x] `get_shared_object` (line 560) → `print.rs:8027`
+- [x] `get_klipper_object_id` (line 578) → `print.rs:8031`
+- [x] `set_klipper_object_id` (line 579) → `print.rs:8035`
+- [x] `set_auto_circle_compenstaion_params` (line 581) → `print.rs:8039`
+- [x] `get_auto_circle_compenstaion_params` (line 582) → `print.rs:8043`
+- [x] `config_apply` (line 591) → `print.rs:8047`
+- [x] `config_apply_only` (line 592) → `print.rs:8053`
+- [x] `set_shared_object` (line 2073) → `print.rs:8057`
+- [~] `clear_shared_object` (line 2079) → `print.rs:8061` — partial
+- [x] `copy_layers_from_shared_object` (line 2092) → `print.rs:8074`
+- [x] `copy_layers_overhang_from_shared_object` (line 2110) → `print.rs:8091`
+- [x] `get_first_layer_bbox` (line 2125) → `print.rs:8104`
 
 **class `PrintObjectRegions`**
 
-- [x] `ref_cnt_inc` (line 353) → `print.rs:7692`
-- [x] `ref_cnt_dec` (line 354) → `print.rs:7697`
-- [x] `clear` (line 355) → `print.rs:7702`
+- [x] `ref_cnt_inc` (line 353) → `print.rs:7712`
+- [x] `ref_cnt_dec` (line 354) → `print.rs:7717`
+- [x] `clear` (line 355) → `print.rs:7722`
 
 **class `PrintObjectRegions::FuzzySkinPaintedRegion`**
 
-- [x] `parent_print_object_region` (line 5914) → `print.rs:7639`
-- [x] `parent_print_object_region_id` (line 5926) → `print.rs:7648`
+- [x] `parent_print_object_region` (line 5914) → `print.rs:7659`
+- [x] `parent_print_object_region_id` (line 5926) → `print.rs:7668`
 
 **class `PrintObjectRegions::LayerRangeRegions`**
 
-- [x] `has_volume` (line 335) → `print.rs:7669`
+- [x] `has_volume` (line 335) → `print.rs:7689`
 
 **class `PrintRegion`**
 
-- [x] `config_hash` (line 157) → `print.rs:7390`
-- [x] `print_region_id` (line 159) → `print.rs:7394`
-- [x] `print_object_region_id` (line 160) → `print.rs:7398`
-- [x] `gradient_volume_id` (line 164) → `print.rs:7402`
+- [x] `config_hash` (line 157) → `print.rs:7410`
+- [x] `print_region_id` (line 159) → `print.rs:7414`
+- [x] `print_object_region_id` (line 160) → `print.rs:7418`
+- [x] `gradient_volume_id` (line 164) → `print.rs:7422`
 - [~] `set_config` (line 179) → `print_region.rs` — not in the paired file
-- [x] `set_config` (line 180) → `print.rs:7450`
-- [x] `config_apply_only` (line 181) → `print.rs:7456`
+- [x] `set_config` (line 180) → `print.rs:7470`
+- [x] `config_apply_only` (line 181) → `print.rs:7476`
 
 **class `PrintStatistics`**
 
-- [x] `clear` (line 842) → `print.rs:8439`
-- [x] `config` (line 4454) → `print.rs:8397`
-- [x] `placeholders` (line 4473) → `print.rs:8417`
+- [x] `clear` (line 842) → `print.rs:8459`
+- [x] `config` (line 4454) → `print.rs:8417`
+- [x] `placeholders` (line 4473) → `print.rs:8437`
 - [~] `finalize_output_path` (line 4484) → `sla_print.rs` — not in the paired file
 
 **class `StatisticsByExtruderCount`**
 
-- [x] `clear` (line 877) → `print.rs:8466`
+- [x] `clear` (line 877) → `print.rs:8486`
 
 **class `SupportStageTimes`**
 
-- [x] `reset` (line 79) → `print.rs:7341`
-- [x] `total` (line 80) → `print.rs:7345`
+- [x] `reset` (line 79) → `print.rs:7361`
+- [x] `total` (line 80) → `print.rs:7365`
 
 **class `WipeTowerData`**
 
-- [x] `clear` (line 799) → `print.rs:8294`
-- [v] `construct_mesh` (line 5888) → `print.rs:8307` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
+- [x] `clear` (line 799) → `print.rs:8314`
+- [v] `construct_mesh` (line 5888) → `print.rs:8327` — R916: tests/print_native_parity.rs: brim and skirt flows (single and multi diameter), printed filaments, single-diameter layering nozzle, the wipe tower mesh against the pin's Print.cpp
 
 ### `PrintApply` (.cpp)
 

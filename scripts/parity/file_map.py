@@ -8,7 +8,10 @@
 The C++ side is the pinned `references/BambuStudio/src/libslic3r`, the Rust
 side `crates/libslic3r-rs/src`. A C++ unit is a `.cpp` with the header of the
 same name (or a header alone). Its Rust counterpart is the `.rs` file whose
-name has the same words, in any casing style.
+name has the same words, in any casing style. A Rust module name cannot start
+with a digit, so a C++ file whose name does spells the number out in Rust; those
+pairings are listed by hand in `RUST_STEM_ALIASES` (`Format/3mf` is
+`format/three_mf.rs`) and are compared by the alias's words.
 
 Per pair the script lists, by name, the C++ functions with no Rust function
 of the same name, the Rust functions with no C++ function, and for every
@@ -101,6 +104,16 @@ def words(name):
 
 def letters(name):
     return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+# C++ file stems that start with a digit, and the name the Rust file has instead (a Rust module
+# name cannot start with a digit: `mod 3mf;` does not parse). Explicit, one entry per such file.
+RUST_STEM_ALIASES = {"3mf": "three_mf"}
+
+
+def rust_stem(stem):
+    """The name the Rust file of the C++ unit `stem` has: the stem itself, or its alias."""
+    return RUST_STEM_ALIASES.get(stem, stem)
 
 
 def read(path):
@@ -362,7 +375,7 @@ def build():
     # A Rust file belongs to the C++ unit of its name in its own directory when there is one.
     home = set()
     for (rel_dir, stem) in units:
-        for c in by_letters.get(letters(stem), []):
+        for c in by_letters.get(letters(rust_stem(stem)), []):
             if dir_key(c) == cpp_dir_key(rel_dir):
                 home.add(c)
 
@@ -370,7 +383,7 @@ def build():
     for (rel_dir, stem), files in sorted(units.items()):
         rel = (rel_dir + "/" if rel_dir else "") + stem
         want_dir = cpp_dir_key(rel_dir)
-        all_cands = by_letters.get(letters(stem), [])
+        all_cands = by_letters.get(letters(rust_stem(stem)), [])
         same_dir = [c for c in all_cands if dir_key(c) == want_dir]
         # files of this name elsewhere that are not at home with another C++ unit of the same name
         moved = [c for c in all_cands if c not in home]
@@ -399,7 +412,7 @@ def build():
                               "share": round(share, 2)})
         cands = kept
         rstem = os.path.splitext(os.path.basename(primary))[0]
-        name_match = "words" if words(rstem) == words(stem) else "letters"
+        name_match = "words" if words(rstem) == words(rust_stem(stem)) else "letters"
         placement = "same" if dir_key(primary) == want_dir else "moved"
 
         rfns = [f for f in rust_fns[primary] if not f["test"]]
@@ -480,7 +493,8 @@ def build():
         ranked_votes = sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
         guess = [u for u, n in ranked_votes if n >= max(2, len(fns) // 4)]
         kind = "module" if stem in ("mod", "lib", "main") else "no C++ file of this name"
-        namesakes = sorted((d + "/" if d else "") + st for (d, st) in units if letters(st) == letters(stem))
+        namesakes = sorted((d + "/" if d else "") + st for (d, st) in units
+                           if letters(rust_stem(st)) == letters(stem))
         if namesakes:
             kind = "same name as a C++ file in another directory"
             guess = namesakes

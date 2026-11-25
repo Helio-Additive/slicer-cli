@@ -1283,6 +1283,42 @@ pub fn to_unscaled_linesf(src: &[ExPolygon]) -> Vec<crate::geometry::LineF> {
     lines
 }
 
+/// ExPolygon.hpp:150-178 `Linesf to_linesf(const ExPolygons &src, uint32_t count_lines = 0)`: the closed
+/// edges of every contour and hole as doubles (`p.cast<double>()`, not unscaled); `count_lines == 0`
+/// counts the points (the asserts are NDEBUG-off).
+pub fn to_linesf(src: &[ExPolygon], count_lines: u32) -> Vec<crate::geometry::LineF> {
+    use crate::geometry::{LineF, PointF};
+    // ExPolygon.hpp:153
+    let count_lines = if count_lines == 0 { count_points(src) as u32 } else { count_lines };
+    let mut lines: Vec<LineF> = Vec::with_capacity(count_lines as usize);
+    let mut prev_pd = PointF::new(0.0, 0.0);
+    // ExPolygon.hpp:158-170
+    let mut to_lines = |pts: &[Point]| {
+        if pts.len() < 2 {
+            return;
+        }
+        let mut is_first = true;
+        for p in pts {
+            let pd = PointF::new(p.x as f64, p.y as f64);
+            if is_first {
+                is_first = false;
+            } else {
+                lines.push(LineF::new(prev_pd, pd));
+            }
+            prev_pd = pd;
+        }
+        lines.push(LineF::new(prev_pd, PointF::new(pts[0].x as f64, pts[0].y as f64)));
+    };
+    // ExPolygon.hpp:171-175
+    for expoly in src {
+        to_lines(&expoly.contour.points);
+        for hole in &expoly.holes {
+            to_lines(&hole.points);
+        }
+    }
+    lines
+}
+
 /// boost::polygon `winding_direction` (boost/polygon/polygon_traits.hpp).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindingDirection {
@@ -1368,11 +1404,11 @@ pub fn translate(expolys: &mut [ExPolygon], p: &Point) {
 
 /// ExPolygon.hpp:385-418 `polygons_append(Polygons &dst, ...)`: the source by reference or moved.
 pub trait PolygonsAppendSrc {
-    fn polygons_append_to(self, dst: &mut Vec<Polygon>);
+    fn polygons_append(self, dst: &mut Vec<Polygon>);
 }
 impl PolygonsAppendSrc for &ExPolygon {
     // ExPolygon.hpp:385-390
-    fn polygons_append_to(self, dst: &mut Vec<Polygon>) {
+    fn polygons_append(self, dst: &mut Vec<Polygon>) {
         dst.reserve(self.holes.len() + 1);
         dst.push(self.contour.clone());
         dst.extend(self.holes.iter().cloned());
@@ -1380,7 +1416,7 @@ impl PolygonsAppendSrc for &ExPolygon {
 }
 impl PolygonsAppendSrc for &[ExPolygon] {
     // ExPolygon.hpp:392-399
-    fn polygons_append_to(self, dst: &mut Vec<Polygon>) {
+    fn polygons_append(self, dst: &mut Vec<Polygon>) {
         dst.reserve(number_polygons(self));
         for it in self {
             dst.push(it.contour.clone());
@@ -1389,13 +1425,13 @@ impl PolygonsAppendSrc for &[ExPolygon] {
     }
 }
 impl PolygonsAppendSrc for &Vec<ExPolygon> {
-    fn polygons_append_to(self, dst: &mut Vec<Polygon>) {
-        self.as_slice().polygons_append_to(dst)
+    fn polygons_append(self, dst: &mut Vec<Polygon>) {
+        self.as_slice().polygons_append(dst)
     }
 }
 impl PolygonsAppendSrc for ExPolygon {
     // ExPolygon.hpp:401-408 (ExPolygon &&src)
-    fn polygons_append_to(self, dst: &mut Vec<Polygon>) {
+    fn polygons_append(self, dst: &mut Vec<Polygon>) {
         dst.reserve(self.holes.len() + 1);
         dst.push(self.contour);
         dst.extend(self.holes);
@@ -1403,7 +1439,7 @@ impl PolygonsAppendSrc for ExPolygon {
 }
 impl PolygonsAppendSrc for Vec<ExPolygon> {
     // ExPolygon.hpp:410-418 (ExPolygons &&src)
-    fn polygons_append_to(self, dst: &mut Vec<Polygon>) {
+    fn polygons_append(self, dst: &mut Vec<Polygon>) {
         dst.reserve(number_polygons(&self));
         for expoly in self {
             dst.push(expoly.contour);
@@ -1413,27 +1449,27 @@ impl PolygonsAppendSrc for Vec<ExPolygon> {
 }
 /// ExPolygon.hpp:385-418
 pub fn polygons_append<S: PolygonsAppendSrc>(dst: &mut Vec<Polygon>, src: S) {
-    src.polygons_append_to(dst)
+    src.polygons_append(dst)
 }
 
 /// ExPolygon.hpp:421-435 `expolygons_append(ExPolygons &dst, const ExPolygons&)` / `(ExPolygons &&)`.
 pub trait ExPolygonsAppendSrc {
-    fn expolygons_append_to(self, dst: &mut Vec<ExPolygon>);
+    fn expolygons_append(self, dst: &mut Vec<ExPolygon>);
 }
 impl ExPolygonsAppendSrc for &[ExPolygon] {
     // ExPolygon.hpp:421-424
-    fn expolygons_append_to(self, dst: &mut Vec<ExPolygon>) {
+    fn expolygons_append(self, dst: &mut Vec<ExPolygon>) {
         dst.extend_from_slice(self);
     }
 }
 impl ExPolygonsAppendSrc for &Vec<ExPolygon> {
-    fn expolygons_append_to(self, dst: &mut Vec<ExPolygon>) {
+    fn expolygons_append(self, dst: &mut Vec<ExPolygon>) {
         dst.extend_from_slice(self);
     }
 }
 impl ExPolygonsAppendSrc for Vec<ExPolygon> {
     // ExPolygon.hpp:426-435
-    fn expolygons_append_to(self, dst: &mut Vec<ExPolygon>) {
+    fn expolygons_append(self, dst: &mut Vec<ExPolygon>) {
         if dst.is_empty() {
             *dst = self;
         } else {
@@ -1443,7 +1479,7 @@ impl ExPolygonsAppendSrc for Vec<ExPolygon> {
 }
 /// ExPolygon.hpp:421-435
 pub fn expolygons_append<S: ExPolygonsAppendSrc>(dst: &mut Vec<ExPolygon>, src: S) {
-    src.expolygons_append_to(dst)
+    src.expolygons_append(dst)
 }
 
 /// ExPolygon.hpp:437-441 `void expolygons_rotate(ExPolygons &expolys, double angle)`
@@ -1468,7 +1504,7 @@ pub fn expolygons_contain(expolys: &[ExPolygon], pt: &Point, border_result: bool
 /// ExPolygon.hpp:214-284 `to_polylines(const ExPolygon&)`, `(const ExPolygons&)`, `(ExPolygon&&)`, `(ExPolygons&&)`:
 /// every ring closed by repeating its first point.
 pub trait ToPolylinesSrc {
-    fn to_polylines_of(self) -> Vec<Polyline>;
+    fn to_polylines(self) -> Vec<Polyline>;
 }
 fn closed_polyline(mut points: Vec<Point>) -> Polyline {
     // pl.points.push_back(pl.points.front());
@@ -1478,7 +1514,7 @@ fn closed_polyline(mut points: Vec<Point>) -> Polyline {
 }
 impl ToPolylinesSrc for &ExPolygon {
     // ExPolygon.hpp:214-229
-    fn to_polylines_of(self) -> Vec<Polyline> {
+    fn to_polylines(self) -> Vec<Polyline> {
         let mut polylines = Vec::with_capacity(self.holes.len() + 1);
         polylines.push(closed_polyline(self.contour.points.clone()));
         for ith in &self.holes {
@@ -1489,7 +1525,7 @@ impl ToPolylinesSrc for &ExPolygon {
 }
 impl ToPolylinesSrc for &[ExPolygon] {
     // ExPolygon.hpp:231-248
-    fn to_polylines_of(self) -> Vec<Polyline> {
+    fn to_polylines(self) -> Vec<Polyline> {
         let mut polylines = Vec::with_capacity(number_polygons(self));
         for it in self {
             polylines.push(closed_polyline(it.contour.points.clone()));
@@ -1501,13 +1537,13 @@ impl ToPolylinesSrc for &[ExPolygon] {
     }
 }
 impl ToPolylinesSrc for &Vec<ExPolygon> {
-    fn to_polylines_of(self) -> Vec<Polyline> {
-        self.as_slice().to_polylines_of()
+    fn to_polylines(self) -> Vec<Polyline> {
+        self.as_slice().to_polylines()
     }
 }
 impl ToPolylinesSrc for ExPolygon {
     // ExPolygon.hpp:250-265 (moved)
-    fn to_polylines_of(self) -> Vec<Polyline> {
+    fn to_polylines(self) -> Vec<Polyline> {
         let mut polylines = Vec::with_capacity(self.holes.len() + 1);
         polylines.push(closed_polyline(self.contour.points));
         for ith in self.holes {
@@ -1518,7 +1554,7 @@ impl ToPolylinesSrc for ExPolygon {
 }
 impl ToPolylinesSrc for Vec<ExPolygon> {
     // ExPolygon.hpp:267-284 (moved)
-    fn to_polylines_of(self) -> Vec<Polyline> {
+    fn to_polylines(self) -> Vec<Polyline> {
         let mut polylines = Vec::with_capacity(number_polygons(&self));
         for it in self {
             polylines.push(closed_polyline(it.contour.points));
@@ -1531,24 +1567,61 @@ impl ToPolylinesSrc for Vec<ExPolygon> {
 }
 /// ExPolygon.hpp:214-284
 pub fn to_polylines<S: ToPolylinesSrc>(src: S) -> Vec<Polyline> {
-    src.to_polylines_of()
+    src.to_polylines()
 }
 
 /// ExPolygon.hpp:286-350 `to_polygons(const ExPolygon&)`, `(const ExPolygons&)`, `(ExPolygon&&)`, `(ExPolygons&&)`.
 pub trait ToPolygonsSrc {
-    fn to_polygons_of(self) -> Vec<Polygon>;
+    fn to_polygons(self) -> Vec<Polygon>;
 }
-impl<S: PolygonsAppendSrc> ToPolygonsSrc for S {
-    // ExPolygon.hpp:286-304, 328-350: the same pushes as polygons_append into an empty vector.
-    fn to_polygons_of(self) -> Vec<Polygon> {
-        let mut polygons = Vec::new();
-        self.polygons_append_to(&mut polygons);
+impl ToPolygonsSrc for &ExPolygon {
+    // ExPolygon.hpp:286-293
+    fn to_polygons(self) -> Vec<Polygon> {
+        let mut polygons: Vec<Polygon> = Vec::with_capacity(self.holes.len() + 1);
+        polygons.push(self.contour.clone());
+        polygons.extend(self.holes.iter().cloned());
+        polygons
+    }
+}
+impl ToPolygonsSrc for &[ExPolygon] {
+    // ExPolygon.hpp:295-304
+    fn to_polygons(self) -> Vec<Polygon> {
+        let mut polygons: Vec<Polygon> = Vec::with_capacity(number_polygons(self));
+        for it in self {
+            polygons.push(it.contour.clone());
+            polygons.extend(it.holes.iter().cloned());
+        }
+        polygons
+    }
+}
+impl ToPolygonsSrc for &Vec<ExPolygon> {
+    fn to_polygons(self) -> Vec<Polygon> {
+        self.as_slice().to_polygons()
+    }
+}
+impl ToPolygonsSrc for ExPolygon {
+    // ExPolygon.hpp:328-337 (ExPolygon &&src)
+    fn to_polygons(self) -> Vec<Polygon> {
+        let mut polygons: Vec<Polygon> = Vec::with_capacity(self.holes.len() + 1);
+        polygons.push(self.contour);
+        polygons.extend(self.holes);
+        polygons
+    }
+}
+impl ToPolygonsSrc for Vec<ExPolygon> {
+    // ExPolygon.hpp:339-350 (ExPolygons &&src)
+    fn to_polygons(self) -> Vec<Polygon> {
+        let mut polygons: Vec<Polygon> = Vec::with_capacity(number_polygons(&self));
+        for expoly in self {
+            polygons.push(expoly.contour);
+            polygons.extend(expoly.holes);
+        }
         polygons
     }
 }
 /// ExPolygon.hpp:286-350
 pub fn to_polygons<S: ToPolygonsSrc>(src: S) -> Vec<Polygon> {
-    src.to_polygons_of()
+    src.to_polygons()
 }
 
 /// ExPolygon.hpp:306-326 `to_polygon_ptrs(const ExPolygon&)` / `(const ExPolygons&)`: the contour, then the holes.
@@ -1586,28 +1659,28 @@ pub fn to_polygon_ptrs<T: ToPolygonPtrs + ?Sized>(src: &T) -> Vec<&Polygon> {
 
 /// ExPolygon.hpp:352-368 `to_expolygons(const Polygons&)` / `(Polygons&&)`: one ExPolygon per polygon, no holes.
 pub trait ToExpolygonsSrc {
-    fn to_expolygons_of(self) -> Vec<ExPolygon>;
+    fn to_expolygons(self) -> Vec<ExPolygon>;
 }
 impl ToExpolygonsSrc for &[Polygon] {
     // ExPolygon.hpp:352-359
-    fn to_expolygons_of(self) -> Vec<ExPolygon> {
+    fn to_expolygons(self) -> Vec<ExPolygon> {
         self.iter().map(|p| ExPolygon::new(p.clone())).collect()
     }
 }
 impl ToExpolygonsSrc for &Vec<Polygon> {
-    fn to_expolygons_of(self) -> Vec<ExPolygon> {
-        self.as_slice().to_expolygons_of()
+    fn to_expolygons(self) -> Vec<ExPolygon> {
+        self.as_slice().to_expolygons()
     }
 }
 impl ToExpolygonsSrc for Vec<Polygon> {
     // ExPolygon.hpp:361-368 (moved)
-    fn to_expolygons_of(self) -> Vec<ExPolygon> {
+    fn to_expolygons(self) -> Vec<ExPolygon> {
         self.into_iter().map(ExPolygon::new).collect()
     }
 }
 /// ExPolygon.hpp:352-368
 pub fn to_expolygons<S: ToExpolygonsSrc>(src: S) -> Vec<ExPolygon> {
-    src.to_expolygons_of()
+    src.to_expolygons()
 }
 
 /// ExPolygon.hpp:451-458 `ExPolygons expolygons_simplify(const ExPolygons &expolys, double tolerance)`, the
@@ -1621,4 +1694,268 @@ pub fn expolygons_simplify(expolys: &[ExPolygon], tolerance: f64) -> Vec<ExPolyg
         exp.simplify_scaled_tolerance_into(tolerance, &mut out);
     }
     out
+}
+
+// ---------------------------------------------------------------------------------------------------
+// `get_extents` / `get_extents_rotated` overloads under their C++ names (ExPolygon.cpp:490-520): the
+// free functions above keep their names; these traits are the per-type overloads.
+
+/// ExPolygon.hpp:482-485 `get_extents(const ExPolygon&)` / `(const ExPolygons&)`.
+pub trait GetExtents {
+    fn get_extents(&self) -> BoundingBox;
+}
+impl GetExtents for ExPolygon {
+    // ExPolygon.cpp:490-493
+    fn get_extents(&self) -> BoundingBox {
+        self.contour.bounding_box()
+    }
+}
+impl GetExtents for [ExPolygon] {
+    // ExPolygon.cpp:495-504
+    fn get_extents(&self) -> BoundingBox {
+        let mut bbox = BoundingBox::new();
+        if !self.is_empty() {
+            for i in 0..self.len() {
+                if !self[i].contour.points.is_empty() {
+                    bbox.merge(&GetExtents::get_extents(&self[i]));
+                }
+            }
+        }
+        bbox
+    }
+}
+
+/// ExPolygon.hpp:486-487 `get_extents_rotated(const ExPolygon&, double)` / `(const ExPolygons&, double)`.
+pub trait GetExtentsRotated {
+    fn get_extents_rotated(&self, angle: f64) -> BoundingBox;
+}
+impl GetExtentsRotated for ExPolygon {
+    // ExPolygon.cpp:506-509
+    fn get_extents_rotated(&self, angle: f64) -> BoundingBox {
+        crate::geometry::get_extents_rotated(&self.contour, angle)
+    }
+}
+impl GetExtentsRotated for [ExPolygon] {
+    // ExPolygon.cpp:511-520
+    fn get_extents_rotated(&self, angle: f64) -> BoundingBox {
+        let mut bbox = BoundingBox::new();
+        if !self.is_empty() {
+            bbox = crate::geometry::get_extents_rotated(&self[0].contour, angle);
+            for i in 1..self.len() {
+                bbox.merge(&crate::geometry::get_extents_rotated(&self[i].contour, angle));
+            }
+        }
+        bbox
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// `class ExPolygon` members under their C++ names (ExPolygon.hpp:38-86, ExPolygon.cpp:16-67, 225-263,
+// 372-379). The struct lives in geometry/expolygon.rs, whose inherent methods of the same names take
+// millimetres or another shape; these traits take the pin's arguments (scaled coordinates) and run
+// the pin's bodies over the MultiPoint overloads of multi_point.rs.
+
+/// ExPolygon.hpp:39-40 / ExPolygon.cpp:16-28: `scale(double)` and `scale(double, double)`.
+pub trait ExPolygonScale<A> {
+    fn scale(&mut self, args: A);
+}
+impl ExPolygonScale<f64> for ExPolygon {
+    // ExPolygon.cpp:16-21
+    fn scale(&mut self, factor: f64) {
+        crate::multi_point::MultiPointScale::<f64>::scale(&mut self.contour, factor);
+        for hole in &mut self.holes {
+            crate::multi_point::MultiPointScale::<f64>::scale(hole, factor);
+        }
+    }
+}
+impl ExPolygonScale<(f64, f64)> for ExPolygon {
+    // ExPolygon.cpp:23-28
+    fn scale(&mut self, (factor_x, factor_y): (f64, f64)) {
+        crate::multi_point::MultiPointScale::<(f64, f64)>::scale(&mut self.contour, (factor_x, factor_y));
+        for hole in &mut self.holes {
+            crate::multi_point::MultiPointScale::<(f64, f64)>::scale(hole, (factor_x, factor_y));
+        }
+    }
+}
+
+/// ExPolygon.hpp:41-42 / ExPolygon.cpp:30-35: `translate(double, double)` and `translate(const Point&)`.
+pub trait ExPolygonTranslate<A> {
+    fn translate(&mut self, args: A);
+}
+impl ExPolygonTranslate<&Point> for ExPolygon {
+    // ExPolygon.cpp:30-35
+    fn translate(&mut self, p: &Point) {
+        crate::multi_point::MultiPointTranslate::<&Point>::translate(&mut self.contour, p);
+        for hole in &mut self.holes {
+            crate::multi_point::MultiPointTranslate::<&Point>::translate(hole, p);
+        }
+    }
+}
+impl ExPolygonTranslate<(f64, f64)> for ExPolygon {
+    // ExPolygon.hpp:41 `this->translate(Point(coord_t(x), coord_t(y)))`, truncating.
+    fn translate(&mut self, (x, y): (f64, f64)) {
+        let p = Point::new(x as i32 as Coord, y as i32 as Coord);
+        ExPolygonTranslate::<&Point>::translate(self, &p);
+    }
+}
+
+/// ExPolygon.hpp:43-44 / ExPolygon.cpp:37-49: `rotate(double)` and `rotate(double, const Point&)`.
+pub trait ExPolygonRotate<A> {
+    fn rotate(&mut self, args: A);
+}
+impl ExPolygonRotate<f64> for ExPolygon {
+    // ExPolygon.cpp:37-42
+    fn rotate(&mut self, angle: f64) {
+        crate::multi_point::MultiPointRotate::<f64>::rotate(&mut self.contour, angle);
+        for hole in &mut self.holes {
+            crate::multi_point::MultiPointRotate::<f64>::rotate(hole, angle);
+        }
+    }
+}
+impl ExPolygonRotate<(f64, &Point)> for ExPolygon {
+    // ExPolygon.cpp:44-49
+    fn rotate(&mut self, (angle, center): (f64, &Point)) {
+        crate::multi_point::MultiPointRotate::<(f64, &Point)>::rotate(&mut self.contour, (angle, center));
+        for hole in &mut self.holes {
+            crate::multi_point::MultiPointRotate::<(f64, &Point)>::rotate(hole, (angle, center));
+        }
+    }
+}
+
+/// ExPolygon.hpp:38, 46, 47, 82: `clear()`, `empty()`, `is_valid()`, `num_contours()`.
+pub trait ExPolygonMembers {
+    fn clear(&mut self);
+    fn empty(&self) -> bool;
+    fn is_valid(&self) -> bool;
+    fn num_contours(&self) -> usize;
+}
+impl ExPolygonMembers for ExPolygon {
+    // ExPolygon.hpp:38
+    fn clear(&mut self) {
+        self.contour.points.clear();
+        self.holes.clear();
+    }
+    // ExPolygon.hpp:46
+    fn empty(&self) -> bool {
+        self.contour.points.is_empty()
+    }
+    // ExPolygon.cpp:59-66
+    fn is_valid(&self) -> bool {
+        if !self.contour.is_valid() || !self.contour.is_counter_clockwise() {
+            return false;
+        }
+        for it in &self.holes {
+            if !it.is_valid() || it.is_counter_clockwise() {
+                return false;
+            }
+        }
+        true
+    }
+    // ExPolygon.hpp:82
+    fn num_contours(&self) -> usize {
+        self.holes.len() + 1
+    }
+}
+
+/// ExPolygon.hpp:72-73 / ExPolygon.cpp:225-251: `simplify_p(double, Polygons*)` and
+/// `Polygons simplify_p(double)`, the tolerance in scaled coordinates.
+pub trait ExPolygonSimplifyP<A> {
+    type Output;
+    fn simplify_p(&self, args: A) -> Self::Output;
+}
+impl ExPolygonSimplifyP<f64> for ExPolygon {
+    type Output = Vec<Polygon>;
+    // ExPolygon.cpp:231-251
+    fn simplify_p(&self, tolerance: f64) -> Vec<Polygon> {
+        let mut pp: Vec<Polygon> = Vec::with_capacity(self.holes.len() + 1);
+        // contour
+        {
+            let mut p = self.contour.clone();
+            p.points.push(p.points[0]);
+            p.points = crate::multi_point::douglas_peucker(&p.points, tolerance);
+            p.points.pop();
+            pp.push(p);
+        }
+        // holes
+        for hole in &self.holes {
+            let mut p = hole.clone();
+            p.points.push(p.points[0]);
+            p.points = crate::multi_point::douglas_peucker(&p.points, tolerance);
+            p.points.pop();
+            pp.push(p);
+        }
+        crate::clipper_utils::cpp::simplify_polygons(&pp, false)
+    }
+}
+impl ExPolygonSimplifyP<(f64, &mut Vec<Polygon>)> for ExPolygon {
+    type Output = ();
+    // ExPolygon.cpp:225-229
+    fn simplify_p(&self, (tolerance, polygons): (f64, &mut Vec<Polygon>)) {
+        let pp = ExPolygonSimplifyP::<f64>::simplify_p(self, tolerance);
+        polygons.extend(pp);
+    }
+}
+
+/// ExPolygon.hpp:74-75 / ExPolygon.cpp:253-261: `ExPolygons simplify(double)` and
+/// `simplify(double, ExPolygons*)`, the tolerance in scaled coordinates.
+pub trait ExPolygonSimplify<A> {
+    type Output;
+    fn simplify(&self, args: A) -> Self::Output;
+}
+impl ExPolygonSimplify<f64> for ExPolygon {
+    type Output = Vec<ExPolygon>;
+    // ExPolygon.cpp:253-256 `union_ex(this->simplify_p(tolerance))` (pftNonZero)
+    fn simplify(&self, tolerance: f64) -> Vec<ExPolygon> {
+        use crate::clipper_utils::cpp::UnionEx;
+        let pp = ExPolygonSimplifyP::<f64>::simplify_p(self, tolerance);
+        UnionEx::union_ex(pp.as_slice(), crate::clipper::PolyFillType::pftNonZero)
+    }
+}
+impl ExPolygonSimplify<(f64, &mut Vec<ExPolygon>)> for ExPolygon {
+    type Output = ();
+    // ExPolygon.cpp:258-261 `append(*expolygons, this->simplify(tolerance))`
+    fn simplify(&self, (tolerance, expolygons): (f64, &mut Vec<ExPolygon>)) {
+        let r = ExPolygonSimplify::<f64>::simplify(self, tolerance);
+        if expolygons.is_empty() {
+            *expolygons = r;
+        } else {
+            expolygons.extend(r);
+        }
+    }
+}
+
+/// ExPolygon.hpp:76-79 / ExPolygon.cpp:263-379: the three `medial_axis` overloads, widths in scaled
+/// coordinates. The Voronoi walk and its post-processing (ExPolygon.cpp:263-371) run through
+/// `geometry::ExPolygon::medial_axis_scaled` (the boost-voronoi shim; a third-party core).
+pub trait ExPolygonMedialAxis<A> {
+    type Output;
+    fn medial_axis(&self, args: A) -> Self::Output;
+}
+impl ExPolygonMedialAxis<(f64, f64, &mut crate::geometry::ThickPolylines)> for ExPolygon {
+    type Output = ();
+    // ExPolygon.cpp:263-371
+    fn medial_axis(&self, (min_width, max_width, polylines): (f64, f64, &mut crate::geometry::ThickPolylines)) {
+        self.medial_axis_scaled(min_width, max_width, polylines);
+    }
+}
+impl ExPolygonMedialAxis<(f64, f64, &mut Vec<Polyline>)> for ExPolygon {
+    type Output = ();
+    // ExPolygon.cpp:373-380
+    fn medial_axis(&self, (min_width, max_width, polylines): (f64, f64, &mut Vec<Polyline>)) {
+        let mut tp: crate::geometry::ThickPolylines = Vec::new();
+        ExPolygonMedialAxis::<(f64, f64, &mut crate::geometry::ThickPolylines)>::medial_axis(self, (min_width, max_width, &mut tp));
+        polylines.reserve(tp.len());
+        for pl in tp {
+            polylines.push(Polyline::from_points(pl.points));
+        }
+    }
+}
+impl ExPolygonMedialAxis<(f64, f64)> for ExPolygon {
+    type Output = Vec<Polyline>;
+    // ExPolygon.hpp:78-79
+    fn medial_axis(&self, (min_width, max_width): (f64, f64)) -> Vec<Polyline> {
+        let mut out: Vec<Polyline> = Vec::new();
+        ExPolygonMedialAxis::<(f64, f64, &mut Vec<Polyline>)>::medial_axis(self, (min_width, max_width, &mut out));
+        out
+    }
 }

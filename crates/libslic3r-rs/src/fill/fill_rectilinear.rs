@@ -2536,7 +2536,7 @@ pub fn fill_surface_by_lines_zag(
     let line_spacing = if params.full_infill && !params.dont_adjust {
         // FillRectilinear.cpp:2863 — `bounding_box_src.size().x()`.
         let ls = adjust_solid_spacing(bbox_src.width(), line_spacing);
-        ADJUSTED_SPACING_MM.with(|c| c.set(Some(ls as f64 / crate::SCALING_FACTOR)));
+        ADJUSTED_SPACING_MM.with(|c| c.set(Some(fill_rect_unscale_double(ls))));
         ls
     } else {
         // Native align_to_grid branch (FillRectilinear.cpp:2865-2875): refpt =
@@ -3884,14 +3884,20 @@ impl AntPathMatrix {
                             if i_right == i_to as i32
                                 && it.next_on_contour_quality == LinkQuality::Valid
                             {
-                                length = measure_perimeter_horizontal_segment_length(
+                                let m = measure_perimeter_horizontal_segment_length(
                                     poly_with_offset,
                                     segs,
                                     exit_vline,
                                     i_from,
                                     i_to,
-                                ) as f32
-                                    / crate::SCALING_FACTOR as f32;
+                                );
+                                // FillRectilinear.cpp:1753 `unscale<float>(coordf_t)`: libslic3r.h:112
+                                // `float(v) * float(SCALING_FACTOR)`. FILL_RECT_UNSCALE_MUL=0 divides.
+                                length = if fill_rect_unscale_mul() {
+                                    (m as f32) * (crate::libslic3r::SCALING_FACTOR as f32)
+                                } else {
+                                    m as f32 / crate::SCALING_FACTOR as f32
+                                };
                             }
                         }
 
@@ -3913,10 +3919,24 @@ impl AntPathMatrix {
                             } else {
                                 Point::new(0, 0)
                             };
-                            let dx = (p2.x - p1.x) as f64;
-                            let dy = (p2.y - p1.y) as f64;
-                            let dist = (dx * dx + dy * dy).sqrt() as f32;
-                            length = dist / crate::SCALING_FACTOR as f32;
+                            if fill_rect_unscale_mul() {
+                                // FillRectilinear.cpp:1757 `unscale<float>(Vec2f(dx, dy).norm())`: the
+                                // coord_t differences converted to float, Eigen's float norm
+                                // `sqrt(x*x + y*y)` (the products and the sum are separate inlined
+                                // functors, not one contracted expression), then the float product with
+                                // 0.00001f (libslic3r.h:112).
+                                let dx = (p2.x - p1.x) as f32;
+                                let dy = (p2.y - p1.y) as f32;
+                                let sq_x = dx * dx;
+                                let sq_y = dy * dy;
+                                let dist = (sq_x + sq_y).sqrt();
+                                length = dist * (crate::libslic3r::SCALING_FACTOR as f32);
+                            } else {
+                                let dx = (p2.x - p1.x) as f64;
+                                let dy = (p2.y - p1.y) as f64;
+                                let dist = (dx * dx + dy * dy).sqrt() as f32;
+                                length = dist / crate::SCALING_FACTOR as f32;
+                            }
                         }
 
                         let idx = (i * 2 + from_flip) * dim + (j * 2 + to_flip);
@@ -5255,7 +5275,7 @@ pub fn fill_surface_by_lines_monotonic(
             // R258: same writeback as the non-monotonic path — the monotonic
             // (top-surface) emission recomputes flow from the adjusted spacing.
             let ls = adjust_solid_spacing(bbox_src.width(), line_spacing);
-            ADJUSTED_SPACING_MM.with(|c| c.set(Some(ls as f64 / crate::SCALING_FACTOR)));
+            ADJUSTED_SPACING_MM.with(|c| c.set(Some(fill_rect_unscale_double(ls))));
             ls
         }
     } else {
@@ -5564,6 +5584,24 @@ use crate::surface::Surface;
 /// classes below. `=0` keeps the arithmetic those entries had before R922.
 pub fn fill_rectilinear_pin() -> bool {
     crate::faithful_gate("FILL_RECTILINEAR_PIN")
+}
+
+/// `FILL_RECT_UNSCALE_MUL` (on unless =0): the sites of FillRectilinear.cpp that call `unscale<T>`
+/// (libslic3r.h:112, `T(v) * T(SCALING_FACTOR)`, a product with 0.00001) multiply as the pin; =0 keeps
+/// the port's division by 100000 (an ulp away for some values). Cached: the ant-path lengths are hot.
+fn fill_rect_unscale_mul() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("FILL_RECT_UNSCALE_MUL"))
+}
+
+/// FillRectilinear.cpp:2863 `this->spacing = unscale<double>(line_spacing);` (coord_t to double, times
+/// SCALING_FACTOR), under FILL_RECT_UNSCALE_MUL.
+fn fill_rect_unscale_double(v: Coord) -> f64 {
+    if fill_rect_unscale_mul() {
+        v as f64 * crate::libslic3r::SCALING_FACTOR
+    } else {
+        v as f64 / crate::SCALING_FACTOR
+    }
 }
 
 /// `FILL_MONOTONIC_PIN`: the connected monotonic fill of a bottom surface (ipMonotonic, FillMonotonic) is

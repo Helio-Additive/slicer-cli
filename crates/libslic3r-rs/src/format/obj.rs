@@ -597,9 +597,10 @@ pub fn load_obj_to_model(
         }
     };
 
-    let obj = ModelObject::new(name, mesh);
+    // OBJ.cpp:262 `model->add_object(object_name.c_str(), path, std::move(mesh));` (Model.cpp:603-622: one
+    // model part, the object's input file, the default extruder).
     let mut model = Model::new();
-    model.add_object(obj);
+    model.add_object_with_mesh(&name, &path.to_string_lossy(), crate::model::ModelMesh::from_triangle_mesh(&mesh));
     Ok(model)
 }
 

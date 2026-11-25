@@ -2805,6 +2805,13 @@ pub fn extrude_collection(
     /// C++: gcode += this->extrude_entity(*entity, description, speed);
     /// C++: }
     for entity in &collection.entities {
+        // EMPTY_LOOP_NO_TRAVEL: a loop the seam-gap clip empties prints nothing at the pin, not
+        // even its travel (GCode.cpp:6713-6714 `if (paths.empty()) return "";` comes before
+        // `_extrude`, which travels, :7611). Skipped before the travel and the role tag; a
+        // pending pre-travel position stays for the next entity (`m_last_pos` did not move).
+        if loop_prints_nothing(entity, writer, config) {
+            continue;
+        }
         /// Get entity role for feature tracking
         /// GCode.cpp:2862-2863
         let entity_role = get_entity_role(entity);
@@ -3412,6 +3419,33 @@ fn travel_target_for_entity(
     get_entity_first_point(entity)
 }
 
+/// EMPTY_LOOP_NO_TRAVEL (faithful, R951): true for a loop that `extrude_loop` would clip to
+/// nothing with the seam gap (GCode.cpp:6703-6714: `clip_length = scale_(nozzle_diameter) *
+/// seam_gap / 100`, `loop.clip_end(clip_length, &paths); if (paths.empty()) return "";`), the
+/// same clip as `extrude_loop` here. The pin then writes nothing for it, not the travel either,
+/// which lives in `_extrude` (GCode.cpp:7611). =0: always false (the earlier arm travels to it).
+fn loop_prints_nothing(
+    entity: &ExtrusionEntityType,
+    writer: &GCodeWriter,
+    config: &crate::print_config::PrintObjectConfig,
+) -> bool {
+    let ExtrusionEntityType::Loop(l) = entity else {
+        return false;
+    };
+    if !(crate::faithful_gate("ZSMOOTH_FAITHFUL")
+        && crate::gcode::writer::lift_faithful_gate()
+        && crate::faithful_gate("EMPTY_LOOP_NO_TRAVEL"))
+    {
+        return false;
+    }
+    let clip_length = crate::scale(writer.config_ref().nozzle_diameter) as f64 * (config.seam_gap / 100.0);
+    let mut probe = l.clone();
+    probe.make_counter_clockwise();
+    let mut tmp = Vec::new();
+    probe.clip_end(clip_length, &mut tmp);
+    tmp.is_empty()
+}
+
 fn writer_last_pos(writer: &GCodeWriter) -> Point {
     let p = writer.position();
     Point::new(scale(p.x), scale(p.y))
@@ -3491,6 +3525,12 @@ fn chained_path_from(
     eec: &ExtrusionEntityCollection,
     writer: &GCodeWriter,
 ) -> ExtrusionEntityCollection {
+    chained_path_from_pos(eec, writer_last_pos(writer))
+}
+
+/// `chained_path_from` from a given `start_near` (ExtrusionEntityCollection.hpp:102-103,
+/// .cpp:89-99), for a caller that chains from `m_last_pos` before a travel it writes itself.
+fn chained_path_from_pos(eec: &ExtrusionEntityCollection, start_near: Point) -> ExtrusionEntityCollection {
     // hpp:103: when no_sort is set, return the collection unchanged.
     if eec.no_sort {
         return eec.clone();
@@ -3498,7 +3538,6 @@ fn chained_path_from(
     // cpp:92-96: filtered (here unfiltered, role == erMixed) clone of the entities.
     let mut out = eec.clone();
     // cpp:97: chain_and_reorder_extrusion_entities(out.entities, &start_near)
-    let start_near = writer_last_pos(writer);
     crate::shortest_path::chain_and_reorder_extrusion_entities(
         &mut out.entities,
         Some(&start_near),
@@ -4690,10 +4729,31 @@ pub fn extrude_perimeters_entities(
     let node_first = cooling_node_ids.is_some()
         && !skip_inner_walls
         && crate::faithful_gate("COOLING_NODE_BEFORE_TRAVEL");
+    // EMPTY_LOOP_NO_TRAVEL: loops the seam-gap clip empties print nothing and get no travel
+    // (GCode.cpp:6713-6714, :7611); the bucket travel goes to the first entity that prints, and
+    // the markers of the empty ones before it are written before it (GCode.cpp:5738-5747).
+    let printing_idx = if skip_inner_walls {
+        Some(0)
+    } else {
+        entities.iter().position(|e| !loop_prints_nothing(e, writer, config))
+    };
+    let Some(first_idx) = printing_idx else {
+        if let Some(ids) = cooling_node_ids {
+            for k in 0..entities.len() {
+                let id = ids.get(k).copied().unwrap_or(-1);
+                if id != -1 {
+                    writer.write_raw(&format!("; COOLING_NODE: {}", id));
+                }
+            }
+        }
+        return;
+    };
     if node_first {
-        let id = cooling_node_ids.and_then(|ids| ids.first().copied()).unwrap_or(-1);
-        if id != -1 {
-            writer.write_raw(&format!("; COOLING_NODE: {}", id));
+        for k in 0..=first_idx {
+            let id = cooling_node_ids.and_then(|ids| ids.get(k).copied()).unwrap_or(-1);
+            if id != -1 {
+                writer.write_raw(&format!("; COOLING_NODE: {}", id));
+            }
         }
     }
     // ZSMOOTH_FAITHFUL: the bucket-start retract must go through the faithful
@@ -4702,9 +4762,9 @@ pub fn extrude_perimeters_entities(
     // unconditional behavior (byte-locked).
     let bucket_from = writer_last_pos(writer);
     let first_pt_opt = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-        travel_target_for_entity(&entities[0], writer_last_pos(writer))
+        travel_target_for_entity(&entities[first_idx], writer_last_pos(writer))
     } else {
-        get_entity_first_point(&entities[0])
+        get_entity_first_point(&entities[first_idx])
     };
     let do_retract = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         match first_pt_opt {
@@ -4713,7 +4773,7 @@ pub fn extrude_perimeters_entities(
                 let dx = crate::unscale(fp.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(fp.y()) - crate::unscale(from.y);
                 let travel_len = (dx * dx + dy * dy).sqrt();
-                let role = get_entity_role(&entities[0]);
+                let role = get_entity_role(&entities[first_idx]);
                 writer.needs_retraction_faithful(from, fp, role, travel_len)
             }
             None => true,
@@ -4730,7 +4790,7 @@ pub fn extrude_perimeters_entities(
             let dx = crate::unscale(fp.x()) - crate::unscale(from.x);
             let dy = crate::unscale(fp.y()) - crate::unscale(from.y);
             writer.set_travel_acceleration_for(
-                get_entity_role(&entities[0]),
+                get_entity_role(&entities[first_idx]),
                 (dx * dx + dy * dy).sqrt(),
             );
         }
@@ -4758,7 +4818,7 @@ pub fn extrude_perimeters_entities(
     if crate::faithful_gate("ZSMOOTH_FAITHFUL")
         && bucket_seam_once_gate()
         && !skip_inner_walls
-        && matches!(entities[0], ExtrusionEntityType::Loop(_))
+        && matches!(entities[first_idx], ExtrusionEntityType::Loop(_))
     {
         BUCKET_PRE_TRAVEL_POS.with(|c| c.set(Some(bucket_from)));
     }
@@ -4774,7 +4834,7 @@ pub fn extrude_perimeters_entities(
         // writer state as the batch path below.
         for (k, entity) in entities.iter().enumerate() {
             let id = ids.get(k).copied().unwrap_or(-1);
-            if id != -1 && !(node_first && k == 0) {
+            if id != -1 && !(node_first && k <= first_idx) {
                 writer.write_raw(&format!("; COOLING_NODE: {}", id));
             }
             let coll = crate::extrusion_entity::ExtrusionEntityCollection {
@@ -4819,7 +4879,43 @@ pub fn extrude_infill_entities(
         }
         let m_last_pos = writer_last_pos(writer);
         crate::shortest_path::chain_and_reorder_extrusion_entities(&mut extrusions, Some(&m_last_pos));
-        let Some(first_pt) = extrusions.first().and_then(|e| {
+        // INFILL_BUCKET_CHAIN_FIRST (faithful, R951): the pin writes no bucket travel; the first
+        // fill, a collection, is chained from `m_last_pos` (`eec->chained_path_from(m_last_pos)`,
+        // GCode.cpp:6997-7000) and `_extrude` of its first entity travels to that entity
+        // (GCode.cpp:7611). The bucket travel here stands for that travel, so it goes to the
+        // chained collection's first entity, and that same chained collection is printed. =0: the
+        // travel goes to the unchained collection's first point and the collection is chained
+        // again from where the travel ended.
+        // EMPTY_LOOP_NO_TRAVEL: an entity that prints nothing (a loop the seam-gap clip empties,
+        // GCode.cpp:6713-6714) moves nothing, so the travel goes to the first entity that prints;
+        // a later collection is chained from the same `m_last_pos` (GCode.cpp:6997-6998).
+        let mut first_chained: Option<(usize, ExtrusionEntityCollection)> = None;
+        let mut first_fill_idx = 0usize;
+        if crate::faithful_gate("ZSMOOTH_FAITHFUL") && crate::faithful_gate("INFILL_BUCKET_CHAIN_FIRST") {
+            for (i, fill) in extrusions.iter().enumerate() {
+                match fill {
+                    ExtrusionEntityType::Collection(eec) => {
+                        let c = chained_path_from_pos(eec, m_last_pos);
+                        if c.entities.iter().any(|e| !loop_prints_nothing(e, writer, config)) {
+                            first_fill_idx = i;
+                            first_chained = Some((i, c));
+                            break;
+                        }
+                    }
+                    _ => {
+                        if !loop_prints_nothing(fill, writer, config) {
+                            first_fill_idx = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let first_leaf: Option<&ExtrusionEntityType> = match &first_chained {
+            Some((_, c)) => c.entities.iter().find(|e| !loop_prints_nothing(e, writer, config)),
+            None => extrusions.get(first_fill_idx),
+        };
+        let Some(first_pt) = first_leaf.and_then(|e| {
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 travel_target_for_entity(e, writer_last_pos(writer))
             } else {
@@ -4828,6 +4924,33 @@ pub fn extrude_infill_entities(
         }) else {
             continue;
         };
+        // INFILL_BUCKET_PROBE (diagnostic only): the bucket's start, entity kinds and first points.
+        if crate::probe_enabled("INFILL_BUCKET_PROBE") {
+            let kinds: Vec<String> = extrusions
+                .iter()
+                .take(6)
+                .map(|e| {
+                    let k = match e {
+                        ExtrusionEntityType::Path(_) => "P",
+                        ExtrusionEntityType::MultiPath(_) => "M",
+                        ExtrusionEntityType::Loop(_) => "L",
+                        ExtrusionEntityType::Collection(_) => "C",
+                    };
+                    format!("{}{:?}{:?}", k, get_entity_role(e), get_entity_first_point(e))
+                })
+                .collect();
+            eprintln!(
+                "INFILL_BUCKET z={:.3} from={:?} n={} target={:?} first={:?}",
+                writer.z(),
+                m_last_pos,
+                extrusions.len(),
+                first_pt,
+                kinds
+            );
+        }
+        // The role `_extrude` sees for that travel is the first entity's (GCode.cpp:7611-7618).
+        // With both gates at 0, `first_leaf` is `extrusions.first()`.
+        let first_role = first_leaf.map(get_entity_role);
         // ZSMOOTH_FAITHFUL: bucket-start retract through faithful
         // needs_retraction (GCode.cpp:6964) — R167.
         {
@@ -4836,10 +4959,7 @@ pub fn extrude_infill_entities(
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
                 let travel_len = (dx * dx + dy * dy).sqrt();
-                let role = extrusions
-                    .first()
-                    .map(get_entity_role)
-                    .unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
+                let role = first_role.unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
                 writer.needs_retraction_faithful(from, first_pt, role, travel_len)
             } else {
                 true
@@ -4851,10 +4971,7 @@ pub fn extrude_infill_entities(
                 let from = writer_last_pos(writer);
                 let dx = crate::unscale(first_pt.x()) - crate::unscale(from.x);
                 let dy = crate::unscale(first_pt.y()) - crate::unscale(from.y);
-                let role = extrusions
-                    .first()
-                    .map(get_entity_role)
-                    .unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
+                let role = first_role.unwrap_or(crate::extrusion_entity::ExtrusionRole::InternalInfill);
                 writer.set_travel_acceleration_for(role, (dx * dx + dy * dy).sqrt());
             } else {
                 writer.set_travel_acceleration(6000.0);
@@ -4884,14 +5001,18 @@ pub fn extrude_infill_entities(
         // =0: the first entity splits from the post-travel position.
         let infill_split_once = crate::faithful_gate("ZSMOOTH_FAITHFUL")
             && crate::faithful_gate("INFILL_BUCKET_SPLIT_ONCE")
-            && matches!(extrusions.first(), Some(ExtrusionEntityType::Loop(_)));
+            && matches!(first_leaf, Some(ExtrusionEntityType::Loop(_)));
         if infill_split_once {
             BUCKET_PRE_TRAVEL_POS.with(|c| c.set(Some(m_last_pos)));
         }
-        for fill in &extrusions {
+        for (fill_idx, fill) in extrusions.iter().enumerate() {
             match fill {
                 ExtrusionEntityType::Collection(eec) => {
-                    let chained = chained_path_from(eec, writer);
+                    // INFILL_BUCKET_CHAIN_FIRST: the first collection as chained before the travel.
+                    let chained = match &first_chained {
+                        Some((fi, c)) if *fi == fill_idx => c.clone(),
+                        _ => chained_path_from(eec, writer),
+                    };
                     let _ = extrude_collection(&chained, writer, config, is_first_layer);
                 }
                 _ => {
@@ -16355,6 +16476,52 @@ mod extrude_support_pin_tests {
         let (with, c1) = run(Some(std::slice::from_ref(&island)));
         assert!(without > 0, "{c0}");
         assert_eq!(with, 0, "{c1}");
+    }
+}
+
+#[cfg(test)]
+mod empty_loop_no_travel_tests {
+    //! EMPTY_LOOP_NO_TRAVEL (R951): a loop no longer than the seam-gap clip prints nothing at the
+    //! pin (GCode.cpp:6703-6714), so it gets no travel (GCode.cpp:7611).
+    use super::*;
+    use crate::extrusion_entity::{ExtrusionLoopRole, ExtrusionRole};
+    use crate::geometry::{Point, Polyline};
+    use crate::print_config::PrintObjectConfig;
+
+    fn square_loop(side: f64) -> ExtrusionEntityType {
+        let mut p = ExtrusionPath::new(ExtrusionRole::ExternalPerimeter);
+        p.polyline = Polyline::from_points(vec![
+            Point::new_scale(10.0, 10.0),
+            Point::new_scale(10.0 + side, 10.0),
+            Point::new_scale(10.0 + side, 10.0 + side),
+            Point::new_scale(10.0, 10.0 + side),
+            Point::new_scale(10.0, 10.0),
+        ]);
+        p.mm3_per_mm = 0.05;
+        p.width = 0.4;
+        p.height = 0.2;
+        ExtrusionEntityType::Loop(ExtrusionLoop::new(vec![p], ExtrusionLoopRole::DEFAULT))
+    }
+
+    #[test]
+    fn a_loop_inside_the_seam_gap_prints_nothing() {
+        if !(crate::faithful_gate("ZSMOOTH_FAITHFUL")
+            && crate::gcode::writer::lift_faithful_gate()
+            && crate::faithful_gate("EMPTY_LOOP_NO_TRAVEL"))
+        {
+            return;
+        }
+        let writer = GCodeWriter::new();
+        let config = PrintObjectConfig::default();
+        // clip = nozzle * seam_gap / 100 (mm); a square of perimeter 4 * side.
+        let clip_mm = writer.config_ref().nozzle_diameter * config.seam_gap / 100.0;
+        assert!(clip_mm > 0.0);
+        assert!(loop_prints_nothing(&square_loop(clip_mm / 8.0), &writer, &config));
+        assert!(!loop_prints_nothing(&square_loop(clip_mm), &writer, &config));
+        // Paths are never skipped (only extrude_loop clips).
+        let mut p = ExtrusionPath::new(ExtrusionRole::GapFill);
+        p.polyline = Polyline::from_points(vec![Point::new_scale(0.0, 0.0), Point::new_scale(0.001, 0.0)]);
+        assert!(!loop_prints_nothing(&ExtrusionEntityType::Path(p), &writer, &config));
     }
 }
 
