@@ -2688,6 +2688,64 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 mod circle_compensation_settings_tests {
     use super::*;
 
+    /// GCodeProcessor.cpp:2081–2087. Reapplying a typed profile replaces
+    /// the layer-detection flags before the first tagged layer is processed.
+    #[test]
+    fn layer_tag_profiles_match_native() {
+        use crate::gcode::g_code_processor::GCodeProcessor;
+
+        let program = "; CHANGE_LAYER\nG1 X1 Y2 Z0.2 F1200\nG1 X2 E1\n; CHANGE_LAYER\nG1 Z0.4\nG1 X3 E2\n";
+        let profiles = (0..4).map(|flags| {
+            let spiral = if flags & 1 != 0 { "1" } else { "0" };
+            let scarf = if flags & 2 != 0 { "1" } else { "0" };
+            let json = serde_json::json!({"spiral_mode": spiral, "has_scarf_joint_seam": scarf});
+            let (loaded, _, _) = load_bambustudio_settings(&json).unwrap();
+            let mut direct = PrintConfig::default();
+            for (key, value) in [("spiral_mode", spiral), ("has_scarf_joint_seam", scarf)] {
+                direct.apply_key_value(key, value);
+            }
+            [loaded, direct]
+        }).collect::<Vec<_>>();
+        let rows = include_str!("../tests/data/g_code_processor/layer_tag_profiles.txt");
+        assert_eq!(rows.lines().count(), 16);
+        for row in rows.lines() {
+            let words = row.split_whitespace().collect::<Vec<_>>();
+            let previous = words[0].parse::<usize>().unwrap();
+            let current = words[1].parse::<usize>().unwrap();
+            let layer_count = words[2].parse::<usize>().unwrap();
+            assert_eq!(words.len(), 3 + 3 * layer_count);
+            let expected = words[3..].chunks_exact(3).map(|data| {
+                (u32::from_str_radix(data[0], 16).unwrap(),
+                 (data[1].parse::<usize>().unwrap(), data[2].parse::<usize>().unwrap()))
+            }).collect::<Vec<_>>();
+            for (old, new) in profiles[previous].iter().zip(&profiles[current]) {
+                let mut processor = GCodeProcessor::new();
+                processor.reset();
+                processor.apply_config(old);
+                processor.apply_config(new);
+                processor.process_buffer(program);
+                let actual = processor.result().spiral_vase_layers.iter()
+                    .map(|(height, ids)| (height.to_bits(), *ids)).collect::<Vec<_>>();
+                assert_eq!(actual, expected, "{row}");
+            }
+        }
+    }
+
+    #[test]
+    fn layer_tag_profiles_round_trip_settings() {
+        let default = PrintConfig::default();
+        let old = serde_json::to_value(&default).unwrap();
+        assert!(old.get("has_scarf_joint_seam").is_none());
+        let mut config: PrintConfig = serde_json::from_value(old).unwrap();
+        assert!(!config.has_scarf_joint_seam);
+        assert!(config.set_deserialize("has_scarf_joint_seam", "1"));
+        let saved = serde_json::to_value(&config).unwrap();
+        let mut restored: PrintConfig = serde_json::from_value(saved).unwrap();
+        assert!(restored.has_scarf_joint_seam);
+        restored.apply_key_value_map(&default.to_key_value_map());
+        assert!(!restored.has_scarf_joint_seam);
+    }
+
     /// PrintConfig.cpp:3000-3006, 3624-3628, 3682-3688 and GCodeProcessor.cpp:2008-2027.
     #[test]
     fn filament_material_info_matches_native() {

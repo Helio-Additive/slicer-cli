@@ -878,11 +878,41 @@ static void filament_material_info()
     }
 }
 
+// GCodeProcessor.cpp 2081-2087. Applying another typed profile replaces
+// the detection setting before the processor sees the first layer tag.
+static void layer_tag_profiles()
+{
+    const char *program = "; CHANGE_LAYER\nG1 X1 Y2 Z0.2 F1200\nG1 X2 E1\n"
+                          "; CHANGE_LAYER\nG1 Z0.4\nG1 X3 E2\n";
+    for (int previous = 0; previous < 4; ++previous) {
+        for (int current = 0; current < 4; ++current) {
+            PrintConfig cfg;
+            GCodeProcessor proc;
+            proc.reset();
+            for (int flags : {previous, current}) {
+                cfg.spiral_mode.value = (flags & 1) != 0;
+                cfg.has_scarf_joint_seam.value = (flags & 2) != 0;
+                proc.apply_config(cfg);
+            }
+            proc.process_buffer(program);
+            const auto &layers = proc.result().spiral_vase_layers;
+            std::printf("%d %d %zu", previous, current, layers.size());
+            for (const auto &layer : layers)
+                std::printf(" %s %zu %zu", f32(layer.first).c_str(), layer.second.first, layer.second.second);
+            std::putchar('\n');
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--layer-tag-profiles") {
+        layer_tag_profiles();
+        return 0;
     }
     if (std::string(argv[1]) == "--filament-material-info") {
         filament_material_info();

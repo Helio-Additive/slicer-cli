@@ -3383,6 +3383,12 @@ impl GCodeProcessor {
             self.ensure_nozzle_group_result(self.m_result.filaments_count as i32);
         }
 
+        // GCodeProcessor.cpp:2081-2087. Each typed profile replaces the
+        // detection setting, including an ordinary profile after a spiral one.
+        if crate::faithful_gate("PROCESSOR_LAYER_TAG_PROFILES") {
+            self.m_detect_layer_based_on_tag = config.spiral_vase || config.has_scarf_joint_seam;
+        }
+
         // GCodeProcessor.cpp:2057-2059 — m_first_layer_height from `initial_layer_print_height`,
         // which the startup paths are flattened to and the first `Z_HEIGHT` tag compares with.
         // PROCESSOR_FIRST_LAYER_HEIGHT (on); =0 leaves it 0.

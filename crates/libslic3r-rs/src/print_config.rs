@@ -233,6 +233,9 @@ pub struct PrintConfig {
     // === Misc ===
     /// Enable spiral/vase mode.
     pub spiral_vase: bool,
+    /// PrintConfig.hpp:1540, PrintConfig.cpp:4963-4965. Scarf seams use layer tags.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_scarf_joint_seam: bool,
     /// PrintConfig.hpp:1442: spiral_mode_smooth — interpolate XY with the previous
     /// layer so there is no seam at layer changes. Consumed by SpiralVase.
     pub spiral_mode_smooth: bool,
@@ -1408,6 +1411,7 @@ impl Default for PrintConfig {
 
             // Misc
             spiral_vase: false,
+            has_scarf_joint_seam: false,
             z_direction_outwall_speed_continuous: false,
             spiral_mode_smooth: false,
             gcode_flavor: GCodeFlavor::Marlin,
@@ -2934,6 +2938,12 @@ impl PrintConfig {
             "z_direction_outwall_speed_continuous" => {
                 if let Some(v) = parse_bool(value) {
                     self.z_direction_outwall_speed_continuous = v;
+                }
+                true
+            }
+            "has_scarf_joint_seam" if crate::faithful_gate("PROCESSOR_LAYER_TAG_PROFILES") => {
+                if let Some(v) = parse_bool(value) {
+                    self.has_scarf_joint_seam = v;
                 }
                 true
             }
@@ -5483,6 +5493,9 @@ impl PrintConfig {
                 "0".into()
             },
         );
+        if crate::faithful_gate("PROCESSOR_LAYER_TAG_PROFILES") {
+            m.insert("has_scarf_joint_seam".into(), u8::from(self.has_scarf_joint_seam).to_string());
+        }
         m.insert(
             "spiral_mode".into(),
             if self.spiral_vase {
@@ -5766,6 +5779,9 @@ impl PrintConfig {
             }
             "enable_arc_fitting" => {
                 self.arc_fitting_enabled = parse_bool(value);
+            }
+            "has_scarf_joint_seam" if crate::faithful_gate("PROCESSOR_LAYER_TAG_PROFILES") => {
+                return self.set_deserialize(key, value);
             }
             "spiral_mode" => {
                 self.spiral_vase = parse_bool(value);
