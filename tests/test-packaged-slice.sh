@@ -174,6 +174,26 @@ if [ -n "$SNAP_BINARY" ]; then
     test -s "$WORKDIR/snap-range/plate_1.gcode"
     grep -q RangeLayerHeightFilled "$WORKDIR/snap-range.log"
     echo "PASS: packaged snapmaker height range with no layer height keeps the object's"
+    # A filament number past the run's filaments is refused (-2), as the
+    # official command line refuses --load-filament-ids past the loaded
+    # filaments (Snapmaker_Orca.cpp 1543 at the Snapmaker pin). This run names
+    # no filament and has one. The code is read from result.json: Git Bash
+    # shows 127 for every negative exit code.
+    printf '{"plates": [{"plate_name": "past", "need_arrange": true, "objects": [{"path": "snap.stl", "count": 1, "filaments": [2]}]}]}\n' > "$WORKDIR/asm-past.json"
+    if (cd "$WORKDIR" && "$SNAP_ABS" --load-assemble-list asm-past.json --slice 1 \
+        --printer-preset "Snapmaker U1 (0.4 nozzle)" --outputdir snap-past > snap-past.log 2>&1); then
+        cat "$WORKDIR/snap-past.log"
+        echo 'FAIL: a filament number past the loaded filaments was not refused'
+        exit 1
+    fi
+    python3 - "$WORKDIR/snap-past/result.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+assert d["return_code"] == -2, d
+assert "filament 2, but this run has 1 filament(s)" in d["error_string"], d
+PY
+    test ! -e "$WORKDIR/snap-past/plate_1.gcode"
+    echo "PASS: packaged snapmaker refuses a filament number past the loaded filaments (-2)"
     if grep -E 'parse (.*[/\\])?(info|flush|profiles)[/\\]|PresetBundle exception' "$WORKDIR/snap.log"; then
         exit 1
     fi
