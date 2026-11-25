@@ -715,11 +715,51 @@ static void wipe_cases()
     }
 }
 
+// GCode.cpp:477-520, 8498-8517. Keep the actual current point independent
+// of the stored path, as on an extruded loop after seam clipping.
+static void short_wipes()
+{
+    const Point pos(100000, 200000);
+    const Point from(99000, 199900);
+    const std::vector<Points> paths = {{}, {pos}, {from, pos}, {from, pos, pos},
+        {from, Point(pos.x() + 1, pos.y())}, {from, Point(pos.x() + 10, pos.y())},
+        {from, Point(pos.x() + 11, pos.y())}, {from, pos, Point(pos.x() + 1000, pos.y())}};
+    for (const auto &[length, before] : std::vector<std::pair<const char *, const char *>>{
+            {"0.8", "0"}, {"0.8", "30"}, {"0.8", "100"}, {"0", "0"}})
+      for (const char *distance : {"2", "0", "0.0001"})
+        for (const Points &path : paths) {
+            DynamicPrintConfig settings;
+            for (const auto &kv : KVs{{"gcode_flavor", "marlin"}, {"wipe", "1"}, {"wipe_distance", distance},
+                                      {"retraction_length", length}, {"retract_before_wipe", before},
+                                      {"retract_speed", "30"}, {"use_relative_e_distances", "1"}})
+                settings.set_deserialize_strict(kv.first, kv.second);
+            PrintConfig cfg;
+            cfg.apply(settings, true);
+            GCode gg;
+            gg.apply_print_config(cfg);
+            gg.m_writer.set_extruders({0});
+            gg.m_writer.toolchange(0, 0);
+            gg.m_writer.set_speed(600.);
+            gg.m_enable_cooling_markers = true;
+            gg.set_last_pos(pos);
+            gg.m_wipe.path = Polyline(path);
+            const auto gcode = gg.retract(false, false, LiftType::NormalLift, false);
+            std::printf("%s %s %s %zu", length, before, distance, path.size());
+            for (const Point &p : path)
+                std::printf(" %d %d", int(p.x()), int(p.y()));
+            std::printf(" %s\n", hex(gcode).c_str());
+        }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--short-wipes") {
+        short_wipes();
+        return 0;
     }
     std::string dir = argv[1];
     g_out           = fopen((dir + "/g_code.txt").c_str(), "wb");

@@ -2582,34 +2582,37 @@ impl GCodeWriter {
                 );
             }
         }
-        // Wipe during retraction (C++ Wipe::wipe from GCode.cpp:357-433)
-        // Retract filament while moving along the reversed last extrusion path
-        if lift_faithful_gate() && self.wipe_enabled && self.wipe_path.len() >= 2 {
-            // R222: verbatim Wipe::wipe (GCode.cpp:360-433), the whole cluster:
-            // forward source-polyline walk, wipe_dist clip, per-segment
-            // dE = length*(seg/wipe_dist)*0.95, current-speed wipe (set_speed
-            // dedup -> usually no F line), WIPE_START/END markers.
-            let length = self.retraction_length * (1.0 - self.config.retract_before_wipe / 100.0);
+        // GCode.cpp:8498-8517 checks the configured filament wipe distance
+        // before Wipe::wipe can substitute its tool-change distance.
+        let short_wipes = lift_faithful_gate() && crate::faithful_gate("WIPE_CLIP_SCALED")
+            && crate::faithful_gate("WIPE_SHORT_PATH");
+        let filament_wipe_dist = if crate::faithful_gate("WIPE_DIST_CONFIG") {
+            self.config.wipe_distance_profile.unwrap_or(self.config.filament_wipe_distance)
+        } else {
+            self.config.filament_wipe_distance
+        };
+        let has_wipe = if short_wipes {
+            !self.wipe_path.is_empty()
+                && filament_wipe_dist / crate::libslic3r::SCALING_FACTOR > crate::libslic3r::SCALED_EPSILON
+        } else {
+            self.wipe_path.len() >= 2
+        };
+        if lift_faithful_gate() && self.wipe_enabled && has_wipe {
+            // GCodeWriter.cpp:881-902, GCode.cpp:456-461. First retract the
+            // configured percentage, then distribute the balance over the wipe.
+            let factor = if short_wipes {
+                (self.config.retract_before_wipe * 0.01).clamp(0.0, 1.0)
+            } else {
+                self.config.retract_before_wipe / 100.0
+            };
+            let before_wipe = if short_wipes { self.retraction_length * factor } else { 0.0 };
+            if before_wipe > 0.0 {
+                self.write_retraction(before_wipe, retract_speed);
+            }
+            let length = self.retraction_length * (1.0 - factor);
             if length >= 0.0 {
-                // Native: wipe_distance.get_at(filament) — the per-filament
-                // value (1.0 on this profile), not the writer's 2.0 default.
-                // R807: the profile key is `wipe_distance` (BBS FILAMENT_CONFIG,
-                // GCode.cpp:380), parsed into `config.wipe_distance_profile`;
-                // `filament_wipe_distance` is only fed by a key no profile
-                // carries, so every wipe was clipped at its 1.0 mm default
-                // against native's 2.0 (Majora sparse len/wipe 1.000 v 2.000).
-                // `WIPE_DIST_CONFIG=0` restores the old field.
-                let mut wipe_dist = if crate::faithful_gate("WIPE_DIST_CONFIG") {
-                    self.config
-                        .wipe_distance_profile
-                        .unwrap_or(self.config.filament_wipe_distance)
-                } else {
-                    self.config.filament_wipe_distance
-                };
-                // TOOLCHANGE_WIPE_SPEED (on): GCode.cpp:469-472 — a tool change
-                // wipes `prime_tower_wipe_distance` when it is set.
-                let toolchange_wipe =
-                    self.m_toolchange_wipe && crate::faithful_gate("TOOLCHANGE_WIPE_SPEED");
+                let mut wipe_dist = filament_wipe_dist;
+                let toolchange_wipe = self.m_toolchange_wipe && crate::faithful_gate("TOOLCHANGE_WIPE_SPEED");
                 if toolchange_wipe && self.config.prime_tower_wipe_distance > 0.0 {
                     wipe_dist = self.config.prime_tower_wipe_distance;
                 }
@@ -2651,6 +2654,11 @@ impl GCodeWriter {
                         let dy = (b.1 - a.1) as f64;
                         (dx * dx + dy * dy).sqrt()
                     };
+                    // Polyline.hpp:89-96 skips the first point of the appended
+                    // range when it equals last_pos. Further duplicates remain.
+                    if short_wipes && ip.len() >= 2 && ip[0] == ip[1] {
+                        ip.remove(1);
+                    }
                     let total: f64 = ip.windows(2).map(|w| seg_len(w[0], w[1])).sum();
                     // scale_(wipe_distance): a division, as a double.
                     let mut wd = wipe_dist / sf;
@@ -2674,7 +2682,7 @@ impl GCodeWriter {
                         }
                         distance -= lsqr.sqrt();
                     }
-                    if ip.len() >= 2 {
+                    if short_wipes || ip.len() >= 2 {
                         let len: f64 = ip.windows(2).map(|w| seg_len(w[0], w[1])).sum();
                         if len < wd {
                             wd = if len < crate::libslic3r::EPSILON { crate::libslic3r::EPSILON } else { len };
@@ -2718,7 +2726,11 @@ impl GCodeWriter {
                         );
                     }
                 }
-                if kept.len() >= 2 && acc > 1e-4 {
+                // GCode.cpp:487-516 emits the markers for a single remaining
+                // point. Only actual segments emit XY moves and acceleration.
+                let write_wipe = if short_wipes { !kept.is_empty() } else { kept.len() >= 2 && acc > 1e-4 };
+                let mut wiped = before_wipe;
+                if write_wipe {
                     // R227: native wipe segments are extrude_to_xy calls, so
                     // they surface the pending (reset) accel before WIPE_START's
                     // first move.
@@ -2815,10 +2827,10 @@ impl GCodeWriter {
                             self.feedrate = wipe_f;
                         }
                     }
-                    if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && accel_after_speed {
+                    if crate::faithful_gate("WIPE_ACCEL_AFTER_MARKER") && accel_after_speed && kept.len() >= 2 {
                         self.flush_pending_accel();
                     }
-                    let mut wiped_sum: CoordF = 0.0;
+                    let mut wiped_sum: CoordF = before_wipe;
                     for i in 1..kept.len() {
                         let dx = kept[i].0 - kept[i - 1].0;
                         let dy = kept[i].1 - kept[i - 1].1;
@@ -2846,28 +2858,22 @@ impl GCodeWriter {
                     // WIPE_CLIP_SCALED: `Extruder::retract(length)` retracts
                     // `length - m_retracted`, the sum of the wipe's dE
                     // (Extruder.cpp:71-91, 101-130).
-                    let wiped: CoordF = if seg_ratios.is_some() {
+                    wiped = if seg_ratios.is_some() {
                         wiped_sum
                     } else {
                         length * 0.95 * (acc.min(eff_wipe_dist) / eff_wipe_dist)
                     };
+                }
+                if short_wipes || write_wipe {
                     let remaining = self.retraction_length - wiped;
-                    if remaining > 1e-6 {
-                        self.extruder.extrude(-remaining);
-                        let e_out = self.extruder.e();
-                        self.write_command(&GCodeCommand::LinearMove {
-                            x: None,
-                            y: None,
-                            z: None,
-                            e: Some(e_out),
-                            f: Some(retract_speed),
-                        });
-                        self.last_emitted_f = retract_speed;
+                    let minimum = if short_wipes { 0.0 } else { 1e-6 };
+                    if remaining > minimum {
+                        self.write_retraction(remaining, retract_speed);
                     }
                 }
             }
             self.wipe_path.clear();
-        } else if self.wipe_enabled && self.wipe_path.len() >= 2 {
+        } else if !lift_faithful_gate() && self.wipe_enabled && self.wipe_path.len() >= 2 {
             // Build reversed wipe path from current position
             let mut wipe_pts: Vec<(CoordF, CoordF)> = Vec::new();
             wipe_pts.push((self.x, self.y)); // current position
@@ -2972,7 +2978,7 @@ impl GCodeWriter {
 
             // Clear wipe path after use
             self.wipe_path.clear();
-        } else {
+        } else if !short_wipes || retraction_length > 0.0 {
             // No wipe path — simple retraction
             let de = -retraction_length;
             self.extruder.extrude(de);
@@ -2998,6 +3004,19 @@ impl GCodeWriter {
         self.retracted = true;
         self.m_retracted_length = self.retraction_length;
         self.stats.retraction_count += 1;
+    }
+
+    /// GCodeWriter.cpp:903-925. Emit an E-only retraction at the configured speed.
+    fn write_retraction(&mut self, amount: CoordF, speed: CoordF) {
+        self.extruder.extrude(-amount);
+        self.write_command(&GCodeCommand::LinearMove {
+            x: None,
+            y: None,
+            z: None,
+            e: Some(self.extruder.e()),
+            f: Some(speed),
+        });
+        self.last_emitted_f = speed;
     }
 
     /// Retract filament without z-hop lift.
@@ -4015,6 +4034,40 @@ mod tests {
         assert!(!first_line(&last).contains(";_WIPE"), "last wipe: {last}");
         assert!(first_line(&other).ends_with(";_WIPE"), "other wipe: {other}");
         assert_eq!(first_line(&last) + ";_WIPE", first_line(&other));
+    }
+
+    /// Raw output of GCode::retract for the native --short-wipes vectors.
+    /// GCode.cpp:477-520, 8498-8517 and Polyline.hpp:89-96.
+    #[test]
+    fn short_wipe_retractions_match_native() {
+        let fixture = include_str!("../../tests/data/g_code/short_wipes.txt");
+        assert_eq!(fixture.lines().count(), 96);
+        for line in fixture.lines() {
+            let mut fields = line.split_whitespace();
+            let mut config = PrintConfig::default();
+            config.retract_length = fields.next().unwrap().parse().unwrap();
+            config.retract_before_wipe = fields.next().unwrap().parse().unwrap();
+            config.wipe_distance_profile = Some(fields.next().unwrap().parse().unwrap());
+            config.retract_speed = 30.0;
+            let count: usize = fields.next().unwrap().parse().unwrap();
+            let points = (0..count).map(|_| {
+                let x = fields.next().unwrap().parse::<i64>().unwrap();
+                let y = fields.next().unwrap().parse::<i64>().unwrap();
+                (crate::unscale(x), crate::unscale(y))
+            }).collect();
+            let mut writer = GCodeWriter::with_config(config);
+            writer.set_position_xy(1.0, 2.0);
+            writer.set_wipe_path_points(points);
+            writer.set_speed(600.0, "");
+            let start = writer.gcode().content().len();
+            writer.retract_with_lift_type(0, false);
+
+            let hex = fields.next().unwrap();
+            let expected = if hex == "-" { Vec::new() } else {
+                (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect()
+            };
+            assert_eq!(&writer.gcode().content().as_bytes()[start..], expected, "{line}");
+        }
     }
 
     /// GCode.cpp:447-449 + 498: with no current speed yet (`m_current_speed`
