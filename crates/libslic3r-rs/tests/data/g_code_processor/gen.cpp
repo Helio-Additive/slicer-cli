@@ -642,11 +642,46 @@ static const char *PROG_VG1 = "G28\n"
                               ";VG1 Z0.6 F600\n"
                               ";VG1 X20 Y60 E1 F6000\n";
 
+// GCodeProcessor.cpp:2038-2040, 6596-6610. Keep the rows deliberately out
+// of extruder order to distinguish an exact match, an owner's fallback, and 0.
+static void machine_rows()
+{
+    using namespace MultiNozzleUtils;
+    PrintConfig config;
+    config.printer_extruder_id.values = {2, 1, 1, 2};
+    config.printer_extruder_variant.values = {"Bowden Standard", "Direct Drive Standard",
+                                               "Direct Drive High Flow", "Bowden High Flow"};
+    config.extruder_type.values = {etDirectDrive, etBowden};
+    const std::vector<NozzleInfo> nozzles = {
+        {"0.4", nvtStandard, 0, 0}, {"0.4", nvtHighFlow, 0, 1},
+        {"0.4", nvtHighFlow, 1, 2}, {"0.4", nvtTPUHighFlow, 0, 3}
+    };
+    auto group = LayeredNozzleGroupResult::create(std::vector<int>{0, 1, 2, 3}, nozzles, {0, 1, 2, 3});
+    if (!group) std::abort();
+    for (int grouped : {0, 1})
+        for (int extruder : {-1, 0, 1, 2})
+            for (int nozzle : {-1, 0, 1, 2, 3, 4}) {
+                GCodeProcessor p;
+                p.apply_config(config);
+                p.m_nozzle_group_result = grouped ? std::make_shared<LayeredNozzleGroupResult>(*group) : nullptr;
+                p.m_extruder_id = static_cast<unsigned char>(extruder);
+                if (nozzle >= 0)
+                    p.m_nozzle_status_recorder.set_nozzle_status(nozzle, 0, p.get_extruder_id());
+                for (int filament : {-1, 0, 3})
+                    std::printf("%d %d %d %d %d\n", grouped, extruder, nozzle, filament,
+                                p.get_machine_config_idx(filament));
+            }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--machine-rows") {
+        machine_rows();
+        return 0;
     }
     std::string dir = argv[1];
     g_out           = fopen((dir + "/g_code_processor.txt").c_str(), "wb");

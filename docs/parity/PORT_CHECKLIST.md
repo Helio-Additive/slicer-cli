@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**78.2% of the named C++ functions are ported or verified (7489 of 9574); 77.1% by size of body.**
+**78.2% of the named C++ functions are ported or verified (7490 of 9574); 77.1% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
 | not started `[ ]` | 411 | 4.3% | 6.3% |
-| partial `[~]` | 1674 | 17.5% | 16.5% |
+| partial `[~]` | 1673 | 17.5% | 16.5% |
 | ported `[x]` | 3709 | 38.7% | 23.9% |
-| verified `[v]` | 3780 | 39.5% | 53.3% |
+| verified `[v]` | 3781 | 39.5% | 53.3% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -205,7 +205,7 @@ Entries of `port_checklist_verified.json` that match no function now: `_fill_sur
 | `GCode/ConflictChecker` | 1 | `gcode/conflict_checker.rs` | partial | 19 | 0 | 3 | 16 | 0 |
 | `GCode/CoolingBuffer` | 1 | `gcode/cooling_buffer.rs` | partial | 5 | 0 | 2 | 3 | 0 |
 | `GCode/GCodeEditor` | 1 | `gcode/g_code_editor.rs` | partial | 30 | 2 | 10 | 18 | 0 |
-| `GCode/GCodeProcessor` | 1 | `gcode/g_code_processor.rs` | partial | 213 | 9 | 14 | 112 | 78 |
+| `GCode/GCodeProcessor` | 1 | `gcode/g_code_processor.rs` | partial | 213 | 9 | 13 | 112 | 79 |
 | `GCode/PostProcessor` | 1 | `gcode/post_processor.rs` | partial | 7 | 2 | 5 | 0 | 0 |
 | `GCode/PressureEqualizer` | 1 | `gcode/pressure_equalizer.rs` | partial | 36 | 0 | 1 | 35 | 0 |
 | `GCode/PrintExtents` | 1 | `gcode/print_extents.rs` | partial | 10 | 5 | 3 | 2 | 0 |
@@ -6310,10 +6310,10 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **free functions**
 
-- [v] `set_option_value` (line 97) → `gcode/g_code_processor.rs:7170` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `set_option_value` (line 103) → `gcode/g_code_processor.rs:7192` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `get_option_value` (line 109) → `gcode/g_code_processor.rs:7178` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `get_option_value` (line 115) → `gcode/g_code_processor.rs:7200` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `set_option_value` (line 97) → `gcode/g_code_processor.rs:7200` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `set_option_value` (line 103) → `gcode/g_code_processor.rs:7222` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `get_option_value` (line 109) → `gcode/g_code_processor.rs:7208` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `get_option_value` (line 115) → `gcode/g_code_processor.rs:7230` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
 - [v] `estimated_acceleration_distance` (line 121) → `gcode/g_code_processor.rs:546` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit
 - [v] `intersection_distance` (line 126) → `gcode/g_code_processor.rs:555` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit
 - [v] `speed_from_distance` (line 131) → `gcode/g_code_processor.rs:576` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit
@@ -6324,10 +6324,10 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [v] `planner_forward_pass_kernel` (line 345) → `gcode/g_code_processor.rs:1132` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit
 - [v] `planner_reverse_pass_kernel` (line 365) → `gcode/g_code_processor.rs:1155` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit
 - [v] `recalculate_trapezoids` (line 382) → `gcode/g_code_processor.rs:1178` — R854: replay over the oracle's Benchy G-code: all 131,695 planner blocks and elapsed times equal the C++ floats bit for bit
-- [v] `skip_whitespaces` (line 2649) → `gcode/g_code_processor.rs:7213` — R952: Native test tests/g_code_processor_helpers_native_parity.rs (vectors tests/data/g_code_processor_helpers/g_code_processor_helpers.txt.gz from gen.cpp beside it, which includes the pin's GCodeProcessor.cpp): 451 comment strings (fixed edge cases: signs, padding, overflow of int, inf/nan, hexadecimal floats, float overflow and underflow, line ends; and 400 LCG-made '; Z_HEIGHT:' / '; OBJECT_ID:' / layer strings) through get_object_label_id (GCodeProcessor.cpp:152-165), get_z_height (167-177; result bits), skip_whitespaces (2649-2652) and remove_eols (2654-2657). 0 mismatches with PROCESSOR_STOF_PIN on (default); 7 with it =0 (inf, -INF, nan, 0x1p3, 0x.8 read as 0 and 1e40 / 3.4028236e38 as inf where the pin's stof throws and get_z_height keeps 0).
-- [v] `remove_eols` (line 2654) → `gcode/g_code_processor.rs:7222` — R952: Native test tests/g_code_processor_helpers_native_parity.rs (vectors tests/data/g_code_processor_helpers/g_code_processor_helpers.txt.gz from gen.cpp beside it, which includes the pin's GCodeProcessor.cpp): 451 comment strings (fixed edge cases: signs, padding, overflow of int, inf/nan, hexadecimal floats, float overflow and underflow, line ends; and 400 LCG-made '; Z_HEIGHT:' / '; OBJECT_ID:' / layer strings) through get_object_label_id (GCodeProcessor.cpp:152-165), get_z_height (167-177; result bits), skip_whitespaces (2649-2652) and remove_eols (2654-2657). 0 mismatches with PROCESSOR_STOF_PIN on (default); 7 with it =0 (inf, -INF, nan, 0x1p3, 0x.8 read as 0 and 1e40 / 3.4028236e38 as inf where the pin's stof throws and get_z_height keeps 0).
+- [v] `skip_whitespaces` (line 2649) → `gcode/g_code_processor.rs:7243` — R952: Native test tests/g_code_processor_helpers_native_parity.rs (vectors tests/data/g_code_processor_helpers/g_code_processor_helpers.txt.gz from gen.cpp beside it, which includes the pin's GCodeProcessor.cpp): 451 comment strings (fixed edge cases: signs, padding, overflow of int, inf/nan, hexadecimal floats, float overflow and underflow, line ends; and 400 LCG-made '; Z_HEIGHT:' / '; OBJECT_ID:' / layer strings) through get_object_label_id (GCodeProcessor.cpp:152-165), get_z_height (167-177; result bits), skip_whitespaces (2649-2652) and remove_eols (2654-2657). 0 mismatches with PROCESSOR_STOF_PIN on (default); 7 with it =0 (inf, -INF, nan, 0x1p3, 0x.8 read as 0 and 1e40 / 3.4028236e38 as inf where the pin's stof throws and get_z_height keeps 0).
+- [v] `remove_eols` (line 2654) → `gcode/g_code_processor.rs:7252` — R952: Native test tests/g_code_processor_helpers_native_parity.rs (vectors tests/data/g_code_processor_helpers/g_code_processor_helpers.txt.gz from gen.cpp beside it, which includes the pin's GCodeProcessor.cpp): 451 comment strings (fixed edge cases: signs, padding, overflow of int, inf/nan, hexadecimal floats, float overflow and underflow, line ends; and 400 LCG-made '; Z_HEIGHT:' / '; OBJECT_ID:' / layer strings) through get_object_label_id (GCodeProcessor.cpp:152-165), get_z_height (167-177; result bits), skip_whitespaces (2649-2652) and remove_eols (2654-2657). 0 mismatches with PROCESSOR_STOF_PIN on (default); 7 with it =0 (inf, -INF, nan, 0x1p3, 0x.8 read as 0 and 1e40 / 3.4028236e38 as inf where the pin's stof throws and get_z_height keeps 0).
 - [ ] `load_from_superslicer_gcode_file` (line 2944) → `gcode/g_code_processor.rs`
-- [v] `parse_number` (line 3137) → `gcode/g_code_processor.rs:7273` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as divergent to the estimate)
+- [v] `parse_number` (line 3137) → `gcode/g_code_processor.rs:7303` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as divergent to the estimate)
 
 **class `CommandProcessor`**
 
@@ -6336,10 +6336,10 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `ExtruderUsageBlcok`**
 
-- [x] `initialize_step_1` (line 429) → `gcode/g_code_processor.rs:7322`
-- [x] `initialize_step_2` (line 435) → `gcode/g_code_processor.rs:7330`
-- [x] `initialize_step_3` (line 438) → `gcode/g_code_processor.rs:7336`
-- [x] `reset` (line 444) → `gcode/g_code_processor.rs:7344`
+- [x] `initialize_step_1` (line 429) → `gcode/g_code_processor.rs:7352`
+- [x] `initialize_step_2` (line 435) → `gcode/g_code_processor.rs:7360`
+- [x] `initialize_step_3` (line 438) → `gcode/g_code_processor.rs:7366`
+- [x] `reset` (line 444) → `gcode/g_code_processor.rs:7374`
 
 **class `FilamentPrintableResult`**
 
@@ -6352,130 +6352,130 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessor`**
 
-- [x] `is_helio_gcode` (line 546) → `gcode/g_code_processor.rs:8943`
+- [x] `is_helio_gcode` (line 546) → `gcode/g_code_processor.rs:8973`
 - [ ] `set_filaments` (line 1301) → `gcode/g_code_processor.rs`
-- [x] `is_stealth_time_estimator_enabled` (line 1304) → `gcode/g_code_processor.rs:8948`
-- [x] `enable_machine_envelope_processing` (line 1307) → `gcode/g_code_processor.rs:8953`
-- [x] `set_xy_offset` (line 1336) → `gcode/g_code_processor.rs:3223`
-- [x] `detect_layer_based_on_tag` (line 1339) → `gcode/g_code_processor.rs:8959`
-- [v] `parse_helioadditive_comment` (line 1343) → `gcode/g_code_processor.rs:8833` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `is_stealth_time_estimator_enabled` (line 1304) → `gcode/g_code_processor.rs:8978`
+- [x] `enable_machine_envelope_processing` (line 1307) → `gcode/g_code_processor.rs:8983`
+- [x] `set_xy_offset` (line 1336) → `gcode/g_code_processor.rs:3230`
+- [x] `detect_layer_based_on_tag` (line 1339) → `gcode/g_code_processor.rs:8989`
+- [v] `parse_helioadditive_comment` (line 1343) → `gcode/g_code_processor.rs:8863` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
 - [v] `contains_reserved_tag` (line 1635) → `gcode/g_code_processor.rs:1889` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
 - [v] `contains_reserved_tags` (line 1658) → `gcode/g_code_processor.rs:1917` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [~] `register_commands` (line 1699) → `gcode/g_code_processor.rs:3129` — divergent
+- [~] `register_commands` (line 1699) → `gcode/g_code_processor.rs:3136` — divergent
 - [ ] `check_multi_extruder_gcode_valid` (line 1785) → `gcode/g_code_processor.rs`
-- [v] `apply_config` (line 1964) → `gcode/g_code_processor.rs:3242` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [v] `apply_config` (line 1964) → `gcode/g_code_processor.rs:3249` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
 - [~] `apply_config` (line 2106) → `g_code_reader.rs, placeholder_parser.rs` — not in the paired file
-- [x] `enable_stealth_time_estimator` (line 2548) → `gcode/g_code_processor.rs:3217`
-- [x] `reset` (line 2553) → `gcode/g_code_processor.rs:3143`
+- [x] `enable_stealth_time_estimator` (line 2548) → `gcode/g_code_processor.rs:3224`
+- [x] `reset` (line 2553) → `gcode/g_code_processor.rs:3150`
 - [ ] `export_config_for_render` (line 2659) → `gcode/g_code_processor.rs`
 - [ ] `process_file` (line 2671) → `gcode/g_code_processor.rs`
-- [~] `initialize` (line 2763) → `gcode/g_code_processor.rs:8965` — partial
-- [x] `initialize_from_context` (line 2779) → `gcode/g_code_processor.rs:8976`
-- [v] `process_buffer` (line 2785) → `gcode/g_code_processor.rs:3605` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `finalize` (line 2793) → `gcode/g_code_processor.rs:6814` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
-- [x] `get_time` (line 2888) → `gcode/g_code_processor.rs:4441`
-- [x] `get_prepare_time` (line 2893) → `gcode/g_code_processor.rs:4450`
-- [v] `get_time_dhm` (line 2898) → `gcode/g_code_processor.rs:3401` — R953: Native lib test gcode::g_code_processor::tests::get_time_dhm_native_r953 (vectors tests/data/g_code_processor_used_filaments/g_code_processor_time_dhm.txt from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp): the pin's GCodeProcessor::get_time_dhm(mode) (GCodeProcessor.cpp:2898-2901) with m_time_processor.machines[mode].time set to 324 float times (0, sub-second, 59.4/59.5/59.6 s, minute, hour and day edges, 499681.3 s, 1e7, negative, and 300 LCG values) in both modes, 648 strings; the port's new GCodeProcessor::get_time_dhm (over crate::utils short_time / get_time_dhms) gives the same string on all 648 (cargo test -p slicer --lib r953: 3 passed).
-- [x] `get_custom_gcode_times` (line 2903) → `gcode/g_code_processor.rs:8993`
-- [x] `get_moves_time` (line 2918) → `gcode/g_code_processor.rs:9009`
-- [x] `get_roles_time` (line 2931) → `gcode/g_code_processor.rs:9025`
+- [~] `initialize` (line 2763) → `gcode/g_code_processor.rs:8995` — partial
+- [x] `initialize_from_context` (line 2779) → `gcode/g_code_processor.rs:9006`
+- [v] `process_buffer` (line 2785) → `gcode/g_code_processor.rs:3635` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `finalize` (line 2793) → `gcode/g_code_processor.rs:6844` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [x] `get_time` (line 2888) → `gcode/g_code_processor.rs:4471`
+- [x] `get_prepare_time` (line 2893) → `gcode/g_code_processor.rs:4480`
+- [v] `get_time_dhm` (line 2898) → `gcode/g_code_processor.rs:3416` — R953: Native lib test gcode::g_code_processor::tests::get_time_dhm_native_r953 (vectors tests/data/g_code_processor_used_filaments/g_code_processor_time_dhm.txt from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp): the pin's GCodeProcessor::get_time_dhm(mode) (GCodeProcessor.cpp:2898-2901) with m_time_processor.machines[mode].time set to 324 float times (0, sub-second, 59.4/59.5/59.6 s, minute, hour and day edges, 499681.3 s, 1e7, negative, and 300 LCG values) in both modes, 648 strings; the port's new GCodeProcessor::get_time_dhm (over crate::utils short_time / get_time_dhms) gives the same string on all 648 (cargo test -p slicer --lib r953: 3 passed).
+- [x] `get_custom_gcode_times` (line 2903) → `gcode/g_code_processor.rs:9023`
+- [x] `get_moves_time` (line 2918) → `gcode/g_code_processor.rs:9039`
+- [x] `get_roles_time` (line 2931) → `gcode/g_code_processor.rs:9055`
 - [ ] `apply_config_superslicer` (line 2969) → `gcode/g_code_processor.rs`
-- [x] `get_layers_time` (line 2977) → `gcode/g_code_processor.rs:9041`
+- [x] `get_layers_time` (line 2977) → `gcode/g_code_processor.rs:9071`
 - [ ] `apply_config_simplify3d` (line 2984) → `gcode/g_code_processor.rs`
-- [v] `process_gcode_line` (line 3075) → `gcode/g_code_processor.rs:3626` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
-- [x] `process_helioadditive_comment` (line 3122) → `gcode/g_code_processor.rs:9052`
+- [v] `process_gcode_line` (line 3075) → `gcode/g_code_processor.rs:3656` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [x] `process_helioadditive_comment` (line 3122) → `gcode/g_code_processor.rs:9082`
 - [v] `get_gcode_last_filament` (line 3174) → `gcode/g_code_processor.rs:1951` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
 - [v] `get_last_z_from_gcode` (line 3209) → `gcode/g_code_processor.rs:2004` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
 - [v] `get_last_position_from_gcode` (line 3264) → `gcode/g_code_processor.rs:2065` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_tags` (line 3381) → `gcode/g_code_processor.rs:3732` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_producers_tags` (line 3643) → `gcode/g_code_processor.rs:9059` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915.
-- [x] `process_bambuslicer_tags` (line 3660) → `gcode/g_code_processor.rs:9075`
-- [v] `process_cura_tags` (line 3665) → `gcode/g_code_processor.rs:9081` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
-- [v] `process_simplify3d_tags` (line 3739) → `gcode/g_code_processor.rs:9140` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
-- [v] `process_craftware_tags` (line 3881) → `gcode/g_code_processor.rs:9277` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
-- [v] `process_ideamaker_tags` (line 3931) → `gcode/g_code_processor.rs:9318` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
-- [v] `process_kissslicer_tags` (line 3992) → `gcode/g_code_processor.rs:9372` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
-- [x] `detect_producer` (line 4100) → `gcode/g_code_processor.rs:9468`
-- [v] `process_G0` (line 4113) → `gcode/g_code_processor.rs:3937` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_G1` (line 4118) → `gcode/g_code_processor.rs:5549` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
-- [v] `process_VG1` (line 4521) → `gcode/g_code_processor.rs:6064` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
-- [v] `process_G2_G3` (line 4905) → `gcode/g_code_processor.rs:3949` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
-- [x] `process_G4` (line 5304) → `gcode/g_code_processor.rs:4461`
-- [x] `process_G29` (line 5315) → `gcode/g_code_processor.rs:4577`
-- [x] `process_G10` (line 5326) → `gcode/g_code_processor.rs:4506`
-- [x] `process_G11` (line 5332) → `gcode/g_code_processor.rs:4511`
-- [x] `process_G20` (line 5338) → `gcode/g_code_processor.rs:4516`
-- [x] `process_G21` (line 5343) → `gcode/g_code_processor.rs:4521`
-- [x] `process_G22` (line 5348) → `gcode/g_code_processor.rs:4526`
-- [x] `process_G23` (line 5354) → `gcode/g_code_processor.rs:4531`
-- [x] `process_G28` (line 5360) → `gcode/g_code_processor.rs:4536`
-- [x] `process_G90` (line 5386) → `gcode/g_code_processor.rs:4594`
-- [x] `process_G91` (line 5391) → `gcode/g_code_processor.rs:4599`
-- [x] `process_G92` (line 5396) → `gcode/g_code_processor.rs:4604`
-- [x] `process_M1` (line 5434) → `gcode/g_code_processor.rs:3932`
-- [x] `process_M82` (line 5439) → `gcode/g_code_processor.rs:4643`
-- [x] `process_M83` (line 5444) → `gcode/g_code_processor.rs:4648`
-- [x] `process_M104` (line 5449) → `gcode/g_code_processor.rs:4653`
-- [x] `process_VM104` (line 5482) → `gcode/g_code_processor.rs:9481`
-- [v] `process_M106` (line 5487) → `gcode/g_code_processor.rs:4681` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_M107` (line 5510) → `gcode/g_code_processor.rs:4708` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_M108` (line 5520) → `gcode/g_code_processor.rs:4724` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [x] `process_M109` (line 5534) → `gcode/g_code_processor.rs:4738`
-- [x] `process_VM109` (line 5539) → `gcode/g_code_processor.rs:9487`
-- [x] `process_M132` (line 5544) → `gcode/g_code_processor.rs:4755`
-- [v] `process_M135` (line 5562) → `gcode/g_code_processor.rs:4773` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [x] `process_M140` (line 5576) → `gcode/g_code_processor.rs:4787`
-- [x] `process_M190` (line 5583) → `gcode/g_code_processor.rs:4799`
-- [x] `process_M191` (line 5590) → `gcode/g_code_processor.rs:4811`
-- [v] `process_M201` (line 5600) → `gcode/g_code_processor.rs:4824` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_M203` (line 5620) → `gcode/g_code_processor.rs:4863` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [x] `process_M204` (line 5651) → `gcode/g_code_processor.rs:4907`
-- [v] `process_M205` (line 5680) → `gcode/g_code_processor.rs:4943` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [v] `process_SET_VELOCITY_LIMIT` (line 5710) → `gcode/g_code_processor.rs:4979` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [x] `process_M221` (line 5764) → `gcode/g_code_processor.rs:5024`
-- [x] `process_M622` (line 5776) → `gcode/g_code_processor.rs:4483`
-- [x] `process_M623` (line 5787) → `gcode/g_code_processor.rs:4496`
-- [v] `process_M400` (line 5794) → `gcode/g_code_processor.rs:5038` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
-- [x] `process_M401` (line 5814) → `gcode/g_code_processor.rs:5074`
-- [x] `process_M402` (line 5825) → `gcode/g_code_processor.rs:5088`
-- [v] `process_M566` (line 5857) → `gcode/g_code_processor.rs:5126` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [x] `process_M702` (line 5874) → `gcode/g_code_processor.rs:5148`
-- [x] `process_SYNC` (line 5890) → `gcode/g_code_processor.rs:5476`
-- [x] `process_T` (line 5909) → `gcode/g_code_processor.rs:5221`
-- [~] `process_M1020` (line 5919) → `gcode/g_code_processor.rs:5190` — partial
+- [v] `process_tags` (line 3381) → `gcode/g_code_processor.rs:3762` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `process_producers_tags` (line 3643) → `gcode/g_code_processor.rs:9089` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915.
+- [x] `process_bambuslicer_tags` (line 3660) → `gcode/g_code_processor.rs:9105`
+- [v] `process_cura_tags` (line 3665) → `gcode/g_code_processor.rs:9111` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
+- [v] `process_simplify3d_tags` (line 3739) → `gcode/g_code_processor.rs:9170` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
+- [v] `process_craftware_tags` (line 3881) → `gcode/g_code_processor.rs:9307` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
+- [v] `process_ideamaker_tags` (line 3931) → `gcode/g_code_processor.rs:9348` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
+- [v] `process_kissslicer_tags` (line 3992) → `gcode/g_code_processor.rs:9402` — R953: Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915. (the body reads as partial to the estimate)
+- [x] `detect_producer` (line 4100) → `gcode/g_code_processor.rs:9498`
+- [v] `process_G0` (line 4113) → `gcode/g_code_processor.rs:3967` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `process_G1` (line 4118) → `gcode/g_code_processor.rs:5579` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [v] `process_VG1` (line 4521) → `gcode/g_code_processor.rs:6094` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [v] `process_G2_G3` (line 4905) → `gcode/g_code_processor.rs:3979` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [x] `process_G4` (line 5304) → `gcode/g_code_processor.rs:4491`
+- [x] `process_G29` (line 5315) → `gcode/g_code_processor.rs:4607`
+- [x] `process_G10` (line 5326) → `gcode/g_code_processor.rs:4536`
+- [x] `process_G11` (line 5332) → `gcode/g_code_processor.rs:4541`
+- [x] `process_G20` (line 5338) → `gcode/g_code_processor.rs:4546`
+- [x] `process_G21` (line 5343) → `gcode/g_code_processor.rs:4551`
+- [x] `process_G22` (line 5348) → `gcode/g_code_processor.rs:4556`
+- [x] `process_G23` (line 5354) → `gcode/g_code_processor.rs:4561`
+- [x] `process_G28` (line 5360) → `gcode/g_code_processor.rs:4566`
+- [x] `process_G90` (line 5386) → `gcode/g_code_processor.rs:4624`
+- [x] `process_G91` (line 5391) → `gcode/g_code_processor.rs:4629`
+- [x] `process_G92` (line 5396) → `gcode/g_code_processor.rs:4634`
+- [x] `process_M1` (line 5434) → `gcode/g_code_processor.rs:3962`
+- [x] `process_M82` (line 5439) → `gcode/g_code_processor.rs:4673`
+- [x] `process_M83` (line 5444) → `gcode/g_code_processor.rs:4678`
+- [x] `process_M104` (line 5449) → `gcode/g_code_processor.rs:4683`
+- [x] `process_VM104` (line 5482) → `gcode/g_code_processor.rs:9511`
+- [v] `process_M106` (line 5487) → `gcode/g_code_processor.rs:4711` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `process_M107` (line 5510) → `gcode/g_code_processor.rs:4738` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `process_M108` (line 5520) → `gcode/g_code_processor.rs:4754` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `process_M109` (line 5534) → `gcode/g_code_processor.rs:4768`
+- [x] `process_VM109` (line 5539) → `gcode/g_code_processor.rs:9517`
+- [x] `process_M132` (line 5544) → `gcode/g_code_processor.rs:4785`
+- [v] `process_M135` (line 5562) → `gcode/g_code_processor.rs:4803` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `process_M140` (line 5576) → `gcode/g_code_processor.rs:4817`
+- [x] `process_M190` (line 5583) → `gcode/g_code_processor.rs:4829`
+- [x] `process_M191` (line 5590) → `gcode/g_code_processor.rs:4841`
+- [v] `process_M201` (line 5600) → `gcode/g_code_processor.rs:4854` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `process_M203` (line 5620) → `gcode/g_code_processor.rs:4893` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `process_M204` (line 5651) → `gcode/g_code_processor.rs:4937`
+- [v] `process_M205` (line 5680) → `gcode/g_code_processor.rs:4973` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [v] `process_SET_VELOCITY_LIMIT` (line 5710) → `gcode/g_code_processor.rs:5009` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `process_M221` (line 5764) → `gcode/g_code_processor.rs:5054`
+- [x] `process_M622` (line 5776) → `gcode/g_code_processor.rs:4513`
+- [x] `process_M623` (line 5787) → `gcode/g_code_processor.rs:4526`
+- [v] `process_M400` (line 5794) → `gcode/g_code_processor.rs:5068` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as partial to the estimate)
+- [x] `process_M401` (line 5814) → `gcode/g_code_processor.rs:5104`
+- [x] `process_M402` (line 5825) → `gcode/g_code_processor.rs:5118`
+- [v] `process_M566` (line 5857) → `gcode/g_code_processor.rs:5156` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `process_M702` (line 5874) → `gcode/g_code_processor.rs:5178`
+- [x] `process_SYNC` (line 5890) → `gcode/g_code_processor.rs:5506`
+- [x] `process_T` (line 5909) → `gcode/g_code_processor.rs:5251`
+- [~] `process_M1020` (line 5919) → `gcode/g_code_processor.rs:5220` — partial
 - [~] `process_T` (line 5960) → `gcode/g_code_processor.rs` — another overload of the name is ported
-- [x] `init_filament_maps_when_import_only_gcode` (line 5986) → `gcode/g_code_processor.rs:9492`
-- [x] `ensure_nozzle_group_result` (line 5993) → `gcode/g_code_processor.rs:5261`
-- [x] `process_filament_change` (line 6054) → `gcode/g_code_processor.rs:5337`
-- [v] `store_move_vertex` (line 6159) → `gcode/g_code_processor.rs:6721` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
-- [x] `set_extrusion_role` (line 6223) → `gcode/g_code_processor.rs:3895`
-- [x] `set_skippable_type` (line 6234) → `gcode/g_code_processor.rs:3923`
-- [x] `minimum_feedrate` (line 6248) → `gcode/g_code_processor.rs:3466`
-- [x] `minimum_travel_feedrate` (line 6256) → `gcode/g_code_processor.rs:3476`
-- [x] `get_axis_max_feedrate` (line 6264) → `gcode/g_code_processor.rs:3486`
-- [x] `get_axis_max_acceleration` (line 6277) → `gcode/g_code_processor.rs:3499`
-- [x] `get_axis_max_jerk` (line 6290) → `gcode/g_code_processor.rs:3512`
-- [x] `get_xyz_max_jerk` (line 6302) → `gcode/g_code_processor.rs:3524`
-- [x] `get_retract_acceleration` (line 6309) → `gcode/g_code_processor.rs:3534`
-- [x] `set_retract_acceleration` (line 6315) → `gcode/g_code_processor.rs:3544`
-- [x] `get_acceleration` (line 6325) → `gcode/g_code_processor.rs:3557`
-- [x] `set_acceleration` (line 6331) → `gcode/g_code_processor.rs:3567`
-- [x] `get_travel_acceleration` (line 6341) → `gcode/g_code_processor.rs:3580`
-- [x] `set_travel_acceleration` (line 6347) → `gcode/g_code_processor.rs:3590`
-- [x] `get_filament_load_time` (line 6357) → `gcode/g_code_processor.rs:5314`
-- [x] `get_filament_unload_time` (line 6363) → `gcode/g_code_processor.rs:5323`
-- [x] `get_extruder_change_time` (line 6369) → `gcode/g_code_processor.rs:5332`
-- [x] `get_hotend_change_time` (line 6375) → `gcode/g_code_processor.rs:9500`
-- [x] `process_custom_gcode_time` (line 6380) → `gcode/g_code_processor.rs:9506` — read against the C++ in R915 (the estimate says partial)
-- [x] `process_filaments` (line 6401) → `gcode/g_code_processor.rs:9526`
-- [v] `simulate_st_synchronize` (line 6416) → `gcode/g_code_processor.rs:5492` — R950: Replay over the pin's own output (probe PROCESSOR_REPLAY in print.rs, diagnostic only): the export's processor set-up (print's nozzle group context, apply_config of the H2D Majora job) run over slicer_cli's G-code of the H2D job less its post-processed lines (M73, M632, M633, ';Multi extruder pre'): print time 499681.3 s = 5d 18h 48m 1s, prepare 328.67 s, model time 5d 18h 42m 32s = the pin's header exactly; TimeProcessor::post_process (M73 P/R) over that text equals the pin's M73 P/R lines on every line of 5.06 million (diff = the pin's 983 'M73 L<n>' lines and the first/last placeholders, written elsewhere by the port); post_process_with_context with the job's pre-heating context gives back the pin's file line for line except 894 doubled 'M400' (the M400 the pin's pre-cooling injection writes before each of its 894 '...pre cooling' lines, which the strip left in). . (the body reads as divergent to the estimate)
-- [v] `update_estimated_times_stats` (line 6429) → `gcode/g_code_processor.rs:6933` — R950: Fixture: HEADER_USED_FILAMENT_PROCESSOR (print.rs header_used_filament_lines, GCodeProcessor.cpp 661-673, 728-766, from print_statistics.total_volumes_per_extruder): Benchy classic header '; total filament length [mm] : 3994.07' / volume 9606.86 / weight 12.10 and Benchy arachne 3958.04 / 9520.20 / 12.00 equal the oracle's (target/parity-ref); the gate at 0 gives the writer's 3984.04 / 3948.02. nu3mf and the H2D job now write the pin's per-filament lists (H2D weights equal on all 8 filaments; lengths/volumes within 0.3 mm3 where the bodies differ). Binary 11:33, fx r950c / r950c_off. Unit test print::tests::test_header_used_filament_lines_r950 (format, std::map order, filament not in the writer's list skipped).
-- [x] `update_preview_layers_times_stats` (line 6456) → `gcode/g_code_processor.rs:9544`
-- [x] `update_slice_warnings` (line 6509) → `gcode/g_code_processor.rs:9599`
-- [x] `get_filament_id` (line 6565) → `gcode/g_code_processor.rs:3429`
-- [x] `get_last_filament_id` (line 6577) → `gcode/g_code_processor.rs:3441`
-- [x] `get_extruder_id` (line 6589) → `gcode/g_code_processor.rs:3421`
-- [~] `get_machine_config_idx` (line 6596) → `gcode/g_code_processor.rs:3454` — stub
+- [x] `init_filament_maps_when_import_only_gcode` (line 5986) → `gcode/g_code_processor.rs:9522`
+- [x] `ensure_nozzle_group_result` (line 5993) → `gcode/g_code_processor.rs:5291`
+- [x] `process_filament_change` (line 6054) → `gcode/g_code_processor.rs:5367`
+- [v] `store_move_vertex` (line 6159) → `gcode/g_code_processor.rs:6751` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
+- [x] `set_extrusion_role` (line 6223) → `gcode/g_code_processor.rs:3925`
+- [x] `set_skippable_type` (line 6234) → `gcode/g_code_processor.rs:3953`
+- [x] `minimum_feedrate` (line 6248) → `gcode/g_code_processor.rs:3496`
+- [x] `minimum_travel_feedrate` (line 6256) → `gcode/g_code_processor.rs:3506`
+- [x] `get_axis_max_feedrate` (line 6264) → `gcode/g_code_processor.rs:3516`
+- [x] `get_axis_max_acceleration` (line 6277) → `gcode/g_code_processor.rs:3529`
+- [x] `get_axis_max_jerk` (line 6290) → `gcode/g_code_processor.rs:3542`
+- [x] `get_xyz_max_jerk` (line 6302) → `gcode/g_code_processor.rs:3554`
+- [x] `get_retract_acceleration` (line 6309) → `gcode/g_code_processor.rs:3564`
+- [x] `set_retract_acceleration` (line 6315) → `gcode/g_code_processor.rs:3574`
+- [x] `get_acceleration` (line 6325) → `gcode/g_code_processor.rs:3587`
+- [x] `set_acceleration` (line 6331) → `gcode/g_code_processor.rs:3597`
+- [x] `get_travel_acceleration` (line 6341) → `gcode/g_code_processor.rs:3610`
+- [x] `set_travel_acceleration` (line 6347) → `gcode/g_code_processor.rs:3620`
+- [x] `get_filament_load_time` (line 6357) → `gcode/g_code_processor.rs:5344`
+- [x] `get_filament_unload_time` (line 6363) → `gcode/g_code_processor.rs:5353`
+- [x] `get_extruder_change_time` (line 6369) → `gcode/g_code_processor.rs:5362`
+- [x] `get_hotend_change_time` (line 6375) → `gcode/g_code_processor.rs:9530`
+- [x] `process_custom_gcode_time` (line 6380) → `gcode/g_code_processor.rs:9536` — read against the C++ in R915 (the estimate says partial)
+- [x] `process_filaments` (line 6401) → `gcode/g_code_processor.rs:9556`
+- [v] `simulate_st_synchronize` (line 6416) → `gcode/g_code_processor.rs:5522` — R950: Replay over the pin's own output (probe PROCESSOR_REPLAY in print.rs, diagnostic only): the export's processor set-up (print's nozzle group context, apply_config of the H2D Majora job) run over slicer_cli's G-code of the H2D job less its post-processed lines (M73, M632, M633, ';Multi extruder pre'): print time 499681.3 s = 5d 18h 48m 1s, prepare 328.67 s, model time 5d 18h 42m 32s = the pin's header exactly; TimeProcessor::post_process (M73 P/R) over that text equals the pin's M73 P/R lines on every line of 5.06 million (diff = the pin's 983 'M73 L<n>' lines and the first/last placeholders, written elsewhere by the port); post_process_with_context with the job's pre-heating context gives back the pin's file line for line except 894 doubled 'M400' (the M400 the pin's pre-cooling injection writes before each of its 894 '...pre cooling' lines, which the strip left in). . (the body reads as divergent to the estimate)
+- [v] `update_estimated_times_stats` (line 6429) → `gcode/g_code_processor.rs:6963` — R950: Fixture: HEADER_USED_FILAMENT_PROCESSOR (print.rs header_used_filament_lines, GCodeProcessor.cpp 661-673, 728-766, from print_statistics.total_volumes_per_extruder): Benchy classic header '; total filament length [mm] : 3994.07' / volume 9606.86 / weight 12.10 and Benchy arachne 3958.04 / 9520.20 / 12.00 equal the oracle's (target/parity-ref); the gate at 0 gives the writer's 3984.04 / 3948.02. nu3mf and the H2D job now write the pin's per-filament lists (H2D weights equal on all 8 filaments; lengths/volumes within 0.3 mm3 where the bodies differ). Binary 11:33, fx r950c / r950c_off. Unit test print::tests::test_header_used_filament_lines_r950 (format, std::map order, filament not in the writer's list skipped).
+- [x] `update_preview_layers_times_stats` (line 6456) → `gcode/g_code_processor.rs:9574`
+- [x] `update_slice_warnings` (line 6509) → `gcode/g_code_processor.rs:9629`
+- [x] `get_filament_id` (line 6565) → `gcode/g_code_processor.rs:3444`
+- [x] `get_last_filament_id` (line 6577) → `gcode/g_code_processor.rs:3456`
+- [x] `get_extruder_id` (line 6589) → `gcode/g_code_processor.rs:3436`
+- [v] `get_machine_config_idx` (line 6596) → `gcode/g_code_processor.rs:3469` — R955: machine_config_rows_match_native in gcode/g_code_processor.rs compares 144 machine row selections against the pinned GCodeProcessor::get_machine_config_idx, using tests/data/g_code_processor/gen.cpp --machine-rows. Covers exact and fallback variants, missing groups and nozzles, active and uninitialized extruders, and three filament IDs.
 
 **class `GCodeProcessor::CachedPosition`**
 
@@ -6487,15 +6487,15 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessor::DataChecker`**
 
-- [x] `update` (line 1122) → `gcode/g_code_processor.rs:8736`
-- [x] `reset` (line 1132) → `gcode/g_code_processor.rs:8746`
-- [x] `get_min` (line 1134) → `gcode/g_code_processor.rs:8753`
-- [x] `get_max` (line 1146) → `gcode/g_code_processor.rs:8766`
-- [x] `output` (line 1158) → `gcode/g_code_processor.rs:8779`
+- [x] `update` (line 1122) → `gcode/g_code_processor.rs:8766`
+- [x] `reset` (line 1132) → `gcode/g_code_processor.rs:8776`
+- [x] `get_min` (line 1134) → `gcode/g_code_processor.rs:8783`
+- [x] `get_max` (line 1146) → `gcode/g_code_processor.rs:8796`
+- [x] `output` (line 1158) → `gcode/g_code_processor.rs:8809`
 
 **class `GCodeProcessor::FilamentVariantRows`**
 
-- [x] `value_at` (line 791) → `gcode/g_code_processor.rs:7366`
+- [x] `value_at` (line 791) → `gcode/g_code_processor.rs:7396`
 
 **class `GCodeProcessor::OptionsZCorrector`**
 
@@ -6505,21 +6505,21 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessor::PreCoolingInjector`**
 
-- [v] `filament_variant_row` (line 6611) → `gcode/g_code_processor.rs:7570` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
-- [v] `process_pre_cooling_and_heating` (line 6628) → `gcode/g_code_processor.rs:7596` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
-- [v] `build_extruder_free_blocks` (line 6691) → `gcode/g_code_processor.rs:7669` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
-- [v] `inject_cooling_heating_command` (line 6699) → `gcode/g_code_processor.rs:7692` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
-- [v] `build_by_filament_blocks` (line 6998) → `gcode/g_code_processor.rs:8089` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
-- [v] `build_by_extruder_blocks` (line 7050) → `gcode/g_code_processor.rs:8133` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
-- [v] `attach_nc_bounds_if_gap_crosses_nozzle_change` (line 7162) → `gcode/g_code_processor.rs:8232` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `filament_variant_row` (line 6611) → `gcode/g_code_processor.rs:7600` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `process_pre_cooling_and_heating` (line 6628) → `gcode/g_code_processor.rs:7626` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `build_extruder_free_blocks` (line 6691) → `gcode/g_code_processor.rs:7699` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `inject_cooling_heating_command` (line 6699) → `gcode/g_code_processor.rs:7722` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `build_by_filament_blocks` (line 6998) → `gcode/g_code_processor.rs:8119` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `build_by_extruder_blocks` (line 7050) → `gcode/g_code_processor.rs:8163` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
+- [v] `attach_nc_bounds_if_gap_crosses_nozzle_change` (line 7162) → `gcode/g_code_processor.rs:8262` — R946: tests/pre_cooling_injector_native_parity.rs (post_process_pre_heating_matches_the_pin): the pin's TimeProcessor::post_process with pre-heating enabled (GCodeProcessor.cpp 571-1300: block collection, time fill, M73 E) and the whole PreCoolingInjector (6611-7202) from tests/data/pre_cooling_injector/gen.cpp on 48 generated two-extruder scenarios (skippable blocks, hotend as extruder on every fourth): output byte-equal to the pin, with 353 pre-heating and 581 pre-cooling lines.
 
 **class `GCodeProcessor::SeamsDetector`**
 
-- [x] `activate` (line 1050) → `gcode/g_code_processor.rs:8676`
-- [x] `get_first_vertex` (line 1058) → `gcode/g_code_processor.rs:8686`
-- [x] `set_first_vertex` (line 1059) → `gcode/g_code_processor.rs:8691`
-- [x] `is_active` (line 1061) → `gcode/g_code_processor.rs:8696`
-- [x] `has_first_vertex` (line 1062) → `gcode/g_code_processor.rs:8701`
+- [x] `activate` (line 1050) → `gcode/g_code_processor.rs:8706`
+- [x] `get_first_vertex` (line 1058) → `gcode/g_code_processor.rs:8716`
+- [x] `set_first_vertex` (line 1059) → `gcode/g_code_processor.rs:8721`
+- [x] `is_active` (line 1061) → `gcode/g_code_processor.rs:8726`
+- [x] `has_first_vertex` (line 1062) → `gcode/g_code_processor.rs:8731`
 
 **class `GCodeProcessor::TimeBlock`**
 
@@ -6530,7 +6530,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 - [x] `reset` (line 312) → `gcode/g_code_processor.rs:1365`
 - [v] `simulate_st_synchronize` (line 337) → `gcode/g_code_processor.rs:1392` — R950: Replay over the pin's own output (probe PROCESSOR_REPLAY in print.rs, diagnostic only): the export's processor set-up (print's nozzle group context, apply_config of the H2D Majora job) run over slicer_cli's G-code of the H2D job less its post-processed lines (M73, M632, M633, ';Multi extruder pre'): print time 499681.3 s = 5d 18h 48m 1s, prepare 328.67 s, model time 5d 18h 42m 32s = the pin's header exactly; TimeProcessor::post_process (M73 P/R) over that text equals the pin's M73 P/R lines on every line of 5.06 million (diff = the pin's 983 'M73 L<n>' lines and the first/last placeholders, written elsewhere by the port); post_process_with_context with the job's pre-heating context gives back the pin's file line for line except 894 doubled 'M400' (the M400 the pin's pre-cooling injection writes before each of its 894 '...pre cooling' lines, which the strip left in). .
-- [x] `handle_time_block` (line 416) → `gcode/g_code_processor.rs:8933`
+- [x] `handle_time_block` (line 416) → `gcode/g_code_processor.rs:8963`
 - [x] `merge_adjacent_addtional_time_blocks` (line 423) → `gcode/g_code_processor.rs:1343`
 - [v] `calculate_time` (line 444) → `gcode/g_code_processor.rs:1405` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp
 
@@ -6544,8 +6544,8 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessor::TimeProcessor`**
 
-- [x] `reset` (line 554) → `gcode/g_code_processor.rs:2776`
-- [v] `post_process` (line 571) → `gcode/g_code_processor.rs:2638` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as divergent to the estimate)
+- [x] `reset` (line 554) → `gcode/g_code_processor.rs:2783`
+- [v] `post_process` (line 571) → `gcode/g_code_processor.rs:2645` — R915: tests/g_code_processor_native_parity.rs: 102 whole programs across 9 G-code flavors (times per mode, role/move/layer/custom times, filament volumes, 1,085 moves field by field, post-processed text) and 154 helper lines, against the pin's GCodeProcessor.cpp (the body reads as divergent to the estimate)
 - [ ] `handle_offsets_of_first_process` (line 1307) → `gcode/g_code_processor.rs`
 - [ ] `handle_offsets_of_second_process` (line 1367) → `gcode/g_code_processor.rs`
 
@@ -6576,7 +6576,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 - [~] `lock` (line 383) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
 - [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs, preset.rs` — not in the paired file
 - [~] `reset` (line 1537) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file
-- [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2490` — partial
+- [~] `reset` (line 1571) → `gcode/g_code_processor.rs:2497` — partial
 
 **class `GCodeProcessorResult::MoveVertex`**
 

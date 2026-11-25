@@ -5475,5 +5475,13 @@
    "CubicBSplineKernel::a32",
    "CubicBSplineKernel::a33"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 955,
+  "evidence": "machine_config_rows_match_native in gcode/g_code_processor.rs compares 144 machine row selections against the pinned GCodeProcessor::get_machine_config_idx, using tests/data/g_code_processor/gen.cpp --machine-rows. Covers exact and fallback variants, missing groups and nozzles, active and uninitialized extruders, and three filament IDs.",
+  "functions": [
+   "GCodeProcessor::get_machine_config_idx"
+  ]
  }
 ]

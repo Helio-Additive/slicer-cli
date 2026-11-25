@@ -2420,6 +2420,10 @@ pub struct GCodeProcessorResult {
     /// GCodeProcessor.hpp:287 `bool support_traditional_timelapse{true};`
     pub support_traditional_timelapse: bool,
     pub printable_height: f32,
+    // GCodeProcessor.hpp:295-297. Machine-limit rows are keyed by extruder and nozzle variant.
+    pub extruder_types: Vec<crate::extruder::ExtruderType>,
+    pub printer_extruder_id: Vec<i32>,
+    pub printer_extruder_variant: Vec<String>,
     pub settings_ids: SettingsIds,
     pub filaments_count: usize,
     pub extruder_colors: Vec<String>,
@@ -2460,6 +2464,9 @@ impl Default for GCodeProcessorResult {
             timelapse_warning_code: 0,
             support_traditional_timelapse: true,
             printable_height: 0.0,
+            extruder_types: Vec::new(),
+            printer_extruder_id: Vec::new(),
+            printer_extruder_variant: Vec::new(),
             settings_ids: SettingsIds::default(),
             filaments_count: 0,
             extruder_colors: Vec::new(),
@@ -3290,6 +3297,14 @@ impl GCodeProcessor {
             }
         }
 
+        // GCodeProcessor.cpp:2038-2040. With the gate disabled the empty table
+        // retains the pre-R955 lookup result (row zero).
+        if crate::faithful_gate("PROCESSOR_MACHINE_CONFIG_ROW") {
+            self.m_result.printer_extruder_id.clone_from(&config.printer_extruder_id);
+            self.m_result.printer_extruder_variant.clone_from(&config.printer_extruder_variant);
+            self.m_result.extruder_types = config.extruder_types();
+        }
+
         // PROCESS_FILAMENT_CHANGE (on): what process_filament_change reads
         // (GCodeProcessor.cpp:1970-2023, 2045-2053, 2074-2079). =0 leaves the
         // processor single-filament with no tool-change time, as before R847.
@@ -3449,10 +3464,25 @@ impl GCodeProcessor {
         self.m_last_filament_id[extruder_id as usize] as i32
     }
 
-    // BLOCKED(deps): get_machine_config_idx needs MultiNozzleUtils nozzle group;
-    // with the default (no nozzle group) it returns 0 — faithful to cpp:6379-6392.
+    /// GCodeProcessor.cpp:6596-6610. Machine limits follow the nozzle currently
+    /// mounted in the active extruder. The C++ signature also accepts a filament ID.
     fn get_machine_config_idx(&self, _filament_idx: i32) -> i32 {
-        0
+        let extruder_id = self.get_extruder_id(true);
+        let Some(group) = &self.m_nozzle_group_result else { return 0 };
+        let Some(&extruder_type) = self.m_result.extruder_types.get(extruder_id as usize) else { return 0 };
+        let variants = &self.m_result.printer_extruder_variant;
+        let ids = &self.m_result.printer_extruder_id;
+        // A single row always resolves to zero. An incomplete table cannot be
+        // indexed as a pair (PrintConfig.cpp:995 requires equal lengths).
+        if variants.len() <= 1 || variants.len() != ids.len() {
+            return 0;
+        }
+        let nozzle_id = self.m_nozzle_status_recorder.get_nozzle_in_extruder(extruder_id);
+        let Some(nozzle) = group.get_nozzle_from_id(nozzle_id) else { return 0 };
+        crate::print_config::config_def::get_config_index_base(
+            crate::print_config::enums::NozzleVolumeType::from_i32(nozzle.volume_type as i32),
+            extruder_type, extruder_id + 1, variants, ids,
+        )
     }
 
     // ----- machine-limit getters (cpp:6022-6128) -----
@@ -9657,10 +9687,40 @@ pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without
 mod tests {
     use super::*;
 
-    /// R953 PROCESS_M702_PIN: `M702 C` unloads the active filament (GCodeProcessor.cpp:5874-5886).
-    /// With no extruder selected `get_filament_id()` is 0 (forced, :6565-6575), the unload time is 0
-    /// because `extruder_unloaded` is set first (:5880, :6363-6367), and `unload_time_per_filament[0]
-    /// += 0` still creates the entry (std::map::operator[]). A plain `M702` changes nothing.
+    /// The pin's GCodeProcessor.cpp:6596-6610 over the states emitted by
+    /// tests/data/g_code_processor/gen.cpp --machine-rows.
+    #[test]
+    fn machine_config_rows_match_native() {
+        use crate::extruder::NozzleVolumeType::{NvtHighFlow, NvtStandard, NvtTPUHighFlow};
+        use crate::multi_nozzle_utils::{LayeredNozzleGroupResult, NozzleInfo};
+
+        let mut config = crate::print_config::PrintConfig::default();
+        config.printer_extruder_id = vec![2, 1, 1, 2];
+        config.printer_extruder_variant = ["Bowden Standard", "Direct Drive Standard",
+                                          "Direct Drive High Flow", "Bowden High Flow"].map(str::to_owned).to_vec();
+        config.extruder_type = vec![0, 1];
+        let nozzles: Vec<_> = [(0, NvtStandard), (0, NvtHighFlow), (1, NvtHighFlow), (0, NvtTPUHighFlow)]
+            .into_iter().enumerate().map(|(id, (extruder_id, volume_type))| NozzleInfo {
+                group_id: id as i32, extruder_id, volume_type, diameter: "0.4".into(), installed: true,
+            }).collect();
+        let group = LayeredNozzleGroupResult::create(&[0, 1, 2, 3], &nozzles, &[0, 1, 2, 3]).unwrap();
+        let vectors = include_str!("../../tests/data/g_code_processor/machine_rows.txt");
+        assert_eq!(vectors.lines().count(), 144);
+        for line in vectors.lines() {
+            let values: Vec<i32> = line.split_whitespace().map(|s| s.parse().unwrap()).collect();
+            let [grouped, extruder, nozzle, filament, expected] = values[..] else { panic!("bad vector {line}") };
+            let mut p = GCodeProcessor::new();
+            p.apply_config(&config);
+            p.initialize_from_context((grouped == 1).then(|| group.clone()));
+            p.m_extruder_id = extruder as u8;
+            if nozzle >= 0 {
+                let extruder_id = p.get_extruder_id(true);
+                p.m_nozzle_status_recorder.set_nozzle_status(nozzle, 0, extruder_id);
+            }
+            assert_eq!(p.get_machine_config_idx(filament), expected, "{line}");
+        }
+    }
+
     /// R953: `GCodeProcessor::get_time_dhm` against the pin. The vectors
     /// (tests/data/g_code_processor_used_filaments/g_code_processor_time_dhm.txt, written by gen.cpp
     /// beside them, which includes the pin's GCodeProcessor.cpp) give per line the mode, the machine's
@@ -9691,6 +9751,10 @@ mod tests {
         assert!(bad.is_empty(), "{} of {n} differ:\n{}", bad.len(), bad.join("\n"));
     }
 
+    /// R953 PROCESS_M702_PIN: `M702 C` unloads the active filament (GCodeProcessor.cpp:5874-5886).
+    /// With no extruder selected `get_filament_id()` is 0 (forced, :6565-6575), the unload time is 0
+    /// because `extruder_unloaded` is set first (:5880, :6363-6367), and `unload_time_per_filament[0]
+    /// += 0` still creates the entry (std::map::operator[]). A plain `M702` changes nothing.
     #[test]
     fn process_m702_records_the_unload_entry_r953() {
         let mut p = GCodeProcessor::new();
