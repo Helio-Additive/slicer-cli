@@ -494,6 +494,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                     return fail(CLI_CONFIG_FILE_ERROR, "The assemble list gives " + what + " no filament; give a filament for it");
                 object->config.set_key_value("extruder", new ConfigOptionInt(assemble_object.filaments[0]));
                 used_filaments.emplace(assemble_object.filaments[0]);
+                plate.asked_filaments.emplace(assemble_object.filaments[0], assemble_object.path);
             } else {
                 if (assemble_object.filaments.empty())
                     assemble_object.filaments.resize(1, 0);
@@ -559,6 +560,7 @@ StepResult construct_assemble_list(std::vector<AssemblePlate>& plates, Model& mo
                 if (!skip_filament) {
                     copy_obj->config.set_key_value("extruder", new ConfigOptionInt(assemble_object.filaments[array_index]));
                     used_filaments.emplace(assemble_object.filaments[array_index]);
+                    plate.asked_filaments.emplace(assemble_object.filaments[array_index], assemble_object.path);
                 } else {
                     assemble_object.filaments[array_index] = 0;
                 }
@@ -609,6 +611,25 @@ StepResult load_assemble_list(const std::string& file, AssembleList& list) {
     }
     list.model.add_default_instances();
     return {};
+}
+
+std::string assemble_filament_refusal(const std::vector<AssemblePlate>& plates, size_t filament_count) {
+    // The highest number asked, so that the sentence names the count that serves the whole list.
+    int highest = 0;
+    size_t on_plate = 0;
+    const std::string* path = nullptr;
+    for (size_t plate_index = 0; plate_index < plates.size(); ++plate_index)
+        if (const auto& asked = plates[plate_index].asked_filaments; !asked.empty() && asked.rbegin()->first > highest) {
+            highest  = asked.rbegin()->first;
+            path     = &asked.rbegin()->second;
+            on_plate = plate_index + 1;
+        }
+    if (highest <= 0 || size_t(highest) <= filament_count)
+        return {};
+    return "The assemble list gives object " + *path + " on plate " + std::to_string(on_plate) + " filament " +
+           std::to_string(highest) + ", but this run has " + std::to_string(filament_count) + " filament(s); name " +
+           std::to_string(highest) + " filaments with --filament-preset or --load-filaments, or give the object a filament from 1 to " +
+           std::to_string(filament_count) + ".";
 }
 
 } // namespace slicer_cli

@@ -5934,6 +5934,33 @@ else
     show o25slabmk; fail "OrcaSlicer: slab project exit $(rc o25slabmk)"
 fi
 
+# A filament number in the assemble list that the run has no filament for is
+# refused (-2): the engine would print the object with the
+# first filament and say nothing. The official command line has the rule for
+# --load-filament-ids. With a filament named for each number the plate slices
+# with both; 0 stays the default filament.
+py '
+import json
+P = lambda fil: {"plates": [{"plate_name": "m", "need_arrange": True, "objects": [{"path": "cube.stl", "count": len(fil), "filaments": fil}]}]}
+json.dump(P([1, 2]), open("fil-two.json", "w")); json.dump(P([0]), open("fil-zero.json", "w"))
+'
+fil_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run fil-past-$e "$bin" --load-assemble-list fil-two.json --slice 1 --printer-preset "$A1M" --outputdir fil-past-$e/out
+    [ "$(code fil-past-$e)" = 254 ] || { fil_ok=0; show fil-past-$e; fail "$e: filament 2 asked with one filament loaded exit $(code fil-past-$e), want 254 (-2)"; }
+    grep -q "gives object cube.stl on plate 1 filament 2, but this run has 1 filament" fil-past-$e/out/result.json \
+        || { fil_ok=0; fail "$e: the refusal does not name the object, the filament and the count: $(grep -o '"error_string"[^}]*' fil-past-$e/out/result.json | cut -c1-300)"; }
+    [ ! -e fil-past-$e/out/plate_1.gcode ] || { fil_ok=0; fail "$e: a refused plate left a G-code file"; }
+    run fil-named-$e "$bin" --load-assemble-list fil-two.json --slice 1 --printer-preset "$A1M" \
+        --filament-preset "$A1M_FILAMENT" --filament-preset "$A1M_FILAMENT" --outputdir fil-named-$e/out
+    [ "$(rc fil-named-$e)" = 0 ] || { fil_ok=0; show fil-named-$e; fail "$e: filaments 1 and 2 with two filaments named exit $(rc fil-named-$e)"; }
+    grep -q "^T1$" fil-named-$e/out/plate_1.gcode || { fil_ok=0; fail "$e: two filaments named, but the G-code never changes to the second"; }
+    run fil-zero-$e "$bin" --load-assemble-list fil-zero.json --slice 1 --printer-preset "$A1M" --outputdir fil-zero-$e/out
+    [ "$(rc fil-zero-$e)" = 0 ] || { fil_ok=0; show fil-zero-$e; fail "$e: filament 0 (the default filament) exit $(rc fil-zero-$e)"; }
+done
+[ $fil_ok = 1 ] && echo "PASS: a filament number past the loaded filaments is refused (-2); with a filament named for each number the plate uses both (both engines)"
+
 # "Nozzle Manual" on a printer with a nozzle rack (H2C): the engine rebuilds
 # its nozzle grouping from the three maps and the rack the project states
 # (extruder_nozzle_stats). The rack is kept when the project is loaded, so the

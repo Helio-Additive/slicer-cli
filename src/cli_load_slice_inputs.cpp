@@ -366,6 +366,16 @@ static int merge_slice_settings(CliRunContext& context, const CliOptions& o, Pla
             emit_event({{"event","config_normalized"}, {"tag","PrimeTowerOffOneFilament"},
                         {"message","Every filament slot holds the same filament: the prime tower is off"}});
     }
+    // An assemble list's filament number past the filaments the run has now,
+    // with every preset and settings file in (cli_assemble.hpp).
+    if (inputs.assemble_input) {
+        const std::string why = slicer_cli::assemble_filament_refusal(context.g_assemble->plates, project_filament_count(config));
+        if (!why.empty()) {
+            std::cerr << "Error: " << why << "\n";
+            set_outcome_failure(outcome, CLI_INVALID_PARAMS, why);
+            return 1;
+        }
+    }
     // --load-custom-gcodes, --skip-modified-gcodes (cli_load_settings.cpp).
     {
         const slicer_cli::StepResult g = slicer_cli::apply_custom_gcodes(o, o.slice_mode ? o.slice_plate : plate_id, model);

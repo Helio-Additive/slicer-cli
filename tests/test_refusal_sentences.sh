@@ -83,6 +83,7 @@ def lst(path, obj, arrange=False):
 lst("nopath.json", {"path": "missing.stl", "count": 1, "filaments": [1]})
 lst("emptylist.json", {"path": "cube.stl", "count": 1, "filaments": [1]})
 lst("nofil.json", {"path": "cube.stl", "count": 1, "filaments": []})
+lst("pastfil.json", {"path": "cube.stl", "count": 2, "filaments": [1, 2]})
 lst("readfail.json", {"path": "empty.stl", "count": 1, "filaments": [1]})
 lst("junkobj.json", {"path": "junk.obj", "count": 1, "filaments": [1]})
 # Two 200 mm cubes on one plate of the 180 mm A1 mini bed: each fits alone,
@@ -551,6 +552,8 @@ both assemble-list-badjson    "*could not be read*; check the file*" \
      --load-assemble-list garbage.json --slice 1 --printer-preset "$A1M"
 both assemble-no-filament     "*give a filament for it*" \
      --load-assemble-list nofil.json --slice 1 --printer-preset "$A1M"
+both assemble-filament-past   "*filament 2, but this run has 1 filament(s); name 2 filaments with --filament-preset or --load-filaments*" \
+     --load-assemble-list pastfil.json --slice 1 --printer-preset "$A1M"
 both assemble-stl-read        "*could not be read; check the file*" \
      --load-assemble-list readfail.json --slice 1 --printer-preset "$A1M"
 both assemble-obj-mesh        "*holds no usable mesh*; check the file*" \

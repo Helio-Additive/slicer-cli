@@ -122,6 +122,13 @@ Every plate of the list is sliced, whatever plate `--slice` names. The list:
 - `count` copies of each part. Each per-copy list (`filaments`,
   `assemble_index`, `pos_x`, `pos_y`, `pos_z`) holds one value per copy or one
   value for all.
+- `filaments` are filament numbers of this run: 1 is the first filament
+  named with `--filament-preset` or `--load-filaments`, and 0 is the default
+  filament. A number the run has no filament for is refused (-2) on all
+  binaries; the sentence names the object, the number and the count. Without
+  this rule the engine prints the object with the first filament and says
+  nothing. The official command lines have the rule only for
+  `--load-filament-ids`.
 - Parts with the same `assemble_index` above 0 are merged into one object,
   `assemble_<n>`, whose settings come from `assembled_params`.
 - `need_arrange` arranges the plate; otherwise the objects stay at their

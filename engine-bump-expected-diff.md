@@ -195,10 +195,12 @@ G-code states:
   now starts a printer with one filament when it is
   `single_extruder_multi_material`, else one per extruder
   (`PresetBundle::min_filament_count`, `PresetBundle.cpp` 5419-5424); 2.4.2
-  gave one per extruder whatever that setting. A two-cube plate that asks for
-  filaments 1 and 2 on the H2D printed with two filaments and a prime tower
-  (2h 45m, 16.4 m of filament) and now prints with one (12m 35s, 2.4 m). Name
-  each filament with `--filament-preset` to get the old plate.
+  gave one per extruder whatever that setting. A two-cube assemble list that
+  asks for filaments 1 and 2 on the H2D printed with two filaments and a
+  prime tower on 2.4.2 (2h 45m, 16.4 m of filament). With one filament the
+  engine printed both cubes with it and said nothing, on every printer that
+  starts with one filament. slicer_cli now refuses that list (-2) on all
+  three binaries: name each filament with `--filament-preset`.
 
 **Preset names.** A read of the shipped profile files (selectable presets,
 every vendor):
