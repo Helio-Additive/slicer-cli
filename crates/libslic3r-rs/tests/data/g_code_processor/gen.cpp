@@ -844,11 +844,49 @@ static void filament_offsets()
     }
 }
 
+// GCodeProcessor.cpp:2008-2027 sizes these result vectors to the filament count.
+// Each option falls back separately to its first row when a filament has no row.
+static void filament_material_info()
+{
+    struct Profile { const char *hrc; const char *vitrification; const char *cost; };
+    const Profile profiles[] = {
+        {nullptr, nullptr, nullptr},
+        {"12", "62", "22.75"},
+        {"12,47", "62,128", "22.75,43.125"},
+        {"3,12,47,99", "61", "0,13.123456789,24.75"},
+        {nullptr, "60,65,70,75", "0.1"},
+        {"19,27", "16777217,93", nullptr},
+    };
+    GCodeProcessor p;
+    p.reset();
+    for (const Profile &profile : profiles) {
+        for (int count : {1, 3, 2}) {
+            PrintConfig cfg;
+            cfg.filament_diameter.values.assign(count, 1.75);
+            if (profile.hrc) cfg.set_deserialize_strict("required_nozzle_HRC", profile.hrc);
+            if (profile.vitrification) cfg.set_deserialize_strict("temperature_vitrification", profile.vitrification);
+            if (profile.cost) cfg.set_deserialize_strict("filament_cost", profile.cost);
+            p.apply_config(cfg);
+            const auto &r = p.result();
+            std::printf("%d %s %s %s", count, profile.hrc ? profile.hrc : "-",
+                        profile.vitrification ? profile.vitrification : "-", profile.cost ? profile.cost : "-");
+            for (size_t i = 0; i < r.filaments_count; ++i)
+                std::printf(" %d %d %s", r.required_nozzle_HRC.at(i), r.filament_vitrification_temperature.at(i),
+                            f32(r.filament_costs.at(i)).c_str());
+            std::putchar('\n');
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--filament-material-info") {
+        filament_material_info();
+        return 0;
     }
     if (std::string(argv[1]) == "--filament-offsets") {
         filament_offsets();

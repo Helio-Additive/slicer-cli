@@ -56,6 +56,11 @@ pub(crate) fn profile_machine_limit_rows_enabled(key: &str) -> bool {
     machine_limit_rows_enabled(key) && (!is_machine_axis_limit(key) || crate::faithful_gate("MACHINE_LIMITS"))
 }
 
+pub(crate) fn processor_filament_material_rows_enabled(key: &str) -> bool {
+    matches!(key, "required_nozzle_HRC" | "temperature_vitrification" | "filament_cost")
+        && crate::faithful_gate("PROCESSOR_FILAMENT_MATERIAL_INFO")
+}
+
 /// The six per-AMS scalar options in PrintConfig.hpp:1423-1428.
 fn is_ams_filament_time(key: &str) -> bool {
     matches!(key,
@@ -164,6 +169,15 @@ pub struct PrintConfig {
     pub filament_diameters: Vec<CoordF>,
     /// Per-filament densities (g/cm³) — full `filament_density` array.
     pub filament_densities: Vec<CoordF>,
+    /// Per-filament price in currency/kg (PrintConfig.hpp:1392). Older configs carry the scalar price.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filament_costs: Vec<CoordF>,
+    /// Nozzle hardness required by each filament (PrintConfig.hpp:1408).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_nozzle_hrc: Vec<i32>,
+    /// Per-filament softening temperature in °C (PrintConfig.hpp:1396).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub temperature_vitrification: Vec<i32>,
     /// Per-filament adhesiveness category — full `filament_adhesiveness_category`
     /// array (PrintConfig.cpp:2385, coInts, default 0).
     /// BambuStudio groups the wipe tower into one BLOCK per DISTINCT category
@@ -1363,6 +1377,9 @@ impl Default for PrintConfig {
             filament_colours: Vec::new(),
             filament_diameters: Vec::new(),
             filament_densities: Vec::new(),
+            filament_costs: Vec::new(),
+            required_nozzle_hrc: Vec::new(),
+            temperature_vitrification: Vec::new(),
             filament_adhesiveness_categories: Vec::new(),
             extrusion_multiplier: 1.0,
             // PrintConfig.cpp:3004-3011 default ConfigOptionFloat(0.4)
@@ -2617,6 +2634,28 @@ impl PrintConfig {
     /// Apply a key-value pair from BambuStudio project_settings JSON.
     /// Returns true if the key was recognized and applied.
     pub fn set_deserialize(&mut self, key: &str, value: &str) -> bool {
+        if processor_filament_material_rows_enabled(key) {
+            use crate::config::{ConfigOption, ConfigOptionFloats, ConfigOptionInts};
+            if key == "filament_cost" {
+                let mut rows = ConfigOptionFloats::new();
+                if matches!(rows.deserialize(value, false), Ok(true)) {
+                    if let Some(&first) = rows.values.first() {
+                        self.filament_cost = first;
+                    }
+                    self.filament_costs = rows.values;
+                }
+            } else {
+                let mut rows = ConfigOptionInts::new();
+                if matches!(rows.deserialize(value, false), Ok(true)) {
+                    if key == "required_nozzle_HRC" {
+                        self.required_nozzle_hrc = rows.values;
+                    } else {
+                        self.temperature_vitrification = rows.values;
+                    }
+                }
+            }
+            return true;
+        }
         if profile_machine_limit_rows_enabled(key) && self.set_machine_limit_rows(key, value) {
             return true;
         }
@@ -5537,6 +5576,9 @@ impl PrintConfig {
         let parse_bool =
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
+        if processor_filament_material_rows_enabled(key) {
+            return self.set_deserialize(key, value);
+        }
         if matches!(key, "extruder_offset" | "master_extruder_id" | "filament_map")
             && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")
         {

@@ -190,8 +190,18 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R963 | Map each filament to its physical extruder's XY offset. The processor matches 48 native offset tables and 12 travel-move cases (GCodeProcessor.cpp 2016–2022, 6199–6200). With the second extruder offset by (12.25, −3.5) mm, the recorded T1 move at (50, 30) lands at (62.25, 26.5) in both engines. All four slicing fixtures match R962 byte for byte with either gate setting. | `PROCESSOR_FILAMENT_OFFSETS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
 | R964 | Start each wipe at the logical end of the last extrusion path, including after a segment shorter than EPSILON (GCode.cpp 477–483, 7987–7988, 8087). Each writer tracks its own endpoint until its next XY movement. Two wipe retractions at Majora layer 4 and two at H2D layer 319 now match the C++ bytes. The three-decimal motion scores stay flat. The disabled gate reproduces all four R963 files. | `WIPE_PATH_END` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (+2 verbatim) |
 | R965 | Pass scaled float distances to the monotonic gap-fill offsets (FillRectilinear.cpp 3703–3707). The eight-point H2D layer 498 island yields the native path and width of 0.092880219221115112 mm. The only changed fixture line is its width comment. The other three files match R964 byte for byte, as do all four with the gate disabled. | `MONOTONIC_GAP_OFFSET_FLOAT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
+| R966 | Apply the per-filament nozzle hardness, softening temperature and cost to the processor result (GCodeProcessor.cpp 2024–2027). Both typed setters and the project settings loader reproduce all 18 native profiles, including missing and surplus rows. Older serialized profiles retain their scalar price. All four G-code fixtures match R965 byte for byte with either gate setting. | `PROCESSOR_FILAMENT_MATERIAL_INFO` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 (same bytes) |
 
 ## Findings
+
+- R966, H2D heating and cooling. Replaying the single-worker C++ file through the Rust
+  processor reproduces every temperature command and its placement in all 984 blocks
+  (preamble plus 983 layers, with M73 and standalone M400 excluded when aligning commands).
+  Replacing just layers 369–371 of the Rust file with those C++ layers reproduces the same
+  result, including heating positions at layers 422 and 538 and the 114 °C command at
+  layer 820. Three other C++ runs reproduce the Rust motion at layers 369–371. After
+  excluding those postprocessor commands, all 983 Rust layers match at least one of seven
+  native runs, including all 863 layers where the seven agree.
 
 - R809: after placement, straight-wall coordinates agree to the last digit, so
   the frame is exact.

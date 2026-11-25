@@ -2171,6 +2171,7 @@ fn load_bambustudio_settings(
                 serde_json::Value::String(s) => s.clone(),
                 // Config.cpp:1030-1080 joins the profile's array before deserialization.
                 serde_json::Value::Array(arr) if crate::print_config::profile_machine_limit_rows_enabled(key)
+                    || crate::print_config::processor_filament_material_rows_enabled(key)
                     || (matches!(key.as_str(), "extruder_offset" | "filament_map") && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")) => {
                     let Some(items) = arr.iter().map(|v| v.as_str()).collect::<Option<Vec<_>>>() else { continue };
                     items.join(",")
@@ -2686,6 +2687,66 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 #[cfg(test)]
 mod circle_compensation_settings_tests {
     use super::*;
+
+    /// PrintConfig.cpp:3000-3006, 3624-3628, 3682-3688 and GCodeProcessor.cpp:2008-2027.
+    #[test]
+    fn filament_material_info_matches_native() {
+        use crate::gcode::g_code_processor::GCodeProcessor;
+
+        let vectors = include_str!("../tests/data/g_code_processor/filament_material_info.txt");
+        let keys = ["required_nozzle_HRC", "temperature_vitrification", "filament_cost"];
+        let mut proc = GCodeProcessor::new();
+        proc.reset();
+        assert_eq!(vectors.lines().count(), 18);
+        for line in vectors.lines() {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            let count: usize = fields[0].parse().unwrap();
+            let expected: Vec<(i32, i32, u32)> = fields[4..].chunks_exact(3).map(|row| (
+                row[0].parse().unwrap(), row[1].parse().unwrap(), u32::from_str_radix(row[2], 16).unwrap(),
+            )).collect();
+            let mut profile = serde_json::json!({ "filament_diameter": vec!["1.75"; count] });
+            let mut direct = PrintConfig::default();
+            direct.filament_diameters = vec![1.75; count];
+            let mut by_key = direct.clone();
+            for (key, value) in keys.iter().zip(&fields[1..4]) {
+                if *value != "-" {
+                    profile[*key] = serde_json::json!(value.split(',').collect::<Vec<_>>());
+                    assert!(direct.set_deserialize(key, value), "{key}");
+                    assert!(by_key.apply_key_value(key, value), "{key}");
+                }
+            }
+            let (loaded, _, _) = load_bambustudio_settings(&profile).unwrap();
+            for config in [direct, by_key, loaded] {
+                proc.apply_config(&config);
+                let r = proc.result();
+                assert_eq!(r.required_nozzle_hrc.len(), count, "{line}");
+                assert_eq!(r.filament_vitrification_temperature.len(), count, "{line}");
+                assert_eq!(r.filament_costs.len(), count, "{line}");
+                for (i, row) in expected.iter().enumerate() {
+                    assert_eq!((r.required_nozzle_hrc[i], r.filament_vitrification_temperature[i], r.filament_costs[i].to_bits()), *row, "{line}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn filament_material_info_reads_older_scalar_config() {
+        use crate::gcode::g_code_processor::GCodeProcessor;
+
+        let mut config = PrintConfig::default();
+        config.filament_diameters = vec![1.75; 2];
+        config.filament_cost = 17.25;
+        let serialized = serde_json::to_value(&config).unwrap();
+        for name in ["filament_costs", "required_nozzle_hrc", "temperature_vitrification"] {
+            assert!(serialized.get(name).is_none());
+        }
+        let config: PrintConfig = serde_json::from_value(serialized).unwrap();
+        let mut proc = GCodeProcessor::new();
+        proc.apply_config(&config);
+        assert_eq!(proc.result().filament_costs, vec![17.25; 2]);
+        assert_eq!(proc.result().required_nozzle_hrc, vec![0; 2]);
+        assert_eq!(proc.result().filament_vitrification_temperature, vec![100; 2]);
+    }
 
     /// GCodeProcessor.cpp:2016-2022, 6164-6200. Exercise the JSON settings
     /// loader and the stored travel vertices for both assignments of T0/T1.

@@ -2512,8 +2512,8 @@ impl GCodeProcessorResult {
         self.required_nozzle_hrc = vec![DEFAULT_FILAMENT_HRC; MIN_EXTRUDERS_COUNT];
         self.filament_densities = vec![DEFAULT_FILAMENT_DENSITY; MIN_EXTRUDERS_COUNT];
         self.filament_costs = vec![DEFAULT_FILAMENT_COST; MIN_EXTRUDERS_COUNT];
-        // BLOCKED(config): filament_vitrification_temperature default not reset in
-        // this branch of C++; left as-is here.
+        // GCodeProcessor.cpp:1594-1597 resets the other four material vectors here.
+        // apply_config replaces the vitrification temperatures for the next print.
         self.spiral_vase_layers = Vec::new();
         self.skippable_part_time.clear();
         self.warnings.clear();
@@ -3315,9 +3315,9 @@ impl GCodeProcessor {
             self.m_handle_hotend_as_extruder = config.handle_hotend_as_extruder;
             // :2006-2023 — the per-filament vectors, `get_at(i)` falling back to
             // the first value.
-            let get_at = |v: &Vec<f64>, i: usize, first: f64| -> f64 {
-                v.get(i).or(v.first()).copied().unwrap_or(first)
-            };
+            fn get_at<T: Copy>(rows: &[T], i: usize, fallback: T) -> T {
+                rows.get(i).or_else(|| rows.first()).copied().unwrap_or(fallback)
+            }
             // GCodeProcessor.cpp:2016-2022. The one-based map is padded with the
             // master extruder. ConfigOptionPoints::get_at falls back to row zero.
             self.m_extruder_offsets = if let Some(first) = config.extruder_offsets.first()
@@ -3338,6 +3338,21 @@ impl GCodeProcessor {
             self.m_result.filament_densities = (0..filament_count)
                 .map(|i| get_at(&config.filament_densities, i, config.filament_density) as f32)
                 .collect();
+            // GCodeProcessor.cpp:2024-2027. ConfigOptionVector::get_at uses row zero
+            // past the end. A scalar-only config uses the defaults from PrintConfig.cpp
+            // (3000-3006, 3624-3628, 3682-3688) and its saved filament price.
+            if crate::faithful_gate("PROCESSOR_FILAMENT_MATERIAL_INFO") {
+                self.m_result.required_nozzle_hrc = (0..filament_count)
+                    .map(|i| get_at(&config.required_nozzle_hrc, i, 0))
+                    .collect();
+                // The native result holds ints, but apply_config first casts the option to float.
+                self.m_result.filament_vitrification_temperature = (0..filament_count)
+                    .map(|i| get_at(&config.temperature_vitrification, i, 100) as f32 as i32)
+                    .collect();
+                self.m_result.filament_costs = (0..filament_count)
+                    .map(|i| get_at(&config.filament_costs, i, config.filament_cost) as f32)
+                    .collect();
+            }
             self.m_extruder_temps.resize(filament_count, 0.0);
             // GCodeProcessor.cpp:2042-2051, PrintConfig.cpp:1085-1108. The
             // selected AMS has its own load/unload times, including zero.
