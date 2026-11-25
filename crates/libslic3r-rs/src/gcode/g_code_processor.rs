@@ -1729,7 +1729,16 @@ impl UsedFilaments {
             let mut filament: (f64, f64) = (0.0, 0.0);
 
             // double s = PI * sqr(0.5 * filament_diameter);
-            let s = PI * sqr(0.5 * filament_diameter) as f64;
+            // GCodeProcessor.cpp:1512: `0.5` is a double literal, so the float diameter is
+            // promoted and the half and its square are taken in double (R953 gate
+            // PROCESSOR_ROLE_CACHE_F64, faithful; =0 gives the earlier float arm, which differs
+            // for a diameter whose half squared is not exact in float, e.g. 2.85f).
+            let s = if crate::faithful_gate("PROCESSOR_ROLE_CACHE_F64") {
+                let half = 0.5 * filament_diameter as f64;
+                PI * (half * half)
+            } else {
+                PI * sqr(0.5 * filament_diameter) as f64
+            };
             filament.0 = self.role_cache / s * 0.001;
             filament.1 = self.role_cache * filament_density as f64 * 0.001;
 
@@ -3385,6 +3394,17 @@ impl GCodeProcessor {
     }
 
     // ----- accessors -----
+
+    /// GCodeProcessor.cpp:2898-2901 `std::string GCodeProcessor::get_time_dhm(ETimeMode mode) const`:
+    /// `short_time(get_time_dhms(m_time_processor.machines[mode].time))`, "N/A" for a mode not below
+    /// `ETimeMode::Count` (the Rust enum has no such value, so that branch cannot be reached).
+    pub fn get_time_dhm(&self, mode: ETimeMode) -> String {
+        if (mode as usize) < ETimeMode::COUNT {
+            crate::utils::short_time(&crate::utils::get_time_dhms(self.m_time_processor.machines[mode as usize].time))
+        } else {
+            String::from("N/A")
+        }
+    }
 
     /// GCodeProcessor.hpp `const Result& get_result() const`.
     pub fn result(&self) -> &GCodeProcessorResult {
@@ -5128,6 +5148,28 @@ impl GCodeProcessor {
     fn process_m702(&mut self, line: &crate::g_code_reader::GCodeLine) {
         // C++ checks line.has('C'); 'C' is not a recognized axis char in the
         // Rust reader's has(Axis) API, but has_char covers it.
+        // R953 gate PROCESS_M702_PIN (faithful): GCodeProcessor.cpp:5874-5886 as the pin writes it:
+        // `int filament_id = get_filament_id();` before the test, the unload time from
+        // get_filament_unload_time(filament_id) and `unload_time_per_filament[filament_id] +=` it
+        // (std::map::operator[] creates the entry even when the time is 0); =0 the earlier arm
+        // below, which leaves the statistic out.
+        if crate::faithful_gate("PROCESS_M702_PIN") {
+            let filament_id = self.get_filament_id(true);
+            if line.has_char(b'C') {
+                self.m_time_processor.extruder_unloaded = true;
+                let unload_time = self.get_filament_unload_time(filament_id.max(0) as usize);
+                if filament_id >= 0 {
+                    *self
+                        .m_result
+                        .print_statistics
+                        .unload_time_per_filament
+                        .entry(filament_id as usize)
+                        .or_insert(0.0) += unload_time as f64;
+                }
+                self.simulate_st_synchronize(unload_time, ExtrusionRole::None);
+            }
+            return;
+        }
         if line.has_char(b'C') {
             self.m_time_processor.extruder_unloaded = true;
             // get_filament_unload_time => extruder_unloaded ? 0 : filament_unload_times
@@ -9614,6 +9656,57 @@ pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R953 PROCESS_M702_PIN: `M702 C` unloads the active filament (GCodeProcessor.cpp:5874-5886).
+    /// With no extruder selected `get_filament_id()` is 0 (forced, :6565-6575), the unload time is 0
+    /// because `extruder_unloaded` is set first (:5880, :6363-6367), and `unload_time_per_filament[0]
+    /// += 0` still creates the entry (std::map::operator[]). A plain `M702` changes nothing.
+    /// R953: `GCodeProcessor::get_time_dhm` against the pin. The vectors
+    /// (tests/data/g_code_processor_used_filaments/g_code_processor_time_dhm.txt, written by gen.cpp
+    /// beside them, which includes the pin's GCodeProcessor.cpp) give per line the mode, the machine's
+    /// time as float bits and the pin's string, for 324 times in both modes.
+    #[test]
+    fn get_time_dhm_native_r953() {
+        let path = format!(
+            "{}/tests/data/g_code_processor_used_filaments/g_code_processor_time_dhm.txt",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let mut n = 0usize;
+        let mut bad: Vec<String> = Vec::new();
+        for line in text.lines() {
+            let t: Vec<&str> = line.splitn(4, ' ').collect();
+            assert_eq!(t[0], "T");
+            let mode = if t[1] == "0" { ETimeMode::Normal } else { ETimeMode::Stealth };
+            let time = f32::from_bits(u32::from_str_radix(t[2], 16).unwrap());
+            let mut p = GCodeProcessor::new();
+            p.m_time_processor.machines[mode as usize].time = time;
+            let got = p.get_time_dhm(mode);
+            n += 1;
+            if got != t[3] {
+                bad.push(format!("mode {} time {time}: port {got:?} pin {:?}", t[1], t[3]));
+            }
+        }
+        assert!(n >= 600, "only {n} lines");
+        assert!(bad.is_empty(), "{} of {n} differ:\n{}", bad.len(), bad.join("\n"));
+    }
+
+    #[test]
+    fn process_m702_records_the_unload_entry_r953() {
+        let mut p = GCodeProcessor::new();
+        p.process_buffer("M702\n");
+        assert!(p.m_result.print_statistics.unload_time_per_filament.is_empty());
+        // TimeProcessor::reset starts with extruder_unloaded = true (GCodeProcessor.cpp:556).
+        assert!(p.m_time_processor.extruder_unloaded);
+        p.process_buffer("M702 C\n");
+        assert!(p.m_time_processor.extruder_unloaded);
+        if crate::faithful_gate("PROCESS_M702_PIN") {
+            assert_eq!(p.m_result.print_statistics.unload_time_per_filament.get(&0), Some(&0.0));
+            assert_eq!(p.m_result.print_statistics.unload_time_per_filament.len(), 1);
+        } else {
+            assert!(p.m_result.print_statistics.unload_time_per_filament.is_empty());
+        }
+    }
 
     /// The `producer` lines of tests/data/g_code_processor/g_code_processor.txt.gz (gen.cpp, which
     /// includes the pin's GCodeProcessor.cpp): `process_producers_tags` with `m_producer` set, from a

@@ -758,6 +758,15 @@ pub struct PrintConfig {
     /// Extruder Y offset (mm). Subtracted from all G-code Y coordinates.
     pub extruder_offset_y: CoordF,
 
+    /// PrintConfig.hpp:1745 `filament_velocity_adaptation_factor` (ConfigOptionFloats, one value per
+    /// filament, min 0, default {1.0}, PrintConfig.cpp:3294-3301). GCode::extrude_loop hands
+    /// `FILAMENT_CONFIG(filament_velocity_adaptation_factor)` to `set_smooth_coff` before
+    /// `smooth_speed_discontinuity_area` (GCode.cpp:6779, 6809; FILAMENT_CONFIG is
+    /// `get_at(get_filament_config_index(filament id))`, GCode.cpp:1570), so the smoothing coefficient is
+    /// this factor times `smooth_coefficient`. Read it with
+    /// [`PrintConfig::filament_velocity_adaptation_factor_at`].
+    pub filament_velocity_adaptation_factor: Vec<f64>,
+
     // === Auto circle contour-hole compensation (PrintConfig.hpp:1746-1758, all ConfigOptionFloats,
     // one value per filament; defaults PrintConfig.cpp:6944-7010). Read by
     // AutoContourHolesCompensationParams(const PrintConfig&) (Print.hpp:371-385). ===
@@ -858,6 +867,35 @@ impl PrintConfig {
         let mut opt = crate::config::ConfigOptionFloats::new();
         if matches!(opt.deserialize(value, false), Ok(true)) {
             *field = opt.values;
+        }
+        true
+    }
+
+    /// `filament_velocity_adaptation_factor.get_at(idx)` (Config.hpp:681-685: the value at `idx`, the
+    /// first value past the end). GCode.cpp:6779/6809 read it at
+    /// `get_filament_config_index(m_writer.filament()->id())` (GCode.cpp:1570). An empty vector (the pin
+    /// asserts it is not) gives the option's default 1.0.
+    pub fn filament_velocity_adaptation_factor_at(&self, idx: usize) -> f64 {
+        let values = &self.filament_velocity_adaptation_factor;
+        if values.is_empty() {
+            return 1.0;
+        }
+        if idx < values.len() {
+            values[idx]
+        } else {
+            values[0]
+        }
+    }
+
+    /// `ConfigOptionFloats::deserialize(str)` (Config.hpp:918-939) into
+    /// `filament_velocity_adaptation_factor` (PrintConfig.hpp:1745): the comma-separated list replaces
+    /// the values; on a failed deserialize (a `nil` item: the option is not nullable) the field keeps its
+    /// values, as `ConfigBase::set_deserialize_raw` leaves the option when it throws.
+    pub fn set_deserialize_filament_velocity_adaptation_factor(&mut self, value: &str) -> bool {
+        use crate::config::ConfigOption as _;
+        let mut opt = crate::config::ConfigOptionFloats::new();
+        if matches!(opt.deserialize(value, false), Ok(true)) {
+            self.filament_velocity_adaptation_factor = opt.values;
         }
         true
     }
@@ -1451,6 +1489,9 @@ impl Default for PrintConfig {
             // Extruder offset (0 = no offset)
             extruder_offset_x: 0.0,
             extruder_offset_y: 0.0,
+
+            // PrintConfig.cpp:3301 `set_default_value(new ConfigOptionFloats{1.0})`.
+            filament_velocity_adaptation_factor: vec![1.0],
 
             // Auto circle contour-hole compensation: the pin's defaults (PrintConfig.cpp:6944-7010).
             circle_compensation_speed: vec![200.0],
@@ -2411,6 +2452,10 @@ impl PrintConfig {
             // deserialized as the pin's ConfigOptionFloats (Config.hpp:918-939).
             k if CIRCLE_COMPENSATION_FLOATS_KEYS.contains(&k) => {
                 self.set_deserialize_circle_compensation_floats(k, value)
+            }
+            // PrintConfig.hpp:1745 (ConfigOptionFloats, Config.hpp:918-939).
+            "filament_velocity_adaptation_factor" => {
+                self.set_deserialize_filament_velocity_adaptation_factor(value)
             }
             // === Layer Heights ===
             "layer_height" => {
@@ -5311,6 +5356,10 @@ impl PrintConfig {
             // PrintConfig.hpp:1747-1758 (ConfigOptionFloats, Config.hpp:918-939).
             k if CIRCLE_COMPENSATION_FLOATS_KEYS.contains(&k) => {
                 self.set_deserialize_circle_compensation_floats(k, value);
+            }
+            // PrintConfig.hpp:1745 (ConfigOptionFloats, Config.hpp:918-939).
+            "filament_velocity_adaptation_factor" => {
+                self.set_deserialize_filament_velocity_adaptation_factor(value);
             }
             "layer_height" => {
                 if let Some(v) = parse_f64(value) {

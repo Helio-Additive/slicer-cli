@@ -540,13 +540,17 @@ fn report(log: &mut Option<std::fs::File>, line: String) {
 
 /// The shim resets the endpoint flags in `clear()` where the engine's C++ does not
 /// (Polyline.hpp:265-268; `MEDIAL_AXIS_CLEAR_CPP`, on by default since R900). The comparison
-/// with the shim is made with those two gates off (the second is the diagram repair): everything else is the
+/// with the shim is made with those gates off (the second is the diagram repair, the third the Eigen arithmetic): everything else is the
 /// default path. Set
 /// before the first gate is read (the crate snapshots the environment once).
 fn shim_behaviour() {
     std::env::set_var("MEDIAL_AXIS_CLEAR_CPP", "0");
     // The shim builds the diagram with boost alone, without the repair of Voronoi.cpp:25-60.
     std::env::set_var("MEDIAL_AXIS_VD_REPAIR", "0");
+    // The shim spells the Eigen vector steps as scalars that clang fuses; the pin does not
+    // (MEDIAL_AXIS_EIGEN_PIN, R953; the pin's own arithmetic is checked by
+    // tests/medial_axis_pin_native_parity.rs).
+    std::env::set_var("MEDIAL_AXIS_EIGEN_PIN", "0");
 }
 
 #[test]

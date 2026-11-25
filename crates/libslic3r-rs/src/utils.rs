@@ -1364,7 +1364,9 @@ pub fn check_copy(origin: &str, copy: &str) -> CopyFileResult {
 // Ignore system and hidden files, which may be created by the DropBox synchronisation process.
 pub fn is_plain_file(dir_entry: &std::fs::DirEntry) -> bool {
     // Utils.cpp:1017-1018  if (! is_regular_file(status())) return false;
-    match dir_entry.metadata() {
+    // `directory_entry::status()` follows a symlink (boost's `symlink_status()` would not), where
+    // `DirEntry::metadata()` does not: the target's metadata is `std::fs::metadata(path)`.
+    match std::fs::metadata(dir_entry.path()) {
         Ok(m) => {
             if !m.is_file() {
                 return false;
@@ -1521,7 +1523,27 @@ pub mod perl_utils {
 // returns that string (the vsnprintf round-trip is identity for the result).
 pub fn string_printf(formatted: &str) -> String {
     // Utils.cpp:1149-1166  vsnprintf into INITIAL_LEN buffer, grow if truncated.
-    formatted.to_string()
+    let bytes = string_printf_bytes(formatted.as_bytes());
+    // Only a 199-byte result can end inside a UTF-8 sequence (see string_printf_bytes).
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+/// utils.cpp:1126-1146 `string_printf`'s buffer handling over the bytes vsnprintf produces in full:
+/// the first vsnprintf writes at most `INITIAL_LEN - 1` = 199 bytes including the terminating NUL and
+/// returns the full length; only a length >= INITIAL_LEN (200) grows the buffer and formats again.
+/// So a 199-byte result keeps its first 198 bytes and ends with the NUL vsnprintf wrote
+/// (`buffer.resize(bufflen)`), every other length comes back whole.
+pub fn string_printf_bytes(formatted: &[u8]) -> Vec<u8> {
+    const INITIAL_LEN: usize = 200;
+    let bufflen = formatted.len();
+    if bufflen >= INITIAL_LEN {
+        return formatted.to_vec();
+    }
+    let mut buffer = vec![0u8; INITIAL_LEN];
+    let written = bufflen.min(INITIAL_LEN - 2);
+    buffer[..written].copy_from_slice(&formatted[..written]);
+    buffer.truncate(bufflen);
+    buffer
 }
 
 // libslic3r_version.h:4  #define SLIC3R_APP_NAME "BambuStudio"  (from version.inc)
@@ -1988,6 +2010,14 @@ impl Md5Ctx {
     }
 }
 
+/// The 16-byte MD5 digest (RFC 1321) of `data`, for the md5 users outside this file
+/// (AppConfig.cpp:561-579 `appconfig_md5_hash_line` takes it from boost::uuids::detail::md5).
+pub(crate) fn md5_digest(data: &[u8]) -> [u8; 16] {
+    let mut ctx = Md5Ctx::new();
+    ctx.update(data);
+    ctx.finalize()
+}
+
 // utils.cpp:1511-1530  bool bbl_calc_md5(std::string &filename, std::string &md5_out)
 // `boost::filesystem::file_size` throws when the file cannot be read; that is the `Err` here.
 pub fn bbl_calc_md5(filename: &str, md5_out: &mut String) -> std::io::Result<bool> {
@@ -2061,10 +2091,16 @@ fn strcasecmp(a: &str, b: &str) -> i32 {
 
 // boost::filesystem::path(dir_entry).extension().string(): the extension
 // including the leading dot, or "" if none.
+/// `dir_entry.path().extension().string()` of boost::filesystem v3 (the default version, path.cpp
+/// `path::extension()`): the filename from its last '.', empty for "." / ".." or without a '.'; a dot
+/// file such as ".ini" is all extension (Rust's `Path::extension` gives none there).
 fn dir_entry_extension(dir_entry: &std::fs::DirEntry) -> String {
-    let path = dir_entry.path();
-    match path.extension() {
-        Some(ext) => format!(".{}", ext.to_string_lossy()),
+    let name = dir_entry.file_name().to_string_lossy().into_owned();
+    if name == "." || name == ".." {
+        return String::new();
+    }
+    match name.rfind('.') {
+        Some(pos) => name[pos..].to_string(),
         None => String::new(),
     }
 }

@@ -582,8 +582,14 @@ impl ExPolygon {
                 }
                 // Extend the start of the segment: `p1 -= (p2 - p1).normalized() * max_width`.
                 let (nx, ny) = ma_normalized(p2x - p1x, p2y - p1y);
-                p1x = (-nx).mul_add(max_width, p1x);
-                p1y = (-ny).mul_add(max_width, p1y);
+                if super::medial_axis::medial_axis_eigen_pin() {
+                    // ExPolygon.cpp:303 on Eigen vectors: `n * max_width` rounded, then subtracted.
+                    p1x -= nx * max_width;
+                    p1y -= ny * max_width;
+                } else {
+                    p1x = (-nx).mul_add(max_width, p1x);
+                    p1y = (-ny).mul_add(max_width, p1y);
+                }
                 if ma_polygon_intersection(
                     &self.contour.points,
                     Point::new(p1x as Coord, p1y as Coord),
@@ -607,8 +613,14 @@ impl ExPolygon {
                 }
                 // Extend the end of the segment: `p2 += (p2 - p1).normalized() * max_width`.
                 let (nx, ny) = ma_normalized(p2x - p1x, p2y - p1y);
-                p2x = nx.mul_add(max_width, p2x);
-                p2y = ny.mul_add(max_width, p2y);
+                if super::medial_axis::medial_axis_eigen_pin() {
+                    // ExPolygon.cpp:313 on Eigen vectors: `n * max_width` rounded, then added.
+                    p2x += nx * max_width;
+                    p2y += ny * max_width;
+                } else {
+                    p2x = nx.mul_add(max_width, p2x);
+                    p2y = ny.mul_add(max_width, p2y);
+                }
                 if ma_polygon_intersection(
                     &self.contour.points,
                     Point::new(p1x as Coord, p1y as Coord),
@@ -682,6 +694,25 @@ impl ExPolygon {
         }
 
         polylines.append(&mut pp);
+    }
+
+    /// ExPolygon.cpp:373-380 `ExPolygon::medial_axis(double min_width, double max_width,
+    /// Polylines* polylines)`: [`Self::medial_axis_thick_polylines`] (widths scaled, as the C++
+    /// takes them), each polyline's points appended to `polylines`.
+    pub fn medial_axis_into_polylines(&self, min_width: f64, max_width: f64, polylines: &mut Vec<Polyline>) {
+        let mut tp: Vec<MedialAxisThickPolyline> = Vec::new();
+        self.medial_axis_thick_polylines(min_width, max_width, &mut tp);
+        polylines.reserve(tp.len());
+        for pl in tp {
+            polylines.push(Polyline::from_points(pl.points));
+        }
+    }
+
+    /// ExPolygon.hpp:75-76 `Polylines ExPolygon::medial_axis(double min_width, double max_width)`.
+    pub fn medial_axis_returning_polylines(&self, min_width: f64, max_width: f64) -> Vec<Polyline> {
+        let mut out = Vec::new();
+        self.medial_axis_into_polylines(min_width, max_width, &mut out);
+        out
     }
 
     /// ExPolygon.cpp:121-129 `ExPolygon::on_boundary(point, eps)` as the medial-axis shim has
@@ -896,6 +927,10 @@ pub fn medial_axis_counters() -> MedialAxisCounters {
 fn ma_seg_length(a: Point, b: Point) -> f64 {
     let dx = (b.x - a.x) as f64;
     let dy = (b.y - a.y) as f64;
+    if super::medial_axis::medial_axis_eigen_pin() {
+        // Line.hpp:163 `(b - a).cast<double>().norm()`: Eigen's squaredNorm, not fused.
+        return (dx * dx + dy * dy).sqrt();
+    }
     dx.mul_add(dx, dy * dy).sqrt()
 }
 
@@ -913,7 +948,8 @@ fn ma_polyline_length(points: &[Point]) -> f64 {
 /// squared norm is not positive (medial_axis_shim.cpp:643-648).
 #[inline]
 fn ma_normalized(vx: f64, vy: f64) -> (f64, f64) {
-    let z = vx.mul_add(vx, vy * vy);
+    // Eigen's `normalized()` (Dot.h): `squaredNorm()`, not fused at the pin.
+    let z = if super::medial_axis::medial_axis_eigen_pin() { vx * vx + vy * vy } else { vx.mul_add(vx, vy * vy) };
     if z > 0. {
         let n = z.sqrt();
         (vx / n, vy / n)
@@ -943,8 +979,15 @@ fn ma_line_intersection(l1a: Point, l1b: Point, l2a: Point, l2b: Point, out: &mu
     let t2 = nume_b / denom;
     if t1 >= 0. && t1 <= 1.0 && t2 >= 0. && t2 <= 1.0 {
         // Get the intersection point.
-        out.x = t1.mul_add(v1x, l1a.x as f64) as Coord;
-        out.y = t1.mul_add(v1y, l1a.y as f64) as Coord;
+        if super::medial_axis::medial_axis_eigen_pin() {
+            // Line.hpp:144 `(l1.a.cast<double>() + t1 * v1).cast<coord_t>()` on Eigen vectors:
+            // `t1 * v1` rounded, then added (the scalar `cross2`s above stay fused, Point.hpp:86-89).
+            out.x = (l1a.x as f64 + t1 * v1x) as Coord;
+            out.y = (l1a.y as f64 + t1 * v1y) as Coord;
+        } else {
+            out.x = t1.mul_add(v1x, l1a.x as f64) as Coord;
+            out.y = t1.mul_add(v1y, l1a.y as f64) as Coord;
+        }
         return true;
     }
     false
@@ -988,11 +1031,13 @@ fn ma_point_projection(pts: &[Point], point: Point) -> Point {
         }
         let v1x = (pt1.x - pt0.x) as f64;
         let v1y = (pt1.y - pt0.y) as f64;
-        let div = v1x.mul_add(v1x, v1y * v1y);
+        // Polygon.cpp:329, 332 `v1.squaredNorm()`, `v1.dot(v2)`: Eigen, not fused at the pin.
+        let eigen = super::medial_axis::medial_axis_eigen_pin();
+        let div = if eigen { v1x * v1x + v1y * v1y } else { v1x.mul_add(v1x, v1y * v1y) };
         if div > 0. {
             let v2x = (point.x - pt0.x) as f64;
             let v2y = (point.y - pt0.y) as f64;
-            let t = v1x.mul_add(v2x, v1y * v2y) / div;
+            let t = if eigen { (v1x * v2x + v1y * v2y) / div } else { v1x.mul_add(v2x, v1y * v2y) / div };
             if t > 0. && t < 1. {
                 let foot = Point::new(
                     (t.mul_add(v1x, pt0.x as f64) + 0.5).floor() as Coord,
@@ -1016,6 +1061,10 @@ fn ma_polygon_on_boundary(pts: &[Point], point: Point, eps: f64) -> bool {
     let proj = ma_point_projection(pts, point);
     let ex = (proj.x - point.x) as f64;
     let ey = (proj.y - point.y) as f64;
+    if super::medial_axis::medial_axis_eigen_pin() {
+        // Polygon.hpp:72 `.squaredNorm() < eps * eps`: Eigen, not fused.
+        return ex * ex + ey * ey < eps * eps;
+    }
     ex.mul_add(ex, ey * ey) < eps * eps
 }
 

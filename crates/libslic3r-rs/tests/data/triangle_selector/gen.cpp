@@ -13,7 +13,7 @@
 //   -DNDEBUG -std=c++17 and `-include $REPO/libslic3r/bambustudio/cgal_54_compat.hpp`), then
 //   link it with the link line of `slicer_cli` ($BUILD/CMakeFiles/slicer_cli.dir/link.txt) with
 //   main.cpp's objects replaced by gen.o.
-//   for part in subdivide region stream cursor; do
+//   for part in subdivide region stream cursor free triangle; do
 //     ./gen $part > $DATA/vectors_$part.txt && gzip -9n -f $DATA/vectors_$part.txt
 //   done
 //
@@ -635,6 +635,87 @@ static void gen_cursor() {
     }
 }
 
+// The file-static helpers of TriangleSelector.cpp and ClippingPlane's members on random inputs:
+// test_line_inside_sphere / _cylinder / _capsule (52-154), is_point_inside_triangle (224-243),
+// is_mesh_point_not_clipped (2430-2434), is_circle_pointer_inside_triangle (2509-2529),
+// line_plane_intersection (2543-2558), ClippingPlane::is_active / is_mesh_point_clipped
+// (TriangleSelector.hpp:40-42).
+static Vec3f rnd_v3(double lo, double hi) { return Vec3f((float) range(lo, hi), (float) range(lo, hi), (float) range(lo, hi)); }
+
+static void gen_free() {
+    for (int i = 0; i < 3000; ++i) {
+        Vec3f a = rnd_v3(-2, 2), b = rnd_v3(-2, 2), p = rnd_v3(-2, 2), q = rnd_v3(-2, 2);
+        if (below(8) == 0) b = a;                       // a degenerate line
+        if (below(8) == 0) q = p;                       // a degenerate cylinder axis
+        const float r = (float) range(0.05, 2.0);
+        tag("sphere"); p3f(a); p3f(b); p3f(p); pf(r); arrow(); pi(test_line_inside_sphere(a, b, p, r)); nl();
+        tag("cylinder"); p3f(a); p3f(b); p3f(p); p3f(q); pf(r); arrow(); pi(test_line_inside_cylinder(a, b, p, q, r)); nl();
+        tag("capsule"); p3f(a); p3f(b); p3f(p); p3f(q); pf(r); arrow(); pi(test_line_inside_capsule(a, b, p, q, r)); nl();
+    }
+    for (int i = 0; i < 3000; ++i) {
+        Vec3f p1 = rnd_v3(-2, 2), p2 = rnd_v3(-2, 2), p3 = rnd_v3(-2, 2);
+        const float u = (float) range(-0.3, 1.2), v = (float) range(-0.3, 1.2), h = below(3) == 0 ? (float) range(-0.2, 0.2) : 0.f;
+        Vec3f n = (p2 - p1).cross(p3 - p1);
+        Vec3f pt = p1 + u * (p2 - p1) + v * (p3 - p1) + h * n;
+        tag("inside_triangle"); p3f(pt); p3f(p1); p3f(p2); p3f(p3); arrow(); pi(is_point_inside_triangle(pt, p1, p2, p3)); nl();
+    }
+    for (int i = 0; i < 3000; ++i) {
+        TriangleSelector::ClippingPlane clp = below(4) == 0 ? TriangleSelector::ClippingPlane() : TriangleSelector::ClippingPlane({(float) range(-1, 1), (float) range(-1, 1), (float) range(-1, 1), (float) range(-1, 1)});
+        Vec3f pt = rnd_v3(-2, 2);
+        tag("clip"); pclp(clp); p3f(pt); arrow(); pi(clp.is_active()); pi(clp.is_mesh_point_clipped(pt)); pi(is_mesh_point_not_clipped(pt, clp)); nl();
+    }
+    for (int i = 0; i < 3000; ++i) {
+        Vec3f p1 = rnd_v3(-2, 2), p2 = rnd_v3(-2, 2), p3 = rnd_v3(-2, 2);
+        const float u = (float) range(-0.3, 1.2), v = (float) range(-0.3, 1.2);
+        Vec3f center = p1 + u * (p2 - p1) + v * (p3 - p1) + rnd_v3(-0.3, 0.3);
+        Vec3f dir = rnd_dir();
+        const bool uniform = below(2);
+        Transform3f trafo = rnd_trafo(uniform ? 0 : 2).cast<float>();
+        tag("circle_pointer"); p3f(p1); p3f(p2); p3f(p3); p3f(center); p3f(dir); pi(uniform); ptrafof(trafo); arrow();
+        pi(is_circle_pointer_inside_triangle(p1, p2, p3, center, dir, uniform, trafo)); nl();
+    }
+    for (int i = 0; i < 3000; ++i) {
+        Vec3f a = rnd_v3(-2, 2), b = rnd_v3(-2, 2), o = rnd_v3(-2, 2), n = rnd_dir();
+        if (below(10) == 0) n = Vec3f(b - a).cross(rnd_v3(-1, 1)); // a plane parallel to the line
+        Vec3f out(0.f, 0.f, 0.f);
+        bool hit = line_plane_intersection(a, b, o, n, out);
+        tag("line_plane"); p3f(a); p3f(b); p3f(o); p3f(n); arrow(); pi(hit); p3f(out); nl();
+    }
+}
+
+// TriangleSelector::Triangle's members (TriangleSelector.hpp:386-422, TriangleSelector.cpp:196-222)
+// on random sequences of calls that keep to their asserts: after each call, valid, is_split,
+// number_of_split_sides and, unsplit, get_state and is_selected_by_seed_fill, split, special_side.
+static void gen_triangle() {
+    for (int i = 0; i < 2000; ++i) {
+        int a = (int) below(1000), b = (int) below(1000), c = (int) below(1000), src = (int) below(500), st = (int) below(16);
+        TriangleSelector::Triangle tr(a, b, c, src, EnforcerBlockerType(st));
+        auto after = [&tr]() {
+            pi(tr.valid()); pi(tr.is_split()); pi(tr.number_of_split_sides());
+            if (tr.is_split()) pi(tr.special_side()); else { pi((int) tr.get_state()); pi(tr.is_selected_by_seed_fill()); }
+        };
+        tag("triangle"); pi(a); pi(b); pi(c); pi(src); pi(st); arrow(); pi(tr.verts_idxs[0]); pi(tr.verts_idxs[1]); pi(tr.verts_idxs[2]); pi(tr.source_triangle); after();
+        for (int k = 0; k < 8; ++k) {
+            const int op = (int) below(4);
+            if (op == 0) {
+                const int sides = (int) below(4), special = (sides == 1 || sides == 2) ? (int) below(3) : 0;
+                tr.set_division(sides, special); std::printf(" D"); pi(sides); pi(special);
+            } else if (tr.is_split()) {
+                std::printf(" N");
+            } else if (op == 1) {
+                const int s = (int) below(16);
+                tr.set_state(EnforcerBlockerType(s)); std::printf(" T"); pi(s);
+            } else if (op == 2) {
+                tr.select_by_seed_fill(); std::printf(" F");
+            } else {
+                tr.unselect_by_seed_fill(); std::printf(" U");
+            }
+            after();
+        }
+        nl();
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) return 1;
     std::string what = argv[1];
@@ -642,6 +723,8 @@ int main(int argc, char** argv) {
     else if (what == "region") { g_state ^= 0x2222; gen_region(); }
     else if (what == "stream") { g_state ^= 0x3333; gen_stream(); }
     else if (what == "cursor") { g_state ^= 0x4444; gen_cursor(); }
+    else if (what == "free") { g_state ^= 0x5555; gen_free(); }
+    else if (what == "triangle") { g_state ^= 0x6666; gen_triangle(); }
     else return 1;
     return 0;
 }

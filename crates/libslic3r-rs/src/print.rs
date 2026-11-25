@@ -12826,3 +12826,883 @@ mod collect_layers_to_print_object_tests {
         );
     }
 }
+
+/// Print.cpp:4500-5314: the JSON (de)serializers of the cached slicing data that
+/// `Print::export_cached_data` / `load_cached_data` write and read (nlohmann::json; dumped by
+/// [`crate::desensitize::nlohmann_dump`]). The C++ overloads of `to_json` / `from_json` are the
+/// methods of [`ToJson`] / [`FromJson`] on the same types.
+pub mod print_json {
+    use super::faithful::{groupedVolumeSlices, SupportLayer};
+    use crate::adaptive_layer_merge::AdaptiveMergePatch;
+    use crate::arc_fitter::{EMovePathType, PathFittingData};
+    use crate::circle::{ArcDirection, ArcSegment};
+    use crate::extrusion_entity::{
+        ExtrusionEntityCollection, ExtrusionEntityType, ExtrusionLoop, ExtrusionLoopRole, ExtrusionMultiPath,
+        ExtrusionPath, ExtrusionRole,
+    };
+    use crate::geometry::{BoundingBox, ExPolygon, Point, Polygon, Polyline};
+    use crate::layer::{Layer, LayerRegion};
+    use crate::object_id::ObjectID;
+    use crate::surface::{Surface, SurfaceType};
+    use serde_json::{Map, Value};
+
+    // Print.cpp:4500-4594 (the JSON_* macros).
+    pub const JSON_POLYGON_CONTOUR: &str = "contour";
+    pub const JSON_POLYGON_HOLES: &str = "holes";
+    pub const JSON_POINTS: &str = "points";
+    pub const JSON_EXPOLYGON: &str = "expolygon";
+    pub const JSON_ARC_FITTING: &str = "arc_fitting";
+    pub const JSON_FIRSTLAYER_GROUP_ID: &str = "group_id";
+    pub const JSON_FIRSTLAYER_GROUP_VOLUME_IDS: &str = "volume_ids";
+    pub const JSON_FIRSTLAYER_GROUP_SLICES: &str = "slices";
+    pub const JSON_LAYER_REGIONS: &str = "layer_regions";
+    pub const JSON_LAYER_SLICED_POLYGONS: &str = "sliced_polygons";
+    pub const JSON_LAYER_SLLICED_BBOXES: &str = "sliced_bboxes";
+    pub const JSON_LAYER_OVERHANG_POLYGONS: &str = "overhang_polygons";
+    pub const JSON_LAYER_OVERHANG_BBOX: &str = "overhang_bbox";
+    pub const JSON_SUPPORT_LAYER_ISLANDS: &str = "support_islands";
+    pub const JSON_SUPPORT_LAYER_FILLS: &str = "support_fills";
+    pub const JSON_LAYER_REGION_CONFIG_HASH: &str = "config_hash";
+    pub const JSON_LAYER_REGION_SLICES: &str = "slices";
+    pub const JSON_LAYER_REGION_RAW_SLICES: &str = "raw_slices";
+    pub const JSON_LAYER_REGION_THIN_FILLS: &str = "thin_fills";
+    pub const JSON_LAYER_REGION_FILL_EXPOLYGONS: &str = "fill_expolygons";
+    pub const JSON_LAYER_REGION_FILL_SURFACES: &str = "fill_surfaces";
+    pub const JSON_LAYER_REGION_FILL_NO_OVERLAP: &str = "fill_no_overlap_expolygons";
+    pub const JSON_LAYER_REGION_UNSUPPORTED_BRIDGE_EDGES: &str = "unsupported_bridge_edges";
+    pub const JSON_LAYER_REGION_PERIMETERS: &str = "perimeters";
+    pub const JSON_LAYER_REGION_FILLS: &str = "fills";
+    pub const JSON_LAYER_REGION_ADAPTIVE_MERGE_PATCHES: &str = "adaptive_merge_patches";
+    pub const JSON_ADAPTIVE_MERGE_BOTTOM_IDX: &str = "bottom_idx";
+    pub const JSON_ADAPTIVE_MERGE_TOP_IDX: &str = "top_idx";
+    pub const JSON_ADAPTIVE_MERGE_GROUP_TOP: &str = "group_top";
+    pub const JSON_ADAPTIVE_MERGE_MERGED_HEIGHT: &str = "merged_height";
+    pub const JSON_ADAPTIVE_MERGE_AREA: &str = "area";
+    pub const JSON_ADAPTIVE_MERGE_SUPPRESSED_AREA: &str = "suppressed_area";
+    pub const JSON_SURF_TYPE: &str = "surface_type";
+    pub const JSON_SURF_THICKNESS: &str = "thickness";
+    pub const JSON_SURF_THICKNESS_LAYER: &str = "thickness_layers";
+    pub const JSON_SURF_BRIDGE_ANGLE: &str = "bridge_angle";
+    pub const JSON_SURF_EXTRA_PERIMETERS: &str = "extra_perimeters";
+    pub const JSON_ARC_DATA: &str = "arc_data";
+    pub const JSON_ARC_START_INDEX: &str = "start_index";
+    pub const JSON_ARC_END_INDEX: &str = "end_index";
+    pub const JSON_ARC_PATH_TYPE: &str = "path_type";
+    pub const JSON_IS_ARC: &str = "is_arc";
+    pub const JSON_ARC_LENGTH: &str = "length";
+    pub const JSON_ARC_ANGLE_RADIUS: &str = "angle_radians";
+    pub const JSON_ARC_POLAY_START_THETA: &str = "polar_start_theta";
+    pub const JSON_ARC_POLAY_END_THETA: &str = "polar_end_theta";
+    pub const JSON_ARC_START_POINT: &str = "start_point";
+    pub const JSON_ARC_END_POINT: &str = "end_point";
+    pub const JSON_ARC_DIRECTION: &str = "direction";
+    pub const JSON_ARC_RADIUS: &str = "radius";
+    pub const JSON_ARC_CENTER: &str = "center";
+    pub const JSON_EXTRUSION_ENTITY_TYPE: &str = "entity_type";
+    pub const JSON_EXTRUSION_NO_SORT: &str = "no_sort";
+    pub const JSON_EXTRUSION_PATHS: &str = "paths";
+    pub const JSON_EXTRUSION_ENTITIES: &str = "entities";
+    pub const JSON_EXTRUSION_TYPE_PATH: &str = "path";
+    pub const JSON_EXTRUSION_TYPE_MULTIPATH: &str = "multipath";
+    pub const JSON_EXTRUSION_TYPE_LOOP: &str = "loop";
+    pub const JSON_EXTRUSION_TYPE_COLLECTION: &str = "collection";
+    pub const JSON_EXTRUSION_POLYLINE: &str = "polyline";
+    pub const JSON_EXTRUSION_OVERHANG_DEGREE: &str = "overhang_degree";
+    pub const JSON_EXTRUSION_CURVE_DEGREE: &str = "curve_degree";
+    pub const JSON_EXTRUSION_MM3_PER_MM: &str = "mm3_per_mm";
+    pub const JSON_EXTRUSION_WIDTH: &str = "width";
+    pub const JSON_EXTRUSION_HEIGHT: &str = "height";
+    pub const JSON_EXTRUSION_ROLE: &str = "role";
+    pub const JSON_EXTRUSION_NO_EXTRUSION: &str = "no_extrusion";
+    pub const JSON_EXTRUSION_LOOP_ROLE: &str = "loop_role";
+
+    /// nlohmann's `basic_json(double)`: a number_float; NaN and infinity dump as `null`
+    /// (serializer.hpp dump_float), which is what a serde `Value::Null` dumps as.
+    fn jf(v: f64) -> Value {
+        serde_json::Number::from_f64(v).map(Value::Number).unwrap_or(Value::Null)
+    }
+
+    /// `j[key]` on a null json makes it an object (json.hpp operator[](key)).
+    fn obj(j: &mut Value) -> &mut Map<String, Value> {
+        if !j.is_object() {
+            *j = Value::Object(Map::new());
+        }
+        j.as_object_mut().unwrap()
+    }
+
+    /// `j.push_back(v)` on a null json makes it an array (json.hpp push_back).
+    fn push(j: &mut Value, v: Value) {
+        if !j.is_array() {
+            *j = Value::Array(Vec::new());
+        }
+        j.as_array_mut().unwrap().push(v);
+    }
+
+    /// `j.push_back({key, value})` on an object: `object_t::insert`, which keeps an existing key
+    /// (json.hpp push_back(initializer_list_t)).
+    fn push_pair(j: &mut Value, key: &str, v: Value) {
+        obj(j).entry(key.to_string()).or_insert(v);
+    }
+
+    /// `j[key]` of a const json: the member (json.hpp asserts it exists); `null` here when it does not.
+    fn at<'a>(j: &'a Value, key: &str) -> &'a Value {
+        static NULL: Value = Value::Null;
+        j.get(key).unwrap_or(&NULL)
+    }
+
+    fn at_i<'a>(j: &'a Value, i: usize) -> &'a Value {
+        static NULL: Value = Value::Null;
+        j.get(i).unwrap_or(&NULL)
+    }
+
+    /// `j.size()`: the element count of an array or object, 1 for a scalar, 0 for null (json.hpp size()).
+    fn size(j: &Value) -> usize {
+        match j {
+            Value::Null => 0,
+            Value::Array(a) => a.len(),
+            Value::Object(o) => o.len(),
+            _ => 1,
+        }
+    }
+
+    /// `get<double>()` of a number (from_json.hpp get_arithmetic_value: a static_cast of whichever
+    /// number type the json holds).
+    fn get_f64(j: &Value) -> f64 {
+        match j {
+            Value::Number(n) => {
+                if let Some(v) = n.as_u64() {
+                    v as f64
+                } else if let Some(v) = n.as_i64() {
+                    v as f64
+                } else {
+                    n.as_f64().unwrap_or(0.0)
+                }
+            }
+            Value::Bool(b) => *b as i32 as f64,
+            _ => 0.0,
+        }
+    }
+
+    /// `get<int64-like>()` of a number: a float is truncated by the static_cast.
+    fn get_i64(j: &Value) -> i64 {
+        match j {
+            Value::Number(n) => {
+                if let Some(v) = n.as_i64() {
+                    v
+                } else if let Some(v) = n.as_u64() {
+                    v as i64
+                } else {
+                    n.as_f64().unwrap_or(0.0) as i64
+                }
+            }
+            Value::Bool(b) => *b as i64,
+            _ => 0,
+        }
+    }
+
+    fn get_bool(j: &Value) -> bool {
+        j.as_bool().unwrap_or(false)
+    }
+
+    /// `ExtrusionRole` from its `uint8_t` value (ExtrusionEntity.hpp:45-68).
+    fn extrusion_role_from(v: i64) -> ExtrusionRole {
+        use ExtrusionRole::*;
+        const ROLES: [ExtrusionRole; 22] = [
+            None, Perimeter, ExternalPerimeter, OverhangPerimeter, InternalInfill, SolidInfill,
+            FloatingVerticalShell, TopSolidInfill, BottomSurface, Ironing, BridgeInfill, GapFill, Skirt, Brim,
+            SupportMaterial, SupportMaterialInterface, SupportTransition, SupportIroning, WipeTower, Custom,
+            Flush, Mixed,
+        ];
+        ROLES.get(v as u8 as usize).copied().unwrap_or(None)
+    }
+
+    /// `EMovePathType` from its `unsigned char` value (ArcFitter.hpp:9-15).
+    fn move_path_type_from(v: i64) -> EMovePathType {
+        match v as u8 {
+            0 => EMovePathType::NoopMove,
+            1 => EMovePathType::LinearMove,
+            2 => EMovePathType::ArcMoveCw,
+            _ => EMovePathType::ArcMoveCcw,
+        }
+    }
+
+    fn move_path_type_value(t: EMovePathType) -> i64 {
+        match t {
+            EMovePathType::NoopMove => 0,
+            EMovePathType::LinearMove => 1,
+            EMovePathType::ArcMoveCw => 2,
+            EMovePathType::ArcMoveCcw => 3,
+        }
+    }
+
+    /// `ArcDirection` from its `unsigned char` value (Circle.hpp:57-62).
+    fn arc_direction_from(v: i64) -> ArcDirection {
+        match v as u8 {
+            1 => ArcDirection::CounterClockwise,
+            2 => ArcDirection::Clockwise,
+            _ => ArcDirection::Unknown,
+        }
+    }
+
+    fn arc_direction_value(d: ArcDirection) -> i64 {
+        match d {
+            ArcDirection::Unknown => 0,
+            ArcDirection::CounterClockwise => 1,
+            ArcDirection::Clockwise => 2,
+            #[allow(unreachable_patterns)]
+            _ => 3,
+        }
+    }
+
+    /// The C++ `static void to_json(json& j, const T&)` overloads of Print.cpp.
+    pub trait ToJson {
+        fn to_json(&self, j: &mut Value);
+    }
+
+    /// The C++ `static void from_json(const json& j, T&)` overloads of Print.cpp.
+    pub trait FromJson {
+        fn from_json(j: &Value, out: &mut Self);
+    }
+
+    /// `ifs >> j` of nlohmann::json (Print::load_cached_data reads the cache files so), through the port
+    /// of nlohmann's lexer in config.rs, whose numbers are correctly rounded as the pin's strtod.
+    pub fn parse(data: &[u8]) -> Result<Value, String> {
+        crate::config::nlohmann_json_parse(data).map_err(|(_, what)| what)
+    }
+
+    /// `j.dump()` (json.hpp dump(): no indent), nlohmann's serializer.
+    pub fn dump(j: &Value) -> String {
+        let mut out = String::new();
+        crate::desensitize::nlohmann_dump(j, false, 0, 0, &mut out);
+        out
+    }
+
+    /// `json j = v;` for a type with a `to_json`.
+    pub fn to_value<T: ToJson + ?Sized>(v: &T) -> Value {
+        let mut j = Value::Null;
+        v.to_json(&mut j);
+        j
+    }
+
+    /// Points: a flat array x0, y0, x1, y1, ...
+    pub struct PointsRef<'a>(pub &'a [Point]);
+
+    // Print.cpp:4596-4602 `to_json(json&, const Points&)`
+    impl ToJson for PointsRef<'_> {
+        fn to_json(&self, j: &mut Value) {
+            for p in self.0 {
+                push(j, Value::from(p.x));
+                push(j, Value::from(p.y));
+            }
+        }
+    }
+
+    // Print.cpp:4901-4910 `from_json(const json&, Points&)`: `int array_size = j.size()`, pairs pushed.
+    impl FromJson for Vec<Point> {
+        fn from_json(j: &Value, out: &mut Self) {
+            let array_size = size(j) as i32;
+            for index in 0..(array_size / 2) {
+                let index = index as usize;
+                let x = get_i64(at_i(j, 2 * index)) as i32 as i64;
+                let y = get_i64(at_i(j, 2 * index + 1)) as i32 as i64;
+                out.push(Point::new(x, y));
+            }
+        }
+    }
+
+    // Print.cpp:4604-4609 `to_json(json&, const BoundingBox&)`
+    impl ToJson for BoundingBox {
+        fn to_json(&self, j: &mut Value) {
+            push(j, Value::from(self.min.x));
+            push(j, Value::from(self.min.y));
+            push(j, Value::from(self.max.x));
+            push(j, Value::from(self.max.y));
+        }
+    }
+
+    // Print.cpp:4912-4920 `from_json(const json&, BoundingBox&)`: min, max, `defined = true`.
+    // FIDELITY-NOTE: the port's `defined` is private to geometry/bounding_box.rs; the box is set by
+    // merging min then max into an undefined box, which gives the pin's min/max and `defined` whenever
+    // min <= max per axis (every box the pin's to_json writes: a defined box, or an undefined one at 0).
+    impl FromJson for BoundingBox {
+        fn from_json(j: &Value, out: &mut Self) {
+            let min = Point::new(get_i64(at_i(j, 0)) as i32 as i64, get_i64(at_i(j, 1)) as i32 as i64);
+            let max = Point::new(get_i64(at_i(j, 2)) as i32 as i64, get_i64(at_i(j, 3)) as i32 as i64);
+            let mut bbox = BoundingBox::new();
+            bbox.merge_point(min);
+            bbox.merge_point(max);
+            *out = bbox;
+        }
+    }
+
+    // Print.cpp:4611-4628 `to_json(json&, const ExPolygon&)`
+    impl ToJson for ExPolygon {
+        fn to_json(&self, j: &mut Value) {
+            let mut holes_json = Value::Array(Vec::new());
+            //contour
+            let contour_json = to_value(&PointsRef(&self.contour.points));
+            obj(j).insert(JSON_POLYGON_CONTOUR.to_string(), contour_json);
+            //holes
+            for hole_polyon in &self.holes {
+                let hole_json = to_value(&PointsRef(&hole_polyon.points));
+                push(&mut holes_json, hole_json);
+            }
+            obj(j).insert(JSON_POLYGON_HOLES.to_string(), holes_json);
+        }
+    }
+
+    // Print.cpp:4922-4934 `from_json(const json&, ExPolygon&)`
+    impl FromJson for ExPolygon {
+        fn from_json(j: &Value, out: &mut Self) {
+            let mut points = Vec::new();
+            Vec::<Point>::from_json(at(j, JSON_POLYGON_CONTOUR), &mut points);
+            out.contour.points = points;
+            let holes = at(j, JSON_POLYGON_HOLES);
+            let holes_count = size(holes) as i32;
+            for holes_index in 0..holes_count {
+                let mut hole_points = Vec::new();
+                Vec::<Point>::from_json(at_i(holes, holes_index as usize), &mut hole_points);
+                let mut hole = Polygon::new();
+                hole.points = hole_points;
+                out.holes.push(hole);
+            }
+        }
+    }
+
+    fn expolygon_from(j: &Value) -> ExPolygon {
+        let mut polygon = ExPolygon::new(Polygon::new());
+        ExPolygon::from_json(j, &mut polygon);
+        polygon
+    }
+
+    // Print.cpp:4630-4637 `to_json(json&, const Surface&)`
+    // The port keeps an undefined bridge angle as None; the pin's double holds -1 (Surface.hpp:46-48).
+    impl ToJson for Surface {
+        fn to_json(&self, j: &mut Value) {
+            let o = obj(j);
+            o.insert(JSON_EXPOLYGON.to_string(), to_value(&self.expolygon));
+            o.insert(JSON_SURF_TYPE.to_string(), Value::from(self.surface_type as i64));
+            o.insert(JSON_SURF_THICKNESS.to_string(), jf(self.thickness));
+            o.insert(JSON_SURF_THICKNESS_LAYER.to_string(), Value::from(self.thickness_layers as u16 as u64));
+            o.insert(JSON_SURF_BRIDGE_ANGLE.to_string(), jf(self.bridge_angle.unwrap_or(-1.0)));
+            o.insert(JSON_SURF_EXTRA_PERIMETERS.to_string(), Value::from(self.extra_perimeters as u16 as u64));
+        }
+    }
+
+    // Print.cpp:4964-4973 `from_json(const json&, Surface&)`
+    // FIDELITY-NOTE: a bridge angle of exactly -1 (the pin's "undefined", Surface.hpp:46-48) is the
+    // port's None; any other value is kept as Some(value), so the next to_json writes it back unchanged.
+    impl FromJson for Surface {
+        fn from_json(j: &Value, out: &mut Self) {
+            out.expolygon = expolygon_from(at(j, JSON_EXPOLYGON));
+            out.surface_type = SurfaceType::from_u8(get_i64(at(j, JSON_SURF_TYPE)) as u8);
+            out.thickness = get_f64(at(j, JSON_SURF_THICKNESS));
+            out.thickness_layers = get_i64(at(j, JSON_SURF_THICKNESS_LAYER)) as u16 as usize;
+            let bridge_angle = get_f64(at(j, JSON_SURF_BRIDGE_ANGLE));
+            out.bridge_angle = if bridge_angle == -1.0 { None } else { Some(bridge_angle) };
+            out.extra_perimeters = get_i64(at(j, JSON_SURF_EXTRA_PERIMETERS)) as u16 as usize;
+        }
+    }
+
+    fn surface_from(j: &Value) -> Surface {
+        let mut surface = Surface::new(SurfaceType::Internal, ExPolygon::new(Polygon::new()));
+        Surface::from_json(j, &mut surface);
+        surface
+    }
+
+    // Print.cpp:4639-4657 `to_json(json&, const ArcSegment&)`
+    impl ToJson for ArcSegment {
+        fn to_json(&self, j: &mut Value) {
+            let o = obj(j);
+            o.insert(JSON_IS_ARC.to_string(), Value::from(self.is_arc));
+            o.insert(JSON_ARC_LENGTH.to_string(), jf(self.length));
+            o.insert(JSON_ARC_ANGLE_RADIUS.to_string(), jf(self.angle_radians));
+            o.insert(JSON_ARC_POLAY_START_THETA.to_string(), jf(self.polar_start_theta));
+            o.insert(JSON_ARC_POLAY_END_THETA.to_string(), jf(self.polar_end_theta));
+            o.insert(
+                JSON_ARC_START_POINT.to_string(),
+                Value::Array(vec![Value::from(self.start_point.x), Value::from(self.start_point.y)]),
+            );
+            o.insert(
+                JSON_ARC_END_POINT.to_string(),
+                Value::Array(vec![Value::from(self.end_point.x), Value::from(self.end_point.y)]),
+            );
+            o.insert(JSON_ARC_DIRECTION.to_string(), Value::from(arc_direction_value(self.direction)));
+            o.insert(JSON_ARC_RADIUS.to_string(), jf(self.circle.radius));
+            o.insert(
+                JSON_ARC_CENTER.to_string(),
+                Value::Array(vec![Value::from(self.circle.center.x), Value::from(self.circle.center.y)]),
+            );
+        }
+    }
+
+    // Print.cpp:4975-4992 `from_json(const json&, ArcSegment&)`
+    impl FromJson for ArcSegment {
+        fn from_json(j: &Value, out: &mut Self) {
+            out.is_arc = get_bool(at(j, JSON_IS_ARC));
+            out.length = get_f64(at(j, JSON_ARC_LENGTH));
+            out.angle_radians = get_f64(at(j, JSON_ARC_ANGLE_RADIUS));
+            out.polar_start_theta = get_f64(at(j, JSON_ARC_POLAY_START_THETA));
+            out.polar_end_theta = get_f64(at(j, JSON_ARC_POLAY_END_THETA));
+            out.start_point.x = get_i64(at_i(at(j, JSON_ARC_START_POINT), 0)) as i32 as i64;
+            out.start_point.y = get_i64(at_i(at(j, JSON_ARC_START_POINT), 1)) as i32 as i64;
+            out.end_point.x = get_i64(at_i(at(j, JSON_ARC_END_POINT), 0)) as i32 as i64;
+            out.end_point.y = get_i64(at_i(at(j, JSON_ARC_END_POINT), 1)) as i32 as i64;
+            out.direction = arc_direction_from(get_i64(at(j, JSON_ARC_DIRECTION)));
+            out.circle.radius = get_f64(at(j, JSON_ARC_RADIUS));
+            out.circle.center.x = get_i64(at_i(at(j, JSON_ARC_CENTER), 0)) as i32 as i64;
+            out.circle.center.y = get_i64(at_i(at(j, JSON_ARC_CENTER), 1)) as i32 as i64;
+        }
+    }
+
+    // Print.cpp:4660-4677 `to_json(json&, const Polyline&)`
+    impl ToJson for Polyline {
+        fn to_json(&self, j: &mut Value) {
+            let mut fittings_json = Value::Array(Vec::new());
+            let points_json = to_value(&PointsRef(&self.points));
+            obj(j).insert(JSON_POINTS.to_string(), points_json);
+            for path_fitting in &self.fitting_result {
+                let mut fitting_json = Value::Null;
+                let o = obj(&mut fitting_json);
+                o.insert(JSON_ARC_START_INDEX.to_string(), Value::from(path_fitting.start_point_index as u64));
+                o.insert(JSON_ARC_END_INDEX.to_string(), Value::from(path_fitting.end_point_index as u64));
+                o.insert(JSON_ARC_PATH_TYPE.to_string(), Value::from(move_path_type_value(path_fitting.path_type)));
+                if path_fitting.arc_data.is_arc {
+                    o.insert(JSON_ARC_DATA.to_string(), to_value(&path_fitting.arc_data));
+                }
+                push(&mut fittings_json, fitting_json);
+            }
+            obj(j).insert(JSON_ARC_FITTING.to_string(), fittings_json);
+        }
+    }
+
+    // Print.cpp:4994-5013 `from_json(const json&, Polyline&)`
+    impl FromJson for Polyline {
+        fn from_json(j: &Value, out: &mut Self) {
+            let mut points = Vec::new();
+            Vec::<Point>::from_json(at(j, JSON_POINTS), &mut points);
+            out.points = points;
+            let fittings = at(j, JSON_ARC_FITTING);
+            let arc_fitting_count = size(fittings) as i32;
+            for arc_fitting_index in 0..arc_fitting_count {
+                let fitting_json = at_i(fittings, arc_fitting_index as usize);
+                let mut arc_data = ArcSegment::new();
+                if let Some(arc_json) = fitting_json.get(JSON_ARC_DATA) {
+                    ArcSegment::from_json(arc_json, &mut arc_data);
+                }
+                out.fitting_result.push(PathFittingData {
+                    start_point_index: get_i64(at(fitting_json, JSON_ARC_START_INDEX)) as usize,
+                    end_point_index: get_i64(at(fitting_json, JSON_ARC_END_INDEX)) as usize,
+                    path_type: move_path_type_from(get_i64(at(fitting_json, JSON_ARC_PATH_TYPE))),
+                    arc_data,
+                });
+            }
+        }
+    }
+
+    fn polyline_from(j: &Value) -> Polyline {
+        let mut polyline = Polyline::new();
+        Polyline::from_json(j, &mut polyline);
+        polyline
+    }
+
+    // Print.cpp:4679-4688 `to_json(json&, const ExtrusionPath&)`: `width` / `height` are floats at the
+    // pin (ExtrusionEntity.hpp:221-223), stored in the json as the double of the float.
+    impl ToJson for ExtrusionPath {
+        fn to_json(&self, j: &mut Value) {
+            let o = obj(j);
+            o.insert(JSON_EXTRUSION_POLYLINE.to_string(), to_value(&self.polyline));
+            o.insert(JSON_EXTRUSION_OVERHANG_DEGREE.to_string(), jf(self.overhang_degree));
+            o.insert(JSON_EXTRUSION_CURVE_DEGREE.to_string(), Value::from(self.curve_degree));
+            o.insert(JSON_EXTRUSION_MM3_PER_MM.to_string(), jf(self.mm3_per_mm));
+            o.insert(JSON_EXTRUSION_WIDTH.to_string(), jf(self.width as f32 as f64));
+            o.insert(JSON_EXTRUSION_HEIGHT.to_string(), jf(self.height as f32 as f64));
+            o.insert(JSON_EXTRUSION_ROLE.to_string(), Value::from(self.role as u8 as i64));
+            o.insert(JSON_EXTRUSION_NO_EXTRUSION.to_string(), Value::from(self.is_force_no_extrusion()));
+        }
+    }
+
+    // Print.cpp:5015-5024 `from_json(const json&, ExtrusionPath&)`
+    impl FromJson for ExtrusionPath {
+        fn from_json(j: &Value, out: &mut Self) {
+            out.polyline = polyline_from(at(j, JSON_EXTRUSION_POLYLINE));
+            out.overhang_degree = get_f64(at(j, JSON_EXTRUSION_OVERHANG_DEGREE));
+            out.curve_degree = get_i64(at(j, JSON_EXTRUSION_CURVE_DEGREE)) as i32;
+            out.mm3_per_mm = get_f64(at(j, JSON_EXTRUSION_MM3_PER_MM));
+            out.width = get_f64(at(j, JSON_EXTRUSION_WIDTH)) as f32 as f64;
+            out.height = get_f64(at(j, JSON_EXTRUSION_HEIGHT)) as f32 as f64;
+            out.set_extrusion_role(extrusion_role_from(get_i64(at(j, JSON_EXTRUSION_ROLE))));
+            out.set_force_no_extrusion(get_bool(at(j, JSON_EXTRUSION_NO_EXTRUSION)));
+        }
+    }
+
+    fn extrusion_path_from(j: &Value) -> ExtrusionPath {
+        let mut path = ExtrusionPath::new(ExtrusionRole::None);
+        ExtrusionPath::from_json(j, &mut path);
+        path
+    }
+
+    /// Print.cpp:4690-4751 `convert_extrusion_to_json(entity_json, entity_paths_json, extrusion_entity)`.
+    pub fn convert_extrusion_to_json(
+        entity_json: &mut Value,
+        entity_paths_json: &mut Value,
+        extrusion_entity: &ExtrusionEntityType,
+    ) -> bool {
+        let path_type = match extrusion_entity {
+            ExtrusionEntityType::Path(_) => JSON_EXTRUSION_TYPE_PATH,
+            ExtrusionEntityType::MultiPath(_) => JSON_EXTRUSION_TYPE_MULTIPATH,
+            ExtrusionEntityType::Loop(_) => JSON_EXTRUSION_TYPE_LOOP,
+            ExtrusionEntityType::Collection(_) => JSON_EXTRUSION_TYPE_COLLECTION,
+        };
+        obj(entity_json).insert(JSON_EXTRUSION_ENTITY_TYPE.to_string(), Value::from(path_type));
+        match extrusion_entity {
+            ExtrusionEntityType::Path(path) => {
+                push(entity_paths_json, to_value(path));
+            }
+            ExtrusionEntityType::MultiPath(multipath) => {
+                for extrusion_path in &multipath.paths {
+                    push(entity_paths_json, to_value(extrusion_path));
+                }
+            }
+            ExtrusionEntityType::Loop(lp) => {
+                obj(entity_json).insert(JSON_EXTRUSION_LOOP_ROLE.to_string(), Value::from(lp.loop_role().0 as i64));
+                for extrusion_path in &lp.paths {
+                    push(entity_paths_json, to_value(extrusion_path));
+                }
+            }
+            ExtrusionEntityType::Collection(collection) => {
+                //recursive collections
+                obj(entity_json).insert(JSON_EXTRUSION_NO_SORT.to_string(), Value::from(collection.no_sort));
+                for recursive_extrusion_entity in &collection.entities {
+                    let mut recursive_entity_json = Value::Null;
+                    let mut recursive_entity_paths_json = Value::Array(Vec::new());
+                    let ret = convert_extrusion_to_json(
+                        &mut recursive_entity_json,
+                        &mut recursive_entity_paths_json,
+                        recursive_extrusion_entity,
+                    );
+                    if !ret {
+                        continue;
+                    }
+                    push(entity_paths_json, recursive_entity_json);
+                }
+            }
+        }
+        let paths = std::mem::replace(entity_paths_json, Value::Null);
+        if matches!(extrusion_entity, ExtrusionEntityType::Collection(_)) {
+            obj(entity_json).insert(JSON_EXTRUSION_ENTITIES.to_string(), paths);
+        } else {
+            obj(entity_json).insert(JSON_EXTRUSION_PATHS.to_string(), paths);
+        }
+        true
+    }
+
+    /// Print.cpp:4753-4776 `adaptive_merge_patch_to_json(patch)`.
+    pub fn adaptive_merge_patch_to_json(patch: &AdaptiveMergePatch) -> Value {
+        let mut area_json = Value::Array(Vec::new());
+        for expolygon in patch.area() {
+            push(&mut area_json, to_value(expolygon));
+        }
+        let mut patch_json = Value::Null;
+        let o = obj(&mut patch_json);
+        o.insert(JSON_ADAPTIVE_MERGE_BOTTOM_IDX.to_string(), Value::from(patch.bottom_idx as u64));
+        o.insert(JSON_ADAPTIVE_MERGE_TOP_IDX.to_string(), Value::from(patch.top_idx as u64));
+        o.insert(JSON_ADAPTIVE_MERGE_GROUP_TOP.to_string(), Value::from(patch.group_top));
+        o.insert(JSON_ADAPTIVE_MERGE_MERGED_HEIGHT.to_string(), jf(patch.merged_height));
+        o.insert(JSON_ADAPTIVE_MERGE_AREA.to_string(), area_json);
+        if patch.has_suppressed_area() {
+            let mut suppressed_json = Value::Array(Vec::new());
+            for expolygon in patch.suppressed_area() {
+                push(&mut suppressed_json, to_value(expolygon));
+            }
+            o.insert(JSON_ADAPTIVE_MERGE_SUPPRESSED_AREA.to_string(), suppressed_json);
+        }
+        patch_json
+    }
+
+    fn collection_to_json(collection: &ExtrusionEntityCollection) -> Value {
+        let mut collection_json = Value::Null;
+        let mut entities_json = Value::Array(Vec::new());
+        obj(&mut collection_json).insert(JSON_EXTRUSION_NO_SORT.to_string(), Value::from(collection.no_sort));
+        obj(&mut collection_json)
+            .insert(JSON_EXTRUSION_ENTITY_TYPE.to_string(), Value::from(JSON_EXTRUSION_TYPE_COLLECTION));
+        for extrusion_entity in &collection.entities {
+            let mut entity_json = Value::Null;
+            let mut entity_paths_json = Value::Array(Vec::new());
+            if !convert_extrusion_to_json(&mut entity_json, &mut entity_paths_json, extrusion_entity) {
+                continue;
+            }
+            push(&mut entities_json, entity_json);
+        }
+        obj(&mut collection_json).insert(JSON_EXTRUSION_ENTITIES.to_string(), entities_json);
+        collection_json
+    }
+
+    /// A `LayerRegion` with `layer_region.region().config_hash()`, which the port's LayerRegion does
+    /// not reach (it has no PrintRegion pointer).
+    pub struct LayerRegionWithHash<'a> {
+        pub layer_region: &'a LayerRegion,
+        pub config_hash: u64,
+    }
+
+    // Print.cpp:4778-4880 `to_json(json&, const LayerRegion&)`. The port keeps `raw_slices` as
+    // surfaces (layer.rs); their expolygons are the pin's `ExPolygons raw_slices` (Layer.hpp:44).
+    impl ToJson for LayerRegionWithHash<'_> {
+        fn to_json(&self, j: &mut Value) {
+            let layer_region = self.layer_region;
+            obj(j).insert(JSON_LAYER_REGION_CONFIG_HASH.to_string(), Value::from(self.config_hash));
+            //slices
+            let slices_surfaces_json: Vec<Value> = layer_region.slices.surfaces.iter().map(to_value).collect();
+            push_pair(j, JSON_LAYER_REGION_SLICES, Value::Array(slices_surfaces_json));
+            //raw_slices
+            let raw_slices_json: Vec<Value> =
+                layer_region.raw_slices.surfaces.iter().map(|s| to_value(&s.expolygon)).collect();
+            push_pair(j, JSON_LAYER_REGION_RAW_SLICES, Value::Array(raw_slices_json));
+            //thin fills
+            push_pair(j, JSON_LAYER_REGION_THIN_FILLS, collection_to_json(&layer_region.thin_fills));
+            //fill_expolygons
+            let fill_expolygons_json: Vec<Value> = layer_region.fill_expolygons.iter().map(to_value).collect();
+            push_pair(j, JSON_LAYER_REGION_FILL_EXPOLYGONS, Value::Array(fill_expolygons_json));
+            //fill_surfaces
+            let fill_surfaces_json: Vec<Value> = layer_region.fill_surfaces.surfaces.iter().map(to_value).collect();
+            push_pair(j, JSON_LAYER_REGION_FILL_SURFACES, Value::Array(fill_surfaces_json));
+            //fill_no_overlap_expolygons
+            let no_overlap_json: Vec<Value> = layer_region.fill_no_overlap_expolygons.iter().map(to_value).collect();
+            push_pair(j, JSON_LAYER_REGION_FILL_NO_OVERLAP, Value::Array(no_overlap_json));
+            //unsupported_bridge_edges
+            let edges_json: Vec<Value> = layer_region.unsupported_bridge_edges.iter().map(to_value).collect();
+            push_pair(j, JSON_LAYER_REGION_UNSUPPORTED_BRIDGE_EDGES, Value::Array(edges_json));
+            //perimeters
+            push_pair(j, JSON_LAYER_REGION_PERIMETERS, collection_to_json(&layer_region.perimeters));
+            //fills
+            push_pair(j, JSON_LAYER_REGION_FILLS, collection_to_json(&layer_region.fills));
+            let patches_json: Vec<Value> =
+                layer_region.adaptive_merge_patches.iter().map(adaptive_merge_patch_to_json).collect();
+            push_pair(j, JSON_LAYER_REGION_ADAPTIVE_MERGE_PATCHES, Value::Array(patches_json));
+        }
+    }
+
+    // Print.cpp:4882-4898 `to_json(json&, const groupedVolumeSlices&)`
+    impl ToJson for groupedVolumeSlices {
+        fn to_json(&self, j: &mut Value) {
+            obj(j).insert(JSON_FIRSTLAYER_GROUP_ID.to_string(), Value::from(self.groupId));
+            let volumes_json: Vec<Value> = self.volume_ids.iter().map(|id| Value::from(id.id as u64)).collect();
+            obj(j).insert(JSON_FIRSTLAYER_GROUP_VOLUME_IDS.to_string(), Value::Array(volumes_json));
+            let slices_json: Vec<Value> = self.slices.iter().map(to_value).collect();
+            obj(j).insert(JSON_FIRSTLAYER_GROUP_SLICES.to_string(), Value::Array(slices_json));
+        }
+    }
+
+    // Print.cpp:5293-5314 `from_json(const json&, groupedVolumeSlices&)`
+    impl FromJson for groupedVolumeSlices {
+        fn from_json(j: &Value, out: &mut Self) {
+            out.groupId = get_i64(at(j, JSON_FIRSTLAYER_GROUP_ID)) as i32;
+            let ids = at(j, JSON_FIRSTLAYER_GROUP_VOLUME_IDS);
+            for volume_index in 0..(size(ids) as i32) {
+                out.volume_ids.push(ObjectID { id: get_i64(at_i(ids, volume_index as usize)) as u64 as usize });
+            }
+            let slices = at(j, JSON_FIRSTLAYER_GROUP_SLICES);
+            for slice_index in 0..(size(slices) as i32) {
+                out.slices.push(expolygon_from(at_i(slices, slice_index as usize)));
+            }
+        }
+    }
+
+    /// Print.cpp:4936-4962 `adaptive_merge_patch_from_json(patch_json)`.
+    pub fn adaptive_merge_patch_from_json(patch_json: &Value) -> AdaptiveMergePatch {
+        let mut patch = AdaptiveMergePatch::default();
+        patch.bottom_idx = get_i64(at(patch_json, JSON_ADAPTIVE_MERGE_BOTTOM_IDX)) as u64 as usize;
+        patch.top_idx = get_i64(at(patch_json, JSON_ADAPTIVE_MERGE_TOP_IDX)) as u64 as usize;
+        patch.group_top = get_bool(at(patch_json, JSON_ADAPTIVE_MERGE_GROUP_TOP));
+        patch.merged_height = get_f64(at(patch_json, JSON_ADAPTIVE_MERGE_MERGED_HEIGHT));
+        let area: Vec<ExPolygon> = match at(patch_json, JSON_ADAPTIVE_MERGE_AREA) {
+            Value::Array(a) => a.iter().map(expolygon_from).collect(),
+            _ => Vec::new(),
+        };
+        patch.set_area(area);
+        if let Some(suppressed_json) = patch_json.get(JSON_ADAPTIVE_MERGE_SUPPRESSED_AREA) {
+            let suppressed: Vec<ExPolygon> = match suppressed_json {
+                Value::Array(a) => a.iter().map(expolygon_from).collect(),
+                _ => Vec::new(),
+            };
+            patch.set_suppressed_area(suppressed);
+        }
+        patch
+    }
+
+    /// Print.cpp:5026-5095 `convert_extrusion_from_json(entity_json, entity_collection)`: false on an
+    /// unknown entity type (or one inside a collection).
+    pub fn convert_extrusion_from_json(entity_json: &Value, entity_collection: &mut ExtrusionEntityCollection) -> bool {
+        let path_type = at(entity_json, JSON_EXTRUSION_ENTITY_TYPE).as_str().unwrap_or("");
+        if path_type == JSON_EXTRUSION_TYPE_PATH {
+            let path = extrusion_path_from(at_i(at(entity_json, JSON_EXTRUSION_PATHS), 0));
+            entity_collection.entities.push(ExtrusionEntityType::Path(path));
+        } else if path_type == JSON_EXTRUSION_TYPE_MULTIPATH {
+            let mut multipath = ExtrusionMultiPath::new();
+            let paths = at(entity_json, JSON_EXTRUSION_PATHS);
+            for path_index in 0..(size(paths) as i32) {
+                multipath.paths.push(extrusion_path_from(at_i(paths, path_index as usize)));
+            }
+            entity_collection.entities.push(ExtrusionEntityType::MultiPath(multipath));
+        } else if path_type == JSON_EXTRUSION_TYPE_LOOP {
+            let mut lp = ExtrusionLoop::new(Vec::new(), ExtrusionLoopRole::DEFAULT);
+            lp.set_loop_role(ExtrusionLoopRole(get_i64(at(entity_json, JSON_EXTRUSION_LOOP_ROLE)) as u8));
+            let paths = at(entity_json, JSON_EXTRUSION_PATHS);
+            for path_index in 0..(size(paths) as i32) {
+                lp.paths.push(extrusion_path_from(at_i(paths, path_index as usize)));
+            }
+            entity_collection.entities.push(ExtrusionEntityType::Loop(lp));
+        } else if path_type == JSON_EXTRUSION_TYPE_COLLECTION {
+            let mut collection = ExtrusionEntityCollection::new();
+            collection.no_sort = get_bool(at(entity_json, JSON_EXTRUSION_NO_SORT));
+            let entities = at(entity_json, JSON_EXTRUSION_ENTITIES);
+            for entity_index in 0..(size(entities) as i32) {
+                let entity_item_json = at_i(entities, entity_index as usize);
+                if !convert_extrusion_from_json(entity_item_json, &mut collection) {
+                    return false;
+                }
+            }
+            entity_collection.entities.push(ExtrusionEntityType::Collection(Box::new(collection)));
+        } else {
+            return false;
+        }
+        true
+    }
+
+    /// `Error while parsing <what> at layer %zu, print_z %f` (Print.cpp:5127-5129, 5180-5182, 5196-5198).
+    fn parse_error(what: &str, layer_id: usize, print_z: f64) -> String {
+        format!("Error while parsing {what} at layer {layer_id}, print_z {print_z:.6}")
+    }
+
+    fn collection_from_json(
+        j: &Value,
+        collection: &mut ExtrusionEntityCollection,
+        what: &str,
+        layer_id: usize,
+        print_z: f64,
+    ) -> Result<(), String> {
+        collection.no_sort = get_bool(at(j, JSON_EXTRUSION_NO_SORT));
+        let entities = at(j, JSON_EXTRUSION_ENTITIES);
+        for index in 0..(size(entities) as i32) {
+            if !convert_extrusion_from_json(at_i(entities, index as usize), collection) {
+                return Err(parse_error(what, layer_id, print_z));
+            }
+        }
+        Ok(())
+    }
+
+    /// Print.cpp:5097-5211 `convert_layer_region_from_json(j, layer_region)`. `layer_id` / `print_z` are
+    /// `layer_region.layer()->id()` / `print_z` for the FileIOError text; Err is that error.
+    pub fn convert_layer_region_from_json(
+        j: &Value,
+        layer_region: &mut LayerRegion,
+        layer_id: usize,
+        print_z: f64,
+    ) -> Result<(), String> {
+        //slices
+        let slices = at(j, JSON_LAYER_REGION_SLICES);
+        for index in 0..(size(slices) as i32) {
+            layer_region.slices.surfaces.push(surface_from(at_i(slices, index as usize)));
+        }
+        //raw_slices (surfaces in the port; only their expolygons are read)
+        let raw_slices = at(j, JSON_LAYER_REGION_RAW_SLICES);
+        for index in 0..(size(raw_slices) as i32) {
+            let polygon = expolygon_from(at_i(raw_slices, index as usize));
+            layer_region.raw_slices.surfaces.push(Surface::new(SurfaceType::Internal, polygon));
+        }
+        //thin fills
+        collection_from_json(at(j, JSON_LAYER_REGION_THIN_FILLS), &mut layer_region.thin_fills, "thin_fills", layer_id, print_z)?;
+        //fill_expolygons
+        let fill_expolygons = at(j, JSON_LAYER_REGION_FILL_EXPOLYGONS);
+        for index in 0..(size(fill_expolygons) as i32) {
+            layer_region.fill_expolygons.push(expolygon_from(at_i(fill_expolygons, index as usize)));
+        }
+        //fill_surfaces
+        let fill_surfaces = at(j, JSON_LAYER_REGION_FILL_SURFACES);
+        for index in 0..(size(fill_surfaces) as i32) {
+            layer_region.fill_surfaces.surfaces.push(surface_from(at_i(fill_surfaces, index as usize)));
+        }
+        //fill_no_overlap_expolygons
+        let no_overlap = at(j, JSON_LAYER_REGION_FILL_NO_OVERLAP);
+        for index in 0..(size(no_overlap) as i32) {
+            layer_region.fill_no_overlap_expolygons.push(expolygon_from(at_i(no_overlap, index as usize)));
+        }
+        //unsupported_bridge_edges
+        let edges = at(j, JSON_LAYER_REGION_UNSUPPORTED_BRIDGE_EDGES);
+        for index in 0..(size(edges) as i32) {
+            layer_region.unsupported_bridge_edges.push(polyline_from(at_i(edges, index as usize)));
+        }
+        //perimeters
+        collection_from_json(at(j, JSON_LAYER_REGION_PERIMETERS), &mut layer_region.perimeters, "perimeters", layer_id, print_z)?;
+        //fills
+        collection_from_json(at(j, JSON_LAYER_REGION_FILLS), &mut layer_region.fills, "fills", layer_id, print_z)?;
+        if let Some(patches_json) = j.get(JSON_LAYER_REGION_ADAPTIVE_MERGE_PATCHES) {
+            if let Value::Array(patches) = patches_json {
+                layer_region.adaptive_merge_patches.reserve(patches.len());
+                for patch_json in patches {
+                    layer_region.adaptive_merge_patches.push(adaptive_merge_patch_from_json(patch_json));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Print.cpp:5214-5260 `extract_layer(layer_json, layer)`.
+    pub fn extract_layer(layer_json: &Value, layer: &mut Layer) -> Result<(), String> {
+        //slice_polygons
+        let sliced = at(layer_json, JSON_LAYER_SLICED_POLYGONS);
+        for index in 0..(size(sliced) as i32) {
+            layer.lslices.push(expolygon_from(at_i(sliced, index as usize)));
+        }
+        //slice_bboxes
+        let bboxes = at(layer_json, JSON_LAYER_SLLICED_BBOXES);
+        for index in 0..(size(bboxes) as i32) {
+            let mut bbox = BoundingBox::new();
+            BoundingBox::from_json(at_i(bboxes, index as usize), &mut bbox);
+            layer.lslices_bboxes.push(bbox);
+        }
+        //overhang_polygons
+        let overhangs = at(layer_json, JSON_LAYER_OVERHANG_POLYGONS);
+        for index in 0..(size(overhangs) as i32) {
+            layer.loverhangs.push(expolygon_from(at_i(overhangs, index as usize)));
+        }
+        //overhang_box
+        let mut overhang_bbox = BoundingBox::new();
+        BoundingBox::from_json(at(layer_json, JSON_LAYER_OVERHANG_BBOX), &mut overhang_bbox);
+        layer.loverhangs_bbox = overhang_bbox;
+        //layer_regions
+        let layer_id = layer.id();
+        let print_z = layer.print_z;
+        let layer_region_count = layer.region_count() as i32;
+        for layer_region_index in 0..layer_region_count {
+            let layer_region_json = at_i(at(layer_json, JSON_LAYER_REGIONS), layer_region_index as usize);
+            let layer_region = layer.get_region_mut(layer_region_index as usize).unwrap();
+            convert_layer_region_from_json(layer_region_json, layer_region, layer_id, print_z)?;
+        }
+        Ok(())
+    }
+
+    /// Print.cpp:5262-5291 `extract_support_layer(support_layer_json, support_layer)`.
+    pub fn extract_support_layer(support_layer_json: &Value, support_layer: &mut SupportLayer) -> Result<(), String> {
+        extract_layer(support_layer_json, &mut support_layer.layer)?;
+        //support_islands
+        let islands = at(support_layer_json, JSON_SUPPORT_LAYER_ISLANDS);
+        for index in 0..(size(islands) as i32) {
+            support_layer.support_islands.push(expolygon_from(at_i(islands, index as usize)));
+        }
+        //support_fills
+        let fills = at(support_layer_json, JSON_SUPPORT_LAYER_FILLS);
+        support_layer.support_fills.no_sort = get_bool(at(fills, JSON_EXTRUSION_NO_SORT));
+        let entities = at(fills, JSON_EXTRUSION_ENTITIES);
+        for index in 0..(size(entities) as i32) {
+            if !convert_extrusion_from_json(at_i(entities, index as usize), &mut support_layer.support_fills) {
+                return Err(format!(
+                    "Error while parsing fills at support_layer {}, print_z {:.6}",
+                    support_layer.layer.id(),
+                    support_layer.layer.print_z
+                ));
+            }
+        }
+        Ok(())
+    }
+}

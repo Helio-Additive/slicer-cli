@@ -51,6 +51,20 @@ fn f1_union_vd_round() -> bool {
     *ON.get_or_init(|| crate::faithful_gate("F1_UNION"))
 }
 
+/// `MEDIAL_AXIS_EIGEN_PIN` (faithful, R953): the medial axis's vector arithmetic as the pin
+/// compiles it. MedialAxis.cpp:641-647 / 665 (`Line::distance_to`, `.norm()`, `line.length()`)
+/// and ExPolygon.cpp:296-316, 325 (`normalized()`, `p1 -= n * max_width`, `Polygon::intersection`,
+/// `on_boundary`, `Polyline::length`) run on Eigen `Vec2d`s, whose `squaredNorm`, `dot` and
+/// `a + t * v` clang does not contract (each product is rounded before the sum; the scalar
+/// `cross2` of Point.hpp:86-89 and the scalar `floor(pt0 + t * v + 0.5)` of Polygon.cpp:334 stay
+/// fused). `=0` keeps the fused scalar spelling of the old medial-axis shim
+/// (medial_axis_shim.cpp), the engine's arithmetic until R952.
+pub(crate) fn medial_axis_eigen_pin() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| crate::faithful_gate("MEDIAL_AXIS_EIGEN_PIN"))
+}
+
 /// Convert a Voronoi-vertex `double` coordinate to `Coord`, matching native
 /// `Point(double,double)`'s `coord_t(lrint(x))`. `round_ties_even` mirrors `lrint`'s
 /// default rounding mode EXACTLY (NOT `.round()`, which is ties-away-from-zero). Gated
@@ -1186,6 +1200,17 @@ impl MedialAxis {
         }
     }
 
+    /// MedialAxis.cpp:521-528 `MedialAxis::build(Polylines* polylines)`: the thick build, each
+    /// polyline's points appended to `polylines`.
+    pub fn build_polylines(&mut self, polylines: &mut Vec<crate::geometry::Polyline>) {
+        let mut tp: Vec<MedialAxisThickPolyline> = Vec::new();
+        self.build(&mut tp);
+        polylines.reserve(tp.len());
+        for pl in tp {
+            polylines.push(crate::geometry::Polyline::from_points(pl.points));
+        }
+    }
+
     /// MedialAxis.cpp:545-590 `MedialAxis::process_edge_neighbors(edge, polyline)`.
     pub fn process_edge_neighbors(&mut self, mut edge: usize, polyline: &mut MedialAxisThickPolyline) {
         loop {
@@ -1264,6 +1289,10 @@ impl MedialAxis {
     /// to `fma(a, b, c * d)` and `t * v - va` to `fma(t, v, -va)`. The shim is followed.
     #[inline]
     fn distance_to(line: &Line, p: Point) -> f64 {
+        if medial_axis_eigen_pin() {
+            // Line.hpp:43-68, 79 `line_alg::distance_to_squared` on Eigen vectors: nothing fused.
+            return line.distance_to(&p);
+        }
         let vx = (line.b.x - line.a.x) as f64;
         let vy = (line.b.y - line.a.y) as f64;
         let vax = (p.x - line.a.x) as f64;
@@ -1306,6 +1335,11 @@ impl MedialAxis {
     fn norm(a: Point, b: Point) -> f64 {
         let x = (a.x - b.x) as f64;
         let y = (a.y - b.y) as f64;
+        if medial_axis_eigen_pin() {
+            // MedialAxis.cpp:643, 647 `(p - line.a).cast<double>().norm()`: Eigen's squaredNorm,
+            // the two products rounded, then summed.
+            return (x * x + y * y).sqrt();
+        }
         x.mul_add(x, y * y).sqrt()
     }
 
@@ -1360,7 +1394,9 @@ impl MedialAxis {
                 // `line.length()`: sqrt(dx * dx + dy * dy) on scalars in the shim, contracted.
                 let dx = (line.b.x - line.a.x) as f64;
                 let dy = (line.b.y - line.a.y) as f64;
-                let line_length = dx.mul_add(dx, dy * dy).sqrt();
+                // Line.hpp:163 `(b - a).cast<double>().norm()` at the pin: not fused.
+                let line_length =
+                    if medial_axis_eigen_pin() { (dx * dx + dy * dy).sqrt() } else { dx.mul_add(dx, dy * dy).sqrt() };
                 if w0 < SCALED_EPSILON || w1 < SCALED_EPSILON || line_length >= self.m_min_width {
                     return false;
                 }

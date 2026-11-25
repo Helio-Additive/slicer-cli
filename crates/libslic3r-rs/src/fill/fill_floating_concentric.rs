@@ -768,8 +768,14 @@ pub fn interpolate_width(
     let d_curr = (((curr.x - prev.x) as f64).powi(2) + ((curr.y - prev.y) as f64).powi(2)).sqrt();
     // FillFloatingConcentric.cpp:241
     let t = if d_total > 0.0 { d_curr / d_total } else { 0.0 };
-    // FillFloatingConcentric.cpp:242
-    (1.0 - t) * width_prev + t * width_next
+    // FillFloatingConcentric.cpp:242 (override layer file :257). FFC_INTERP_WIDTH_FMA (faithful,
+    // R953): the pin's clang contracts `(1 - t) * width_prev + t * width_next` (one expression,
+    // -ffp-contract=on) to fma(1 - t, width_prev, t * width_next); =0 rounds both products.
+    if crate::faithful_gate("FFC_INTERP_WIDTH_FMA") {
+        (1.0 - t).mul_add(width_prev, t * width_next)
+    } else {
+        (1.0 - t) * width_prev + t * width_next
+    }
 }
 
 /// `ThickPolyline::get_width_at(size_t point_idx)` — Polyline.cpp:666-671.

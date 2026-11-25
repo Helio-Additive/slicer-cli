@@ -246,7 +246,7 @@ fn float_angle_limits() -> bool {
 // Check if the line is whole inside the sphere, or it is partially inside (intersecting) the sphere.
 // Inspired by Christer Ericson's Real-Time Collision Detection, pp. 177-179.
 // TriangleSelector.cpp:15
-fn test_line_inside_sphere(line_a: &Vec3f, line_b: &Vec3f, sphere_p: &Vec3f, sphere_radius: f32) -> bool {
+pub fn test_line_inside_sphere(line_a: &Vec3f, line_b: &Vec3f, sphere_p: &Vec3f, sphere_radius: f32) -> bool {
     let sphere_radius_sqr = sqr_f32(sphere_radius); // TriangleSelector.cpp:17
     let line_dir = line_b - line_a; // n  // TriangleSelector.cpp:18
     let origins_diff = line_a - sphere_p; // m  // TriangleSelector.cpp:19
@@ -297,7 +297,7 @@ fn test_line_inside_sphere(line_a: &Vec3f, line_b: &Vec3f, sphere_p: &Vec3f, sph
 // Check if the line is whole inside the finite cylinder, or it is partially inside (intersecting) the finite cylinder.
 // Inspired by Christer Ericson's Real-Time Collision Detection, pp. 194-198.
 // TriangleSelector.cpp:54
-fn test_line_inside_cylinder(line_a: &Vec3f, line_b: &Vec3f, cylinder_p: &Vec3f, cylinder_q: &Vec3f, cylinder_radius: f32) -> bool {
+pub fn test_line_inside_cylinder(line_a: &Vec3f, line_b: &Vec3f, cylinder_p: &Vec3f, cylinder_q: &Vec3f, cylinder_radius: f32) -> bool {
     debug_assert!(cylinder_p != cylinder_q); // TriangleSelector.cpp:56
     let cylinder_dir = cylinder_q - cylinder_p; // d  // TriangleSelector.cpp:57
     // TriangleSelector.cpp:58-65
@@ -370,7 +370,7 @@ fn test_line_inside_cylinder(line_a: &Vec3f, line_b: &Vec3f, cylinder_p: &Vec3f,
 
 // Check if the line is whole inside the capsule, or it is partially inside (intersecting) the capsule.
 // TriangleSelector.cpp:108
-fn test_line_inside_capsule(line_a: &Vec3f, line_b: &Vec3f, capsule_p: &Vec3f, capsule_q: &Vec3f, capsule_radius: f32) -> bool {
+pub fn test_line_inside_capsule(line_a: &Vec3f, line_b: &Vec3f, capsule_p: &Vec3f, capsule_q: &Vec3f, capsule_radius: f32) -> bool {
     debug_assert!(capsule_p != capsule_q); // TriangleSelector.cpp:109
 
     // Check if the line intersect any of the spheres forming the capsule.
@@ -503,7 +503,7 @@ impl Triangle {
 
     // Set the division type.
     // sides_to_split==-1 : just restore previous split  // TriangleSelector.cpp:159
-    fn set_division(&mut self, sides_to_split: i32, special_side_idx: i32) {
+    pub fn set_division(&mut self, sides_to_split: i32, special_side_idx: i32) {
         debug_assert!(sides_to_split >= 0 && sides_to_split <= 3); // TriangleSelector.cpp:162
         debug_assert!(special_side_idx >= 0 && special_side_idx < 3); // TriangleSelector.cpp:163
         debug_assert!(sides_to_split == 1 || sides_to_split == 2 || special_side_idx == 0); // TriangleSelector.cpp:164
@@ -512,7 +512,7 @@ impl Triangle {
     }
 
     // Get/set current state.  // TriangleSelector.hpp:322
-    fn set_state(&mut self, ty: EnforcerBlockerType) {
+    pub fn set_state(&mut self, ty: EnforcerBlockerType) {
         debug_assert!(!self.is_split());
         self.state = ty;
     }
@@ -524,19 +524,19 @@ impl Triangle {
     }
 
     // Set if the triangle has been selected or unselected by seed fill.  // TriangleSelector.cpp:169
-    fn select_by_seed_fill(&mut self) {
+    pub fn select_by_seed_fill(&mut self) {
         debug_assert!(!self.is_split()); // TriangleSelector.cpp:171
         self.m_selected_by_seed_fill = true; // TriangleSelector.cpp:172
     }
 
     // TriangleSelector.cpp:175
-    fn unselect_by_seed_fill(&mut self) {
+    pub fn unselect_by_seed_fill(&mut self) {
         debug_assert!(!self.is_split()); // TriangleSelector.cpp:177
         self.m_selected_by_seed_fill = false; // TriangleSelector.cpp:178
     }
 
     // Get if the triangle has been selected or not by seed fill.  // TriangleSelector.cpp:181
-    fn is_selected_by_seed_fill(&self) -> bool {
+    pub fn is_selected_by_seed_fill(&self) -> bool {
         debug_assert!(!self.is_split()); // TriangleSelector.cpp:183
         self.m_selected_by_seed_fill // TriangleSelector.cpp:184
     }
@@ -561,7 +561,7 @@ impl Triangle {
 
     // TriangleSelector.hpp:336
     #[inline]
-    fn special_side(&self) -> i32 {
+    pub fn special_side(&self) -> i32 {
         debug_assert!(self.is_split());
         self.special_side_idx as i32
     }
@@ -1121,7 +1121,7 @@ fn eigen_dot_f32(a: &Vec3f, b: &Vec3f) -> f32 {
 
 // TriangleSelector.cpp:224-243
 #[inline]
-fn is_point_inside_triangle(pt: &Vec3f, p1: &Vec3f, p2: &Vec3f, p3: &Vec3f) -> bool {
+pub fn is_point_inside_triangle(pt: &Vec3f, p1: &Vec3f, p2: &Vec3f, p3: &Vec3f) -> bool {
     // Real-time collision detection, Ericson, Chapter 3.4
     let barycentric = || -> Vec3f {
         let v = [p2 - p1, p3 - p1, pt - p1]; // TriangleSelector.cpp:228
@@ -1159,12 +1159,12 @@ fn is_point_inside_triangle(pt: &Vec3f, p1: &Vec3f, p2: &Vec3f, p3: &Vec3f) -> b
 // Returns true if clipping plane is not active or if the point not clipped by clipping plane.
 // TriangleSelector.cpp:2084-2087
 #[inline]
-fn is_mesh_point_not_clipped(point: &Vec3f, clipping_plane: &ClippingPlane) -> bool {
+pub fn is_mesh_point_not_clipped(point: &Vec3f, clipping_plane: &ClippingPlane) -> bool {
     !clipping_plane.is_active() || !clipping_plane.is_mesh_point_clipped(point)
 }
 
 // p1, p2, p3 are in mesh coords!  // TriangleSelector.cpp:2163-2182
-fn is_circle_pointer_inside_triangle(p1_: &Vec3f, p2_: &Vec3f, p3_: &Vec3f, center: &Vec3f, dir: &Vec3f, uniform_scaling: bool, trafo: &Transform3f) -> bool {
+pub fn is_circle_pointer_inside_triangle(p1_: &Vec3f, p2_: &Vec3f, p3_: &Vec3f, center: &Vec3f, dir: &Vec3f, uniform_scaling: bool, trafo: &Transform3f) -> bool {
     let q1 = center + dir; // TriangleSelector.cpp:2164
     let q2 = center - dir; // TriangleSelector.cpp:2165
 
@@ -1186,7 +1186,7 @@ fn is_circle_pointer_inside_triangle(p1_: &Vec3f, p2_: &Vec3f, p3_: &Vec3f, cent
 }
 
 // TriangleSelector.cpp:2197-2212
-fn line_plane_intersection(line_a: &Vec3f, line_b: &Vec3f, plane_origin: &Vec3f, plane_normal: &Vec3f, out_intersection: &mut Vec3f) -> bool {
+pub fn line_plane_intersection(line_a: &Vec3f, line_b: &Vec3f, plane_origin: &Vec3f, plane_normal: &Vec3f, out_intersection: &mut Vec3f) -> bool {
     let line_dir = line_b - line_a; // TriangleSelector.cpp:2199
     let t_denominator = dotf(plane_normal, &line_dir); // TriangleSelector.cpp:2546
     if t_denominator == 0.0 {

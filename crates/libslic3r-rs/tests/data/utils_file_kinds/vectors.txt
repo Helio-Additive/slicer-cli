@@ -1,0 +1,15 @@
+.ini 1 1 0 0
+a.ini 1 1 0 0
+b.INI 1 1 0 0
+broken.ini 0 0 0 0
+c.Idx 1 0 1 0
+d.txt 1 0 0 0
+dirlink.ini 0 0 0 0
+e.ini.bak 1 0 0 0
+f. 1 0 0 0
+g.png 1 0 0 1
+h.PNG 1 0 0 1
+link.ini 1 1 0 0
+noext 1 0 0 0
+sub.ini 0 0 0 0
+x.y.idx 1 0 1 0

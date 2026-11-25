@@ -2325,6 +2325,14 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
             }
         }
     }
+    // PrintConfig.hpp:1745 `filament_velocity_adaptation_factor` (ConfigOptionFloats, one value per
+    // filament; GCode.cpp:6779/6809): the whole JSON array, as the keys above (Config.cpp:1030-1080).
+    if let Some(serde_json::Value::Array(arr)) = json.get("filament_velocity_adaptation_factor") {
+        let items: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+        if items.len() == arr.len() {
+            config.set_deserialize("filament_velocity_adaptation_factor", &items.join(","));
+        }
+    }
 }
 
 /// Parse extruder_offset from JSON and set on config.
@@ -2668,5 +2676,28 @@ mod circle_compensation_settings_tests {
         // Not in the file: the pin's default (PrintConfig.cpp:6951-6954).
         assert_eq!(pc.counter_coef_1, vec![0.0]);
         assert_eq!(pc.circle_compensation_floats("counter_coef_2"), vec![0.008, 0.009, 0.01]);
+    }
+
+    /// R953: `filament_velocity_adaptation_factor` (PrintConfig.hpp:1745, ConfigOptionFloats, default
+    /// {1.0}, PrintConfig.cpp:3294-3301) reaches the typed config whole, and `get_at` gives the first
+    /// value past the end (Config.hpp:681-685), as FILAMENT_CONFIG reads it (GCode.cpp:1570, 6779, 6809).
+    #[test]
+    fn filament_velocity_adaptation_factor_is_read_whole() {
+        let (pc, _oc, _rc) = load_bambustudio_settings(&serde_json::json!({})).unwrap();
+        assert_eq!(pc.filament_velocity_adaptation_factor, vec![1.0]);
+        assert_eq!(pc.filament_velocity_adaptation_factor_at(3), 1.0);
+        let json = serde_json::json!({
+            "filament_velocity_adaptation_factor": ["1", "0.8", "1.25"],
+        });
+        let (pc, _oc, _rc) = load_bambustudio_settings(&json).unwrap();
+        assert_eq!(pc.filament_velocity_adaptation_factor, vec![1.0, 0.8, 1.25]);
+        assert_eq!(pc.filament_velocity_adaptation_factor_at(1), 0.8);
+        assert_eq!(pc.filament_velocity_adaptation_factor_at(7), 1.0);
+        let mut pc2 = pc.clone();
+        assert!(pc2.set_deserialize("filament_velocity_adaptation_factor", "0.5,2"));
+        assert_eq!(pc2.filament_velocity_adaptation_factor, vec![0.5, 2.0]);
+        // A nil item fails the (non-nullable) deserialize: the values stay.
+        assert!(pc2.apply_key_value("filament_velocity_adaptation_factor", "nil"));
+        assert_eq!(pc2.filament_velocity_adaptation_factor, vec![0.5, 2.0]);
     }
 }

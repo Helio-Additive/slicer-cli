@@ -5114,5 +5114,231 @@
    "decode_colors",
    "encode_color"
   ]
+ },
+ {
+  "unit": "Geometry/MedialAxis",
+  "round": 953,
+  "evidence": "tests/medial_axis_pin_native_parity.rs (medial_axis_pin_native_parity) against tests/data/medial_axis_pin/gen.cpp (vectors.txt.gz, 1.16 MB), which calls the pin's own Geometry::MedialAxis as libslic3r_core.a compiles it (not the old FFI shim): 1,196 ExPolygons (300 rotated strips, 200 rings with a hole, 250 narrow wedges, 250 offset random walks, 196 gap areas of random stars cut as PerimeterGenerator.cpp:1346-1358 cuts them, half of them after douglas_peucker), 0 mismatches with MEDIAL_AXIS_EIGEN_PIN on (default): MedialAxis(min, max, expolygon).build(ThickPolylines*) (MedialAxis.cpp:445-519, with process_edge_neighbors 545-590 and validate_edge 592-688 inside it) compared on every polyline's points, both widths per segment bit for bit and the endpoint flags; build(Polylines*) (521-528) on the points. With MEDIAL_AXIS_EIGEN_PIN=0 (the shim's fused scalar arithmetic) 724 of the 1,196 build results have widths 1 ulp off. Rust: MedialAxis::build, MedialAxis::build_polylines (the Polylines overload), process_edge_neighbors, validate_edge in geometry/medial_axis.rs.",
+  "functions": [
+   "MedialAxis::build",
+   "MedialAxis::process_edge_neighbors",
+   "MedialAxis::validate_edge"
+  ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 953,
+  "evidence": "tests/medial_axis_pin_native_parity.rs, same 1,196 ExPolygons and generator: the pin's ExPolygon::medial_axis(min, max, ThickPolylines*) (ExPolygon.cpp:263-371: fmaxf of the widths, endpoint extension through Polygon::intersection, on_boundary, short-polyline removal, joining) compared on points, widths (bit for bit) and endpoint flags; ExPolygon::medial_axis(min, max, Polylines*) (373-380) and Polylines ExPolygon::medial_axis(min, max) (ExPolygon.hpp:75-76) on the points; 0 mismatches with MEDIAL_AXIS_EIGEN_PIN on (=0: 711 width mismatches). Rust: ExPolygon::medial_axis_thick_polylines, medial_axis_into_polylines, medial_axis_returning_polylines in geometry/expolygon.rs (scaled widths as the C++; the crate's medial_axis(mm) entry wraps the first).",
+  "functions": [
+   "ExPolygon::medial_axis"
+  ]
+ },
+ {
+  "unit": "TriangleSelector",
+  "round": 953,
+  "evidence": "tests/triangle_selector_free_native_parity.rs against tests/data/triangle_selector/gen.cpp part 'free' (vectors_free.txt.gz; the generator includes the pin's TriangleSelector.cpp, so its file-static helpers are the pin's): 3,000 random cases per function, 0 mismatches: test_line_inside_sphere (TriangleSelector.cpp:52-87; an eighth with a degenerate line), test_line_inside_cylinder (91-142) and test_line_inside_capsule (145-154) on 2,637 cases each (the 363 with P == Q skipped: the pin asserts P != Q), is_point_inside_triangle (224-243; points on and off the plane), is_mesh_point_not_clipped (2430-2434), is_circle_pointer_inside_triangle (2509-2529; uniform and non-uniform transforms), line_plane_intersection (2543-2558; the point bit for bit, a tenth of the planes parallel to the line), ClippingPlane::is_active and is_mesh_point_clipped (TriangleSelector.hpp:40-42; a quarter inactive). Rust: the free functions (now pub) and ClippingPlane in triangle_selector.rs.",
+  "functions": [
+   "test_line_inside_sphere",
+   "test_line_inside_cylinder",
+   "test_line_inside_capsule",
+   "is_point_inside_triangle",
+   "is_mesh_point_not_clipped",
+   "is_circle_pointer_inside_triangle",
+   "line_plane_intersection",
+   "TriangleSelector::ClippingPlane::is_active",
+   "TriangleSelector::ClippingPlane::is_mesh_point_clipped"
+  ]
+ },
+ {
+  "unit": "clipper2/clipper",
+  "round": 953,
+  "evidence": "tests/clipper2_cpp_names_native_parity.rs against tests/data/clipper2_cpp_names/gen.cpp (vectors.txt.gz, 1.97 MB), which calls the pin's Clipper2 (src/clipper2: clipper.h over libClipper2.a): 78 groups, 0 mismatches, integers exact and doubles bit for bit. Path64 overloads, 1,000 calls each on random stars and point clouds with repeated and collinear points: BooleanOp (all four clip types, all four fill rules), Intersect, Union (subjects + clips, and subjects only), Difference, Xor, InflatePaths (all join and end types, miter limit, arc tolerance), TranslatePath, TranslatePaths, RectClip (paths, path), RectClipLines (lines, line), TrimCollinear (open and closed), Ellipse(Point64 center), RamerDouglasPeucker (path, paths), SimplifyPath, Distance, Length, NearCollinear. Double overloads, 200 calls each: BooleanOp, Intersect, Union x2, Difference, Xor, InflatePaths with PathsD and precision 0-4, TranslatePath(s) with PathD, RectClip x2 and RectClipLines x2 with RectD, TrimCollinear(PathD, precision), Ellipse(PointD), Ellipse(Rect64), RamerDouglasPeucker x2, SimplifyPath, Length on PathD, MakePath(std::vector<int64_t>), MakePathD(std::vector<double>). Rust: clipper2/clipper_h.rs (boolean_op, intersect, union, union_subjects, difference, xor, inflate_paths, translate_path(s), rect_clip(_path), rect_clip_lines(_path), trim_collinear, ellipse, ellipse_rect, ramer_douglas_peucker(_paths), simplify_path, distance, length, near_collinear, make_path, make_path_d and the _d forms).",
+  "functions": [
+   "BooleanOp",
+   "Intersect",
+   "Union",
+   "Difference",
+   "Xor",
+   "InflatePaths",
+   "TranslatePath",
+   "TranslatePaths",
+   "RectClip",
+   "RectClipLines",
+   "TrimCollinear",
+   "Ellipse",
+   "RamerDouglasPeucker",
+   "SimplifyPath",
+   "Distance",
+   "Length",
+   "NearCollinear",
+   "MakePath",
+   "MakePathD"
+  ]
+ },
+ {
+  "unit": "clipper2/clipper.core",
+  "round": 953,
+  "evidence": "tests/clipper2_cpp_names_native_parity.rs, same generator (clipper.core.h of the pin's src/clipper2), 0 mismatches: GetBounds(Path64), GetBounds(Paths64), GetBounds<double, int64_t>(Path64), GetBounds(PathD), GetBounds(PathsD); StripNearEqual (Path64, Paths64, PathD, PathsD); StripDuplicates (Path64, Paths64, PathD, PathsD; open and closed); CrossProduct and DotProduct (three Point64, two PointD vectors, three PointD, two Point64 vectors); Area (Path64, Paths64, PathD, PathsD); GetSegmentIntersectPt (Point64 with a fifth collinear, PointD); Rect64 Width / Height / Contains(Point64) / Contains(Rect64); RectD Width / Height / Contains(PointD). 1,000 calls per Path64 group, 200 per double group. Rust: clipper2/clipper_core.rs.",
+  "functions": [
+   "GetBounds",
+   "StripNearEqual",
+   "StripDuplicates",
+   "CrossProduct",
+   "DotProduct",
+   "Area",
+   "GetSegmentIntersectPt",
+   "Rect::Width",
+   "Rect::Height",
+   "Rect::Contains"
+  ]
+ },
+ {
+  "unit": "Geometry",
+  "round": 953,
+  "evidence": "tests/transform_normal_native_parity.rs against tests/data/transform_normal/gen.cpp (vectors.txt.gz), compiled with the engine's flags: Geometry::transform_normal(const Transform3d&, const Vec3d&) and (const Transform3d&, const Vec3f&) (Geometry.hpp:382-393) on 4,000 transforms (assemble_transform with uniform and non-uniform scales and mirrors, raw random 3x4 parts, a tenth of those singular; every fiftieth normal shorter than EPSILON): the intermediate transform.linear().inverse().transpose() * normal and both results bit-equal, 0 mismatches. Rust: transform_normal in geometry/geometry.rs (generic over trait TransformNormalArg for the two overloads): Eigen's 3x3 inverse as eigen::mat3_inverse, then per row (e0 + e1) + e2 unfused, norm the same redux.",
+  "functions": [
+   "transform_normal"
+  ]
+ },
+ {
+  "unit": "TriangleSelector",
+  "round": 953,
+  "evidence": "tests/triangle_selector_free_native_parity.rs (triangle_members_match_the_pin) against tests/data/triangle_selector/gen.cpp part 'triangle' (vectors_triangle.txt.gz; the pin's TriangleSelector.cpp included, members made public for the generator): 2,000 triangles built with TriangleSelector::Triangle(a, b, c, source_triangle, init_state) (TriangleSelector.hpp:386-397; verts_idxs and source_triangle compared), each followed by 8 random calls within the asserts (set_division with 0-3 sides, set_state with all 16 states, select_by_seed_fill, unselect_by_seed_fill; TriangleSelector.cpp:196-222, TriangleSelector.hpp:405-422), 16,000 calls; after every call valid, is_split, number_of_split_sides and, unsplit, get_state and is_selected_by_seed_fill, split, special_side: 0 mismatches. Rust: impl Triangle in triangle_selector.rs (set_division, set_state, select_by_seed_fill, unselect_by_seed_fill, is_selected_by_seed_fill, special_side now pub).",
+  "functions": [
+   "TriangleSelector::Triangle::set_division",
+   "TriangleSelector::Triangle::select_by_seed_fill",
+   "TriangleSelector::Triangle::unselect_by_seed_fill",
+   "TriangleSelector::Triangle::is_selected_by_seed_fill",
+   "TriangleSelector::Triangle::set_state",
+   "TriangleSelector::Triangle::get_state",
+   "TriangleSelector::Triangle::valid",
+   "TriangleSelector::Triangle::is_split",
+   "TriangleSelector::Triangle::number_of_split_sides",
+   "TriangleSelector::Triangle::special_side"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 953,
+  "evidence": "Native test tests/g_code_processor_used_filaments_native_parity.rs (vectors tests/data/g_code_processor_used_filaments/g_code_processor_used_filaments.txt.gz from gen.cpp beside it, which includes the pin's GCodeProcessor.cpp with the private members reachable): 400 LCG sequences, 9,818 operations in all (each of the 14 kinds 661 to 751 times), run on the pin's own GCodeProcessor::m_used_filaments with filament diameters 1.75f, 2.85f, 1.7f, 3.0f, 1.8f, 2.9f, 2.2f and random floats in [1.5, 3], densities fixed and random, volumes zero, decimal, negative and full-mantissa doubles, flush volumes as floats, the extruder / filament selection unset, unmapped or set and the extrusion role over all erCount values. The whole UsedFilaments state (six caches, volumes_per_color_change, the five per-filament maps and filaments_per_role, doubles as 64-bit patterns) is compared after every operation; what the pin's methods read from the processor (get_filament_id(), get_filament_id(false), m_extrusion_role) is printed with each operation and handed to the port's methods. 0 mismatching states with PROCESSOR_ROLE_CACHE_F64 on (default); 2,836 with it =0 (process_role_cache squared the half diameter in float; the pin's `0.5 * diameter` is double, GCodeProcessor.cpp:1512).",
+  "functions": [
+   "GCodeProcessor::UsedFilaments::reset",
+   "GCodeProcessor::UsedFilaments::increase_support_caches",
+   "GCodeProcessor::UsedFilaments::increase_model_caches",
+   "GCodeProcessor::UsedFilaments::increase_wipe_tower_caches",
+   "GCodeProcessor::UsedFilaments::process_color_change_cache",
+   "GCodeProcessor::UsedFilaments::process_model_cache",
+   "GCodeProcessor::UsedFilaments::process_wipe_tower_cache",
+   "GCodeProcessor::UsedFilaments::process_support_cache",
+   "GCodeProcessor::UsedFilaments::process_total_volume_cache",
+   "GCodeProcessor::UsedFilaments::update_flush_per_filament",
+   "GCodeProcessor::UsedFilaments::process_role_cache",
+   "GCodeProcessor::UsedFilaments::process_caches"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 953,
+  "evidence": "Existing native lib test gcode::g_code_processor::tests::test_producer_tags_native (vectors tests/data/g_code_processor/g_code_processor.txt.gz, 'producer' lines, from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp and calls its process_producers_tags with m_producer set): 81 comments (Cura TYPE:/FLAVOR:/LAYER: tags, Simplify3D feature / tool H W / layer comments, CraftWare segType:, ideaMaker TYPE:/WIDTH:/HEIGHT:/LAYER:, KISSlicer path and BEGIN_LAYER_OBJECT comments, and near misses) for each of the 10 producers, 810 in all, on a fresh processor each; return value, extrusion role, layer id, forced width and height bits, flavor and seam-detector state equal on all 810 (cargo test -p slicer --lib test_producer_tags_native: 1 passed, run in R953). True returns: Cura 25, Simplify3D 22, CraftWare 13, ideaMaker 18, KISSlicer 14. Recorded in R953; the test dates from R915.",
+  "functions": [
+   "GCodeProcessor::process_producers_tags",
+   "GCodeProcessor::process_cura_tags",
+   "GCodeProcessor::process_simplify3d_tags",
+   "GCodeProcessor::process_craftware_tags",
+   "GCodeProcessor::process_ideamaker_tags",
+   "GCodeProcessor::process_kissslicer_tags"
+  ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 953,
+  "evidence": "Native lib test gcode::g_code_processor::tests::get_time_dhm_native_r953 (vectors tests/data/g_code_processor_used_filaments/g_code_processor_time_dhm.txt from gen.cpp beside them, which includes the pin's GCodeProcessor.cpp): the pin's GCodeProcessor::get_time_dhm(mode) (GCodeProcessor.cpp:2898-2901) with m_time_processor.machines[mode].time set to 324 float times (0, sub-second, 59.4/59.5/59.6 s, minute, hour and day edges, 499681.3 s, 1e7, negative, and 300 LCG values) in both modes, 648 strings; the port's new GCodeProcessor::get_time_dhm (over crate::utils short_time / get_time_dhms) gives the same string on all 648 (cargo test -p slicer --lib r953: 3 passed).",
+  "functions": [
+   "GCodeProcessor::get_time_dhm"
+  ]
+ },
+ {
+  "unit": "Utils",
+  "round": 953,
+  "evidence": "Through get_time_dhm_native_r953 above: the pin's get_time_dhm is short_time(get_time_dhms(time)) (GCodeProcessor.cpp:2900), so the same 648 strings compare the port's crate::utils::get_time_dhms and short_time with the pin's (Utils.hpp:475, 522) on 324 float times; all equal.",
+  "functions": [
+   "short_time",
+   "get_time_dhms"
+  ]
+ },
+ {
+  "unit": "Print",
+  "round": 953,
+  "evidence": "tests/print_json_native_parity.rs (print_json_round_trips_match_the_pin; vectors from tests/data/print_json/gen.cpp, which includes the pin's Print.cpp and calls its static to_json / from_json overloads, convert_extrusion_to_json / convert_extrusion_from_json, adaptive_merge_patch_to_json / adaptive_merge_patch_from_json, extract_layer and extract_support_layer on structures from a fixed-seed LCG: bounding boxes, surfaces with all their fields, polylines with arc fittings, extrusion paths with float widths, paths / multipaths / loops / nested collections, adaptive merge patches with and without a suppressed area, first-layer groups, layers with 1-3 regions written as export_cached_data lays them out (slices, raw slices, thin fills, fill expolygons and surfaces, no-overlap expolygons, unsupported bridge edges, perimeters, fills, merge patches), support layers with islands and fills). For each case the pin's to_json text goes through the port's from_json (or extract_layer / extract_support_layer) and to_json, and nlohmann's dump of the result is byte-equal to the pin's dump of its own from_json + to_json: 1 passed, 660 of 660 cases (bbox 60, surface 100, polyline 100, path 100, entity 150, patch 60, group 40, layer 30, support 20).",
+  "functions": [
+   "to_json",
+   "from_json",
+   "convert_extrusion_to_json",
+   "adaptive_merge_patch_to_json",
+   "adaptive_merge_patch_from_json",
+   "convert_extrusion_from_json",
+   "convert_layer_region_from_json",
+   "extract_layer",
+   "extract_support_layer"
+  ],
+  "notes": "The 9 to_json overloads (Points, BoundingBox, ExPolygon, Surface, ArcSegment, Polyline, ExtrusionPath, LayerRegion, groupedVolumeSlices) and 8 from_json overloads are the methods of print::print_json::ToJson / FromJson in print.rs. Not live (nothing in slicer_cli-rust writes or reads the cache)."
+ },
+ {
+  "unit": "AppConfig",
+  "round": 953,
+  "evidence": "tests/app_config_keys_native_parity.rs (app_config_keys_match_the_pin; vectors from tests/data/app_config_keys/gen.cpp calling the pin's AppConfig::set and AppConfig::get_mouse_device_lock_horizon, which goes through get_3dmouse_device_numeric_value<bool> and string_to_double_decimal_point, and dual_extruder_first_slice_video_app_config_key): 20 stored strings (1, 0, 0.5, -0, -1, abc, 1e3, empty, 2,5, 1e-7, nan, inf, 0x10, 1abc, true, false, 00, -0.0, 1e-400, 1e400) give the pin's found flag and value, a missing device and a missing key give not found, 8 printer model names (spaces, tabs, UTF-8, empty) give the pin's key bytes: AppConfig::get_language_code over 10 stored languages (empty, zh_CN, zh_TW, en, en_US, e, de_DE, zh_cn, a UTF-8 value, ja_JP.UTF-8) and AppConfig::get_hms_host over 6 environments give the pin's bytes: 1 passed, 46 of 46 cases equal.",
+  "functions": [
+   "AppConfig::get_mouse_device_lock_horizon",
+   "dual_extruder_first_slice_video_app_config_key",
+   "AppConfig::get_language_code",
+   "AppConfig::get_hms_host"
+  ]
+ },
+ {
+  "unit": "utils",
+  "round": 953,
+  "evidence": "tests/utils_xml_escape_native_parity.rs (xml_escapes_match_the_pin; vectors from tests/data/utils_xml_escape/gen.cpp calling the pin's xml_escape(s, false), xml_escape(s, true), xml_escape_double_quotes_attribute_value(s) and xml_unescape(s) on 400 strings from a fixed-seed LCG over quotes, apostrophes, ampersands, angle brackets, CR/LF/TAB, complete and truncated entities and UTF-8 text): 1 passed, 400 of 400 strings, all four outputs byte-equal. tests/utils_string_printf_native_parity.rs (string_printf_matches_the_pin; vectors from tests/data/utils_string_printf/gen.cpp calling the pin's string_printf(\"%s\", s) for every length 0-260 and UTF-8 strings across the cut): 1 passed, 269 of 269 outputs byte-equal, including the pin's 199-byte case (198 bytes and a NUL: vsnprintf into INITIAL_LEN - 1, utils.cpp:1126-1146), which the port's identity function did not give. tests/utils_file_kinds_native_parity.rs (file_kinds_match_the_pin; vectors from tests/data/utils_file_kinds/gen.cpp calling the pin's is_plain_file, is_ini_file, is_idx_file and is_gallery_file(directory_entry, \".png\") over a directory of 15 entries it lays out, which the test lays out again: files with upper/lower-case extensions, a dot file '.ini', 'f.', 'x.y.idx', a directory named sub.ini, symlinks to a file, to a directory and to nothing): 1 passed, 15 of 15 entries give the pin's four flags. utils.rs: is_plain_file follows a symlink as directory_entry::status() does (DirEntry::metadata did not) and the extension is boost::filesystem v3's (a dot file is all extension).",
+  "functions": [
+   "xml_escape",
+   "xml_escape_double_quotes_attribute_value",
+   "xml_unescape",
+   "string_printf",
+   "is_plain_file",
+   "is_ini_file",
+   "is_idx_file",
+   "is_gallery_file"
+  ]
+ },
+ {
+  "unit": "Format/3mf",
+  "round": 953,
+  "evidence": "tests/three_mf_attributes_native_parity.rs (attribute_helpers_match_the_pin; vectors from tests/data/three_mf_attributes/gen.cpp calling the pin's global get_attribute_value_charptr / _string / _float / _int / _bool of 3mf.cpp linked from the engine library) over 46 attribute values (signs, '+', leading space and tab, fractions, exponents with and without digits, hex, inf/Infinity/nan in any case, float overflow and underflow, the smallest normal, int overflow on both sides, trailing text, comma) and a missing key: found flag, string, float bits, int and bool all equal, 1 passed, 47 of 47. format/three_mf.rs: the float is now fast_float's from_chars (no whitespace, no '+', no hex; was atof) and the int stops before the digit that would overflow as qi::int_ does (was clamped).",
+  "functions": [
+   "get_attribute_value_charptr",
+   "get_attribute_value_string",
+   "get_attribute_value_float",
+   "get_attribute_value_int",
+   "get_attribute_value_bool"
+  ]
+ },
+ {
+  "unit": "Format/bbs_3mf",
+  "round": 953,
+  "evidence": "tests/three_mf_attributes_native_parity.rs (attribute_helpers_match_the_pin; the same vectors from tests/data/three_mf_attributes/gen.cpp also call the pin's global bbs_get_attribute_value_charptr / _string / _float / _int / _bool of bbs_3mf.cpp linked from the engine library): over the 46 attribute values and the missing key, found flag, string, float bits, int and bool all equal, 47 of 47. format/bbs_3mf.rs bbs_get_attribute_value_int now stops before the digit that would overflow as qi::int_ does (was clamped).",
+  "functions": [
+   "bbs_get_attribute_value_charptr",
+   "bbs_get_attribute_value_string",
+   "bbs_get_attribute_value_float",
+   "bbs_get_attribute_value_int",
+   "bbs_get_attribute_value_bool"
+  ]
+ },
+ {
+  "unit": "Fill/FillFloatingConcentric",
+  "round": 953,
+  "evidence": "Native test tests/ffc_interpolate_width_native_parity.rs with vectors from tests/data/ffc_interpolate_width/gen.cpp, which includes the override layer's FillFloatingConcentric.cpp (what slicer_cli compiles) and calls its interpolate_width (FillFloatingConcentric.cpp:220-258) on 500 LCG cases (ThickPolyline points and 2n-2 widths, ZPath with z inside, below and above subject_idx_range, every idx): the port's interpolate_width returns the pin's double bit for bit with FFC_INTERP_WIDTH_FMA (fma(1 - t, width_prev, t * width_next)); with FFC_INTERP_WIDTH_FMA=0, 12 of 500 differ in the last bit.",
+  "functions": [
+   "interpolate_width"
+  ]
  }
 ]

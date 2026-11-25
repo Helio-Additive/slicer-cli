@@ -3422,3 +3422,45 @@ impl IsRotationNinetyDegrees for Vec3d {
         is_rotation_ninety_degrees(self)
     }
 }
+
+/// The normal argument of [`transform_normal`]: `const Vec3d &normal` (Geometry.hpp:382) or
+/// `const Vec3f &normal`, which Geometry.hpp:390-393 converts with `normal.cast<double>()`.
+pub trait TransformNormalArg {
+    fn to_vec3d(&self) -> Vec3d;
+}
+
+impl TransformNormalArg for Vec3d {
+    fn to_vec3d(&self) -> Vec3d {
+        *self
+    }
+}
+
+impl TransformNormalArg for Vector3<f32> {
+    fn to_vec3d(&self) -> Vec3d {
+        Vec3d::new(self.x as f64, self.y as f64, self.z as f64)
+    }
+}
+
+/// Geometry.hpp:382-387 `Vec3d transform_normal(const Transform3d &transform, const Vec3d &normal)`
+/// and Geometry.hpp:390-393 (the `Vec3f` overload, through [`TransformNormalArg`]): the world-space
+/// unit normal, `transform.linear().inverse().transpose() * normal` normalized, zero when its
+/// length is below EPSILON. Eigen as the pin's build evaluates it (measured against the pin,
+/// tests/transform_normal_native_parity.rs): the 3x3 inverse of InverseImpl.h
+/// (`eigen::mat3_inverse`); each coefficient of the transposed inverse times the vector as the
+/// redux of a contiguous row, a packet of the first two products then the third added,
+/// `(e0 + e1) + e2`, nothing fused.
+pub fn transform_normal<N: TransformNormalArg>(transform: &Transform3d, normal: &N) -> Vec3d {
+    let normal = normal.to_vec3d();
+    let inv = eigen::mat3_inverse(&eigen::linear(transform));
+    // Geometry.hpp:384: row i of the transpose is column i of the inverse.
+    let row = |i: usize| (inv[(0, i)] * normal.x + inv[(1, i)] * normal.y) + inv[(2, i)] * normal.z;
+    let n = Vec3d::new(row(0), row(1), row(2));
+    // Geometry.hpp:385 `n.norm()`: the same redux over the squares.
+    let len = ((n.x * n.x + n.y * n.y) + n.z * n.z).sqrt();
+    // Geometry.hpp:386
+    if len < EPSILON {
+        Vec3d::zeros()
+    } else {
+        Vec3d::new(n.x / len, n.y / len, n.z / len)
+    }
+}

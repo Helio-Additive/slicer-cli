@@ -2424,8 +2424,8 @@ pub fn extrude_loop(
     // C++ GCode.cpp:5576-5582 — smooth speed of discontinuity areas.
     // Gated on detect_overhang_wall && smooth_speed_discontinuity_area &&
     // is_set_speed_discontinuity_area (perimeter / external / overhang roles).
-    // m_smooth_coefficient = filament_velocity_adaptation_factor (assumed 1.0) *
-    // smooth_coefficient.
+    // m_smooth_coefficient = filament_velocity_adaptation_factor (the filament's, under
+    // SMOOTH_COEFF_FILAMENT_FACTOR) * smooth_coefficient.
     let is_set_speed_discontinuity = matches!(
         loop_role,
         Some(ExtrusionRole::ExternalPerimeter)
@@ -2435,10 +2435,18 @@ pub fn extrude_loop(
     // GCode.hpp:252, 659: `float m_smooth_coefficient`, set by `set_smooth_coff(float filamet_melting)` as
     // `filamet_melting * m_config.smooth_coefficient` (a double product stored into the float member;
     // GCode.cpp:6779/6809 pass FILAMENT_CONFIG(filament_velocity_adaptation_factor)). Gate SMOOTH_COEFF_F32
-    // (faithful): the coefficient rounded to float as the pin keeps it (the factor is still taken as 1.0:
-    // the live PrintConfig does not carry filament_velocity_adaptation_factor); =0: the double option.
+    // (faithful): the coefficient rounded to float as the pin keeps it; =0: the double option.
+    // R953 gate SMOOTH_COEFF_FILAMENT_FACTOR (faithful): the factor is
+    // `FILAMENT_CONFIG(filament_velocity_adaptation_factor)` = the option at
+    // `get_filament_config_index(m_writer.filament()->id())` (GCode.cpp:1570, 6779, 6809), passed as
+    // set_smooth_coff's float parameter (GCode.hpp:252); =0 keeps the factor 1.0.
+    let smooth_factor: f32 = if crate::faithful_gate("SMOOTH_COEFF_FILAMENT_FACTOR") {
+        writer.config_ref().filament_velocity_adaptation_factor_at(writer.extruder()) as f32
+    } else {
+        1.0f32
+    };
     let smooth_coeff = if crate::faithful_gate("SMOOTH_COEFF_F32") {
-        (1.0f32 as f64 * config.smooth_coefficient) as f32 as f64
+        (smooth_factor as f64 * config.smooth_coefficient) as f32 as f64
     } else {
         config.smooth_coefficient
     };
@@ -3744,6 +3752,39 @@ pub fn extrude_path_ex(
     _print_config: Option<&PrintConfig>,
 ) {
     extrude_path_with_arc_fitting(path, writer, config, is_first_layer, None);
+    // GCode.cpp:8087: `_extrude` ends with `set_last_pos(path.last_point())`, also when its
+    // last segments were shorter than EPSILON and skipped (GCode.cpp:7987-7988), so the
+    // writer stayed short of the path's end. See `extrude_last_pos`.
+    if let Some(last) = path.polyline.points().last() {
+        let p = writer.position();
+        EXTRUDE_LAST_POS.with(|c| c.set(Some((*last, p.x.to_bits(), p.y.to_bits()))));
+    }
+}
+
+thread_local! {
+    /// LAST_POS_PATH_END: the pin's `GCode::m_last_pos` as `_extrude` leaves it (the
+    /// path's last point, GCode.cpp:8087), with the writer position (bits) at that time.
+    static EXTRUDE_LAST_POS: std::cell::Cell<Option<(Point, u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// The pin's `m_last_pos` where `_extrude` decides on the travel to a path's first point
+/// (GCode.cpp:7611 `m_last_pos != path.first_point()`). `writer_last_pos` rebuilds it from
+/// the writer's position, which stops at the last segment the path wrote: `_extrude` skips a
+/// segment shorter than EPSILON (GCode.cpp:7987-7988, 7999-8000) but still sets `m_last_pos`
+/// to `path.last_point()` (GCode.cpp:8087). So while the writer has not moved since the last
+/// path, `m_last_pos` is that path's last point; after a travel or wipe it is the writer's.
+/// LAST_POS_PATH_END (faithful, R953); `=0` keeps the writer's position.
+fn extrude_last_pos(writer: &GCodeWriter) -> Point {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *GATE.get_or_init(|| crate::faithful_gate("LAST_POS_PATH_END")) {
+        if let Some((pt, xb, yb)) = EXTRUDE_LAST_POS.with(|c| c.get()) {
+            let p = writer.position();
+            if p.x.to_bits() == xb && p.y.to_bits() == yb {
+                return pt;
+            }
+        }
+    }
+    writer_last_pos(writer)
 }
 
 /// Extrude a path with optional arc fitting.
@@ -5385,7 +5426,7 @@ fn travel_needed_to_first_point(writer: &GCodeWriter, first_pt: Point, dist_sq: 
         *GATE.get_or_init(|| crate::faithful_gate("TRAVEL_EXACT_LAST_POS"))
     };
     if on {
-        let last = writer_last_pos(writer);
+        let last = extrude_last_pos(writer);
         // TRAVEL_EXACT_PROBE (diagnostic only): the travels the tolerance skipped.
         if last != first_pt && dist_sq <= 0.001 * 0.001 && crate::probe_enabled("TRAVEL_EXACT_PROBE") {
             eprintln!("[TRAVELX] in_path={in_path} last=({},{}) first=({},{})", last.x, last.y, first_pt.x, first_pt.y);
@@ -6723,6 +6764,26 @@ mod exporter_tests {
             content.is_empty() || !content.contains("G1"),
             "Should not generate moves for empty path"
         );
+    }
+
+    /// LAST_POS_PATH_END: `_extrude` skips a last segment shorter than EPSILON
+    /// (GCode.cpp:7987-7988) but leaves `m_last_pos` at the path's last point (GCode.cpp:8087);
+    /// after a travel it is the travel's end again (GCode.cpp:8336).
+    #[test]
+    fn extrude_last_pos_is_the_path_end_after_a_skipped_segment() {
+        let mut writer = GCodeWriter::new();
+        let mut path = ExtrusionPath::new(ExtrusionRole::Perimeter);
+        path.polyline =
+            Polyline::from_points(vec![Point::new(0, 0), Point::new(1_000_000, 0), Point::new(1_000_007, 0)]);
+        path.mm3_per_mm = 0.1;
+        path.width = 0.4;
+        path.height = 0.2;
+        let config = crate::print_config::PrintObjectConfig::default();
+        extrude_path(&path, &mut writer, &config, false);
+        assert_eq!(writer_last_pos(&writer), Point::new(1_000_000, 0));
+        assert_eq!(extrude_last_pos(&writer), Point::new(1_000_007, 0));
+        writer.travel_to(20.0, 0.0, None);
+        assert_eq!(extrude_last_pos(&writer), Point::new(2_000_000, 0));
     }
 
     #[test]

@@ -277,7 +277,7 @@ fn transform_is_approx(a: &Transform3d, b: &Transform3d, prec: f64) -> bool {
 
 /// 3mf.cpp:165-176
 /// C++: `const char* get_attribute_value_charptr(const char** attributes, unsigned int attributes_size, const char* attribute_key)`
-fn get_attribute_value_charptr<'a>(
+pub fn get_attribute_value_charptr<'a>(
     attributes: &'a [(String, String)],
     attribute_key: &str,
 ) -> Option<&'a str> {
@@ -297,7 +297,7 @@ fn get_attribute_value_charptr<'a>(
 
 /// 3mf.cpp:178-182
 /// C++: `std::string get_attribute_value_string(...)`
-fn get_attribute_value_string(attributes: &[(String, String)], attribute_key: &str) -> String {
+pub fn get_attribute_value_string(attributes: &[(String, String)], attribute_key: &str) -> String {
     // 3mf.cpp:180-181
     get_attribute_value_charptr(attributes, attribute_key)
         .unwrap_or("")
@@ -307,15 +307,15 @@ fn get_attribute_value_string(attributes: &[(String, String)], attribute_key: &s
 /// 3mf.cpp:184-190
 /// C++: `float get_attribute_value_float(...)` —
 /// `fast_float::from_chars(text, text + strlen(text), value)`; on parse failure
-/// the value stays 0.0f. (fast_float does not skip leading whitespace; the
-/// strtod-based helper here does — XML attribute values in practice carry no
-/// leading whitespace.)
-fn get_attribute_value_float(attributes: &[(String, String)], attribute_key: &str) -> f32 {
+/// the value stays 0.0f (see [`fast_float_from_chars_f32`]).
+pub fn get_attribute_value_float(attributes: &[(String, String)], attribute_key: &str) -> f32 {
     // 3mf.cpp:186
     let mut value = 0.0f32;
     // 3mf.cpp:187-188
     if let Some(text) = get_attribute_value_charptr(attributes, attribute_key) {
-        value = atof(text) as f32;
+        if let Some(v) = fast_float_from_chars_f32(text) {
+            value = v;
+        }
     }
     // 3mf.cpp:189
     value
@@ -325,7 +325,7 @@ fn get_attribute_value_float(attributes: &[(String, String)], attribute_key: &st
 /// C++: `int get_attribute_value_int(...)` —
 /// `boost::spirit::qi::parse(text, text + strlen(text), qi::int_, value)`;
 /// on parse failure the value stays 0.
-fn get_attribute_value_int(attributes: &[(String, String)], attribute_key: &str) -> i32 {
+pub fn get_attribute_value_int(attributes: &[(String, String)], attribute_key: &str) -> i32 {
     // 3mf.cpp:194
     let mut value = 0i32;
     // 3mf.cpp:195-196 — qi::int_ parses [+-]?digits from the start (no
@@ -338,18 +338,22 @@ fn get_attribute_value_int(attributes: &[(String, String)], attribute_key: &str)
             negative = bytes[i] == b'-';
             i += 1;
         }
+        // qi::int_ (extract_int) stops before the digit that would overflow int and keeps what it
+        // has; plain qi::parse needs no full match, so "2147483648" gives 214748364.
+        let limit: i64 = if negative { -(i32::MIN as i64) } else { i32::MAX as i64 };
         let mut parsed: i64 = 0;
         let mut any = false;
         while i < bytes.len() && bytes[i].is_ascii_digit() {
+            let next = parsed * 10 + (bytes[i] - b'0') as i64;
+            if next > limit {
+                break;
+            }
+            parsed = next;
             any = true;
-            parsed = parsed
-                .saturating_mul(10)
-                .saturating_add((bytes[i] - b'0') as i64);
             i += 1;
         }
         if any {
-            let parsed = if negative { -parsed } else { parsed };
-            value = parsed.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            value = (if negative { -parsed } else { parsed }) as i32;
         }
     }
     // 3mf.cpp:197
@@ -359,12 +363,64 @@ fn get_attribute_value_int(attributes: &[(String, String)], attribute_key: &str)
 /// 3mf.cpp:200-204
 /// C++: `bool get_attribute_value_bool(...)` —
 /// `(text != nullptr) ? (bool)::atoi(text) : true`
-fn get_attribute_value_bool(attributes: &[(String, String)], attribute_key: &str) -> bool {
+pub fn get_attribute_value_bool(attributes: &[(String, String)], attribute_key: &str) -> bool {
     // 3mf.cpp:202-203
     match get_attribute_value_charptr(attributes, attribute_key) {
         Some(text) => atoi(text) != 0,
         None => true,
     }
+}
+
+/// `fast_float::from_chars(first, last, float&)` with the default `chars_format::general`, as
+/// 3mf.cpp:188 calls it: no leading whitespace, an optional '-' (no '+'), digits with an optional '.'
+/// (at least one digit), an optional exponent that is used only when it has digits, or
+/// "inf" / "infinity" / "nan" in any case; the longest such prefix rounded to the nearest float
+/// (Rust's f32 parser rounds the decimal directly to f32, as fast_float does). None where nothing
+/// parses (the value is left as it was).
+pub fn fast_float_from_chars_f32(text: &str) -> Option<f32> {
+    let b = text.as_bytes();
+    let n = b.len();
+    let mut i = 0usize;
+    if i < n && b[i] == b'-' {
+        i += 1;
+    }
+    let rest = text[i..].to_ascii_lowercase();
+    if rest.starts_with("infinity") {
+        return text[..i + 8].parse::<f32>().ok();
+    }
+    if rest.starts_with("inf") || rest.starts_with("nan") {
+        return text[..i + 3].parse::<f32>().ok();
+    }
+    let start_digits = i;
+    while i < n && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    let mut digits = i - start_digits;
+    if i < n && b[i] == b'.' {
+        i += 1;
+        let f0 = i;
+        while i < n && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        digits += i - f0;
+    }
+    if digits == 0 {
+        return None;
+    }
+    if i < n && (b[i] == b'e' || b[i] == b'E') {
+        let mut j = i + 1;
+        if j < n && (b[j] == b'+' || b[j] == b'-') {
+            j += 1;
+        }
+        let e0 = j;
+        while j < n && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j > e0 {
+            i = j;
+        }
+    }
+    text[..i].parse::<f32>().ok()
 }
 
 /// 3mf.cpp:206-233
@@ -4718,4 +4774,53 @@ pub fn store_3mf(
 
     // 3mf.cpp:3276
     res
+}
+
+/// boost::spirit::karma `real_policies<T>::fmtflags` (boost/spirit/home/karma/numeric/real_policies.hpp:
+/// `scientific = 0`, `fixed = 1`), the values the coordinate policies below return.
+pub mod fmtflags {
+    pub const SCIENTIFIC: i32 = 0;
+    pub const FIXED: i32 = 1;
+}
+
+/// 3mf.cpp:2667-2675 `template <typename Num> struct coordinate_policy_fixed : karma::real_policies<Num>`,
+/// for `float` (3mf.cpp:2682). The pin compiles it only with `EXPORT_3MF_USE_SPIRIT_KARMA_FP` (defined 0,
+/// 3mf.cpp:43), so its exporter writes coordinates through the other branch (3mf.cpp:2708-2740).
+#[allow(non_camel_case_types)]
+pub struct coordinate_policy_fixed;
+
+impl coordinate_policy_fixed {
+    /// 3mf.cpp:2670 `static int floatfield(Num n) { return fmtflags::fixed; }`
+    pub fn floatfield(_n: f32) -> i32 {
+        fmtflags::FIXED
+    }
+    /// 3mf.cpp:2672 `static unsigned precision(Num) { return std::numeric_limits<Num>::max_digits10 + 1; }`
+    /// (`max_digits10` of float is 9).
+    pub fn precision(_n: f32) -> u32 {
+        9 + 1
+    }
+    /// 3mf.cpp:2674 `static bool trailing_zeros(Num) { return false; }`
+    pub fn trailing_zeros(_n: f32) -> bool {
+        false
+    }
+}
+
+/// 3mf.cpp:2676-2680 `struct coordinate_policy_scientific : coordinate_policy_fixed<Num>`: the fixed
+/// policy with the scientific float field.
+#[allow(non_camel_case_types)]
+pub struct coordinate_policy_scientific;
+
+impl coordinate_policy_scientific {
+    /// 3mf.cpp:2679 `static int floatfield(Num n) { return fmtflags::scientific; }`
+    pub fn floatfield(_n: f32) -> i32 {
+        fmtflags::SCIENTIFIC
+    }
+    /// Inherited from coordinate_policy_fixed (3mf.cpp:2672).
+    pub fn precision(n: f32) -> u32 {
+        coordinate_policy_fixed::precision(n)
+    }
+    /// Inherited from coordinate_policy_fixed (3mf.cpp:2674).
+    pub fn trailing_zeros(n: f32) -> bool {
+        coordinate_policy_fixed::trailing_zeros(n)
+    }
 }

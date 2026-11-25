@@ -1638,6 +1638,12 @@ impl AppConfig {
         self.get_3dmouse_device_numeric_value(name, "swap_yz").map(|v| v != 0.0)
     }
 
+    // AppConfig.hpp:257-258  bool get_mouse_device_lock_horizon(const std::string& name, bool& lock) const
+    // (`T(double)` for a bool: true for any non-zero value)
+    pub fn get_mouse_device_lock_horizon(&self, name: &str) -> Option<bool> {
+        self.get_3dmouse_device_numeric_value(name, "lock_horizon").map(|v| v != 0.0)
+    }
+
     // AppConfig.hpp:263-275  template<typename T> bool get_3dmouse_device_numeric_value(...)
     fn get_3dmouse_device_numeric_value(&self, device_name: &str, parameter_name: &str) -> Option<f64> {
         // AppConfig.hpp:266  std::string key = std::string("mouse_device:") + device_name;
@@ -2101,4 +2107,73 @@ fn random_uuid_string() -> String {
 fn _faithful_keepalive() {
     let _ = (CopyFileResult::Success, copy_file as fn(&str, &str, &mut String, bool) -> CopyFileResult);
     let _: HashMap<String, String> = HashMap::new();
+}
+
+/// AppConfig.hpp:303-315 `dual_extruder_first_slice_video_app_config_key(printer_model)`: the "app" key
+/// of the first dual-extruder slicing guide video, one per printer model (spaces become '_'; every other
+/// byte is kept).
+pub fn dual_extruder_first_slice_video_app_config_key(printer_model: &str) -> String {
+    let mut slug: Vec<u8> = Vec::with_capacity(printer_model.len());
+    for &c in printer_model.as_bytes() {
+        if c == b' ' {
+            slug.push(b'_');
+        } else {
+            slug.push(c);
+        }
+    }
+    // The bytes of a &str with ASCII spaces replaced by ASCII '_' stay valid UTF-8.
+    String::from("play_slicing_video_model_") + &String::from_utf8(slug).unwrap_or_default()
+}
+
+/// AppConfig.cpp:561-579 `appconfig_md5_hash_line(data)` (compiled on Windows only at the pin): the
+/// MD5 of the bytes as 32 upper-case hex digits (`boost::algorithm::hex` over the 16-byte digest of
+/// boost::uuids::detail::md5) in the line `# MD5 checksum <hex>\n`.
+pub fn appconfig_md5_hash_line(data: &[u8]) -> String {
+    let md5_digest = crate::utils::md5_digest(data);
+    let mut md5_digest_str = String::with_capacity(32);
+    for b in md5_digest {
+        md5_digest_str.push_str(&format!("{:02X}", b));
+    }
+    // MD5 hash is 32 HEX digits long.
+    debug_assert_eq!(md5_digest_str.len(), 32);
+    // This line will be emited at the end of the file.
+    format!("# MD5 checksum {md5_digest_str}\n")
+}
+
+/// AppConfig.cpp:582-603 `verify_config_file_checksum(ifs)` over the whole file's bytes (the pin reads
+/// the stream from its start into a string): true when the text from the last '#' on equals the
+/// checksum line of everything before it.
+pub fn verify_config_file_checksum(whole_config: &[u8]) -> bool {
+    // The checksum should be on the last line in the config file.
+    if let Some(last_comment_pos) = whole_config.iter().rposition(|&c| c == b'#') {
+        if whole_config[last_comment_pos..] == *appconfig_md5_hash_line(&whole_config[..last_comment_pos]).as_bytes() {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod r953_checksum_tests {
+    use super::*;
+
+    /// RFC 1321 A.5 test suite digests, through the checksum line; and the round trip of
+    /// AppConfig.cpp:972 / 1178 (`c << appconfig_md5_hash_line(text)`) through verify_config_file_checksum.
+    #[test]
+    fn checksum_line_and_verify() {
+        assert_eq!(appconfig_md5_hash_line(b""), "# MD5 checksum D41D8CD98F00B204E9800998ECF8427E\n");
+        assert_eq!(appconfig_md5_hash_line(b"abc"), "# MD5 checksum 900150983CD24FB0D6963F7D28E17F72\n");
+        assert_eq!(
+            appconfig_md5_hash_line(b"12345678901234567890123456789012345678901234567890123456789012345678901234567890"),
+            "# MD5 checksum 57EDF4A22BE3C955AC49DA2E2107B67A\n"
+        );
+        let text = b"{\n    \"app\": {}\n}".to_vec();
+        let mut file = text.clone();
+        file.extend_from_slice(appconfig_md5_hash_line(&text).as_bytes());
+        assert!(verify_config_file_checksum(&file));
+        file[3] ^= 1;
+        assert!(!verify_config_file_checksum(&file));
+        assert!(!verify_config_file_checksum(b"no comment"));
+        assert_eq!(dual_extruder_first_slice_video_app_config_key("Bambu Lab H2D"), "play_slicing_video_model_Bambu_Lab_H2D");
+    }
 }

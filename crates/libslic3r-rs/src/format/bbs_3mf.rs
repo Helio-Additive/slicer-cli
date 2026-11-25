@@ -1105,18 +1105,22 @@ pub fn bbs_get_attribute_value_int(attributes: &[(String, String)], attribute_ke
             negative = bytes[i] == b'-';
             i += 1;
         }
+        // qi::int_ (extract_int) stops before the digit that would overflow int and keeps what it
+        // has; plain qi::parse needs no full match, so "2147483648" gives 214748364.
+        let limit: i64 = if negative { -(i32::MIN as i64) } else { i32::MAX as i64 };
         let mut parsed: i64 = 0;
         let mut any = false;
         while i < bytes.len() && bytes[i].is_ascii_digit() {
+            let next = parsed * 10 + (bytes[i] - b'0') as i64;
+            if next > limit {
+                break;
+            }
+            parsed = next;
             any = true;
-            parsed = parsed
-                .saturating_mul(10)
-                .saturating_add((bytes[i] - b'0') as i64);
             i += 1;
         }
         if any {
-            let parsed = if negative { -parsed } else { parsed };
-            value = parsed.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            value = (if negative { -parsed } else { parsed }) as i32;
         }
     }
     // bbs_3mf.cpp:486
