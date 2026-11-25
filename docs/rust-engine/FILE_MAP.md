@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 90 |
 | of the rest, 25 tokens or more | 278 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8924 |
+| Rust functions with no C++ function of that name in the pair | 8925 |
 
 By tier:
 
@@ -8810,14 +8810,14 @@ Rust only:
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 
-Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust functions 114. Matched 58: faithful 41, partial 8, divergent 9, stub 0.
+Tier 1. C++ functions 82 (plus 2 constructors, 1 destructors, 0 operators), Rust functions 115. Matched 58: faithful 41, partial 8, divergent 9, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - divergent: `PrintObject::all_regions` :132 and `PrintObject::all_regions` :5812 (25%, 0.69x)
 - partial: `PrintObject::merge_layer_node` :141 and `PrintObject::merge_layer_node` :5828 (52%, 1.18x)
 - divergent: `PrintObject::make_perimeters` :470 and `PrintObject::make_perimeters` :1983 (26%, 1.35x)
-- partial: `should_refine_zero_gap_contact` :679 and `should_refine_zero_gap_contact` :8292 (30%, 1.43x)
+- partial: `should_refine_zero_gap_contact` :679 and `should_refine_zero_gap_contact` :8342 (30%, 1.43x)
 - divergent: `PrintObject::prepare_infill` :902 and `PrintObject::prepare_infill` :2321 (19%, 1.14x)
 - partial: `PrintObject::infill` :1154 and `PrintObject::infill` :4836 (59%, 5.47x)
 - divergent: `PrintObject::ironing` :1249 and `PrintObject::ironing` :5667 (15%, 4.88x)
@@ -8826,8 +8826,8 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `PrintObject::simplify_extrusion_path` :1374 and `PrintObject::simplify_extrusion_path` :5414 (0%, 0.29x)
 - divergent: `PrintObject::clear_layers` :1479 and `PrintObject::clear_layers` :5965 (0%, 0.38x)
 - partial: `PrintObject::detect_surfaces_type` :1951 and `PrintObject::detect_surfaces_type` :4228 (42%, 2.15x)
-- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :7401 (18%, 0.92x)
-- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6897 (45%, 2.11x)
+- divergent: `PrintObject::process_external_surfaces` :2167 and `PrintObject::process_external_surfaces` :7390 (18%, 0.92x)
+- partial: `PrintObject::discover_horizontal_shells` :4089 and `PrintObject::discover_horizontal_shells` :6886 (45%, 2.11x)
 - partial: `PrintObject::discover_sub_top_surfaces` :5839 and `PrintObject::discover_sub_top_surfaces` :2532 (48%, 1.2x)
 - divergent: `PrintObject::_generate_support_material` :5920 and `PrintObject::generate_support_material` :5530 (13%, 2.7x)
 - partial: `PrintObject::get_layer_idx_get_printz` :6796 and `PrintObject::get_layer_idx_get_printz` :6064 (50%, 0.92x)
@@ -8896,27 +8896,28 @@ Rust only:
 - `PrintObject::num_printing_regions` :5794 — C++ has it in `Print`
 - `PrintObject::printing_region` :5804
 - `PrintObject::discover_vertical_shells` :6107
-- `polygons_diff` :7508
-- `polygons_intersection` :7523
-- `PrintObject::default` :7539
-- `cfg_int` :7571
-- `cfg_float` :7574
-- `cfg_floats_or_empty` :7577
-- `sort_remove_duplicates` :7584 — C++ has it in `libslic3r`
-- `is_approx` :7589 — C++ has it in `Point`, `libslic3r`
-- `print_invalidate_step` :7595
-- `PrintObject::new` :7611
-- `zero_gap_length_thresh` :8277
-- `expolygons_of_polygons` :8390
-- `periodic_modifier_active` :8661
-- `PrintObject::has_interlocking_beam` :9319
-- `determine_bridging_angle_pin` :9533
-- `vs_probe` :9651
-- `boi_perims_dump` :9685
-- `boi_stage_dump` :9774
-- `circle_compensation_live_gate` :9833
-- `circle_compensation_live_params` :9840
-- `PrintObject::apply_circle_compensation_live_all_layers` :9858
+- `combine_holes` :7497
+- `polygons_diff` :7558
+- `polygons_intersection` :7573
+- `PrintObject::default` :7589
+- `cfg_int` :7621
+- `cfg_float` :7624
+- `cfg_floats_or_empty` :7627
+- `sort_remove_duplicates` :7634 — C++ has it in `libslic3r`
+- `is_approx` :7639 — C++ has it in `Point`, `libslic3r`
+- `print_invalidate_step` :7645
+- `PrintObject::new` :7661
+- `zero_gap_length_thresh` :8327
+- `expolygons_of_polygons` :8440
+- `periodic_modifier_active` :8711
+- `PrintObject::has_interlocking_beam` :9369
+- `determine_bridging_angle_pin` :9583
+- `vs_probe` :9701
+- `boi_perims_dump` :9735
+- `boi_stage_dump` :9824
+- `circle_compensation_live_gate` :9883
+- `circle_compensation_live_params` :9890
+- `PrintObject::apply_circle_compensation_live_all_layers` :9908
 
 ### `PrintObjectSlice` (.cpp) and `print_object_slice.rs`
 

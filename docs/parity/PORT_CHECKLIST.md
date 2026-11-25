@@ -11395,36 +11395,36 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 
 **free functions**
 
-- [x] `zero_gap_threshold_rad` (line 658) → `print_object.rs:8283`
-- [x] `scaled_external_perimeter_width` (line 667) → `print_object.rs:8397`
-- [~] `should_refine_zero_gap_contact` (line 679) → `print_object.rs:8292` — partial
-- [x] `is_significant_contact_piece` (line 698) → `print_object.rs:8305`
-- [x] `filter_significant_contact_pieces` (line 709) → `print_object.rs:8319`
-- [x] `compute_zero_gap_contact_mask` (line 726) → `print_object.rs:8418`
-- [x] `refine_fill_surfaces_for_zero_gap_contact` (line 817) → `print_object.rs:8532`
-- [x] `type_bridges_over_suppressed_orphans` (line 866) → `print_object.rs:8586`
-- [x] `volume_slices_by_id` (line 1075) → `print_object.rs:8654`
-- [x] `conformal_modifier_islands` (line 1085) → `print_object.rs:8676`
-- [x] `layer_skips_periodic_modifier` (line 2245) → `print_object.rs:8773`
-- [x] `shell_band_size` (line 2263) → `print_object.rs:8338`
-- [x] `effective_top_shell_parameters` (line 2271) → `print_object.rs:8351`
-- [x] `effective_bottom_shell_parameters` (line 2286) → `print_object.rs:8367`
+- [x] `zero_gap_threshold_rad` (line 658) → `print_object.rs:8333`
+- [x] `scaled_external_perimeter_width` (line 667) → `print_object.rs:8447`
+- [~] `should_refine_zero_gap_contact` (line 679) → `print_object.rs:8342` — partial
+- [x] `is_significant_contact_piece` (line 698) → `print_object.rs:8355`
+- [x] `filter_significant_contact_pieces` (line 709) → `print_object.rs:8369`
+- [x] `compute_zero_gap_contact_mask` (line 726) → `print_object.rs:8468`
+- [x] `refine_fill_surfaces_for_zero_gap_contact` (line 817) → `print_object.rs:8582`
+- [x] `type_bridges_over_suppressed_orphans` (line 866) → `print_object.rs:8636`
+- [x] `volume_slices_by_id` (line 1075) → `print_object.rs:8704`
+- [x] `conformal_modifier_islands` (line 1085) → `print_object.rs:8726`
+- [x] `layer_skips_periodic_modifier` (line 2245) → `print_object.rs:8823`
+- [x] `shell_band_size` (line 2263) → `print_object.rs:8388`
+- [x] `effective_top_shell_parameters` (line 2271) → `print_object.rs:8401`
+- [x] `effective_bottom_shell_parameters` (line 2286) → `print_object.rs:8417`
 - [~] `clamp_exturder_to_default_protect0` (line 3617) → `print.rs, print_apply.rs` — not in the paired file
 - [~] `apply_to_print_region_config` (line 3644) → `print_apply.rs` — not in the paired file
 - [~] `volume_ignores_modifier_infill` (line 3724) → `print_apply.rs` — not in the paired file
 - [~] `restore_parent_internal_infill` (line 3732) → `print_apply.rs` — not in the paired file
 - [~] `region_config_from_model_volume` (line 3742) → `print_apply.rs` — not in the paired file
-- [x] `band_reference_nozzle` (line 4283) → `print_object.rs:8786`
-- [x] `collect_span_bridges` (line 5008) → `print_object.rs:8818`
+- [x] `band_reference_nozzle` (line 4283) → `print_object.rs:8836`
+- [x] `collect_span_bridges` (line 5008) → `print_object.rs:8868`
 - [ ] `project_triangles_to_slabs` (line 6540) → `print_object.rs`
 
 **class `PrintObject`**
 
-- [x] `set_instances` (line 110) → `print_object.rs:7654`
+- [x] `set_instances` (line 110) → `print_object.rs:7704`
 - [~] `all_regions` (line 132) → `print_object.rs:5812` — divergent
 - [~] `merge_layer_node` (line 141) → `print_object.rs:5828` — partial
-- [x] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs:8883`
-- [x] `calc_estimated_filament_print_time` (line 328) → `print_object.rs:9141`
+- [x] `detect_extruder_geometric_unprintables` (line 202) → `print_object.rs:8933`
+- [x] `calc_estimated_filament_print_time` (line 328) → `print_object.rs:9191`
 - [~] `make_perimeters` (line 470) → `print_object.rs:1983` — divergent
 - [~] `prepare_infill` (line 902) → `print_object.rs:2321` — divergent
 - [~] `infill` (line 1154) → `print_object.rs:4836` — partial
@@ -11441,30 +11441,30 @@ Rust file: `print_object.rs`. Status: **partial**. Not listed: 2 constructors, 1
 - [~] `get_support_layer_at_printz` (line 1501) → `print.rs` — not in the paired file
 - [x] `clear_support_layers` (line 1506) → `print_object.rs:6008`
 - [ ] `alloc_tree_support_preview_cache` (line 1520) → `print_object.rs`
-- [x] `add_tree_support_layer` (line 1530) → `print_object.rs:8856`
-- [x] `add_support_layer` (line 1536) → `print_object.rs:8864`
-- [x] `insert_support_layer` (line 1542) → `print_object.rs:8873`
-- [x] `invalidate_state_by_config_options` (line 1549) → `print_object.rs:7683`
-- [x] `invalidate_step` (line 1879) → `print_object.rs:8000`
-- [x] `invalidate_all_steps` (line 1916) → `print_object.rs:8042`
-- [x] `reset_slice_surfaces` (line 1925) → `print_object.rs:9294`
+- [x] `add_tree_support_layer` (line 1530) → `print_object.rs:8906`
+- [x] `add_support_layer` (line 1536) → `print_object.rs:8914`
+- [x] `insert_support_layer` (line 1542) → `print_object.rs:8923`
+- [x] `invalidate_state_by_config_options` (line 1549) → `print_object.rs:7733`
+- [x] `invalidate_step` (line 1879) → `print_object.rs:8050`
+- [x] `invalidate_all_steps` (line 1916) → `print_object.rs:8092`
+- [x] `reset_slice_surfaces` (line 1925) → `print_object.rs:9344`
 - [~] `detect_surfaces_type` (line 1951) → `print_object.rs:4228` — partial
-- [~] `process_external_surfaces` (line 2167) → `print_object.rs:7401` — divergent
-- [x] `discover_shell_for_perimeters` (line 2698) → `print_object.rs:9331`
+- [~] `process_external_surfaces` (line 2167) → `print_object.rs:7390` — divergent
+- [x] `discover_shell_for_perimeters` (line 2698) → `print_object.rs:9381`
 - [~] `object_config_from_model_object` (line 3627) → `print_apply.rs` — not in the paired file
 - [ ] `generate_support_preview` (line 3826) → `print_object.rs`
-- [x] `update_slicing_parameters` (line 3840) → `print_object.rs:8053`
-- [x] `compute_slicing_parameters` (line 3847) → `print_object.rs:8063`
-- [x] `slicing_parameters` (line 3862) → `print_object.rs:8208`
-- [x] `object_extruders` (line 3903) → `print_object.rs:8091`
-- [x] `update_layer_height_profile` (line 3925) → `print_object.rs:8112`
-- [x] `get_certain_layers` (line 3970) → `print_object.rs:8169`
-- [x] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs:8195`
-- [x] `clip_fill_surfaces` (line 4003) → `print_object.rs:9027`
-- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6897` — partial
+- [x] `update_slicing_parameters` (line 3840) → `print_object.rs:8103`
+- [x] `compute_slicing_parameters` (line 3847) → `print_object.rs:8113`
+- [x] `slicing_parameters` (line 3862) → `print_object.rs:8258`
+- [x] `object_extruders` (line 3903) → `print_object.rs:8141`
+- [x] `update_layer_height_profile` (line 3925) → `print_object.rs:8162`
+- [x] `get_certain_layers` (line 3970) → `print_object.rs:8219`
+- [x] `get_instances_shift_without_plate_offset` (line 3985) → `print_object.rs:8245`
+- [x] `clip_fill_surfaces` (line 4003) → `print_object.rs:9077`
+- [~] `discover_horizontal_shells` (line 4089) → `print_object.rs:6886` — partial
 - [ ] `compute_adaptive_merge_groups` (line 4312) → `print_object.rs`
 - [ ] `combine_adaptive_infill` (line 5035) → `print_object.rs`
-- [x] `combine_infill` (line 5724) → `print_object.rs:9390`
+- [x] `combine_infill` (line 5724) → `print_object.rs:9440`
 - [~] `discover_sub_top_surfaces` (line 5839) → `print_object.rs:2532` — partial
 - [~] `_generate_support_material` (line 5920) → `print_object.rs:5530` — divergent
 - [ ] `collected_support_areas` (line 5960) → `print_object.rs`

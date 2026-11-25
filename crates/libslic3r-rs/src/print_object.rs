@@ -6524,17 +6524,6 @@ lines={} grown_polys={} grown_verts={}",
                         }
                     }};
                 }
-                macro_rules! combine_holes {
-                    ($h2:expr) => {{
-                        let h2 = $h2;
-                        if holes.is_empty() || h2.is_empty() {
-                            holes = vec![];
-                        } else {
-                            holes = intersection(&holes, &h2);
-                        }
-                    }};
-                }
-
                 // TOP projection (PrintObject.cpp:1924-1954)
                 if n_top > 0 {
                     let print_z = print_zs[idx];
@@ -6546,7 +6535,7 @@ lines={} grown_polys={} grown_verts={}",
                     {
                         any = true;
                         if !is_partial {
-                            combine_holes!(cache[i].holes.clone());
+                            combine_holes(&mut holes, &cache[i].holes);
                         }
                         combine_shells!(cache[i].top.clone());
                         i += 1;
@@ -6569,7 +6558,7 @@ lines={} grown_polys={} grown_verts={}",
                     {
                         any = true;
                         if !is_partial {
-                            combine_holes!(cache[i as usize].holes.clone());
+                            combine_holes(&mut holes, &cache[i as usize].holes);
                         }
                         combine_shells!(cache[i as usize].bottom.clone());
                         i -= 1;
@@ -7501,6 +7490,67 @@ lines={} grown_polys={} grown_verts={}",
             }
         }
         Ok(())
+    }
+}
+
+/// PrintObject.cpp:2476-2481, inside discover_vertical_shells.
+fn combine_holes(holes: &mut crate::geometry::ExPolygons, other: &[crate::geometry::ExPolygon]) {
+    use crate::geometry::{to_polygons, ExPolygon};
+
+    if holes.is_empty() || other.is_empty() {
+        holes.clear();
+        return;
+    }
+    let faithful = crate::faithful_gate("TOPFILL_FAITHFUL");
+    if faithful && crate::faithful_gate("VSHELL_HOLE_PATHS") {
+        // The Polygons overload returns raw paths. The next intersection and
+        // diff(polygonsInternal, holes) at PrintObject.cpp:2570 use that order.
+        *holes = crate::clipper_utils::intersection_polygons_raw_clib(
+            &to_polygons(holes),
+            &to_polygons(other),
+        )
+        .into_iter()
+        .map(ExPolygon::new)
+        .collect();
+    } else if faithful {
+        *holes = crate::clipper_utils::intersection_clib(holes, other);
+    } else {
+        *holes = crate::clipper_utils::intersection(holes, other);
+    }
+}
+
+#[cfg(test)]
+mod vertical_shell_tests {
+    use super::combine_holes;
+    use crate::geometry::{to_polygons, ExPolygon, Point, Polygon};
+
+    fn read_paths(line: &str, kind: &str) -> Vec<Polygon> {
+        let (label, fields) = line.split_once(' ').unwrap();
+        assert_eq!(label, kind);
+        let mut values = fields.split_whitespace().map(|s| s.parse::<i64>().unwrap());
+        let paths = (0..values.next().unwrap()).map(|_| {
+            let points = (0..values.next().unwrap())
+                .map(|_| Point::new(values.next().unwrap(), values.next().unwrap()))
+                .collect();
+            Polygon::from_points(points)
+        }).collect();
+        assert_eq!(values.next(), None);
+        paths
+    }
+
+    #[test]
+    fn combine_holes_preserves_native_path_order() {
+        let mut lines = include_str!("../tests/data/clipper_utils/shell_holes.txt").lines();
+        let [outer, inner, island]: [Polygon; 3] =
+            read_paths(lines.next().unwrap(), "initial").try_into().unwrap();
+        let mut holes = vec![ExPolygon::with_holes(outer, vec![inner]), ExPolygon::new(island)];
+        for _ in 0..4 {
+            let layer = read_paths(lines.next().unwrap(), "layer");
+            let layer: Vec<_> = layer.into_iter().map(ExPolygon::new).collect();
+            combine_holes(&mut holes, &layer);
+            assert_eq!(to_polygons(&holes), read_paths(lines.next().unwrap(), "combined"));
+        }
+        assert_eq!(lines.next(), None);
     }
 }
 

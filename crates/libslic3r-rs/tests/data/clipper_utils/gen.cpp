@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 // Overloads ClipperUtils.cpp defines and ClipperUtils.hpp does not declare.
@@ -216,6 +217,30 @@ static void put_shapes(const Shapes &s)
 
 int main(int argc, char **argv)
 {
+    // ./gen --shell-holes > shell_holes.txt
+    // PrintObject.cpp:2475-2481 intersects the accumulated holes with each
+    // adjacent layer's paths. Keep the native order between intersections.
+    if (argc == 2 && std::strcmp(argv[1], "--shell-holes") == 0) {
+        g_out = stdout;
+        auto rect = [](int x0, int y0, int x1, int y1) {
+            return Polygon{Point(x0, y0), Point(x1, y0), Point(x1, y1), Point(x0, y1)};
+        };
+        Polygon hole = rect(20, 20, 60, 60);
+        hole.reverse();
+        Polygons holes{rect(0, 0, 80, 80), hole, rect(100, 0, 140, 68)};
+        R("initial", holes);
+        for (const Polygons &layer : {Polygons{rect(-10, -10, 150, 90)},
+                                      Polygons{rect(5, 5, 135, 70)}, Polygons{},
+                                      Polygons{rect(0, 0, 80, 80)}}) {
+            R("layer", layer);
+            if (holes.empty() || layer.empty())
+                holes.clear();
+            else
+                holes = intersection(holes, layer);
+            R("combined", holes);
+        }
+        return 0;
+    }
     g_out = argc > 1 ? std::fopen(argv[1], "w") : stdout;
     if (g_out == nullptr)
         return 1;

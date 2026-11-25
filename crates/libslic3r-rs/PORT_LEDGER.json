@@ -1753,6 +1753,7 @@
     "area": "root",
     "rust": "crates/libslic3r-rs/src/print_object.rs",
     "rust_exists": true,
+    "notes": "R961 verifies the hole-intersection order in discover_vertical_shells (PrintObject.cpp 2476-2481) with nested and disjoint rings. The intersection, following difference and regularized shell at H2D layer 671 match the pinned engine. The rest of the function remains partial.",
     "loc": 4128,
     "status": "partial",
     "priority": 2,
