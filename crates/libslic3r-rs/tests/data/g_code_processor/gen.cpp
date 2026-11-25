@@ -1160,12 +1160,47 @@ static void pause_times()
     }
 }
 
+// GCodeProcessor.cpp:2004,2074-2077,5449-5485,5534-5542,6192-6212.
+// Read the actual stored temperatures on subsequent travel moves.
+static void temperature_targets()
+{
+    for (const char *physical : {"default", "empty", "0", "1,0", "3,3"}) {
+        for (const char *assignment : {"default", "empty", "1,2,1", "2,1,2", "2"}) {
+            PrintConfig cfg;
+            cfg.filament_diameter.values.assign(3, 1.75);
+            if (std::string(physical) != "default")
+                cfg.set_deserialize_strict("physical_extruder_map", std::string(physical) == "empty" ? "" : physical);
+            if (std::string(assignment) != "default")
+                cfg.set_deserialize_strict("filament_map", std::string(assignment) == "empty" ? "" : assignment);
+            for (const char *command : {
+                "M104 S103.125", "M104 S111 I0", "M104 S180.25 I1", "M104 S197 I1.5 T0",
+                "M104 S120 I-1 T0", "M104 S121 I3", "M104 S132 T0", "M104 S141 T1",
+                "M104 S150 T2.5", "M104 S187 T9", "M104 I2", "M109 R199",
+                "M109 S155 R200 T1", "M109 S160 I0", ";VM104 S173 T0", ";VM109 S181 I2"
+            }) {
+                GCodeProcessor p;
+                p.reset(); p.apply_config(cfg); p.initialize("temp.gcode");
+                p.process_buffer("T1\n");
+                p.process_buffer(std::string(command) + "\n");
+                std::printf("%s %s %s", physical, assignment, hex(command).c_str());
+                for (float temp : p.m_extruder_temps) std::printf(" %s", f32(temp).c_str());
+                for (int i = 0; i != 3; ++i) {
+                    p.process_buffer("T" + std::to_string(i) + "\nG1 X" + std::to_string((1+i)*10) + " F900\n");
+                    std::printf(" %s", f32(p.result().moves.back().temperature).c_str());
+                }
+                std::putchar('\n');
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
     }
+    if (std::string(argv[1]) == "--temperature-targets") { temperature_targets(); return 0; }
     if (std::string(argv[1]) == "--pause-times") {
         pause_times();
         return 0;

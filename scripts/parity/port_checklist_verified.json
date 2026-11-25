@@ -5553,5 +5553,16 @@
   "functions": [
    "ModelObject::get_config_value"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 979,
+  "evidence": "temperature_targets_match_native compares three filament temperatures immediately after each command and on subsequent moves over 400 native cases. H2D line 838 also reproduces 220 C after the command targeting physical extruder 1.",
+  "functions": [
+   "GCodeProcessor::process_M104",
+   "GCodeProcessor::process_VM104",
+   "GCodeProcessor::process_M109",
+   "GCodeProcessor::process_VM109"
+  ]
  }
 ]

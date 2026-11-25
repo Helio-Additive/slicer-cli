@@ -203,8 +203,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R976 | Process color-change tags for active and inactive filaments (GCodeProcessor.cpp 3525–3595). Thirteen native cases check preview colors, stop times and volume per color change. A Benchy with a color change in its end G-code gains 174 in-order body lines and matches the entire C++ file. The four standard fixtures reproduce R975 with either gate setting. | `PROCESSOR_COLOR_CHANGE` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R977 | Record hardware pauses at `M400 U1` and resolve their motion time, layer and progress when finalizing the processor result (GCodeProcessor.cpp 513–542, 2858–2866, 5794–5811). All 56 native snapshots and the complete hardware-pause Benchy replay agree. The four fixture files reproduce R976 with either gate setting. | `PROCESSOR_M400_PAUSE_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R978 | Derive the scarf-seam flag in the full and typed configs from the model and its normalized settings (PrintApply.cpp 1323–1435). The 20 native model cases and 14 supplemental slice flags agree. All four standard jobs reproduce R977 with either gate setting. | `PRINT_APPLY_SCARF_SEAM` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R979 | Apply the S temperature on M104, M109 and their virtual commands to the filament indicated by I, to every filament on the physical extruder indicated by T, or to the active filament (GCodeProcessor.cpp 5449–5485, 5534–5542). All 400 native command/profile cases agree. | `PROCESSOR_TEMPERATURE_TARGETS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R979, H2D temperature preview. The 1,400-line startup replay has 128
+  preview moves. The first differing temperature was on line 838 at
+  `T0 H-1`: native stored 220 °C and Rust stored 140 °C. Line 794 had
+  requested 220 °C on physical extruder 1. Rust discarded the physical
+  extruder map on config application. In a three-filament replay the
+  previous command handler also missed the second filament on the same
+  extruder and ignored the explicit I selector. Both input maps now
+  survive profile application, including empty maps on reconfiguration.
+  All 400 native cases agree immediately after the command and on three
+  subsequent travel moves. Both gate settings reproduce all four R978 files.
+  H2D retains 4,614,342 and 4,614,863 matches in order. On the same first
+  15,000 H2D lines the enabled replay agrees on 11,001 moves for the
+  compared IDs, roles, positions, temperatures, flow, fan and path fields.
 
 - R978, scarf-seam config. Rust previously exported zero for a circle-enabled
   Benchy even though both engines read the circle settings as enabled. In

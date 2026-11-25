@@ -3513,7 +3513,12 @@ impl GCodeProcessor {
             self.m_time_processor.extruder_change_times = config.machine_switch_extruder_time as f32;
             self.m_time_processor.hotend_change_times = config.machine_hotend_change_time as f32;
             // :2074-2079
-            if !config.filament_map.is_empty() {
+            if crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS") {
+                // GCodeProcessor.cpp:2004,2074-2077. Both maps replace the
+                // previous profile, including an explicitly empty map.
+                self.m_physical_extruder_map = config.physical_extruder_map.as_deref().unwrap_or(&[0]).to_vec();
+                self.m_filament_maps = config.filament_map.iter().map(|v| v.saturating_sub(1)).collect();
+            } else if !config.filament_map.is_empty() {
                 self.m_filament_maps = config.filament_map.iter().map(|v| v - 1).collect();
             }
             self.ensure_nozzle_group_result(self.m_result.filaments_count as i32);
@@ -4937,9 +4942,32 @@ impl GCodeProcessor {
         self.m_e_local_positioning_type = EPositioningType::Relative;
     }
 
-    /// GCodeProcessor.cpp:5267-5286  process_M104 — set extruder temperature.
+    /// GCodeProcessor.cpp:5449-5480. I selects one filament. T selects all
+    /// filaments assigned to the first matching physical extruder.
     fn process_m104(&mut self, line: &crate::g_code_reader::GCodeLine) {
         let filament_id = self.get_filament_id(true);
+        if crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS") {
+            let Some(temp) = line.has_value(b'S') else { return };
+            if let Some(target) = line.has_value(b'I') {
+                let id = target.round() as i32;
+                if let Ok(index) = usize::try_from(id) {
+                    if let Some(slot) = self.m_extruder_temps.get_mut(index) {
+                        *slot = temp;
+                    }
+                }
+            } else if let Some(target) = line.has_value(b'T') {
+                if let Some(index) = self.m_physical_extruder_map.iter().position(|&id| id == target.round() as i32) {
+                    for (slot, &assigned) in self.m_extruder_temps.iter_mut().zip(&self.m_filament_maps) {
+                        if assigned == index as i32 {
+                            *slot = temp;
+                        }
+                    }
+                }
+            } else if let Some(slot) = self.m_extruder_temps.get_mut(filament_id as usize) {
+                *slot = temp;
+            }
+            return;
+        }
         if let Some(phy_extruder_id_temp) = line.has_value(b'T') {
             let phy_extruder_id_temp_int = phy_extruder_id_temp.round() as i32;
             if let Some(s_temp) = line.has_value(b'S') {
@@ -5022,8 +5050,11 @@ impl GCodeProcessor {
         }
     }
 
-    /// GCodeProcessor.cpp:5326-5342  process_M109 — set extruder temp + wait.
+    /// GCodeProcessor.cpp:5534-5537. The preview handles M109 through M104.
     fn process_m109(&mut self, line: &crate::g_code_reader::GCodeLine) {
+        if crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS") {
+            return self.process_m104(line);
+        }
         let filament_id = self.get_filament_id(true);
         if let Some(new_temp) = line.has_value(b'R') {
             if let Some(val) = line.has_value(b'T') {
@@ -9967,6 +9998,41 @@ pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without
 mod tests {
     use super::*;
 
+    /// GCodeProcessor.cpp:5449-5485,5534-5542. Compare the internal state
+    /// immediately after each command and the temperatures on three travels.
+    #[test]
+    fn temperature_targets_match_native() {
+        use crate::print_config::PrintConfig;
+        for row in include_str!("../../tests/data/g_code_processor/temperature_targets.txt").lines() {
+            let fields: Vec<_> = row.split_whitespace().collect();
+            let cmd: Vec<u8> = fields[2].as_bytes().chunks_exact(2).map(|pair|
+                u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect();
+            let command = String::from_utf8(cmd).unwrap();
+            let expected = fields[3..].iter().map(|bits| u32::from_str_radix(bits, 16).unwrap()).collect::<Vec<_>>();
+            for setter in [PrintConfig::set_deserialize, PrintConfig::apply_key_value] {
+                let mut config = PrintConfig::default();
+                config.filament_diameters = vec![1.75; 3];
+                for (key, value) in [("physical_extruder_map", fields[0]), ("filament_map", fields[1])] {
+                    if value != "default" {
+                        setter(&mut config, key, if value == "empty" { "" } else { value });
+                    }
+                }
+                let mut p = GCodeProcessor::new();
+                p.reset();
+                p.apply_config(&config);
+                p.initialize("temp.gcode");
+                p.process_buffer("T1\n");
+                p.process_buffer(&format!("{command}\n"));
+                let temps: Vec<_> = p.m_extruder_temps.iter().map(|v| v.to_bits()).collect();
+                assert_eq!(temps, expected[..3], "{command} profile {row}");
+                for tool in 0..3 {
+                    p.process_buffer(&format!("T{tool}\nG1 X{} F900\n", (1 + tool) * 10));
+                    assert_eq!(p.result().moves.last().unwrap().temperature.to_bits(), expected[3+tool], "{command}, filament {tool}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn serialized_filament_offsets_preserve_scalar_configs() {
         use crate::print_config::PrintConfig;
@@ -9974,7 +10040,9 @@ mod tests {
         config.filament_diameters = vec![1.75, 1.75];
         config.extruder_offset_x = -1.25;
         config.extruder_offset_y = 3.5;
-        let legacy = serde_json::to_value(&config).unwrap();
+        let mut legacy = serde_json::to_value(&config).unwrap();
+        // This older serialized profile stored the pre-R979 default as [].
+        legacy["filament_map"] = serde_json::json!([]);
         assert!(legacy.get("extruder_offsets").is_none() && legacy.get("master_extruder_id").is_none());
         let mut config: PrintConfig = serde_json::from_value(legacy).unwrap();
         let mut processor = GCodeProcessor::new();

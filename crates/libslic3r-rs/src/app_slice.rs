@@ -2266,6 +2266,7 @@ fn load_bambustudio_settings(
                 serde_json::Value::Array(arr) if crate::print_config::profile_machine_limit_rows_enabled(key)
                     || crate::print_config::processor_filament_material_rows_enabled(key)
                     || crate::print_config::processor_bed_area_enabled(key)
+                    || (matches!(key.as_str(), "physical_extruder_map" | "filament_map") && crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS"))
                     || (matches!(key.as_str(), "extruder_offset" | "filament_map") && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")) => {
                     let Some(items) = arr.iter().map(|v| v.as_str()).collect::<Option<Vec<_>>>() else { continue };
                     items.join(",")
@@ -2411,7 +2412,7 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
             _ => get_f64_array(key),
         }
     };
-    if !crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") {
+    if !crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") && !crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS") {
         config.filament_map = get_f64_list("filament_map").into_iter().map(|v| v as i32).collect();
     }
     config.nozzle_volumes = get_f64_list("nozzle_volume");
@@ -2852,6 +2853,40 @@ mod circle_compensation_settings_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn processor_temperature_maps_follow_profile_reapplication() {
+        use crate::gcode::g_code_processor::GCodeProcessor;
+        let mut processor = GCodeProcessor::new();
+        processor.initialize("targets.gcode");
+        // PrintConfig.cpp:3008-3012,3025-3029; GCodeProcessor.cpp:2004,
+        // 2074-2077,5449-5480. Each typed profile replaces both maps.
+        let mut old = serde_json::to_value(PrintConfig::default()).unwrap();
+        assert!(old.get("physical_extruder_map").is_none());
+        old["filament_map"] = serde_json::json!([]);
+        let legacy: PrintConfig = serde_json::from_value(old).unwrap();
+        let profiles = [
+            (serde_json::json!({"physical_extruder_map": ["1","0"], "filament_map": ["1","2","1"]}), 1, true),
+            (serde_json::json!({"physical_extruder_map": [], "filament_map": ["1"]}), 0, false),
+            (serde_json::json!({"filament_map": []}), 0, false),
+            (serde_json::json!({}), 0, true),
+        ];
+        for (i, (profile, physical, assigned)) in profiles.iter().enumerate() {
+            let (config, _, _) = load_bambustudio_settings(profile).unwrap();
+            let mut restored = PrintConfig::default();
+            restored.apply_key_value_map(&config.to_key_value_map());
+            for cfg in [&config, &restored] {
+                processor.apply_config(cfg);
+                processor.process_buffer("M104 S33 I0\n");
+                processor.process_buffer(&format!("M104 S218 T{physical}\nG1 X{} F600\n", i*2+1));
+                assert_eq!(processor.result().moves.last().unwrap().temperature, if *assigned { 218.0 } else { 33.0 });
+                processor.process_buffer("G1 X0\n");
+            }
+        }
+        processor.apply_config(&legacy);
+        processor.process_buffer("M104 S33 I0\nM104 S218 T0\nG1 X10 F600\n");
+        assert_eq!(processor.result().moves.last().unwrap().temperature, 33.0);
     }
 
     #[test]

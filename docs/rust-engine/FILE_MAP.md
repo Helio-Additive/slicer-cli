@@ -4498,22 +4498,22 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1696 (43%, 0.72x)
 - partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1711 (43%, 0.71x)
 - divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3269 (7%, 0.05x)
-- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3383 (51%, 1.18x)
-- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9275 (50%, 1.17x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7116 (41%, 0.77x)
-- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3837 (74%, 1.44x)
-- divergent: `parse_number` :3137 and `parse_number` :7583 (9%, 0.16x)
-- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9391 (35%, 0.9x)
-- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9450 (44%, 0.93x)
-- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9587 (41%, 0.93x)
-- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9628 (44%, 0.87x)
-- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9682 (40%, 0.83x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5850 (75%, 1.0x)
-- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6365 (86%, 1.24x)
-- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4236 (66%, 1.01x)
-- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5491 (46%, 0.72x)
-- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9816 (53%, 0.74x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5793 (23%, 0.27x)
+- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3383 (53%, 1.23x)
+- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9306 (50%, 1.17x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7147 (41%, 0.77x)
+- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3842 (74%, 1.44x)
+- divergent: `parse_number` :3137 and `parse_number` :7614 (9%, 0.16x)
+- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9422 (35%, 0.9x)
+- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9481 (44%, 0.93x)
+- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9618 (41%, 0.93x)
+- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9659 (44%, 0.87x)
+- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9713 (40%, 0.83x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5881 (75%, 1.0x)
+- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6396 (86%, 1.24x)
+- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4241 (66%, 1.01x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5522 (46%, 0.72x)
+- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9847 (53%, 0.74x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5824 (23%, 0.27x)
 
 Missing in the Rust file:
 
@@ -4579,43 +4579,43 @@ Rust only:
 - `TimeProcessor::default` :2902
 - `cmd_from_id` :3029
 - `GCodeProcessor::new` :3183
-- `GCodeProcessor::get_axis_max_acceleration_extruding` :3578
-- `GCodeProcessor::get_machine_limit_retract_acceleration` :3583
-- `GCodeProcessor::get_machine_limit_travel_acceleration` :3588
-- `GCodeProcessor::result` :3606
-- `GCodeProcessor::result_mut` :3610
-- `GCodeProcessor::process_gcode` :3831
-- `GCodeProcessor::dispatch` :3885
-- `GCodeProcessor::time_processor` :4724
-- `GCodeProcessor::process_t_command` :5532
-- `GCodeProcessor::process_filaments_tool_change` :5762
-- `GCodeProcessor::run_calculate_time` :5805
-- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6926
-- `GCodeProcessor::process_used_filaments_caches` :7216
-- `GCodeProcessor::update_mode` :7263
-- `GCodeProcessor::print_time` :7320
-- `GCodeProcessor::default` :7326
-- `emove_type_from_index` :7335
-- `extrusion_role_from_index` :7352
-- `normalize3` :7383
-- `normalized3` :7393
-- `klipper_regex_value` :7404
-- `parse_klipper_kv` :7438
-- `f32::parse_number_impl` :7549
-- `i32::parse_number_impl` :7558
-- `ExtruderUsageBlcok::default` :7613
-- `FilamentUsageBlock::new` :7704
-- `TimeProcessContext::from_config` :7760 — C++ has it in `Model`
-- `PreCoolingInjector::new` :7860
-- `PreCoolingInjector::sort_free_blocks` :7994
-- `istream_int` :8586
-- `istream_nozzle_after` :8610
-- `nozzle_change_fields` :8620
-- `toolchange_wipe_fields` :8663
-- `TimeProcessor::post_process_with_context` :8691
-- `DataChecker::new` :9041
-- `helio_regex_search` :9166
-- `GCodeProcessor::time_process_inputs` :9293
+- `GCodeProcessor::get_axis_max_acceleration_extruding` :3583
+- `GCodeProcessor::get_machine_limit_retract_acceleration` :3588
+- `GCodeProcessor::get_machine_limit_travel_acceleration` :3593
+- `GCodeProcessor::result` :3611
+- `GCodeProcessor::result_mut` :3615
+- `GCodeProcessor::process_gcode` :3836
+- `GCodeProcessor::dispatch` :3890
+- `GCodeProcessor::time_processor` :4729
+- `GCodeProcessor::process_t_command` :5563
+- `GCodeProcessor::process_filaments_tool_change` :5793
+- `GCodeProcessor::run_calculate_time` :5836
+- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6957
+- `GCodeProcessor::process_used_filaments_caches` :7247
+- `GCodeProcessor::update_mode` :7294
+- `GCodeProcessor::print_time` :7351
+- `GCodeProcessor::default` :7357
+- `emove_type_from_index` :7366
+- `extrusion_role_from_index` :7383
+- `normalize3` :7414
+- `normalized3` :7424
+- `klipper_regex_value` :7435
+- `parse_klipper_kv` :7469
+- `f32::parse_number_impl` :7580
+- `i32::parse_number_impl` :7589
+- `ExtruderUsageBlcok::default` :7644
+- `FilamentUsageBlock::new` :7735
+- `TimeProcessContext::from_config` :7791 — C++ has it in `Model`
+- `PreCoolingInjector::new` :7891
+- `PreCoolingInjector::sort_free_blocks` :8025
+- `istream_int` :8617
+- `istream_nozzle_after` :8641
+- `nozzle_change_fields` :8651
+- `toolchange_wipe_fields` :8694
+- `TimeProcessor::post_process_with_context` :8722
+- `DataChecker::new` :9072
+- `helio_regex_search` :9197
+- `GCodeProcessor::time_process_inputs` :9324
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 
@@ -8612,19 +8612,19 @@ Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Ru
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `multi_nozzle_diameter_mode_enabled` :139 and `multi_nozzle_diameter_mode_enabled` :16070 (50%, 1.21x)
-- divergent: `StaticPrintConfig::StaticCache::optptr` :863 and `DynamicPrintConfig::optptr` :17497 (0%, 0.23x)
-- partial: `find_printer_variant_index` :1010 and `find_printer_variant_index` :16639 (50%, 1.0x)
-- partial: `get_nozzle_volume_type_string` :1023 and `get_nozzle_volume_type_string` :16656 (50%, 0.91x)
-- partial: `is_single_ext_multi_nozzle` :1199 and `is_single_ext_multi_nozzle` :16908 (33%, 0.98x)
-- partial: `PrintConfigDef::init_fff_params` :1704 and `PrintConfigDef::init_fff_params` :9067 (92%, 1.22x)
-- partial: `PrintConfigDef::init_extruder_option_keys` :7593 and `PrintConfigDef::init_extruder_option_keys` :15666 (50%, 1.14x)
-- partial: `PrintConfigDef::init_filament_option_keys` :7624 and `PrintConfigDef::init_filament_option_keys` :15706 (50%, 1.15x)
-- partial: `DynamicPrintConfig::get_filament_vendor` :9713 and `DynamicPrintConfig::get_filament_vendor` :17893 (40%, 1.27x)
-- partial: `DynamicPrintConfig::get_filament_type` :9726 and `DynamicPrintConfig::get_filament_type` :17905 (40%, 1.27x)
-- partial: `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :9996 and `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :20002 (69%, 0.74x)
-- partial: `validate` :10643 and `validate` :20753 (53%, 1.04x)
-- partial: `get_bed_shape` :11508 and `get_bed_shape` :20413 (30%, 0.35x)
+- partial: `multi_nozzle_diameter_mode_enabled` :139 and `multi_nozzle_diameter_mode_enabled` :16090 (50%, 1.21x)
+- divergent: `StaticPrintConfig::StaticCache::optptr` :863 and `DynamicPrintConfig::optptr` :17517 (0%, 0.23x)
+- partial: `find_printer_variant_index` :1010 and `find_printer_variant_index` :16659 (50%, 1.0x)
+- partial: `get_nozzle_volume_type_string` :1023 and `get_nozzle_volume_type_string` :16676 (50%, 0.91x)
+- partial: `is_single_ext_multi_nozzle` :1199 and `is_single_ext_multi_nozzle` :16928 (33%, 0.98x)
+- partial: `PrintConfigDef::init_fff_params` :1704 and `PrintConfigDef::init_fff_params` :9087 (92%, 1.22x)
+- partial: `PrintConfigDef::init_extruder_option_keys` :7593 and `PrintConfigDef::init_extruder_option_keys` :15686 (50%, 1.14x)
+- partial: `PrintConfigDef::init_filament_option_keys` :7624 and `PrintConfigDef::init_filament_option_keys` :15726 (50%, 1.15x)
+- partial: `DynamicPrintConfig::get_filament_vendor` :9713 and `DynamicPrintConfig::get_filament_vendor` :17913 (40%, 1.27x)
+- partial: `DynamicPrintConfig::get_filament_type` :9726 and `DynamicPrintConfig::get_filament_type` :17925 (40%, 1.27x)
+- partial: `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :9996 and `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :20022 (69%, 0.74x)
+- partial: `validate` :10643 and `validate` :20773 (53%, 1.04x)
+- partial: `get_bed_shape` :11508 and `get_bed_shape` :20433 (30%, 0.35x)
 
 Missing in the Rust file:
 
@@ -8651,167 +8651,167 @@ Rust only:
 - `default_bed_exclude_area` :70
 - `is_default_bed_exclude_area` :74
 - `is_ams_filament_time` :79
-- `PrintConfig::set_machine_limit_rows` :921
-- `PrintConfig::machine_limit_values` :955
-- `PrintConfig::circle_compensation_floats_mut` :970
-- `PrintConfig::circle_compensation_floats` :990
-- `PrintConfig::set_deserialize_circle_compensation_floats` :1012
-- `PrintConfig::filament_velocity_adaptation_factor_at` :1028
-- `PrintConfig::set_deserialize_filament_velocity_adaptation_factor` :1044
-- `PrintConfig::extruder_types` :1055
-- `PrintConfig::set_deserialize_printer_extruder_id` :1062
-- `PrintConfig::set_deserialize_printer_extruder_variant` :1075
-- `PrintConfig::set_deserialize_extruder_type` :1089
-- `PerExtruderCoolingConfig::default` :1143
-- `PrintConfig::new` :1167
-- `PrintConfig::num_filaments` :1177
-- `PrintConfig::apply_from` :1186
-- `PrintConfig::layer_height` :1191 — C++ has it in `SLAPrint`
-- `PrintConfig::first_layer_height` :1197
-- `PrintConfig::nozzle_diameter` :1203 — C++ has it in `Flow`
-- `PrintConfig::print_speed` :1209
-- `PrintConfig::support` :1215
-- `PrintConfig::support_type` :1221
-- `PrintConfig::brim_width` :1227
-- `PrintConfig::raft_enabled` :1233
-- `PrintConfig::raft_layers` :1239 — C++ has it in `Slicing`
-- `PrintConfig::raft_expansion` :1248
-- `PrintConfig::raft_contact_distance` :1254
-- `PrintConfig::raft_density` :1260
-- `PrintConfig::validate` :1274 — C++ has it in `ExtrusionEntity`, `Print`, `PrintBase`
-- `PrintConfig::use_relative_e` :1317
-- `PrintConfig::arc_fitting` :1322
-- `PrintConfig::arc_fitting_tolerance` :1327
-- `PrintConfig::arc_fitting_radius` :1332
-- `PrintConfig::avoid_crossing_perimeters` :1339
-- `PrintConfig::avoid_crossing_max_detour` :1345
-- `PrintConfig::default` :1352
-- `PrintConfig::fmt` :1730
-- `PrintObjectConfig::effective_line_width` :2473
-- `PrintObjectConfig::effective_initial_layer_line_width` :2482
-- `PrintObjectConfig::effective_outer_wall_line_width` :2492
-- `PrintObjectConfig::effective_inner_wall_line_width` :2502
-- `PrintObjectConfig::effective_sparse_infill_line_width` :2511
-- `PrintObjectConfig::effective_solid_infill_line_width` :2520
-- `PrintObjectConfig::effective_top_surface_line_width` :2529
-- `PrintObjectConfig::new` :2540
-- `PrintObjectConfig::perimeters` :2545
-- `PrintObjectConfig::fill_density` :2551
-- `PrintObjectConfig::fill_pattern` :2557
-- `PrintObjectConfig::seam_position` :2563
-- `PrintObjectConfig::perimeter_mode` :2569
-- `PrintObjectConfig::arachne` :2575
-- `PrintObjectConfig::arachne_min_bead_width` :2581
-- `PrintObjectConfig::arachne_min_feature_size` :2587
-- `parse_f64` :2595
-- `parse_percent_number` :2619
-- `parse_pct` :2623
-- `parse_bool` :2634
-- `parse_u32` :2638
-- `parse_i32` :2642
-- `parse_float_or_percent` :2647
-- `PrintConfig::set_deserialize` :2665 — C++ has it in `Config`
-- `PrintObjectConfig::set_deserialize_circle_compensation` :3608
-- `PrintObjectConfig::set_deserialize` :3631 — C++ has it in `Config`
-- `PrintObjectConfig::default` :4298
-- `PrintObjectConfig::validate` :4606 — C++ has it in `ExtrusionEntity`, `Print`, `PrintBase`
-- `PrintObjectConfig::fmt` :4628
-- `BrimType::from_str_bambu` :4715
-- `PrintSequence::from_str_bambu` :4746
-- `WallInfillOrder::from_str_bambu` :4772
-- `SupportBasePattern::from_str_bambu` :4812
-- `SupportInterfacePattern::from_str_bambu` :4841
-- `IroningType::from_str_bambu` :4866
-- `FuzzySkinType::from_str_bambu` :4899
-- `FuzzySkinType::is_enabled` :4910 — C++ has it in `MeshBoolean`
-- `ScarfSeamType::from_str_bambu` :4929
-- `SurfacePattern::from_str_bambu` :4960
-- `InternalSolidInfillPattern::from_str_bambu` :4987
-- `EnsureVerticalShellThickness::from_str_bambu` :5025
-- `TreeSupportStyle::from_str_bambu` :5102
-- `ConformalStagger::from_config_str` :5176
-- `ConformalPole::from_config_str` :5208
-- `InfillPattern::from_str_bambu` :5299
-- `TopOneWallType::is_enabled` :5401 — C++ has it in `MeshBoolean`
-- `TopOneWallType::is_all_top` :5406
-- `TopOneWallType::from_str_bambu` :5412
-- `PerimeterMode::is_variable_width` :5439
-- `PerimeterMode::name` :5444
-- `PrintConfig::to_key_value_map` :5462
-- `PrintConfig::apply_key_value_map` :5623
-- `PrintConfig::apply_key_value` :5631
-- `PrintObjectConfig::apply_key_value` :6312
-- `find_from` :7171
-- `s_keys_map_nozzle_volume_type` :7253
-- `convert_to_nvt_type` :7379
-- `stoi` :7453
-- `atoi` :7457
-- `parse_leading_int` :7461
-- `keys_map` :7999
-- `L` :8718 — C++ has it in `I18N`
-- `append` :8723 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `find_or_npos` :8732
-- `substr_from` :8737
-- `PrintConfigDef::deref` :8814
-- `PrintConfigDef::deref_mut` :8820
-- `print_config_def` :8830
-- `PrintConfigDef::new` :8840
-- `PrintConfigDef::extruder_option_keys` :8859
-- `PrintConfigDef::extruder_retract_keys` :8866
-- `PrintConfigDef::filament_option_keys` :8870
-- `PrintConfigDef::filament_retract_keys` :8874
-- `getline_tokens` :15957
-- `opt_values` :15972
-- `opt_value` :15980
-- `dyn_ints` :15989
-- `dyn_ints_nullable` :16000
-- `dyn_floats_nullable` :16005
-- `dyn_strings` :16016
-- `dyn_enums_generic` :16021
-- `dyn_bools` :16026
-- `get_at` :16031 — C++ has it in `Config`
-- `get_ams_time_types` :16685
-- `stoi` :16812
-- `atoi` :16837
-- `get_extruder_ams_count` :16857
-- `get_extruder_nozzle_stats` :16922
-- `save_extruder_ams_count_to_string` :16954
-- `save_extruder_nozzle_stats_to_string` :17122
-- `key_set` :17257
-- `ExtruderNozleInfo::operator_lt` :17458
-- `DynamicPrintConfig::default` :17478
-- `DynamicPrintConfig::deref` :17485
-- `DynamicPrintConfig::deref_mut` :17491
-- `DynamicPrintConfig::optptr_mut` :17507
-- `DynamicPrintConfig::keys` :17510 — C++ has it in `Config`
-- `DynamicPrintConfig::new` :17521
-- `DynamicPrintConfig::from_config_base` :17527
-- `DynamicPrintConfig::get_filament_type_displayed` :17745
-- `boost_split_token_compress` :18029
-- `new_static_member` :18843
-- `static_print_config_members` :18910
-- `static_print_config_defaults` :18934
-- `float_or_percent_lt` :19013
-- `values_mut` :19019
-- `ids_and_variants` :19665
-- `typed_values_mut` :19820
-- `get_at_wrapped` :19830
-- `select_variant_rows` :19841
-- `canonical_multi_nozzle_printer_variant` :20278
-- `default_single_nozzle_printer_variant` :20284
-- `nozzle_variant_exists` :20291
-- `printer_nozzle_diameter_mode_single` :20302
-- `printer_nozzle_diameter_mode_multi` :20307
-- `skirt_get_int` :20461
-- `skirt_opt_values` :20504
-- `skirt_opt_value` :20512
-- `skirt_get_at` :20520
-- `std_to_string_f64` :20702
-- `validate_emplace` :20713
-- `validate_single` :20718
-- `validate_vector` :20727
-- `validate_serialize` :20736
-- `full_print_config_of` :20743
+- `PrintConfig::set_machine_limit_rows` :925
+- `PrintConfig::machine_limit_values` :959
+- `PrintConfig::circle_compensation_floats_mut` :974
+- `PrintConfig::circle_compensation_floats` :994
+- `PrintConfig::set_deserialize_circle_compensation_floats` :1016
+- `PrintConfig::filament_velocity_adaptation_factor_at` :1032
+- `PrintConfig::set_deserialize_filament_velocity_adaptation_factor` :1048
+- `PrintConfig::extruder_types` :1059
+- `PrintConfig::set_deserialize_printer_extruder_id` :1066
+- `PrintConfig::set_deserialize_printer_extruder_variant` :1079
+- `PrintConfig::set_deserialize_extruder_type` :1093
+- `PerExtruderCoolingConfig::default` :1147
+- `PrintConfig::new` :1171
+- `PrintConfig::num_filaments` :1181
+- `PrintConfig::apply_from` :1190
+- `PrintConfig::layer_height` :1195 — C++ has it in `SLAPrint`
+- `PrintConfig::first_layer_height` :1201
+- `PrintConfig::nozzle_diameter` :1207 — C++ has it in `Flow`
+- `PrintConfig::print_speed` :1213
+- `PrintConfig::support` :1219
+- `PrintConfig::support_type` :1225
+- `PrintConfig::brim_width` :1231
+- `PrintConfig::raft_enabled` :1237
+- `PrintConfig::raft_layers` :1243 — C++ has it in `Slicing`
+- `PrintConfig::raft_expansion` :1252
+- `PrintConfig::raft_contact_distance` :1258
+- `PrintConfig::raft_density` :1264
+- `PrintConfig::validate` :1278 — C++ has it in `ExtrusionEntity`, `Print`, `PrintBase`
+- `PrintConfig::use_relative_e` :1321
+- `PrintConfig::arc_fitting` :1326
+- `PrintConfig::arc_fitting_tolerance` :1331
+- `PrintConfig::arc_fitting_radius` :1336
+- `PrintConfig::avoid_crossing_perimeters` :1343
+- `PrintConfig::avoid_crossing_max_detour` :1349
+- `PrintConfig::default` :1356
+- `PrintConfig::fmt` :1736
+- `PrintObjectConfig::effective_line_width` :2479
+- `PrintObjectConfig::effective_initial_layer_line_width` :2488
+- `PrintObjectConfig::effective_outer_wall_line_width` :2498
+- `PrintObjectConfig::effective_inner_wall_line_width` :2508
+- `PrintObjectConfig::effective_sparse_infill_line_width` :2517
+- `PrintObjectConfig::effective_solid_infill_line_width` :2526
+- `PrintObjectConfig::effective_top_surface_line_width` :2535
+- `PrintObjectConfig::new` :2546
+- `PrintObjectConfig::perimeters` :2551
+- `PrintObjectConfig::fill_density` :2557
+- `PrintObjectConfig::fill_pattern` :2563
+- `PrintObjectConfig::seam_position` :2569
+- `PrintObjectConfig::perimeter_mode` :2575
+- `PrintObjectConfig::arachne` :2581
+- `PrintObjectConfig::arachne_min_bead_width` :2587
+- `PrintObjectConfig::arachne_min_feature_size` :2593
+- `parse_f64` :2601
+- `parse_percent_number` :2625
+- `parse_pct` :2629
+- `parse_bool` :2640
+- `parse_u32` :2644
+- `parse_i32` :2648
+- `parse_float_or_percent` :2653
+- `PrintConfig::set_deserialize` :2671 — C++ has it in `Config`
+- `PrintObjectConfig::set_deserialize_circle_compensation` :3619
+- `PrintObjectConfig::set_deserialize` :3642 — C++ has it in `Config`
+- `PrintObjectConfig::default` :4309
+- `PrintObjectConfig::validate` :4617 — C++ has it in `ExtrusionEntity`, `Print`, `PrintBase`
+- `PrintObjectConfig::fmt` :4639
+- `BrimType::from_str_bambu` :4726
+- `PrintSequence::from_str_bambu` :4757
+- `WallInfillOrder::from_str_bambu` :4783
+- `SupportBasePattern::from_str_bambu` :4823
+- `SupportInterfacePattern::from_str_bambu` :4852
+- `IroningType::from_str_bambu` :4877
+- `FuzzySkinType::from_str_bambu` :4910
+- `FuzzySkinType::is_enabled` :4921 — C++ has it in `MeshBoolean`
+- `ScarfSeamType::from_str_bambu` :4940
+- `SurfacePattern::from_str_bambu` :4971
+- `InternalSolidInfillPattern::from_str_bambu` :4998
+- `EnsureVerticalShellThickness::from_str_bambu` :5036
+- `TreeSupportStyle::from_str_bambu` :5113
+- `ConformalStagger::from_config_str` :5187
+- `ConformalPole::from_config_str` :5219
+- `InfillPattern::from_str_bambu` :5310
+- `TopOneWallType::is_enabled` :5412 — C++ has it in `MeshBoolean`
+- `TopOneWallType::is_all_top` :5417
+- `TopOneWallType::from_str_bambu` :5423
+- `PerimeterMode::is_variable_width` :5450
+- `PerimeterMode::name` :5455
+- `PrintConfig::to_key_value_map` :5473
+- `PrintConfig::apply_key_value_map` :5642
+- `PrintConfig::apply_key_value` :5650
+- `PrintObjectConfig::apply_key_value` :6332
+- `find_from` :7191
+- `s_keys_map_nozzle_volume_type` :7273
+- `convert_to_nvt_type` :7399
+- `stoi` :7473
+- `atoi` :7477
+- `parse_leading_int` :7481
+- `keys_map` :8019
+- `L` :8738 — C++ has it in `I18N`
+- `append` :8743 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `find_or_npos` :8752
+- `substr_from` :8757
+- `PrintConfigDef::deref` :8834
+- `PrintConfigDef::deref_mut` :8840
+- `print_config_def` :8850
+- `PrintConfigDef::new` :8860
+- `PrintConfigDef::extruder_option_keys` :8879
+- `PrintConfigDef::extruder_retract_keys` :8886
+- `PrintConfigDef::filament_option_keys` :8890
+- `PrintConfigDef::filament_retract_keys` :8894
+- `getline_tokens` :15977
+- `opt_values` :15992
+- `opt_value` :16000
+- `dyn_ints` :16009
+- `dyn_ints_nullable` :16020
+- `dyn_floats_nullable` :16025
+- `dyn_strings` :16036
+- `dyn_enums_generic` :16041
+- `dyn_bools` :16046
+- `get_at` :16051 — C++ has it in `Config`
+- `get_ams_time_types` :16705
+- `stoi` :16832
+- `atoi` :16857
+- `get_extruder_ams_count` :16877
+- `get_extruder_nozzle_stats` :16942
+- `save_extruder_ams_count_to_string` :16974
+- `save_extruder_nozzle_stats_to_string` :17142
+- `key_set` :17277
+- `ExtruderNozleInfo::operator_lt` :17478
+- `DynamicPrintConfig::default` :17498
+- `DynamicPrintConfig::deref` :17505
+- `DynamicPrintConfig::deref_mut` :17511
+- `DynamicPrintConfig::optptr_mut` :17527
+- `DynamicPrintConfig::keys` :17530 — C++ has it in `Config`
+- `DynamicPrintConfig::new` :17541
+- `DynamicPrintConfig::from_config_base` :17547
+- `DynamicPrintConfig::get_filament_type_displayed` :17765
+- `boost_split_token_compress` :18049
+- `new_static_member` :18863
+- `static_print_config_members` :18930
+- `static_print_config_defaults` :18954
+- `float_or_percent_lt` :19033
+- `values_mut` :19039
+- `ids_and_variants` :19685
+- `typed_values_mut` :19840
+- `get_at_wrapped` :19850
+- `select_variant_rows` :19861
+- `canonical_multi_nozzle_printer_variant` :20298
+- `default_single_nozzle_printer_variant` :20304
+- `nozzle_variant_exists` :20311
+- `printer_nozzle_diameter_mode_single` :20322
+- `printer_nozzle_diameter_mode_multi` :20327
+- `skirt_get_int` :20481
+- `skirt_opt_values` :20524
+- `skirt_opt_value` :20532
+- `skirt_get_at` :20540
+- `std_to_string_f64` :20722
+- `validate_emplace` :20733
+- `validate_single` :20738
+- `validate_vector` :20747
+- `validate_serialize` :20756
+- `full_print_config_of` :20763
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 

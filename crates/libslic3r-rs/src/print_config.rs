@@ -555,6 +555,10 @@ pub struct PrintConfig {
     pub ams_filament_times: BTreeMap<String, f64>,
     /// BambuStudio: `filament_map`, 1-based extruder per filament (coInts).
     pub filament_map: Vec<i32>,
+    /// PrintConfig.hpp:1437. An omitted physical map uses extruder 0. An
+    /// explicitly empty map has no physical temperature targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physical_extruder_map: Option<Vec<i32>>,
     /// BambuStudio: `nozzle_volume` per extruder (mm³) (GCodeProcessor.cpp:1975-1977).
     pub nozzle_volumes: Vec<CoordF>,
     /// Explicit MachineEnvelopeConfig axis and motion rows (PrintConfig.hpp:1312-1342).
@@ -1563,7 +1567,9 @@ impl Default for PrintConfig {
             handle_hotend_as_extruder: false,
             default_ams_type: -1,
             ams_filament_times: BTreeMap::new(),
-            filament_map: Vec::new(),
+            // PrintConfig.cpp:3008-3012. Preserve an explicitly empty assignment.
+            filament_map: if crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS") { vec![1] } else { Vec::new() },
+            physical_extruder_map: None,
             nozzle_volumes: Vec::new(),
             machine_axis_limit_rows: BTreeMap::new(),
             machine_max_acceleration_x: 20000.0,
@@ -3545,11 +3551,16 @@ impl PrintConfig {
                 }
                 true
             }
-            "filament_map" if crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") => {
+            "filament_map" | "physical_extruder_map" if crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS")
+                || (key == "filament_map" && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")) => {
                 use crate::config::{ConfigOption, ConfigOptionInts};
                 let mut map = ConfigOptionInts::new();
                 if matches!(map.deserialize(value, false), Ok(true)) {
-                    self.filament_map = map.values;
+                    if key == "physical_extruder_map" {
+                        self.physical_extruder_map = Some(map.values);
+                    } else {
+                        self.filament_map = map.values;
+                    }
                 }
                 true
             }
@@ -5531,6 +5542,14 @@ impl PrintConfig {
             format!("{}", self.filament_max_volumetric_speed),
         );
         m.insert("filament_type".into(), self.filament_type.clone());
+        if crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS") {
+            for (key, rows) in [
+                ("physical_extruder_map", self.physical_extruder_map.as_deref().unwrap_or(&[0])),
+                ("filament_map", self.filament_map.as_slice()),
+            ] {
+                m.insert(key.into(), rows.iter().map(i32::to_string).collect::<Vec<_>>().join(","));
+            }
+        }
         m.insert(
             "enable_arc_fitting".into(),
             if self.arc_fitting_enabled {
@@ -5636,6 +5655,7 @@ impl PrintConfig {
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
         if processor_filament_material_rows_enabled(key)
+            || (matches!(key, "physical_extruder_map" | "filament_map") && crate::faithful_gate("PROCESSOR_TEMPERATURE_TARGETS"))
             || processor_bed_area_enabled(key)
             || (key == "printable_height" && crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY"))
         {

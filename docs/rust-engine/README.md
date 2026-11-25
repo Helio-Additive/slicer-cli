@@ -131,7 +131,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R978) |
+| Fixture | As brought over (R808) | Now (R979) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -141,11 +141,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R978:
+missing most often. Lines of the oracle's body the port has verbatim, at R979:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R978 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R979 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.
@@ -180,8 +180,10 @@ export. R977 records the layer and estimated time of hardware pauses. A
 Benchy with `M400 U1` on layer 300 reports 99% complete with zero whole
 minutes remaining in both processors. R978 derives the processor’s scarf-seam
 flag from the model and its settings. All 20 native model cases agree on the
-flag, as do both STL and 3MF exports across 14 supplemental jobs. The four
-standard fixtures still match R970 byte for byte.
+flag, as do both STL and 3MF exports across 14 supplemental jobs. R979
+maps M104 and M109 temperatures to the requested filament or physical
+extruder. In the H2D startup the T0 preview now reads 220 °C at line 838.
+The four standard fixtures still match R970 byte for byte.
 
 The percentages of R852 are lower than R851's while the matched counts are
 higher: R852 writes the `M73 P.. R..` progress lines, which `seq_parity.py`
