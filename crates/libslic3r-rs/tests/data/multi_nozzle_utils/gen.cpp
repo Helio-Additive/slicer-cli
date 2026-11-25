@@ -25,7 +25,7 @@
 // length then its nozzles; an optional nozzle is "-" or "+" and the nozzle. A configuration is "C" <n>
 // then n pairs <key> <value>: the options set with set_deserialize_strict() on top of the defaults of a
 // full configuration ("D" instead of "C": on top of an empty DynamicPrintConfig).
-// Volume types are kept within 0..3 (the four values the Rust enum has).
+// Serialization additionally covers every nozzle volume type at the pin.
 
 #include <cstdint>
 #include <cstdio>
@@ -968,29 +968,64 @@ static void case_unordered_map()
 // NozzleInfo / NozzleGroupInfo (de)serialization, resolve_ams_load_unload
 // ---------------------------------------------------------------------------------------------
 
+static void write_nozzle_info(const NozzleInfo &n)
+{
+    tok("nis");
+    tnozzle(n);
+    arrow();
+    ts(n.serialize());
+    endl_();
+}
+
+static void write_group_info(const NozzleGroupInfo &g)
+{
+    tok("ngs");
+    ts(g.diameter);
+    ti((int) g.volume_type);
+    ti(g.extruder_id);
+    ti(g.nozzle_count);
+    arrow();
+    ts(g.serialize());
+    endl_();
+}
+
+static void read_group_info(const std::string &s)
+{
+    tok("ngd");
+    ts(s);
+    arrow();
+    auto r = NozzleGroupInfo::deserialize(s);
+    if (!r)
+        ti(0);
+    else {
+        ti(1);
+        ts(r->diameter);
+        ti((int) r->volume_type);
+        ti(r->extruder_id);
+        ti(r->nozzle_count);
+    }
+    endl_();
+}
+
 static void case_serialize()
 {
+    // PrintConfig.hpp:382-390, MultiNozzleUtils.cpp:1103-1147. Exercise each
+    // physical nozzle name and Hybrid for both extruders and diameters.
+    for (int v = 0; v < nvtCount; ++v)
+        for (int extruder : {0, 1}) {
+            const std::string diameter = extruder == 0 ? "0.4" : "0.6";
+            NozzleGroupInfo g(diameter, NozzleVolumeType(v), extruder, 1);
+            write_nozzle_info({diameter, g.volume_type, extruder, extruder});
+            write_group_info(g);
+            read_group_info(g.serialize());
+        }
     for (int c = 0; c < 400; ++c) {
-        NozzleInfo n = rnozzle(ri(0, 9));
-        tok("nis");
-        tnozzle(n);
-        arrow();
-        ts(n.serialize());
-        endl_();
-
+        write_nozzle_info(rnozzle(ri(0, 9)));
         NozzleGroupInfo g(rb(80) ? DIAMS[ri(0, 3)] : "", NozzleVolumeType(ri(0, 3)), ri(-1, 3), ri(-2, 9));
-        tok("ngs");
-        ts(g.diameter);
-        ti((int) g.volume_type);
-        ti(g.extruder_id);
-        ti(g.nozzle_count);
-        arrow();
-        ts(g.serialize());
-        endl_();
+        write_group_info(g);
     }
     static const char *PIECES[] = {"0", "1", "-1", "12", "x", " 3", "+4", "7a", "", "0.4", "0.2", "Standard", "High Flow",
                                    "Hybrid", "TPU High Flow", "TPU", "HighFlow", "standard", "99999999999", "2"};
-    // (No "TPU285" / "E3D High Flow": the Rust NozzleVolumeType has the four values of an earlier pin.)
     for (int c = 0; c < 1200; ++c) {
         std::string s;
         if (rb(50)) {
@@ -1012,20 +1047,7 @@ static void case_serialize()
                 s += PIECES[ri(0, 19)];
             }
         }
-        tok("ngd");
-        ts(s);
-        arrow();
-        auto r = NozzleGroupInfo::deserialize(s);
-        if (!r)
-            ti(0);
-        else {
-            ti(1);
-            ts(r->diameter);
-            ti((int) r->volume_type);
-            ti(r->extruder_id);
-            ti(r->nozzle_count);
-        }
-        endl_();
+        read_group_info(s);
     }
     for (int c = 0; c < 400; ++c) {
         std::vector<double> loads, unloads;

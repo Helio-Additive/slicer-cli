@@ -23,15 +23,10 @@
 //! - `PresetCollection`: the crate has no preset collections (`preset_bundle.rs`, port status), so
 //!   [`PrinterPresetSelection`] holds what `read_selected_printer` takes from one: the name of the
 //!   selected preset, the name of its base preset and the config of the edited preset.
-//! - `NozzleVolumeType`: `crate::extruder::NozzleVolumeType` is the enum of an earlier
-//!   `PrintConfig.hpp` with four values; the pin has six (`nvtTPU285`, `nvtE3DHighFlow`). The enum of
-//!   the pin is [`NozzleVolumeType`] here, kept as its integer because the unit casts config integers
-//!   to it unchecked (`NozzleVolumeType(types[flat])`).
-//! - The functions of `PrintConfig.cpp`, `PrintConfig.hpp` and `PresetBundle.cpp` this unit calls
-//!   are ported at the end of this file from the pin, each with its line reference:
-//!   `print_config.rs` has `get_extruder_nozzle_stats` and `save_extruder_nozzle_stats_to_string`
-//!   of the earlier source only (no fall-back to Standard, four volume types), and none of the
-//!   others. They belong in `print_config.rs` and `preset_bundle.rs` once those follow the pin.
+//! - [`NozzleVolumeType`] holds the integer because the unit casts config values
+//!   to the enum unchecked (`NozzleVolumeType(types[flat])`).
+//! - The inventory's PrintConfig and PresetBundle helpers follow the pin and carry
+//!   their source references at the end of this file.
 //! - The mirror config and the history are a reference and a pointer that must outlive the
 //!   inventory in C++; here they are shared (`Arc<Mutex<_>>`).
 //!

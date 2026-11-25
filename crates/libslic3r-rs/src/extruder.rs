@@ -55,14 +55,7 @@ impl ExtruderType {
     }
 }
 
-// PrintConfig.hpp:346
-// enum NozzleVolumeType {
-//     nvtStandard = 0,
-//     nvtHighFlow,
-//     nvtHybrid,
-//     nvtTPUHighFlow,
-//     nvtMaxNozzleVolumeType = nvtTPUHighFlow
-// };
+/// PrintConfig.hpp:382-390. Volume types read by the extruder and nozzle groups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(i32)]
 pub enum NozzleVolumeType {
@@ -70,88 +63,46 @@ pub enum NozzleVolumeType {
     NvtHighFlow = 1,
     NvtHybrid = 2,
     NvtTPUHighFlow = 3,
+    NvtTPU285 = 4,
+    NvtE3DHighFlow = 5,
 }
-// PrintConfig.hpp:351  nvtMaxNozzleVolumeType = nvtTPUHighFlow
-pub const NVT_MAX_NOZZLE_VOLUME_TYPE: i32 = NozzleVolumeType::NvtTPUHighFlow as i32;
+
+pub const NVT_MAX_NOZZLE_VOLUME_TYPE: i32 = NozzleVolumeType::NvtE3DHighFlow as i32;
 
 impl NozzleVolumeType {
-    // Faithful equivalent of `NozzleVolumeType(int)` cast in C++.
     pub fn from_i32(v: i32) -> NozzleVolumeType {
         match v {
-            0 => NozzleVolumeType::NvtStandard,
-            1 => NozzleVolumeType::NvtHighFlow,
-            2 => NozzleVolumeType::NvtHybrid,
-            _ => NozzleVolumeType::NvtTPUHighFlow,
+            0 => Self::NvtStandard,
+            1 => Self::NvtHighFlow,
+            2 => Self::NvtHybrid,
+            4 if crate::faithful_gate("NOZZLE_VOLUME_TYPES_PIN") => Self::NvtTPU285,
+            5 if crate::faithful_gate("NOZZLE_VOLUME_TYPES_PIN") => Self::NvtE3DHighFlow,
+            _ => Self::NvtTPUHighFlow,
         }
     }
 }
 
-// PrintConfig.cpp enum key-name tables, indexed by enum value.
-// (s_keys_names_ExtruderType / s_keys_names_NozzleVolumeType)
-//
-// These are produced by CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(NAME) (PrintConfig.cpp:132)
-// via enum_names_from_keys_map (PrintConfig.cpp:119): the names vector is sized
-// max(enum value)+1 and indexed by enum value, with the KEY STRING at that index.
-//   s_keys_map_ExtruderType  (PrintConfig.cpp:483): {"Direct Drive": etDirectDrive(0), "Bowden": etBowden(1)}
-//   s_keys_map_NozzleVolumeType (PrintConfig.cpp:489): {"Standard": nvtStandard(0),
-//     "High Flow": nvtHighFlow(1), "TPU High Flow": nvtTPUHighFlow(3), "Hybrid": nvtHybrid(2)}
-// so indexed by value the tables are (note the embedded spaces in the keys):
-const S_KEYS_NAMES_EXTRUDER_TYPE: [&str; 2] = ["Direct Drive", "Bowden"];
-const S_KEYS_NAMES_NOZZLE_VOLUME_TYPE: [&str; 4] =
-    ["Standard", "High Flow", "Hybrid", "TPU High Flow"];
+impl From<NozzleVolumeType> for crate::print_config::enums::NozzleVolumeType {
+    fn from(volume: NozzleVolumeType) -> Self {
+        Self::from_i32(volume as i32)
+    }
+}
 
-// PrintConfig.hpp:391
-// static std::set<NozzleVolumeType> get_valid_nozzle_volume_type()
-//   Builds the set of *valid* nozzle volume types: every value in
-//   [0, nvtMaxNozzleVolumeType] EXCEPT nvtHybrid. (Note: this excludes
-//   nvtHybrid even though it is <= nvtMaxNozzleVolumeType.)
+/// PrintConfig.hpp:436-444. Hybrid describes a mixture rather than a physical nozzle.
 pub fn get_valid_nozzle_volume_type() -> std::collections::BTreeSet<i32> {
-    // PrintConfig.hpp:392
-    let mut type_set: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
-    // PrintConfig.hpp:393  for (int i = 0; i <= nvtMaxNozzleVolumeType; ++i)
-    for i in 0..=NVT_MAX_NOZZLE_VOLUME_TYPE {
-        // PrintConfig.hpp:394  auto t = static_cast<NozzleVolumeType>(i);
-        let t = NozzleVolumeType::from_i32(i);
-        // PrintConfig.hpp:395  if (t == nvtHybrid) continue;
-        if t == NozzleVolumeType::NvtHybrid {
-            continue;
-        }
-        // PrintConfig.hpp:396  type.insert(t);
-        type_set.insert(t as i32);
-    }
-    // PrintConfig.hpp:397
-    type_set
+    (0..=NVT_MAX_NOZZLE_VOLUME_TYPE)
+        .map(NozzleVolumeType::from_i32)
+        .filter(|&volume| volume != NozzleVolumeType::NvtHybrid)
+        .map(|volume| volume as i32)
+        .collect()
 }
 
-// PrintConfig.cpp:528
-// std::string get_extruder_variant_string(ExtruderType extruder_type, NozzleVolumeType nozzle_volume_type)
+/// PrintConfig.cpp:954-971.
 pub fn get_extruder_variant_string(
     extruder_type: ExtruderType,
     nozzle_volume_type: NozzleVolumeType,
 ) -> String {
-    // PrintConfig.cpp:530
-    let mut variant_string = String::new();
-
-    // PrintConfig.cpp:532
-    if (extruder_type as i32) > ET_MAX_EXTRUDER_TYPE {
-        // PrintConfig.cpp:533 (logging) — unsupported ExtruderType
-        // extruder_type = etDirectDrive;
-        return variant_string;
-    }
-    // PrintConfig.cpp:537  auto nozzle_volume_types = get_valid_nozzle_volume_type();
-    let nozzle_volume_types = get_valid_nozzle_volume_type();
-    // PrintConfig.cpp:538  if (nozzle_volume_types.count(nozzle_volume_type) == 0)
-    if !nozzle_volume_types.contains(&(nozzle_volume_type as i32)) {
-        // PrintConfig.cpp:539 (logging) — unsupported NozzleVolumeType
-        // extruder_type = etDirectDrive;
-        return variant_string;
-    }
-    // PrintConfig.cpp:543-545
-    variant_string = S_KEYS_NAMES_EXTRUDER_TYPE[extruder_type as usize].to_string();
-    variant_string += " ";
-    variant_string += S_KEYS_NAMES_NOZZLE_VOLUME_TYPE[nozzle_volume_type as usize];
-    // PrintConfig.cpp:546
-    variant_string
+    crate::print_config::config_def::get_extruder_variant_string(extruder_type, nozzle_volume_type.into())
 }
 
 // PrintConfig.cpp:549
@@ -169,7 +120,7 @@ pub fn get_config_index_base(
     // no exact variant, use the first row owned by this filament or extruder.
     if crate::faithful_gate("EXTRUDER_CONFIG_ROW_FALLBACK") {
         return crate::print_config::config_def::get_config_index_base(
-            crate::print_config::enums::NozzleVolumeType::from_i32(volume_type as i32),
+            volume_type.into(),
             extruder_type,
             variant_id_1based,
             variant_list,

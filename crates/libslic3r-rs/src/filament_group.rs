@@ -22,10 +22,6 @@
 //!   [`libcxx_shuffle`]).
 //! - `std::function<bool(int, std::vector<int>&)>` is [`CustomSeq`] (`Rc`, as a std::function is
 //!   copied).
-//! - FIDELITY-NOTE: `MultiNozzleUtils::NozzleInfo::volume_type` is `crate::extruder::NozzleVolumeType`,
-//!   the enum of an earlier pin without nvtTPU285 (4) and nvtE3DHighFlow (5) (extruder.rs); a value
-//!   cast from an integer collapses 4 and 5 onto nvtTPUHighFlow. Where the C++ compares an enum
-//!   cast from an integer of the configuration with a nozzle's type, the integers are compared.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;

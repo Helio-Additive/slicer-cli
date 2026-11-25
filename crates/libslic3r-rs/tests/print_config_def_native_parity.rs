@@ -437,13 +437,20 @@ mod functions {
                 hex(&get_nozzle_volume_type_string(nvt(v))),
             ];
             for e in 0..2 {
-                l.push(hex(&get_extruder_variant_string(et(e), nvt(v))));
+                let name = get_extruder_variant_string(et(e), nvt(v));
+                if v < NozzleVolumeType::NvtCount as i32 {
+                    let volume = slicer::extruder::NozzleVolumeType::from_i32(v);
+                    assert_eq!(slicer::extruder::get_extruder_variant_string(et(e), volume), name);
+                }
+                l.push(hex(&name));
             }
             emit(l);
         }
         {
             let mut l = vec!["fn".into(), "get_valid_nozzle_volume_type".into(), "=>".into()];
-            for t in get_valid_nozzle_volume_type() {
+            let valid = get_valid_nozzle_volume_type();
+            assert_eq!(slicer::extruder::get_valid_nozzle_volume_type(), valid.iter().map(|&v| v as i32).collect());
+            for t in valid {
                 l.push((t as i32).to_string());
             }
             emit(l);
@@ -549,7 +556,10 @@ mod functions {
                 }
                 l.push(e);
             }
-            lst(&mut l, &save_extruder_nozzle_stats_to_string(&stats));
+            let saved = save_extruder_nozzle_stats_to_string(&stats);
+            let extruder_stats = slicer::print_config::get_extruder_nozzle_stats(&s);
+            assert_eq!(slicer::print_config::save_extruder_nozzle_stats_to_string(&extruder_stats), saved);
+            lst(&mut l, &saved);
             emit(l);
         }
         for n in ["Standard", "High Flow", "TPU High Flow", "TPU285", "Hybrid", "E3D High Flow", "standard", "", "Normal"] {
@@ -561,7 +571,9 @@ mod functions {
             "High Flow Direct Drive", "Direct Drive  Standard ", "Bowden\nStandard",
         ]);
         for v in &variants {
-            emit(vec!["fn".into(), "convert_to_nvt_type".into(), hex(v), "=>".into(), (convert_to_nvt_type(v) as i32).to_string()]);
+            let volume = convert_to_nvt_type(v) as i32;
+            assert_eq!(slicer::print_config::convert_to_nvt_type(v) as i32, volume);
+            emit(vec!["fn".into(), "convert_to_nvt_type".into(), hex(v), "=>".into(), volume.to_string()]);
         }
         {
             let lists = vec![

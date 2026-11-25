@@ -7115,8 +7115,6 @@ impl _BBS_3MF_Importer {
             nozzle_info.extruder_id = atoi(&extruder_id) - 1;
             nozzle_info.diameter = nozzle_diameter;
 
-            // FIDELITY-NOTE: `MultiNozzleUtils::NozzleInfo::volume_type` of the crate is the older
-            // `extruder::NozzleVolumeType` (four values); a newer type maps through its integer.
             nozzle_info.volume_type = match volume_type_str_to_enum.get(&volume_type) {
                 Some(v) => crate::extruder::NozzleVolumeType::from_i32(*v),
                 None => crate::extruder::NozzleVolumeType::NvtStandard,

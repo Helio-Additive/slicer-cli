@@ -3840,7 +3840,7 @@ pub mod group_reorder {
                 } else {
                     virtual_diameter.clone()
                 };
-                // NozzleVolumeType(req_vol): FIDELITY-NOTE (crate::extruder's enum of an earlier pin)
+                // ToolOrdering.cpp:1677 casts the requested configuration value to NozzleVolumeType.
                 virtual_nozzle.volume_type = crate::extruder::NozzleVolumeType::from_i32(req_vol);
                 virtual_nozzle.extruder_id = 0;
                 virtual_nozzle.group_id = nozzle_list.len() as i32;

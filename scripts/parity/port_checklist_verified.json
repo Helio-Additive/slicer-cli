@@ -5483,5 +5483,14 @@
   "functions": [
    "GCodeProcessor::get_machine_config_idx"
   ]
+ },
+ {
+  "unit": "PrintConfig",
+  "round": 957,
+  "evidence": "tests/print_config_def_native_parity.rs compares the extruder-facing and canonical helpers to functions.txt.gz generated from the pin. Covers nozzle counts for empty, repeated, malformed and unknown entries and TPU285 / E3D High Flow, plus 14 extruder variant strings.",
+  "functions": [
+   "get_extruder_nozzle_stats",
+   "convert_to_nvt_type"
+  ]
  }
 ]

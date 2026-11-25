@@ -6862,7 +6862,7 @@ impl PrintObjectConfig {
 // crate::multi_nozzle_utils and are not duplicated here.
 // ===========================================================================
 
-use crate::extruder::{NozzleVolumeType, NVT_MAX_NOZZLE_VOLUME_TYPE};
+use crate::extruder::NozzleVolumeType;
 use std::collections::{BTreeMap, BTreeSet};
 
 // PrintConfig.cpp:19  (anonymous namespace)
@@ -7072,6 +7072,12 @@ pub fn get_extruder_ams_count(strs: &[String]) -> Vec<BTreeMap<i32, i32>> {
 // PrintConfig.cpp:631
 // std::vector<std::map<NozzleVolumeType,int>> get_extruder_nozzle_stats(const std::vector<std::string>& strs)
 pub fn get_extruder_nozzle_stats(strs: &[String]) -> Vec<BTreeMap<NozzleVolumeType, i32>> {
+    // PrintConfig.cpp:1212-1244, including the fallback for unknown keys.
+    if crate::faithful_gate("NOZZLE_VOLUME_TYPES_PIN") {
+        return config_def::get_extruder_nozzle_stats(strs).into_iter().map(|row| {
+            row.into_iter().map(|(volume, count)| (NozzleVolumeType::from_i32(volume as i32), count)).collect()
+        }).collect();
+    }
     // PrintConfig.cpp:633
     let mut extruder_nozzle_counts: Vec<BTreeMap<NozzleVolumeType, i32>> = Vec::new();
     let keys_map = s_keys_map_nozzle_volume_type();
@@ -7136,6 +7142,10 @@ pub fn save_extruder_ams_count_to_string(extruder_ams_count: &[BTreeMap<i32, i32
 
 // PrintConfig.cpp:672  NozzleVolumeType convert_to_nvt_type(const std::string &variant_str)
 pub fn convert_to_nvt_type(variant_str: &str) -> NozzleVolumeType {
+    // PrintConfig.cpp:1329-1352.
+    if crate::faithful_gate("NOZZLE_VOLUME_TYPES_PIN") {
+        return NozzleVolumeType::from_i32(config_def::convert_to_nvt_type(variant_str) as i32);
+    }
     // PrintConfig.cpp:673  const auto &ext_types = ConfigOptionEnum<ExtruderType>::get_enum_names();
     let ext_types = &S_KEYS_NAMES_EXTRUDER_TYPE;
     let keys_map = s_keys_map_nozzle_volume_type();
@@ -7188,7 +7198,7 @@ pub fn save_extruder_nozzle_stats_to_string(
         let mut it = item.iter().peekable();
         while let Some((k, v)) = it.next() {
             // PrintConfig.cpp:704  oss << get_nozzle_volume_type_string(it->first) << "#" << it->second;
-            oss.push_str(&format!("{}#{}", nozzle_volume_type_string(*k), v));
+            oss.push_str(&format!("{}#{}", config_def::get_nozzle_volume_type_string((*k).into()), v));
             // PrintConfig.cpp:705  if (std::next(it) != item.end()) oss << "|";
             if it.peek().is_some() {
                 oss.push('|');
@@ -7199,23 +7209,6 @@ pub fn save_extruder_nozzle_stats_to_string(
     }
     // PrintConfig.cpp:710
     extruder_nozzle_count_str
-}
-
-// PrintConfig.cpp:563  std::string get_nozzle_volume_type_string(NozzleVolumeType nozzle_volume_type)
-// Local copy used by save_extruder_nozzle_stats_to_string (the canonical port
-// lives in crate::multi_nozzle_utils but is private there).
-fn nozzle_volume_type_string(nozzle_volume_type: NozzleVolumeType) -> String {
-    // s_keys_names_NozzleVolumeType is the value-indexed inversion of
-    // s_keys_map_NozzleVolumeType (PrintConfig.cpp:489):
-    //   ["Standard", "High Flow", "Hybrid", "TPU High Flow"]
-    const S_KEYS_NAMES_NOZZLE_VOLUME_TYPE: [&str; 4] =
-        ["Standard", "High Flow", "Hybrid", "TPU High Flow"];
-    // PrintConfig.cpp:565  if (nozzle_volume_type > nvtMaxNozzleVolumeType) return "";
-    if (nozzle_volume_type as i32) > NVT_MAX_NOZZLE_VOLUME_TYPE {
-        return String::new();
-    }
-    // PrintConfig.cpp:569  return s_keys_names_NozzleVolumeType[nozzle_volume_type];
-    S_KEYS_NAMES_NOZZLE_VOLUME_TYPE[nozzle_volume_type as usize].to_string()
 }
 
 // Faithful equivalents of std::stoi / std::atoi over the leading numeric
@@ -7680,9 +7673,6 @@ pub mod enums {
 
     cpp_enum! {
         /// PrintConfig.hpp:382-390 `enum NozzleVolumeType`
-        ///
-        /// FIDELITY-NOTE: `crate::extruder::NozzleVolumeType` is the same enum of an earlier pin,
-        /// without nvtTPU285 and nvtE3DHighFlow; the code ported here uses this one.
         NozzleVolumeType {
             NvtStandard = 0, NvtHighFlow = 1, NvtHybrid = 2, NvtTPUHighFlow = 3, NvtTPU285 = 4, NvtE3DHighFlow = 5,
             NvtCount = 6,

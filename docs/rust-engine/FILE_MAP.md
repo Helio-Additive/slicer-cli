@@ -45,8 +45,8 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 7485 (83%) |
-| estimate: faithful | 6546 (87% of matched) |
-| estimate: partial | 620 (8% of matched) |
+| estimate: faithful | 6548 (87% of matched) |
+| estimate: partial | 618 (8% of matched) |
 | estimate: divergent | 287 (4% of matched) |
 | estimate: stub | 32 (0% of matched) |
 | missing in the paired Rust file | 1545 |
@@ -55,13 +55,13 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 90 |
 | of the rest, 25 tokens or more | 278 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8921 |
+| Rust functions with no C++ function of that name in the pair | 8919 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 5762 | 5039 | 490 | 213 | 20 | 1089 |
+| 1 | 180 | 180 | 6851 | 5762 | 5041 | 488 | 213 | 20 | 1089 |
 | 2 | 15 | 15 | 392 | 356 | 305 | 37 | 13 | 1 | 36 |
 | 3 | 92 | 89 | 1374 | 1119 | 982 | 74 | 57 | 6 | 255 |
 | 4 | 23 | 23 | 435 | 248 | 220 | 19 | 4 | 5 | 187 |
@@ -82,7 +82,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `GCode/WipeTower` | `gcode/wipe_tower.rs` | 218 | 183 | 20 | 7 | 2 | 6 | 0 |
 | 1 | `PresetBundle` | `preset_bundle.rs` | 141 | 119 | 10 | 9 | 0 | 3 | 0 |
 | 1 | `EdgeGrid` | `edge_grid.rs` | 47 | 27 | 3 | 5 | 1 | 11 | 2 |
-| 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 58 | 15 | 8 | 0 | 4 | 0 |
+| 1 | `GCode/ToolOrdering` | `gcode/tool_ordering.rs` | 85 | 59 | 14 | 8 | 0 | 4 | 0 |
 | 1 | `libslic3r` | `libslic3r.rs` | 28 | 1 | 0 | 0 | 0 | 27 | 8 |
 | 1 | `Arrange` | `arrange.rs` | 44 | 23 | 2 | 0 | 0 | 19 | 7 |
 | 1 | `GCode/PrintExtents` | `gcode/print_extents.rs` | 10 | 2 | 1 | 1 | 1 | 5 | 5 |
@@ -122,7 +122,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Fill/Fill` | `fill/fill.rs` | 7 | 2 | 0 | 2 | 0 | 3 | 1 |
 | 1 | `Fill/FillBase` | `fill/fill_base.rs` | 68 | 46 | 7 | 1 | 0 | 14 | 2 |
 | 1 | `Fill/Lightning/Generator` | `fill/lightning/generator.rs` | 6 | 1 | 1 | 0 | 0 | 4 | 3 |
-| 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 178 | 23 | 3 | 0 | 1 | 0 |
+| 1 | `Format/bbs_3mf` | `format/bbs_3mf.rs` | 205 | 179 | 22 | 3 | 0 | 1 | 0 |
 | 1 | `GCodeWriter` | `g_code_writer.rs` | 84 | 77 | 4 | 3 | 0 | 0 | 0 |
 | 1 | `Geometry/MedialAxis` | `geometry/medial_axis.rs` | 16 | 3 | 0 | 1 | 0 | 12 | 2 |
 | 1 | `PrintConfig` | `print_config.rs` | 137 | 113 | 12 | 1 | 0 | 11 | 2 |
@@ -2688,39 +2688,40 @@ Rust only:
 
 ### `Extruder` (.cpp+.hpp) and `extruder.rs`
 
-Tier 1. C++ functions 31 (plus 2 constructors, 1 destructors, 4 operators), Rust functions 60. Matched 31: faithful 31, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 31 (plus 2 constructors, 1 destructors, 4 operators), Rust functions 61. Matched 31: faithful 31, partial 0, divergent 0, stub 0.
 
 Rust only:
 
 - `ExtruderType::from_i32` :50
-- `NozzleVolumeType::from_i32` :79
-- `get_valid_nozzle_volume_type` :108 — C++ has it in `PrintConfig`
-- `get_extruder_variant_string` :128 — C++ has it in `PrintConfig`
-- `get_config_index_base` :161 — C++ has it in `PrintConfig`
-- `get_extruder_index` :200 — C++ has it in `PrintConfig`
-- `get_filament_config_idx` :219 — C++ has it in `Layer`, `Print`, `PrintConfig`
-- `get_process_config_idx` :245 — C++ has it in `Layer`, `Print`, `PrintConfig`
-- `ConfigOptionVector::new` :283
-- `ConfigOptionVector::get_at` :287 — C++ has it in `Config`
-- `ConfigOptionVector::size` :296 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
-- `gcode_flavor_from_int` :360
-- `option_vector_values` :380
-- `GCodeConfig::defaults` :454
-- `GCodeConfig::new` :463
-- `GCodeConfig::apply` :477 — C++ has it in `Arrange`, `Config`, `Format/SL1`
-- `GCodeConfig::apply_only` :484 — C++ has it in `Config`, `PlaceholderParser`
-- `GCodeConfig::is_nil` :551 — C++ has it in `Config`
-- `extruder_pin` :574
-- `Extruder::new` :604
-- `Extruder::config` :628 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `Extruder::share_retracted` :702
-- `Extruder::exclusive_nozzle` :719
-- `Extruder::volume_type` :739 — C++ has it in `NozzleInventory`
-- `Extruder::extruder_type` :753
-- `Extruder::retract_lift` :1061
-- `Extruder::eq` :1185
-- `Extruder::partial_cmp` :1191
-- `Extruder::cmp` :1196
+- `NozzleVolumeType::from_i32` :73
+- `NozzleVolumeType::from` :86 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `get_valid_nozzle_volume_type` :92 — C++ has it in `PrintConfig`
+- `get_extruder_variant_string` :101 — C++ has it in `PrintConfig`
+- `get_config_index_base` :112 — C++ has it in `PrintConfig`
+- `get_extruder_index` :151 — C++ has it in `PrintConfig`
+- `get_filament_config_idx` :170 — C++ has it in `Layer`, `Print`, `PrintConfig`
+- `get_process_config_idx` :196 — C++ has it in `Layer`, `Print`, `PrintConfig`
+- `ConfigOptionVector::new` :234
+- `ConfigOptionVector::get_at` :238 — C++ has it in `Config`
+- `ConfigOptionVector::size` :247 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
+- `gcode_flavor_from_int` :311
+- `option_vector_values` :331
+- `GCodeConfig::defaults` :405
+- `GCodeConfig::new` :414
+- `GCodeConfig::apply` :428 — C++ has it in `Arrange`, `Config`, `Format/SL1`
+- `GCodeConfig::apply_only` :435 — C++ has it in `Config`, `PlaceholderParser`
+- `GCodeConfig::is_nil` :502 — C++ has it in `Config`
+- `extruder_pin` :525
+- `Extruder::new` :555
+- `Extruder::config` :579 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `Extruder::share_retracted` :653
+- `Extruder::exclusive_nozzle` :670
+- `Extruder::volume_type` :690 — C++ has it in `NozzleInventory`
+- `Extruder::extruder_type` :704
+- `Extruder::retract_lift` :1012
+- `Extruder::eq` :1136
+- `Extruder::partial_cmp` :1142
+- `Extruder::cmp` :1147
 
 ### `ExtrusionEntity` (.cpp+.hpp) and `extrusion_entity.rs`
 
@@ -2962,38 +2963,38 @@ Tier 1. C++ functions 49 (plus 5 constructors, 0 destructors, 1 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `FlushTimeMachine::time_machine_end` :46 and `FlushTimeMachine::time_machine_end` :126 (20%, 0.35x)
-- partial: `FlushDistanceEvaluator::get_distance` :685 and `FlushDistanceEvaluator::get_distance` :1147 (80%, 0.44x)
-- partial: `FilamentGroup::calc_filament_group_for_match` :1197 and `FilamentGroup::calc_filament_group_for_match` :1875 (92%, 1.15x)
+- divergent: `FlushTimeMachine::time_machine_end` :46 and `FlushTimeMachine::time_machine_end` :122 (20%, 0.35x)
+- partial: `FlushDistanceEvaluator::get_distance` :685 and `FlushDistanceEvaluator::get_distance` :1143 (80%, 0.44x)
+- partial: `FilamentGroup::calc_filament_group_for_match` :1197 and `FilamentGroup::calc_filament_group_for_match` :1871 (92%, 1.15x)
 
 Rust only:
 
-- `FilamentGroupError::fmt` :91
-- `runtime_error` :100
-- `FlushTimeMachine::default` :114
-- `MemoryedGroup::new` :144
-- `MemoryedGroup::gt` :149
-- `MemoryedGroupHeap::new` :163
-- `MemoryedGroupHeap::comp` :168
-- `MemoryedGroupHeap::sift_up` :174
-- `MemoryedGroupHeap::c` :190
-- `MemoryedGroupHeap::empty` :195 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
-- `MemoryedGroupHeap::size` :200 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
-- `MemoryedGroupHeap::top` :205
-- `MemoryedGroupHeap::push` :210 — C++ has it in `Channel`, `MeshSplitImpl`, `MutablePriorityQueue`
-- `MemoryedGroupHeap::pop` :219 — C++ has it in `Channel`, `MeshSplitImpl`, `MutablePriorityQueue`
-- `libcxx_uniform_int_ptrdiff` :252
-- `libcxx_shuffle` :272
-- `limits_as_hash_map` :640
-- `FlushDistanceEvaluator::new` :1100
-- `TimeEvaluator::new` :1160
-- `KMediods::new` :1201
-- `FilamentGroup::new` :1663
-- `nozzle_match_diameter_matches` :2283
-- `nozzle_match_can_place_unloaded` :2292
-- `nozzle_match_is_fixed_nozzle` :2323
-- `nozzle_match_append_virtual_nozzle` :2331
-- `nozzle_match_assign_unmatched` :2342
+- `FilamentGroupError::fmt` :87
+- `runtime_error` :96
+- `FlushTimeMachine::default` :110
+- `MemoryedGroup::new` :140
+- `MemoryedGroup::gt` :145
+- `MemoryedGroupHeap::new` :159
+- `MemoryedGroupHeap::comp` :164
+- `MemoryedGroupHeap::sift_up` :170
+- `MemoryedGroupHeap::c` :186
+- `MemoryedGroupHeap::empty` :191 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `MemoryedGroupHeap::size` :196 — C++ has it in `Arachne/utils/ExtrusionLine`, `BoundingBox`, `ClipperUtils`
+- `MemoryedGroupHeap::top` :201
+- `MemoryedGroupHeap::push` :206 — C++ has it in `Channel`, `MeshSplitImpl`, `MutablePriorityQueue`
+- `MemoryedGroupHeap::pop` :215 — C++ has it in `Channel`, `MeshSplitImpl`, `MutablePriorityQueue`
+- `libcxx_uniform_int_ptrdiff` :248
+- `libcxx_shuffle` :268
+- `limits_as_hash_map` :636
+- `FlushDistanceEvaluator::new` :1096
+- `TimeEvaluator::new` :1156
+- `KMediods::new` :1197
+- `FilamentGroup::new` :1659
+- `nozzle_match_diameter_matches` :2279
+- `nozzle_match_can_place_unloaded` :2288
+- `nozzle_match_is_fixed_nozzle` :2319
+- `nozzle_match_append_virtual_nozzle` :2327
+- `nozzle_match_assign_unmatched` :2338
 
 ### `FilamentGroupUtils` (.cpp+.hpp) and `filament_group_utils.rs`
 
@@ -3874,7 +3875,7 @@ Rust only:
 
 ### `Format/bbs_3mf` (.cpp+.hpp) and `format/bbs_3mf.rs`
 
-Tier 1. C++ functions 205 (plus 16 constructors, 3 destructors, 4 operators), Rust functions 343. Matched 204: faithful 178, partial 23, divergent 3, stub 0.
+Tier 1. C++ functions 205 (plus 16 constructors, 3 destructors, 4 operators), Rust functions 343. Matched 204: faithful 179, partial 22, divergent 3, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -3887,23 +3888,22 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `_BBS_3MF_Importer::ObjectImporter::object_parse_error_message` :1329 and `ObjectImporter::object_parse_error_message` :3096 (33%, 1.39x)
 - partial: `_BBS_3MF_Importer::parse_error_message` :1542 and `_BBS_3MF_Importer::parse_error_message` :4152 (33%, 1.39x)
 - partial: `_BBS_3MF_Importer::get_thumbnail` :1823 and `_BBS_3MF_Importer::get_thumbnail` :3895 (54%, 0.93x)
-- partial: `mz_zip_read_istream` :1862 and `mz_zip_read_istream` :8003 (33%, 1.75x)
+- partial: `mz_zip_read_istream` :1862 and `mz_zip_read_istream` :8001 (33%, 1.75x)
 - partial: `_BBS_3MF_Importer::_stop_xml_parser` :2059 and `_BBS_3MF_Importer::_stop_xml_parser` :4141 (50%, 0.46x)
 - partial: `_BBS_3MF_Importer::_load_model_from_file` :2070 and `_BBS_3MF_Importer::_load_model_from_file` :4168 (82%, 0.99x)
 - partial: `_BBS_3MF_Importer::_extract_xml_from_archive` :2905 and `_BBS_3MF_Importer::_extract_xml_from_archive` :4953 (39%, 1.41x)
 - partial: `_BBS_3MF_Importer::_extract_model_from_archive` :2950 and `_BBS_3MF_Importer::_extract_model_from_archive` :5008 (42%, 0.63x)
 - divergent: `_BBS_3MF_Importer::_extract_embossed_svg_shape_file` :3693 and `_BBS_3MF_Importer::_extract_embossed_svg_shape_file` :5618 (30%, 0.33x)
 - partial: `_BBS_3MF_Importer::_handle_start_config_metadata` :4913 and `_BBS_3MF_Importer::_handle_start_config_metadata` :6799 (82%, 1.12x)
-- partial: `_BBS_3MF_Importer::_handle_start_config_nozzle` :5275 and `_BBS_3MF_Importer::_handle_start_config_nozzle` :7102 (79%, 1.07x)
-- partial: `_BBS_3MF_Importer::_handle_start_text_info_item` :5434 and `_BBS_3MF_Importer::_handle_start_text_info_item` :7279 (87%, 0.94x)
-- partial: `_BBS_3MF_Importer::_generate_volumes_new` :5619 and `_BBS_3MF_Importer::_generate_volumes_new` :7466 (85%, 1.01x)
-- partial: `_BBS_3MF_Importer::_generate_volumes` :5876 and `_BBS_3MF_Importer::_generate_volumes` :7728 (87%, 0.97x)
+- partial: `_BBS_3MF_Importer::_handle_start_text_info_item` :5434 and `_BBS_3MF_Importer::_handle_start_text_info_item` :7277 (87%, 0.94x)
+- partial: `_BBS_3MF_Importer::_generate_volumes_new` :5619 and `_BBS_3MF_Importer::_generate_volumes_new` :7464 (85%, 1.01x)
+- partial: `_BBS_3MF_Importer::_generate_volumes` :5876 and `_BBS_3MF_Importer::_generate_volumes` :7726 (87%, 0.97x)
 - partial: `_BBS_3MF_Importer::ObjectImporter::_extract_object_from_archive` :6508 and `ObjectImporter::_extract_object_from_archive` :3546 (41%, 0.57x)
-- partial: `_BBS_3MF_Exporter::_add_file_to_archive` :7316 and `_BBS_3MF_Exporter::_add_file_to_archive` :8954 (46%, 0.53x)
-- partial: `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :7338 and `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :8972 (43%, 0.96x)
-- partial: `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :7446 and `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :9093 (53%, 0.86x)
-- divergent: `reset_stream` :7537 and `reset_stream` :8247 (25%, 0.28x)
-- divergent: `_BBS_3MF_Exporter::_add_model_file_to_archive` :7553 and `_BBS_3MF_Exporter::_add_model_file_to_archive` :9204 (15%, 0.12x)
+- partial: `_BBS_3MF_Exporter::_add_file_to_archive` :7316 and `_BBS_3MF_Exporter::_add_file_to_archive` :8952 (46%, 0.53x)
+- partial: `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :7338 and `_BBS_3MF_Exporter::_add_content_types_file_to_archive` :8970 (43%, 0.96x)
+- partial: `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :7446 and `_BBS_3MF_Exporter::_add_bbox_file_to_archive` :9091 (53%, 0.86x)
+- divergent: `reset_stream` :7537 and `reset_stream` :8245 (25%, 0.28x)
+- divergent: `_BBS_3MF_Exporter::_add_model_file_to_archive` :7553 and `_BBS_3MF_Exporter::_add_model_file_to_archive` :9202 (15%, 0.12x)
 
 Missing in the Rust file:
 
@@ -4002,54 +4002,54 @@ Rust only:
 - `_BBS_3MF_Importer::get_color_group_map` :3788
 - `_BBS_3MF_Importer::get_volume_color_data` :3804
 - `_BBS_3MF_Importer::_extract_xml_from_archive_path` :4936
-- `MzZipIstream::new` :8028
-- `MzZipIstream::read` :8037 — C++ has it in `PNGReadWrite`
-- `MzZipIstream::seek` :8045
-- `iter_json` :8079
-- `custom_gcode_type_from_int` :8089
-- `gradient_curve_is_empty` :8106
-- `sanitize_mixed_gradient_curve_array` :8136 — C++ has it in `FilamentMixer`
-- `read_emboss_shape` :8150
-- `cut_connector_type_from_int` :8193
-- `std_stoi` :8206
-- `ObjectData::new` :8279
-- `_BBS_3MF_Exporter::default` :8328
-- `_BBS_3MF_Exporter::new` :8334
-- `_BBS_3MF_Exporter::add_error` :8356 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::log_errors` :8361 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::errors` :8366
-- `_BBS_3MF_Exporter::write_image_to_png_in_memory` :8996
-- `_BBS_3MF_Exporter::_add_object_to_model_stream` :9535 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_object_components_to_stream` :9557
-- `_BBS_3MF_Exporter::_add_mesh_to_object_stream` :9616 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::add_transformation` :9765
-- `_BBS_3MF_Exporter::_add_build_to_model_stream` :9777 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_layer_height_profile_file_to_archive` :9810 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_layer_config_ranges_file_to_archive` :9843 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_brim_ear_points_file_to_archive` :9898
-- `_BBS_3MF_Exporter::_add_print_config_file_to_archive` :9939 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_project_config_file_to_archive` :9960
-- `_BBS_3MF_Exporter::_add_project_embedded_presets_to_archive` :9972
-- `_BBS_3MF_Exporter::_add_model_config_file_to_archive` :10008 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_cut_information_file_to_archive` :10517
-- `_BBS_3MF_Exporter::_add_slice_info_config_file_to_archive` :10574
-- `_BBS_3MF_Exporter::_add_gcode_file_to_archive` :10962
-- `_BBS_3MF_Exporter::_add_custom_gcode_per_print_z_file_to_archive` :11010 — C++ has it in `Format/3mf`
-- `_BBS_3MF_Exporter::_add_auxiliary_dir_to_archive` :11078
-- `_BBS_3MF_Exporter::_add_filament_sequence_file_to_archive` :11134
-- `_BBS_3MF_Exporter::_add_assembly_tree_file_to_archive` :11167
-- `_BBS_3MF_Exporter::_add_assembly_stpes_json_file_to_archive` :11184
-- `_BBS_3MF_Exporter::_add_assembly_model_file_to_archive` :11199
-- `std_clamp` :11217
-- `_add_text_info_to_archive` :11228
-- `get_dealed_platform_path` :11297
-- `handle_legacy_project_loaded` :11312 — C++ has it in `Format/3mf`
-- `load_bbs_3mf` :11339
-- `bbs_3mf_get_thumbnail` :11405
-- `is_bbs_project_3mf` :11417
-- `load_gcode_3mf_from_stream` :11431
-- `store_bbs_3mf` :11445
-- `release_plate_data_list` :11463
+- `MzZipIstream::new` :8026
+- `MzZipIstream::read` :8035 — C++ has it in `PNGReadWrite`
+- `MzZipIstream::seek` :8043
+- `iter_json` :8077
+- `custom_gcode_type_from_int` :8087
+- `gradient_curve_is_empty` :8104
+- `sanitize_mixed_gradient_curve_array` :8134 — C++ has it in `FilamentMixer`
+- `read_emboss_shape` :8148
+- `cut_connector_type_from_int` :8191
+- `std_stoi` :8204
+- `ObjectData::new` :8277
+- `_BBS_3MF_Exporter::default` :8326
+- `_BBS_3MF_Exporter::new` :8332
+- `_BBS_3MF_Exporter::add_error` :8354 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::log_errors` :8359 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::errors` :8364
+- `_BBS_3MF_Exporter::write_image_to_png_in_memory` :8994
+- `_BBS_3MF_Exporter::_add_object_to_model_stream` :9533 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_object_components_to_stream` :9555
+- `_BBS_3MF_Exporter::_add_mesh_to_object_stream` :9614 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::add_transformation` :9763
+- `_BBS_3MF_Exporter::_add_build_to_model_stream` :9775 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_layer_height_profile_file_to_archive` :9808 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_layer_config_ranges_file_to_archive` :9841 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_brim_ear_points_file_to_archive` :9896
+- `_BBS_3MF_Exporter::_add_print_config_file_to_archive` :9937 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_project_config_file_to_archive` :9958
+- `_BBS_3MF_Exporter::_add_project_embedded_presets_to_archive` :9970
+- `_BBS_3MF_Exporter::_add_model_config_file_to_archive` :10006 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_cut_information_file_to_archive` :10515
+- `_BBS_3MF_Exporter::_add_slice_info_config_file_to_archive` :10572
+- `_BBS_3MF_Exporter::_add_gcode_file_to_archive` :10960
+- `_BBS_3MF_Exporter::_add_custom_gcode_per_print_z_file_to_archive` :11008 — C++ has it in `Format/3mf`
+- `_BBS_3MF_Exporter::_add_auxiliary_dir_to_archive` :11076
+- `_BBS_3MF_Exporter::_add_filament_sequence_file_to_archive` :11132
+- `_BBS_3MF_Exporter::_add_assembly_tree_file_to_archive` :11165
+- `_BBS_3MF_Exporter::_add_assembly_stpes_json_file_to_archive` :11182
+- `_BBS_3MF_Exporter::_add_assembly_model_file_to_archive` :11197
+- `std_clamp` :11215
+- `_add_text_info_to_archive` :11226
+- `get_dealed_platform_path` :11295
+- `handle_legacy_project_loaded` :11310 — C++ has it in `Format/3mf`
+- `load_bbs_3mf` :11337
+- `bbs_3mf_get_thumbnail` :11403
+- `is_bbs_project_3mf` :11415
+- `load_gcode_3mf_from_stream` :11429
+- `store_bbs_3mf` :11443
+- `release_plate_data_list` :11461
 
 ### `GCode` (.cpp+.hpp) and `g_code.rs`
 
@@ -4898,7 +4898,7 @@ Rust only:
 
 ### `GCode/ToolOrdering` (.cpp+.hpp) and `gcode/tool_ordering.rs`
 
-Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust functions 219. Matched 81: faithful 58, partial 15, divergent 8, stub 0.
+Tier 1. C++ functions 85 (plus 3 constructors, 0 destructors, 6 operators), Rust functions 219. Matched 81: faithful 59, partial 14, divergent 8, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -4914,7 +4914,6 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - divergent: `ToolOrdering::has_wipe_tower` :352 and `ToolOrdering::has_wipe_tower` :2181 (25%, 1.04x)
 - partial: `ToolOrdering::handle_dontcare_extruder` :383 and `ToolOrdering::handle_dontcare_extruder` :2936 (47%, 1.06x)
 - divergent: `ToolOrdering::collect_extruder_statistics` :1402 and `ToolOrdering::collect_extruder_statistics` :1835 (12%, 1.06x)
-- partial: `build_manual_nozzle_map` :1617 and `build_manual_nozzle_map` :3762 (76%, 1.08x)
 - partial: `ToolOrdering::prepare_ordering_context` :2815 and `ToolOrdering::prepare_ordering_context` :5192 (52%, 1.02x)
 - divergent: `WipingExtrusions::set_extruder_override` :3811 and `WipingExtrusions::set_extruder_override` :396 (25%, 1.1x)
 - partial: `WipingExtrusions::first_nonsoluble_extruder_on_layer` :3839 and `WipingExtrusions::first_nonsoluble_extruder_on_layer` :605 (44%, 0.62x)
@@ -6883,15 +6882,15 @@ Rust only:
 
 ### `MultiNozzleUtils` (.cpp+.hpp) and `multi_nozzle_utils.rs`
 
-Tier 1. C++ functions 59 (plus 4 constructors, 0 destructors, 3 operators), Rust functions 119. Matched 58: faithful 53, partial 5, divergent 0, stub 0.
+Tier 1. C++ functions 59 (plus 4 constructors, 0 destructors, 3 operators), Rust functions 117. Matched 58: faithful 53, partial 5, divergent 0, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `StaticNozzleGroupResult::get_nozzle_from_id` :712 and `StaticNozzleGroupResult::get_nozzle_from_id` :1689 (50%, 0.44x)
-- partial: `NozzleStatusRecorder::is_nozzle_empty` :1064 and `NozzleStatusRecorder::is_nozzle_empty` :2632 (67%, 0.39x)
-- partial: `NozzleStatusRecorder::get_filament_in_nozzle` :1071 and `NozzleStatusRecorder::get_filament_in_nozzle` :2640 (50%, 0.87x)
-- partial: `NozzleStatusRecorder::get_nozzle_in_extruder` :1078 and `NozzleStatusRecorder::get_nozzle_in_extruder` :2651 (50%, 0.87x)
-- partial: `NozzleStatusRecorder::clear_nozzle_status` :1095 and `NozzleStatusRecorder::clear_nozzle_status` :2679 (75%, 0.35x)
+- partial: `StaticNozzleGroupResult::get_nozzle_from_id` :712 and `StaticNozzleGroupResult::get_nozzle_from_id` :1640 (50%, 0.44x)
+- partial: `NozzleStatusRecorder::is_nozzle_empty` :1064 and `NozzleStatusRecorder::is_nozzle_empty` :2583 (67%, 0.39x)
+- partial: `NozzleStatusRecorder::get_filament_in_nozzle` :1071 and `NozzleStatusRecorder::get_filament_in_nozzle` :2591 (50%, 0.87x)
+- partial: `NozzleStatusRecorder::get_nozzle_in_extruder` :1078 and `NozzleStatusRecorder::get_nozzle_in_extruder` :2602 (50%, 0.87x)
+- partial: `NozzleStatusRecorder::clear_nozzle_status` :1095 and `NozzleStatusRecorder::clear_nozzle_status` :2630 (75%, 0.35x)
 
 Missing in the Rust file:
 
@@ -6899,67 +6898,65 @@ Missing in the Rust file:
 
 Rust only:
 
-- `nozzle_volume_type_enum_values` :49
-- `get_nozzle_volume_type_string` :70 — C++ has it in `PrintConfig`
-- `NozzleInfo::default` :91
-- `NozzleInfo::lt` :104
-- `NozzleGroupInfo::default` :146
-- `NozzleGroupInfo::new` :158
-- `NozzleGroupInfo::lt` :173
-- `NozzleGroupInfo::eq` :199
-- `stoi` :292
-- `FilamentChangeTimeParams::default` :322
-- `print_config_ints` :374
-- `print_config_floats` :382
-- `build_nozzle_list_from_maps` :601
-- `LayeredNozzleGroupResult::default` :833
-- `LayeredNozzleGroupResult::with_support` :840
-- `LayeredNozzleGroupResult::is_support_dynamic_nozzle_map` :853
-- `LayeredNozzleGroupResult::create` :860 — C++ has it in `EdgeGrid`, `Fill/Lightning/TreeNode`, `SLA/SupportTree`
-- `LayeredNozzleGroupResult::get_layer_filament_nozzle_map` :1505
-- `LayeredNozzleGroupResult::get_layer_filament_nozzle_maps` :1515
-- `LayeredNozzleGroupResult::get_layer_filament_sequences` :1520
-- `LayeredNozzleGroupResult::get_used_nozzles_in_extruder_layer` :1583
-- `LayeredNozzleGroupResult::get_used_extruders_layer` :1588
-- `LayeredNozzleGroupResult::get_used_filaments_layer` :1593
-- `StaticNozzleGroupResult::with_support` :1616
-- `libcxx_hash_int` :2193
-- `libcxx_constrain_hash` :2198
-- `libcxx_next_prime` :2210
-- `libcxx_is_hash_power2` :2233
-- `libcxx_next_hash_pow2` :2238
-- `UnorderedMapInt::default` :2262
-- `UnorderedMapInt::new` :2269
-- `UnorderedMapInt::with_bucket_count` :2274
-- `UnorderedMapInt::hash_of` :2280
-- `UnorderedMapInt::bucket_count` :2285
-- `UnorderedMapInt::len` :2290
-- `UnorderedMapInt::is_empty` :2295 — C++ has it in `PresetBundle`
-- `UnorderedMapInt::rehash` :2300
-- `UnorderedMapInt::do_rehash` :2319
-- `UnorderedMapInt::reserve` :2353 — C++ has it in `Fill/FillPlanePath`, `Model`, `MutablePriorityQueue`
-- `UnorderedMapInt::find_node` :2358
-- `UnorderedMapInt::contains_key` :2380
-- `UnorderedMapInt::count` :2385 — C++ has it in `NozzleInventory`, `PrintApply`, `TriangleMesh`
-- `UnorderedMapInt::get` :2390 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `UnorderedMapInt::get_mut` :2400
-- `UnorderedMapInt::emplace_unique` :2411
-- `UnorderedMapInt::insert` :2446 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
-- `UnorderedMapInt::insert_multi` :2452
-- `UnorderedMapInt::erase` :2503 — C++ has it in `AppConfig`, `Config`, `Point`
-- `UnorderedMapInt::clear` :2533 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
-- `UnorderedMapInt::order` :2547
-- `UnorderedMapInt::iter` :2558
-- `UnorderedMapInt::keys` :2563 — C++ has it in `Config`
-- `UnorderedMapInt::entry` :2570
-- `UnorderedMapInt::assign_from` :2580
-- `UnorderedMapInt::clone` :2599 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
-- `NozzleStatusRecorder::new` :2623
-- `NozzleStatusRecorder::get_nozzle_filament_map` :2692
-- `NozzleStatusRecorder::get_extruder_nozzle_map` :2697
-- `NozzleStatusRecorder::assign_from` :2707
-- `NozzleStatusRecorder::default` :2715
-- `PrintTimeRecalcInput::new` :2795
+- `NozzleInfo::default` :47
+- `NozzleInfo::lt` :60
+- `NozzleGroupInfo::default` :102
+- `NozzleGroupInfo::new` :114
+- `NozzleGroupInfo::lt` :129
+- `NozzleGroupInfo::eq` :155
+- `stoi` :247
+- `FilamentChangeTimeParams::default` :277
+- `print_config_ints` :329
+- `print_config_floats` :337
+- `build_nozzle_list_from_maps` :552
+- `LayeredNozzleGroupResult::default` :784
+- `LayeredNozzleGroupResult::with_support` :791
+- `LayeredNozzleGroupResult::is_support_dynamic_nozzle_map` :804
+- `LayeredNozzleGroupResult::create` :811 — C++ has it in `EdgeGrid`, `Fill/Lightning/TreeNode`, `SLA/SupportTree`
+- `LayeredNozzleGroupResult::get_layer_filament_nozzle_map` :1456
+- `LayeredNozzleGroupResult::get_layer_filament_nozzle_maps` :1466
+- `LayeredNozzleGroupResult::get_layer_filament_sequences` :1471
+- `LayeredNozzleGroupResult::get_used_nozzles_in_extruder_layer` :1534
+- `LayeredNozzleGroupResult::get_used_extruders_layer` :1539
+- `LayeredNozzleGroupResult::get_used_filaments_layer` :1544
+- `StaticNozzleGroupResult::with_support` :1567
+- `libcxx_hash_int` :2144
+- `libcxx_constrain_hash` :2149
+- `libcxx_next_prime` :2161
+- `libcxx_is_hash_power2` :2184
+- `libcxx_next_hash_pow2` :2189
+- `UnorderedMapInt::default` :2213
+- `UnorderedMapInt::new` :2220
+- `UnorderedMapInt::with_bucket_count` :2225
+- `UnorderedMapInt::hash_of` :2231
+- `UnorderedMapInt::bucket_count` :2236
+- `UnorderedMapInt::len` :2241
+- `UnorderedMapInt::is_empty` :2246 — C++ has it in `PresetBundle`
+- `UnorderedMapInt::rehash` :2251
+- `UnorderedMapInt::do_rehash` :2270
+- `UnorderedMapInt::reserve` :2304 — C++ has it in `Fill/FillPlanePath`, `Model`, `MutablePriorityQueue`
+- `UnorderedMapInt::find_node` :2309
+- `UnorderedMapInt::contains_key` :2331
+- `UnorderedMapInt::count` :2336 — C++ has it in `NozzleInventory`, `PrintApply`, `TriangleMesh`
+- `UnorderedMapInt::get` :2341 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `UnorderedMapInt::get_mut` :2351
+- `UnorderedMapInt::emplace_unique` :2362
+- `UnorderedMapInt::insert` :2397 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
+- `UnorderedMapInt::insert_multi` :2403
+- `UnorderedMapInt::erase` :2454 — C++ has it in `AppConfig`, `Config`, `Point`
+- `UnorderedMapInt::clear` :2484 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `ByObjectPrintData`
+- `UnorderedMapInt::order` :2498
+- `UnorderedMapInt::iter` :2509
+- `UnorderedMapInt::keys` :2514 — C++ has it in `Config`
+- `UnorderedMapInt::entry` :2521
+- `UnorderedMapInt::assign_from` :2531
+- `UnorderedMapInt::clone` :2550 — C++ has it in `Config`, `ExtrusionEntity`, `ExtrusionEntityCollection`
+- `NozzleStatusRecorder::new` :2574
+- `NozzleStatusRecorder::get_nozzle_filament_map` :2643
+- `NozzleStatusRecorder::get_extruder_nozzle_map` :2648
+- `NozzleStatusRecorder::assign_from` :2658
+- `NozzleStatusRecorder::default` :2666
+- `PrintTimeRecalcInput::new` :2746
 
 ### `MultiPoint` (.cpp+.hpp) and `multi_point.rs`
 
@@ -8611,23 +8608,23 @@ Rust only:
 
 ### `PrintConfig` (.cpp+.hpp) and `print_config.rs`
 
-Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Rust functions 287. Matched 126: faithful 113, partial 12, divergent 1, stub 0.
+Tier 1. C++ functions 137 (plus 11 constructors, 1 destructors, 1 operators), Rust functions 286. Matched 126: faithful 113, partial 12, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `multi_nozzle_diameter_mode_enabled` :139 and `multi_nozzle_diameter_mode_enabled` :15792 (50%, 1.21x)
-- divergent: `StaticPrintConfig::StaticCache::optptr` :863 and `DynamicPrintConfig::optptr` :17219 (0%, 0.23x)
-- partial: `find_printer_variant_index` :1010 and `find_printer_variant_index` :16361 (50%, 1.0x)
-- partial: `get_nozzle_volume_type_string` :1023 and `get_nozzle_volume_type_string` :16378 (50%, 0.91x)
-- partial: `is_single_ext_multi_nozzle` :1199 and `is_single_ext_multi_nozzle` :16630 (33%, 0.98x)
-- partial: `PrintConfigDef::init_fff_params` :1704 and `PrintConfigDef::init_fff_params` :8789 (92%, 1.22x)
-- partial: `PrintConfigDef::init_extruder_option_keys` :7593 and `PrintConfigDef::init_extruder_option_keys` :15388 (50%, 1.14x)
-- partial: `PrintConfigDef::init_filament_option_keys` :7624 and `PrintConfigDef::init_filament_option_keys` :15428 (50%, 1.15x)
-- partial: `DynamicPrintConfig::get_filament_vendor` :9713 and `DynamicPrintConfig::get_filament_vendor` :17615 (40%, 1.27x)
-- partial: `DynamicPrintConfig::get_filament_type` :9726 and `DynamicPrintConfig::get_filament_type` :17627 (40%, 1.27x)
-- partial: `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :9996 and `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :19724 (69%, 0.74x)
-- partial: `validate` :10643 and `validate` :20475 (53%, 1.04x)
-- partial: `get_bed_shape` :11508 and `get_bed_shape` :20135 (30%, 0.35x)
+- partial: `multi_nozzle_diameter_mode_enabled` :139 and `multi_nozzle_diameter_mode_enabled` :15782 (50%, 1.21x)
+- divergent: `StaticPrintConfig::StaticCache::optptr` :863 and `DynamicPrintConfig::optptr` :17209 (0%, 0.23x)
+- partial: `find_printer_variant_index` :1010 and `find_printer_variant_index` :16351 (50%, 1.0x)
+- partial: `get_nozzle_volume_type_string` :1023 and `get_nozzle_volume_type_string` :16368 (50%, 0.91x)
+- partial: `is_single_ext_multi_nozzle` :1199 and `is_single_ext_multi_nozzle` :16620 (33%, 0.98x)
+- partial: `PrintConfigDef::init_fff_params` :1704 and `PrintConfigDef::init_fff_params` :8779 (92%, 1.22x)
+- partial: `PrintConfigDef::init_extruder_option_keys` :7593 and `PrintConfigDef::init_extruder_option_keys` :15378 (50%, 1.14x)
+- partial: `PrintConfigDef::init_filament_option_keys` :7624 and `PrintConfigDef::init_filament_option_keys` :15418 (50%, 1.15x)
+- partial: `DynamicPrintConfig::get_filament_vendor` :9713 and `DynamicPrintConfig::get_filament_vendor` :17605 (40%, 1.27x)
+- partial: `DynamicPrintConfig::get_filament_type` :9726 and `DynamicPrintConfig::get_filament_type` :17617 (40%, 1.27x)
+- partial: `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :9996 and `DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filaments` :19714 (69%, 0.74x)
+- partial: `validate` :10643 and `validate` :20465 (53%, 1.04x)
+- partial: `get_bed_shape` :11508 and `get_bed_shape` :20125 (30%, 0.35x)
 
 Missing in the Rust file:
 
@@ -8736,76 +8733,75 @@ Rust only:
 - `PrintObjectConfig::apply_key_value` :6077
 - `find_from` :6936
 - `s_keys_map_nozzle_volume_type` :7018
-- `get_extruder_nozzle_stats` :7074
-- `convert_to_nvt_type` :7138
-- `nozzle_volume_type_string` :7207
-- `stoi` :7225
-- `atoi` :7229
-- `parse_leading_int` :7233
-- `keys_map` :7721
-- `L` :8440 — C++ has it in `I18N`
-- `append` :8445 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
-- `find_or_npos` :8454
-- `substr_from` :8459
-- `PrintConfigDef::deref` :8536
-- `PrintConfigDef::deref_mut` :8542
-- `print_config_def` :8552
-- `PrintConfigDef::new` :8562
-- `PrintConfigDef::extruder_option_keys` :8581
-- `PrintConfigDef::extruder_retract_keys` :8588
-- `PrintConfigDef::filament_option_keys` :8592
-- `PrintConfigDef::filament_retract_keys` :8596
-- `getline_tokens` :15679
-- `opt_values` :15694
-- `opt_value` :15702
-- `dyn_ints` :15711
-- `dyn_ints_nullable` :15722
-- `dyn_floats_nullable` :15727
-- `dyn_strings` :15738
-- `dyn_enums_generic` :15743
-- `dyn_bools` :15748
-- `get_at` :15753 — C++ has it in `Config`
-- `get_ams_time_types` :16407
-- `stoi` :16534
-- `atoi` :16559
-- `get_extruder_ams_count` :16579
-- `save_extruder_ams_count_to_string` :16676
-- `save_extruder_nozzle_stats_to_string` :16844
-- `key_set` :16979
-- `ExtruderNozleInfo::operator_lt` :17180
-- `DynamicPrintConfig::default` :17200
-- `DynamicPrintConfig::deref` :17207
-- `DynamicPrintConfig::deref_mut` :17213
-- `DynamicPrintConfig::optptr_mut` :17229
-- `DynamicPrintConfig::keys` :17232 — C++ has it in `Config`
-- `DynamicPrintConfig::new` :17243
-- `DynamicPrintConfig::from_config_base` :17249
-- `DynamicPrintConfig::get_filament_type_displayed` :17467
-- `boost_split_token_compress` :17751
-- `new_static_member` :18565
-- `static_print_config_members` :18632
-- `static_print_config_defaults` :18656
-- `float_or_percent_lt` :18735
-- `values_mut` :18741
-- `ids_and_variants` :19387
-- `typed_values_mut` :19542
-- `get_at_wrapped` :19552
-- `select_variant_rows` :19563
-- `canonical_multi_nozzle_printer_variant` :20000
-- `default_single_nozzle_printer_variant` :20006
-- `nozzle_variant_exists` :20013
-- `printer_nozzle_diameter_mode_single` :20024
-- `printer_nozzle_diameter_mode_multi` :20029
-- `skirt_get_int` :20183
-- `skirt_opt_values` :20226
-- `skirt_opt_value` :20234
-- `skirt_get_at` :20242
-- `std_to_string_f64` :20424
-- `validate_emplace` :20435
-- `validate_single` :20440
-- `validate_vector` :20449
-- `validate_serialize` :20458
-- `full_print_config_of` :20465
+- `convert_to_nvt_type` :7144
+- `stoi` :7218
+- `atoi` :7222
+- `parse_leading_int` :7226
+- `keys_map` :7711
+- `L` :8430 — C++ has it in `I18N`
+- `append` :8435 — C++ has it in `Config`, `CutSurface`, `ExPolygonCollection`
+- `find_or_npos` :8444
+- `substr_from` :8449
+- `PrintConfigDef::deref` :8526
+- `PrintConfigDef::deref_mut` :8532
+- `print_config_def` :8542
+- `PrintConfigDef::new` :8552
+- `PrintConfigDef::extruder_option_keys` :8571
+- `PrintConfigDef::extruder_retract_keys` :8578
+- `PrintConfigDef::filament_option_keys` :8582
+- `PrintConfigDef::filament_retract_keys` :8586
+- `getline_tokens` :15669
+- `opt_values` :15684
+- `opt_value` :15692
+- `dyn_ints` :15701
+- `dyn_ints_nullable` :15712
+- `dyn_floats_nullable` :15717
+- `dyn_strings` :15728
+- `dyn_enums_generic` :15733
+- `dyn_bools` :15738
+- `get_at` :15743 — C++ has it in `Config`
+- `get_ams_time_types` :16397
+- `stoi` :16524
+- `atoi` :16549
+- `get_extruder_ams_count` :16569
+- `get_extruder_nozzle_stats` :16634
+- `save_extruder_ams_count_to_string` :16666
+- `save_extruder_nozzle_stats_to_string` :16834
+- `key_set` :16969
+- `ExtruderNozleInfo::operator_lt` :17170
+- `DynamicPrintConfig::default` :17190
+- `DynamicPrintConfig::deref` :17197
+- `DynamicPrintConfig::deref_mut` :17203
+- `DynamicPrintConfig::optptr_mut` :17219
+- `DynamicPrintConfig::keys` :17222 — C++ has it in `Config`
+- `DynamicPrintConfig::new` :17233
+- `DynamicPrintConfig::from_config_base` :17239
+- `DynamicPrintConfig::get_filament_type_displayed` :17457
+- `boost_split_token_compress` :17741
+- `new_static_member` :18555
+- `static_print_config_members` :18622
+- `static_print_config_defaults` :18646
+- `float_or_percent_lt` :18725
+- `values_mut` :18731
+- `ids_and_variants` :19377
+- `typed_values_mut` :19532
+- `get_at_wrapped` :19542
+- `select_variant_rows` :19553
+- `canonical_multi_nozzle_printer_variant` :19990
+- `default_single_nozzle_printer_variant` :19996
+- `nozzle_variant_exists` :20003
+- `printer_nozzle_diameter_mode_single` :20014
+- `printer_nozzle_diameter_mode_multi` :20019
+- `skirt_get_int` :20173
+- `skirt_opt_values` :20216
+- `skirt_opt_value` :20224
+- `skirt_get_at` :20232
+- `std_to_string_f64` :20414
+- `validate_emplace` :20425
+- `validate_single` :20430
+- `validate_vector` :20439
+- `validate_serialize` :20448
+- `full_print_config_of` :20455
 
 ### `PrintObject` (.cpp) and `print_object.rs`
 
@@ -13144,7 +13140,7 @@ Tier 3. C++ functions 49 (plus 1 constructors, 0 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- partial: `valid_legacy_counts` :192 and `valid_legacy_counts` :373 (38%, 0.61x)
+- partial: `valid_legacy_counts` :192 and `valid_legacy_counts` :368 (38%, 0.61x)
 
 Missing in the Rust file:
 
@@ -13152,33 +13148,33 @@ Missing in the Rust file:
 
 Rust only:
 
-- `NozzlePrintConfig::ints_nullable_is_nil` :107
-- `NozzlePrintConfig::opt_string` :113
-- `NozzleSlot::default` :155
-- `NozzleLayer::default` :193
-- `boost_trim` :501
-- `lock` :641 — C++ has it in `Execution/ExecutionSeq`, `GCode/GCodeProcessor`, `MTUtils`
-- `Impl::new` :663
-- `NozzleInventory::new` :900
-- `NozzleInventory::assign` :908 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
-- `NozzleInventory::slots` :1121
-- `NozzleInventory::export_to_mirror` :1186
-- `multi_nozzle_diameter_mode_enabled` :1245 — C++ has it in `PrintConfig`
-- `get_nozzle_volume_type_string` :1250 — C++ has it in `PrintConfig`
-- `is_single_ext_multi_nozzle` :1259 — C++ has it in `PrintConfig`
-- `atoi` :1270
-- `get_extruder_nozzle_stats` :1291 — C++ has it in `PrintConfig`
-- `nozzle_volume_type_from_string` :1324 — C++ has it in `PrintConfig`
-- `default_nozzle_volume_slots` :1335 — C++ has it in `PrintConfig`
-- `get_default_nozzle_volume_type` :1403 — C++ has it in `PrintConfig`
-- `save_extruder_nozzle_stats_to_string` :1413 — C++ has it in `PrintConfig`
-- `nozzle_variant_exists` :1434
-- `ExtruderFullStat::get_raw_stat` :1454 — C++ has it in `PresetBundle`
-- `ExtruderFullStat::resize` :1459 — C++ has it in `Config`, `PresetBundle`
-- `ExtruderFullStat::set_extruder_stats` :1464 — C++ has it in `PresetBundle`
-- `get_nozzle_volume_type_str` :1474 — C++ has it in `PresetBundle`
-- `per_slot_nozzle_options_consistent` :1487 — C++ has it in `PresetBundle`
-- `sync_per_slot_nozzle_options_from_full_stat` :1504 — C++ has it in `PresetBundle`
+- `NozzlePrintConfig::ints_nullable_is_nil` :102
+- `NozzlePrintConfig::opt_string` :108
+- `NozzleSlot::default` :150
+- `NozzleLayer::default` :188
+- `boost_trim` :496
+- `lock` :636 — C++ has it in `Execution/ExecutionSeq`, `GCode/GCodeProcessor`, `MTUtils`
+- `Impl::new` :658
+- `NozzleInventory::new` :895
+- `NozzleInventory::assign` :903 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
+- `NozzleInventory::slots` :1116
+- `NozzleInventory::export_to_mirror` :1181
+- `multi_nozzle_diameter_mode_enabled` :1240 — C++ has it in `PrintConfig`
+- `get_nozzle_volume_type_string` :1245 — C++ has it in `PrintConfig`
+- `is_single_ext_multi_nozzle` :1254 — C++ has it in `PrintConfig`
+- `atoi` :1265
+- `get_extruder_nozzle_stats` :1286 — C++ has it in `PrintConfig`
+- `nozzle_volume_type_from_string` :1319 — C++ has it in `PrintConfig`
+- `default_nozzle_volume_slots` :1330 — C++ has it in `PrintConfig`
+- `get_default_nozzle_volume_type` :1398 — C++ has it in `PrintConfig`
+- `save_extruder_nozzle_stats_to_string` :1408 — C++ has it in `PrintConfig`
+- `nozzle_variant_exists` :1429
+- `ExtruderFullStat::get_raw_stat` :1449 — C++ has it in `PresetBundle`
+- `ExtruderFullStat::resize` :1454 — C++ has it in `Config`, `PresetBundle`
+- `ExtruderFullStat::set_extruder_stats` :1459 — C++ has it in `PresetBundle`
+- `get_nozzle_volume_type_str` :1469 — C++ has it in `PresetBundle`
+- `per_slot_nozzle_options_consistent` :1482 — C++ has it in `PresetBundle`
+- `sync_per_slot_nozzle_options_from_full_stat` :1499 — C++ has it in `PresetBundle`
 
 ### `ObjColorUtils` (.cpp+.hpp) and `obj_color_utils.rs`
 

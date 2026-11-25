@@ -27,54 +27,10 @@ use crate::utils::format_diameter_to_str_default as format_diameter_to_str;
 
 // MultiNozzleUtils.cpp:12  namespace Slic3r { namespace MultiNozzleUtils {
 
-// ==================== PrintConfig.cpp helpers reused for parity ====================
-//
-// `get_nozzle_volume_type_string` and `ConfigOptionEnum<NozzleVolumeType>::get_enum_values()`
-// are defined in PrintConfig.cpp. They are reproduced here exactly (string<->enum maps)
-// because the existing `crate::extruder` name table diverges from the C++ key-name table.
-
-// PrintConfig.cpp:897-905  static const t_config_enum_values s_keys_map_NozzleVolumeType = {
-//     { "Standard",  nvtStandard },
-//     { "High Flow", nvtHighFlow },
-//     { "TPU High Flow", nvtTPUHighFlow },
-//     { "TPU285", nvtTPU285},
-//     { "Hybrid", nvtHybrid},
-//     { "E3D High Flow", nvtE3DHighFlow }
-// };
-// FIDELITY-NOTE: the values are the integers of the pin's enum (PrintConfig.hpp:382-390); the
-// callers convert them with `NozzleVolumeType::from_i32` of `crate::extruder`, the four-valued enum
-// of an earlier pin, so "TPU285" and "E3D High Flow" read as nvtTPUHighFlow.
-// ConfigOptionEnum<NozzleVolumeType>::get_enum_values() returns s_keys_map_NozzleVolumeType.
-// (string -> enum value)
-fn nozzle_volume_type_enum_values() -> BTreeMap<String, i32> {
-    let mut m = BTreeMap::new();
-    m.insert("Standard".to_string(), 0); // nvtStandard
-    m.insert("High Flow".to_string(), 1); // nvtHighFlow
-    m.insert("TPU High Flow".to_string(), 3); // nvtTPUHighFlow
-    m.insert("TPU285".to_string(), 4); // nvtTPU285
-    m.insert("Hybrid".to_string(), 2); // nvtHybrid
-    m.insert("E3D High Flow".to_string(), 5); // nvtE3DHighFlow
-    m
-}
-
-// PrintConfig.cpp:119  static t_config_enum_names enum_names_from_keys_map(...)
-//   inverts s_keys_map_NozzleVolumeType into names[enum_value] = key.
-// Result: ["Standard", "High Flow", "Hybrid", "TPU High Flow", "TPU285", "E3D High Flow"]
-const S_KEYS_NAMES_NOZZLE_VOLUME_TYPE: [&str; 6] =
-    ["Standard", "High Flow", "Hybrid", "TPU High Flow", "TPU285", "E3D High Flow"];
-
-/// PrintConfig.hpp:389 `nvtCount`
-const NVT_COUNT: i32 = 6;
-
-// PrintConfig.cpp:1023-1030  std::string get_nozzle_volume_type_string(NozzleVolumeType nozzle_volume_type)
-fn get_nozzle_volume_type_string(nozzle_volume_type: NozzleVolumeType) -> String {
-    // PrintConfig.cpp:1025-1028  if (int(nozzle_volume_type) < 0 || nozzle_volume_type >= nvtCount) { ... return ""; }
-    if (nozzle_volume_type as i32) < 0 || (nozzle_volume_type as i32) >= NVT_COUNT {
-        return String::new();
-    }
-    // PrintConfig.cpp:1029  return s_keys_names_NozzleVolumeType[nozzle_volume_type];
-    S_KEYS_NAMES_NOZZLE_VOLUME_TYPE[nozzle_volume_type as usize].to_string()
-}
+// PrintConfig.cpp:897-905, 1023-1030. The group readers and writers share
+// PrintConfig's value-indexed names and its exact, case-sensitive key lookup.
+use crate::print_config::config_def::get_nozzle_volume_type_string;
+use crate::print_config::enums::s_keys_map_NozzleVolumeType;
 
 // MultiNozzleUtils.hpp:17  struct NozzleInfo
 #[derive(Debug, Clone)]
@@ -126,7 +82,7 @@ impl NozzleInfo {
             self.group_id,
             self.extruder_id + 1,
             self.diameter,
-            get_nozzle_volume_type_string(self.volume_type)
+            get_nozzle_volume_type_string(self.volume_type.into())
         )
     }
 }
@@ -215,7 +171,7 @@ impl NozzleGroupInfo {
             "{}-{}-{}-{}",
             self.extruder_id,
             self.diameter,
-            get_nozzle_volume_type_string(self.volume_type),
+            get_nozzle_volume_type_string(self.volume_type.into()),
             self.nozzle_count
         )
     }
@@ -264,8 +220,7 @@ impl NozzleGroupInfo {
         let diameter = tokens[1].clone();
         // MultiNozzleUtils.cpp:1140  NozzleVolumeType volume_type = NozzleVolumeType(ConfigOptionEnum<NozzleVolumeType>::get_enum_values().at(tokens[2]));
         //   .at() throws if the key is absent -> caught -> std::nullopt.
-        let enum_values = nozzle_volume_type_enum_values();
-        let volume_type = match enum_values.get(&tokens[2]) {
+        let volume_type = match s_keys_map_NozzleVolumeType.get(&tokens[2]) {
             Some(&v) => NozzleVolumeType::from_i32(v),
             None => return None,
         };
@@ -391,10 +346,6 @@ fn print_config_floats(config: &(impl crate::config::ConfigOptionResolver + ?Siz
 // reorder), empty slots become placeholders, and N1X puts every nozzle on the single real extruder 0.
 // Returns empty (caller falls back) when the params are absent or inconsistent.
 // MultiNozzleUtils.cpp:36-99  std::vector<NozzleInfo> build_nozzle_list_from_extruder_nozzles(const PrintConfig &print_config)
-//
-// FIDELITY-NOTE: `NozzleVolumeType(vtypes[vi])` goes through `NozzleVolumeType::from_i32` of
-// `crate::extruder` (the four-valued enum of an earlier pin): nvtTPU285 (4) and nvtE3DHighFlow (5)
-// read as nvtTPUHighFlow.
 pub fn build_nozzle_list_from_extruder_nozzles(
     print_config: &(impl crate::config::ConfigOptionResolver + ?Sized),
 ) -> Vec<NozzleInfo> {
@@ -710,7 +661,7 @@ pub fn load_nozzle_infos_with_compatibility(
             }
 
             // MultiNozzleUtils.cpp:250  auto volume_type_str_to_enum = ConfigOptionEnum<NozzleVolumeType>::get_enum_values();
-            let volume_type_str_to_enum = nozzle_volume_type_enum_values();
+            let volume_type_str_to_enum = &*s_keys_map_NozzleVolumeType;
 
             // MultiNozzleUtils.cpp:252  NozzleInfo info;
             let mut info = NozzleInfo::default();
