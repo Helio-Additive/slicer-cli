@@ -241,6 +241,10 @@ pub struct GCodeWriter {
     /// Current Y position (mm).
     y: CoordF,
 
+    /// GCode.cpp:8087 records the exact path end even when the final move was
+    /// too short to emit. An XY move supersedes it (GCode.cpp:516, 8336).
+    pub(crate) last_path_end: Option<crate::Point>,
+
     /// Current Z position (mm).
     z: CoordF,
 
@@ -521,6 +525,7 @@ impl GCodeWriter {
             extruder_index: 0,
             multiple_extruders: false,
             m_extruder_ids: None,
+            last_path_end: None,
             position_known: false,
             // GCodeWriter.hpp:164 — defaults to FALSE, so the first lift of the
             // print is a normal lift, not a spiral.
@@ -662,6 +667,12 @@ impl GCodeWriter {
         self.gcode
     }
 
+    fn update_xy(&mut self, x: CoordF, y: CoordF) {
+        self.x = x;
+        self.y = y;
+        self.last_path_end = None;
+    }
+
     /// Get the current position.
     pub fn position(&self) -> PointF {
         PointF::new(self.x, self.y)
@@ -750,6 +761,7 @@ impl GCodeWriter {
         }
         // `is_current_position_clear` reads this one unless
         // WRITER_POS_CLEAR_CPP=1; the next travel sets both again.
+        self.last_path_end = None;
         self.position_known = false;
         if let Some(z) = last_z {
             self.z = z;
@@ -1034,14 +1046,14 @@ impl GCodeWriter {
     /// Set the current X position (for testing).
     #[cfg(test)]
     pub fn set_x(&mut self, x: CoordF) {
-        self.x = x;
+        self.update_xy(x, self.y);
         self.position_known = true;
     }
 
     /// Set the current Y position (for testing).
     #[cfg(test)]
     pub fn set_y(&mut self, y: CoordF) {
-        self.y = y;
+        self.update_xy(self.x, y);
         self.position_known = true;
     }
 
@@ -1619,10 +1631,10 @@ impl GCodeWriter {
     pub fn home(&mut self, x: bool, y: bool, z: bool) {
         self.write_command(&GCodeCommand::Home { x, y, z });
         if x {
-            self.x = 0.0;
+            self.update_xy(0.0, self.y);
         }
         if y {
-            self.y = 0.0;
+            self.update_xy(self.x, 0.0);
         }
         if z {
             self.z = 0.0;
@@ -1717,8 +1729,7 @@ impl GCodeWriter {
             });
         }
 
-        self.x = x;
-        self.y = y;
+        self.update_xy(x, y);
         // C++ travel_to_xy does NOT update m_current_speed; it only emits F via
         // the formatter. So we update the emitted-F tracker but leave `feedrate`
         // (the extrusion speed) untouched, so it survives across travels.
@@ -2047,8 +2058,7 @@ impl GCodeWriter {
                         e: None,
                         f: Some(travel_f),
                     });
-                    self.x = topx;
-                    self.y = topy;
+                    self.update_xy(topx, topy);
                     self.z = dest_z;
                 } else if self.m_to_lift_type == 0 {
                     self.travel_to_z(dest_z, None);
@@ -2065,8 +2075,7 @@ impl GCodeWriter {
                     e: None,
                     f: Some(travel_f),
                 });
-                self.x = x;
-                self.y = y;
+                self.update_xy(x, y);
                 self.z = dest_z;
                 self.last_emitted_f = travel_f;
             } else {
@@ -2077,8 +2086,7 @@ impl GCodeWriter {
                     e: None,
                     f: Some(travel_f),
                 });
-                self.x = x;
-                self.y = y;
+                self.update_xy(x, y);
                 self.last_emitted_f = travel_f;
                 self.travel_to_z(dest_z, None);
             }
@@ -2108,8 +2116,7 @@ impl GCodeWriter {
                     e: None,
                     f: Some(travel_f),
                 });
-                self.x = x;
-                self.y = y;
+                self.update_xy(x, y);
                 self.z = z;
                 self.last_emitted_f = travel_f;
             } else {
@@ -2120,8 +2127,7 @@ impl GCodeWriter {
                     e: None,
                     f: Some(travel_f),
                 });
-                self.x = x;
-                self.y = y;
+                self.update_xy(x, y);
                 self.last_emitted_f = travel_f;
                 self.travel_to_z(z, None);
             }
@@ -2232,8 +2238,7 @@ impl GCodeWriter {
         if (f - self.last_emitted_f).abs() > 0.01 {
             self.last_emitted_f = f;
         }
-        self.x = x;
-        self.y = y;
+        self.update_xy(x, y);
         self.position_known = true;
     }
 
@@ -2283,8 +2288,7 @@ impl GCodeWriter {
             },
         });
 
-        self.x = x;
-        self.y = y;
+        self.update_xy(x, y);
         self.feedrate = f;
         self.last_emitted_f = f;
         self.position_known = true;
@@ -2400,8 +2404,7 @@ impl GCodeWriter {
 
         self.write_command(&cmd);
 
-        self.x = x;
-        self.y = y;
+        self.update_xy(x, y);
         self.feedrate = f;
         self.last_emitted_f = f;
         self.position_known = true;
@@ -2616,8 +2619,13 @@ impl GCodeWriter {
                 if toolchange_wipe && self.config.prime_tower_wipe_distance > 0.0 {
                     wipe_dist = self.config.prime_tower_wipe_distance;
                 }
-                // wipe_path = [current] + stored[1..] (forward).
-                let mut pts: Vec<(CoordF, CoordF)> = vec![(self.x, self.y)];
+                // GCode.cpp:477-483 starts with GCode::last_pos(), which can
+                // differ from the emitted position after a sub-EPSILON segment.
+                let start = self.last_path_end
+                    .filter(|_| crate::faithful_gate("WIPE_PATH_END"))
+                    .map(|p| (crate::unscale(p.x), crate::unscale(p.y)))
+                    .unwrap_or((self.x, self.y));
+                let mut pts = vec![start];
                 pts.extend(self.wipe_path.iter().skip(1).copied());
                 // clip_end(total - wipe_dist): keep the first wipe_dist mm.
                 let mut kept: Vec<(CoordF, CoordF)> = vec![pts[0]];
@@ -2852,8 +2860,7 @@ impl GCodeWriter {
                     }
                     self.write_raw("; WIPE_END");
                     let end = *kept.last().unwrap();
-                    self.x = end.0;
-                    self.y = end.1;
+                    self.update_xy(end.0, end.1);
                     // Remaining retraction (whatever the wipe didn't consume).
                     // WIPE_CLIP_SCALED: `Extruder::retract(length)` retracts
                     // `length - m_retracted`, the sum of the wipe's dE
@@ -2959,8 +2966,7 @@ impl GCodeWriter {
 
                 // Update position to end of wipe path
                 if let Some(&(wx, wy)) = clipped_pts.last() {
-                    self.x = wx;
-                    self.y = wy;
+                    self.update_xy(wx, wy);
                 }
             } else {
                 // Wipe path too short — do simple retraction
@@ -3721,8 +3727,7 @@ impl GCodeWriter {
 
         self.gcode.append_line(&gcode);
 
-        self.x = x;
-        self.y = y;
+        self.update_xy(x, y);
         if self.absolute_extrusion {
             // E tracking is handled by extruder.extrude() calls
         }
@@ -3768,8 +3773,7 @@ impl GCodeWriter {
     }
 
     pub fn set_position_xy(&mut self, x: CoordF, y: CoordF) {
-        self.x = x;
-        self.y = y;
+        self.update_xy(x, y);
         self.position_known = true;
     }
 }

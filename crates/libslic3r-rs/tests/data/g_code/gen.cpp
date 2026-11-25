@@ -751,11 +751,47 @@ static void short_wipes()
         }
 }
 
+// GCode.cpp:477-483, 7987-7988, 8087. At H2D layer 319 the final
+// path segment is shorter than EPSILON. Keep the writer's last emitted
+// position and GCode::last_pos independent, as _extrude does.
+static void path_end_wipes()
+{
+    const Points path{
+        {-6966092, 5857234}, {-6978770, 5866277}, {-7374137, 5435874},
+        {-7277364, 5357320}, {-7257132, 5343782}, {-7101852, 5593913},
+        {-6961202, 5853746}, {-6961207, 5853749},
+    };
+    for (int end : {6, 7}) {
+        DynamicPrintConfig settings;
+        for (const auto &kv : KVs{{"gcode_flavor", "marlin"}, {"wipe", "1"}, {"wipe_distance", "2"},
+                                  {"retraction_length", "0.8"}, {"retract_before_wipe", "0%"},
+                                  {"retract_speed", "30"}, {"use_relative_e_distances", "1"}})
+            settings.set_deserialize_strict(kv.first, kv.second);
+        PrintConfig cfg;
+        cfg.apply(settings, true);
+        GCode gg;
+        gg.apply_print_config(cfg);
+        gg.m_writer.set_extruders({0});
+        gg.m_writer.toolchange(0, 0);
+        gg.m_writer.travel_to_xy(gg.point_to_gcode(path[6]));
+        gg.m_writer.set_speed(600.);
+        gg.m_enable_cooling_markers = true;
+        gg.set_last_pos(path[end]);
+        gg.m_wipe.path = Polyline(path);
+        const auto gcode = gg.retract(false, false, LiftType::NormalLift, false);
+        std::printf("%d %s\n", end, hex(gcode).c_str());
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--path-end-wipes") {
+        path_end_wipes();
+        return 0;
     }
     if (std::string(argv[1]) == "--short-wipes") {
         short_wipes();

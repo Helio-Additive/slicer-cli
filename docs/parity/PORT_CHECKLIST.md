@@ -5942,179 +5942,179 @@ Rust file: `g_code.rs`. Status: **partial**. Not listed: 10 constructors, 1 dest
 
 **free functions**
 
-- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:13745` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:10135`
-- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:10155`
-- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:13784`
+- [v] `infer_timelapse_final_plate_pos` (line 86) → `g_code.rs:13797` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `get_nozzle_diameters_by_nozzle_id` (line 120) → `g_code.rs:10187`
+- [x] `get_nozzle_volume_types_by_nozzle_id` (line 134) → `g_code.rs:10207`
+- [x] `get_path_of_change_filament` (line 175) → `g_code.rs:13836`
 - [v] `check_add_eol` (line 298) → `g_code.rs:49` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `custom_gcode_changes_tool` (line 306) → `g_code.rs:58` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `transform_gcode` (line 378) → `g_code.rs:133` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [v] `get_wipe_avoid_pos_x` (line 428) → `g_code.rs:224` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:13915`
-- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:10212`
-- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:13952` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:16254`
-- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:15947` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `wipe_tower_point_to_object_point` (line 526) → `g_code.rs:13967`
+- [x] `get_outer_wall_volumetric_speed` (line 532) → `g_code.rs:10264`
+- [v] `custom_gcode_sets_temperature` (line 557) → `g_code.rs:14004` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `update_print_estimated_stats` (line 1853) → `g_code.rs:16306`
+- [v] `validate_custom_gcode` (line 1895) → `g_code.rs:15999` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
 - [ ] `init_gcode_processor` (line 2193) → `g_code.rs`
 - [ ] `autospeed_volumetric_limit` (line 2207) → `g_code.rs`
 - [ ] `init_ooze_prevention` (line 2266) → `g_code.rs`
 - [ ] `export_thumbnails_to_file` (line 2301) → `g_code.rs`
-- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:16306`
-- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:16349` — partial
-- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:16368` — partial
+- [x] `update_print_stats_and_format_filament_stats` (line 2344) → `g_code.rs:16358`
+- [~] `sort_object_instances_by_max_z` (line 2406) → `g_code.rs:16401` — partial
+- [~] `sort_object_instances_by_model_order` (line 2421) → `g_code.rs:16420` — partial
 - [~] `to_bambu_bed_type` (line 2461) → `g_code.rs:1581` — divergent
-- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:16184`
-- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:16033`
-- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:16059`
-- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:16122`
-- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:16148`
-- [x] `get_instance_name` (line 4568) → `g_code.rs:14092` — read against the C++ in R915 (the estimate says partial)
+- [x] `emit_custom_gcode_per_print_z` (line 4340) → `g_code.rs:16236`
+- [x] `skirt_loops_per_extruder_all_printing` (line 4433) → `g_code.rs:16085`
+- [x] `make_skirt_loops_multi_diameter` (line 4455) → `g_code.rs:16111`
+- [x] `make_skirt_loops_per_extruder_1st_layer` (line 4507) → `g_code.rs:16174`
+- [x] `make_skirt_loops_per_extruder_other_layers` (line 4530) → `g_code.rs:16200`
+- [x] `get_instance_name` (line 4568) → `g_code.rs:14144` — read against the C++ in R915 (the estimate says partial)
 - [~] `get_instance_name` (line 4576) → `g_code.rs` — another overload of the name is ported
 - [ ] `calculate_layer_edge_grid` (line 6543) → `g_code.rs`
-- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:15927` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `need_smooth_speed` (line 7205) → `g_code.rs:13189`
-- [v] `encodeBase64` (line 8091) → `g_code.rs:14046` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
-- [x] `polygon_to_string` (line 8993) → `g_code.rs:16411`
+- [v] `has_overhang_path_on_slope` (line 6565) → `g_code.rs:15979` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `need_smooth_speed` (line 7205) → `g_code.rs:13241`
+- [v] `encodeBase64` (line 8091) → `g_code.rs:14098` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as partial to the estimate)
+- [x] `polygon_to_string` (line 8993) → `g_code.rs:16463`
 
 **class `GCode`**
 
-- [x] `set_gcode_offset` (line 211) → `g_code.rs:14688`
-- [v] `set_origin` (line 216) → `g_code.rs:15530` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `layer` (line 223) → `g_code.rs:14758`
-- [x] `enable_cooling_markers` (line 231) → `g_code.rs:14778`
-- [x] `layer_count` (line 234) → `g_code.rs:14783`
-- [x] `set_layer_count` (line 235) → `g_code.rs:14788`
-- [x] `set_smooth_coff` (line 252) → `g_code.rs:14832`
-- [x] `set_last_pos` (line 420) → `g_code.rs:14837`
-- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:14843`
-- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:14848`
-- [x] `last_pos_defined` (line 423) → `g_code.rs:14853`
-- [x] `on_first_layer` (line 713) → `g_code.rs:15495`
-- [x] `path_touches_bed` (line 716) → `g_code.rs:15504`
-- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:15512`
-- [x] `object_layer_over_raft` (line 725) → `g_code.rs:15523`
+- [x] `set_gcode_offset` (line 211) → `g_code.rs:14740`
+- [v] `set_origin` (line 216) → `g_code.rs:15582` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `layer` (line 223) → `g_code.rs:14810`
+- [x] `enable_cooling_markers` (line 231) → `g_code.rs:14830`
+- [x] `layer_count` (line 234) → `g_code.rs:14835`
+- [x] `set_layer_count` (line 235) → `g_code.rs:14840`
+- [x] `set_smooth_coff` (line 252) → `g_code.rs:14884`
+- [x] `set_last_pos` (line 420) → `g_code.rs:14889`
+- [x] `set_last_scarf_seam_flag` (line 421) → `g_code.rs:14895`
+- [x] `set_scarf_seam_start_flag` (line 422) → `g_code.rs:14900`
+- [x] `last_pos_defined` (line 423) → `g_code.rs:14905`
+- [x] `on_first_layer` (line 713) → `g_code.rs:15547`
+- [x] `path_touches_bed` (line 716) → `g_code.rs:15556`
+- [x] `path_starts_at_object_base` (line 719) → `g_code.rs:15564`
+- [x] `object_layer_over_raft` (line 725) → `g_code.rs:15575`
 - [ ] `collect_layers_to_print` (line 1576) → `g_code.rs`
 - [ ] `collect_layers_to_print` (line 1769) → `g_code.rs`
-- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:14824`
-- [x] `unretract` (line 1959) → `g_code.rs:14818`
-- [v] `first_layer_projection` (line 1965) → `g_code.rs:16428` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
+- [x] `is_BBL_Printer` (line 1952) → `g_code.rs:14876`
+- [x] `unretract` (line 1959) → `g_code.rs:14870`
+- [v] `first_layer_projection` (line 1965) → `g_code.rs:16480` — R916: tests/g_code_native_parity.rs: first_layer_projection against the pin's GCode.cpp (the body reads as partial to the estimate)
 - [ ] `do_export` (line 1986) → `g_code.rs`
 - [ ] `_do_export` (line 2478) → `g_code.rs`
 - [ ] `export_layer_filaments` (line 3670) → `g_code.rs`
-- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:11191`
-- [x] `get_extruder_id` (line 3793) → `g_code.rs:10688`
-- [x] `get_filament_config_index` (line 3802) → `g_code.rs:10701`
-- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:10707`
-- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:14905`
+- [x] `check_placeholder_parser_failed` (line 3765) → `g_code.rs:11243`
+- [x] `get_extruder_id` (line 3793) → `g_code.rs:10740`
+- [x] `get_filament_config_index` (line 3802) → `g_code.rs:10753`
+- [x] `get_nozzle_config_index` (line 3810) → `g_code.rs:10759`
+- [x] `set_extrude_acceleration` (line 3818) → `g_code.rs:14957`
 - [ ] `process_layers` (line 3830) → `g_code.rs`
 - [ ] `process_layers` (line 3973) → `g_code.rs`
-- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:11158`
-- [v] `print_machine_envelope` (line 4132) → `g_code.rs:14919` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
-- [x] `get_bed_temperature` (line 4173) → `g_code.rs:10713`
-- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:10721`
-- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:14982`
-- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:15023`
+- [x] `placeholder_parser_process` (line 4110) → `g_code.rs:11210`
+- [v] `print_machine_envelope` (line 4132) → `g_code.rs:14971` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `get_bed_temperature` (line 4173) → `g_code.rs:10765`
+- [x] `get_highest_bed_temperature` (line 4180) → `g_code.rs:10773`
+- [x] `_print_first_layer_bed_temperature` (line 4195) → `g_code.rs:15034`
+- [x] `_print_first_layer_extruder_temperatures` (line 4228) → `g_code.rs:15075`
 - [ ] `sort_print_object_instances` (line 4284) → `g_code.rs`
 - [ ] `compute_farthest_point` (line 4582) → `g_code.rs`
 - [ ] `generate_timelapse_gcode` (line 4735) → `g_code.rs`
 - [ ] `filament_in_first_layer_phase` (line 4844) → `g_code.rs`
 - [~] `process_layer` (line 4919) → `gcode/cooling.rs, gcode/spiral_vase.rs` — not in the paired file
-- [v] `apply_print_config` (line 6403) → `g_code.rs:16480` — R942: tests/g_code_native_parity.rs (tags apc, ctor, wipe): the pin's GCode::apply_print_config (GCode.cpp 6403-6408) on 3 configurations, the GCode() constructor's FullPrintConfig defaults before and after it (602 keys and 9 object, region and print options), and Wipe::wipe with retraction during the wipe (retract_before_wipe 0/30/0/70 %, 4 cases with an E per segment) from tests/data/g_code/gen.cpp: every line equal.
-- [v] `append_full_config` (line 6410) → `g_code.rs:14795` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `set_extruders` (line 6433) → `g_code.rs:14859`
-- [v] `set_origin` (line 6446) → `g_code.rs:14699` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `preamble` (line 6458) → `g_code.rs:14874`
-- [~] `change_layer` (line 6473) → `g_code.rs:6444` — partial
-- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:15069` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:15101` — read against the C++ in R915 (the estimate says partial)
-- [x] `get_path_speed` (line 6615) → `g_code.rs:15118` — read against the C++ in R915 (the estimate says partial)
+- [v] `apply_print_config` (line 6403) → `g_code.rs:16532` — R942: tests/g_code_native_parity.rs (tags apc, ctor, wipe): the pin's GCode::apply_print_config (GCode.cpp 6403-6408) on 3 configurations, the GCode() constructor's FullPrintConfig defaults before and after it (602 keys and 9 object, region and print options), and Wipe::wipe with retraction during the wipe (retract_before_wipe 0/30/0/70 %, 4 cases with an E per segment) from tests/data/g_code/gen.cpp: every line equal.
+- [v] `append_full_config` (line 6410) → `g_code.rs:14847` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `set_extruders` (line 6433) → `g_code.rs:14911`
+- [v] `set_origin` (line 6446) → `g_code.rs:14751` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `preamble` (line 6458) → `g_code.rs:14926`
+- [~] `change_layer` (line 6473) → `g_code.rs:6437` — partial
+- [v] `mass_load_limited_machine_acceleration` (line 6513) → `g_code.rs:15121` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `is_enable_overhang_speed` (line 6601) → `g_code.rs:15153` — read against the C++ in R915 (the estimate says partial)
+- [x] `get_path_speed` (line 6615) → `g_code.rs:15170` — read against the C++ in R915 (the estimate says partial)
 - [~] `extrude_loop` (line 6664) → `g_code.rs:2179` — divergent
 - [ ] `extrude_multi_path` (line 6884) → `g_code.rs`
-- [x] `extrude_entity` (line 6914) → `g_code.rs:4372`
+- [x] `extrude_entity` (line 6914) → `g_code.rs:4365`
 - [~] `extrude_path` (line 6927) → `g_code.rs:3757` — divergent
-- [~] `extrude_perimeters` (line 6959) → `g_code.rs:4656` — divergent
-- [x] `extrude_infill` (line 6983) → `g_code.rs:4720`
-- [~] `extrude_support` (line 7011) → `g_code.rs:5258` — partial
-- [v] `mapping_speed` (line 7158) → `g_code.rs:13171` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
-- [v] `get_speed_coor_x` (line 7165) → `g_code.rs:13181` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
-- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:15170`
-- [v] `split_and_mapping_speed` (line 7213) → `g_code.rs:13208` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
-- [v] `merge_same_speed_paths` (line 7363) → `g_code.rs:13462` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed). (the body reads as partial to the estimate)
-- [v] `set_speed_transition` (line 7403) → `g_code.rs:13512` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
-- [v] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:13675` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
-- [x] `slowDownByHeight` (line 7513) → `g_code.rs:15245`
-- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:15316` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [~] `extrude_perimeters` (line 6959) → `g_code.rs:4649` — divergent
+- [x] `extrude_infill` (line 6983) → `g_code.rs:4713`
+- [~] `extrude_support` (line 7011) → `g_code.rs:5251` — partial
+- [v] `mapping_speed` (line 7158) → `g_code.rs:13223` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
+- [v] `get_speed_coor_x` (line 7165) → `g_code.rs:13233` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
+- [x] `get_overhang_degree_corr_speed` (line 7171) → `g_code.rs:15222`
+- [v] `split_and_mapping_speed` (line 7213) → `g_code.rs:13260` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
+- [v] `merge_same_speed_paths` (line 7363) → `g_code.rs:13514` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed). (the body reads as partial to the estimate)
+- [v] `set_speed_transition` (line 7403) → `g_code.rs:13564` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
+- [v] `smooth_speed_discontinuity_area` (line 7499) → `g_code.rs:13727` — R952: Native test tests/g_code_smooth_native_parity.rs (vectors tests/data/g_code_smooth/g_code_smooth.txt.gz from gen.cpp beside it, which includes the pin's GCode.cpp with the private members reachable): bit-equal results of the pin and the port for 200 mapping_speed / get_speed_coor_x pairs (m_smooth_coefficient float 4, 80, 150, 2.7f, 0.35f; distances incl. 0 and negative), 1500 set_speed_transition calls (2-7 groups of LCG wall paths with overhang groups, short and long segments: every output path's role, smooth_speed bits and points), 1500 direct split_and_mapping_speed calls (both directions; max length the paths' total, half, random or 0: the interpolated paths and the remaining paths), and 1000 merge_same_speed_paths + smooth_speed_discontinuity_area calls with the pin's get_path_speed over set wall / overhang speeds, overhang degrees 0-5 and three mm3_per_mm values (the port's path_speed_fn is handed the pin's get_path_speed value of each path). 0 mismatches (cargo test -p slicer --test g_code_smooth_native_parity: 1 passed).
+- [x] `slowDownByHeight` (line 7513) → `g_code.rs:15297`
+- [v] `calc_max_volumetric_speed` (line 7565) → `g_code.rs:15368` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
 - [~] `_extrude` (line 7587) → `extruder.rs, gcode/extruder.rs, gcode/wipe_tower.rs` — not in the paired file
-- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:15347` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:15367`
-- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:15372` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:15381` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:15400`
-- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:15430` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
-- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:15438`
-- [~] `travel_to` (line 8198) → `g_code.rs:5592` — divergent
-- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:15450`
-- [x] `to_lift_type` (line 8348) → `g_code.rs:6409`
+- [v] `_encode_label_ids_to_base64` (line 8104) → `g_code.rs:15399` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_is_object_skip_early_end_enabled` (line 8125) → `g_code.rs:15419`
+- [v] `_init_remaining_objects_bitmap` (line 8130) → `g_code.rs:15424` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [v] `_remaining_objects_gcode` (line 8141) → `g_code.rs:15433` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_precompute_object_last_layers` (line 8159) → `g_code.rs:15452`
+- [v] `_clear_remaining_object` (line 8179) → `g_code.rs:15482` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers)
+- [x] `_mark_objects_finished` (line 8186) → `g_code.rs:15490`
+- [~] `travel_to` (line 8198) → `g_code.rs:5585` — divergent
+- [x] `reset_last_acceleration` (line 8342) → `g_code.rs:15502`
+- [x] `to_lift_type` (line 8348) → `g_code.rs:6402`
 - [ ] `needs_retraction` (line 8363) → `g_code.rs`
-- [x] `retract` (line 8498) → `g_code.rs:15456`
-- [x] `update_layer_related_config` (line 8531) → `g_code.rs:16493`
-- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:11064` — partial
-- [~] `set_extruder` (line 8617) → `g_code.rs:5997` — divergent
-- [x] `set_object_info` (line 9007) → `g_code.rs:16522`
-- [x] `point_to_gcode` (line 9029) → `g_code.rs:14729`
-- [x] `gcode_to_point` (line 9036) → `g_code.rs:14739`
+- [x] `retract` (line 8498) → `g_code.rs:15508`
+- [x] `update_layer_related_config` (line 8531) → `g_code.rs:16545`
+- [~] `update_placeholder_parser_with_variant_params` (line 8551) → `g_code.rs:11116` — partial
+- [~] `set_extruder` (line 8617) → `g_code.rs:5990` — divergent
+- [x] `set_object_info` (line 9007) → `g_code.rs:16574`
+- [x] `point_to_gcode` (line 9029) → `g_code.rs:14781`
+- [x] `gcode_to_point` (line 9036) → `g_code.rs:14791`
 
 **class `GCode::GCodeOutputStream`**
 
-- [x] `is_open` (line 300) → `g_code.rs:14441`
-- [x] `write` (line 311) → `g_code.rs:14480`
-- [x] `is_error` (line 7082) → `g_code.rs:14446`
-- [x] `get_last_error` (line 7087) → `g_code.rs:14451`
-- [x] `flush` (line 7092) → `g_code.rs:14460`
-- [x] `close` (line 7098) → `g_code.rs:14473`
+- [x] `is_open` (line 300) → `g_code.rs:14493`
+- [x] `write` (line 311) → `g_code.rs:14532`
+- [x] `is_error` (line 7082) → `g_code.rs:14498`
+- [x] `get_last_error` (line 7087) → `g_code.rs:14503`
+- [x] `flush` (line 7092) → `g_code.rs:14512`
+- [x] `close` (line 7098) → `g_code.rs:14525`
 - [~] `write` (line 7106) → `log.rs, nozzle_inventory.rs, zipper.rs` — not in the paired file
-- [x] `writeln` (line 7119) → `g_code.rs:14498`
-- [v] `write_format` (line 7125) → `g_code.rs:14511` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
+- [x] `writeln` (line 7119) → `g_code.rs:14550`
+- [v] `write_format` (line 7125) → `g_code.rs:14563` — R915: tests/g_code_native_parity.rs: 318 lines against the pin's GCode.cpp (custom G-code temperature and tool detection, base64, timelapse plate position, transform_gcode, remaining-objects bitmaps, origin, full config, machine envelope, volumetric speed, skirt helpers) (the body reads as divergent to the estimate)
 
 **class `GCode::LayerToPrint`**
 
-- [x] `layer` (line 261) → `g_code.rs:14348`
-- [x] `object` (line 272) → `g_code.rs:14362`
-- [x] `print_z` (line 276) → `g_code.rs:14367`
+- [x] `layer` (line 261) → `g_code.rs:14400`
+- [x] `object` (line 272) → `g_code.rs:14414`
+- [x] `print_z` (line 276) → `g_code.rs:14419`
 
 **class `GCode::ObjectByExtruder::Island::Region`**
 
-- [x] `append` (line 9106) → `g_code.rs:15764`
+- [x] `append` (line 9106) → `g_code.rs:15816`
 
 **class `OozePrevention`**
 
-- [x] `pre_toolchange` (line 332) → `g_code.rs:14118`
-- [x] `post_toolchange` (line 362) → `g_code.rs:14152`
-- [x] `_get_temp` (line 369) → `g_code.rs:14163`
+- [x] `pre_toolchange` (line 332) → `g_code.rs:14170`
+- [x] `post_toolchange` (line 362) → `g_code.rs:14204`
+- [x] `_get_temp` (line 369) → `g_code.rs:14215`
 
 **class `Wipe`**
 
-- [x] `has_path` (line 63) → `g_code.rs:14194`
-- [x] `reset_path` (line 64) → `g_code.rs:14199`
-- [v] `wipe` (line 440) → `g_code.rs:14206` — R941: tests/g_code_native_parity.rs (tag wipe): the pin's Wipe::wipe (GCode.cpp 440-525) on 5 cases from tests/data/g_code/gen.cpp (role-based wipe speed, the travel_speed x wipe_speed fallback when the current speed is 0, path clipping, last position, has_path): output equal. retract_before_wipe 100 % leaves dE untested.
+- [x] `has_path` (line 63) → `g_code.rs:14246`
+- [x] `reset_path` (line 64) → `g_code.rs:14251`
+- [v] `wipe` (line 440) → `g_code.rs:14258` — R941: tests/g_code_native_parity.rs (tag wipe): the pin's Wipe::wipe (GCode.cpp 440-525) on 5 cases from tests/data/g_code/gen.cpp (role-based wipe speed, the travel_speed x wipe_speed fallback when the current speed is 0, path clipping, last position, has_path): output equal. retract_before_wipe 100 % leaves dE untested.
 
 **class `WipeTowerIntegration`**
 
-- [x] `next_layer` (line 106) → `g_code.rs:15635`
-- [x] `is_first_print` (line 112) → `g_code.rs:15694`
-- [x] `set_is_first_print` (line 113) → `g_code.rs:15699`
-- [x] `enable_timelapse_print` (line 115) → `g_code.rs:15704`
-- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:15709`
-- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:15714`
-- [x] `set_rib_offset` (line 118) → `g_code.rs:15719`
+- [x] `next_layer` (line 106) → `g_code.rs:15687`
+- [x] `is_first_print` (line 112) → `g_code.rs:15746`
+- [x] `set_is_first_print` (line 113) → `g_code.rs:15751`
+- [x] `enable_timelapse_print` (line 115) → `g_code.rs:15756`
+- [x] `set_wipe_tower_depth` (line 116) → `g_code.rs:15761`
+- [x] `set_wipe_tower_bbx` (line 117) → `g_code.rs:15766`
+- [x] `set_rib_offset` (line 118) → `g_code.rs:15771`
 - [x] `generate_path_to_wipe_tower` (line 623) → `g_code.rs:258`
 - [~] `append_tcr` (line 741) → `g_code.rs:655` — divergent
 - [~] `post_process_wipe_tower_moves` (line 1383) → `g_code.rs:503` — divergent
-- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:15682`
-- [x] `prime` (line 1477) → `g_code.rs:15630` — read against the C++ in R915 (the estimate says divergent)
+- [x] `compacted_tower_base_z` (line 1467) → `g_code.rs:15734`
+- [x] `prime` (line 1477) → `g_code.rs:15682` — read against the C++ in R915 (the estimate says divergent)
 - [~] `tool_change` (line 1489) → `g_code_writer.rs, gcode/tool_ordering.rs, gcode/wipe_tower.rs` — not in the paired file
-- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:15642`
-- [~] `finalize` (line 1554) → `g_code.rs:15676` — stub
+- [x] `is_empty_wipe_tower_gcode` (line 1524) → `g_code.rs:15694`
+- [~] `finalize` (line 1554) → `g_code.rs:15728` — stub
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp)
 

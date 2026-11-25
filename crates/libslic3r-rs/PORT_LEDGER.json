@@ -1802,7 +1802,7 @@
     "area": "root",
     "rust": "crates/libslic3r-rs/src/g_code.rs",
     "rust_exists": true,
-    "notes": "R960 checks the live export writer's short wipe path in gcode/writer.rs against 96 native GCode::retract outputs. Two-point stored loops may leave one point after replacement and append (Polyline.hpp 89-96, GCode.cpp 477-520 and 8498-8517).",
+    "notes": "R960 checks the live export writer's short wipe path in gcode/writer.rs against 96 native GCode::retract outputs. Two-point stored loops may leave one point after replacement and append (Polyline.hpp 89-96, GCode.cpp 477-520 and 8498-8517). R964 uses the writer-specific logical path end for Wipe::wipe (GCode.cpp 477-483, 7987-7988, 8087). The H2D layer 319 replay tests both the last emitted move and the distinct end after a skipped segment.",
     "loc": 7703,
     "status": "partial",
     "priority": 2,

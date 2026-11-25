@@ -3791,8 +3791,7 @@ pub fn extrude_path_ex(
     // last segments were shorter than EPSILON and skipped (GCode.cpp:7987-7988), so the
     // writer stayed short of the path's end. See `extrude_last_pos`.
     if let Some(last) = path.polyline.points().last() {
-        let p = writer.position();
-        EXTRUDE_LAST_POS.with(|c| c.set(Some((*last, p.x.to_bits(), p.y.to_bits()))));
+        writer.last_path_end = Some(*last);
     }
 }
 
@@ -3829,9 +3828,6 @@ fn travel_probe_path_desc(path: &ExtrusionPath) -> String {
 thread_local! {
     /// TRAVEL_EXACT_PROBE (diagnostic only): (previous path, current path) descriptions.
     static TRAVEL_PROBE_PATHS: std::cell::RefCell<(String, String)> = const { std::cell::RefCell::new((String::new(), String::new())) };
-    /// LAST_POS_PATH_END: the pin's `GCode::m_last_pos` as `_extrude` leaves it (the
-    /// path's last point, GCode.cpp:8087), with the writer position (bits) at that time.
-    static EXTRUDE_LAST_POS: std::cell::Cell<Option<(Point, u64, u64)>> = const { std::cell::Cell::new(None) };
 }
 
 /// The pin's `m_last_pos` where `_extrude` decides on the travel to a path's first point
@@ -3844,11 +3840,8 @@ thread_local! {
 fn extrude_last_pos(writer: &GCodeWriter) -> Point {
     static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *GATE.get_or_init(|| crate::faithful_gate("LAST_POS_PATH_END")) {
-        if let Some((pt, xb, yb)) = EXTRUDE_LAST_POS.with(|c| c.get()) {
-            let p = writer.position();
-            if p.x.to_bits() == xb && p.y.to_bits() == yb {
-                return pt;
-            }
+        if let Some(end) = writer.last_path_end {
+            return end;
         }
     }
     writer_last_pos(writer)
@@ -6895,6 +6888,65 @@ mod exporter_tests {
             content.is_empty() || !content.contains("G1"),
             "Should not generate moves for empty path"
         );
+    }
+
+    /// GCode.cpp:477-483, 7987-7988, 8087. The recorded path end can lie
+    /// past the last emitted XY move by less than EPSILON (H2D layer 319).
+    #[test]
+    fn path_end_wipes_match_native() {
+        let points = [
+            Point::new(-6966092, 5857234), Point::new(-6978770, 5866277),
+            Point::new(-7374137, 5435874), Point::new(-7277364, 5357320),
+            Point::new(-7257132, 5343782), Point::new(-7101852, 5593913),
+            Point::new(-6961202, 5853746), Point::new(-6961207, 5853749),
+        ];
+        let vectors = include_str!("../tests/data/g_code/path_end_wipes.txt");
+        assert_eq!(vectors.lines().count(), 2);
+        for line in vectors.lines() {
+            let (end, hex) = line.split_once(' ').unwrap();
+            let end = end.parse::<usize>().unwrap();
+            let mut config = PrintConfig::default();
+            config.retract_length = 0.8;
+            config.retract_before_wipe = 0.0;
+            config.wipe_distance_profile = Some(2.0);
+            config.retract_speed = 30.0;
+            let mut writer = GCodeWriter::with_config(config);
+            let mut path = ExtrusionPath::new(ExtrusionRole::Perimeter);
+            path.polyline = Polyline::from_points(points[..=end].to_vec());
+            path.mm3_per_mm = 0.1;
+            path.width = 0.45;
+            path.height = 0.2;
+            extrude_path(&path, &mut writer, &PrintObjectConfig::default(), false);
+            assert_eq!(writer_last_pos(&writer), points[6]);
+            assert_eq!(extrude_last_pos(&writer), points[end]);
+            writer.set_wipe_path_points(points.iter().map(|p| (unscale(p.x), unscale(p.y))).collect());
+            writer.set_speed(600.0, "");
+            let start = writer.gcode().content().len();
+            writer.retract_with_lift_type(0, false);
+            let expected: Vec<_> = (0..hex.len()).step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+            assert_eq!(&writer.gcode().content().as_bytes()[start..], expected, "end={end}");
+            assert_eq!(extrude_last_pos(&writer), writer_last_pos(&writer));
+        }
+    }
+
+    #[test]
+    fn path_end_belongs_to_one_writer_until_its_next_xy_move() {
+        let mut writer = GCodeWriter::new();
+        let mut path = ExtrusionPath::new(ExtrusionRole::Perimeter);
+        path.polyline = Polyline::from_points(vec![Point::new(0, 0), Point::new(1_000_000, 0), Point::new(1_000_007, 0)]);
+        path.mm3_per_mm = 0.1;
+        path.width = 0.4;
+        path.height = 0.2;
+        extrude_path(&path, &mut writer, &PrintObjectConfig::default(), false);
+
+        let mut second = GCodeWriter::new();
+        second.travel_to(10.0, 0.0, None);
+        assert_eq!(extrude_last_pos(&second), Point::new(1_000_000, 0));
+        assert_eq!(extrude_last_pos(&writer), Point::new(1_000_007, 0));
+        writer.travel_to(20.0, 0.0, None);
+        writer.travel_to(10.0, 0.0, None);
+        assert_eq!(extrude_last_pos(&writer), Point::new(1_000_000, 0));
     }
 
     /// LAST_POS_PATH_END: `_extrude` skips a last segment shorter than EPSILON
