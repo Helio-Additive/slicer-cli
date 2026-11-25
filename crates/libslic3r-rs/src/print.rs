@@ -2272,7 +2272,14 @@ impl Print {
         }
 
         // Final progress and block end marker (matching reference order)
-        body.extend_from_slice(b"M73 P100 R0\n");
+        let defer_progress = crate::faithful_gate("M73_LINES") && crate::faithful_gate("PROCESSOR_PAUSE_PROGRESS");
+        if defer_progress {
+            use crate::gcode::g_code_processor::{reserved_tag, ETags};
+            // GCode.cpp:3639 stores the final marker before EXECUTABLE_BLOCK_END.
+            writeln!(body, ";{}", reserved_tag(ETags::LastLineM73Placeholder))?;
+        } else {
+            body.extend_from_slice(b"M73 P100 R0\n");
+        }
         // EXECUTABLE_BLOCK_END_BLANK (faithful): GCode.cpp:3640 `file.write_format("; EXECUTABLE_BLOCK_END\n\n")`,
         // a blank line after the marker; =0 writes the marker line only.
         if crate::faithful_gate("EXECUTABLE_BLOCK_END_BLANK") {
@@ -2296,7 +2303,7 @@ impl Print {
             // the CONFIG_BLOCK write (GCode.cpp:2646-2655, Print.cpp:3258-3261).
             provisional_header.used_filaments = self.export_header_used_filaments();
             provisional_header.filament_nozzle_map = self.export_header_filament_nozzle_map();
-            let mut full_gcode = provisional_header.generate_complete_header();
+            let mut full_gcode = provisional_header.complete_header_with_progress(defer_progress);
             full_gcode.push_str(&String::from_utf8_lossy(&body));
 
             let mut processor = GCodeProcessor::new();
@@ -2338,7 +2345,7 @@ impl Print {
         header.config_block_settings = self.config_block_settings.clone();
         header.used_filaments = self.export_header_used_filaments();
         header.filament_nozzle_map = self.export_header_filament_nozzle_map();
-        let header_str = header.generate_complete_header();
+        let header_str = header.complete_header_with_progress(defer_progress);
         // HEADER_USED_FILAMENT_PROCESSOR (faithful, R950): the header's three used-filament lines are the
         // placeholders `TimeProcessor::post_process` fills from the processor's
         // `used_filaments.total_volumes_per_filament` (GCodeProcessor.cpp:728-766), which counts every

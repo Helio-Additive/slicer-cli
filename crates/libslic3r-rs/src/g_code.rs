@@ -8823,20 +8823,23 @@ impl GCodeHeader {
     /// and the first CHANGE_LAYER.  Matches the BambuStudio C++ output for
     /// Bambu Lab H2D + PLA Basic.
     pub fn generate_executable_block_content(&self) -> String {
-        let mut s = String::new();
-        // M73_LINES (on): the first-line placeholder becomes `M73 P0 R<minutes>`
-        // with `time_in_minutes(machine.time)` = int((t + 0.5f) / 60.0f)
-        // (GCodeProcessor.cpp:589-592, 683-688). =0 rounds the writer's own
-        // crude time.
-        let minutes = if crate::faithful_gate("M73_LINES") {
-            ((self.estimated_print_time_seconds + 0.5f32) / 60.0f32) as i32 as u64
+        self.executable_block_content(false)
+    }
+
+    fn executable_block_content(&self, defer_progress: bool) -> String {
+        let mut s = if defer_progress {
+            use crate::gcode::g_code_processor::{reserved_tag, ETags};
+            // GCode.cpp:2762. The postprocessor has the time and stops for each mode.
+            format!(";{}\n", reserved_tag(ETags::FirstLineM73Placeholder))
         } else {
-            (self.stats.print_time_seconds / 60.0).round() as u64
+            let minutes = if crate::faithful_gate("M73_LINES") {
+                ((self.estimated_print_time_seconds + 0.5f32) / 60.0f32) as i32 as u64
+            } else {
+                (self.stats.print_time_seconds / 60.0).round() as u64
+            };
+            format!("M73 P0 R{}\n", minutes)
         };
         let c = &self.config;
-
-        // Progress estimate
-        s.push_str(&format!("M73 P0 R{}\n", minutes));
 
         // Machine motion parameters — read from raw_settings if available
         if let Some(ref settings) = self.raw_settings {
@@ -9043,11 +9046,15 @@ impl GCodeHeader {
 
     /// Generate the complete header (all blocks).
     pub fn generate_complete_header(&self) -> String {
+        self.complete_header_with_progress(false)
+    }
+
+    pub(crate) fn complete_header_with_progress(&self, defer_progress: bool) -> String {
         let mut header = String::new();
         header.push_str(&self.generate_header_block());
         header.push_str(&self.generate_config_block());
         header.push_str(&self.generate_executable_block_start());
-        header.push_str(&self.generate_executable_block_content());
+        header.push_str(&self.executable_block_content(defer_progress));
         header
     }
 }

@@ -2437,6 +2437,7 @@ pub struct GCodeProcessorResult {
     pub filament_costs: Vec<f32>,
     pub filament_vitrification_temperature: Vec<i32>,
     pub print_statistics: PrintEstimatedStatistics,
+    pub custom_gcode_per_print_z: Vec<crate::custom_g_code::Item>,
     pub spiral_vase_layers: Vec<(f32, (usize, usize))>,
     pub warnings: Vec<SliceWarning>,
     pub skippable_part_time: HashMap<SkipType, f32>,
@@ -2483,6 +2484,7 @@ impl Default for GCodeProcessorResult {
             filament_costs: Vec::new(),
             filament_vitrification_temperature: Vec::new(),
             print_statistics: PrintEstimatedStatistics::new(),
+            custom_gcode_per_print_z: Vec::new(),
             spiral_vase_layers: Vec::new(),
             warnings: Vec::new(),
             skippable_part_time: HashMap::new(),
@@ -2525,6 +2527,7 @@ impl GCodeProcessorResult {
         self.filament_costs = vec![DEFAULT_FILAMENT_COST; MIN_EXTRUDERS_COUNT];
         // GCodeProcessor.cpp:1594-1597 resets the other four material vectors here.
         // apply_config replaces the vitrification temperatures for the next print.
+        self.custom_gcode_per_print_z.clear();
         self.spiral_vase_layers = Vec::new();
         self.skippable_part_time.clear();
         self.warnings.clear();
@@ -2650,9 +2653,9 @@ impl TimeProcessor {
     /// while the counter here counts G1/G2/G3/`;VG1` lines of the text only
     /// (`g1_lines_counter`, :997) — as in C++.
     ///
-    /// Not ported here: the placeholders (the port writes those lines itself),
-    /// the filament and extruder blocks, the pre-heating injection and the
-    /// line-offset bookkeeping of the same function.
+    /// The first pass also expands the progress markers. The export header
+    /// supplies the time, layer-count and filament summaries. Pre-heating runs
+    /// in the context-aware postprocessor.
     pub fn post_process(&self, gcode: &str) -> String {
         self.post_process_first_pass(gcode, None)
     }
@@ -2692,8 +2695,65 @@ impl TimeProcessor {
         let mut out = String::with_capacity(gcode.len() + gcode.len() / 64);
         // :929-931 — `line_id` counts the input lines from 1.
         let mut line_id: u32 = 0;
+        let progress_tags = crate::faithful_gate("PROCESSOR_PAUSE_PROGRESS");
+        // GCodeProcessor.cpp:913-952, 993. Each line ends in LF on export.
+        // A CR and LF are consumed together when read in the same 96 KiB block.
+        let mut normalized;
+        let gcode = if progress_tags && !gcode.is_empty() && (gcode.contains('\r') || !gcode.ends_with('\n')) {
+            normalized = String::with_capacity(gcode.len() + 1);
+            let mut start = 0;
+            for (cr, _) in gcode.match_indices('\r') {
+                normalized.push_str(&gcode[start..cr]);
+                normalized.push('\n');
+                start = cr + 1;
+                if start % (96 * 1024) != 0 && gcode.as_bytes().get(start) == Some(&b'\n') {
+                    start += 1;
+                }
+            }
+            normalized.push_str(&gcode[start..]);
+            if !normalized.ends_with('\n') {
+                normalized.push('\n');
+            }
+            normalized.as_str()
+        } else {
+            gcode
+        };
         for gcode_line in gcode.split_inclusive('\n') {
             line_id += 1;
+            // GCodeProcessor.cpp:675-703. The file reader removes the EOL, then
+            // process_placeholders compares the text after the first byte.
+            if progress_tags && gcode_line.as_bytes().get(1) == Some(&b'_') {
+                let tag = gcode_line[1..].trim_end_matches('\n');
+                let first = tag == reserved_tag(ETags::FirstLineM73Placeholder);
+                if first || tag == reserved_tag(ETags::LastLineM73Placeholder) {
+                    let mut emitted = 0;
+                    for (mode, machine) in machines.iter().enumerate() {
+                        if !machine.enabled { continue; }
+                        let (progress, remaining) = if first {
+                            (0, time_in_minutes(machine.time))
+                        } else {
+                            (100, 0)
+                        };
+                        out.push_str(&format_line_m73_main(&machine.line_m73_main_mask, progress, remaining));
+                        emitted += 1;
+                        if let Some(stop) = machine.stop_times.first().filter(|_| first) {
+                            let minutes = time_in_minutes(stop.elapsed_time);
+                            out.push_str(&format_line_m73_stop_int(&machine.line_m73_stop_mask, minutes));
+                            last_exported_stop[mode] = minutes;
+                            emitted += 1;
+                        }
+                    }
+                    if emitted > 0 {
+                        // One output line replaces the input marker (:791-793, 1019-1022).
+                        if emitted > 1 {
+                            if let Some(offs) = offsets.as_deref_mut() {
+                                offs.push((line_id, emitted - 1));
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
             if GCodeLine::cmd_is_str(gcode_line, "G1")
                 || GCodeLine::cmd_is_str(gcode_line, "G2")
                 || GCodeLine::cmd_is_str(gcode_line, "G3")
@@ -2964,9 +3024,38 @@ pub enum GCodeFlavor {
     Other,
 }
 
+/// GCodeProcessor.hpp:1067-1100. A pause or custom command is recorded
+/// immediately and moved to the last travel position at the next extrusion.
+#[derive(Default)]
+struct OptionsZCorrector {
+    pending: Option<(usize, usize)>,
+}
+
+impl OptionsZCorrector {
+    fn set(&mut self, result: &GCodeProcessorResult) {
+        self.pending = Some((result.moves.len() - 1, result.custom_gcode_per_print_z.len() - 1));
+    }
+
+    fn update(&mut self, result: &mut GCodeProcessorResult, height: f32) {
+        let Some((move_id, item_id)) = self.pending.take() else { return };
+        if move_id >= result.moves.len() { return; }
+        let Some(item) = result.custom_gcode_per_print_z.get_mut(item_id) else { return };
+        let position = result.moves.last().unwrap().position;
+        let mut option = result.moves.remove(move_id);
+        option.position = position;
+        option.height = height;
+        result.moves.push(option);
+        item.print_z = f64::from(position[2]);
+    }
+
+    fn reset(&mut self) {
+        self.pending = None;
+    }
+}
+
 /// GCodeProcessor.hpp:440-1211  class GCodeProcessor (state machine).
 ///
-/// Not modelled: `OptionsZCorrector` (with `custom_gcode_per_print_z`), the
+/// Not modelled here: the
 /// filament lists and the pre-heating context of `post_process`, the data
 /// checkers' members (ENABLE_GCODE_VIEWER_DATA_CHECKING is off at the pin).
 pub struct GCodeProcessor {
@@ -3041,6 +3130,7 @@ pub struct GCodeProcessor {
     m_g1_line_id: u32,
     m_layer_id: u32,
     m_cp_color: CpColor,
+    m_options_z_corrector: OptionsZCorrector,
     m_seams_count: i32,
     m_detect_layer_based_on_tag: bool,
     m_measure_g29_time: bool,
@@ -3118,6 +3208,7 @@ impl GCodeProcessor {
             m_g1_line_id: 0,
             m_layer_id: 0,
             m_cp_color: CpColor::default(),
+            m_options_z_corrector: OptionsZCorrector::default(),
             m_seams_count: 0,
             m_detect_layer_based_on_tag: false,
             m_measure_g29_time: false,
@@ -3216,6 +3307,7 @@ impl GCodeProcessor {
         self.m_g1_line_id = 0;
         self.m_layer_id = 0;
         self.m_cp_color.reset();
+        self.m_options_z_corrector.reset();
 
         self.m_time_processor.reset();
         self.m_used_filaments.reset();
@@ -3811,9 +3903,8 @@ impl GCodeProcessor {
     /// GCodeProcessor.cpp:3381-3632  process_tags.
     ///
     /// PROCESS_TAGS (on); =0 ignores every tag, as the port did before R846.
-    /// Not ported: the color change, pause and custom G-code tags (:3525-3608),
-    /// whose `custom_gcode_per_print_z` and `OptionsZCorrector` are missing; those
-    /// tags are ignored. The producers' tags run only with `producers_enabled`
+    /// Color change tags (:3525-3594) are still ignored.
+    /// The producers' tags run only with `producers_enabled`
     /// (G-code loaded from a file), never for the G-code the port writes.
     fn process_tags(&mut self, comment: &str, producers_enabled: bool) {
         if !crate::faithful_gate("PROCESS_TAGS") {
@@ -3955,6 +4046,31 @@ impl GCodeProcessor {
                 let _ = parse_number(rest, &mut self.m_forced_width);
             } else if let Some(v) = parse_number_f32(rest) {
                 self.m_forced_width = v;
+            }
+            return;
+        }
+
+        // GCodeProcessor.cpp:3597-3614. Only a pause schedules a timed stop.
+        let pause = comment == reserved_tag(ETags::PausePrint);
+        if (pause || comment == reserved_tag(ETags::CustomCode))
+            && crate::faithful_gate("PROCESSOR_PAUSE_PROGRESS")
+        {
+            let (move_type, code) = if pause {
+                (EMoveType::PausePrint, CustomGCodeType::PausePrint)
+            } else {
+                (EMoveType::CustomGCode, CustomGCodeType::Custom)
+            };
+            self.store_move_vertex(move_type, EMovePathType::NoopMove);
+            let item = crate::custom_g_code::Item::new(
+                self.m_end_position[crate::g_code_reader::Axis::Z as usize],
+                code,
+                self.get_filament_id(true) + 1,
+                String::new(),
+            );
+            self.m_result.custom_gcode_per_print_z.push(item);
+            self.m_options_z_corrector.set(&self.m_result);
+            if pause {
+                self.process_custom_gcode_time(code);
             }
             return;
         }
@@ -4237,6 +4353,7 @@ impl GCodeProcessor {
                 self.m_end_position[Axis::Z as usize] = self.m_height as f64;
             }
             self.m_extruded_last_z = self.m_end_position[Axis::Z as usize] as f32;
+            self.m_options_z_corrector.update(&mut self.m_result, self.m_height);
 
             if self.m_forced_width > 0.0 {
                 self.m_width = self.m_forced_width;
@@ -5786,7 +5903,7 @@ impl GCodeProcessor {
                 self.m_end_position[Axis::Z as usize] = self.m_height as f64;
             }
             self.m_extruded_last_z = self.m_end_position[Axis::Z as usize] as f32;
-            // m_options_z_corrector.update(m_height); — BLOCKED(deps): no-op.
+            self.m_options_z_corrector.update(&mut self.m_result, self.m_height);
 
             if self.m_forced_width > 0.0 {
                 self.m_width = self.m_forced_width;
@@ -6295,7 +6412,7 @@ impl GCodeProcessor {
                 self.m_end_position[Axis::Z as usize] = self.m_height as f64;
             }
             self.m_extruded_last_z = self.m_end_position[Axis::Z as usize] as f32;
-            // m_options_z_corrector.update(m_height); — BLOCKED(deps): no-op.
+            self.m_options_z_corrector.update(&mut self.m_result, self.m_height);
 
             if self.m_forced_width > 0.0 {
                 self.m_width = self.m_forced_width;

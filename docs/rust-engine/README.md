@@ -131,7 +131,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R974) |
+| Fixture | As brought over (R808) | Now (R975) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -141,11 +141,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R974:
+missing most often. Lines of the oracle's body the port has verbatim, at R975:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R974 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R975 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.
@@ -171,7 +171,10 @@ overhang filter window on short paths. Layer 24 brings consensus agreement to
 remaining slab-order and seam-coordinate differences in the round log. R973
 reproduces the native tagged-layer metadata for spiral and scarf profiles.
 R974 also copies the profile’s build height and polygons into the processor
-result. All four fixture files match R970 byte for byte.
+result. R975 records pause stops and uses them when writing the opening M73
+commands. A Benchy profile with a pause in its end G-code now matches the
+entire native file (197,591 lines). The four standard fixtures still match
+R970 byte for byte.
 
 The percentages of R852 are lower than R851's while the matched counts are
 higher: R852 writes the `M73 P.. R..` progress lines, which `seq_parity.py`

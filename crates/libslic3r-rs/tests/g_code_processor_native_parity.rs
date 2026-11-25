@@ -377,3 +377,80 @@ fn programs() {
     assert!(compared >= 90, "only {compared} cases compared");
     assert!(report.is_empty(), "{} of {} program lines differ:\n{}", differ, total, report.join("\n"));
 }
+
+/// GCodeProcessor.cpp:675-703, 1019-1032, 1316-1325. The native file pass
+/// expands the two progress tags and renumbers moves by the inserted lines.
+#[test]
+fn progress_markers_match_native() {
+    let rows = include_str!("data/g_code_processor/progress_markers.txt");
+    assert_eq!(rows.lines().count(), 18);
+    for row in rows.lines() {
+        let mut fields = row.split_whitespace();
+        let stealth = fields.next().unwrap() == "1";
+        let input = unhex(fields.next().unwrap());
+        let expected_text = unhex(fields.next().unwrap());
+        let expected_ids: Vec<u32> = fields.map(|field| field.parse().unwrap()).collect();
+
+        let mut processor = GCodeProcessor::new();
+        processor.reset();
+        processor.apply_config(&slicer::print_config::PrintConfig::default());
+        processor.enable_stealth_time_estimator(stealth);
+        processor.initialize("progress.gcode");
+        processor.process_buffer(&input);
+        processor.finalize(false);
+        let mut offsets = Vec::new();
+        let text = processor.time_processor().post_process_first_pass(&input, Some(&mut offsets));
+        assert_eq!(text, expected_text, "stealth={stealth}, input={input:?}");
+        let ids: Vec<_> = processor.result().moves.iter().map(|m| {
+            let added: u32 = offsets.iter().filter(|(line, _)| *line <= m.gcode_id).map(|(_, n)| *n).sum();
+            m.gcode_id + added
+        }).collect();
+        assert_eq!(ids, expected_ids, "stealth={stealth}, input={input:?}");
+    }
+}
+
+/// GCodeProcessor.cpp:3597-3614. Compare pending and corrected option
+/// positions, the order of the moves and the stop time in each estimation mode.
+#[test]
+fn pause_and_custom_tags_match_native() {
+    let vectors = include_str!("data/g_code_processor/option_tags.txt");
+    let (settings, rows) = vectors.split_once("begin\n").unwrap();
+    let profile = settings.lines().map(|line| {
+        let (key, value) = line.split_once(' ').unwrap();
+        (key.to_owned(), unhex(value))
+    }).collect::<Vec<_>>();
+    assert_eq!(rows.lines().count(), 20);
+    let mut config = rust_config(&profile);
+    config.filament_diameters = vec![1.75; 2];
+    let mut processor = GCodeProcessor::new();
+    for row in rows.lines() {
+        let mut fields = row.split_whitespace();
+        let finish = fields.next().unwrap() == "1";
+        let input = unhex(fields.next().unwrap());
+        processor.reset();
+        processor.apply_config(&config);
+        processor.enable_stealth_time_estimator(true);
+        processor.initialize("options.gcode");
+        processor.process_buffer(&input);
+        if finish { processor.finalize(false); }
+
+        let result = processor.result();
+        let mut actual = vec![result.custom_gcode_per_print_z.len().to_string()];
+        for item in &result.custom_gcode_per_print_z {
+            actual.extend([f64h(item.print_z), (item.gcode_type as i32).to_string(), item.extruder.to_string(),
+                           hex(&item.color), hex(&item.extra)]);
+        }
+        actual.push(result.moves.len().to_string());
+        for m in &result.moves {
+            actual.extend([m.gcode_id.to_string(), (m.move_type as i32).to_string(),
+                           f32h(m.position[0]), f32h(m.position[1]), f32h(m.position[2]), f32h(m.height)]);
+        }
+        for machine in &processor.time_processor().machines {
+            actual.push(machine.stop_times.len().to_string());
+            for stop in &machine.stop_times {
+                actual.extend([stop.g1_line_id.to_string(), f32h(stop.elapsed_time)]);
+            }
+        }
+        assert_eq!(actual, fields.collect::<Vec<_>>(), "finish={finish}, input={input:?}");
+    }
+}

@@ -199,8 +199,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R972 | Both seam placers compute the same projected position at Majora layer 355. Its scaled coordinates overflow the pin's 32-bit type (SeamPlacer.cpp 1608–1619, Point.hpp 185). The complete binary and isolated native conversions give different results. | Evidence only | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R973 | The typed processor profile enables layer-tag detection for spiral mode and scarf seams (GCodeProcessor.cpp 2081–2087). An ordinary profile clears it. All 16 native profile transitions reproduce the float heights and move indices of the two tagged layers. All four fixture files match R970 with the gate enabled and disabled. | `PROCESSOR_LAYER_TAG_PROFILES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R974 | Copy the printable height and the printable, excluded and clumping-detection polygons into the processor result (GCodeProcessor.cpp 1577–1590, 2072, 2089–2091). Six native states agree through both typed setters and the JSON loader, including defaults, empty areas, reapplication and reset. The four fixture files reproduce R973 with the gate enabled and disabled. | `PROCESSOR_PRINTABLE_GEOMETRY` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R975 | Record pause and custom G-code option moves, correct their height on the next extrusion, and expand the first and last progress tags in the file pass. On a Benchy with an end-code pause, the in-order count rises from 190,464 to all 190,638 body lines. The entire export matches C++. All four standard fixtures reproduce R974 with either gate setting. | `PROCESSOR_PAUSE_PROGRESS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R975, pause-print Benchy. The same two-move probe first differed at the pause
+  tag. Rust omitted the option move and stop time. With those restored, the
+  first progress marker expands to the normal and stealth estimates and their
+  stop countdowns (GCodeProcessor.cpp 675–703, 3597–3614). The file pass
+  matches native text and move line numbers for 18 cases. Twenty observations
+  before and after finalization cover the option move, item height and stop
+  times through linear and arc extrusion (GCodeProcessor.hpp 1067–1100).
+  On the full slice the native opening commands are `M73 P0 R49` and
+  `M73 C49`. R974 emitted `M73 P0 R50` and omitted the stop. Enabling the
+  gate reproduces all 4,639,219 native bytes. Disabling it reproduces R974.
+  H2D retains 4,614,342 and 4,614,863 in-order matches against the two oracles.
 
 - R972, Majora layer 355. Both seam placers receive the same five-point loop,
   choose candidate 1434 in the same perimeter and compute the same concave

@@ -5519,5 +5519,15 @@
   "functions": [
    "smooth_overhang_level"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 975,
+  "evidence": "pause_and_custom_tags_match_native compares moves and option items before and after finalization in 20 native cases, including reset, consecutive tags and correction at the next G1 or arc extrusion (GCodeProcessor.hpp 1077-1099).",
+  "functions": [
+   "GCodeProcessor::OptionsZCorrector::set",
+   "GCodeProcessor::OptionsZCorrector::update",
+   "GCodeProcessor::OptionsZCorrector::reset"
+  ]
  }
 ]

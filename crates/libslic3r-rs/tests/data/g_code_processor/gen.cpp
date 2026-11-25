@@ -942,11 +942,115 @@ static void printable_geometry()
     emit("reset_again");
 }
 
+// GCodeProcessor.cpp 675-703, 1019-1032, 1316-1325. Use the actual
+// file pass so the expected text and renumbered moves include marker expansion.
+static void progress_markers(const std::string &dir)
+{
+    const std::string first = ";_GP_FIRST_LINE_M73_PLACEHOLDER";
+    const std::string last = ";_GP_LAST_LINE_M73_PLACEHOLDER";
+    const std::string move = "G1 X120 F60\n";
+    const std::string next = "G1 X240 F60\n";
+    const std::string pause = "; PAUSE_PRINTING\n";
+    const std::vector<std::string> programs = {
+        first + "\n" + last + "\n",
+        first + "\n" + move + next + last + "\n",
+        first + "\n" + move + pause + next + last + "\n",
+        move + first + "\n" + pause + next + last + "\nG1 X300 F60\n",
+        first + "\n" + first + "\n" + move + pause + next + last + "\n" + last + "\n",
+        first + " \n;" + last + "\n" + move + last + "\n",
+        first + "\n" + move + pause + next + last,
+        first + "\rG1 X120 F60\r; PAUSE_PRINTING\rG1 X240 F60\r" + last + "\r",
+        first + "\r\nG1 X120 F60\r\n" + last + "\r\n; end",
+    };
+    for (int stealth : {0, 1}) {
+        for (const auto &program : programs) {
+            const std::string path = dir + "/progress.gcode";
+            { std::ofstream out(path, std::ios::binary); out << program; }
+            PrintConfig cfg;
+            GCodeProcessor proc;
+            proc.reset();
+            proc.apply_config(cfg);
+            proc.enable_stealth_time_estimator(stealth);
+            proc.initialize(path);
+            proc.process_buffer(program);
+            proc.finalize(true);
+            std::ifstream stream(path, std::ios::binary);
+            const std::string output((std::istreambuf_iterator<char>(stream)), {});
+            std::printf("%d %s %s", stealth, hex(program).c_str(), hex(output).c_str());
+            for (const auto &move : proc.result().moves)
+                std::printf(" %u", static_cast<unsigned>(move.gcode_id));
+            std::putchar('\n');
+        }
+    }
+}
+
+// GCodeProcessor.cpp 3597-3614, 6216-6221, GCodeProcessor.hpp 1077-1099.
+static void option_tags()
+{
+    const std::string travel = "G1 X10 Y10 Z0.2 F600\n";
+    const std::string pause = "; PAUSE_PRINTING\n";
+    const std::string custom = "; CUSTOM_GCODE\n";
+    const std::string lift = "G1 X11 Y10 Z0.4 F600\n";
+    const std::string extrude = "G1 X12 Y10 E0.5 F600\n";
+    const std::string arc = "G3 X13 Y10 I1 J0 E0.5 F600\n";
+    const std::vector<std::string> programs = {
+        pause, custom, travel + pause, travel + custom,
+        travel + pause + lift + extrude, travel + custom + lift + arc,
+        travel + pause + custom + lift + extrude, travel + custom + pause + lift + arc,
+        "T1\n" + travel + pause + lift + extrude,
+        travel + "; PAUSE_PRINTING extra\n; CUSTOM_GCODE extra\n" + lift,
+    };
+    PrintConfig cfg;
+    for (auto [key, value] : limits("marlin2")) {
+        if (key == "filament_diameter") value = "1.75,1.75";
+        cfg.set_deserialize_strict(key, value);
+        std::printf("%s %s\n", key.c_str(), hex(value).c_str());
+    }
+    std::puts("begin");
+    GCodeProcessor p;
+    for (const auto &program : programs) {
+        for (int finish : {0, 1}) {
+            p.reset();
+            p.apply_config(cfg);
+            p.enable_stealth_time_estimator(true);
+            p.initialize("options.gcode");
+            p.process_buffer(program);
+            if (finish) p.finalize(false);
+            const auto &r = p.result();
+            std::printf("%d %s %zu", finish, hex(program).c_str(), r.custom_gcode_per_print_z.size());
+            for (const auto &item : r.custom_gcode_per_print_z)
+                std::printf(" %s %d %d %s %s", f64(item.print_z).c_str(), int(item.type),
+                            item.extruder, hex(item.color).c_str(), hex(item.extra).c_str());
+            std::printf(" %zu", r.moves.size());
+            for (const auto &move : r.moves)
+                std::printf(" %u %d %s %s %s %s", unsigned(move.gcode_id), int(move.type),
+                            f32(move.position.x()).c_str(), f32(move.position.y()).c_str(),
+                            f32(move.position.z()).c_str(), f32(move.height).c_str());
+            for (int mode : {0, 1}) {
+                const auto &stops = p.m_time_processor.machines[mode].stop_times;
+                std::printf(" %zu", stops.size());
+                for (const auto &stop : stops)
+                    std::printf(" %u %s", unsigned(stop.g1_line_id), f32(stop.elapsed_time).c_str());
+            }
+            std::putchar('\n');
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--option-tags") {
+        option_tags();
+        return 0;
+    }
+    if (std::string(argv[1]) == "--progress-markers") {
+        if (argc != 3) return 1;
+        progress_markers(argv[2]);
+        return 0;
     }
     if (std::string(argv[1]) == "--printable-geometry") {
         printable_geometry();
