@@ -105,7 +105,7 @@ OrcaSlicer 2.5.2 pins newer libraries than 2.4.2
 | Library | 2.4.2 build | 2.5.2 build |
 |-|-|-|
 | CGAL | 5.6.3 (Linux, macOS CI), vcpkg 6.1.1 (Windows) | 6.2.1 everywhere: the archive and SHA-256 of `deps/CGAL/CGAL.cmake`; on Windows through the overlay port `ci/vcpkg-overlays-orca/cgal` |
-| OpenCASCADE | 7.6.0 static (Linux) | 8.0.1 static with OrcaSlicer's `0001-BRepMesh-seam-pcurve-selection.patch` (Linux); vcpkg 7.9.3 (Windows) and Homebrew (macOS) as before |
+| OpenCASCADE | 7.6.0 static (Linux); vcpkg 7.9.3 (Windows); Homebrew (macOS) | 8.0.1 static with OrcaSlicer's `0001-BRepMesh-seam-pcurve-selection.patch` on Linux, macOS and Windows |
 
 The source needs CGAL 6.2: `MeshBoolean.cpp` includes
 `CGAL/boost/graph/border.h`, which 6.1.1 does not have (found on the Windows
@@ -133,11 +133,12 @@ kernels and given upstream's own STEP test files (`tests/data`):
 The first file is the case upstream's patch is for (a cone whose seam curve
 is slightly tilted).
 
-The Windows build takes OpenCASCADE 7.9.3 from vcpkg and the macOS build
-takes Homebrew's (7.9.3 today), both without the patch, as before this bump.
-On the Windows build of this head the first file is refused (-100) and the
-two others slice with the same layer counts (30 and 47). macOS is not
-measured. OpenCASCADE 8.0.1 with the patch on Windows and macOS is open work.
+The OrcaSlicer build on Windows and macOS uses the same static OpenCASCADE
+8.0.1 with the patch (Windows: the overlay port
+`ci/vcpkg-overlays-orca/opencascade`; macOS: `install_deps.sh`). On Windows
+the OrcaSlicer program slices the three files with 125, 30 and 47 layers; an
+OrcaSlicer program built against vcpkg's 7.9.3 refused the first file (-100).
+On macOS the first file is a case of `tests/test-complete-slice-path.sh`.
 
 ## What stays the same
 

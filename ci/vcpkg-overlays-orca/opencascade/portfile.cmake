@@ -4,11 +4,17 @@
 # (references/OrcaSlicer/deps/OCCT/OCCT.cmake at f92a7c0). The patch is read from
 # the engine checkout, so there is one copy of it; its hash is checked here
 # because vcpkg does not track a file outside the port folder.
+# A Windows checkout can give the file CRLF line ends (OrcaSlicer's
+# .gitattributes has "* text=auto"), so the port makes a copy with LF line ends,
+# checks the hash of that copy and applies it. Every checkout then builds the
+# same source.
 set(ORCA_SEAM_PATCH "${CMAKE_CURRENT_LIST_DIR}/../../../references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch")
 if(NOT EXISTS "${ORCA_SEAM_PATCH}")
     message(FATAL_ERROR "The OrcaSlicer checkout is missing: ${ORCA_SEAM_PATCH}")
 endif()
-file(SHA256 "${ORCA_SEAM_PATCH}" ORCA_SEAM_PATCH_SHA256)
+set(ORCA_SEAM_PATCH_LF "${CURRENT_BUILDTREES_DIR}/0001-BRepMesh-seam-pcurve-selection.patch")
+configure_file("${ORCA_SEAM_PATCH}" "${ORCA_SEAM_PATCH_LF}" @ONLY NEWLINE_STYLE LF)
+file(SHA256 "${ORCA_SEAM_PATCH_LF}" ORCA_SEAM_PATCH_SHA256)
 if(NOT ORCA_SEAM_PATCH_SHA256 STREQUAL "652d13689016f44bdde8012d73c885fda4e803a5ee4a6ea2cf0d570d5982cf72")
     message(FATAL_ERROR "OrcaSlicer's OpenCASCADE patch changed (${ORCA_SEAM_PATCH_SHA256}); review it and update this port.")
 endif()
@@ -26,7 +32,7 @@ vcpkg_from_github(
         0003-image-remove-freeimage-msvc-autolink.patch
         0004-cmake-add-additional-path-extraction-for-OpenCASCADE.patch
         0005-drop-bin-letter.patch
-        "${ORCA_SEAM_PATCH}"
+        "${ORCA_SEAM_PATCH_LF}"
 )
 
 set(STATIC_FLAG_OPTIONS "")

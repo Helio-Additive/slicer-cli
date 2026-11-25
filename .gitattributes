@@ -1,0 +1,2 @@
+# vcpkg applies these files as they are: keep them byte for byte on every system.
+ci/vcpkg-overlays-orca/opencascade/*.patch -text

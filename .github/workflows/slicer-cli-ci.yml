@@ -583,7 +583,8 @@ jobs:
             # set of TK*.dll, the 7.9.3 of Bambu Studio and Snapmaker Orca.
             VCPKG_ARGS+=(--overlay-triplets="$GITHUB_WORKSPACE/ci/vcpkg-triplets-orca")
             OCCT_PATCH=references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch
-            [[ "$(sha256sum "$OCCT_PATCH" | cut -c1-16)" == 652d13689016f44b ]] \
+            # The hash is of the file with LF line ends: a Windows checkout gives it CRLF.
+            [[ "$(tr -d '\r' < "$OCCT_PATCH" | sha256sum | cut -c1-16)" == 652d13689016f44b ]] \
               || { echo "OrcaSlicer's OpenCASCADE patch changed: give the vcpkg cache key the new hash"; exit 1; }
           fi
           for attempt in 1 2 3; do
@@ -1287,7 +1288,8 @@ jobs:
             # set of TK*.dll, the 7.9.3 of Bambu Studio and Snapmaker Orca.
             VCPKG_ARGS+=(--overlay-triplets="$GITHUB_WORKSPACE/ci/vcpkg-triplets-orca")
             OCCT_PATCH=references/OrcaSlicer/deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch
-            [[ "$(sha256sum "$OCCT_PATCH" | cut -c1-16)" == 652d13689016f44b ]] \
+            # The hash is of the file with LF line ends: a Windows checkout gives it CRLF.
+            [[ "$(tr -d '\r' < "$OCCT_PATCH" | sha256sum | cut -c1-16)" == 652d13689016f44b ]] \
               || { echo "OrcaSlicer's OpenCASCADE patch changed: give the vcpkg cache key the new hash"; exit 1; }
           fi
           for attempt in 1 2 3; do
