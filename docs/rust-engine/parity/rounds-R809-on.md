@@ -196,8 +196,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R969 | Retract the remaining distance when a tool change requests a longer retraction (GCode.cpp 871–879, 8498–8522, GCodeWriter.cpp 881–946, Extruder.cpp 101–146). The writer matches 48 native cases in absolute and relative E, including shorter, equal and zero requests. On Majora all four native runs agree on the missing 1.2 mm at four tower entries. Both Benchys and H2D match R968 byte for byte. Disabling the gate reproduces all four R968 files. | `RETRACT_TO_REQUESTED_LENGTH` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,863,819 to 2,864,038 (+219) |
 | R970 | Walk the full 6.5 mm overhang filter window on short paths (PerimeterGenerator.cpp 548–590). Rust had stopped after a fixed number of neighbors even when the ring had positive length. A four-path native case reproduces the difference. All four C++ runs agree with the feed and retraction text at both changed Majora sites. Both Benchys and H2D match R969, as do all four files with the gate disabled. | `OVERHANG_FILTER_FULL_WINDOW` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,038 to 2,864,040 (+2) |
 | R971 | Traced the two differing Majora layer 173 arc moves to the order of equal-key slab segments at layer 172 (TriangleMeshSlicer.cpp 1063–1081, 1176–1205). The existing opt-in ordering reproduces the complete layer against seven native runs. The full-file scores below are for the retained default. | `TMS_CHAIN_LIBCXX_SORT` (existing opt-in) | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R972 | Both seam placers compute the same projected position at Majora layer 355. Its scaled coordinates overflow the pin's 32-bit type (SeamPlacer.cpp 1608–1619, Point.hpp 185). The complete binary and isolated native conversions give different results. | Evidence only | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R972, Majora layer 355. Both seam placers receive the same five-point loop,
+  choose candidate 1434 in the same perimeter and compute the same concave
+  bisector. A depth of 0.824215 mm and a half-angle cosine of 0.00000329415
+  put the projected position at (−72581.578125, −161326.203125) mm.
+  Both scaled coordinates exceed the range of the signed 32-bit coordinate
+  used by the pin. At this point the live C++ writer obtained
+  (1331776780, 1047248872). Standalone macOS arm64 and x86_64 builds of the
+  same conversion returned the minimum signed 32-bit value on both axes.
+  The native floating-point-to-integer conversion is undefined for this
+  input. The Rust port keeps its wider coordinates and the resulting seam
+  remains different on this fixture.
 
 - R971, Majora. Both engines supplied the same 33 subject points and 41
   overhang samples at layer 173. The first difference came from the slab for

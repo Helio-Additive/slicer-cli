@@ -2795,7 +2795,8 @@
     "loc": 1530,
     "status": "partial",
     "priority": 5,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R972: the concave bisector on Majora layer 355 agrees through the final f32 position. Both coordinates overflow the native int32_t at Point.hpp 185 (SeamPlacer.cpp 1608-1619). Isolated builds and the full binary convert the same value differently, leaving the resulting seam compiler-dependent."
   },
   {
     "cpp": "GCode/ToolOrderUtils.cpp",
