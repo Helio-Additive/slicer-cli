@@ -2401,7 +2401,7 @@ impl MoveVertex {
 /// GCodeProcessor.hpp:181-355  struct GCodeProcessorResult
 ///
 /// Only the fields used by the time / filament-usage parity path are modeled.
-/// Fields that require unported deps (Pointfs, ExtruderType, NozzleType,
+/// Fields that require unported deps (NozzleType,
 /// MultiNozzleUtils, mutex, etc.) are omitted; see the BLOCKED notes in
 /// `finalize`/`apply_config`. The `print_time` / `filament_used_mm` /
 /// `filament_used_g` / `filament_used_mm3` accessors are thin parity-facing
@@ -2420,6 +2420,10 @@ pub struct GCodeProcessorResult {
     /// GCodeProcessor.hpp:287 `bool support_traditional_timelapse{true};`
     pub support_traditional_timelapse: bool,
     pub printable_height: f32,
+    // GCodeProcessor.hpp:273-276. XY coordinates are unscaled doubles.
+    pub printable_area: Vec<(f64, f64)>,
+    pub bed_exclude_area: Vec<(f64, f64)>,
+    pub wrapping_exclude_area: Vec<(f64, f64)>,
     // GCodeProcessor.hpp:295-297. Machine-limit rows are keyed by extruder and nozzle variant.
     pub extruder_types: Vec<crate::extruder::ExtruderType>,
     pub printer_extruder_id: Vec<i32>,
@@ -2464,6 +2468,9 @@ impl Default for GCodeProcessorResult {
             timelapse_warning_code: 0,
             support_traditional_timelapse: true,
             printable_height: 0.0,
+            printable_area: Vec::new(),
+            bed_exclude_area: Vec::new(),
+            wrapping_exclude_area: Vec::new(),
             extruder_types: Vec::new(),
             printer_extruder_id: Vec::new(),
             printer_extruder_variant: Vec::new(),
@@ -2504,6 +2511,10 @@ impl GCodeProcessorResult {
         self.timelapse_warning_code = 0;
         // GCodeProcessor.cpp:1589
         self.support_traditional_timelapse = true;
+        // GCodeProcessor.cpp:1577-1590.
+        self.printable_area.clear();
+        self.bed_exclude_area.clear();
+        self.wrapping_exclude_area.clear();
         self.printable_height = 0.0;
         self.settings_ids.reset();
         self.filaments_count = 0;
@@ -3381,6 +3392,15 @@ impl GCodeProcessor {
                 self.m_filament_maps = config.filament_map.iter().map(|v| v - 1).collect();
             }
             self.ensure_nozzle_group_result(self.m_result.filaments_count as i32);
+        }
+
+        // GCodeProcessor.cpp:2072, 2089-2091. Copy the complete profile
+        // polygons on reapplication, including an explicitly empty polygon.
+        if crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY") {
+            self.m_result.printable_height = config.printable_height as f32;
+            self.m_result.printable_area.clone_from(&config.printable_area);
+            self.m_result.bed_exclude_area.clone_from(&config.bed_exclude_area);
+            self.m_result.wrapping_exclude_area.clone_from(&config.wrapping_exclude_area);
         }
 
         // GCodeProcessor.cpp:2081-2087. Each typed profile replaces the

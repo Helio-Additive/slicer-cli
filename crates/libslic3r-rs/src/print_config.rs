@@ -61,6 +61,20 @@ pub(crate) fn processor_filament_material_rows_enabled(key: &str) -> bool {
         && crate::faithful_gate("PROCESSOR_FILAMENT_MATERIAL_INFO")
 }
 
+pub(crate) fn processor_bed_area_enabled(key: &str) -> bool {
+    matches!(key, "printable_area" | "bed_exclude_area" | "wrapping_exclude_area")
+        && crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY")
+}
+
+// PrintConfig.cpp:1545-1551. Older serialized profiles omit this option.
+fn default_bed_exclude_area() -> Vec<(CoordF, CoordF)> {
+    vec![(0.0, 0.0)]
+}
+
+fn is_default_bed_exclude_area(points: &[(CoordF, CoordF)]) -> bool {
+    matches!(points, [(x, y)] if x.to_bits() == 0 && y.to_bits() == 0)
+}
+
 /// The six per-AMS scalar options in PrintConfig.hpp:1423-1428.
 fn is_ams_filament_time(key: &str) -> bool {
     matches!(key,
@@ -646,6 +660,12 @@ pub struct PrintConfig {
     pub prime_tower_wipe_distance: CoordF,
     /// The points of the printable area (mm). BambuStudio: `printable_area`.
     pub printable_area: Vec<(CoordF, CoordF)>,
+    /// PrintConfig.hpp:1575, bed polygon excluded from printing.
+    #[serde(default = "default_bed_exclude_area", skip_serializing_if = "is_default_bed_exclude_area")]
+    pub bed_exclude_area: Vec<(CoordF, CoordF)>,
+    /// PrintConfig.cpp:4256-4261, area excluded from clumping detection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wrapping_exclude_area: Vec<(CoordF, CoordF)>,
     /// Leave gaps in the prime-tower wall where the object passes close, and
     /// iron the start of each purge line.
     /// BambuStudio: `prime_tower_skip_points`. Drives `WipeTower::m_use_gap_wall`
@@ -1330,6 +1350,9 @@ impl PrintConfig {
 
 impl Default for PrintConfig {
     fn default() -> Self {
+        // PrintConfig.cpp:1532-1537, 1585-1592. Machine profiles may replace both.
+        let native_bed = crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY");
+        let bed_side = if native_bed { 200.0 } else { 256.0 };
         Self {
             // Bed
             bed_size_x: 256.0,
@@ -1588,7 +1611,9 @@ impl Default for PrintConfig {
             prime_tower_brim_width: 3.0,
             prime_tower_wipe_speed: 0.0,
             prime_tower_wipe_distance: 0.0,
-            printable_area: vec![(0.0, 0.0), (256.0, 0.0), (256.0, 256.0), (0.0, 256.0)],
+            printable_area: vec![(0.0, 0.0), (bed_side, 0.0), (bed_side, bed_side), (0.0, bed_side)],
+            bed_exclude_area: default_bed_exclude_area(),
+            wrapping_exclude_area: Vec::new(),
             prime_tower_skip_points: false,
             prime_tower_max_speed: 90.0,
 
@@ -1602,7 +1627,7 @@ impl Default for PrintConfig {
             pressure_advance: 0.0,
 
             // Printable height
-            printable_height: 256.0,
+            printable_height: if native_bed { 100.0 } else { 256.0 },
 
             // Extruder clearance
             extruder_clearance_height_to_rod: 36.0,
@@ -3481,6 +3506,27 @@ impl PrintConfig {
             }
             "handle_hotend_as_extruder" => {
                 self.handle_hotend_as_extruder = parse_bool(value).unwrap_or(false);
+                true
+            }
+            "printable_height" if crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY") => {
+                use crate::config::{ConfigOption, ConfigOptionFloat};
+                let mut height = ConfigOptionFloat::new();
+                if matches!(height.deserialize(value, false), Ok(true)) {
+                    self.printable_height = height.value;
+                }
+                true
+            }
+            k if processor_bed_area_enabled(k) => {
+                use crate::config::{ConfigOption, ConfigOptionPoints};
+                let mut points = ConfigOptionPoints::new();
+                if matches!(points.deserialize(value, false), Ok(true)) {
+                    let area = match k {
+                        "printable_area" => &mut self.printable_area,
+                        "bed_exclude_area" => &mut self.bed_exclude_area,
+                        _ => &mut self.wrapping_exclude_area,
+                    };
+                    *area = points.values.iter().map(|p| (p.x, p.y)).collect();
+                }
                 true
             }
             "extruder_offset" if crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") => {
@@ -5589,7 +5635,10 @@ impl PrintConfig {
         let parse_bool =
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
-        if processor_filament_material_rows_enabled(key) {
+        if processor_filament_material_rows_enabled(key)
+            || processor_bed_area_enabled(key)
+            || (key == "printable_height" && crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY"))
+        {
             return self.set_deserialize(key, value);
         }
         if matches!(key, "extruder_offset" | "master_extruder_id" | "filament_map")

@@ -2172,6 +2172,7 @@ fn load_bambustudio_settings(
                 // Config.cpp:1030-1080 joins the profile's array before deserialization.
                 serde_json::Value::Array(arr) if crate::print_config::profile_machine_limit_rows_enabled(key)
                     || crate::print_config::processor_filament_material_rows_enabled(key)
+                    || crate::print_config::processor_bed_area_enabled(key)
                     || (matches!(key.as_str(), "extruder_offset" | "filament_map") && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")) => {
                     let Some(items) = arr.iter().map(|v| v.as_str()).collect::<Option<Vec<_>>>() else { continue };
                     items.join(",")
@@ -2413,31 +2414,30 @@ fn apply_bed_temperature(config: &mut PrintConfig, json: &serde_json::Value) {
 
 /// Parse bed dimensions from printable_area array.
 fn apply_bed_dimensions(config: &mut PrintConfig, json: &serde_json::Value) {
-    if let Some(serde_json::Value::Array(arr)) = json.get("printable_area") {
-        let mut max_x: f64 = 256.0;
-        let mut max_y: f64 = 256.0;
-        let mut points: Vec<(f64, f64)> = Vec::new();
-        for v in arr {
-            if let Some(s) = v.as_str() {
-                let parts: Vec<&str> = s.split('x').collect();
-                if parts.len() == 2 {
-                    if let (Ok(x), Ok(y)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
-                        points.push((x, y));
-                        if x > max_x {
-                            max_x = x;
-                        }
-                        if y > max_y {
-                            max_y = y;
-                        }
-                    }
+    let Some(points_json) = json.get("printable_area").and_then(|v| v.as_array()) else { return };
+    let mut legacy_points = Vec::new();
+    let points = if crate::faithful_gate("PROCESSOR_PRINTABLE_GEOMETRY") {
+        // The profile loader already parsed this option as ConfigOptionPoints.
+        &config.printable_area
+    } else {
+        for value in points_json {
+            if let Some((x, y)) = value.as_str().and_then(|text| text.split_once('x')) {
+                if let (Ok(x), Ok(y)) = (x.parse(), y.parse()) {
+                    legacy_points.push((x, y));
                 }
             }
         }
-        config.bed_size_x = max_x;
-        config.bed_size_y = max_y;
-        if points.len() >= 3 {
-            config.printable_area = points;
-        }
+        &legacy_points
+    };
+    let (mut size_x, mut size_y) = (256.0_f64, 256.0_f64);
+    for &(x, y) in points {
+        size_x = size_x.max(x);
+        size_y = size_y.max(y);
+    }
+    config.bed_size_x = size_x;
+    config.bed_size_y = size_y;
+    if legacy_points.len() >= 3 {
+        config.printable_area = legacy_points;
     }
 }
 
@@ -2687,6 +2687,98 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 #[cfg(test)]
 mod circle_compensation_settings_tests {
     use super::*;
+
+    /// GCodeProcessor.cpp:1577-1590, 2072, 2089-2091. Reuse each processor
+    /// through the same profile changes and resets as the native generator.
+    #[test]
+    fn printable_geometry_matches_native() {
+        use crate::gcode::g_code_processor::GCodeProcessor;
+
+        let custom = serde_json::json!({
+            "printable_height": "248.125123",
+            "printable_area": ["-0.25x3", "200x-1.375", "189x199", "0x190.125"],
+            "bed_exclude_area": ["1x1", "2x1", "1x2"],
+            "wrapping_exclude_area": ["0.125x1", "2x1.3333333333", "1x2"],
+        });
+        let empty = serde_json::json!({
+            "printable_height": "0",
+            "printable_area": [], "bed_exclude_area": [], "wrapping_exclude_area": [],
+        });
+        let options = |profile: &serde_json::Value| {
+            let (loaded, _, _) = load_bambustudio_settings(profile).unwrap();
+            let mut direct = PrintConfig::default();
+            let mut by_key = PrintConfig::default();
+            for (key, value) in profile.as_object().unwrap() {
+                let text = match value.as_array() {
+                    Some(points) => points.iter().map(|p| p.as_str().unwrap()).collect::<Vec<_>>().join(","),
+                    None => value.as_str().unwrap().to_owned(),
+                };
+                direct.set_deserialize(key, &text);
+                by_key.apply_key_value(key, &text);
+            }
+            [loaded, direct, by_key]
+        };
+        let mut processors = [GCodeProcessor::new(), GCodeProcessor::new(), GCodeProcessor::new()];
+        let rows = include_str!("../tests/data/g_code_processor/printable_geometry.txt");
+        assert_eq!(rows.lines().count(), 6);
+        for row in rows.lines() {
+            let mut fields = row.split_whitespace();
+            let state = fields.next().unwrap();
+            let height = u32::from_str_radix(fields.next().unwrap(), 16).unwrap();
+            match state {
+                "reset" | "reset_again" => processors.iter_mut().for_each(|p| p.reset()),
+                "default" | "default_again" => {
+                    let config = PrintConfig::default();
+                    for p in &mut processors { p.apply_config(&config); }
+                }
+                "profile" | "empty" => {
+                    let configs = options(if state == "profile" { &custom } else { &empty });
+                    for (p, config) in processors.iter_mut().zip(&configs) {
+                        p.apply_config(config);
+                    }
+                }
+                _ => panic!("unknown native state {state}"),
+            }
+            let mut read_area = || {
+                let count = fields.next().unwrap().parse::<usize>().unwrap();
+                (0..count).map(|_| {
+                    let x = u64::from_str_radix(fields.next().unwrap(), 16).unwrap();
+                    let y = u64::from_str_radix(fields.next().unwrap(), 16).unwrap();
+                    (x, y)
+                }).collect::<Vec<_>>()
+            };
+            let expected = [read_area(), read_area(), read_area()];
+            assert!(fields.next().is_none(), "{state}");
+            for p in &processors {
+                let result = p.result();
+                assert_eq!(result.printable_height.to_bits(), height, "{state}");
+                let areas = [&result.printable_area, &result.bed_exclude_area, &result.wrapping_exclude_area];
+                for (area, native) in areas.into_iter().zip(&expected) {
+                    let bits: Vec<_> = area.iter().map(|(x, y)| (x.to_bits(), y.to_bits())).collect();
+                    assert_eq!(&bits, native, "{state}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn printable_geometry_keeps_older_profiles_and_explicit_empty_areas() {
+        let mut old = serde_json::to_value(PrintConfig::default()).unwrap();
+        assert!(old.get("bed_exclude_area").is_none());
+        assert!(old.get("wrapping_exclude_area").is_none());
+        old["printable_height"] = serde_json::json!(256.0);
+        old["printable_area"] = serde_json::json!([[0, 0], [256, 0], [0, 256]]);
+        let mut config: PrintConfig = serde_json::from_value(old).unwrap();
+        assert_eq!(config.printable_height, 256.0);
+        assert_eq!(config.printable_area, [(0.0, 0.0), (256.0, 0.0), (0.0, 256.0)]);
+        assert_eq!(config.bed_exclude_area, [(0.0, 0.0)]);
+        assert!(config.wrapping_exclude_area.is_empty());
+        config.bed_exclude_area.clear();
+        config.wrapping_exclude_area = vec![(1.25, -2.5)];
+        let restored: PrintConfig = serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
+        assert!(restored.bed_exclude_area.is_empty());
+        assert_eq!(restored.wrapping_exclude_area, [(1.25, -2.5)]);
+    }
 
     /// GCodeProcessor.cpp:2081–2087. Reapplying a typed profile replaces
     /// the layer-detection flags before the first tagged layer is processed.

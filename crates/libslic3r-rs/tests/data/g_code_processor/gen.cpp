@@ -904,11 +904,53 @@ static void layer_tag_profiles()
     }
 }
 
+// GCodeProcessor.cpp 1577-1590, 2072, 2089-2091. Printable geometry
+// is copied on each typed config application and cleared on result reset.
+static void printable_geometry()
+{
+    GCodeProcessor proc;
+    proc.reset();
+    auto emit = [&](const char *name) {
+        const auto &r = proc.result();
+        std::printf("%s %s", name, f32(r.printable_height).c_str());
+        for (const auto *area : {&r.printable_area, &r.bed_exclude_area, &r.wrapping_exclude_area}) {
+            std::printf(" %zu", area->size());
+            for (const auto &point : *area)
+                std::printf(" %s %s", f64(point.x()).c_str(), f64(point.y()).c_str());
+        }
+        std::putchar('\n');
+    };
+    emit("reset");
+    PrintConfig cfg;
+    proc.apply_config(cfg);
+    emit("default");
+    cfg.set_deserialize_strict("printable_height", "248.125123");
+    cfg.set_deserialize_strict("printable_area", "-0.25x3,200x-1.375,189x199,0x190.125");
+    cfg.set_deserialize_strict("bed_exclude_area", "1x1,2x1,1x2");
+    cfg.set_deserialize_strict("wrapping_exclude_area", "0.125x1,2x1.3333333333,1x2");
+    proc.apply_config(cfg);
+    emit("profile");
+    cfg.printable_height.value = 0.0;
+    cfg.printable_area.values.clear();
+    cfg.bed_exclude_area.values.clear();
+    cfg.wrapping_exclude_area.values.clear();
+    proc.apply_config(cfg);
+    emit("empty");
+    proc.apply_config(PrintConfig{});
+    emit("default_again");
+    proc.reset();
+    emit("reset_again");
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--printable-geometry") {
+        printable_geometry();
+        return 0;
     }
     if (std::string(argv[1]) == "--layer-tag-profiles") {
         layer_tag_profiles();
