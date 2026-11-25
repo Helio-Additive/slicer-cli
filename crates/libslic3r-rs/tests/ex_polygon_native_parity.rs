@@ -8,6 +8,7 @@
 //! (`simplify_p_scaled_tolerance`, `simplify_scaled_tolerance`, `expolygons_simplify_scaled_tolerance`).
 //! The families named in `REPORTED` are counted and printed, not asserted: they are not equal to the pin yet.
 
+use slicer::ex_polygon::{ExPolygonArea, ExPolygonContains, ExPolygonHasDuplicatePoints, ExPolygonsOverlaps};
 use slicer::geometry::{BoundingBox, ExPolygon, Line, Point, Polygon, Polyline};
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -145,17 +146,20 @@ fn ex_polygon_matches_the_pin() {
             }};
         }
 
+        // ExPolygon::area (ExPolygon.cpp:52-58) and the free area(const ExPolygon&) (ExPolygon.hpp:487, R948)
+        assert_eq!(ex.area().to_bits(), <ExPolygon as ExPolygonArea>::area(&ex).to_bits());
         dbl_eq!("area", ex.area());
         eq!("is_valid", ex.is_valid() as i64, t.i());
         eq!("contains(point, true)", ex.contains(&p, true) as i64, t.i());
         eq!("contains(point, false)", ex.contains(&p, false) as i64, t.i());
         eq!("on_boundary", ex.on_boundary(&p, eps) as i64, t.i());
         eq!("point_projection", ex.point_projection(&p), t.pt());
-        eq!("contains(line)", ex.contains_line(&cut) as i64, t.i());
-        eq!("contains(polyline)", ex.contains_polyline(&polyline) as i64, t.i());
+        // R948: the one-argument ExPolygon::contains overloads under their C++ name (ExPolygon.cpp:76-107)
+        eq!("contains(line)", <ExPolygon as ExPolygonContains<Line>>::contains(&ex, &cut) as i64, t.i());
+        eq!("contains(polyline)", <ExPolygon as ExPolygonContains<Polyline>>::contains(&ex, &polyline) as i64, t.i());
         {
             let pls = vec![polyline.clone(), Polyline::from_points(vec![cut.a, cut.b])];
-            eq!("contains(polylines)", ex.contains_polylines(&pls) as i64, t.i());
+            eq!("contains(polylines)", <ExPolygon as ExPolygonContains<[Polyline]>>::contains(&ex, &pls[..]) as i64, t.i());
         }
         eq!("overlaps", ex.overlaps(&other) as i64, t.i());
         {
@@ -209,12 +213,12 @@ fn ex_polygon_matches_the_pin() {
         }
         eq!("get_extents(expolygon)", bb_of(&slicer::ex_polygon::get_extents_expoly(&ex)), t.bb());
         eq!("get_extents(expolygons)", bb_of(&slicer::ex_polygon::get_extents(&exs)), t.bb());
-        dbl_eq!("area(expolygons)", slicer::geometry::area_expolygons(&exs));
+        dbl_eq!("area(expolygons)", <[ExPolygon] as ExPolygonArea>::area(&exs));
         eq!("expolygons_simplify", rings_of(&slicer::geometry::expolygons_simplify_scaled_tolerance(&exs, tolerance)), t.exs());
         eq!("expolygons_contain(true)", slicer::geometry::expolygons_contain_border_result(&sxe, &p, true) as i64, t.i());
         eq!("expolygons_contain(false)", slicer::geometry::expolygons_contain_border_result(&sxe, &p, false) as i64, t.i());
-        eq!("overlaps(expolygons, expolygon)", slicer::ex_polygon::overlaps_expolys_expoly(&sxe, &ex) as i64, t.i());
-        eq!("has_duplicate_points(expolygon)", slicer::ex_polygon::has_duplicate_points_expoly(&ex) as i64, t.i());
+        eq!("overlaps(expolygons, expolygon)", <[ExPolygon] as ExPolygonsOverlaps<ExPolygon>>::overlaps(&sxe, &ex) as i64, t.i());
+        eq!("has_duplicate_points(expolygon)", <ExPolygon as ExPolygonHasDuplicatePoints>::has_duplicate_points(&ex) as i64, t.i());
         dbl_eq!("get_expolygons_area", slicer::ex_polygon::get_expolygons_area(&exs));
         let range: i64 = [60, 3000, 400000, 2000000][ln % 4];
         {

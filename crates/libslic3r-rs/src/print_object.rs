@@ -1142,6 +1142,8 @@ impl PrintObject {
                                 thickness_layers: 1,
                                 bridge_angle: None,
                                 extra_perimeters: 0,
+                                counter_circle_compensation: false,
+                                holes_circle_compensation: Vec::new(),
                             })
                             .collect();
                 }
@@ -2135,6 +2137,8 @@ impl PrintObject {
                                 thickness_layers: 1,
                                 bridge_angle: None,
                                 extra_perimeters: 0,
+                                counter_circle_compensation: false,
+                                holes_circle_compensation: Vec::new(),
                             })
                             .collect();
                     }

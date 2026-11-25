@@ -2589,6 +2589,16 @@ impl Print {
     /// organic/adaptive support sync, per-region line-width) gate on features not
     /// yet active in this pipeline and are ported incrementally.
     pub fn validate(&self) -> crate::print_base::StringObjectException {
+        self.validate_with_warnings(None)
+    }
+
+    /// [`Print::validate`] with the C++'s `warnings` out-parameter (Print.cpp:1413
+    /// `std::vector<StringObjectException> *warnings`): the soft findings are pushed there; only the checks
+    /// of gate FRONT_END_VALIDATE_PIN_CHECKS ([`Print::validate_live_as_the_pin`]) push any.
+    pub fn validate_with_warnings(
+        &self,
+        warnings: Option<&mut Vec<crate::print_base::StringObjectException>>,
+    ) -> crate::print_base::StringObjectException {
         use crate::print_base::StringObjectException;
 
         // Print.cpp:1290-1291 — no objects: valid (empty exception).
@@ -2602,6 +2612,12 @@ impl Print {
                 string: "No extrusions under current settings.".to_string(),
                 ..Default::default()
             };
+        }
+
+        // Gate FRONT_END_VALIDATE_PIN_CHECKS (faithful, R948): the rest of the pin's checks, in the
+        // pin's order, on what the live job has (`validate_live_as_the_pin`); off, the subset below.
+        if crate::faithful_gate("FRONT_END_VALIDATE_PIN_CHECKS") {
+            return self.validate_live_as_the_pin(warnings);
         }
 
         // Print.cpp:1344-1362 — spiral (vase) mode constraints.
@@ -2702,6 +2718,333 @@ impl Print {
         }
 
         // Print.cpp:1657 — all checks passed.
+        StringObjectException::default()
+    }
+
+    /// Print.cpp:1413-1844 `Print::validate` (the checks after `extruders.empty()`, Print.cpp:1423-1841) on
+    /// the live job, in the pin's order, with the inputs the live Print has: its print config, its full
+    /// configuration (`full_print_config()`, made from the job's settings), its objects and their regions'
+    /// configs. The pin's own [`faithful::Print::validate`] is verified (print_clearance_native_parity
+    /// `validate_matches_the_pin`); this follows it check for check.
+    ///
+    /// FIDELITY-NOTE (what the live Print does not have, so the check is not made here):
+    /// - `sequential_print_clearance_valid` / `layered_print_cleareance_valid` /
+    ///   `compacted_wipe_tower_clearance_valid` (Print.cpp:1434-1456): the instances' convex hulls and the
+    ///   tower's position are not on the live path (one PrintObject, no ModelInstance hulls);
+    /// - the tree-support custom layering (Print.cpp:1499-1529): the live object has no layer height profile;
+    /// - the prime tower checks (Print.cpp:1531-1690): the front end's own rules that turn the prime tower off
+    ///   (main.cpp:10095-10140, cli_load_settings.cpp:2045-2075) are not on the Rust front end, so its
+    ///   `enable_prime_tower` is not the one the pin's check reads (a Cube with `enable_prime_tower=1` and smooth
+    ///   timelapse slices in `slicer_cli`, its tower turned off);
+    /// - the warnings (Print.cpp:1459-1470, 1763-1778, 1834-1840): the live front end has no warning channel;
+    /// - `extruders()` is the live `all_extruders()` (the object extruders, Print.cpp:432-467, without the
+    ///   support extruders); the plate is the first (the live job slices one plate);
+    /// - one instance per live PrintObject (`total_copies_count` is the object count).
+    pub fn validate_live_as_the_pin(
+        &self,
+        mut warnings: Option<&mut Vec<crate::print_base::StringObjectException>>,
+    ) -> crate::print_base::StringObjectException {
+        use crate::config::ConfigEnum;
+        use crate::gcode::wipe_tower::{cfg_bools, cfg_enum, cfg_float, cfg_floats, cfg_ints, get_at};
+        use crate::libslic3r::EPSILON;
+        use crate::print_base::{StringExceptionType, StringObjectException};
+        use crate::print_config::config_def::{get_bed_temp_key, primary_nozzle_diameter};
+        use crate::print_config::enums::BedType;
+        use crate::print_config::PrintSequence;
+        let err = |s: &str| StringObjectException { string: s.to_string(), ..Default::default() };
+        let err_key = |s: &str, opt_key: &str| StringObjectException {
+            string: s.to_string(),
+            opt_key: opt_key.to_string(),
+            ..Default::default()
+        };
+        // `config.<key>.value` of a bool option (false when missing).
+        let cfg_bool_opt = |config: &crate::print_config::config_def::DynamicPrintConfig, key: &str| -> bool {
+            use crate::config::ConfigOptionResolver;
+            config.option(key).and_then(|o| o.get_bool().ok()).unwrap_or(false)
+        };
+
+        // Print.hpp `full_print_config()`: the job's full configuration, made from its settings as
+        // `full_print_config_from_raw_settings` makes it (read here without keeping it: `&self`).
+        let built_full;
+        let full: Option<&crate::print_config::config_def::DynamicPrintConfig> =
+            if let Some(f) = self.full_print_config.as_ref() {
+                Some(f)
+            } else if let Some(settings) = self.raw_settings.as_ref() {
+                built_full = full_print_config_from_settings(settings);
+                Some(&built_full)
+            } else {
+                None
+            };
+
+        // Print.cpp:1415 `this->extruders()`: Print.cpp:558-576 `extruders(false)`, the object extruders (the
+        // live `all_extruders`, Print.cpp:432-467) and the support extruders (Print.cpp:523-555), sorted, unique.
+        // FIDELITY-NOTE: the live object config has no support filaments and the live print config does not take
+        // them from the settings (PrintConfig::set_deserialize has no support_filament arm): the full
+        // configuration's are read (one object, no per-object override).
+        let mut extruders: Vec<usize> = self.all_extruders();
+        {
+            // Print.cpp:528 `m_config.filament_diameter.size()` (the full configuration's; the live config's
+            // num_filaments() otherwise)
+            let num_extruders = full
+                .map(|f| cfg_floats(f, "filament_diameter").len())
+                .unwrap_or_else(|| self.config().num_filaments());
+            let mut support_extruders: Vec<usize> = Vec::new();
+            let mut support_uses_current_extruder = false;
+            for object in &self.objects {
+                let oc = object.config();
+                // Print.hpp:524-526 has_support_material() = has_support() || has_raft()
+                if oc.enable_support || oc.enforce_support_layers > 0 || oc.raft_layers > 0 {
+                    let support_filament_of = |key: &str, live: u32| -> u32 {
+                        use crate::config::ConfigOptionResolver;
+                        full.and_then(|f| f.option(key)).and_then(|o| o.get_int().ok()).map(|v| v.max(0) as u32).unwrap_or(live)
+                    };
+                    for filament in [
+                        support_filament_of("support_filament", self.config.support_filament),
+                        support_filament_of("support_interface_filament", self.config.support_interface_filament),
+                    ] {
+                        if filament == 0 {
+                            support_uses_current_extruder = true;
+                        } else {
+                            let i = (filament - 1) as usize;
+                            support_extruders.push(if i >= num_extruders { 0 } else { i });
+                        }
+                    }
+                }
+            }
+            if support_uses_current_extruder {
+                // Add all object extruders to the support extruders as it is not know which one will be used to print supports.
+                support_extruders.extend(self.all_extruders());
+            }
+            support_extruders.sort_unstable();
+            support_extruders.dedup();
+            extruders.extend(support_extruders);
+            extruders.sort_unstable();
+            extruders.dedup();
+        }
+        if self.objects.is_empty() {
+            return StringObjectException::default();
+        }
+        if extruders.is_empty() {
+            return err("No extrusions under current settings.");
+        }
+
+        // Print.cpp:1423-1439
+        if self.config.print_sequence == PrintSequence::ByObject && self.objects.len() > 1 {
+            // TimelapseType::tlSmooth == 1 (PrintConfig.hpp:216-219)
+            if self.config.timelapse_type == 1 {
+                return err("Smooth mode of timelapse is not supported when \"by object\" sequence is enabled.");
+            }
+            if self.config.enable_wrapping_detection {
+                return err_key(
+                    "Clumping detection is not supported when \"by object\" sequence is enabled.",
+                    "enable_wrapping_detection",
+                );
+            }
+        }
+
+        // Print.cpp:1459-1470
+        if self.config.enable_prime_tower {
+        } else if self.config.enable_wrapping_detection {
+            if let Some(w) = warnings.as_deref_mut() {
+                w.push(StringObjectException {
+                    string: "Prime tower is required for clumping detection; otherwise, there may be flaws on the model.".to_string(),
+                    opt_key: "enable_prime_tower".to_string(),
+                    is_warning: true,
+                    hypetext: "Jump to: Prime tower".to_string(),
+                    ..Default::default()
+                });
+            }
+        }
+
+        // Print.cpp:1472-1497
+        if self.config.spiral_vase {
+            let total_copies_count = self.objects.len();
+            // #4043
+            if total_copies_count > 1 && self.config.print_sequence != PrintSequence::ByObject {
+                return err_key(
+                    "Please select \"By object\" print sequence to print multiple objects in spiral vase mode.",
+                    "spiral_mode",
+                );
+            }
+
+            let mut multi_material = false;
+            let mut multi_region = false;
+            let mut uses_mixed = false;
+            let is_mixed: Vec<bool> = full.map(|f| cfg_bools(f, "filament_is_mixed")).unwrap_or_default();
+            // PrintObject::object_extruders (PrintObject.cpp): every region's printing extruders
+            // (PrintRegion::collect_object_printing_extruders with the print's filament count and has_brim,
+            // as all_extruders reads them), sorted, unique.
+            let num_extruders = self.config().num_filaments() as i32;
+            let has_brim = self.config().brim_width > 0.0;
+            for object in &self.objects {
+                let mut object_extruders: Vec<u32> = Vec::new();
+                for region in object.all_regions() {
+                    crate::print_region::PrintRegion::collect_object_printing_extruders_static(
+                        num_extruders,
+                        region.config(),
+                        has_brim,
+                        &mut object_extruders,
+                    );
+                }
+                object_extruders.sort_unstable();
+                object_extruders.dedup();
+                if object_extruders.len() > 1 {
+                    multi_material = true;
+                }
+                if object.all_regions().len() > 1 {
+                    multi_region = true;
+                }
+                for &ext in &object_extruders {
+                    if (ext as usize) < is_mixed.len() && is_mixed[ext as usize] {
+                        uses_mixed = true;
+                    }
+                }
+            }
+            if multi_material || uses_mixed {
+                return err_key(
+                    "The spiral vase mode does not work when an object contains more than one materials.",
+                    "spiral_mode",
+                );
+            }
+            if multi_region {
+                return err_key(
+                    "The spiral vase mode does not work when an object contains regions with different print settings.",
+                    "spiral_mode",
+                );
+            }
+        }
+
+        // Print.cpp:1692-1802
+        {
+            // Find the smallest used nozzle diameter and the number of unique nozzle diameters.
+            let nozzle_diameter: Vec<f64> =
+                full.map(|f| cfg_floats(f, "nozzle_diameter")).unwrap_or_else(|| vec![self.config.nozzle_diameter]);
+            let mut min_nozzle_diameter = f64::MAX;
+            let mut max_nozzle_diameter: f64 = 0.0;
+            for &extruder_id in &extruders {
+                let dmr = get_at(&nozzle_diameter, extruder_id);
+                min_nozzle_diameter = min_nozzle_diameter.min(dmr);
+                max_nozzle_diameter = max_nozzle_diameter.max(dmr);
+            }
+
+            let primary_diameter = full.map(|f| primary_nozzle_diameter(f)).unwrap_or(0.0);
+            let preset_nozzle_diameter = if primary_diameter > EPSILON { primary_diameter } else { max_nozzle_diameter };
+            // Print.cpp:1715-1734: a line width is a coFloat (PrintConfig.cpp:2951, 4494, 4504, 6102), so
+            // get_abs_value is the value itself.
+            let validate_extrusion_width = |width: f64, layer_height: f64| -> Option<&'static str> {
+                let extrusion_width_min = width;
+                let extrusion_width_max = width;
+                if extrusion_width_min == 0.0 {
+                    // Default "auto-generated" extrusion width is always valid.
+                    None
+                } else if extrusion_width_min <= layer_height {
+                    Some("Too small line width")
+                } else if extrusion_width_max > preset_nozzle_diameter * 2.5 {
+                    Some("Too large line width")
+                } else {
+                    None
+                }
+            };
+            for object in &self.objects {
+                let oc = object.config();
+                // Print.cpp:1780-1789
+                let initial_layer_print_height =
+                    full.map(|f| cfg_float(f, "initial_layer_print_height")).unwrap_or(oc.first_layer_height);
+                let layer_height_nozzle_limit = if primary_diameter > EPSILON { primary_diameter } else { min_nozzle_diameter };
+                if initial_layer_print_height > layer_height_nozzle_limit {
+                    return err_key("Layer height cannot exceed nozzle diameter", "initial_layer_print_height");
+                }
+                // validate layer_height
+                let layer_height = oc.layer_height;
+                if layer_height > layer_height_nozzle_limit {
+                    return err_key("Layer height cannot exceed nozzle diameter", "layer_height");
+                }
+
+                // Print.cpp:1791-1800: validate extrusion widths. has_support / has_raft: Print.hpp:524-525.
+                if let Some(msg) = validate_extrusion_width(oc.line_width, layer_height) {
+                    return err_key(msg, "line_width");
+                }
+                let has_support = oc.enable_support || oc.enforce_support_layers > 0;
+                let has_raft = oc.raft_layers > 0;
+                if has_support || has_raft {
+                    if let Some(msg) = validate_extrusion_width(oc.support_line_width, layer_height) {
+                        return err_key(msg, "support_line_width");
+                    }
+                }
+                for opt_key in [
+                    "inner_wall_line_width",
+                    "outer_wall_line_width",
+                    "sparse_infill_line_width",
+                    "internal_solid_infill_line_width",
+                    "top_surface_line_width",
+                    "skin_infill_line_width",
+                    "skeleton_infill_line_width",
+                ] {
+                    for region in object.all_regions() {
+                        let rc = region.config();
+                        let width = match opt_key {
+                            "inner_wall_line_width" => rc.inner_wall_line_width,
+                            "outer_wall_line_width" => rc.outer_wall_line_width,
+                            "sparse_infill_line_width" => rc.sparse_infill_line_width,
+                            "internal_solid_infill_line_width" => rc.internal_solid_infill_line_width,
+                            "top_surface_line_width" => rc.top_surface_line_width,
+                            "skin_infill_line_width" => rc.skin_infill_line_width,
+                            _ => rc.skeleton_infill_line_width,
+                        };
+                        if let Some(msg) = validate_extrusion_width(width, layer_height) {
+                            return err_key(msg, opt_key);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Print.cpp:1805-1841: a filament whose bed temperature for the current plate type is 0.
+        if let Some(full) = full {
+            let bed_type_keys_map = BedType::get_enum_values();
+            let curr_bed_type = cfg_enum(full, "curr_bed_type");
+            for _extruder_id in &extruders {
+                let bed_temp_key = get_bed_temp_key(BedType::from_int(curr_bed_type));
+                let bed_temp_opt = cfg_ints(full, &bed_temp_key);
+                for &extruder_id in &extruders {
+                    let curr_bed_temp = get_at(&bed_temp_opt, extruder_id);
+                    if curr_bed_temp == 0 {
+                        let mut bed_type_name = String::new();
+                        for (name, value) in bed_type_keys_map.iter() {
+                            if *value == curr_bed_type {
+                                bed_type_name = name.clone();
+                                break;
+                            }
+                        }
+                        // this->get_plate_index() + 1: the live job's plate is the first.
+                        let plate = 1;
+                        let mut except = StringObjectException::default();
+                        except.string = format!("Plate {}: {} does not support filament {}", plate, bed_type_name, extruder_id + 1);
+                        except.string += "\n";
+                        except.r#type = StringExceptionType::StringExceptFilamentNotMatchBedType;
+                        except.params.push(plate.to_string());
+                        except.params.push(bed_type_name.clone());
+                        except.params.push((extruder_id + 1).to_string());
+                        except.object = None;
+                        return except;
+                    }
+                }
+
+                // check wall sequence and precise outer wall (Print.cpp:1834-1840: `is_warning` stays false)
+                if cfg_bool_opt(full, "precise_outer_wall")
+                    && cfg_enum(full, "wall_sequence") != crate::print_config::enums::WallSequence::InnerOuter as i32
+                {
+                    if let Some(w) = warnings.as_deref_mut() {
+                        w.push(StringObjectException {
+                            string: "Precise outer wall will be ignored unless the order of walls is set to inner/outer".to_string(),
+                            opt_key: "precise_outer_wall".to_string(),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
         StringObjectException::default()
     }
 

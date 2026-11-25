@@ -788,6 +788,14 @@ fn run_scenario(r: &mut Run, scenario: i32) {
         r.out(format!("{t} shrink {} {}", hd(obj.support_shrinkage_scale(&print)), hb(should_skip_filament_shrink(&print, &obj))));
         for type_ in [ModelVolumeType::SupportEnforcer, ModelVolumeType::SupportBlocker] {
             let slices: Vec<Polygons> = obj.slice_support_volumes(&print, type_).unwrap();
+            // Print.hpp:544-545: slice_support_blockers() / slice_support_enforcers() return
+            // slice_support_volumes(SUPPORT_BLOCKER / SUPPORT_ENFORCER); the vectors' line checks them too.
+            let wrapped: Vec<Polygons> = if type_ == ModelVolumeType::SupportEnforcer {
+                obj.slice_support_enforcers(&print).unwrap()
+            } else {
+                obj.slice_support_blockers(&print).unwrap()
+            };
+            assert_eq!(wrapped, slices, "{t}: slice_support_{} differs from slice_support_volumes", type_ as i32);
             let body: Vec<String> = slices.iter().map(|p| polys_s(p)).collect();
             r.outb(format!("{t} slice_support_volumes {} {}", type_ as i32, slices.len()), body.join(" "));
         }

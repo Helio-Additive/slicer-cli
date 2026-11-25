@@ -200,7 +200,7 @@ impl fmt::Display for SurfaceType {
 ///
 /// Each surface has a type (determining how it should be filled)
 /// and geometry (the ExPolygon defining its shape).
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Surface {
     /// The geometry of this surface.
     pub expolygon: ExPolygon,
@@ -220,6 +220,34 @@ pub struct Surface {
 
     /// Extra perimeters needed for this surface.
     pub extra_perimeters: usize,
+
+    /// Surface.hpp:41 `bool counter_circle_compensation{false};`: the contour was compensated by
+    /// LayerRegion::auto_circle_compensation and is smaller than the diameter limit.
+    #[serde(default)]
+    pub counter_circle_compensation: bool,
+
+    /// Surface.hpp:42 `std::vector<int> holes_circle_compensation; // hole index`
+    #[serde(default)]
+    pub holes_circle_compensation: Vec<i32>,
+}
+
+// Surface.hpp:50-54 `Surface(const Surface &rhs)` (and the move constructor, :65-69, and both
+// assignment operators, :80-98) copy the type, the expolygon, the thicknesses, the bridge angle and
+// the extra perimeters, but NOT `counter_circle_compensation` / `holes_circle_compensation`: a copy
+// starts with them at their defaults.
+impl Clone for Surface {
+    fn clone(&self) -> Self {
+        Self {
+            expolygon: self.expolygon.clone(),
+            surface_type: self.surface_type,
+            thickness: self.thickness,
+            thickness_layers: self.thickness_layers,
+            bridge_angle: self.bridge_angle,
+            extra_perimeters: self.extra_perimeters,
+            counter_circle_compensation: false,
+            holes_circle_compensation: Vec::new(),
+        }
+    }
 }
 
 impl Default for Surface {
@@ -235,6 +263,8 @@ impl Default for Surface {
             thickness_layers: 1,
             bridge_angle: None,
             extra_perimeters: 0,
+            counter_circle_compensation: false,
+            holes_circle_compensation: Vec::new(),
         }
     }
 }
@@ -251,6 +281,8 @@ impl Surface {
             thickness_layers: 1,
             bridge_angle: None,
             extra_perimeters: 0,
+            counter_circle_compensation: false,
+            holes_circle_compensation: Vec::new(),
         }
     }
 
@@ -284,6 +316,8 @@ impl Surface {
             thickness_layers: 1,
             bridge_angle: angle,
             extra_perimeters: 0,
+            counter_circle_compensation: false,
+            holes_circle_compensation: Vec::new(),
         }
     }
 

@@ -1293,6 +1293,12 @@ impl EdgeGrid {
     /// Faithful port of `EdgeGrid::Grid::calculate_sdf`.
     /// EdgeGrid.cpp:672-980
     pub fn calculate_sdf(&mut self) {
+        // R948 gate EDGE_GRID_SDF_PIN (faithful): the pin compares the double distance with the float field
+        // (`dabs < d_min`, EdgeGrid.cpp:722, 750: the float is promoted, not the double rounded), and clang
+        // fuses each float `v[0]*v[0] + v[1]*v[1]` into fmaf(v[0], v[0], v[1]*v[1]) (EdgeGrid.cpp:606, 612,
+        // 873: -ffp-contract=on). Off: the earlier arm (rounded compare, unfused squares).
+        let sdf_pin = crate::faithful_gate("EDGE_GRID_SDF_PIN");
+        let sq2 = move |x: f32, y: f32| -> f32 { if sdf_pin { x.mul_add(x, y * y) } else { x * x + y * y } };
         // 1) Initialize a signum and an unsigned vector to a zero iso surface.
         // EdgeGrid.cpp:680-691
         let nrows = self.rows + 1;
@@ -1345,7 +1351,7 @@ impl EdgeGrid {
                             if t_pt < 0 {
                                 // Closest to p1. EdgeGrid.cpp:722-747
                                 let dabs = ((v_pt.0 * v_pt.0 + v_pt.1 * v_pt.1) as f64).sqrt();
-                                if (dabs as f32) < sdf[addr] {
+                                if if sdf_pin { dabs < sdf[addr] as f64 } else { (dabs as f32) < sdf[addr] } {
                                     // Previous point.
                                     let p0 = *contour.segment_prev(ipt);
                                     let v_seg_prev = (p1.x - p0.x, p1.y - p0.y);
@@ -1369,7 +1375,7 @@ impl EdgeGrid {
                                 let d_seg = v_seg.1 * v_pt.0 - v_seg.0 * v_pt.1;
                                 let d = d_seg as f64 / (l2_seg as f64).sqrt();
                                 let dabs = d.abs();
-                                if (dabs as f32) < sdf[addr] {
+                                if if sdf_pin { dabs < sdf[addr] as f64 } else { (dabs as f32) < sdf[addr] } {
                                     sdf[addr] = dabs as f32;
                                     // Fill in an unsigned vector towards the zero iso surface.
                                     let linv = d_seg as f32 / l2_seg as f32;
@@ -1435,12 +1441,11 @@ impl EdgeGrid {
         let danielsson_step =
             |big_l: &mut [f32], signs: &[u8], addr: usize, addr_delta: isize, incx: f32, incy: f32| {
                 if signs[addr] & 2 == 0 {
-                    let l = big_l[addr << 1] * big_l[addr << 1]
-                        + big_l[(addr << 1) + 1] * big_l[(addr << 1) + 1];
+                    let l = sq2(big_l[addr << 1], big_l[(addr << 1) + 1]);
                     let v2s = ((addr as isize + addr_delta) as usize) << 1;
                     let v2x = big_l[v2s] + incx * res;
                     let v2y = big_l[v2s + 1] + incy * res;
-                    let l2 = v2x * v2x + v2y * v2y;
+                    let l2 = sq2(v2x, v2y);
                     if l2 < l {
                         big_l[addr << 1] = v2x;
                         big_l[(addr << 1) + 1] = v2y;
@@ -1488,7 +1493,7 @@ impl EdgeGrid {
                 let addr = r * ncols + c;
                 let vx = big_l[addr << 1];
                 let vy = big_l[(addr << 1) + 1];
-                let mut d = (vx * vx + vy * vy).sqrt();
+                let mut d = sq2(vx, vy).sqrt();
                 if signs[addr] & 1 != 0 {
                     d = -d;
                 }
@@ -1691,6 +1696,571 @@ impl EdgeGrid {
 
 /// Default implementation delegates to EdgeGrid::new()
 /// EdgeGrid.hpp:94
+// ----------------------------------------------------------------------------------------------------
+// R948: `EdgeGrid::Grid` under its C++ names (EdgeGrid.hpp:91-454, EdgeGrid.cpp:28-345). The Rust struct
+// is `EdgeGrid`; `Grid` names it as the C++ does. The `create` overloads, `create_from_m_contours`,
+// `visit_intersect_line_impl` and `cell_inside_or_crossing` below follow the pin line by line (the older
+// `create_from_*` / `create_from_contours` of this file stay as they were for their live callers).
+// Compared with the pin by tests/edge_grid_native_parity.rs.
+// ----------------------------------------------------------------------------------------------------
+
+/// `EdgeGrid::Grid` (EdgeGrid.hpp:91).
+pub type Grid = EdgeGrid;
+
+/// The `EdgeGrid::Grid::create` overloads (EdgeGrid.hpp:105-113), one implementation per argument type.
+pub trait GridCreate<S> {
+    fn create(&mut self, src: S, resolution: i64);
+}
+
+/// `Contour::num_segments()` as the pin counts it (EdgeGrid.hpp:64: `size() - (m_open ? 1 : 0)`): a closed
+/// one-point contour has one (degenerate) segment, where `Contour::num_segments` of this file returns 0.
+fn contour_num_segments_pin(c: &Contour) -> usize {
+    c.points().len() - if c.is_open() { 1 } else { 0 }
+}
+
+// EdgeGrid.cpp:28-38
+// void EdgeGrid::Grid::create(const Polygons &polygons, coord_t resolution)
+impl<'s> GridCreate<&'s [Polygon]> for EdgeGrid {
+    fn create(&mut self, polygons: &'s [Polygon], resolution: i64) {
+        // EdgeGrid.cpp:31-35 Collect the contours.
+        self.contours.clear();
+        for polygon in polygons {
+            if !polygon.points().is_empty() {
+                self.contours.push(Contour::new_closed(polygon.points().to_vec()));
+            }
+        }
+        // EdgeGrid.cpp:37
+        self.create_from_m_contours(resolution);
+    }
+}
+
+// EdgeGrid.cpp:40-50
+// void EdgeGrid::Grid::create(const std::vector<const Polygon*> &polygons, coord_t resolution)
+impl<'s, 'p> GridCreate<&'s [&'p Polygon]> for EdgeGrid {
+    fn create(&mut self, polygons: &'s [&'p Polygon], resolution: i64) {
+        // EdgeGrid.cpp:43-47
+        self.contours.clear();
+        for polygon in polygons {
+            if !polygon.points().is_empty() {
+                self.contours.push(Contour::new_closed(polygon.points().to_vec()));
+            }
+        }
+        // EdgeGrid.cpp:49
+        self.create_from_m_contours(resolution);
+    }
+}
+
+// EdgeGrid.cpp:52-75
+// void EdgeGrid::Grid::create(const std::vector<Points> &polygons, coord_t resolution, bool open_polylines)
+impl<'s> GridCreate<(&'s [Vec<Point>], bool)> for EdgeGrid {
+    fn create(&mut self, src: (&'s [Vec<Point>], bool), resolution: i64) {
+        let (polygons, open_polylines) = src;
+        // EdgeGrid.cpp:55-72
+        self.contours.clear();
+        for points in polygons {
+            if points.len() > 1 {
+                let mut end = points.len();
+                let mut open = open_polylines;
+                if open_polylines {
+                    // EdgeGrid.cpp:62-65
+                    if points[0] == points[end - 1] {
+                        open = false;
+                        end -= 1;
+                    }
+                }
+                // EdgeGrid.cpp:71 m_contours.emplace_back(begin, end, open);
+                let pts = points[..end].to_vec();
+                self.contours.push(if open { Contour::new_open(pts) } else { Contour::new_closed(pts) });
+            }
+        }
+        // EdgeGrid.cpp:74
+        self.create_from_m_contours(resolution);
+    }
+}
+
+// EdgeGrid.hpp:111
+// void create(const std::vector<Points> &polygons, coord_t resolution) { this->create(polygons, resolution, false); }
+impl<'s> GridCreate<&'s [Vec<Point>]> for EdgeGrid {
+    fn create(&mut self, polygons: &'s [Vec<Point>], resolution: i64) {
+        <EdgeGrid as GridCreate<(&[Vec<Point>], bool)>>::create(self, (polygons, false), resolution)
+    }
+}
+
+// EdgeGrid.cpp:77-102
+// void EdgeGrid::Grid::create(const Polygons &polygons, const Polylines &polylines, coord_t resolution)
+impl<'s, 't> GridCreate<(&'s [Polygon], &'t [Polyline])> for EdgeGrid {
+    fn create(&mut self, src: (&'s [Polygon], &'t [Polyline]), resolution: i64) {
+        let (polygons, polylines) = src;
+        // EdgeGrid.cpp:80-83
+        self.contours.clear();
+        // EdgeGrid.cpp:85-95
+        for polyline in polylines {
+            let points = polyline.points();
+            if points.len() > 1 {
+                let mut end = points.len();
+                let mut open = true;
+                if points[0] == points[end - 1] {
+                    open = false;
+                    end -= 1;
+                }
+                let pts = points[..end].to_vec();
+                self.contours.push(if open { Contour::new_open(pts) } else { Contour::new_closed(pts) });
+            }
+        }
+        // EdgeGrid.cpp:97-99
+        for polygon in polygons {
+            if polygon.points().len() > 1 {
+                self.contours.push(Contour::new_closed(polygon.points().to_vec()));
+            }
+        }
+        // EdgeGrid.cpp:101
+        self.create_from_m_contours(resolution);
+    }
+}
+
+// EdgeGrid.cpp:104-115
+// void EdgeGrid::Grid::create(const ExPolygon &expoly, coord_t resolution)
+impl<'s> GridCreate<&'s ExPolygon> for EdgeGrid {
+    fn create(&mut self, expoly: &'s ExPolygon, resolution: i64) {
+        // EdgeGrid.cpp:106-112
+        self.contours.clear();
+        if !expoly.contour.points().is_empty() {
+            self.contours.push(Contour::new_closed(expoly.contour.points().to_vec()));
+        }
+        for hole in &expoly.holes {
+            if !hole.points().is_empty() {
+                self.contours.push(Contour::new_closed(hole.points().to_vec()));
+            }
+        }
+        // EdgeGrid.cpp:114
+        self.create_from_m_contours(resolution);
+    }
+}
+
+// EdgeGrid.cpp:117-140
+// void EdgeGrid::Grid::create(const ExPolygons &expolygons, coord_t resolution)
+impl<'s> GridCreate<&'s [ExPolygon]> for EdgeGrid {
+    fn create(&mut self, expolygons: &'s [ExPolygon], resolution: i64) {
+        // EdgeGrid.cpp:129-137
+        self.contours.clear();
+        for expoly in expolygons {
+            if !expoly.contour.points().is_empty() {
+                self.contours.push(Contour::new_closed(expoly.contour.points().to_vec()));
+            }
+            for hole in &expoly.holes {
+                if !hole.points().is_empty() {
+                    self.contours.push(Contour::new_closed(hole.points().to_vec()));
+                }
+            }
+        }
+        // EdgeGrid.cpp:139
+        self.create_from_m_contours(resolution);
+    }
+}
+
+impl EdgeGrid {
+    /// EdgeGrid.cpp:141-335 `void EdgeGrid::Grid::create_from_m_contours(coord_t resolution)`: m_contours
+    /// has been initialized, fill in the edge grid. `m_bbox` is merged into, not reset (a `set_bbox` before
+    /// `create` widens the grid, as at the pin).
+    pub fn create_from_m_contours(&mut self, resolution: i64) {
+        // EdgeGrid.cpp:145-151 1) Measure the bounding box.
+        for contour in &self.contours {
+            for pt in contour.points() {
+                self.bbox.merge_point(*pt);
+            }
+        }
+        // EdgeGrid.cpp:153-157 (on the stored corners, defined or not)
+        let eps: i64 = 16;
+        self.bbox.min.x -= eps;
+        self.bbox.min.y -= eps;
+        self.bbox.max.x += eps;
+        self.bbox.max.y += eps;
+
+        // EdgeGrid.cpp:159-163 2) Initialize the edge grid.
+        self.resolution = resolution;
+        let res = self.resolution;
+        self.cols = ((self.bbox.max.x - self.bbox.min.x + res - 1) / res) as usize;
+        self.rows = ((self.bbox.max.y - self.bbox.min.y + res - 1) / res) as usize;
+        self.cells = vec![Cell::default(); self.rows * self.cols];
+        self.signed_distance_field.clear();
+        let cols = self.cols as i64;
+        let (minx, miny) = (self.bbox.min.x, self.bbox.min.y);
+
+        // EdgeGrid.cpp:165-292 3) First round of contour rasterization, count the edges per grid cell.
+        for contour in &self.contours {
+            for j in 0..contour_num_segments_pin(contour) {
+                // EdgeGrid.cpp:169-175 End points of the line segment.
+                let mut p1 = *contour.segment_start(j);
+                let mut p2 = *contour.segment_end(j);
+                p1.x -= minx;
+                p1.y -= miny;
+                p2.x -= minx;
+                p2.y -= miny;
+                // EdgeGrid.cpp:177-180 Get the cells of the end points.
+                let mut ix = p1.x / res;
+                let mut iy = p1.y / res;
+                let ixb = p2.x / res;
+                let iyb = p2.y / res;
+                // EdgeGrid.cpp:186 Account for the end points.
+                self.cells[(iy * cols + ix) as usize].end += 1;
+                if ix == ixb && iy == iyb {
+                    // Both ends fall into the same cell.
+                    continue;
+                }
+                // EdgeGrid.cpp:191-192 Raster the centeral part of the line.
+                let dx = (p2.x - p1.x).abs();
+                let dy = (p2.y - p1.y).abs();
+                if p1.x < p2.x {
+                    let mut ex = ((ix + 1) * res - p1.x) * dy;
+                    if p1.y < p2.y {
+                        // EdgeGrid.cpp:196-217 x positive, y positive
+                        let mut ey = ((iy + 1) * res - p1.y) * dx;
+                        loop {
+                            if ex < ey {
+                                ey -= ex;
+                                ex = dy * res;
+                                ix += 1;
+                            } else if ex == ey {
+                                ex = dy * res;
+                                ey = dx * res;
+                                ix += 1;
+                                iy += 1;
+                            } else {
+                                ex -= ey;
+                                ey = dx * res;
+                                iy += 1;
+                            }
+                            self.cells[(iy * cols + ix) as usize].end += 1;
+                            if !(ix != ixb || iy != iyb) {
+                                break;
+                            }
+                        }
+                    } else {
+                        // EdgeGrid.cpp:219-235 x positive, y non positive
+                        let mut ey = (p1.y - iy * res) * dx;
+                        loop {
+                            if ex <= ey {
+                                ey -= ex;
+                                ex = dy * res;
+                                ix += 1;
+                            } else {
+                                ex -= ey;
+                                ey = dx * res;
+                                iy -= 1;
+                            }
+                            self.cells[(iy * cols + ix) as usize].end += 1;
+                            if !(ix != ixb || iy != iyb) {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    let mut ex = (p1.x - ix * res) * dy;
+                    if p1.y < p2.y {
+                        // EdgeGrid.cpp:241-258 x non positive, y positive
+                        let mut ey = ((iy + 1) * res - p1.y) * dx;
+                        loop {
+                            if ex < ey {
+                                ey -= ex;
+                                ex = dy * res;
+                                ix -= 1;
+                            } else {
+                                ex -= ey;
+                                ey = dx * res;
+                                iy += 1;
+                            }
+                            self.cells[(iy * cols + ix) as usize].end += 1;
+                            if !(ix != ixb || iy != iyb) {
+                                break;
+                            }
+                        }
+                    } else {
+                        // EdgeGrid.cpp:260-289 x non positive, y non positive
+                        let mut ey = (p1.y - iy * res) * dx;
+                        loop {
+                            if ex < ey {
+                                ey -= ex;
+                                ex = dy * res;
+                                ix -= 1;
+                            } else if ex == ey {
+                                // The lower edge of a grid cell belongs to the cell.
+                                if dx > 0 {
+                                    ex = dy * res;
+                                    ix -= 1;
+                                }
+                                if dy > 0 {
+                                    ey = dx * res;
+                                    iy -= 1;
+                                }
+                            } else {
+                                ex -= ey;
+                                ey = dx * res;
+                                iy -= 1;
+                            }
+                            self.cells[(iy * cols + ix) as usize].end += 1;
+                            if !(ix != ixb || iy != iyb) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // EdgeGrid.cpp:294-300 4) Prefix sum the numbers of hits per cells to get an index into m_cell_data.
+        let mut cnt = self.cells[0].end;
+        for i in 1..self.cells.len() {
+            self.cells[i].begin = cnt;
+            cnt += self.cells[i].end;
+            self.cells[i].end = cnt;
+        }
+
+        // EdgeGrid.cpp:302-303 5) Allocate the cell data.
+        self.cell_data = vec![(usize::MAX, usize::MAX); cnt];
+
+        // EdgeGrid.cpp:305-307 6) Finally fill in m_cell_data by rasterizing the lines once again.
+        for i in 0..self.cells.len() {
+            self.cells[i].end = self.cells[i].begin;
+        }
+        // EdgeGrid.cpp:309-334 (the Visitor appends (i, j) at cells[iy*cols+ix].end++ and continues)
+        let mut cells = std::mem::take(&mut self.cells);
+        let mut cell_data = std::mem::take(&mut self.cell_data);
+        for i in 0..self.contours.len() {
+            let contour = &self.contours[i];
+            for j in 0..contour_num_segments_pin(contour) {
+                let (a, b) = (*contour.segment_start(j), *contour.segment_end(j));
+                self.visit_cells_intersecting_line_pin(a, b, &mut |iy: i64, ix: i64| {
+                    let c = &mut cells[(iy * cols + ix) as usize];
+                    cell_data[c.end] = (i, j);
+                    c.end += 1;
+                    true
+                });
+            }
+        }
+        self.cells = cells;
+        self.cell_data = cell_data;
+    }
+
+    /// EdgeGrid.hpp:172-289 `template<typename VISITOR> void visit_intersect_line_impl(coord_t ix, coord_t iy,
+    /// Point p1, coord_t ixb, coord_t iyb, Point p2, VISITOR &visitor) const`: `visitor(iy, ix)` returns false
+    /// to stop.
+    #[allow(clippy::too_many_arguments)]
+    pub fn visit_intersect_line_impl<V: FnMut(i64, i64) -> bool>(
+        &self,
+        mut ix: i64,
+        mut iy: i64,
+        p1: Point,
+        ixb: i64,
+        iyb: i64,
+        p2: Point,
+        visitor: &mut V,
+    ) {
+        let res = self.resolution;
+        // EdgeGrid.hpp:175-178 Account for the end points.
+        if !visitor(iy, ix) || (ix == ixb && iy == iyb) {
+            // Both ends fall into the same cell.
+            return;
+        }
+        // EdgeGrid.hpp:180-181 Raster the centeral part of the line.
+        let dx = (p2.x - p1.x).abs();
+        let dy = (p2.y - p1.y).abs();
+        if p1.x < p2.x {
+            let mut ex = ((ix + 1) * res - p1.x) * dy;
+            if p1.y < p2.y {
+                // EdgeGrid.hpp:184-209 x positive, y positive
+                let mut ey = ((iy + 1) * res - p1.y) * dx;
+                loop {
+                    if ex < ey {
+                        ey -= ex;
+                        ex = dy * res;
+                        ix += 1;
+                    } else if ex == ey {
+                        ex = dy * res;
+                        ey = dx * res;
+                        ix += 1;
+                        iy += 1;
+                    } else {
+                        ex -= ey;
+                        ey = dx * res;
+                        iy += 1;
+                    }
+                    if !visitor(iy, ix) {
+                        return;
+                    }
+                    if !(ix != ixb || iy != iyb) {
+                        break;
+                    }
+                }
+            } else {
+                // EdgeGrid.hpp:211-229 x positive, y non positive
+                let mut ey = (p1.y - iy * res) * dx;
+                loop {
+                    if ex <= ey {
+                        ey -= ex;
+                        ex = dy * res;
+                        ix += 1;
+                    } else {
+                        ex -= ey;
+                        ey = dx * res;
+                        iy -= 1;
+                    }
+                    if !visitor(iy, ix) {
+                        return;
+                    }
+                    if !(ix != ixb || iy != iyb) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            let mut ex = (p1.x - ix * res) * dy;
+            if p1.y < p2.y {
+                // EdgeGrid.hpp:233-252 x non positive, y positive
+                let mut ey = ((iy + 1) * res - p1.y) * dx;
+                loop {
+                    if ex < ey {
+                        ey -= ex;
+                        ex = dy * res;
+                        ix -= 1;
+                    } else {
+                        ex -= ey;
+                        ey = dx * res;
+                        iy += 1;
+                    }
+                    if !visitor(iy, ix) {
+                        return;
+                    }
+                    if !(ix != ixb || iy != iyb) {
+                        break;
+                    }
+                }
+            } else {
+                // EdgeGrid.hpp:254-286 x non positive, y non positive
+                let mut ey = (p1.y - iy * res) * dx;
+                loop {
+                    if ex < ey {
+                        ey -= ex;
+                        ex = dy * res;
+                        ix -= 1;
+                    } else if ex == ey {
+                        // The lower edge of a grid cell belongs to the cell.
+                        if dx > 0 {
+                            ex = dy * res;
+                            ix -= 1;
+                        }
+                        if dy > 0 {
+                            ey = dx * res;
+                            iy -= 1;
+                        }
+                    } else {
+                        ex -= ey;
+                        ey = dx * res;
+                        iy -= 1;
+                    }
+                    if !visitor(iy, ix) {
+                        return;
+                    }
+                    if !(ix != ixb || iy != iyb) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// EdgeGrid.hpp:291-366 `visit_cells_intersecting_line(p1, p2, visitor, need_consider_eps = false)` with
+    /// `need_consider_eps` false (one start and one end cell; the cell indices pass through the `float` of the
+    /// C++ tuple, exact for grid indices).
+    pub fn visit_cells_intersecting_line_pin<V: FnMut(i64, i64) -> bool>(&self, mut p1: Point, mut p2: Point, visitor: &mut V) {
+        // EdgeGrid.hpp:296-297
+        p1.x -= self.bbox.min.x;
+        p1.y -= self.bbox.min.y;
+        p2.x -= self.bbox.min.x;
+        p2.y -= self.bbox.min.y;
+        // EdgeGrid.hpp:303-306 Get the cells of the end points.
+        let ix = p1.x / self.resolution;
+        let iy = p1.y / self.resolution;
+        let ixb = p2.x / self.resolution;
+        let iyb = p2.y / self.resolution;
+        // EdgeGrid.hpp:358-364
+        self.visit_intersect_line_impl(ix, iy, p1, ixb, iyb, p2, visitor);
+    }
+
+    /// EdgeGrid.hpp:420-431 `bool cell_inside_or_crossing(int r, int c) const`.
+    pub fn cell_inside_or_crossing(&self, r: i32, c: i32) -> bool {
+        if r < 0 || r as usize >= self.rows || c < 0 || c as usize >= self.cols {
+            // The cell is outside the domain.
+            return false;
+        }
+        let cell = &self.cells[r as usize * self.cols + c as usize];
+        (cell.begin < cell.end)
+            || (!self.signed_distance_field.is_empty()
+                && self.signed_distance_field[r as usize * (self.cols + 1) + c as usize] <= 0.0f32)
+    }
+
+    /// EdgeGrid.cpp:1414-1450 `std::vector<std::pair<ContourEdge, ContourEdge>> intersecting_edges() const`:
+    /// a `ContourEdge` (`const Contour*`, segment index) is the pair (contour index, segment index) here; the
+    /// pin's pointers into `m_contours` order as the indices do, so `sort_remove_duplicates` is a sort + dedup
+    /// of the index pairs.
+    pub fn intersecting_edges(&self) -> Vec<((usize, usize), (usize, usize))> {
+        // `&ip1 == &jp2`: the same point slot (segment_end of the last segment of a closed contour is m_begin).
+        let end_slot = |cont: &Contour, k: usize| -> usize { if k + 1 >= cont.points().len() { 0 } else { k + 1 } };
+        let mut out: Vec<((usize, usize), (usize, usize))> = Vec::new();
+        // EdgeGrid.cpp:1418-1446 For each cell:
+        for r in 0..self.rows {
+            for c in 0..self.cols {
+                let cell = self.cells[r * self.cols + c];
+                // For each pair of segments in the cell:
+                for i in cell.begin..cell.end {
+                    let (ic, ipt) = self.cell_data[i];
+                    let icontour = &self.contours[ic];
+                    let ip1 = *icontour.segment_start(ipt);
+                    let ip2 = *icontour.segment_end(ipt);
+                    for j in (i + 1)..cell.end {
+                        let (jc, jpt) = self.cell_data[j];
+                        let jcontour = &self.contours[jc];
+                        let jp1 = *jcontour.segment_start(jpt);
+                        let jp2 = *jcontour.segment_end(jpt);
+                        // EdgeGrid.cpp:1434-1436 Segments of the same contour share a common vertex.
+                        if ic == jc && (ipt == end_slot(jcontour, jpt) || jpt == end_slot(icontour, ipt)) {
+                            continue;
+                        }
+                        // EdgeGrid.cpp:1437-1442 (both arms of the pin's `jfirst ? .. : ..` are the same pair)
+                        if crate::geometry::segments_intersect(ip1, ip2, jp1, jp2) {
+                            out.push(((ic, ipt), (jc, jpt)));
+                        }
+                    }
+                }
+            }
+        }
+        // EdgeGrid.cpp:1447 Slic3r::sort_remove_duplicates(out);
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// EdgeGrid.cpp:1047-1176 `ClosestPointResult closest_point_signed_distance(const Point &pt, coord_t
+    /// search_radius) const` under its C++ name: the port is `closest_point` of this file.
+    pub fn closest_point_signed_distance(&self, pt: &Point, search_radius: i64) -> ClosestPointResult {
+        self.closest_point(pt, search_radius)
+    }
+
+    /// The cells as the pin stores them (`m_cells[i].begin`, `.end`), for tests.
+    pub fn cells_begin_end(&self) -> Vec<(usize, usize)> {
+        self.cells.iter().map(|c| (c.begin, c.end)).collect()
+    }
+
+    /// `m_cell_data` (pairs of contour index, segment index), for tests.
+    pub fn cell_data(&self) -> &[(usize, usize)] {
+        &self.cell_data
+    }
+
+    /// `m_signed_distance_field`, for tests.
+    pub fn signed_distance_field(&self) -> &[f32] {
+        &self.signed_distance_field
+    }
+}
+
 impl Default for EdgeGrid {
     // Return default-constructed grid
     // EdgeGrid.hpp:94

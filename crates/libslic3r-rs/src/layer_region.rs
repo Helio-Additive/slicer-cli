@@ -72,6 +72,172 @@ pub const MAX_VARIANCE: f64 =
 /// is `0.04 * crate::SCALING_FACTOR = 4000`.
 const SCALED_SPARSE_INFILL_RESOLUTION: f64 = 0.04 * crate::SCALING_FACTOR;
 
+/// Print.hpp:369-405 `struct AutoContourHolesCompensationParams`: the per-filament coefficients of the
+/// automatic contour and hole compensation, as `PrintObject::get_auto_circle_compenstaion_params`
+/// returns them (Print.hpp:581-582). Defined here beside its only consumer
+/// (`LayerRegion::auto_circle_compensation`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AutoContourHolesCompensationParams {
+    pub counter_speed_coef: Vec<f64>,
+    pub counter_diameter_coef: Vec<f64>,
+    pub counter_compensate_coef: Vec<f64>,
+    pub hole_speed_coef: Vec<f64>,
+    pub hole_diameter_coef: Vec<f64>,
+    pub hole_compensate_coef: Vec<f64>,
+    pub counter_limit_min_value: Vec<f64>,
+    pub counter_limit_max_value: Vec<f64>,
+    pub hole_limit_min_value: Vec<f64>,
+    pub hole_limit_max_value: Vec<f64>,
+    pub circle_compensation_speed: Vec<f64>,
+    pub diameter_limit: Vec<f64>,
+}
+
+impl AutoContourHolesCompensationParams {
+    /// Print.hpp:371-385 `AutoContourHolesCompensationParams(const PrintConfig &config)`: every member is
+    /// the `values` of the PrintConfig option of the same meaning. `values(key)` returns a
+    /// `ConfigOptionFloats` option's values by its key (the live PrintConfig of this crate has no typed
+    /// fields for these options).
+    pub fn new_from_config_values(values: impl Fn(&str) -> Vec<f64>) -> Self {
+        Self {
+            counter_speed_coef: values("counter_coef_1"),
+            counter_diameter_coef: values("counter_coef_2"),
+            counter_compensate_coef: values("counter_coef_3"),
+            hole_speed_coef: values("hole_coef_1"),
+            hole_diameter_coef: values("hole_coef_2"),
+            hole_compensate_coef: values("hole_coef_3"),
+            counter_limit_min_value: values("counter_limit_min"),
+            counter_limit_max_value: values("counter_limit_max"),
+            hole_limit_min_value: values("hole_limit_min"),
+            hole_limit_max_value: values("hole_limit_max"),
+            circle_compensation_speed: values("circle_compensation_speed"),
+            diameter_limit: values("diameter_limit"),
+        }
+    }
+}
+
+impl LayerRegion {
+    /// LayerRegion.cpp:69-125 `void LayerRegion::auto_circle_compensation(SurfaceCollection& slices,
+    /// const AutoContourHolesCompensationParams &auto_contour_holes_compensation_params, float manual_offset)`.
+    /// The pin passes the region's own `slices`; a caller here takes them out of the region first
+    /// (`Layer::apply_auto_circle_compensation_with`).
+    pub fn auto_circle_compensation(
+        &self,
+        slices: &mut crate::surface_collection::SurfaceCollection,
+        auto_contour_holes_compensation_params: &AutoContourHolesCompensationParams,
+        manual_offset: f32,
+    ) {
+        // LayerRegion.cpp:71-72 `int filament_idx = this->region().config().wall_filament - 1;` (1 based)
+        let wall_filament = self.region().config().wall_filament as i64;
+        Self::auto_circle_compensation_for_wall_filament(
+            wall_filament,
+            slices,
+            auto_contour_holes_compensation_params,
+            manual_offset,
+        );
+    }
+
+    /// The body of `LayerRegion::auto_circle_compensation` (LayerRegion.cpp:69-125) for a region whose
+    /// `wall_filament` (1 based) is given; the only member of the region the pin reads.
+    pub fn auto_circle_compensation_for_wall_filament(
+        wall_filament: i64,
+        slices: &mut crate::surface_collection::SurfaceCollection,
+        auto_contour_holes_compensation_params: &AutoContourHolesCompensationParams,
+        manual_offset: f32,
+    ) {
+        use crate::clipper_utils::cpp::{Offset, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT};
+        // `scale_(v)` is `v / SCALING_FACTOR` (libslic3r.h), a division by 0.00001.
+        let scale_ = |v: f64| v / crate::libslic3r::SCALING_FACTOR;
+        // LayerRegion.cpp:17-18 `static const double max_deviation = scale_(0.5);`,
+        // `static const double max_variance = 5 * scale_(0.01) * scale_(0.01);`
+        let max_deviation = scale_(0.5);
+        let max_variance = 5. * scale_(0.01) * scale_(0.01);
+        let params = auto_contour_holes_compensation_params;
+        // LayerRegion.cpp:71-72 filament is 1 base
+        let filament_idx = (wall_filament - 1) as usize;
+
+        // LayerRegion.cpp:74-87
+        let limited_speed = params.circle_compensation_speed[filament_idx];
+        let counter_speed_coef = params.counter_speed_coef[filament_idx];
+        let counter_diameter_coef = params.counter_diameter_coef[filament_idx];
+        let counter_compensate_coef = scale_(params.counter_compensate_coef[filament_idx]);
+
+        let hole_speed_coef = params.hole_speed_coef[filament_idx];
+        let hole_diameter_coef = params.hole_diameter_coef[filament_idx];
+        let hole_compensate_coef = scale_(params.hole_compensate_coef[filament_idx]);
+
+        let counter_limit_min_value = scale_(params.counter_limit_min_value[filament_idx]);
+        let counter_limit_max_value = scale_(params.counter_limit_max_value[filament_idx]);
+        let hole_limit_min_value = scale_(params.hole_limit_min_value[filament_idx]);
+        let hole_limit_max_value = scale_(params.hole_limit_max_value[filament_idx]);
+
+        let diameter_limit_value = scale_(params.diameter_limit[filament_idx]);
+
+        // LayerRegion.cpp:89-124
+        for surface in slices.surfaces.iter_mut() {
+            // LayerRegion.cpp:93
+            if let Some((_center, diameter)) =
+                surface.expolygon.contour.is_approx_circle(max_deviation, max_variance)
+            {
+                // LayerRegion.cpp:94 `scale_(counter_speed_coef * limited_speed) + counter_diameter_coef * diameter
+                // + counter_compensate_coef`: one expression, the left product fused into the first add.
+                let mut offset_value = counter_diameter_coef
+                    .mul_add(diameter, scale_(counter_speed_coef * limited_speed))
+                    + counter_compensate_coef;
+                // LayerRegion.cpp:95-99
+                if offset_value < counter_limit_min_value {
+                    offset_value = counter_limit_min_value;
+                } else if offset_value > counter_limit_max_value {
+                    offset_value = counter_limit_max_value;
+                }
+                // LayerRegion.cpp:100 `offset_value -= manual_offset / 2;` (a float quotient)
+                offset_value -= (manual_offset / 2.0f32) as f64;
+                // LayerRegion.cpp:101 `offset(surface.expolygon.contour, offset_value)`: a float delta
+                let offseted_polys = surface.expolygon.contour.offset(
+                    offset_value as f32,
+                    DEFAULT_JOIN_TYPE,
+                    DEFAULT_MITER_LIMIT,
+                );
+                // LayerRegion.cpp:102-106
+                if offseted_polys.len() == 1 {
+                    surface.expolygon.contour = offseted_polys.into_iter().next().unwrap();
+                    if diameter < diameter_limit_value {
+                        surface.counter_circle_compensation = true;
+                    }
+                }
+            }
+            // LayerRegion.cpp:108-123
+            for i in 0..surface.expolygon.holes.len() {
+                let hole = &surface.expolygon.holes[i];
+                if let Some((_center, diameter)) = hole.is_approx_circle(max_deviation, max_variance) {
+                    // LayerRegion.cpp:111
+                    let mut offset_value = hole_diameter_coef
+                        .mul_add(diameter, scale_(hole_speed_coef * limited_speed))
+                        + hole_compensate_coef;
+                    // LayerRegion.cpp:112-116
+                    if offset_value < hole_limit_min_value {
+                        offset_value = hole_limit_min_value;
+                    } else if offset_value > hole_limit_max_value {
+                        offset_value = hole_limit_max_value;
+                    }
+                    // LayerRegion.cpp:117-119 positive value means shrinking hole, which oppsite to contour
+                    offset_value = -offset_value;
+                    offset_value -= (manual_offset / 2.0f32) as f64;
+                    // LayerRegion.cpp:120
+                    let offseted_polys =
+                        hole.offset(offset_value as f32, DEFAULT_JOIN_TYPE, DEFAULT_MITER_LIMIT);
+                    // LayerRegion.cpp:121-125
+                    if offseted_polys.len() == 1 {
+                        surface.expolygon.holes[i] = offseted_polys.into_iter().next().unwrap();
+                        if diameter < diameter_limit_value {
+                            surface.holes_circle_compensation.push(i as i32);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // `LayerRegion::simplify_*` member methods, defined here to mirror the C++
 // file split (bodies in LayerRegion.cpp, declarations in Layer.hpp:113-119).
 // The struct itself lives in `crate::layer`.

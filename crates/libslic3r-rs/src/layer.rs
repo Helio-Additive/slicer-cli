@@ -1380,6 +1380,8 @@ impl LayerRegion {
                     thickness_layers: 1,
                     bridge_angle: None,
                     extra_perimeters: 0,
+                    counter_circle_compensation: false,
+                    holes_circle_compensation: Vec::new(),
                 };
                 self.fill_surfaces.surfaces.push(fill_surface.clone());
                 self.fill_expolygons.push(fill_surface.expolygon);
@@ -1415,6 +1417,8 @@ impl LayerRegion {
                 thickness_layers: 1,
                 bridge_angle: None,
                 extra_perimeters: 0,
+                counter_circle_compensation: false,
+                holes_circle_compensation: Vec::new(),
             };
             self.fill_surfaces.surfaces.push(fill_surface.clone());
             self.fill_expolygons.push(fill_surface.expolygon);
@@ -1763,6 +1767,8 @@ impl LayerRegion {
                                 thickness_layers: 1,
                                 bridge_angle: None,
                                 extra_perimeters: 0,
+                                counter_circle_compensation: false,
+                                holes_circle_compensation: Vec::new(),
                             });
                         }
                         self.fill_expolygons = new_infill;
@@ -1826,6 +1832,8 @@ impl LayerRegion {
                                 thickness_layers: 1,
                                 bridge_angle: None,
                                 extra_perimeters: 0,
+                                counter_circle_compensation: false,
+                                holes_circle_compensation: Vec::new(),
                             });
                         }
                     }
@@ -2099,6 +2107,8 @@ impl LayerRegion {
                 thickness_layers: 1,
                 bridge_angle: None,
                 extra_perimeters: 0,
+                counter_circle_compensation: false,
+                holes_circle_compensation: Vec::new(),
             });
         }
     }
@@ -3222,7 +3232,45 @@ impl Layer {
         // ported (LayerRegion.cpp / PrintObject), so the per-region call body
         // is a no-op. The region-iteration skeleton mirrors C++ Layer.cpp:41.
         for _layerm in &mut self.regions {
-            // layerm.auto_circle_compensation(...);  // not ported
+            // layerm.auto_circle_compensation(...);  // needs the params: apply_auto_circle_compensation_with
+        }
+    }
+
+    /// Layer.cpp:39-44 `Layer::apply_auto_circle_compensation` with what the pin reads off the object
+    /// handed in: `params` is `this->object()->get_auto_circle_compenstaion_params()` and `manual_offset`
+    /// is `scale_(this->object()->config().circle_compensation_manual_offset)` converted to float.
+    /// AUTO_CIRCLE_COMPENSATION_PIN (on unless =0): every region's slices go through
+    /// LayerRegion::auto_circle_compensation (LayerRegion.cpp:69-125); =0 leaves them as they are.
+    pub fn apply_auto_circle_compensation_with(
+        &mut self,
+        params: &crate::layer_region::AutoContourHolesCompensationParams,
+        manual_offset: f32,
+    ) {
+        if !crate::faithful_gate("AUTO_CIRCLE_COMPENSATION_PIN") {
+            return;
+        }
+        // Layer.cpp:41-43 `for (LayerRegion *layerm : m_regions) layerm->auto_circle_compensation(layerm->slices, ...)`
+        for layerm in self.regions.iter_mut() {
+            let mut slices = std::mem::take(&mut layerm.slices);
+            layerm.auto_circle_compensation(&mut slices, params, manual_offset);
+            layerm.slices = slices;
+        }
+    }
+
+    /// The `gap_compensation_ratio` make_fills gives a FillMonotonicLineWGapFill (Fill.cpp:725-727:
+    /// `fill_monoline->gap_compensation_ratio = surface_fill.params.monotonic_travel_into_wall * (float) 0.01;`).
+    /// `SurfaceFillParams::monotonic_travel_into_wall` is a float (Fill.cpp:49) set from the REGION
+    /// config's percent value for a monotonic-line pattern (Fill.cpp:282-283; the option is a
+    /// `PrintRegionConfig` key, PrintConfig.hpp:1155-1168), so the ratio is a float product of the
+    /// percent number (45 -> 0.45). FILL_MONOTONIC_TRAVEL_REGION_PIN (on unless =0); =0 reads the
+    /// object config's copy, which holds the fraction (0.45), and multiplies it by 0.01 again.
+    pub fn monotonic_gap_compensation_ratio(&self, region_id: usize) -> f32 {
+        if crate::faithful_gate("FILL_MONOTONIC_TRAVEL_REGION_PIN") {
+            let travel_into_wall =
+                self.regions[region_id].region().config().monotonic_travel_into_wall as f32;
+            travel_into_wall * 0.01f32
+        } else {
+            (self.object().config().monotonic_travel_into_wall * 0.01) as f32
         }
     }
 
@@ -4716,7 +4764,7 @@ impl Layer {
                             let new_flow = surface_fill.params.flow.clone();
                             let line_mm3 = new_flow.mm3_per_mm().unwrap_or(0.0);
                             let gap_comp =
-                                (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                                self.monotonic_gap_compensation_ratio(region_id);
                             let mut no_lines: Vec<crate::geometry::Polyline> = Vec::new();
                             Self::monotonic_route_gap_fill(
                                 &mut collection,
@@ -4785,7 +4833,7 @@ impl Layer {
                             let new_flow = surface_fill.params.flow.clone();
                             let line_mm3 = new_flow.mm3_per_mm().unwrap_or(0.0);
                             let gap_comp =
-                                (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                                self.monotonic_gap_compensation_ratio(region_id);
                             let mut no_lines: Vec<crate::geometry::Polyline> = Vec::new();
                             Self::monotonic_route_gap_fill(
                                 &mut collection,
@@ -5026,7 +5074,7 @@ impl Layer {
                     // Native ConfigOptionPercent stores the raw percent number
                     // (profile "45.0"); Fill.cpp:636 multiplies by 0.01.
                     let gap_comp =
-                        (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                        self.monotonic_gap_compensation_ratio(region_id);
                     crate::extrusion_entity::extrusion_entities_append_paths_with_wipe(
                         &mut collection.entities,
                         polylines,
@@ -5085,7 +5133,7 @@ impl Layer {
 
                 // FILL_MONOTONIC_ROUTE_PIN: FillRectilinear.cpp:3692-3746 for this expoly.
                 if route_pin && !route_areas.is_empty() {
-                    let gap_comp = (self.object().config().monotonic_travel_into_wall * 0.01) as f32;
+                    let gap_comp = self.monotonic_gap_compensation_ratio(region_id);
                     Self::monotonic_route_gap_fill(
                         &mut collection,
                         &route_areas,

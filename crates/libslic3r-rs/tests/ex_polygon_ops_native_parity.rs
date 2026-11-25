@@ -4,9 +4,11 @@
 //! star-shaped ExPolygons with holes (a quarter snapped to a grid, every fifth with a repeated point).
 //! Vectors: tests/data/ex_polygon/gen_ops.cpp (ops_vectors.txt.gz).
 
+// R948: the functions are called under their C++ names (traits for the overloads); the older names
+// (overlaps_expolys, contains_line, has_duplicate_points_expoly, remove_sticks_expoly, ...) delegate to them.
 use slicer::ex_polygon::{
-    expolygons_match, get_extents_rotated, get_extents_rotated_expoly, has_duplicate_points_expoly, is_narrow_expolygon, overlaps_expolys,
-    overlaps_expolys_expoly, projection_onto, to_unscaled_linesf,
+    expolygons_match, get_extents_rotated, get_extents_rotated_expoly, is_narrow_expolygon, projection_onto, to_unscaled_linesf,
+    ExPolygonArea, ExPolygonContains, ExPolygonHasDuplicatePoints, ExPolygonsOverlaps,
 };
 use slicer::geometry::{ExPolygon, Line, Point, Polygon, Polyline};
 
@@ -115,8 +117,8 @@ fn ex_polygon_ops_native_parity() {
             let proj = projection_onto(&ab, &pt);
             let narrow = is_narrow_expolygon(&a, mw, 100000.0 * 100000.0, 0.1);
             let got = [
-                overlaps_expolys(&[a.clone()], &[b.clone()]) as i64,
-                overlaps_expolys_expoly(&[b.clone()], &a) as i64,
+                <[ExPolygon] as ExPolygonsOverlaps<[ExPolygon]>>::overlaps(&[a.clone()], &[b.clone()]) as i64,
+                <[ExPolygon] as ExPolygonsOverlaps<ExPolygon>>::overlaps(&[b.clone()], &a) as i64,
                 narrow as i64,
                 proj.x,
                 proj.y,
@@ -136,7 +138,11 @@ fn ex_polygon_ops_native_parity() {
         }
         {
             let ar = hexf(tail(&mut it, "ar")[0]);
-            if slicer::geometry::area_expolygons(&[a.clone(), b.clone()]).to_bits() != ar.to_bits() {
+            // area(const ExPolygons&) (ExPolygon.hpp:488) by its C++ name and by the older one
+            let abv = [a.clone(), b.clone()];
+            if <[ExPolygon] as ExPolygonArea>::area(&abv).to_bits() != ar.to_bits()
+                || slicer::geometry::area_expolygons(&abv).to_bits() != ar.to_bits()
+            {
                 misc_ne[0] += 1;
             }
             let t = tail(&mut it, "rsn");
@@ -147,21 +153,21 @@ fn ex_polygon_ops_native_parity() {
                 let p1 = v[0].contour.points[1];
                 v[0].contour.points.insert(1, p1);
             }
-            let r = slicer::geometry::remove_same_neighbor(&mut v);
+            let r = slicer::ex_polygon::remove_same_neighbor(&mut v);
             if r != rb || !same_exs(&v, &want) {
                 misc_ne[1] += 1;
             }
             let k: usize = tail(&mut it, "klc")[0].parse().unwrap();
             let want: Vec<ExPolygon> = (0..k).map(|_| read_ex(&mut it)).collect();
             let mut v = vec![a.clone(), b.clone()];
-            slicer::geometry::keep_largest_contour_only(&mut v);
+            slicer::ex_polygon::keep_largest_contour_only(&mut v);
             if !same_exs(&v, &want) {
                 misc_ne[2] += 1;
             }
             let rb = tail(&mut it, "rs")[0] == "1";
             let want = vec![read_ex(&mut it)];
             let mut e = a.clone();
-            let r = slicer::ex_polygon::remove_sticks_expoly(&mut e);
+            let r = slicer::ex_polygon::remove_sticks(&mut e);
             if r != rb || !same_exs(&[e], &want) {
                 misc_ne[3] += 1;
             }
@@ -175,17 +181,17 @@ fn ex_polygon_ops_native_parity() {
         if a.overlaps(&b) != ov[0] || b.overlaps(&a) != ov[1] {
             ov_ne += 1;
         }
-        if a.contains_line(&ln) != cl {
+        if <ExPolygon as ExPolygonContains<Line>>::contains(&a, &ln) != cl {
             cl_ne += 1;
         }
-        if a.contains_polyline(&pl) != cp {
+        if <ExPolygon as ExPolygonContains<Polyline>>::contains(&a, &pl) != cp {
             cp_ne += 1;
         }
         let rb = get_extents_rotated_expoly(&a, ang);
         if (rb.min.x, rb.min.y, rb.max.x, rb.max.y) != (bb[0], bb[1], bb[2], bb[3]) {
             bb_ne += 1;
         }
-        if has_duplicate_points_expoly(&a) != dup {
+        if <ExPolygon as ExPolygonHasDuplicatePoints>::has_duplicate_points(&a) != dup {
             dup_ne += 1;
         }
         let rl = to_unscaled_linesf(&[a.clone(), b.clone()]);

@@ -137,17 +137,67 @@ impl ExPolygon {
         }
     }
 
+    // ExPolygon.cpp:52-58
+    // double ExPolygon::area() const
+    // R948: moved here from geometry/expolygon.rs (body unchanged). C++ `Polygon::area()` returns the
+    // *signed* area (CCW positive, CW negative), so `signed_area()` here.
+    pub fn area(&self) -> crate::CoordF {
+        // ExPolygon.cpp:54
+        // double a = this->contour.area();
+        let mut a = self.contour.signed_area();
+        // ExPolygon.cpp:55-56  (the double-negative `a -= -x` is `a += x`)
+        // for (const Polygon &hole : holes) a -= - hole.area();  // holes have negative area
+        for hole in &self.holes {
+            a -= -hole.signed_area();
+        }
+        // ExPolygon.cpp:57
+        a
+    }
+
     // ExPolygon.cpp:76-79
     // bool ExPolygon::contains(const Line &line) const
+    // R948: the C++-named overload is `<ExPolygon as ExPolygonContains<Line>>::contains`; this delegates.
     pub fn contains_line(&self, line: &Line) -> bool {
-        // ExPolygon.cpp:78
-        // return this->contains(Polyline(line.a, line.b));
-        self.contains_polyline(&Polyline::from_points(vec![line.a, line.b]))
+        <ExPolygon as ExPolygonContains<Line>>::contains(self, line)
     }
 
     // ExPolygon.cpp:81-90
     // bool ExPolygon::contains(const Polyline &polyline) const
+    // R948: the C++-named overload is `<ExPolygon as ExPolygonContains<Polyline>>::contains`; this delegates.
     pub fn contains_polyline(&self, polyline: &Polyline) -> bool {
+        <ExPolygon as ExPolygonContains<Polyline>>::contains(self, polyline)
+    }
+
+    // ExPolygon.cpp:92-107
+    // bool ExPolygon::contains(const Polylines &polylines) const
+    // R948: the C++-named overload is `<ExPolygon as ExPolygonContains<[Polyline]>>::contains`; this delegates.
+    pub fn contains_polylines(&self, polylines: &[Polyline]) -> bool {
+        <ExPolygon as ExPolygonContains<[Polyline]>>::contains(self, polylines)
+    }
+}
+
+/// The one-argument `ExPolygon::contains` overloads of ExPolygon.hpp:51-53 under their C++ name, one
+/// implementation per argument type (the `Point` overload, ExPolygon.hpp:54, is the inherent
+/// `ExPolygon::contains(point, border_result)`). Call through the trait path
+/// (`<ExPolygon as ExPolygonContains<Line>>::contains(&e, &l)`): the inherent method takes the name first.
+pub trait ExPolygonContains<T: ?Sized> {
+    fn contains(&self, t: &T) -> bool;
+}
+
+// ExPolygon.cpp:76-79
+// bool ExPolygon::contains(const Line &line) const
+impl ExPolygonContains<Line> for ExPolygon {
+    fn contains(&self, line: &Line) -> bool {
+        // ExPolygon.cpp:78
+        // return this->contains(Polyline(line.a, line.b));
+        <ExPolygon as ExPolygonContains<Polyline>>::contains(self, &Polyline::from_points(vec![line.a, line.b]))
+    }
+}
+
+// ExPolygon.cpp:81-90
+// bool ExPolygon::contains(const Polyline &polyline) const
+impl ExPolygonContains<Polyline> for ExPolygon {
+    fn contains(&self, polyline: &Polyline) -> bool {
         // ExPolygon.cpp:83
         // BoundingBox bbox1 = get_extents(*this);
         let bbox1 = get_extents_expoly(self);
@@ -175,10 +225,12 @@ impl ExPolygon {
         // module `cpp`, verified against the pin; the older `diff_pl` gave 578 of 3,000 other answers.
         crate::clipper_utils::cpp::DiffPl::diff_pl(polyline, self).is_empty()
     }
+}
 
-    // ExPolygon.cpp:92-107
-    // bool ExPolygon::contains(const Polylines &polylines) const
-    pub fn contains_polylines(&self, polylines: &[Polyline]) -> bool {
+// ExPolygon.cpp:92-107
+// bool ExPolygon::contains(const Polylines &polylines) const
+impl ExPolygonContains<[Polyline]> for ExPolygon {
+    fn contains(&self, polylines: &[Polyline]) -> bool {
         // ExPolygon.cpp:102
         // Polylines pl_out = diff_pl(polylines, *this);
         // R929: `diff_pl(const Polylines&, const ExPolygon&)` (ClipperUtils.cpp:917-918) of module `cpp`.
@@ -187,7 +239,9 @@ impl ExPolygon {
         // return pl_out.empty();
         pl_out.is_empty()
     }
+}
 
+impl ExPolygon {
     // ExPolygon.cpp:109-119
     // bool ExPolygon::contains(const Point &point, bool border_result /* = true */) const
     pub fn contains(&self, point: &Point, border_result: bool) -> bool {
@@ -511,32 +565,54 @@ impl ExPolygon {
     }
 }
 
+/// The free `overlaps` overloads of ExPolygon.hpp:467-468 under their C++ name, one implementation per
+/// argument type (`expolys1.overlaps(expolys2)` for `overlaps(expolys1, expolys2)`).
+pub trait ExPolygonsOverlaps<Rhs: ?Sized> {
+    fn overlaps(&self, other: &Rhs) -> bool;
+}
+
 // ExPolygon.cpp:186-195
 // bool overlaps(const ExPolygons& expolys1, const ExPolygons& expolys2)
-pub fn overlaps_expolys(expolys1: &[ExPolygon], expolys2: &[ExPolygon]) -> bool {
-    // ExPolygon.cpp:188-193
-    for expoly1 in expolys1 {
-        for expoly2 in expolys2 {
-            if expoly1.overlaps(expoly2) {
-                return true;
+impl ExPolygonsOverlaps<[ExPolygon]> for [ExPolygon] {
+    fn overlaps(&self, expolys2: &[ExPolygon]) -> bool {
+        let expolys1 = self;
+        // ExPolygon.cpp:188-193
+        for expoly1 in expolys1 {
+            for expoly2 in expolys2 {
+                if expoly1.overlaps(expoly2) {
+                    return true;
+                }
             }
         }
+        // ExPolygon.cpp:194
+        false
     }
-    // ExPolygon.cpp:194
-    false
 }
 
 // ExPolygon.cpp:197-204
 // bool overlaps(const ExPolygons& expolys, const ExPolygon& expoly)
-pub fn overlaps_expolys_expoly(expolys: &[ExPolygon], expoly: &ExPolygon) -> bool {
-    // ExPolygon.cpp:199-202
-    for el in expolys {
-        if el.overlaps(expoly) {
-            return true;
+impl ExPolygonsOverlaps<ExPolygon> for [ExPolygon] {
+    fn overlaps(&self, expoly: &ExPolygon) -> bool {
+        let expolys = self;
+        // ExPolygon.cpp:199-202
+        for el in expolys {
+            if el.overlaps(expoly) {
+                return true;
+            }
         }
+        // ExPolygon.cpp:203
+        false
     }
-    // ExPolygon.cpp:203
-    false
+}
+
+// ExPolygon.cpp:186-195 under the older name; delegates to the C++-named overload (R948).
+pub fn overlaps_expolys(expolys1: &[ExPolygon], expolys2: &[ExPolygon]) -> bool {
+    <[ExPolygon] as ExPolygonsOverlaps<[ExPolygon]>>::overlaps(expolys1, expolys2)
+}
+
+// ExPolygon.cpp:197-204 under the older name; delegates to the C++-named overload (R948).
+pub fn overlaps_expolys_expoly(expolys: &[ExPolygon], expoly: &ExPolygon) -> bool {
+    <[ExPolygon] as ExPolygonsOverlaps<ExPolygon>>::overlaps(expolys, expoly)
 }
 
 // ExPolygon.cpp:206-223
@@ -718,27 +794,41 @@ pub fn get_extents_vector(polygons: &[ExPolygon]) -> Vec<BoundingBox> {
     out
 }
 
+/// `has_duplicate_points(const ExPolygon &)` (ExPolygon.hpp:479) under its C++ name; the `ExPolygons`
+/// overload (480) is the free fn [`has_duplicate_points`].
+pub trait ExPolygonHasDuplicatePoints {
+    fn has_duplicate_points(&self) -> bool;
+}
+
 // ExPolygon.cpp:531-553
 // bool has_duplicate_points(const ExPolygon &expoly)
+impl ExPolygonHasDuplicatePoints for ExPolygon {
+    fn has_duplicate_points(&self) -> bool {
+        let expoly = self;
+        // ExPolygon.cpp:535
+        let mut cnt = expoly.contour.points.len();
+        // ExPolygon.cpp:536-537
+        for hole in &expoly.holes {
+            cnt += hole.points.len();
+        }
+        // ExPolygon.cpp:538-539
+        let mut allpts: Vec<Point> = Vec::with_capacity(cnt);
+        // ExPolygon.cpp:540
+        // allpts.insert(allpts.begin(), expoly.contour.points...);
+        allpts.extend_from_slice(&expoly.contour.points);
+        // ExPolygon.cpp:541-542
+        for hole in &expoly.holes {
+            allpts.extend_from_slice(&hole.points);
+        }
+        // ExPolygon.cpp:543
+        // return has_duplicate_points(std::move(allpts));  (sorts then checks adjacency)
+        points_have_duplicates(allpts)
+    }
+}
+
+// ExPolygon.cpp:531-553 under the older name; delegates to the C++-named overload (R948).
 pub fn has_duplicate_points_expoly(expoly: &ExPolygon) -> bool {
-    // ExPolygon.cpp:535
-    let mut cnt = expoly.contour.points.len();
-    // ExPolygon.cpp:536-537
-    for hole in &expoly.holes {
-        cnt += hole.points.len();
-    }
-    // ExPolygon.cpp:538-539
-    let mut allpts: Vec<Point> = Vec::with_capacity(cnt);
-    // ExPolygon.cpp:540
-    // allpts.insert(allpts.begin(), expoly.contour.points...);
-    allpts.extend_from_slice(&expoly.contour.points);
-    // ExPolygon.cpp:541-542
-    for hole in &expoly.holes {
-        allpts.extend_from_slice(&hole.points);
-    }
-    // ExPolygon.cpp:543
-    // return has_duplicate_points(std::move(allpts));  (sorts then checks adjacency)
-    points_have_duplicates(allpts)
+    <ExPolygon as ExPolygonHasDuplicatePoints>::has_duplicate_points(expoly)
 }
 
 // ExPolygon.cpp:555-580
@@ -772,24 +862,54 @@ pub fn has_duplicate_points(expolys: &[ExPolygon]) -> bool {
 
 // ExPolygon.cpp:582-595
 // bool remove_same_neighbor(ExPolygons &expolygons)
-//
-// The faithful C++ port is the canonical `crate::geometry::remove_same_neighbor`
-// (audited/corrected in place in geometry/expolygon.rs — it now uses the exact
-// std::unique-style Polygon/Polygons `remove_same_neighbor` and the contour-erase
-// step). Re-exported here under the C++ name for parity bookkeeping.
-pub use crate::geometry::remove_same_neighbor as remove_same_neighbor_expolygons;
+// R948: moved here from geometry/expolygon.rs (body unchanged; `crate::geometry::remove_same_neighbor`
+// delegates to it). Collapses consecutive-duplicate points (std::unique semantics, not tolerance-based) on
+// every contour and hole via the Polygon/Polygons `remove_same_neighbor`, then erases any ExPolygon whose
+// contour collapsed to <= 2 points (only when a contour actually changed). Returns true when anything changed.
+pub fn remove_same_neighbor(expolygons: &mut Vec<ExPolygon>) -> bool {
+    use crate::geometry::remove_same_neighbor_polygon;
+    use crate::geometry::remove_same_neighbor_polygons;
+
+    // ExPolygon.cpp:584
+    if expolygons.is_empty() {
+        return false;
+    }
+    // ExPolygon.cpp:585-586
+    let mut remove_from_holes = false;
+    let mut remove_from_contour = false;
+    // ExPolygon.cpp:587-590
+    for expoly in expolygons.iter_mut() {
+        // ExPolygon.cpp:588 — remove_from_contour |= remove_same_neighbor(expoly.contour);
+        remove_from_contour |= remove_same_neighbor_polygon(&mut expoly.contour);
+        // ExPolygon.cpp:589 — remove_from_holes |= remove_same_neighbor(expoly.holes);
+        remove_from_holes |= remove_same_neighbor_polygons(&mut expoly.holes);
+    }
+    // ExPolygon.cpp:592-593 — Removing of expolygons without contour
+    if remove_from_contour {
+        expolygons.retain(|p| p.contour.points.len() > 2);
+    }
+    // ExPolygon.cpp:594
+    remove_from_holes || remove_from_contour
+}
+
+// ExPolygon.cpp:582-595 under the older name (kept for its callers).
+pub use self::remove_same_neighbor as remove_same_neighbor_expolygons;
 
 // ExPolygon.cpp:597-600
 // bool remove_sticks(ExPolygon &poly)
-//
-// NOTE: named `remove_sticks_expoly` to avoid clashing with the existing crate
-// helpers; uses the C++-faithful Polygon/Polygons `remove_sticks`.
-pub fn remove_sticks_expoly(poly: &mut ExPolygon) -> bool {
+// R948: under its C++ name; `remove_sticks_expoly` delegates. Uses the C++-faithful Polygon/Polygons
+// `remove_sticks` (imported here as `polygon_remove_sticks` / `polygons_remove_sticks`).
+pub fn remove_sticks(poly: &mut ExPolygon) -> bool {
     // ExPolygon.cpp:599
     // return remove_sticks(poly.contour) || remove_sticks(poly.holes);
     // NOTE: C++ short-circuits: holes are only processed when the contour pass
     // returns false. We replicate the `||` short-circuit exactly.
     polygon_remove_sticks(&mut poly.contour) || polygons_remove_sticks(&mut poly.holes)
+}
+
+// ExPolygon.cpp:597-600 under the older name; delegates to the C++-named function (R948).
+pub fn remove_sticks_expoly(poly: &mut ExPolygon) -> bool {
+    remove_sticks(poly)
 }
 
 // ExPolygon.cpp:602-621
@@ -828,12 +948,64 @@ pub fn remove_small_and_small_holes(expolygons: &mut ExPolygons, min_area: f64) 
 
 // ExPolygon.cpp:623-640
 // void keep_largest_contour_only(ExPolygons &polygons)
-//
-// The faithful C++ port is the canonical `crate::geometry::keep_largest_contour_only`
-// (audited/corrected in place in geometry/expolygon.rs — it now keeps only the
-// single ExPolygon with the largest CONTOUR area across the whole collection).
-// Re-exported here under a C++-named alias for parity bookkeeping.
-pub use crate::geometry::keep_largest_contour_only as keep_largest_contour_only_collection;
+// R948: moved here from geometry/expolygon.rs (body unchanged; `crate::geometry::keep_largest_contour_only`
+// delegates to it): when there is more than one ExPolygon, keep ONLY the single ExPolygon whose CONTOUR has
+// the largest (signed) area across the whole collection; otherwise leave the collection untouched.
+pub fn keep_largest_contour_only(polygons: &mut Vec<ExPolygon>) {
+    // ExPolygon.cpp:625
+    if polygons.len() > 1 {
+        // ExPolygon.cpp:626-627
+        let mut max_area = 0.0;
+        let mut max_area_polygon: Option<usize> = None;
+        // ExPolygon.cpp:628-634
+        for (idx, p) in polygons.iter().enumerate() {
+            // ExPolygon.cpp:629 — double a = p.contour.area();  (Polygon::area() is signed)
+            let a = p.contour.area();
+            // ExPolygon.cpp:630-633
+            if a > max_area {
+                max_area = a;
+                max_area_polygon = Some(idx);
+            }
+        }
+        // ExPolygon.cpp:635 — assert(max_area_polygon != nullptr);
+        debug_assert!(max_area_polygon.is_some());
+        // ExPolygon.cpp:636-638
+        if let Some(idx) = max_area_polygon {
+            let p = polygons[idx].clone();
+            polygons.clear();
+            polygons.push(p);
+        }
+    }
+}
+
+// ExPolygon.cpp:623-640 under the older name (kept for its callers).
+pub use self::keep_largest_contour_only as keep_largest_contour_only_collection;
+
+/// The free `area` overloads of ExPolygon.hpp:487-488 under their C++ name (`area(poly)` is
+/// `<ExPolygon as ExPolygonArea>::area(&poly)`: the inherent `ExPolygon::area` takes the name first).
+pub trait ExPolygonArea {
+    fn area(&self) -> f64;
+}
+
+// ExPolygon.hpp:487
+// inline double area(const ExPolygon &poly) { return poly.area(); }
+impl ExPolygonArea for ExPolygon {
+    fn area(&self) -> f64 {
+        ExPolygon::area(self)
+    }
+}
+
+// ExPolygon.hpp:488
+// inline double area(const ExPolygons &polys) { double s = 0.; for (auto &p : polys) s += p.area(); return s; }
+impl ExPolygonArea for [ExPolygon] {
+    fn area(&self) -> f64 {
+        let mut s = 0.0f64;
+        for p in self {
+            s += p.area();
+        }
+        s
+    }
+}
 
 // ----------------------------------------------------------------------------
 // Local helpers mirroring Slic3r free functions used by ExPolygon.cpp.

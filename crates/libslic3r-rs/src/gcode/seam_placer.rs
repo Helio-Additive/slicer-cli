@@ -2313,6 +2313,150 @@ pub struct PerimeterDistancer {
     scaled_lines: Vec<Line>,
     // SeamPlacer.cpp:888 — `AABBTreeIndirect::Tree<2, double> tree;`
     tree: tree2d::Tree,
+    // SEAM_DISTANCER_LINEF: the pin's tree, built over the unscaled `Linef`s
+    // (AABBTreeLines.hpp:174-199 with LineType = Linef).
+    tree_f: tree2d::Tree,
+}
+
+/// SEAM_DISTANCER_LINEF (faithful): `PerimeterDistancer` queries `Linef`s in double
+/// (SeamPlacer.cpp:887-919): `IndexedLinesDistancer<Linef>` hands the origin to
+/// `line_alg::distance_to_squared` as a double (AABBTreeLines.hpp:29-35), where the
+/// distancer over scaled `Line`s truncates it to coord_t first, which put the embedded
+/// distance and the overhang of a seam candidate up to sqrt(2) units off. =0 keeps the
+/// scaled query.
+fn seam_distancer_linef_gate() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("SEAM_DISTANCER_LINEF"))
+}
+
+/// AABBTreeLines.hpp:174-199 for `LineType = Linef`: centroid `(a + b) * 0.5` and the
+/// bounding box of the two end points, in double.
+fn build_aabb_tree_over_indexed_linesf(lines: &[LineF]) -> tree2d::Tree {
+    struct InputType {
+        m_idx: usize,
+        m_bbox: tree2d::BoundingBox,
+        m_centroid: [f64; 2],
+    }
+    impl tree2d::SourceNode for InputType {
+        fn idx(&self) -> usize {
+            self.m_idx
+        }
+        fn centroid(&self) -> [f64; 2] {
+            self.m_centroid
+        }
+        fn bbox(&self) -> tree2d::BoundingBox {
+            self.m_bbox
+        }
+    }
+    let mut input: Vec<InputType> = Vec::with_capacity(lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        let mut m_bbox = tree2d::BoundingBox::from_point([line.a.x, line.a.y]);
+        m_bbox.extend_point([line.b.x, line.b.y]);
+        input.push(InputType {
+            m_idx: i,
+            m_bbox,
+            m_centroid: [(line.a.x + line.b.x) * 0.5, (line.a.y + line.b.y) * 0.5],
+        });
+    }
+    let mut out = tree2d::Tree::new();
+    out.build(input);
+    out
+}
+
+/// Line.hpp:43-69 `line_alg::distance_to_squared` for a `Linef` and a double point.
+fn distance_to_squared_linef(line: &LineF, point: PointF, nearest_point: &mut PointF) -> f64 {
+    let v = PointF::new(line.b.x - line.a.x, line.b.y - line.a.y);
+    let va = PointF::new(point.x - line.a.x, point.y - line.a.y);
+    let l2 = v.x * v.x + v.y * v.y;
+    if l2 == 0.0 {
+        *nearest_point = line.a;
+        return va.x * va.x + va.y * va.y;
+    }
+    let t = (va.x * v.x + va.y * v.y) / l2;
+    if t <= 0.0 {
+        *nearest_point = line.a;
+        va.x * va.x + va.y * va.y
+    } else if t >= 1.0 {
+        *nearest_point = line.b;
+        let d = PointF::new(point.x - line.b.x, point.y - line.b.y);
+        d.x * d.x + d.y * d.y
+    } else {
+        *nearest_point = PointF::new(line.a.x + t * v.x, line.a.y + t * v.y);
+        let d = PointF::new(t * v.x - va.x, t * v.y - va.y);
+        d.x * d.x + d.y * d.y
+    }
+}
+
+/// AABBTreeIndirect.hpp:556-632 `squared_distance_to_indexed_primitives_recursive` with
+/// `IndexedLinesDistancer<Linef>` (AABBTreeLines.hpp:17-36), as aabb_tree_lines.rs has it
+/// for `Line`.
+fn squared_distance_to_indexed_linesf_recursive(
+    lines: &[LineF],
+    tree: &tree2d::Tree,
+    origin: PointF,
+    node_idx: usize,
+    low_sqr_d: f64,
+    mut up_sqr_d: f64,
+    i: &mut usize,
+    c: &mut PointF,
+) -> f64 {
+    if low_sqr_d > up_sqr_d {
+        return low_sqr_d;
+    }
+    let node = tree.node(node_idx);
+    if node.is_leaf() {
+        let mut nearest = PointF::new(0.0, 0.0);
+        let sqr_dist = distance_to_squared_linef(&lines[node.idx], origin, &mut nearest);
+        if sqr_dist < up_sqr_d {
+            *i = node.idx;
+            *c = nearest;
+            up_sqr_d = sqr_dist;
+        }
+    } else {
+        let left_node_idx = node_idx * 2 + 1;
+        let right_node_idx = left_node_idx + 1;
+        let node_left = tree.node(left_node_idx);
+        let node_right = tree.node(right_node_idx);
+        let o = [origin.x, origin.y];
+        let mut looked_left = false;
+        let mut looked_right = false;
+        let mut look = |idx: usize, up: &mut f64, i: &mut usize, c: &mut PointF| {
+            let mut i_s = 0usize;
+            let mut c_s = *c;
+            let d = squared_distance_to_indexed_linesf_recursive(lines, tree, origin, idx, low_sqr_d, *up, &mut i_s, &mut c_s);
+            if d < *up {
+                *i = i_s;
+                *c = c_s;
+                *up = d;
+            }
+        };
+        if node_left.bbox.contains(o) {
+            look(left_node_idx, &mut up_sqr_d, i, c);
+            looked_left = true;
+        }
+        if node_right.bbox.contains(o) {
+            look(right_node_idx, &mut up_sqr_d, i, c);
+            looked_right = true;
+        }
+        let left_up_sqr_d = node_left.bbox.squared_exterior_distance(o);
+        let right_up_sqr_d = node_right.bbox.squared_exterior_distance(o);
+        if left_up_sqr_d < right_up_sqr_d {
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look(left_node_idx, &mut up_sqr_d, i, c);
+            }
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look(right_node_idx, &mut up_sqr_d, i, c);
+            }
+        } else {
+            if !looked_right && right_up_sqr_d < up_sqr_d {
+                look(right_node_idx, &mut up_sqr_d, i, c);
+            }
+            if !looked_left && left_up_sqr_d < up_sqr_d {
+                look(left_node_idx, &mut up_sqr_d, i, c);
+            }
+        }
+    }
+    up_sqr_d
 }
 
 impl PerimeterDistancer {
@@ -2341,10 +2485,16 @@ impl PerimeterDistancer {
         }
         // SeamPlacer.cpp:902
         let tree = build_aabb_tree_over_indexed_lines(&scaled_lines);
+        let tree_f = if seam_distancer_linef_gate() {
+            build_aabb_tree_over_indexed_linesf(&lines)
+        } else {
+            tree2d::Tree::new()
+        };
         Self {
             lines,
             scaled_lines,
             tree,
+            tree_f,
         }
     }
 
@@ -2352,6 +2502,36 @@ impl PerimeterDistancer {
     pub fn distance_from_perimeter(&self, point: &Vec2f) -> f32 {
         // SeamPlacer.cpp:907 — `Vec2d p = point.cast<double>();`
         let p = PointF::new(point.x as f64, point.y as f64);
+        if seam_distancer_linef_gate() {
+            // SeamPlacer.cpp:908-919 over the `Linef`s (AABBTreeLines.hpp:205-219).
+            if self.tree_f.empty() {
+                return f32::MAX;
+            }
+            let mut hit_idx_out: usize = 0;
+            let mut hit_point_out = PointF::new(0.0, 0.0);
+            let mut distance = squared_distance_to_indexed_linesf_recursive(
+                &self.lines,
+                &self.tree_f,
+                p,
+                0,
+                0.0,
+                f64::MAX,
+                &mut hit_idx_out,
+                &mut hit_point_out,
+            );
+            if distance < 0.0 {
+                return f32::MAX;
+            }
+            distance = distance.sqrt();
+            let line = &self.lines[hit_idx_out];
+            let v1 = Vec2d::new(line.b.x - line.a.x, line.b.y - line.a.y);
+            let v2 = Vec2d::new(p.x - line.a.x, p.y - line.a.y);
+            // One C++ expression: clang fuses the left product into the subtraction.
+            if v1.x.mul_add(v2.y, -(v1.y * v2.x)) > 0.0 {
+                distance *= -1.0;
+            }
+            return distance as f32;
+        }
         // The query is run in scaled space: scale the query point and compute
         // the squared distance against the scaled lines.
         let scaled_p = PointF::new(p.x * crate::SCALING_FACTOR, p.y * crate::SCALING_FACTOR);
@@ -2606,6 +2786,7 @@ impl SeamPlacer {
             }
             // SeamPlacer.cpp:941-943
             for poly_index in 0..polygons.len() {
+                let perimeters_before = seam_data.layers[layer_idx].perimeters.len();
                 process_perimeter_polygon(
                     &polygons[poly_index],
                     unscaled_z as f32,
@@ -2614,6 +2795,28 @@ impl SeamPlacer {
                     global_model_info,
                     &mut seam_data.layers[layer_idx],
                 );
+                // SEAM_REGION_ID_FROM_LAYER (on): SeamPlacer.cpp:449 takes
+                // `region->region().print_object_region_id()`, the region's index in the
+                // object's region list (PrintApply.cpp:1038), which is also its index in
+                // `layer->regions()`. The live path builds its PrintRegions without that id
+                // (print.rs `PrintRegion::new`, -1), so every perimeter had region -1 and
+                // `find_next_seam_in_layer` (SeamPlacer.cpp:1135) aligned seams across
+                // regions. When the id is missing, take the region's index in the layer.
+                // =0 keeps -1.
+                if let Some(r) = regions[poly_index] {
+                    if r.region().print_object_region_id() < 0
+                        && crate::faithful_gate("SEAM_REGION_ID_FROM_LAYER")
+                    {
+                        if let (Some(idx), true) = (
+                            layer.regions().iter().position(|lr| std::ptr::eq(lr, r)),
+                            seam_data.layers[layer_idx].perimeters.len() > perimeters_before,
+                        ) {
+                            if let Some(per) = seam_data.layers[layer_idx].perimeters.back_mut() {
+                                per.region_id = idx as i32;
+                            }
+                        }
+                    }
+                }
             }
             // SeamPlacer.cpp:944-945 — C++ builds `points_tree` here; this port
             // builds it on demand via `LayerSeams::build_points_tree` (the KD
@@ -3435,6 +3638,83 @@ impl SeamPlacer {
     /// pick (`pick_seam_point`/`pick_nearest`/`pick_random`, SeamPlacer.cpp:1100
     /// loop / `SeamPlacer::place_seam` fallback) → `align_seam_points` (for
     /// `spAligned`).
+    /// SEAMSTAGE=<a>-<b> (diagnostic only, never changes output; R948): after each stage
+    /// of `init` writes every perimeter and candidate of layers a..=b to stderr as raw
+    /// f32 bits, in the format of a pin twin that compiles SeamPlacer.cpp and runs it on one thread:
+    /// `SP <tag> L= P= s= e= si= fin= fp=x,y,z fw= r=` and `SC <tag> L= i= p=x,y,z v= o= m= a= t= c=`.
+    fn seam_stage_dump(&self, tag: &str) {
+        let Some(v) = std::env::var("SEAMSTAGE").ok() else { return };
+        let mut it = v.split('-');
+        let a: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or(usize::MAX);
+        let b: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or(a);
+        use std::fmt::Write as _;
+        let mut o = String::new();
+        for (l, layer) in self.seam_data.layers.iter().enumerate() {
+            if l < a || l > b {
+                continue;
+            }
+            let mut k = 0usize;
+            let mut cur = 0usize;
+            while cur < layer.points.len() {
+                let per = &layer.perimeters[layer.points[cur].perimeter];
+                let _ = writeln!(
+                    o,
+                    "SP {} L={} P={} s={} e={} si={} fin={} fp={:08x},{:08x},{:08x} fw={:08x} r={}",
+                    tag, l, k, per.start_index, per.end_index, per.seam_index, per.finalized as i32,
+                    per.final_seam_position.x.to_bits(), per.final_seam_position.y.to_bits(),
+                    per.final_seam_position.z.to_bits(), per.flow_width.to_bits(), per.region_id
+                );
+                if per.end_index <= cur {
+                    break;
+                }
+                cur = per.end_index;
+                k += 1;
+            }
+            for (i, c) in layer.points.iter().enumerate() {
+                let _ = writeln!(
+                    o,
+                    "SC {} L={} i={} p={:08x},{:08x},{:08x} v={:08x} o={:08x} m={:08x} a={:08x} t={} c={}",
+                    tag, l, i, c.position.x.to_bits(), c.position.y.to_bits(), c.position.z.to_bits(),
+                    c.visibility.to_bits(), c.overhang.to_bits(), c.embedded_distance.to_bits(),
+                    c.local_ccw_angle.to_bits(), c.r#type as i32, c.central_enforcer as i32
+                );
+            }
+        }
+        eprint!("{}", o);
+    }
+
+    /// SEAMSTAGE=<a>-<b> (diagnostic only, R948): the `lslices` of layers a-1..=b that
+    /// `PerimeterDistancer` reads (SeamPlacer.cpp:891-903), one `LS` line per contour / hole
+    /// (`h=-1` the contour), as the pin twin writes them; LSPTS=1 adds every point.
+    fn seam_lslices_dump(po: &PrintObject) {
+        let Some(v) = std::env::var("SEAMSTAGE").ok() else { return };
+        let mut it = v.split('-');
+        let a: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or(usize::MAX);
+        let b: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or(a);
+        let pts = std::env::var("LSPTS").is_ok();
+        use std::fmt::Write as _;
+        let mut o = String::new();
+        for l in a.saturating_sub(1)..=b.min(po.layers().len().saturating_sub(1)) {
+            for (e, ex) in po.layers()[l].lslices.iter().enumerate() {
+                let mut polys: Vec<(i64, &Polygon)> = vec![(-1, &ex.contour)];
+                for (h, hole) in ex.holes.iter().enumerate() {
+                    polys.push((h as i64, hole));
+                }
+                for (h, pg) in polys {
+                    let (sx, sy) = pg.points().iter().fold((0i64, 0i64), |acc, q| (acc.0 + q.x, acc.1 + q.y));
+                    let f = pg.points().first().map(|q| (q.x, q.y)).unwrap_or((0, 0));
+                    let _ = writeln!(o, "LS L={} e={} h={} n={} sx={} sy={} f={},{}", l, e, h, pg.points().len(), sx, sy, f.0, f.1);
+                    if pts {
+                        for q in pg.points() {
+                            let _ = writeln!(o, "LSP L={} e={} h={} {} {}", l, e, h, q.x, q.y);
+                        }
+                    }
+                }
+            }
+        }
+        eprint!("{}", o);
+    }
+
     pub fn init(&mut self, po: &PrintObject, configured_seam_preference: SeamPosition) {
         self.config_mode = match configured_seam_preference {
             SeamPosition::spAligned => SeamPositionMode::Aligned,
@@ -3466,14 +3746,18 @@ impl SeamPlacer {
         // SeamPlacer.cpp:1456 — gather_seam_candidates.
         let __t = std::time::Instant::now();
         self.gather_seam_candidates(po, &global_model_info, configured_seam_preference);
+        self.seam_stage_dump("cand");
         SPPROF_GATHER.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
         // SeamPlacer.cpp:1457 — calculate_candidates_visibility (visibility==1.0).
         let __t = std::time::Instant::now();
         self.calculate_candidates_visibility(po, &global_model_info);
+        self.seam_stage_dump("vis");
         SPPROF_VIS.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
         // SeamPlacer.cpp:1458 — calculate_overhangs_and_layer_embedding.
         let __t = std::time::Instant::now();
+        Self::seam_lslices_dump(po);
         self.calculate_overhangs_and_layer_embedding(po);
+        self.seam_stage_dump("oh");
         SPPROF_OVER.fetch_add(__t.elapsed().as_nanos() as usize, std::sync::atomic::Ordering::Relaxed);
 
         // SeamPlacer.cpp:1459-1460 — pick the initial seam of every perimeter,
@@ -3513,6 +3797,7 @@ impl SeamPlacer {
                 current_point_index = end_index;
             }
         }
+        self.seam_stage_dump("pick");
         if std::env::var("CANDDBG").is_ok() {
             let layer = &self.seam_data.layers[6];
             for (i, c) in layer.points.iter().enumerate() {
@@ -3555,6 +3840,7 @@ impl SeamPlacer {
         ) {
             self.align_seam_points(po, &comparator);
         }
+        self.seam_stage_dump("align");
         if std::env::var("SEAMDBG").is_ok() {
             for (layer_idx, layer) in self.seam_data.layers.iter().enumerate() {
                 let mut peri = 0usize;

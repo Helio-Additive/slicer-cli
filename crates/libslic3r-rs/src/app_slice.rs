@@ -244,7 +244,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
     // Run Print::process() pipeline.
     // main.cpp:1486 — Print::validate() before slicing; abort on a hard error
     // (empty `.string` means valid). Warnings (is_warning) are non-fatal.
-    let validation = print.validate();
+    let validation = validate_and_emit_warnings(&print);
     if !validation.string.is_empty() && !validation.is_warning {
         return Err(validation_refusal(validation));
     }
@@ -342,6 +342,40 @@ impl ValidationRefusal {
             _ => -51,
         }
     }
+}
+
+/// main.cpp:11483-11494, 11528-11531 (Bambu engine): `Print::validate` with the warnings out-parameter; every
+/// warning is joined with a newline into the first (BambuStudio.cpp 7531-7536), which is emitted as the
+/// validation event on stdout (main.cpp:465-484, `validation_warning` or `validation_error` by its
+/// `is_warning`) and followed by `Validation warning: <text>`. Gate FRONT_END_VALIDATE_WARNINGS_PIN
+/// (faithful, R948); off, `Print::validate` without warnings.
+fn validate_and_emit_warnings(print: &Print) -> crate::print_base::StringObjectException {
+    if !crate::faithful_gate("FRONT_END_VALIDATE_WARNINGS_PIN") {
+        return print.validate();
+    }
+    let mut validation_warnings: Vec<crate::print_base::StringObjectException> = Vec::new();
+    let validation_result = print.validate_with_warnings(Some(&mut validation_warnings));
+    let mut validation_warning = crate::print_base::StringObjectException::default();
+    for item in &validation_warnings {
+        if validation_warning.string.is_empty() {
+            validation_warning = item.clone();
+        } else {
+            if !validation_warning.string.ends_with('\n') {
+                validation_warning.string.push('\n');
+            }
+            validation_warning.string += &item.string;
+        }
+    }
+    if !validation_warning.string.is_empty() {
+        use std::io::Write;
+        let text = validation_warning.string.clone();
+        let record = ValidationRefusal { exception: validation_warning }.event_record();
+        let mut out = std::io::stdout();
+        let _ = out.write_all(record.as_bytes());
+        let _ = writeln!(out, "Validation warning: {text}");
+        let _ = out.flush();
+    }
+    validation_result
 }
 
 /// The error a hard validation error becomes. Gate FRONT_END_VALIDATE_REFUSAL_PIN (faithful, R947): a
@@ -1099,7 +1133,7 @@ pub fn slice_3mf_to_gcode(
 
     // main.cpp:1486 — Print::validate() before slicing; abort on a hard error
     // (empty `.string` means valid). Warnings (is_warning) are non-fatal.
-    let validation = print.validate();
+    let validation = validate_and_emit_warnings(&print);
     if !validation.string.is_empty() && !validation.is_warning {
         return Err(validation_refusal(validation));
     }

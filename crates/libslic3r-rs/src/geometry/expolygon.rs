@@ -87,25 +87,8 @@ impl ExPolygon {
 
     /// Calculate the area of the ExPolygon (contour area minus hole areas).
     ///
-    /// Faithful port of `double ExPolygon::area() const` (ExPolygon.cpp:52-58).
-    /// C++ `Polygon::area()` returns the *signed* area (CCW positive, CW
-    /// negative), so we use `signed_area()` here. The C++ body is:
-    /// ```cpp
-    /// double a = this->contour.area();
-    /// for (const Polygon &hole : holes)
-    ///     a -= - hole.area();  // holes have negative area  (== a += hole.area())
-    /// return a;
-    /// ```
-    pub fn area(&self) -> CoordF {
-        // ExPolygon.cpp:54
-        let mut a = self.contour.signed_area();
-        // ExPolygon.cpp:55-56  (the double-negative `a -= -x` is `a += x`)
-        for hole in &self.holes {
-            a -= -hole.signed_area();
-        }
-        // ExPolygon.cpp:57
-        a
-    }
+    // `ExPolygon::area()` (ExPolygon.cpp:52-58) is in crate::ex_polygon (R948: moved there, the file paired
+    // with ExPolygon.cpp, body unchanged).
 
     /// Calculate the signed area of the ExPolygon.
     pub fn signed_area(&self) -> CoordF {
@@ -1314,8 +1297,13 @@ pub fn expolygons_simplify(expolys: &[ExPolygon], tolerance: CoordF) -> Vec<ExPo
 /// Calculate total area of all ExPolygons in a collection
 /// ExPolygon.hpp:488
 pub fn area_expolygons(polys: &[ExPolygon]) -> CoordF {
-    // Sum areas of all ExPolygons
-    // ExPolygon.hpp:488
+    // ExPolygon.hpp:488: `double s = 0.; for (auto &p : polys) s += p.area(); return s;`
+    // R948: delegates to the C++-named `<[ExPolygon] as crate::ex_polygon::ExPolygonArea>::area` under
+    // faithful_gate EXPOLYGONS_AREA_PIN: the sum starts at +0.0 as the pin's; Rust's `Iterator::sum` of f64
+    // starts at -0.0, so an empty collection gave -0.0 (=0 the older arm).
+    if crate::faithful_gate("EXPOLYGONS_AREA_PIN") {
+        return <[ExPolygon] as crate::ex_polygon::ExPolygonArea>::area(polys);
+    }
     polys.iter().map(|p| p.area()).sum()
 }
 
@@ -1405,67 +1393,16 @@ pub fn overlaps_expoly(expolys: &[ExPolygon], expoly: &ExPolygon) -> bool {
     false
 }
 
-/// Faithful port of `bool remove_same_neighbor(ExPolygons &expolygons)`
-/// (BambuStudio `ExPolygon.cpp:582-595`). Collapses consecutive-duplicate points
-/// (std::unique semantics, NOT tolerance-based) on every contour and hole via the
-/// Polygon/Polygons `remove_same_neighbor`, then erases any ExPolygon whose
-/// contour collapsed to <= 2 points (only when a contour actually changed).
-/// Returns true when anything was erased.
+/// `bool remove_same_neighbor(ExPolygons &expolygons)` (ExPolygon.cpp:582-595): the port is
+/// `crate::ex_polygon::remove_same_neighbor` (R948: moved there, body unchanged); this delegates.
 pub fn remove_same_neighbor(expolygons: &mut Vec<ExPolygon>) -> bool {
-    use super::remove_same_neighbor_polygon;
-    use super::remove_same_neighbor_polygons;
-
-    // ExPolygon.cpp:584
-    if expolygons.is_empty() {
-        return false;
-    }
-    // ExPolygon.cpp:585-586
-    let mut remove_from_holes = false;
-    let mut remove_from_contour = false;
-    // ExPolygon.cpp:587-590
-    for expoly in expolygons.iter_mut() {
-        // ExPolygon.cpp:588 — remove_from_contour |= remove_same_neighbor(expoly.contour);
-        remove_from_contour |= remove_same_neighbor_polygon(&mut expoly.contour);
-        // ExPolygon.cpp:589 — remove_from_holes |= remove_same_neighbor(expoly.holes);
-        remove_from_holes |= remove_same_neighbor_polygons(&mut expoly.holes);
-    }
-    // ExPolygon.cpp:592-593 — Removing of expolygons without contour
-    if remove_from_contour {
-        expolygons.retain(|p| p.contour.points.len() > 2);
-    }
-    // ExPolygon.cpp:594
-    remove_from_holes || remove_from_contour
+    crate::ex_polygon::remove_same_neighbor(expolygons)
 }
 
-/// Faithful port of `void keep_largest_contour_only(ExPolygons &polygons)`
-/// (BambuStudio `ExPolygon.cpp:623-640`): when there is more than one ExPolygon,
-/// keep ONLY the single ExPolygon whose CONTOUR has the largest (signed) area
-/// across the whole collection; otherwise leave the collection untouched.
+/// `void keep_largest_contour_only(ExPolygons &polygons)` (ExPolygon.cpp:623-640): the port is
+/// `crate::ex_polygon::keep_largest_contour_only` (R948: moved there, body unchanged); this delegates.
 pub fn keep_largest_contour_only(polygons: &mut Vec<ExPolygon>) {
-    // ExPolygon.cpp:625
-    if polygons.len() > 1 {
-        // ExPolygon.cpp:626-627
-        let mut max_area = 0.0;
-        let mut max_area_polygon: Option<usize> = None;
-        // ExPolygon.cpp:628-634
-        for (idx, p) in polygons.iter().enumerate() {
-            // ExPolygon.cpp:629 — double a = p.contour.area();  (Polygon::area() is signed)
-            let a = p.contour.area();
-            // ExPolygon.cpp:630-633
-            if a > max_area {
-                max_area = a;
-                max_area_polygon = Some(idx);
-            }
-        }
-        // ExPolygon.cpp:635 — assert(max_area_polygon != nullptr);
-        debug_assert!(max_area_polygon.is_some());
-        // ExPolygon.cpp:636-638
-        if let Some(idx) = max_area_polygon {
-            let p = polygons[idx].clone();
-            polygons.clear();
-            polygons.push(p);
-        }
-    }
+    crate::ex_polygon::keep_largest_contour_only(polygons)
 }
 
 // ----------------------------------------------------------------------------------------------------

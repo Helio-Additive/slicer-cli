@@ -2079,6 +2079,13 @@ fn overhang_degree_corr_speed(
         + (upper_speed_bound - lower_speed_bound) * (path_degree - lower_degree_bound as f64)
 }
 
+/// LOOP_SMOOTH_SPEED_BY_PATH_ROLE (faithful): `extrude_loop` sets each wall path's
+/// speed by the path's own role (GCode.cpp:7704-7725), not by the loop's first path.
+fn loop_smooth_speed_by_path_role_gate() -> bool {
+    static G: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *G.get_or_init(|| crate::faithful_gate("LOOP_SMOOTH_SPEED_BY_PATH_ROLE"))
+}
+
 /// Base (normal) wall speed for a perimeter path role, mm/s.
 /// Mirrors the role switch in `extrude_collection` (outer/inner wall speeds).
 fn perimeter_base_speed(
@@ -2533,7 +2540,15 @@ pub fn extrude_loop(
             }
             loop_path_acceleration(writer, path.role, is_first_layer);
             width_tag_before_speed(writer, path);
-            if apply_overhang_speed
+            // LOOP_SMOOTH_SPEED_BY_PATH_ROLE (on): `_extrude` picks the speed by the
+            // PATH's role, and for a wall path takes `path.smooth_speed` whenever
+            // detect_overhang_wall && smooth_speed_discontinuity_area && smooth_speed != 0,
+            // whatever enable_overhang_speed says (GCode.cpp:7704-7725). =0 keys it on
+            // the loop's first path (`apply_overhang_speed`), so a loop that starts on an
+            // overhang wall wrote none of its ramps (Majora L25).
+            let smooth_by_path_role = loop_smooth_speed_by_path_role_gate()
+                && path.smooth_speed != 0.0;
+            if (apply_overhang_speed || smooth_by_path_role)
                 && matches!(
                     path.role,
                     ExtrusionRole::ExternalPerimeter | ExtrusionRole::Perimeter
@@ -2601,7 +2616,11 @@ pub fn extrude_loop(
         }
         loop_path_acceleration(writer, path.role, is_first_layer);
         width_tag_before_speed(writer, path);
-        if apply_overhang_speed
+        // LOOP_SMOOTH_SPEED_BY_PATH_ROLE (on): the overhang-corrected speed follows the
+        // path's role and is_enable_overhang_speed() (GCode.cpp:7704-7725), not the
+        // loop's first path.
+        if (apply_overhang_speed
+            || (loop_smooth_speed_by_path_role_gate() && config.enable_overhang_speed))
             && matches!(
                 path.role,
                 ExtrusionRole::ExternalPerimeter | ExtrusionRole::Perimeter
@@ -4320,7 +4339,19 @@ pub fn extrude_entity(
                     writer.write_raw(";_OVERHANG_FAN_START");
                 }
                 if speed > 0.0 {
-                    let cooling_comment = if role == ExtrusionRole::BridgeInfill {
+                    // PATH_BRIDGE_SPEED_COMMENT (on): `_extrude` writes ";_EXTRUDE_SET_SPEED"
+                    // only for a path that is not a bridge, and is_bridge() is
+                    // erBridgeInfill or erOverhangPerimeter (GCode.cpp:7931-7934,
+                    // ExtrusionEntity.hpp:125-128); the overhang threshold for
+                    // participating cooling (95% in the jobs) passes every other degree.
+                    // An overhang wall path's F line without the marker is one the cooling
+                    // buffer blanks when the feedrate is unchanged (GCodeEditor.cpp:610-615):
+                    // the pin's blank line between two overhang wall paths of an open
+                    // Arachne path. =0 marks it as adjustable.
+                    let is_bridge_path = role == ExtrusionRole::BridgeInfill
+                        || (role == ExtrusionRole::OverhangPerimeter
+                            && crate::faithful_gate("PATH_BRIDGE_SPEED_COMMENT"));
+                    let cooling_comment = if is_bridge_path {
                         ""
                     } else if role == ExtrusionRole::ExternalPerimeter {
                         ";_EXTRUDE_SET_SPEED;_EXTERNAL_PERIMETER"

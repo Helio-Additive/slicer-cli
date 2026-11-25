@@ -4573,5 +4573,69 @@
    "SkeletalTrapezoidation::computePointCellRange",
    "SkeletalTrapezoidation::separatePointyQuadEndNodes"
   ]
+ },
+ {
+  "unit": "EdgeGrid",
+  "round": 948,
+  "evidence": "tests/edge_grid_native_parity.rs (edge_grid_native_parity): the pin's EdgeGrid::Grid against tests/data/edge_grid/gen.cpp (vectors.txt.gz) on 700 cases of random closed and open contours (a third snapped to the grid or half grid so that lines run through cell corners and along cell edges, repeated points, one-point polygons, empty input, a quarter with set_bbox before create; resolutions 2,000-50,000), 100 per create overload: the grid each create leaves through create_from_m_contours and visit_intersect_line_impl (bbox, rows, cols, every cell's begin/end and the whole cell data) 0 of 700 differ; intersecting_edges 0 of 700; cell_inside_or_crossing 0 of 700 before and 0 of 376 after the distance field (12 cells each, in and out of the domain); calculate_sdf 0 of 376 with EDGE_GRID_SDF_PIN (the pin's double-versus-float compare and fused float squares, EdgeGrid.cpp 722, 750, 606, 612, 873; 335 of 376 differ with the gate at 0); closest_point_signed_distance 0 of 3,008 queries (contour, start point, distance and t bit for bit).",
+  "functions": [
+   "EdgeGrid::Grid::create",
+   "Grid::create",
+   "EdgeGrid::Grid::create_from_m_contours",
+   "Grid::visit_intersect_line_impl",
+   "Grid::cell_inside_or_crossing",
+   "EdgeGrid::Grid::intersecting_edges",
+   "EdgeGrid::Grid::calculate_sdf",
+   "EdgeGrid::Grid::closest_point_signed_distance"
+  ]
+ },
+ {
+  "unit": "ExPolygon",
+  "round": 948,
+  "evidence": "tests/ex_polygon_native_parity.rs (ex_polygon_native_parity, 2,000 cases, 90,000 calls) and tests/ex_polygon_ops_native_parity.rs (ex_polygon_ops_native_parity, 1,500 cases), now calling the functions by their C++ names in src/ex_polygon.rs (traits for the overloads: ExPolygonContains<Line | Polyline | [Polyline]>, ExPolygonsOverlaps<[ExPolygon] | ExPolygon>, ExPolygonHasDuplicatePoints, ExPolygonArea for ExPolygon and [ExPolygon]; ExPolygon::area, remove_same_neighbor, keep_largest_contour_only moved in from geometry/expolygon.rs with their bodies unchanged; remove_sticks under its name; the older names delegate): 0 mismatches against the pin's ExPolygon.cpp 52-58, 76-107, 186-204, 531-580, 582-600, 623-640 and ExPolygon.hpp 487-488 from tests/data/ex_polygon/gen.cpp and gen_ops.cpp.",
+  "functions": [
+   "ExPolygon::area",
+   "ExPolygon::contains",
+   "overlaps",
+   "area",
+   "has_duplicate_points",
+   "remove_same_neighbor",
+   "remove_sticks",
+   "keep_largest_contour_only"
+  ]
+ },
+ {
+  "unit": "GCode/SeamPlacer",
+  "round": 948,
+  "evidence": "tests/seam_perimeter_distancer_native_parity.rs (perimeter_distancer_matches_the_pin): the pin's PerimeterDistancer (SeamPlacer.cpp 886-921: the Linef lines, AABBTreeIndirect::Tree<2, double>, AABBTreeLines::squared_distance_to_indexed_lines and the sign test) carried verbatim into tests/data/seam_perimeter_distancer/gen.cpp (the outline handed in where the pin reads layer->lslices) over the pin's AABBTreeLines, on 24 random outlines (1-3 islands, holes) and 4,800 f32 queries: 0 differ (raw float bits) with SEAM_DISTANCER_LINEF on; with SEAM_DISTANCER_LINEF=0 (the earlier query over scaled Lines, whose IndexedLinesDistancer<Line> truncates the origin to coord_t) 4,753 of 4,800 differ.",
+  "functions": [
+   "PerimeterDistancer::distance_from_perimeter"
+  ]
+ },
+ {
+  "unit": "GCode/SeamPlacer",
+  "round": 948,
+  "evidence": "Twin probe over a fixture: a pin twin (SeamPlacer.cpp included under renamed SeamPlacerTwin / SeamPlacerImplTwin / PrintObjectSeamDataTwin, Print::process on one thread, SeamPlacer::init's stages with a dump after each) against the port's SEAMSTAGE probe (gcode/seam_placer.rs SeamPlacer::init, diagnostic only) on the H2D Majora job (Majora on the H2D, two nozzles, with the config slicer_cli wrote), layers 280-320, raw f32 bits, binary 09:06 with SEAM_REGION_ID_FROM_LAYER and SEAM_DISTANCER_LINEF on: the lslices read by PerimeterDistancer equal; gather_seam_candidates equal on all 103,923 candidates (position, type, central_enforcer, angle) and 1,536 perimeters (start/end index, flow width, region id; region id was -1 on every perimeter with SEAM_REGION_ID_FROM_LAYER=0); calculate_overhangs_and_layer_embedding equal on all 103,923 (overhang and embedded_distance; at layer 300 with SEAM_DISTANCER_LINEF=0, 63 overhangs and 2,348 embedded distances differed). Not equal (not claimed): calculate_candidates_visibility (6,854 of 103,923 visibilities differ, most by 1 ulp) and align_seam_points (62 of 1,536 final positions differ by at most 4 ulps; finalized flags and seam indices equal).",
+  "functions": [
+   "SeamPlacer::gather_seam_candidates",
+   "SeamPlacer::calculate_overhangs_and_layer_embedding"
+  ]
+ },
+ {
+  "unit": "Print",
+  "round": 948,
+  "evidence": "tests/print_object_slice_native_parity.rs (print_object_slice_native_parity): for every scenario of the vectors (tests/data/print_object_slice/gen.cpp, models with SupportEnforcer and SupportBlocker volumes), PrintObject::slice_support_enforcers and slice_support_blockers (Print.hpp:544-545, which return slice_support_volumes(SUPPORT_ENFORCER / SUPPORT_BLOCKER)) are asserted equal to slice_support_volumes, whose per-layer polygons the pin's lines check; 1 passed.",
+  "functions": [
+   "PrintObject::slice_support_blockers",
+   "PrintObject::slice_support_enforcers"
+  ]
+ },
+ {
+  "unit": "LayerRegion",
+  "round": 948,
+  "evidence": "tests/auto_circle_compensation_native_parity.rs (auto_circle_compensation_matches_the_pin): the pin's LayerRegion::auto_circle_compensation (LayerRegion.cpp 17-18, 69-125; Polygon::is_approx_circle, the clamped offset value with the fused diameter term, the float manual offset, offset() of the contour and of each hole) called as a member on a PrintRegion/Layer/LayerRegion by tests/data/auto_circle_compensation/gen.cpp on 300 cases (755 surfaces: approximate circles with and without holes, noisy rings, rectangles, stars, rings of fewer than 8 points; random AutoContourHolesCompensationParams for two filaments, wall filament 1 or 2, manual offset 0 or random): contour and holes point for point, counter_circle_compensation and holes_circle_compensation equal on all 755 (426 with a flag set), 0 differ.",
+  "functions": [
+   "LayerRegion::auto_circle_compensation"
+  ]
  }
 ]

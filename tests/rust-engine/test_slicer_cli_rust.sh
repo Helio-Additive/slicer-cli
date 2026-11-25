@@ -75,6 +75,66 @@ fi
 sed 's/"support_line_width": "[0-9.]*"/"support_line_width": "0.1"/' "$DATA/cube_arachne_settings.json" > "$TMP/slw01.json"
 expect_exit support-width-unused 0 -- "$BIN" --config "$TMP/slw01.json" -o "$TMP/slw01.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
 
+# Print::validate checks every region's line widths, internal solid infill
+# among them (Print.cpp:1796-1800): slicer_cli refuses an internal solid infill
+# width of 0.1 mm under a 0.2 mm layer with this event and sentence.
+sed 's/"internal_solid_infill_line_width": "[0-9.]*"/"internal_solid_infill_line_width": "0.1"/' "$DATA/cube_arachne_settings.json" > "$TMP/isw01.json"
+expect_exit internal-solid-width-refused 1 -- "$BIN" --config "$TMP/isw01.json" -o "$TMP/isw01.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+if grep -q '^Validation error: Too small line width$' "$TMP/err" \
+    && grep -qF '[[SLICER_EVENT]] {"event":"validation_error","message":"Too small line width","opt_key":"internal_solid_infill_line_width","tag":"STRING_EXCEPT_NOT_DEFINED"}' "$TMP/out"; then
+    ok internal-solid-width-sentence
+else
+    fail internal-solid-width-sentence "$(cat "$TMP/out" "$TMP/err")"
+fi
+
+# A filament whose bed temperature for the plate type is 0 cannot print on that
+# plate (Print.cpp:1805-1832): slicer_cli refuses the job with the plate, the
+# filament and the type STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE.
+sed 's/"textured_plate_temp": \[[^]]*\]/"textured_plate_temp": ["0"]/' "$DATA/cube_arachne_settings.json" > "$TMP/tpt0.json"
+expect_exit bed-type-refused 1 -- "$BIN" --config "$TMP/tpt0.json" -o "$TMP/tpt0.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+if grep -q '^Validation error: Plate 1: Textured PEI Plate does not support filament 1$' "$TMP/err" \
+    && grep -qF '[[SLICER_EVENT]] {"event":"validation_error","message":"Plate 1: Textured PEI Plate does not support filament 1\n","params":["1","Textured PEI Plate","1"],"tag":"STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE"}' "$TMP/out"; then
+    ok bed-type-sentence
+else
+    fail bed-type-sentence "$(cat "$TMP/out" "$TMP/err")"
+fi
+
+# A validate() warning does not stop the slice; slicer_cli emits it as the
+# validation event and "Validation warning: <sentence>" on stdout
+# (main.cpp:11483-11494, 11528-11531). The precise outer wall warning
+# (Print.cpp:1834-1840) leaves is_warning false, so its event is
+# "validation_error".
+sed '1s/^{/{ "precise_outer_wall": "1", "wall_sequence": "outer wall\/inner wall",/' "$DATA/cube_arachne_settings.json" > "$TMP/pow.json"
+expect_exit precise-outer-wall-warned 0 -- "$BIN" --config "$TMP/pow.json" -o "$TMP/pow.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+if grep -q '^Validation warning: Precise outer wall will be ignored unless the order of walls is set to inner/outer$' "$TMP/out" \
+    && grep -qF '[[SLICER_EVENT]] {"event":"validation_error","message":"Precise outer wall will be ignored unless the order of walls is set to inner/outer","opt_key":"precise_outer_wall","tag":"STRING_EXCEPT_NOT_DEFINED"}' "$TMP/out"; then
+    ok precise-outer-wall-warning
+else
+    fail precise-outer-wall-warning "$(cat "$TMP/out")"
+fi
+
+# The bed check reads every filament the print uses, the support filament among
+# them (Print::extruders, Print.cpp:523-576): two filaments, support printed
+# with filament 2, whose Textured PEI Plate temperature is 0. slicer_cli refuses
+# it naming filament 2.
+python3 - "$DATA/cube_arachne_settings.json" "$TMP/sup2.json" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for k, v in list(d.items()):
+    if isinstance(v, list) and len(v) == 1 and (k.startswith('filament') or k.startswith('nozzle_temperature') or '_plate_temp' in k):
+        d[k] = v * 2
+d.update({'filament_colour': ['#FF0000', '#00FF00'], 'textured_plate_temp': ['55', '0'],
+          'textured_plate_temp_initial_layer': ['55', '0'], 'enable_support': '1',
+          'support_filament': '2', 'support_interface_filament': '2'})
+json.dump(d, open(sys.argv[2], 'w'), indent=4)
+EOF
+expect_exit support-filament-bed-refused 1 -- "$BIN" --config "$TMP/sup2.json" -o "$TMP/sup2.gcode" "$ROOT/tests/rust-engine/fixtures/Cube_25.6.stl"
+if grep -qF '[[SLICER_EVENT]] {"event":"validation_error","message":"Plate 1: Textured PEI Plate does not support filament 2\n","params":["1","Textured PEI Plate","2"],"tag":"STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE"}' "$TMP/out"; then
+    ok support-filament-bed-sentence
+else
+    fail support-filament-bed-sentence "$(cat "$TMP/out" "$TMP/err")"
+fi
+
 # The same input gives the same bytes.
 "$BIN" -o "$TMP/again.gcode" "$DATA/painted_cube.3mf" >/dev/null 2>&1
 if cmp -s "$TMP/3mf/cube.gcode" "$TMP/again.gcode"; then ok deterministic; else fail deterministic "two runs differ"; fi
