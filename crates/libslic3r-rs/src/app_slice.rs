@@ -2169,9 +2169,9 @@ fn load_bambustudio_settings(
         for (key, value) in obj {
             let str_val = match value {
                 serde_json::Value::String(s) => s.clone(),
-                // Config.cpp:900-939, 1030-1080. Preserve the machine envelope's
-                // full array, including each mode and any additional nozzle rows.
-                serde_json::Value::Array(arr) if crate::print_config::profile_machine_limit_rows_enabled(key) => {
+                // Config.cpp:1030-1080 joins the profile's array before deserialization.
+                serde_json::Value::Array(arr) if crate::print_config::profile_machine_limit_rows_enabled(key)
+                    || (matches!(key.as_str(), "extruder_offset" | "filament_map") && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")) => {
                     let Some(items) = arr.iter().map(|v| v.as_str()).collect::<Option<Vec<_>>>() else { continue };
                     items.join(",")
                 }
@@ -2316,7 +2316,9 @@ fn apply_filament_arrays(config: &mut PrintConfig, json: &serde_json::Value) {
             _ => get_f64_array(key),
         }
     };
-    config.filament_map = get_f64_list("filament_map").into_iter().map(|v| v as i32).collect();
+    if !crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") {
+        config.filament_map = get_f64_list("filament_map").into_iter().map(|v| v as i32).collect();
+    }
     config.nozzle_volumes = get_f64_list("nozzle_volume");
     // PrintConfig.hpp:1747-1758: the twelve ConfigOptionFloats of the auto circle compensation take
     // the whole JSON array, joined with ',' and deserialized as ConfigBase::load_from_json does for an
@@ -2684,6 +2686,40 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 #[cfg(test)]
 mod circle_compensation_settings_tests {
     use super::*;
+
+    /// GCodeProcessor.cpp:2016-2022, 6164-6200. Exercise the JSON settings
+    /// loader and the stored travel vertices for both assignments of T0/T1.
+    #[test]
+    fn profile_extruder_offsets_reach_recorded_move_positions() {
+        use crate::gcode::g_code_processor::{EMoveType, GCodeProcessor};
+        let vectors = include_str!("../tests/data/g_code_processor/filament_offsets.txt");
+        let mut cases = 0;
+        for line in vectors.lines().filter(|line| line.starts_with("moves ")) {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            let expected: Vec<_> = fields[4..].iter().map(|s| u32::from_str_radix(s, 16).unwrap()).collect();
+            for offsets in [serde_json::json!(fields[1].split(',').collect::<Vec<_>>()), fields[1].into()] {
+                let profile = serde_json::json!({
+                    "filament_diameter": ["1.75", "1.75"],
+                    "extruder_offset": offsets,
+                    "filament_map": fields[2].split(',').collect::<Vec<_>>(),
+                    "master_extruder_id": fields[3],
+                });
+                let (config, _, _) = load_bambustudio_settings(&profile).unwrap();
+                let mut processor = GCodeProcessor::new();
+                processor.reset();
+                processor.apply_config(&config);
+                processor.initialize("offset.gcode");
+                processor.process_buffer("T0\nG1 X40 Y20 F600\nT1\nG1 X50 Y30 F600\n");
+                processor.finalize(false);
+                let positions: Vec<_> = processor.result().moves.iter()
+                    .filter(|m| m.move_type == EMoveType::Travel)
+                    .flat_map(|m| [m.position[0].to_bits(), m.position[1].to_bits()]).collect();
+                assert_eq!(positions, expected, "{line}");
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 12);
+    }
 
     /// PrintConfig.cpp:1085-1108 and GCodeProcessor.cpp:2042-2051.
     /// The last three vector fields are native load, unload and T0/T1/T0 print times.

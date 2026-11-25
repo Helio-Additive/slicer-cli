@@ -3037,8 +3037,7 @@ pub struct GCodeProcessor {
     m_seams_detector: SeamsDetector,
     /// GCodeProcessor.hpp:1233 `EProducer m_producer;`
     m_producer: EProducer,
-    // BLOCKED(deps): m_extruder_offsets (Vec3f), m_seams_detector,
-    // m_options_z_corrector, m_nozzle_group_result/recorder — see notes.
+    /// GCodeProcessor.hpp m_extruder_offsets, one Vec3f per filament.
     m_extruder_offsets: Vec<[f32; 3]>,
 
     m_time_processor: TimeProcessor,
@@ -3319,10 +3318,19 @@ impl GCodeProcessor {
             let get_at = |v: &Vec<f64>, i: usize, first: f64| -> f64 {
                 v.get(i).or(v.first()).copied().unwrap_or(first)
             };
-            self.m_extruder_offsets = vec![
-                [config.extruder_offset_x as f32, config.extruder_offset_y as f32, 0.0];
-                filament_count
-            ];
+            // GCodeProcessor.cpp:2016-2022. The one-based map is padded with the
+            // master extruder. ConfigOptionPoints::get_at falls back to row zero.
+            self.m_extruder_offsets = if let Some(first) = config.extruder_offsets.first()
+                .filter(|_| crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS"))
+            {
+                (0..filament_count).map(|i| {
+                    let id = config.filament_map.get(i).copied().or(config.master_extruder_id).unwrap_or(1);
+                    let row = config.extruder_offsets.get((id as usize).wrapping_sub(1)).unwrap_or(first);
+                    [row[0] as f32, row[1] as f32, 0.0]
+                }).collect()
+            } else {
+                vec![[config.extruder_offset_x as f32, config.extruder_offset_y as f32, 0.0]; filament_count]
+            };
             self.m_extruder_colors = (0..filament_count).map(|i| i as u8).collect();
             self.m_result.filament_diameters = (0..filament_count)
                 .map(|i| get_at(&config.filament_diameters, i, config.filament_diameter) as f32)
@@ -9693,6 +9701,60 @@ pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serialized_filament_offsets_preserve_scalar_configs() {
+        use crate::print_config::PrintConfig;
+        let mut config = PrintConfig::default();
+        config.filament_diameters = vec![1.75, 1.75];
+        config.extruder_offset_x = -1.25;
+        config.extruder_offset_y = 3.5;
+        let legacy = serde_json::to_value(&config).unwrap();
+        assert!(legacy.get("extruder_offsets").is_none() && legacy.get("master_extruder_id").is_none());
+        let mut config: PrintConfig = serde_json::from_value(legacy).unwrap();
+        let mut processor = GCodeProcessor::new();
+        processor.apply_config(&config);
+        assert_eq!(processor.m_extruder_offsets, vec![[-1.25, 3.5, 0.0]; 2]);
+
+        config.set_deserialize("extruder_offset", "0x0,12.25x-3.5");
+        config.set_deserialize("master_extruder_id", "2");
+        let config: PrintConfig = serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
+        processor.apply_config(&config);
+        assert_eq!(processor.m_extruder_offsets, vec![[12.25, -3.5, 0.0]; 2]);
+        assert_eq!([config.extruder_offset_x, config.extruder_offset_y], [-1.25, 3.5]);
+    }
+
+    /// GCodeProcessor.cpp:2016-2022. Each filament selects its physical
+    /// extruder's XY offset. A short map is extended with master_extruder_id.
+    #[test]
+    fn mapped_filament_offsets_match_native() {
+        use crate::print_config::PrintConfig;
+        let vectors = include_str!("../../tests/data/g_code_processor/filament_offsets.txt");
+        let mut cases = 0;
+        for line in vectors.lines().filter(|line| line.starts_with("rows ")) {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            let expected: Vec<_> = fields[4..].iter().map(|s| u32::from_str_radix(s, 16).unwrap()).collect();
+            for direct in [false, true] {
+                let mut config = PrintConfig::default();
+                config.filament_diameters = vec![1.75, 1.75];
+                let mapping = if fields[2] == "-" { "" } else { fields[2] };
+                for (key, value) in [("extruder_offset", fields[1]), ("filament_map", mapping), ("master_extruder_id", fields[3])] {
+                    if direct {
+                        config.apply_key_value(key, value);
+                    } else {
+                        config.set_deserialize(key, value);
+                    }
+                }
+                let mut processor = GCodeProcessor::new();
+                processor.apply_config(&config);
+                let offsets: Vec<_> = processor.m_extruder_offsets.iter()
+                    .flat_map(|p| [p[0].to_bits(), p[1].to_bits()]).collect();
+                assert_eq!(offsets, expected, "{line}, direct={direct}");
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 48);
+    }
 
     /// GCodeProcessor.cpp:2030-2036, 2055-2066, 6248-6262. Compare initialized
     /// machine limits and minimum feedrates in both modes for every firmware

@@ -798,6 +798,12 @@ pub struct PrintConfig {
     pub extruder_offset_x: CoordF,
     /// Extruder Y offset (mm). Subtracted from all G-code Y coordinates.
     pub extruder_offset_y: CoordF,
+    /// PrintConfig.hpp:1631 extruder_offset. Preserve all XY pairs for the processor.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extruder_offsets: Vec<[f64; 2]>,
+    /// PrintConfig.cpp:5789-5792. An absent master_extruder_id selects extruder 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master_extruder_id: Option<i32>,
 
     /// PrintConfig.hpp:1745 `filament_velocity_adaptation_factor` (ConfigOptionFloats, one value per
     /// filament, min 0, default {1.0}, PrintConfig.cpp:3294-3301). GCode::extrude_loop hands
@@ -1646,6 +1652,8 @@ impl Default for PrintConfig {
             // Extruder offset (0 = no offset)
             extruder_offset_x: 0.0,
             extruder_offset_y: 0.0,
+            extruder_offsets: Vec::new(),
+            master_extruder_id: None,
 
             // PrintConfig.cpp:3301 `set_default_value(new ConfigOptionFloats{1.0})`.
             filament_velocity_adaptation_factor: vec![1.0],
@@ -3424,6 +3432,30 @@ impl PrintConfig {
             }
             "handle_hotend_as_extruder" => {
                 self.handle_hotend_as_extruder = parse_bool(value).unwrap_or(false);
+                true
+            }
+            "extruder_offset" if crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") => {
+                use crate::config::{ConfigOption, ConfigOptionPoints};
+                let mut points = ConfigOptionPoints::new();
+                if matches!(points.deserialize(value, false), Ok(true)) {
+                    self.extruder_offsets = points.values.iter().map(|p| [p.x, p.y]).collect();
+                }
+                true
+            }
+            "master_extruder_id" if crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") => {
+                use crate::config::{ConfigOption, ConfigOptionInt};
+                let mut id = ConfigOptionInt::new();
+                if matches!(id.deserialize(value, false), Ok(true)) {
+                    self.master_extruder_id = Some(id.value);
+                }
+                true
+            }
+            "filament_map" if crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS") => {
+                use crate::config::{ConfigOption, ConfigOptionInts};
+                let mut map = ConfigOptionInts::new();
+                if matches!(map.deserialize(value, false), Ok(true)) {
+                    self.filament_map = map.values;
+                }
                 true
             }
             k if is_ams_filament_time(k) && crate::faithful_gate("PROCESSOR_AMS_TIMES") => {
@@ -5505,6 +5537,11 @@ impl PrintConfig {
         let parse_bool =
             |s: &str| -> bool { s.trim() == "1" || s.trim().eq_ignore_ascii_case("true") };
 
+        if matches!(key, "extruder_offset" | "master_extruder_id" | "filament_map")
+            && crate::faithful_gate("PROCESSOR_FILAMENT_OFFSETS")
+        {
+            return self.set_deserialize(key, value);
+        }
         if (is_ams_filament_time(key)
             || matches!(key, "default_ams_type" | "machine_load_filament_time" | "machine_unload_filament_time"))
             && crate::faithful_gate("PROCESSOR_AMS_TIMES")

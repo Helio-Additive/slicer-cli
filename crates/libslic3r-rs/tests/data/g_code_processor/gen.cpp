@@ -810,11 +810,49 @@ static void ams_times()
     }
 }
 
+// GCodeProcessor.cpp:2016-2022 selects an extruder_offset for each filament.
+// Keep the mapped offsets and the positions exported by store_move_vertex.
+static void filament_offsets()
+{
+    for (const char *offsets : {"0x0", "0x0,12.25x-3.5", "-2.75x4,12.25x-3.5,0.00000037x8.125"}) {
+        for (const char *mapping : {"", "1", "2", "1,2", "2,1", "2,2", "3,1", "1,2,1"}) {
+            for (int master : {1, 2}) {
+                PrintConfig cfg;
+                cfg.set_deserialize_strict("filament_diameter", "1.75,1.75");
+                cfg.set_deserialize_strict("extruder_offset", offsets);
+                cfg.set_deserialize_strict("filament_map", mapping);
+                cfg.master_extruder_id.value = master;
+                GCodeProcessor p;
+                p.reset();
+                p.apply_config(cfg);
+                std::printf("rows %s %s %d", offsets, *mapping ? mapping : "-", master);
+                for (const auto &offset : p.m_extruder_offsets)
+                    std::printf(" %s %s", f32(offset.x()).c_str(), f32(offset.y()).c_str());
+                std::putchar('\n');
+                if (std::string(mapping) == "1,2" || std::string(mapping) == "2,1") {
+                    p.initialize("offset.gcode");
+                    p.process_buffer("T0\nG1 X40 Y20 F600\nT1\nG1 X50 Y30 F600\n");
+                    p.finalize(false);
+                    std::printf("moves %s %s %d", offsets, mapping, master);
+                    for (const auto &move : p.result().moves)
+                        if (move.type == EMoveType::Travel)
+                            std::printf(" %s %s", f32(move.position.x()).c_str(), f32(move.position.y()).c_str());
+                    std::putchar('\n');
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--filament-offsets") {
+        filament_offsets();
+        return 0;
     }
     if (std::string(argv[1]) == "--ams-times") {
         ams_times();
