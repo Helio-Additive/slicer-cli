@@ -184,6 +184,45 @@ pub struct SliceOverrides<'a> {
     pub report_rejections: &'a dyn Fn(),
 }
 
+// main.cpp 7267-7327. The Bambu nozzle option is nullable: the native
+// strict setter stores one value before Print::apply expands it. The two
+// active plate options keep their own vector lengths.
+fn apply_cli_temperature(config: &mut DynamicPrintConfig, key: &str, value: &str) -> Result<Vec<String>> {
+    use crate::config::{ConfigBase, ConfigEnum, ConfigOptionInts, ConfigOptionResolver};
+    use crate::print_config::config_def::{get_bed_temp_1st_layer_key, get_bed_temp_key};
+    use crate::print_config::enums::BedType;
+
+    let temperature: i32 = value.parse()?;
+    let fill_rows = |config: &mut DynamicPrintConfig, name: &str| -> Result<bool> {
+        if let Some(rows) = config.option_mut(name, true)?
+            .and_then(|opt| opt.as_any_mut().downcast_mut::<ConfigOptionInts>())
+        {
+            *rows = ConfigOptionInts::with_size(rows.values.len().max(1), temperature);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    };
+
+    if key == "nozzle_temperature" {
+        if !fill_rows(config, key)? {
+            config.set_deserialize_strict(key, value, false)?;
+        }
+        return Ok(vec![key.to_owned()]);
+    }
+    config.set_key_value(key, Box::new(ConfigOptionInts::from_values(vec![temperature])));
+    let mut keys = vec![key.to_owned()];
+    if let Some(bed) = config.option("curr_bed_type") {
+        let plate = BedType::from_int(bed.get_int()?);
+        for name in [get_bed_temp_key(plate), get_bed_temp_1st_layer_key(plate)] {
+            if !name.is_empty() && fill_rows(config, &name)? {
+                keys.push(name);
+            }
+        }
+    }
+    Ok(keys)
+}
+
 fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&SliceOverrides<'_>>) -> Result<DynamicPrintConfig> {
     let file = crate::print::full_print_config_from_settings(settings);
     let Some(overrides) = overrides else {
@@ -191,12 +230,23 @@ fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&Slice
         return Ok(file);
     };
     for (key, value) in overrides.values {
-        settings[key] = serde_json::Value::String(value.clone());
+        if !matches!(key.as_str(), "bed_temperature" | "nozzle_temperature") {
+            settings[key] = serde_json::Value::String(value.clone());
+        }
     }
     if let Some(density) = overrides.fill_density {
         settings["fill_density"] = format!("{density}%").into();
     }
-    let config = crate::print::full_print_config_from_settings(settings);
+    let mut config = crate::print::full_print_config_from_settings(settings);
+    for (key, value) in overrides.values {
+        if matches!(key.as_str(), "bed_temperature" | "nozzle_temperature") {
+            use crate::config::ConfigBase;
+            for changed in apply_cli_temperature(&mut config, key, value)? {
+                let serialized = config.opt_serialize(&changed)?;
+                settings[&changed] = serialized.split(',').collect::<Vec<_>>().into();
+            }
+        }
+    }
     check_config_values(&config, &file)?;
     (overrides.report_rejections)();
     Ok(config)
@@ -426,6 +476,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
     print.raw_settings = raw_settings_json;
     print.config_block_settings = config_block_settings_json;
     print.cli_fill_density = overrides.and_then(|o| o.fill_density);
+    print.cli_bed_temperature = overrides.and_then(|o| o.values.get("bed_temperature")?.parse().ok());
     if let Some(model) = tree_pin_model {
         // After `apply`, which clears the live Print's model (print.rs).
         print.set_model(model);
@@ -1162,7 +1213,11 @@ pub fn slice_3mf_to_gcode_with_overrides(
             if let Some(overrides) = overrides {
                 use crate::config::ConfigBase;
                 for (key, value) in overrides.values {
-                    base.set_deserialize_strict(key, value, false)?;
+                    if matches!(key.as_str(), "bed_temperature" | "nozzle_temperature") {
+                        apply_cli_temperature(&mut base, key, value)?;
+                    } else {
+                        base.set_deserialize_strict(key, value, false)?;
+                    }
                 }
             }
             base
@@ -1573,6 +1628,7 @@ pub fn slice_3mf_to_gcode_with_overrides(
     print.raw_settings = raw_settings_json;
     print.config_block_settings = config_block_settings_json;
     print.cli_fill_density = overrides.and_then(|o| o.fill_density);
+    print.cli_bed_temperature = overrides.and_then(|o| o.values.get("bed_temperature")?.parse().ok());
     print.set_status_callback(|percent, message| {
         info!("Progress: {}% - {}", percent, message);
     });
@@ -3634,5 +3690,69 @@ mod circle_compensation_settings_tests {
         }
         assert_eq!(cases, 14);
         assert_eq!(got, want);
+    }
+}
+
+#[cfg(test)]
+mod cli_temperature_tests {
+    use super::*;
+    use crate::config::ConfigBase;
+    use crate::print_config::config_def::{get_bed_temp_key, get_bed_temp_1st_layer_key};
+    use crate::print_config::enums::BedType;
+    use std::collections::BTreeMap;
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        plate: String,
+        input: String,
+        operation: String,
+        values: BTreeMap<String, String>,
+    }
+
+    #[test]
+    fn cli_temperature_overrides_match_typed_native_options() {
+        for row in include_str!("../tests/data/cli_temperature/overrides.jsonl").lines() {
+            let case: Case = serde_json::from_str(row).unwrap();
+            let mut config = DynamicPrintConfig::new();
+            config.set_deserialize_strict("curr_bed_type", &case.plate, false).unwrap();
+            let plate = config.base.opt_enum::<BedType>("curr_bed_type").unwrap();
+            let keys = [get_bed_temp_key(plate), get_bed_temp_1st_layer_key(plate)];
+            use crate::config::{ConfigOptionInts, ConfigOptionIntsNullable};
+            match case.input.as_str() {
+                "empty" => {
+                    config.set_key_value("nozzle_temperature", Box::new(ConfigOptionIntsNullable::new()));
+                    for key in &keys {
+                        if !key.is_empty() { config.set_key_value(key, Box::new(ConfigOptionInts::new())); }
+                    }
+                }
+                "nullable" | "plain" => {
+                    if case.input == "nullable" {
+                        config.set_deserialize_strict("nozzle_temperature", "nil,202,nil", false).unwrap();
+                    } else {
+                        config.set_key_value("nozzle_temperature", Box::new(ConfigOptionInts::from_values(vec![190, 202, 210])));
+                    }
+                    config.set_deserialize_strict("nozzle_temperature_initial_layer", "221", false).unwrap();
+                    for (key, values) in keys.iter().zip(["40,41,42", "55,59"]) {
+                        if !key.is_empty() { config.set_deserialize_strict(key, values, false).unwrap(); }
+                    }
+                }
+                "" => {}
+                other => {
+                    for key in ["nozzle_temperature", "nozzle_temperature_initial_layer", &keys[0], &keys[1]] {
+                        if !key.is_empty() { config.set_deserialize_strict(key, other, false).unwrap(); }
+                    }
+                }
+            }
+            for (selected, key, value) in [("bed", "bed_temperature", "53"), ("nozzle", "nozzle_temperature", "222")] {
+                if case.operation == selected || case.operation == "both" {
+                    apply_cli_temperature(&mut config, key, value).unwrap();
+                }
+            }
+            let values = config.keys().into_iter().map(|key| {
+                let value = config.opt_serialize(&key).unwrap();
+                (key, value)
+            }).collect::<BTreeMap<_, _>>();
+            assert_eq!(values, case.values, "{row}");
+        }
     }
 }

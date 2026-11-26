@@ -227,8 +227,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1000 | Parse NanoSVG coordinate units and convert them to pixels in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1001 | Convert SVG line endpoints to open cubic paths in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1002 | Borrow the G-code stream processor safely and preserve native C-string writes. | GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1003 | Apply root CLI nozzle and active-plate temperature overrides. | root CLI, Print, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1003. The root CLI accepts `--temp` and `--bed-temp` on STL and Bambu
+  3MF inputs (cli_command_line.cpp 562–563, main.cpp 7267–7327).
+  All 144 typed native cases match, including empty, nullable and plain
+  integer vectors. Five plate profiles and three projects produce the same
+  motion and heating commands as their file-setting controls in each engine.
+  The complete heating-command sequences agree across engines on seven jobs.
+  With the tower disabled, the three-slot job emits 144 commands in Rust and
+  624 in C++ with either source of settings. The 120 material changes account
+  for the difference. Eighteen pairs of real jobs match in exit status and
+  override or validation events. `CLI_TEMPERATURE_OPTIONS=0` restores the
+  prior refusals. All four standard fixtures match R1002 byte for byte with
+  the gate on and off. H2D holds at 4,614,342 and 4,614,863.
 
 - R1002. GCode.cpp 7106–7117 sends the prefix ending at the first NUL
   to both the file and the processor. R1001 wrote extra bytes in nine

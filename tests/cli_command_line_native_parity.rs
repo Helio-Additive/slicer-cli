@@ -115,10 +115,10 @@ fn geometry_options_match_native_parse_state() {
     }
     for row in include_str!("rust-engine/data/cli_command_line/geometry-options.jsonl").lines() {
         let case: GeometryCase = serde_json::from_str(row).unwrap();
-        // Physical nozzle and temperature settings still have a named refusal.
+        // The physical nozzle setting still has a named refusal.
         // Their native vectors also exercise shared option tokenization.
         if let Some(flag) = case.args.iter().filter_map(|arg| arg.split('=').next())
-            .find(|flag| matches!(*flag, "--nozzle" | "--temp" | "--bed-temp")) {
+            .find(|flag| *flag == "--nozzle") {
             assert!(parse(&case.args).unwrap_err().0.starts_with(flag), "{row}");
             continue;
         }

@@ -8456,6 +8456,8 @@ pub struct GCodeHeader {
     /// before the port's filament-override patch, `Print::config_block_settings`).
     pub config_block_settings: Option<serde_json::Value>,
     pub cli_fill_density: Option<i32>,
+    /// main.cpp 7295-7303: explicit dynamic bed_temperature from --bed-temp.
+    pub cli_bed_temperature: Option<i32>,
 
     /// `print.get_slice_used_filaments(false)` (0-based), which the header's `; filament:` line
     /// lists (GCode.cpp:2646-2655); `None` writes the configured filament count. Set by the export
@@ -8524,6 +8526,7 @@ impl GCodeHeader {
             raw_settings,
             config_block_settings: None,
             cli_fill_density: None,
+            cli_bed_temperature: None,
             used_filaments: None,
             filament_nozzle_map: None,
         }
@@ -8677,7 +8680,7 @@ impl GCodeHeader {
         if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
             if let Some(ref settings) = self.config_block_settings.as_ref().or(self.raw_settings.as_ref()) {
                 if settings.is_object() {
-                    return GCode::config_block_with_cli_settings(settings, self.filament_nozzle_map.as_deref(), self.cli_fill_density);
+                    return GCode::config_block_with_cli_settings(settings, self.filament_nozzle_map.as_deref(), self.cli_fill_density, self.cli_bed_temperature);
                 }
             }
         }
@@ -10078,10 +10081,10 @@ impl GCode {
     /// `config_block_pin` with the nozzle map of the tool ordering (`f_nozzle_maps`,
     /// `GCodeHeader::filament_nozzle_map`).
     pub fn config_block_pin_with_nozzle_map(settings: &serde_json::Value, f_nozzle_maps: Option<&[i32]>) -> String {
-        Self::config_block_with_cli_settings(settings, f_nozzle_maps, None)
+        Self::config_block_with_cli_settings(settings, f_nozzle_maps, None, None)
     }
 
-    fn config_block_with_cli_settings(settings: &serde_json::Value, f_nozzle_maps: Option<&[i32]>, fill_density: Option<i32>) -> String {
+    fn config_block_with_cli_settings(settings: &serde_json::Value, f_nozzle_maps: Option<&[i32]>, fill_density: Option<i32>, bed_temperature: Option<i32>) -> String {
         use crate::config::{ConfigBase, ConfigOptionFloats, ConfigOptionStrings};
         let mut out = String::from("; CONFIG_BLOCK_START\n");
         let mut full_config = String::new();
@@ -10089,6 +10092,9 @@ impl GCode {
         // main.cpp 7261-7263 adds this dynamic option only for --infill.
         if let Some(density) = fill_density {
             print_cfg_temp.set_key_value("fill_density", Box::new(crate::config::ConfigOptionPercent::with_value(f64::from(density))));
+        }
+        if let Some(temperature) = bed_temperature {
+            print_cfg_temp.set_key_value("bed_temperature", Box::new(crate::config::ConfigOptionInts::from_values(vec![temperature])));
         }
         // main.cpp:9678: the roster, read before the padding.
         let project_filaments = front_end_project_filament_count(&print_cfg_temp.base);

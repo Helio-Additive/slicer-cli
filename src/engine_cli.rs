@@ -143,7 +143,7 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     } else {
         LegacyGcode::Normalize
     };
-    // main.cpp 7237-7328. Both legacy overrides use std::stoi: a decimal
+    // main.cpp 7237-7328. The legacy wall, infill and thermal overrides use std::stoi: a decimal
     // integer prefix is sufficient. Report rejections only when slicing
     // reaches the application step, after the config has been validated.
     let mut values = request.geometry.extra_config.clone();
@@ -155,7 +155,8 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
                 values.insert("sparse_infill_density".into(), format!("{value}%"));
                 fill_density = Some(value);
             }
-            Ok(value) => { values.insert("wall_loops".into(), value.to_string()); }
+            Ok(value) if key == "perimeters" => { values.insert("wall_loops".into(), value.to_string()); }
+            Ok(value) => { values.insert(key.clone(), value.to_string()); }
             Err(_) => rejected.push((key, raw)),
         }
     }
@@ -236,7 +237,10 @@ pub fn run(args: &[String]) -> u8 {
             let geometry = if crate::cli_command_line::geometry_options_enabled() {
                 "      --layer-height MM  Set the layer height\n      --wall-loops N, --perimeters N  Set the wall count\n      --sparse-infill-density PERCENT, --infill N  Set sparse infill density\n"
             } else { "" };
-            print!("{USAGE}{additional}{geometry}{legacy}{timing}{USAGE_TAIL}");
+            let thermal = if crate::cli_command_line::temperature_options_enabled() {
+                "      --temp C           Set the nozzle temperature after the first layer\n      --bed-temp C       Set the selected plate temperature for both phases\n"
+            } else { "" };
+            print!("{USAGE}{additional}{geometry}{thermal}{legacy}{timing}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,

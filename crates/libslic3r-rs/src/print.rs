@@ -172,6 +172,8 @@ pub struct Print {
     pub config_block_settings: Option<serde_json::Value>,
     /// main.cpp 7261-7263: dynamic legacy option from --infill.
     pub cli_fill_density: Option<i32>,
+    /// main.cpp 7295-7303: explicit dynamic bed_temperature from --bed-temp.
+    pub cli_bed_temperature: Option<i32>,
 
     /// G-code export origin (mm), subtracted from absolute XY at export
     /// (C++ GCode::m_origin). FRAME_PAIR: = the slice center_offset applied by
@@ -455,6 +457,7 @@ impl Print {
             raw_settings: None,
             config_block_settings: None,
             cli_fill_density: None,
+            cli_bed_temperature: None,
             gcode_origin: (0.0, 0.0),
             wipe_tower_results: Vec::new(),
             wipe_tower_bbx: None,
@@ -2286,6 +2289,7 @@ impl Print {
             );
             provisional_header.config_block_settings = self.config_block_settings.clone();
             provisional_header.cli_fill_density = self.cli_fill_density;
+            provisional_header.cli_bed_temperature = self.cli_bed_temperature;
             // R943 (worker C): the used filaments and the tool ordering's nozzle map the header and
             // the CONFIG_BLOCK write (GCode.cpp:2646-2655, Print.cpp:3258-3261).
             provisional_header.used_filaments = self.export_header_used_filaments();
@@ -2335,6 +2339,7 @@ impl Print {
         );
         header.config_block_settings = self.config_block_settings.clone();
         header.cli_fill_density = self.cli_fill_density;
+        header.cli_bed_temperature = self.cli_bed_temperature;
         header.used_filaments = self.export_header_used_filaments();
         header.filament_nozzle_map = self.export_header_filament_nozzle_map();
         let header_str = header.complete_header_with_progress(defer_progress, startup_filaments.as_ref());

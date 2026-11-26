@@ -34,6 +34,10 @@ pub(crate) fn geometry_options_enabled() -> bool {
     native_tokens() && slicer::faithful_gate("CLI_GEOMETRY_OPTIONS")
 }
 
+pub(crate) fn temperature_options_enabled() -> bool {
+    native_tokens() && slicer::faithful_gate("CLI_TEMPERATURE_OPTIONS")
+}
+
 pub fn refusal(flag: &str) -> String {
     let flags = if native_tokens() {
         "--config, -o/--output, -v/--verbose, --input and --single-instance"
@@ -42,9 +46,10 @@ pub fn refusal(flag: &str) -> String {
     };
     let extra = if slicer::faithful_gate("CLI_LEGACY_GCODE") { ", plus --no-normalize-legacy-gcode" } else { "" };
     let geometry = if geometry_options_enabled() { ", --layer-height, --wall-loops, --sparse-infill-density, --perimeters and --infill" } else { "" };
+    let temperatures = if temperature_options_enabled() { ", --temp and --bed-temp" } else { "" };
     let timing = if slicer::faithful_gate("CLI_GCODE_TIMING") { ", and --gcode-timing" } else { "" };
     format!(
-        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{extra}{timing} so far. \
+        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{temperatures}{extra}{timing} so far. \
          Use slicer_cli (the Bambu Studio engine) for {flag}."
     )
 }
@@ -164,6 +169,10 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
                 }
                 "infill" | "perimeters" if geometry_options_enabled() => {
                     let key = if flag == "infill" { "fill_density" } else { "perimeters" };
+                    geometry.overrides.insert(key.into(), value()?.to_string_lossy().into_owned());
+                }
+                "temp" | "bed-temp" if temperature_options_enabled() => {
+                    let key = if flag == "temp" { "nozzle_temperature" } else { "bed_temperature" };
                     geometry.overrides.insert(key.into(), value()?.to_string_lossy().into_owned());
                 }
                 "single-instance" if native => {}
