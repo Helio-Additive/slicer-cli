@@ -309,6 +309,15 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # every package we need is (re)installed explicitly below anyway.
     export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
 
+    # One run builds the three engines in three jobs, and the package job
+    # refuses two different files with one name. GitHub rolls a new runner
+    # image out over days, so the jobs of one run can start from different
+    # preinstalled Homebrew versions (seen: harfbuzz 15.1.0 and 15.2.0).
+    # Refresh the formula list so every job expects the same versions.
+    if [ -n "${CI:-}" ]; then
+        brew update
+    fi
+
     PACKAGES=(
         cmake
         ninja         # the OpenCASCADE 8.0.1 build for ENGINE=orca
@@ -367,6 +376,19 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         echo "  ✓ All packages reinstalled, marker set"
     else
         echo "  ✓ Cache marker present; skipping reinstall"
+    fi
+
+    # Bring the preinstalled libraries that the packages above depend on to
+    # the expected versions too. `brew reinstall` leaves them as they are.
+    if [ -n "${CI:-}" ]; then
+        OUTDATED_DEPS="$(comm -12 \
+            <(brew outdated --formula --quiet | sort -u) \
+            <(brew deps --union "${PACKAGES[@]}" | sort -u))"
+        if [ -n "$OUTDATED_DEPS" ]; then
+            echo "  Upgrading preinstalled dependencies: $(echo $OUTDATED_DEPS)"
+            # shellcheck disable=SC2086
+            brew upgrade --formula $OUTDATED_DEPS
+        fi
     fi
 
     # This is deliberately a project-managed Cellar keg, not a Homebrew
