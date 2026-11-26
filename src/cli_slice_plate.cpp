@@ -23,6 +23,7 @@
 #include <limits>
 #include "calib_args.hpp"
 #include "cli_arrange_geometry.hpp"
+#include "cli_bed_fit.hpp"
 #include "cli_events.hpp"
 #include "cli_engine_info.hpp"
 #include "cli_filament_config.hpp"
@@ -64,6 +65,12 @@ using json = nlohmann::json;
 /// runs --ensure-on-bed first, before the actions (BambuStudio.cpp 6188-6194
 /// then the action loop at 6336; OrcaSlicer.cpp 5443-5455 then 5470).
 /// --mtcpp follows the bed check (plate_triangle_limit).
+/// A turn the bed refusals suggest as a flag would replace one the run
+/// already gave (cli_bed_fit.hpp).
+static bool rotation_given(const CliOptions& o) {
+    return o.given.count("rotate") != 0 || o.given.count("rotate_x") != 0 || o.given.count("rotate_y") != 0;
+}
+
 static bool plate_object_steps(const CliOptions& o, Slic3r::Model& model, int plate, PlateOutcome& outcome) {
     std::vector<int> skipped;
     if (slicer_cli::apply_skip_objects(o, model, skipped) < 0) {
@@ -368,6 +375,7 @@ static int arrange_plate_instances(CliRunContext& context, const CliOptions& o, 
                 }
         }
     } else if (outcome.duplicate_count > 0) {
+        const bool rotate_flag_ok = slicer_cli::rotate_flag_eligible(model, rotation_given(o));
         PlateScope scope(model, plate_plan.plate(plate_id));
         std::set<int> skip_ids;
         for (int id : o.cli.option<Slic3r::ConfigOptionInts>("skip_objects")->values)
@@ -377,14 +385,15 @@ static int arrange_plate_instances(CliRunContext& context, const CliOptions& o, 
             model, config, arrange_plate_index, outcome.duplicate_count, skip_ids,
             [&](Slic3r::Model& m, Slic3r::DynamicPrintConfig& c, int& landed) {
                 PlateOutcome scratch = outcome;
-                return arrange_on_bed(context, m, c, arrange_plate_index, sliced_filament_count, scratch, &landed);
+                return arrange_on_bed(context, m, c, arrange_plate_index, sliced_filament_count, scratch, &landed, rotate_flag_ok);
             });
         // Copies the loop left off the plate stand wholly outside it
         // and are left out by the inside check below.
         outcome.duplicate_count = reps.copies_kept;
     } else if ((o.arrange_forced() || auto_arrange_model_files || clearance_arrange) && !plate_plan.plan.done) {
+        const bool rotate_flag_ok = slicer_cli::rotate_flag_eligible(model, rotation_given(o));
         PlateScope scope(model, plate_plan.plate(plate_id));
-        if (!arrange_on_bed(context, model, config, arrange_plate_index, sliced_filament_count, outcome)) {
+        if (!arrange_on_bed(context, model, config, arrange_plate_index, sliced_filament_count, outcome, nullptr, rotate_flag_ok)) {
             std::cerr << "Error: " << outcome.error_string << "\n";
             return 1;
         }
@@ -558,9 +567,10 @@ static std::optional<int> finish_run_arrangement(CliRunContext& context, const C
     return std::nullopt;
 }
 
-static int check_slice_plate_objects(const CliOptions& o, RunPlatePlan& plate_plan,
+static int check_slice_plate_objects(CliRunContext& context, const CliOptions& o, RunPlatePlan& plate_plan,
             RunPipeProgress& pipe_progress, PlateOutcome& outcome, bool calib_self_geometry, bool first_call,
-            int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model, bool arranged_without_rotations) {
+            int plate_id, Slic3r::DynamicPrintConfig& config, Slic3r::Model& model,
+            const Slic3r::PlateDataPtrs& plate_data) {
     // --slice: the official per-plate gate before apply (BambuStudio.cpp
     // 6527-6567 at 5873b5f; OrcaSlicer.cpp 5645-5697 at 31f6803). An
     // object partly over the bed edge is refused, and a plate with no
@@ -581,6 +591,12 @@ static int check_slice_plate_objects(const CliOptions& o, RunPlatePlan& plate_pl
             // The plate's instances in the plate's own frame: the bed check
             // reads the plate's shape (PartPlate::get_shape, the bed at the
             // plate's origin, BambuStudio.cpp 6527).
+            const bool rotate_flag_ok = slicer_cli::rotate_flag_eligible(model, rotation_given(o));
+            // The arrange's inputs, read as the plate's arrange above reads
+            // them, for the turn advice's replay.
+            size_t plate_sliced_filaments = 0;
+            if (plate_id > 0 && (int)plate_data.size() >= plate_id && plate_data[plate_id - 1] != nullptr)
+                plate_sliced_filaments = plate_data[plate_id - 1]->slice_filaments_info.size();
             PlateScope scope(model, run_plate);
             if (!plate_object_steps(o, model, step_plate, outcome))
                 return 1;
@@ -588,7 +604,10 @@ static int check_slice_plate_objects(const CliOptions& o, RunPlatePlan& plate_pl
             if (!manual_map_extruders_fit(config, model, step_plate, outcome))
                 return 1;
 #endif
-            if (!check_objects_inside_bed(model, config, outcome, o.arrange_forced(), arranged_without_rotations)) {
+            if (!check_objects_inside_bed(context, model, config, outcome, o.arrange_forced(), rotate_flag_ok,
+                                          o.arrange_forced() && context.g_arrange_switches.allow_rotations,
+                                          !assemble_list_file(o).empty(), plate_id > 0 ? plate_id - 1 : 0,
+                                          plate_sliced_filaments)) {
                 std::cerr << "Error: " << outcome.error_string << "\n";
                 return 1;
             }
@@ -746,8 +765,8 @@ int slice_one_plate(CliRunContext& context, const CliOptions& o, Slic3r::Calib_P
                 return 0;
         }
 
-        if (check_slice_plate_objects(o, rs.layout, rs.progress, outcome,
-                calib_self_geometry, first_call, plate_id, config, model, context.arranged_without_rotations) != 0)
+        if (check_slice_plate_objects(context, o, rs.layout, rs.progress, outcome,
+                calib_self_geometry, first_call, plate_id, config, model, rs.project.plate_data) != 0)
             return 1;
 
         if (const auto result = finish_model_actions(o, rs.outputs, outcome,

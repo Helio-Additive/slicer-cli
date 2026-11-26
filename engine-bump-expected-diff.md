@@ -61,7 +61,7 @@ the 2.4 paths.
 | Colours of filament files without colours | `cli_load_settings.cpp` | the 2.5 command line starts from an empty list: every filament white, flush matrix rebuilt |
 | Seven new flags | `cli_run_steps.cpp`, `cli_flag_support.cpp`, `cli_options.*` | `--strict`, `--ground-largest-face`, `--ground-face-normal`, `--ground-face-point`, `--repair`, `--align-to-y-axis`, `--export-statistics` |
 | `result.json` | `cli_result_json.cpp`, `schemas/` | `strict_mode` and `warnings`, as upstream writes them |
-| Arrange refusal sentence | `cli_plate_arrange.cpp` | a part that fits the bed only turned 90 degrees names `--allow-rotations` (this sentence changes on all three builds) |
+| Arrange refusal sentence | `cli_plate_arrange.cpp` | a part that fits the bed only when turned gets the turn in degrees and the flags that place it, each checked by a replay of the arrange: `--rotate N` and `--arrange 1 --allow-rotations` (this sentence changes on all three builds) |
 | `Thread.cpp` override regenerated | `libslic3r/orcaslicer/libslic3r/Thread.cpp` | upstream changed the file; the override is the 2.5.2 copy with the same fix |
 | Build | `CMakeLists.txt` | the bundled `clipper` folder is optional (2.5 has only Clipper2), `libslic3r/CAD/` is left out (the parametric design tab), `CGAL_LINKED_WITH_TBB` as upstream sets it, the OpenCASCADE toolkit list follows the version found |
 

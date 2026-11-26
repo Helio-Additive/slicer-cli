@@ -15,9 +15,10 @@ struct PlateOutcome;
 struct ProjectFacts;
 std::string mm_text(double v);
 Slic3r::BoundingBoxf3 object_world_bbox(const Slic3r::ModelObject* object);
-bool check_objects_inside_bed(Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
-                                     PlateOutcome& outcome, bool arranged = false,
-                                     bool arranged_without_rotations = false);
+bool check_objects_inside_bed(CliRunContext& context, Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
+                                     PlateOutcome& outcome, bool arranged = false, bool rotate_flag_ok = false,
+                                     bool rotations_tried = false, bool from_list = false, int plate_index = 0,
+                                     size_t sliced_filament_count = 0);
 Slic3r::Vec3d downward_plate_size(CliRunContext& context, const Slic3r::Model& model, const Slic3r::DynamicPrintConfig& config,
                                          int plate_index, bool is_sequence);
 int move_to_new_bed(CliRunContext& context, const slicer_cli::ProjectFacts& facts, bool machine_switch, Slic3r::Model& model,
@@ -26,7 +27,7 @@ Slic3r::BoundingBoxf tower_reach_box(const Slic3r::DynamicPrintConfig& config,
                                             const Slic3r::ConfigOptionPoints& area);
 bool arrange_on_bed(CliRunContext& context, Slic3r::Model& model, Slic3r::DynamicPrintConfig& config,
                            int plate_index, size_t sliced_filament_count, PlateOutcome& outcome,
-                           int* landed_out = nullptr);
+                           int* landed_out = nullptr, bool rotate_flag_ok = false);
 Slic3r::Vec2d tower_default_corner(CliRunContext& context, const Slic3r::DynamicPrintConfig& config);
 void assemble_tower_default_corner(CliRunContext& context, Slic3r::DynamicPrintConfig& config, int plate_index, float margin);
 /// The values the tower sizing reads: the tower width, the wipe volume, the
