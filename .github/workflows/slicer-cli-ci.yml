@@ -773,8 +773,8 @@ jobs:
         run: cmake --build build --config Release --parallel 16
 
       - name: Test existing G-code timing (${{ matrix.engine }})
-        # Like the other build-tree tests: Windows is proven on the local
-        # Windows box, and its legs here run only for release tags.
+        # Like the other build-tree tests: Windows runs this on the local
+        # Windows box; its legs here build and run the Windows smoke test.
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -788,8 +788,8 @@ jobs:
           bash tests/test_gcode_timing.sh --engine "${{ matrix.engine }}" "$TIMING_BINARY"
 
       - name: Test mesh simplify (${{ matrix.engine }})
-        # Like the other build-tree tests: Windows is proven on the local
-        # Windows box, and its legs here run only for release tags.
+        # Like the other build-tree tests: Windows runs this on the local
+        # Windows box; its legs here build and run the Windows smoke test.
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -968,11 +968,16 @@ jobs:
         # Engine is a compile-time choice (-DENGINE=bambu|orca → mutually-exclusive
         # #ifdef paths against two libslic3r forks). Build both; the package job
         # fans them into one package and the app routes per printer at slice time.
-        # Windows legs (paid Blacksmith 16-core runner) run only for release
-        # tags: Windows is built and checked on a local Windows box, so CI is
-        # not its trial (owner, CI spend cut). macOS (Apple Silicon, primary
-        # dev target) runs on every event.
-        include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && '[{"engine":"bambu","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"orca","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"snapmaker","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"bambu","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"},{"engine":"orca","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"},{"engine":"snapmaker","os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","cmake_preset":"-G Ninja -DCMAKE_BUILD_TYPE=Release"}]' || '[{"engine":"bambu","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"orca","os":"macOS-arm64","runner":"macos-15","cmake_preset":""},{"engine":"snapmaker","os":"macOS-arm64","runner":"macos-15","cmake_preset":""}]') }}
+        # Windows legs run on the standard GitHub Windows runner (4 cores) on
+        # every event, like macOS. A change is first built and tested on a
+        # local Windows box, so a failure here is not the first Windows trial.
+        include:
+          - { engine: bambu, os: macOS-arm64, runner: macos-15, cmake_preset: "" }
+          - { engine: orca, os: macOS-arm64, runner: macos-15, cmake_preset: "" }
+          - { engine: snapmaker, os: macOS-arm64, runner: macos-15, cmake_preset: "" }
+          - { engine: bambu, os: Windows-x86_64, runner: windows-2022, cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release" }
+          - { engine: orca, os: Windows-x86_64, runner: windows-2022, cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release" }
+          - { engine: snapmaker, os: Windows-x86_64, runner: windows-2022, cmake_preset: "-G Ninja -DCMAKE_BUILD_TYPE=Release" }
           # - os: macOS-x86_64
           #   runner: macos-13
           #   cmake_preset: ""
@@ -1237,23 +1242,32 @@ jobs:
           fi
 
       - name: Cache vcpkg packages (Windows)
+        id: vcpkg-cache
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg\installed
           # Key includes the pinned vcpkg baseline (OCCT 7.9.3). Bumped from -v2
           # so the previous cache (OCCT 8.0.0, which fails to compile against the
           # pinned BambuStudio source) is NOT restored — it would shadow the pin.
           # Bambu requires the project CGAL 5.4 overlay; Orca the CGAL 6.2.1
-          # overlay (ci/vcpkg-overlays-orca). Keep their caches disjoint. Bumped
-          # to -v8 so an OrcaSlicer cache holding the baseline CGAL 6.1.1 is not restored.
+          # overlay (ci/vcpkg-overlays-orca). Keep their caches disjoint.
           # OrcaSlicer has its own key: OpenCASCADE 8.0.1 with OrcaSlicer's patch, as
           # static libraries (ci/vcpkg-overlays-orca/opencascade, ci/vcpkg-triplets-orca).
           # The key names the patch; the install step checks the patch against it.
           key: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
-          restore-keys: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
+          # Then: this engine's ports from a run that failed part-way or from
+          # the older key, then BambuStudio's set (Snapmaker Orca installs the
+          # same ports). OrcaSlicer takes no other engine's set: vcpkg would
+          # keep that set's OpenCASCADE 7.9.3.
+          restore-keys: |
+            ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
+            ${{ matrix.engine != 'orca' && format('vcpkg-x64-windows-occt793-cgal-{0}-v7', matrix.engine) || '' }}
+            ${{ matrix.engine != 'orca' && 'vcpkg-x64-windows-occt793-cgal-bambu-v8' || '' }}
+            ${{ matrix.engine != 'orca' && 'vcpkg-x64-windows-occt793-cgal-bambu-v7' || '' }}
 
       - name: Install dependencies (Windows)
+        id: vcpkg-install
         if: runner.os == 'Windows'
         shell: bash
         env:
@@ -1273,6 +1287,19 @@ jobs:
           grep -Fq "$GMP_URL_OLD" "$GMP_PORT" && grep -Fq "$GMP_SHA_OLD" "$GMP_PORT" || { echo "Expected GMP archive pin not found"; exit 1; }
           sed -i -e "s#${GMP_URL_OLD}#${GMP_URL_NEW}#" -e "s#${GMP_SHA_OLD}#${GMP_SHA_NEW}#" "$GMP_PORT"
           grep -Fq "$GMP_URL_NEW" "$GMP_PORT" && grep -Fq "$GMP_SHA_NEW" "$GMP_PORT" || { echo "GMP archive pin update failed"; exit 1; }
+          # GitHub regenerated the kuba--/zip v0.3.7 archive (2026-11-20, vcpkg
+          # issue 55200): other bytes, the same files as the tag (commit
+          # e65a860b368c0f1e6852acc7aa902b2c62024d3a, compared file by file).
+          KUBAZIP_PORT="$VCPKG_INSTALLATION_ROOT/ports/kubazip/portfile.cmake"
+          KUBAZIP_SHA_OLD="fb5841f11fa5a7f6f1457952d57b61349ad2bcdda0b2b7b0045655a03bd6c743ad3b68cc510147b3b9bbd1962f753d46f66d251df82bf6dc65c117dd23b8e743"
+          KUBAZIP_SHA_NEW="287bcb5c5441523c874c2bedd77fb63247a428fc9284affb3630c0490cef413b45af1ac512785b913072c24ead65c6437f1120064927f25ab57fbe8696608e3e"
+          # A runner image whose vcpkg already has another pin is left alone:
+          # vcpkg itself stops on an archive that does not match its pin.
+          if grep -Fq "$KUBAZIP_SHA_OLD" "$KUBAZIP_PORT"; then
+            sed -i -e "s#${KUBAZIP_SHA_OLD}#${KUBAZIP_SHA_NEW}#" "$KUBAZIP_PORT"
+          else
+            echo "kubazip: the old archive pin is not in this vcpkg; port left as it is"
+          fi
           "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
@@ -1292,8 +1319,18 @@ jobs:
             [[ "$(tr -d '\r' < "$OCCT_PATCH" | sha256sum | cut -c1-16)" == 652d13689016f44b ]] \
               || { echo "OrcaSlicer's OpenCASCADE patch changed: give the vcpkg cache key the new hash"; exit 1; }
           fi
-          for attempt in 1 2 3; do
-            if vcpkg install "${VCPKG_ARGS[@]}" \
+          # Restored ports can hold another CGAL (5.4 from BambuStudio's set,
+          # 6.1.1 from an older OrcaSlicer cache), and vcpkg keeps an installed
+          # port whatever its version. OrcaSlicer needs 6.2.1: remove any other
+          # one so the overlay port is built.
+          if [[ "${{ matrix.engine }}" == "orca" ]]; then
+            CGAL_INSTALLED="$(vcpkg list cgal:x64-windows | grep "^cgal:x64-windows " || true)"
+            if [[ -n "$CGAL_INSTALLED" ]] && ! grep -q "^cgal:x64-windows *6\.2\.1" <<<"$CGAL_INSTALLED"; then
+              vcpkg remove --recurse cgal:x64-windows
+            fi
+          fi
+          for attempt in 1 2 3 4 5; do
+            if vcpkg install --clean-buildtrees-after-build --clean-packages-after-build "${VCPKG_ARGS[@]}" \
               tbb:x64-windows eigen3:x64-windows \
               boost:x64-windows \
               cgal:x64-windows "opencv[core]:x64-windows" assimp:x64-windows opencascade:x64-windows \
@@ -1302,10 +1339,10 @@ jobs:
               expat:x64-windows freetype:x64-windows libjpeg-turbo:x64-windows; then
               break
             fi
-            if [[ "$attempt" == 3 ]]; then
+            if [[ "$attempt" == 5 ]]; then
               exit 1
             fi
-            sleep 10
+            sleep 120
           done
           # libnoise (Bambu fork) — not in vcpkg, build from source.
           # Previous run failed at install with "cmake_install.cmake:39 file
@@ -1343,6 +1380,24 @@ jobs:
             --prefix "${RUNNER_TEMP}/libnoise-prefix"
           echo "LIBNOISE_ROOT=${RUNNER_TEMP}/libnoise-prefix" >> $GITHUB_ENV
 
+
+      # Saved as soon as the ports are built: a cold engine compile after a cold
+      # vcpkg build can pass the job's time limit, and a rerun then starts warm.
+      - name: Save vcpkg packages (Windows)
+        if: runner.os == 'Windows' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}
+
+      # A download that fails after hours of port builds keeps the ports that
+      # did build: the next run restores them by the key prefix.
+      - name: Save the vcpkg packages built before a failure (Windows)
+        if: failure() && runner.os == 'Windows' && steps.vcpkg-install.outcome == 'failure' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ matrix.engine == 'orca' && 'vcpkg-x64-windows-occt801-static-patch-652d13689016f44b-cgal-orca-v9' || format('vcpkg-x64-windows-occt793-cgal-{0}-v8', matrix.engine) }}-partial-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Cache compiled objects across runs. sccache intercepts compiler
       # invocations (MSVC, Clang, GCC) via CMAKE_C(XX)_COMPILER_LAUNCHER
@@ -1478,11 +1533,11 @@ jobs:
         run: cmake --build build --config Release --parallel 4
       - name: Build (Windows)
         if: runner.os == 'Windows'
-        run: cmake --build build --config Release --parallel 16
+        run: cmake --build build --config Release --parallel 4
 
       - name: Test existing G-code timing (${{ matrix.engine }})
-        # Like the other build-tree tests: Windows is proven on the local
-        # Windows box, and its legs here run only for release tags.
+        # Like the other build-tree tests: Windows runs this on the local
+        # Windows box; its legs here build and run the Windows smoke test.
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -1496,8 +1551,8 @@ jobs:
           bash tests/test_gcode_timing.sh --engine "${{ matrix.engine }}" "$TIMING_BINARY"
 
       - name: Test mesh simplify (${{ matrix.engine }})
-        # Like the other build-tree tests: Windows is proven on the local
-        # Windows box, and its legs here run only for release tags.
+        # Like the other build-tree tests: Windows runs this on the local
+        # Windows box; its legs here build and run the Windows smoke test.
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -1677,12 +1732,15 @@ jobs:
     needs: build-nonlinux
     runs-on: ${{ matrix.runner }}
     # Backstop: a hung test fails the job instead of holding it for hours.
-    timeout-minutes: 90
+    # The Windows package tests take about an hour on the 4-core runner.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
-        # Windows packages only for release tags, like build-nonlinux.
-        include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/slicer-cli/v')) && '[{"os":"macOS-arm64","runner":"macos-15","platform":"macos-arm64"},{"os":"Windows-x86_64","runner":"blacksmith-16vcpu-windows-2025","platform":"windows-x86_64"}]' || '[{"os":"macOS-arm64","runner":"macos-15","platform":"macos-arm64"}]') }}
+        # Windows packages on every event, like build-nonlinux.
+        include:
+          - { os: macOS-arm64, runner: macos-15, platform: macos-arm64 }
+          - { os: Windows-x86_64, runner: windows-2022, platform: windows-x86_64 }
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
