@@ -58,9 +58,9 @@ fn apply_model_scarf_flag(
 const FEATURE_FILAMENT_KEYS: [&str; 3] = ["wall_filament", "sparse_infill_filament", "solid_infill_filament"];
 
 /// PrintApply.cpp 1045-1055,1091 builds a region per part. The merged 3MF
-/// mesh can use their assignment when all parts and roles resolve to one
-/// physical filament. Mixed slots need per-layer component ordering.
-fn uniform_model_filament(model: &crate::model::Model, config: &DynamicPrintConfig) -> Option<usize> {
+/// mesh can use their assignments when all parts resolve to the same
+/// three physical feature slots. Mixed slots need per-layer component ordering.
+fn common_model_feature_slots(model: &crate::model::Model, config: &DynamicPrintConfig) -> Option<[usize; 3]> {
     use crate::gcode::wipe_tower::{cfg_bools, cfg_floats};
 
     // PrintApply.cpp 1649. Embedded settings from an unmarked 3MF may have
@@ -93,15 +93,15 @@ fn uniform_model_filament(model: &crate::model::Model, config: &DynamicPrintConf
             let region = crate::print_apply::region_config_from_model_volume(
                 &base, None, volume, object, Some(model), count, &mut variant,
             );
-            let [wall, sparse, solid] = FEATURE_FILAMENT_KEYS.map(|key| region.opt_int(key));
-            if wall <= 0 || sparse != wall || solid != wall {
+            let slots = FEATURE_FILAMENT_KEYS.map(|key| region.opt_int(key));
+            if slots.iter().any(|&s| s <= 0 || s as usize > count || mixed.get(s as usize - 1) == Some(&true)) {
                 return None;
             }
-            let slot = wall as usize;
-            if mixed.get(slot - 1) == Some(&true) || selected.is_some_and(|prev| prev != slot) {
+            let slots = slots.map(|s| s as usize);
+            if selected.is_some_and(|prev| prev != slots) {
                 return None;
             }
-            selected = Some(slot);
+            selected = Some(slots);
         }
     }
     selected
@@ -955,9 +955,9 @@ fn desktop_place_stl(mesh: &TriangleMesh, settings: &serde_json::Value) -> Deskt
 /// in-process host (`helio-slicer-cli --engine rust`) and the standalone binary
 /// produce identical G-code.
 ///
-/// The geometry loader merges objects. A common physical filament across
-/// every part and feature can be applied to the shared region. Distinct
-/// unpainted part assignments require separate slicing regions.
+/// The geometry loader merges objects. The shared region can carry the
+/// wall, sparse and solid filament assignments common to every part.
+/// Distinct assignments between parts require separate slicing regions.
 ///
 ////// * `input` — path to a `.3mf` file.
 /// * `settings_override` — optional BambuStudio settings JSON that takes
@@ -1027,10 +1027,19 @@ pub fn slice_3mf_to_gcode(
     check_config_values(&config)?;
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
         && (scoped.scarf || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"));
-    let needs_filament = scoped.filament && mmu_facets.is_empty()
+    // Validate global role assignments against the actual imported model as
+    // well: a range, plate tool change or part may select a different tool.
+    let route_features = crate::faithful_gate("FEATURE_FILAMENT_ORDER")
+        && crate::faithful_gate("SCOPED_MODEL_FILAMENT")
+        && crate::faithful_gate("REGION_CONFIG_WALL_FILAMENT")
+        && crate::faithful_gate("REGION_CONFIG_INFILL_FILAMENTS")
+        && crate::faithful_gate("REGION_CONFIG_FILAMENT_CLAMP");
+    let global_slots = FEATURE_FILAMENT_KEYS.map(|key| config.opt_int(key).max(1));
+    let separate_roles = global_slots.iter().any(|&slot| slot != global_slots[0]);
+    let needs_filament = (scoped.filament || (route_features && separate_roles)) && mmu_facets.is_empty()
         && ["filament_diameter", "filament_colour"].iter().any(|key|
             settings_value[*key].as_array().is_some_and(|values| values.len() > 1));
-    let mut model_filament = None;
+    let mut model_slots = None;
     if needs_scarf || needs_filament {
         let (model, embedded) = load_bbs_model_and_config(input)?;
         let full = normalized_model_config(if settings_override.is_some() {
@@ -1042,7 +1051,15 @@ pub fn slice_3mf_to_gcode(
             apply_model_scarf_flag(&mut settings_value, &full, &model);
         }
         if needs_filament {
-            model_filament = uniform_model_filament(&model, &full);
+            model_slots = common_model_feature_slots(&model, &full);
+            if model_slots.is_some_and(|[wall, sparse, solid]| wall != sparse || wall != solid)
+                && (crate::gcode::wipe_tower::cfg_bools(&full, "filament_is_mixed").contains(&true)
+                    || model.plates_custom_gcodes.values().any(|plate| {
+                        plate.gcodes.iter().any(|item| item.gcode_type == crate::custom_g_code::Type::ToolChange)
+                    }))
+            {
+                model_slots = None;
+            }
         }
     }
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
@@ -1050,10 +1067,16 @@ pub fn slice_3mf_to_gcode(
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, mut region_config) = load_bambustudio_settings(&settings_value)?;
-    if let Some(slot) = model_filament.filter(|&slot| slot <= print_config.num_filaments()) {
-        region_config.wall_filament = slot;
-        region_config.sparse_infill_filament = slot;
-        region_config.solid_infill_filament = slot;
+    let route_features = route_features && !print_config.flush_into_objects
+        && !object_config.enable_support && object_config.enforce_support_layers == 0
+        && object_config.raft_layers == 0;
+    let model_slots = model_slots.filter(|slots| slots.iter().all(|&slot| slot <= print_config.num_filaments()));
+    if let Some([wall, sparse, solid]) = model_slots {
+        if route_features || (wall == sparse && wall == solid) {
+            region_config.wall_filament = wall;
+            region_config.sparse_infill_filament = sparse;
+            region_config.solid_infill_filament = solid;
+        }
     }
 
     // Drop the model onto the bed surface (Z=0), and XY-center it on the bed.
@@ -1407,6 +1430,7 @@ pub fn slice_3mf_to_gcode(
     // main.cpp:1456 — print.apply(model, config). Applies the resolved config +
     // default region config; objects are added separately below.
     print.apply(print_config, region_config);
+    print.region_filaments_resolved = route_features && model_slots.is_some();
     // Declare one region per painted extruder (PrintApply.cpp:1062-1078 shape)
     // BEFORE add_object so they share into PrintObjectRegions::all_regions.
     if !painting_extruders.is_empty() {
@@ -2901,7 +2925,7 @@ mod circle_compensation_settings_tests {
     // PrintApply.cpp 1091 creates distinct regions when two parts' feature
     // settings differ. The flattened mesh may select a slot only by consensus.
     #[test]
-    fn uniform_filament_requires_every_part_and_role() {
+    fn feature_filaments_must_agree_across_parts() {
         use crate::model::{Model, ModelMesh, ModelVolumeType};
 
         let full = crate::print::full_print_config_from_settings(&serde_json::json!({
@@ -2914,22 +2938,29 @@ mod circle_compensation_settings_tests {
         obj.config.set("extruder", 2);
         obj.add_volume_mesh(ModelMesh::new(), ModelVolumeType::ModelPart, false);
         obj.add_volume_mesh(ModelMesh::new(), ModelVolumeType::ModelPart, false);
-        assert_eq!(uniform_model_filament(&model, &full), Some(2));
+        assert_eq!(common_model_feature_slots(&model, &full), Some([2; 3]));
 
         model.objects[0].volumes[1].config.set("extruder", 1);
-        assert_eq!(uniform_model_filament(&model, &full), None);
+        assert_eq!(common_model_feature_slots(&model, &full), None);
         model.objects[0].volumes[1].config.set("extruder", 2);
         model.objects[0].volumes[1].config.set("solid_infill_filament", 1);
-        assert_eq!(uniform_model_filament(&model, &full), None);
+        assert_eq!(common_model_feature_slots(&model, &full), None);
 
         let second = model.add_object_new();
         second.add_instance();
         second.config.set("extruder", 1);
         second.add_volume_mesh(ModelMesh::new(), ModelVolumeType::ModelPart, false);
         model.objects[0].volumes[1].config.set("solid_infill_filament", 2);
-        assert_eq!(uniform_model_filament(&model, &full), None);
+        assert_eq!(common_model_feature_slots(&model, &full), None);
         model.objects[1].config.set("extruder", 2);
-        assert_eq!(uniform_model_filament(&model, &full), Some(2));
+        assert_eq!(common_model_feature_slots(&model, &full), Some([2; 3]));
+
+        for object in &mut model.objects {
+            for part in &mut object.volumes {
+                part.config.set("solid_infill_filament", 1);
+            }
+        }
+        assert_eq!(common_model_feature_slots(&model, &full), Some([2, 2, 1]));
 
         // A unanimous virtual slot still requires mixed-component ordering.
         for obj in &mut model.objects {
@@ -2939,7 +2970,7 @@ mod circle_compensation_settings_tests {
                 part.config.set("solid_infill_filament", 3);
             }
         }
-        assert_eq!(uniform_model_filament(&model, &full), None);
+        assert_eq!(common_model_feature_slots(&model, &full), None);
     }
 
     /// GCodeProcessor.cpp:1577-1590, 2072, 2089-2091. Reuse each processor

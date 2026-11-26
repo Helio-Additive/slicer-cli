@@ -1,0 +1,768 @@
+uniform 0 1
+uniform 1 1
+uniform 2 1
+uniform 3 1
+uniform 4 1
+uniform 5 1
+uniform 6 1
+uniform 7 1
+uniform 8 1
+uniform 9 1
+uniform 10 1
+uniform 11 1
+uniform 12 1
+uniform 13 1
+uniform 14 1
+uniform 15 1
+uniform 16 1
+uniform 17 1
+uniform 18 1
+uniform 19 1
+uniform 20 1
+uniform 21 1
+uniform 22 1
+uniform 23 1
+uniform 24 1
+uniform 25 1
+uniform 26 1
+uniform 27 1
+uniform 28 1
+uniform 29 1
+uniform 30 1
+uniform 31 1
+uniform 32 1
+uniform 33 1
+uniform 34 1
+uniform 35 1
+uniform 36 1
+uniform 37 1
+uniform 38 1
+uniform 39 1
+uniform 40 1
+uniform 41 1
+uniform 42 1
+uniform 43 1
+uniform 44 1
+uniform 45 1
+uniform 46 1
+uniform 47 1
+uniform 48 1
+uniform 49 1
+uniform 50 1
+uniform 51 1
+uniform 52 1
+uniform 53 1
+uniform 54 1
+uniform 55 1
+uniform 56 1
+uniform 57 1
+uniform 58 1
+uniform 59 1
+uniform 60 1
+uniform 61 1
+uniform 62 1
+uniform 63 1
+uniform 64 1
+uniform 65 1
+uniform 66 1
+uniform 67 1
+uniform 68 1
+uniform 69 1
+uniform 70 1
+uniform 71 1
+uniform 72 1
+uniform 73 1
+uniform 74 1
+uniform 75 1
+uniform 76 1
+uniform 77 1
+uniform 78 1
+uniform 79 1
+uniform 80 1
+uniform 81 1
+uniform 82 1
+uniform 83 1
+uniform 84 1
+uniform 85 1
+uniform 86 1
+uniform 87 1
+uniform 88 1
+uniform 89 1
+uniform 90 1
+uniform 91 1
+uniform 92 1
+uniform 93 1
+uniform 94 1
+uniform 95 1
+uniform 96 1
+uniform 97 1
+uniform 98 1
+uniform 99 1
+uniform 100 1
+uniform 101 1
+uniform 102 1
+uniform 103 1
+uniform 104 1
+uniform 105 1
+uniform 106 1
+uniform 107 1
+uniform 108 1
+uniform 109 1
+uniform 110 1
+uniform 111 1
+uniform 112 1
+uniform 113 1
+uniform 114 1
+uniform 115 1
+uniform 116 1
+uniform 117 1
+uniform 118 1
+uniform 119 1
+uniform 120 1
+uniform 121 1
+uniform 122 1
+uniform 123 1
+uniform 124 1
+uniform 125 1
+uniform 126 1
+uniform 127 1
+sparse 0 1
+sparse 1 1
+sparse 2 1
+sparse 3 1 2
+sparse 4 2 1
+sparse 5 1 2
+sparse 6 2 1
+sparse 7 1 2
+sparse 8 2 1
+sparse 9 1 2
+sparse 10 2 1
+sparse 11 1 2
+sparse 12 2 1
+sparse 13 1 2
+sparse 14 2 1
+sparse 15 1 2
+sparse 16 2 1
+sparse 17 1 2
+sparse 18 2 1
+sparse 19 1 2
+sparse 20 2 1
+sparse 21 1 2
+sparse 22 2 1
+sparse 23 1 2
+sparse 24 2 1
+sparse 25 1 2
+sparse 26 2 1
+sparse 27 1 2
+sparse 28 2 1
+sparse 29 1 2
+sparse 30 2 1
+sparse 31 1 2
+sparse 32 2 1
+sparse 33 1 2
+sparse 34 2 1
+sparse 35 1 2
+sparse 36 2 1
+sparse 37 1 2
+sparse 38 2 1
+sparse 39 1 2
+sparse 40 2 1
+sparse 41 1 2
+sparse 42 2 1
+sparse 43 1 2
+sparse 44 2 1
+sparse 45 1 2
+sparse 46 2 1
+sparse 47 1 2
+sparse 48 2 1
+sparse 49 1 2
+sparse 50 2 1
+sparse 51 1 2
+sparse 52 2 1
+sparse 53 1 2
+sparse 54 2 1
+sparse 55 1 2
+sparse 56 2 1
+sparse 57 1 2
+sparse 58 2 1
+sparse 59 1 2
+sparse 60 2 1
+sparse 61 1 2
+sparse 62 2 1
+sparse 63 1 2
+sparse 64 2 1
+sparse 65 1 2
+sparse 66 2 1
+sparse 67 1 2
+sparse 68 2 1
+sparse 69 1 2
+sparse 70 2 1
+sparse 71 1 2
+sparse 72 2 1
+sparse 73 1 2
+sparse 74 2 1
+sparse 75 1 2
+sparse 76 2 1
+sparse 77 1 2
+sparse 78 2 1
+sparse 79 1 2
+sparse 80 2 1
+sparse 81 1 2
+sparse 82 2 1
+sparse 83 1 2
+sparse 84 2 1
+sparse 85 1 2
+sparse 86 2 1
+sparse 87 1 2
+sparse 88 2 1
+sparse 89 1 2
+sparse 90 2 1
+sparse 91 1 2
+sparse 92 2 1
+sparse 93 1 2
+sparse 94 2 1
+sparse 95 1 2
+sparse 96 2 1
+sparse 97 1 2
+sparse 98 2 1
+sparse 99 1 2
+sparse 100 2 1
+sparse 101 1 2
+sparse 102 2 1
+sparse 103 1 2
+sparse 104 2 1
+sparse 105 1 2
+sparse 106 2 1
+sparse 107 1 2
+sparse 108 2 1
+sparse 109 1 2
+sparse 110 2 1
+sparse 111 1 2
+sparse 112 2 1
+sparse 113 1 2
+sparse 114 2 1
+sparse 115 1 2
+sparse 116 2 1
+sparse 117 1 2
+sparse 118 2 1
+sparse 119 1 2
+sparse 120 2 1
+sparse 121 1 2
+sparse 122 2 1
+sparse 123 1
+sparse 124 1
+sparse 125 1
+sparse 126 1
+sparse 127 1
+solid 0 1 2
+solid 1 2 1
+solid 2 1 2
+solid 3 1
+solid 4 1
+solid 5 1
+solid 6 1
+solid 7 1
+solid 8 1
+solid 9 1
+solid 10 1
+solid 11 1
+solid 12 1
+solid 13 1
+solid 14 1
+solid 15 1
+solid 16 1
+solid 17 1
+solid 18 1
+solid 19 1
+solid 20 1
+solid 21 1
+solid 22 1
+solid 23 1
+solid 24 1
+solid 25 1
+solid 26 1
+solid 27 1
+solid 28 1
+solid 29 1
+solid 30 1
+solid 31 1
+solid 32 1
+solid 33 1
+solid 34 1
+solid 35 1
+solid 36 1
+solid 37 1
+solid 38 1
+solid 39 1
+solid 40 1
+solid 41 1
+solid 42 1
+solid 43 1
+solid 44 1
+solid 45 1
+solid 46 1
+solid 47 1
+solid 48 1
+solid 49 1
+solid 50 1
+solid 51 1
+solid 52 1
+solid 53 1
+solid 54 1
+solid 55 1
+solid 56 1
+solid 57 1
+solid 58 1
+solid 59 1
+solid 60 1
+solid 61 1
+solid 62 1
+solid 63 1
+solid 64 1
+solid 65 1
+solid 66 1
+solid 67 1
+solid 68 1
+solid 69 1
+solid 70 1
+solid 71 1
+solid 72 1
+solid 73 1
+solid 74 1
+solid 75 1
+solid 76 1
+solid 77 1
+solid 78 1
+solid 79 1
+solid 80 1
+solid 81 1
+solid 82 1
+solid 83 1
+solid 84 1
+solid 85 1
+solid 86 1
+solid 87 1
+solid 88 1
+solid 89 1
+solid 90 1
+solid 91 1
+solid 92 1
+solid 93 1
+solid 94 1
+solid 95 1
+solid 96 1
+solid 97 1
+solid 98 1
+solid 99 1
+solid 100 1
+solid 101 1
+solid 102 1
+solid 103 1
+solid 104 1
+solid 105 1
+solid 106 1
+solid 107 1
+solid 108 1
+solid 109 1
+solid 110 1
+solid 111 1
+solid 112 1
+solid 113 1
+solid 114 1
+solid 115 1
+solid 116 1
+solid 117 1
+solid 118 1
+solid 119 1
+solid 120 1
+solid 121 1
+solid 122 1 2
+solid 123 2 1
+solid 124 1 2
+solid 125 2 1
+solid 126 1 2
+solid 127 2 1
+three 0 0 2
+three 1 2 0
+three 2 0 2
+three 3 0 1
+three 4 1 0
+three 5 0 1
+three 6 1 0
+three 7 0 1
+three 8 1 0
+three 9 0 1
+three 10 1 0
+three 11 0 1
+three 12 1 0
+three 13 0 1
+three 14 1 0
+three 15 0 1
+three 16 1 0
+three 17 0 1
+three 18 1 0
+three 19 0 1
+three 20 1 0
+three 21 0 1
+three 22 1 0
+three 23 0 1
+three 24 1 0
+three 25 0 1
+three 26 1 0
+three 27 0 1
+three 28 1 0
+three 29 0 1
+three 30 1 0
+three 31 0 1
+three 32 1 0
+three 33 0 1
+three 34 1 0
+three 35 0 1
+three 36 1 0
+three 37 0 1
+three 38 1 0
+three 39 0 1
+three 40 1 0
+three 41 0 1
+three 42 1 0
+three 43 0 1
+three 44 1 0
+three 45 0 1
+three 46 1 0
+three 47 0 1
+three 48 1 0
+three 49 0 1
+three 50 1 0
+three 51 0 1
+three 52 1 0
+three 53 0 1
+three 54 1 0
+three 55 0 1
+three 56 1 0
+three 57 0 1
+three 58 1 0
+three 59 0 1
+three 60 1 0
+three 61 0 1
+three 62 1 0
+three 63 0 1
+three 64 1 0
+three 65 0 1
+three 66 1 0
+three 67 0 1
+three 68 1 0
+three 69 0 1
+three 70 1 0
+three 71 0 1
+three 72 1 0
+three 73 0 1
+three 74 1 0
+three 75 0 1
+three 76 1 0
+three 77 0 1
+three 78 1 0
+three 79 0 1
+three 80 1 0
+three 81 0 1
+three 82 1 0
+three 83 0 1
+three 84 1 0
+three 85 0 1
+three 86 1 0
+three 87 0 1
+three 88 1 0
+three 89 0 1
+three 90 1 0
+three 91 0 1
+three 92 1 0
+three 93 0 1
+three 94 1 0
+three 95 0 1
+three 96 1 0
+three 97 0 1
+three 98 1 0
+three 99 0 1
+three 100 1 0
+three 101 0 1
+three 102 1 0
+three 103 0 1
+three 104 1 0
+three 105 0 1
+three 106 1 0
+three 107 0 1
+three 108 1 0
+three 109 0 1
+three 110 1 0
+three 111 0 1
+three 112 1 0
+three 113 0 1
+three 114 1 0
+three 115 0 1
+three 116 1 0
+three 117 0 1
+three 118 1 0
+three 119 0 1
+three 120 1 0
+three 121 0 1
+three 122 1 0 2
+three 123 2 0
+three 124 0 2
+three 125 2 0
+three 126 0 2
+three 127 2 0
+no-tower 0 1
+no-tower 1 1
+no-tower 2 1
+no-tower 3 1 2
+no-tower 4 2 1
+no-tower 5 1 2
+no-tower 6 2 1
+no-tower 7 1 2
+no-tower 8 2 1
+no-tower 9 1 2
+no-tower 10 2 1
+no-tower 11 1 2
+no-tower 12 2 1
+no-tower 13 1 2
+no-tower 14 2 1
+no-tower 15 1 2
+no-tower 16 2 1
+no-tower 17 1 2
+no-tower 18 2 1
+no-tower 19 1 2
+no-tower 20 2 1
+no-tower 21 1 2
+no-tower 22 2 1
+no-tower 23 1 2
+no-tower 24 2 1
+no-tower 25 1 2
+no-tower 26 2 1
+no-tower 27 1 2
+no-tower 28 2 1
+no-tower 29 1 2
+no-tower 30 2 1
+no-tower 31 1 2
+no-tower 32 2 1
+no-tower 33 1 2
+no-tower 34 2 1
+no-tower 35 1 2
+no-tower 36 2 1
+no-tower 37 1 2
+no-tower 38 2 1
+no-tower 39 1 2
+no-tower 40 2 1
+no-tower 41 1 2
+no-tower 42 2 1
+no-tower 43 1 2
+no-tower 44 2 1
+no-tower 45 1 2
+no-tower 46 2 1
+no-tower 47 1 2
+no-tower 48 2 1
+no-tower 49 1 2
+no-tower 50 2 1
+no-tower 51 1 2
+no-tower 52 2 1
+no-tower 53 1 2
+no-tower 54 2 1
+no-tower 55 1 2
+no-tower 56 2 1
+no-tower 57 1 2
+no-tower 58 2 1
+no-tower 59 1 2
+no-tower 60 2 1
+no-tower 61 1 2
+no-tower 62 2 1
+no-tower 63 1 2
+no-tower 64 2 1
+no-tower 65 1 2
+no-tower 66 2 1
+no-tower 67 1 2
+no-tower 68 2 1
+no-tower 69 1 2
+no-tower 70 2 1
+no-tower 71 1 2
+no-tower 72 2 1
+no-tower 73 1 2
+no-tower 74 2 1
+no-tower 75 1 2
+no-tower 76 2 1
+no-tower 77 1 2
+no-tower 78 2 1
+no-tower 79 1 2
+no-tower 80 2 1
+no-tower 81 1 2
+no-tower 82 2 1
+no-tower 83 1 2
+no-tower 84 2 1
+no-tower 85 1 2
+no-tower 86 2 1
+no-tower 87 1 2
+no-tower 88 2 1
+no-tower 89 1 2
+no-tower 90 2 1
+no-tower 91 1 2
+no-tower 92 2 1
+no-tower 93 1 2
+no-tower 94 2 1
+no-tower 95 1 2
+no-tower 96 2 1
+no-tower 97 1 2
+no-tower 98 2 1
+no-tower 99 1 2
+no-tower 100 2 1
+no-tower 101 1 2
+no-tower 102 2 1
+no-tower 103 1 2
+no-tower 104 2 1
+no-tower 105 1 2
+no-tower 106 2 1
+no-tower 107 1 2
+no-tower 108 2 1
+no-tower 109 1 2
+no-tower 110 2 1
+no-tower 111 1 2
+no-tower 112 2 1
+no-tower 113 1 2
+no-tower 114 2 1
+no-tower 115 1 2
+no-tower 116 2 1
+no-tower 117 1 2
+no-tower 118 2 1
+no-tower 119 1 2
+no-tower 120 2 1
+no-tower 121 1 2
+no-tower 122 2 1
+no-tower 123 1
+no-tower 124 1
+no-tower 125 1
+no-tower 126 1
+no-tower 127 1
+flush-infill 0 1
+flush-infill 1 1
+flush-infill 2 1
+flush-infill 3 1
+flush-infill 4 1
+flush-infill 5 1
+flush-infill 6 1
+flush-infill 7 1
+flush-infill 8 1
+flush-infill 9 1
+flush-infill 10 1
+flush-infill 11 1
+flush-infill 12 1
+flush-infill 13 1
+flush-infill 14 1
+flush-infill 15 1
+flush-infill 16 1
+flush-infill 17 1
+flush-infill 18 1
+flush-infill 19 1
+flush-infill 20 1
+flush-infill 21 1
+flush-infill 22 1
+flush-infill 23 1
+flush-infill 24 1
+flush-infill 25 1
+flush-infill 26 1
+flush-infill 27 1
+flush-infill 28 1
+flush-infill 29 1
+flush-infill 30 1
+flush-infill 31 1
+flush-infill 32 1
+flush-infill 33 1
+flush-infill 34 1
+flush-infill 35 1
+flush-infill 36 1
+flush-infill 37 1
+flush-infill 38 1
+flush-infill 39 1
+flush-infill 40 1
+flush-infill 41 1
+flush-infill 42 1
+flush-infill 43 1
+flush-infill 44 1
+flush-infill 45 1
+flush-infill 46 1
+flush-infill 47 1
+flush-infill 48 1
+flush-infill 49 1
+flush-infill 50 1
+flush-infill 51 1
+flush-infill 52 1
+flush-infill 53 1
+flush-infill 54 1
+flush-infill 55 1
+flush-infill 56 1
+flush-infill 57 1
+flush-infill 58 1
+flush-infill 59 1
+flush-infill 60 1
+flush-infill 61 1
+flush-infill 62 1
+flush-infill 63 1
+flush-infill 64 1
+flush-infill 65 1
+flush-infill 66 1
+flush-infill 67 1
+flush-infill 68 1
+flush-infill 69 1
+flush-infill 70 1
+flush-infill 71 1
+flush-infill 72 1
+flush-infill 73 1
+flush-infill 74 1
+flush-infill 75 1
+flush-infill 76 1
+flush-infill 77 1
+flush-infill 78 1
+flush-infill 79 1
+flush-infill 80 1
+flush-infill 81 1
+flush-infill 82 1
+flush-infill 83 1
+flush-infill 84 1
+flush-infill 85 1
+flush-infill 86 1
+flush-infill 87 1
+flush-infill 88 1
+flush-infill 89 1
+flush-infill 90 1
+flush-infill 91 1
+flush-infill 92 1
+flush-infill 93 1
+flush-infill 94 1
+flush-infill 95 1
+flush-infill 96 1
+flush-infill 97 1
+flush-infill 98 1
+flush-infill 99 1
+flush-infill 100 1
+flush-infill 101 1
+flush-infill 102 1
+flush-infill 103 1
+flush-infill 104 1
+flush-infill 105 1
+flush-infill 106 1
+flush-infill 107 1
+flush-infill 108 1
+flush-infill 109 1
+flush-infill 110 1
+flush-infill 111 1
+flush-infill 112 1
+flush-infill 113 1
+flush-infill 114 1
+flush-infill 115 1
+flush-infill 116 1
+flush-infill 117 1
+flush-infill 118 1
+flush-infill 119 1
+flush-infill 120 1
+flush-infill 121 1
+flush-infill 122 1 2
+flush-infill 123 1
+flush-infill 124 1
+flush-infill 125 1
+flush-infill 126 1
+flush-infill 127 1

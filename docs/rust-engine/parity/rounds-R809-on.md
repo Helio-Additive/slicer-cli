@@ -208,9 +208,36 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R981 | Read the global sparse- and solid-infill filament slots and resolve their defaults through the applied region (PrintConfig.cpp 4680–4687, 6090–6100 and PrintObject.cpp 3742–3806). All 72 native cases agree. | `REGION_CONFIG_INFILL_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R982 | Pass the first and first non-support filaments to the startup templates and the virtual tool tag (GCode.cpp 2840–2863, 2898–2927, 3184–3236). Three single-filament cube exports and a support-first header reproduce native startup. | `EXPORT_STARTUP_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R983 | Apply a common physical filament across all unpainted 3MF parts and roles (PrintApply.cpp 1045–1055, 1091 and PrintObject.cpp 3742–3806). Five of 23 supplemental projects gained five in-order lines each. | `SCOPED_MODEL_FILAMENT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R984 | Order and emit a single region's walls, sparse and solid fills by their physical filament. All 768 native layer-order rows are covered by six jobs. | `FEATURE_FILAMENT_ORDER` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
 
+- R984, per-feature filament selection. All 768 input rows agreed on
+  region slots, perimeters and fill roles before ordering. At layer 4 of
+  the sparse cube both engines assigned sparse fill to slot 3. Only C++
+  registered both tools. Rust now uses the parent fill collection to
+  register the tool before flattening, then uses the same layer order
+  for emission and the prime tower. The machine-start header and the
+  writer also share the initial non-support filament. This removes a
+  duplicate first-layer T command on four jobs. The 768 native layer
+  orders reproduce the actual T commands on each layer of the six
+  exports, including a uniform control. Counts of depositing moves agree
+  for every outer wall, inner wall, sparse and solid fill, bottom, top
+  and prime tower on each tool. With flushing into infill, 3,570 sparse
+  moves use T1 and 22 use T2. In-order matches before and after:
+  uniform 10,179 → 10,179, sparse 9,501 → 27,095, solid 9,065 → 14,640,
+  three roles 8,765 → 29,498, tower disabled 8,542 → 9,817, and flushing
+  into infill 9,788 → 13,924. With a tower the volume reported on the
+  first active filament differs from native by roughly 3.25, also present
+  on the uniform control. Without a tower the two volume entries are
+  3,274.24 and 2,257.35 in Rust against 20,366.10 and 19,345.94 in C++.
+  A marker in the filament-change script localized the missing purge on
+  all 120 switches. Seven of the 23 earlier object and part jobs gain
+  matches. The other 16 retain their bytes. Gate-off reproduces R983 on
+  all 23, the six cubes and all four standard fixtures. Both gate positions
+  reproduce all four standard fixture files. H2D remains at 4,614,342
+  and 4,614,863. Mixed, support, object flushing, differing part scopes
+  and per-layer assignments still require their respective registrations.
 - R983, object and part filaments in a merged 3MF. The Rust Bambu 3MF model
   importer and region resolver reproduced all 15 native region
   assignments. The live geometry loader had discarded the scopes. The

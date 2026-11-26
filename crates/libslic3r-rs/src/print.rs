@@ -193,6 +193,12 @@ pub struct Print {
     /// emitted ones stay in lock-step (R424). Empty = use the default
     /// first-appearance order.
     pub optimized_layer_tools: Vec<(f64, Vec<usize>)>,
+    // Physical tools for a single region with distinct feature assignments.
+    // The first entry is the wall tool; fill collections carry their own slot.
+    feature_tools: Vec<usize>,
+    // A flattened 3MF may have several distinct applied regions. Its loader
+    // confirms the common assignment before allowing per-feature routing.
+    pub(crate) region_filaments_resolved: bool,
     /// Per layer (by print_z): the fills `WipingExtrusions` overrode, keyed
     /// (region id, index in `fills.entities`) -> the tool that prints them
     /// (`WipingExtrusions::entity_map` after `Print::_make_wipe_tower`).
@@ -445,6 +451,8 @@ impl Print {
             wipe_tower_results: Vec::new(),
             wipe_tower_bbx: None,
             optimized_layer_tools: Vec::new(),
+            feature_tools: Vec::new(),
+            region_filaments_resolved: true,
             wiping_layer_overrides: Vec::new(),
             wipe_tower_depth: 0.0,
             wipe_tower_brim_width: 0.0,
@@ -611,6 +619,7 @@ impl Print {
     /// silently break the unified PrintRegion identity. This mirrors C++ where
     /// configs only change inside Print::apply and any diff invalidates posSlice.
     pub fn set_default_region_config(&mut self, config: crate::region_config::PrintRegionConfig) {
+        self.region_filaments_resolved = true;
         self.print_regions.clear();
         self.print_regions.push(Arc::new(live_print_region(config, 0)));
     }
@@ -765,6 +774,10 @@ impl Print {
         use crate::gcode::{GCodeHeader, GCodeStats};
         use std::io::Write;
 
+        let mut raw_settings_with_bbox = self.raw_settings.clone();
+        let startup_filaments = raw_settings_with_bbox.as_mut()
+            .and_then(|settings| self.set_export_startup_filaments(settings));
+
         // Create G-code writer with config
         let mut writer = GCodeWriter::with_config(self.config.clone());
         // R85 slice-frame centering export origin (SLICE_CENTER): slices are in the
@@ -823,6 +836,14 @@ impl Print {
                 }
             }
         }
+        // GCode.cpp 3214-3223 initializes the writer after machine start
+        // G-code. The first feature pass already has the startup filament.
+        if !self.feature_tools.is_empty() {
+            if let Some(startup) = &startup_filaments {
+                writer.set_extruder(startup.non_support as usize);
+            }
+        }
+
         // GCode.cpp:3266-3274 (BBS: get path for change filament): with `m_writer.multiple_extruders`,
         // `travel_point_1..3` come from `get_path_of_change_filament(print)`, which reads the objects'
         // first-instance bounding boxes (GCode.cpp:203-206). GCODE_TRAVEL_POINTS_PIN (faithful, read in
@@ -1532,7 +1553,7 @@ impl Print {
                 // instance in every extruder pass, after that extruder's tower
                 // visit. On a layer with several tools it is written from the tool
                 // loop; =0 writes it once here, before the layer's first tower visit.
-                let object_id_per_pass = crate::faithful_gate("OBJECT_ID_PER_PASS") && {
+                let object_id_per_pass = crate::faithful_gate("OBJECT_ID_PER_PASS") && (!self.feature_tools.is_empty() || {
                     let mut tools = ltp.layer.regions().iter().map(|r| {
                         r.region.as_ref().map(|pr| pr.config().wall_filament).unwrap_or(1).max(1) - 1
                     });
@@ -1540,7 +1561,7 @@ impl Print {
                         Some(first) => tools.any(|t| t != first),
                         None => false,
                     }
-                };
+                });
                 if !object_id_per_pass {
                     writer.write_raw(&format!("; OBJECT_ID: {}", label_id));
                 }
@@ -1684,6 +1705,7 @@ impl Print {
                     &mut toolchange_count,
                     total_tool_changes,
                     optimized_tools,
+                    &self.feature_tools,
                     wiping_overrides,
                     if object_id_per_pass { Some(label_id) } else { None },
                     self.wipe_tower_cpp_results,
@@ -2009,8 +2031,6 @@ impl Print {
         // Matches BambuStudio GCode.cpp:1550-1570 first_layer_projection():
         //   bbox = merge of all object instance bounding boxes (XY projection of mesh)
         //   bbox.merge(first_layer_convex_hull) // includes skirt, brim, supports
-        let mut startup_filaments = None;
-        let mut raw_settings_with_bbox = self.raw_settings.clone();
         if let Some(ref mut settings) = raw_settings_with_bbox {
             if let Some(obj) = settings.as_object_mut() {
                 let mut min_x = f64::MAX;
@@ -2130,94 +2150,7 @@ impl Print {
                     );
                 }
 
-                // FIRST_FILAMENTS_TOOL_ORDERING (faithful, R950): `_do_export` finds the first filament and
-                // the first non-support filament of each nozzle with `tool_ordering.cal_non_support_filaments`
-                // over the print's layer tools (GCode.cpp:2783-2788, 2840-2847; ToolOrdering.cpp:1489-1546),
-                // which the start G-code reads (`M620.17 T0 S.. L{first_non_support_filaments[0] ..}`).
-                // The layer tools are the ones the export prints (`optimized_layer_tools`); the export's
-                // placeholder inputs take the two lists from the keys below
-                // (`ExportPlaceholderInputs::from_settings`). Without a planned order (one filament) the
-                // inputs keep the initial filament on its nozzle, which is what the call gives there.
-                // =0 leaves only the initial filament's nozzle set.
-                let first_lists = crate::faithful_gate("FIRST_FILAMENTS_TOOL_ORDERING");
-                let export_startup = crate::faithful_gate("EXPORT_STARTUP_FILAMENTS");
-                let has_order = !self.optimized_layer_tools.is_empty();
-                // Print.cpp:438-465. Without a tower plan, every object role must use
-                // the same physical filament before its first tool is unambiguous.
-                let can_select_slot = self.config().num_filaments() > 1
-                    || self.nozzle_group_result.as_deref().is_some_and(|g| g.is_support_dynamic_nozzle_map());
-                let single = if export_startup && !has_order && can_select_slot && self.objects.iter().all(|o| o.support_layers.is_empty()) {
-                    match self.all_extruders().as_slice() {
-                        [id] => Some(*id as u32),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-                if (has_order && (first_lists || export_startup)) || single.is_some() {
-                    use crate::gcode::tool_ordering::{LayerTools, ToolOrdering, ToolOrderingConfig};
-                    let cfg = crate::g_code::full_print_config_from_settings(&serde_json::Value::Object(obj.clone()));
-                    let mut tool_ordering = ToolOrdering::new(ToolOrderingConfig::default());
-                    for (print_z, tools) in &self.optimized_layer_tools {
-                        let mut lt = LayerTools::new(*print_z);
-                        lt.extruders = tools.iter().map(|&t| t as u32).collect();
-                        tool_ordering.layer_tools_mut().push(lt);
-                    }
-                    if let Some(id) = single {
-                        // ToolOrdering.cpp:829-869. A mixed slot expands into components.
-                        let mixed = crate::gcode::wipe_tower::cfg_bools(&cfg, "filament_is_mixed");
-                        if !mixed.get(id as usize).copied().unwrap_or(false) {
-                            let mut first = LayerTools::new(0.);
-                            first.extruders.push(id);
-                            tool_ordering.layer_tools_mut().push(first);
-                        }
-                    }
-                    tool_ordering.collect_extruder_statistics(false);
-                    if let Some(group) = self.nozzle_group_result.as_deref() {
-                        tool_ordering.nozzle_group_result = group.clone();
-                    }
-                    // `print.config().nozzle_diameter.size()` (GCode.cpp:2787-2788).
-                    let num_nozzles = match obj.get("nozzle_diameter") {
-                        Some(serde_json::Value::Array(a)) => a.len(),
-                        Some(serde_json::Value::String(v)) => v.split(',').count(),
-                        _ => 1,
-                    }
-                    .max(1);
-                    let mut first_non_support_filaments = vec![-1i32; num_nozzles];
-                    let mut first_filaments = vec![-1i32; num_nozzles];
-                    let mut initial_non_support_extruder_id = u32::MAX;
-                    // GCode.cpp:2841-2847: only when the ordering has a first extruder.
-                    if let Some(initial) = tool_ordering.first_extruder() {
-                        tool_ordering.cal_non_support_filaments(
-                            &cfg,
-                            &mut initial_non_support_extruder_id,
-                            &mut first_non_support_filaments,
-                            &mut first_filaments,
-                        );
-                        if export_startup {
-                            let non_support = if initial_non_support_extruder_id == u32::MAX {
-                                initial
-                            } else {
-                                initial_non_support_extruder_id
-                            };
-                            startup_filaments = Some(crate::g_code::ExportStartupFilaments {
-                                initial,
-                                non_support,
-                                group_result: self.nozzle_group_result.clone(),
-                            });
-                        }
-                        if first_lists {
-                            obj.insert(
-                                crate::g_code::EXPORT_FIRST_FILAMENTS_KEY.to_string(),
-                                serde_json::json!(first_filaments),
-                            );
-                            obj.insert(
-                                crate::g_code::EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY.to_string(),
-                                serde_json::json!(first_non_support_filaments),
-                            );
-                        }
-                    }
-                }
+
             }
         }
 
@@ -3612,6 +3545,12 @@ impl Print {
         self.wipe_tower_bbx = None;
         self.wipe_tower_cpp_results = false;
         let num_filaments = self.config.num_filaments();
+        if !self.feature_tools.is_empty() {
+            self.optimized_layer_tools.clear();
+            self.wiping_layer_overrides.clear();
+        }
+        self.feature_tools = self.physical_region_tools();
+        let by_feature = !self.feature_tools.is_empty();
         let is_multicolour = self
             .objects
             .first()
@@ -3623,7 +3562,7 @@ impl Print {
                 self.config.enable_prime_tower, num_filaments, is_multicolour
             );
         }
-        if self.config.enable_prime_tower && num_filaments > 1 && is_multicolour {
+        if by_feature || (self.config.enable_prime_tower && num_filaments > 1 && is_multicolour) {
             use crate::gcode::wipe_tower::{WipeTower, WipeTowerConfig};
             let object = &self.objects[0];
             // Per-layer (print_z, height, tool-sequence), rotated for cross-layer
@@ -3752,7 +3691,17 @@ impl Print {
                     && fill_role_volume(ent).0
                         == crate::extrusion_entity::ExtrusionRole::InternalInfill
             };
+            let mut planned_features = if by_feature {
+                physical_feature_order(object, &first_layer_order, flo_gate, wipe_gate, self.full_print_config.as_ref())
+            } else {
+                Vec::new()
+            }.into_iter();
             for layer in object.layers() {
+                if let Some(tools) = planned_features.next() {
+                    layer_seqs.push((layer.print_z as f32, layer.height as f32, tools));
+                    layer_print_z.push(layer.print_z);
+                    continue;
+                }
                 let regions = layer.regions();
                 let region_tools: Vec<usize> = regions
                     .iter()
@@ -4012,7 +3961,9 @@ impl Print {
                     if flo_gate { Some(&layer0_pin) } else { None };
                 let _ = tou::reorder_filaments_for_minimum_flush_volume(
                     &used,
-                    &vec![0i32; n],
+                    // ToolOrdering.cpp 2863, ToolOrderUtils.cpp 1120-1145:
+                    // the solver indexes this map by position in used_filaments.
+                    &vec![0i32; if by_feature { used.len() } else { n }],
                     &layer_filaments,
                     &[matrix],
                     layer0_custom,
@@ -4060,9 +4011,9 @@ impl Print {
             // Taken where `_make_wipe_tower` takes it (one object without
             // support layers, one extruder and one nozzle); =0, or elsewhere,
             // the reduced driver below (`WipeTower::new` + `generate`).
-            let cpp_driver = crate::faithful_gate("WIPE_TOWER_CPP_DRIVER")
+            let cpp_driver = self.config.enable_prime_tower && crate::faithful_gate("WIPE_TOWER_CPP_DRIVER")
                 && self._make_wipe_tower(&layer_seqs, &layer_print_z, wipe_gate);
-            if cpp_driver {
+            if cpp_driver || !self.config.enable_prime_tower || (by_feature && !has_changes) {
                 self.optimized_layer_tools = optimized_layer_tools;
             } else if has_changes {
                 let object = &self.objects[0];
@@ -4268,6 +4219,7 @@ impl Print {
                             *z,
                             self.config.flush_into_objects,
                             self.config.flush_into_infill,
+                            by_feature,
                         )
                     } else {
                         Vec::new()
@@ -5275,6 +5227,7 @@ fn emit_layer_by_island(
     // Minimum-flush tool order for THIS layer, when the optimizer ran; emission
     // must follow it so the tower's planned changes line up (R439).
     optimized_tools: Option<&[usize]>,
+    feature_tools: &[usize],
     // The fills `WipingExtrusions` overrode on THIS layer: (region id, index in
     // `fills.entities`) -> tool. They print right after the change to that tool
     // (GCode.cpp:5826 `print_wipe_extrusions`).
@@ -5343,7 +5296,24 @@ fn emit_layer_by_island(
     // to the writer once per layer instead. R631.
     writer.set_layer_overhangs(layer.print_z, &layer.loverhangs);
     let n_slices = layer.lslices.len();
-    let n_regions = layer.region_count();
+    // GCode.cpp 5479-5537 bins each collection by tool, island and region.
+    // In a single feature-assigned region there is one bucket per physical
+    // tool on each island. Bucket zero is the wall bucket.
+    let by_feature = !feature_tools.is_empty();
+    let region_tools = if by_feature {
+        let mut tools = feature_tools.to_vec();
+        for &tool in optimized_tools.unwrap_or_default() {
+            if !tools.contains(&tool) {
+                tools.push(tool);
+            }
+        }
+        tools
+    } else {
+        layer.regions().iter().map(|region| {
+            region.region.as_ref().map(|r| r.config().wall_filament).unwrap_or(1).max(1) - 1
+        }).collect()
+    };
+    let n_regions = region_tools.len();
 
     // Per-island, per-region buckets. Island index 0..n_slices, plus a catch-all
     // island at index n_slices for entities not contained by any slice.
@@ -5475,6 +5445,16 @@ fn emit_layer_by_island(
         if !skip_infill {
             for (fill_idx, ent) in region.fills.entities.iter().enumerate() {
                 let wipe_tool = wiping_overrides.and_then(|m| m.get(&(region_id, fill_idx)).copied());
+                let fill_bucket = if by_feature {
+                    let requested = fill_collection_tool(region, ent);
+                    // GCode.cpp 5481-5488: an unregistered physical fill is
+                    // printed by the last tool on this layer.
+                    let tool = optimized_tools.filter(|order| !order.contains(&requested))
+                        .and_then(|order| order.last().copied()).unwrap_or(requested);
+                    region_tools.iter().position(|&t| t == tool).expect("registered layer filament")
+                } else {
+                    region_id
+                };
                 if let Some(fp) = crate::gcode::exporter::get_entity_first_point(ent) {
                     // R778 — which island does each fill EEC land in?
                     if crate::probe_enabled("ISLPROBE") {
@@ -5501,14 +5481,14 @@ fn emit_layer_by_island(
                         if let crate::extrusion_entity::ExtrusionEntityType::Collection(c) = ent {
                             if !c.no_sort {
                                 for child in &c.entities {
-                                    assign(&mut islands, region_id, fp, child.clone(), 1, -1, wipe_tool);
+                                    assign(&mut islands, fill_bucket, fp, child.clone(), 1, -1, wipe_tool);
                                 }
                                 flattened = true;
                             }
                         }
                     }
                     if !flattened {
-                        assign(&mut islands, region_id, fp, ent.clone(), 1, -1, wipe_tool);
+                        assign(&mut islands, fill_bucket, fp, ent.clone(), 1, -1, wipe_tool);
                     }
                 }
             }
@@ -5591,20 +5571,7 @@ fn emit_layer_by_island(
     // config (`wall_filament`, 1-based slot; painted regions carry their slot,
     // region 0 the default). Tool index = slot - 1 (T0-based).
     //
-    // Single-region layers keep the original island-major order and NEVER
-    // enter the toolchange path (byte-identical to the pre-multicolour emit).
-    let region_tools: Vec<usize> = layer
-        .regions()
-        .iter()
-        .map(|r| {
-            r.region
-                .as_ref()
-                .map(|pr| pr.config().wall_filament)
-                .unwrap_or(1)
-                .max(1)
-                - 1
-        })
-        .collect();
+    // Layers with one physical tool keep their island-major order.
     let multi_tool = region_tools.iter().any(|&t| t != region_tools[0]);
     // Unique tools in first-appearance (region-id ascending) order.
     let mut tool_order: Vec<usize> = Vec::new();
@@ -5636,7 +5603,7 @@ fn emit_layer_by_island(
     // optimizer's sequence while emission walked a different one, so transitions the
     // tower never planned fell through to the unpurged object-path `set_extruder`
     // (R468: 411 such changes). Filter first, then compare.
-    let __tool_has_work = |t: usize| -> bool {
+    let tool_has_work = |t: usize| -> bool {
         emit_order.iter().any(|&isl_idx| {
             islands[isl_idx].iter().enumerate().any(|(ri, b)| {
                 region_tools.get(ri) == Some(&t)
@@ -5645,10 +5612,15 @@ fn emit_layer_by_island(
         })
     };
     let mut __opt_adopted = false;
-    if let Some(opt) = optimized_tools {
+    if by_feature {
+        if let Some(order) = optimized_tools {
+            tool_order = order.to_vec();
+            __opt_adopted = true;
+        }
+    } else if let Some(opt) = optimized_tools {
         let mut a: Vec<usize> = opt.to_vec();
         let mut b: Vec<usize> = if multi_tool {
-            tool_order.iter().copied().filter(|&t| __tool_has_work(t)).collect()
+            tool_order.iter().copied().filter(|&t| tool_has_work(t)).collect()
         } else {
             tool_order.clone()
         };
@@ -5679,17 +5651,8 @@ fn emit_layer_by_island(
     // layer-boundary explanation (only 4 of 411 fallbacks are at order[0], 407 are
     // mid-layer), so compare the two SETS directly.
     if crate::probe_enabled("TOOLCHANGE_DEBUG") && multi_tool {
-        let with_work: Vec<usize> = tool_order
-            .iter()
-            .copied()
-            .filter(|&t| {
-                emit_order.iter().any(|&isl_idx| {
-                    islands[isl_idx].iter().enumerate().any(|(ri, b)| {
-                        region_tools.get(ri) == Some(&t)
-                            && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
-                    })
-                })
-            })
+        let with_work: Vec<usize> = tool_order.iter().copied()
+            .filter(|&t| by_feature || tool_has_work(t))
             .collect();
         let planned: Vec<i32> = wipe_tower_layer
             .map(|wt| wt.iter().filter(|r| r.is_tool_change).map(|r| r.new_tool).collect())
@@ -5713,18 +5676,10 @@ fn emit_layer_by_island(
     // are not tool changes are those of a layer without one (generate_new
     // merges the finish into a tool change otherwise, WipeTower.cpp:8054-8070),
     // so they print before the objects of the layer's last extruder.
-    let finish_tool: Option<usize> = if wipe_tower_cpp_results && multi_tool {
-        tool_order
-            .iter()
-            .copied()
-            .filter(|&tool| {
-                emit_order.iter().any(|&isl_idx| {
-                    islands[isl_idx].iter().enumerate().any(|(ri, b)| {
-                        region_tools.get(ri) == Some(&tool)
-                            && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
-                    })
-                })
-            })
+    let finish_tool: Option<usize> = if wipe_tower_cpp_results && by_feature {
+        tool_order.last().copied()
+    } else if wipe_tower_cpp_results && multi_tool {
+        tool_order.iter().copied().filter(|&tool| tool_has_work(tool))
             .last()
     } else {
         None
@@ -5732,13 +5687,7 @@ fn emit_layer_by_island(
     for &tool in &tool_order {
         if multi_tool {
             // Skip the toolchange when this tool has no work on this layer.
-            let has_work = emit_order.iter().any(|&isl_idx| {
-                islands[isl_idx].iter().enumerate().any(|(ri, b)| {
-                    region_tools.get(ri) == Some(&tool)
-                        && (!b.perims.is_empty() || !b.fills.is_empty() || !b.thins.is_empty())
-                })
-            });
-            if !has_work {
+            if !by_feature && !tool_has_work(tool) {
                 continue;
             }
             if let Some(wall) = out_wall_pending.take() {
@@ -6210,6 +6159,73 @@ fn build_default_nozzle_list(
     nozzle_list
 }
 
+/// ToolOrdering.cpp 167-217, 987-1017. Determine the tool before flattening
+/// an island's fill collection. Its children keep the parent assignment.
+fn fill_collection_tool(region: &crate::layer::LayerRegion, entity: &crate::extrusion_entity::ExtrusionEntityType) -> usize {
+    let cfg = region.region().config();
+    let slot = match entity {
+        crate::extrusion_entity::ExtrusionEntityType::Collection(fill) =>
+            crate::gcode::tool_ordering::LayerTools::filament_slot_by_role(fill, cfg) as usize,
+        _ => cfg.wall_filament,
+    };
+    slot.max(1) - 1
+}
+
+/// ToolOrdering.cpp 939-1017,1197-1204. A region registers its wall tool
+/// for perimeters and all its fill tools when any fill is non-overridable.
+fn physical_feature_order(
+    object: &PrintObject,
+    first_layer_order: &[usize],
+    use_first_layer_order: bool,
+    wipe_into_infill: bool,
+    full_config: Option<&crate::print_config::config_def::DynamicPrintConfig>,
+) -> Vec<Vec<usize>> {
+    use crate::gcode::tool_ordering::{HandleDontcareExtruder, LayerTools, ToolOrdering, ToolOrderingConfig};
+    let soluble = full_config.map(|cfg| crate::gcode::wipe_tower::cfg_bools(cfg, "filament_soluble")).unwrap_or_default();
+    let mut ordering = ToolOrdering::new(ToolOrderingConfig::default());
+    for layer in object.layers() {
+        let mut tools = LayerTools::new(layer.print_z);
+        for region in layer.regions() {
+            if !region.perimeters.entities.is_empty()
+                || (!crate::faithful_gate("THIN_FILLS_CLONE") && !region.thin_fills.entities.is_empty())
+            {
+                tools.extruders.push(region.region().config().wall_filament as u32);
+                tools.has_object = true;
+            }
+            let mut fill_slots = Vec::new();
+            let mut non_overridable = false;
+            for entity in &region.fills.entities {
+                if matches!(entity, crate::extrusion_entity::ExtrusionEntityType::Collection(c) if c.entities.is_empty()) {
+                    continue;
+                }
+                let tool = fill_collection_tool(region, entity);
+                fill_slots.push(tool as u32 + 1);
+                let role = crate::gcode::exporter::get_entity_role(entity);
+                let is_soluble = soluble.get(tool).or_else(|| soluble.first()).copied().unwrap_or(false);
+                non_overridable |= !tools.wiping_extrusions_mut()
+                    .is_overriddable_and_mark(role, is_soluble, false, wipe_into_infill);
+            }
+            tools.has_object |= !fill_slots.is_empty();
+            if non_overridable {
+                tools.extruders.extend(fill_slots);
+            }
+        }
+        tools.extruders.sort_unstable();
+        tools.extruders.dedup();
+        if tools.has_object && tools.extruders.is_empty() {
+            tools.extruders.push(0);
+        }
+        ordering.layer_tools_mut().push(tools);
+    }
+    if use_first_layer_order {
+        let one_based: Vec<u32> = first_layer_order.iter().map(|&tool| tool as u32 + 1).collect();
+        ordering.handle_dontcare_extruder(one_based.as_slice());
+    } else {
+        ordering.handle_dontcare_extruder(u32::MAX);
+    }
+    ordering.layer_tools().iter().map(|layer| layer.extruders.iter().map(|&t| t as usize).collect()).collect()
+}
+
 /// The view of one layer that `WipingExtrusions` reads (Print.cpp:4308, 4329;
 /// ToolOrdering.cpp:3906-4117): the fills of each region of the object's layer
 /// at `z`, with the region's filament. Perimeters are read only with
@@ -6219,6 +6235,7 @@ fn wiping_objects_for_layer(
     z: f32,
     flush_into_objects: bool,
     flush_into_infill: bool,
+    by_feature: bool,
 ) -> Vec<crate::gcode::tool_ordering::WipingObject> {
     use crate::gcode::tool_ordering::{WipingEntity, WipingObject, WipingRegion};
     let layer = object.layers().iter().find(|l| (l.print_z as f32 - z).abs() < 1e-4);
@@ -6234,13 +6251,14 @@ fn wiping_objects_for_layer(
                         .enumerate()
                         .map(|(i, e)| {
                             let (role, total_volume) = wiping_role_volume(e);
-                            WipingEntity { id: ((region_id as u64) << 32) | i as u64, role, total_volume, extruder: tool }
+                            let extruder = if by_feature { fill_collection_tool(r, e) as u32 } else { tool };
+                            WipingEntity { id: ((region_id as u64) << 32) | i as u64, role, total_volume, extruder }
                         })
                         .collect::<Vec<_>>()
                 };
                 WipingRegion {
                     wall_filament: tool,
-                    sparse_infill_filament: tool,
+                    sparse_infill_filament: if by_feature { (r.region().config().sparse_infill_filament.max(1) - 1) as u32 } else { tool },
                     fills: entities(&r.fills.entities),
                     // Perimeters are read only with flush_into_objects,
                     // which this arm does not take.
@@ -6460,6 +6478,134 @@ pub(crate) fn full_print_config_from_settings(settings: &serde_json::Value) -> c
 }
 
 impl Print {
+    /// GCode.cpp 2783-2788, 2840-2847. The machine-start placeholders and
+    /// the writer share the first non-support filament of the actual order.
+    fn set_export_startup_filaments(&self, settings: &mut serde_json::Value) -> Option<crate::g_code::ExportStartupFilaments> {
+        let obj = settings.as_object_mut()?;
+        let mut startup_filaments = None;
+        // FIRST_FILAMENTS_TOOL_ORDERING (faithful, R950): `_do_export` finds the first filament and
+        // the first non-support filament of each nozzle with `tool_ordering.cal_non_support_filaments`
+        // over the print's layer tools (GCode.cpp:2783-2788, 2840-2847; ToolOrdering.cpp:1489-1546),
+        // which the start G-code reads (`M620.17 T0 S.. L{first_non_support_filaments[0] ..}`).
+        // The layer tools are the ones the export prints (`optimized_layer_tools`); the export's
+        // placeholder inputs take the two lists from the keys below
+        // (`ExportPlaceholderInputs::from_settings`). Without a planned order (one filament) the
+        // inputs keep the initial filament on its nozzle, which is what the call gives there.
+        // =0 leaves only the initial filament's nozzle set.
+        let first_lists = crate::faithful_gate("FIRST_FILAMENTS_TOOL_ORDERING");
+        let export_startup = crate::faithful_gate("EXPORT_STARTUP_FILAMENTS");
+        let has_order = !self.optimized_layer_tools.is_empty();
+        // Print.cpp:438-465. Without a tower plan, every object role must use
+        // the same physical filament before its first tool is unambiguous.
+        let can_select_slot = self.config().num_filaments() > 1
+            || self.nozzle_group_result.as_deref().is_some_and(|g| g.is_support_dynamic_nozzle_map());
+        let single = if export_startup && !has_order && can_select_slot && self.objects.iter().all(|o| o.support_layers.is_empty()) {
+            match self.all_extruders().as_slice() {
+                [id] => Some(*id as u32),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if (has_order && (first_lists || export_startup)) || single.is_some() {
+            use crate::gcode::tool_ordering::{LayerTools, ToolOrdering, ToolOrderingConfig};
+            let cfg = crate::g_code::full_print_config_from_settings(&serde_json::Value::Object(obj.clone()));
+            let mut tool_ordering = ToolOrdering::new(ToolOrderingConfig::default());
+            for (print_z, tools) in &self.optimized_layer_tools {
+                let mut lt = LayerTools::new(*print_z);
+                lt.extruders = tools.iter().map(|&t| t as u32).collect();
+                tool_ordering.layer_tools_mut().push(lt);
+            }
+            if let Some(id) = single {
+                // ToolOrdering.cpp:829-869. A mixed slot expands into components.
+                let mixed = crate::gcode::wipe_tower::cfg_bools(&cfg, "filament_is_mixed");
+                if !mixed.get(id as usize).copied().unwrap_or(false) {
+                    let mut first = LayerTools::new(0.);
+                    first.extruders.push(id);
+                    tool_ordering.layer_tools_mut().push(first);
+                }
+            }
+            tool_ordering.collect_extruder_statistics(false);
+            if let Some(group) = self.nozzle_group_result.as_deref() {
+                tool_ordering.nozzle_group_result = group.clone();
+            }
+            // `print.config().nozzle_diameter.size()` (GCode.cpp:2787-2788).
+            let num_nozzles = match obj.get("nozzle_diameter") {
+                Some(serde_json::Value::Array(a)) => a.len(),
+                Some(serde_json::Value::String(v)) => v.split(',').count(),
+                _ => 1,
+            }
+            .max(1);
+            let mut first_non_support_filaments = vec![-1i32; num_nozzles];
+            let mut first_filaments = vec![-1i32; num_nozzles];
+            let mut initial_non_support_extruder_id = u32::MAX;
+            // GCode.cpp:2841-2847: only when the ordering has a first extruder.
+            if let Some(initial) = tool_ordering.first_extruder() {
+                tool_ordering.cal_non_support_filaments(
+                    &cfg,
+                    &mut initial_non_support_extruder_id,
+                    &mut first_non_support_filaments,
+                    &mut first_filaments,
+                );
+                if export_startup {
+                    let non_support = if initial_non_support_extruder_id == u32::MAX {
+                        initial
+                    } else {
+                        initial_non_support_extruder_id
+                    };
+                    startup_filaments = Some(crate::g_code::ExportStartupFilaments {
+                        initial,
+                        non_support,
+                        group_result: self.nozzle_group_result.clone(),
+                    });
+                }
+                if first_lists {
+                    obj.insert(
+                        crate::g_code::EXPORT_FIRST_FILAMENTS_KEY.to_string(),
+                        serde_json::json!(first_filaments),
+                    );
+                    obj.insert(
+                        crate::g_code::EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY.to_string(),
+                        serde_json::json!(first_non_support_filaments),
+                    );
+                }
+            }
+        }
+        startup_filaments
+    }
+
+    /// ToolOrdering.cpp 829-1017. A single applied region can require
+    /// several tools. Support and virtual filaments use additional layer
+    /// registrations outside this physical object-only path.
+    fn physical_region_tools(&mut self) -> Vec<usize> {
+        if !crate::faithful_gate("FEATURE_FILAMENT_ORDER") || !self.region_filaments_resolved
+            || self.config.flush_into_objects || self.objects.len() != 1 || self.print_regions.len() != 1
+            || !self.objects[0].support_layers.is_empty() || !self.objects[0].painted_submeshes.is_empty()
+        {
+            return Vec::new();
+        }
+        let cfg = self.print_regions[0].config();
+        let slots = [cfg.wall_filament, cfg.sparse_infill_filament, cfg.solid_infill_filament];
+        let count = self.config.num_filaments();
+        if slots.iter().all(|&s| s == slots[0]) || !slots.iter().all(|s| (1..=count).contains(s)) {
+            return Vec::new();
+        }
+        if let Some(full) = self.full_print_config_from_raw_settings() {
+            let mixed = crate::gcode::wipe_tower::cfg_bools(full, "filament_is_mixed");
+            if mixed.contains(&true) {
+                return Vec::new();
+            }
+        }
+        let mut tools = Vec::new();
+        for slot in slots {
+            let tool = slot - 1;
+            if !tools.contains(&tool) {
+                tools.push(tool);
+            }
+        }
+        tools
+    }
+
     /// The ids `GCode::_do_export` hands `set_extruders` (GCode.cpp:2790-2851):
     /// `print.extruders()` for a sequential print (:2817), the tool ordering's
     /// `all_extruders()` otherwise (:2851).
@@ -6487,6 +6633,13 @@ impl Print {
             }
         };
         let mut extruders: Vec<u32> = Vec::new();
+        if !self.feature_tools.is_empty() && !self.optimized_layer_tools.is_empty() {
+            // Print.cpp 2678: all_extruders of the actual layer order.
+            extruders.extend(self.optimized_layer_tools.iter().flat_map(|(_, ids)| ids.iter().map(|&id| id as u32)));
+            extruders.sort_unstable();
+            extruders.dedup();
+            return extruders;
+        }
         // Print.hpp `is_sequential_print()`: by object and more than one object.
         let sequential = self.config.print_sequence == crate::print_config::PrintSequence::ByObject && self.objects.len() > 1;
         if sequential {
@@ -6947,7 +7100,7 @@ impl Print {
 
                 // layer_tools.wiping_extrusions() (Print.cpp:4308, 4329).
                 let wiping_objects = if wipe_gate {
-                    wiping_objects_for_layer(object, print_z, self.config.flush_into_objects, self.config.flush_into_infill)
+                    wiping_objects_for_layer(object, print_z, self.config.flush_into_objects, self.config.flush_into_infill, !self.feature_tools.is_empty())
                 } else {
                     Vec::new()
                 };

@@ -1639,7 +1639,7 @@
     "status": "partial",
     "priority": 2,
     "fidelity": "fixed",
-    "notes": "R978 ports the model-derived scarf-seam flag at PrintApply.cpp 1339-1435. All 20 full/typed native model results match after normalization, including tool changes and scoped filament, circle and seam options. The live STL and 3MF entries reproduce the native flag on 14 supplemental jobs. R983 connects the live 3MF path to the existing region resolver when all parts and roles agree on one physical filament (PrintApply.cpp 1045-1055,1091 and PrintObject.cpp 3742-3806). Six native region vectors and 23 real projects cover the assignment. Differing part or role slots, modifiers and layer-specific settings still need separate live regions and tool ordering."
+    "notes": "R978 ports the model-derived scarf-seam flag at PrintApply.cpp 1339-1435. All 20 full/typed native model results match after normalization, including tool changes and scoped filament, circle and seam options. The live STL and 3MF entries reproduce the native flag on 14 supplemental jobs. R983 connects the live 3MF path to the existing region resolver when all parts and roles agree on one physical filament (PrintApply.cpp 1045-1055,1091 and PrintObject.cpp 3742-3806). Six native region vectors and 23 real projects cover the assignment. Differing part or role slots, modifiers and layer-specific settings still need separate live regions and tool ordering. R984 additionally carries a common physical wall/sparse/solid tuple across unpainted parts. Different tuples between parts and layer or modifier assignments still need separate regions."
   },
   {
     "cpp": "Brim.cpp",
@@ -1805,7 +1805,7 @@
     "area": "root",
     "rust": "crates/libslic3r-rs/src/g_code.rs",
     "rust_exists": true,
-    "notes": "R960 checks the live export writer's short wipe path in gcode/writer.rs against 96 native GCode::retract outputs. Two-point stored loops may leave one point after replacement and append (Polyline.hpp 89-96, GCode.cpp 477-520 and 8498-8517). R964 uses the writer-specific logical path end for Wipe::wipe (GCode.cpp 477-483, 7987-7988, 8087). The H2D layer 319 replay tests both the last emitted move and the distinct end after a skipped segment. R967 compares width and height tags from consecutive multipaths against the native exporter, including unchanged and changed widths following a tower visit (GCode.cpp 6884-6889, 7869-7902). R982 passes the tool ordering's initial and first non-support filaments to the startup templates and VT tag (GCode.cpp 2840-2863, 2898-2927, 3184-3236). Single physical-filament regions also supply an unambiguous order. The live exporter still needs per-feature and mixed-sublayer ordering for unplanned multi-material jobs. Three STL cubes, a support-first header and three corrected live 3MF exports cover the startup selection.",
+    "notes": "R960 checks the live export writer's short wipe path in gcode/writer.rs against 96 native GCode::retract outputs. Two-point stored loops may leave one point after replacement and append (Polyline.hpp 89-96, GCode.cpp 477-520 and 8498-8517). R964 uses the writer-specific logical path end for Wipe::wipe (GCode.cpp 477-483, 7987-7988, 8087). The H2D layer 319 replay tests both the last emitted move and the distinct end after a skipped segment. R967 compares width and height tags from consecutive multipaths against the native exporter, including unchanged and changed widths following a tower visit (GCode.cpp 6884-6889, 7869-7902). R982 passes the tool ordering's initial and first non-support filaments to the startup templates and VT tag (GCode.cpp 2840-2863, 2898-2927, 3184-3236). Single physical-filament regions also supply an unambiguous order. The live exporter still needs per-feature and mixed-sublayer ordering for unplanned multi-material jobs. Three STL cubes, a support-first header and three corrected live 3MF exports cover the startup selection. R984 routes physical single-region fill collections before flattening (5479-5537) and initializes the body writer to the startup filament (3214-3223). The tower-disabled branch of set_extruder still lacks the filament end/change/start sequence (8683-8976).",
     "loc": 7703,
     "status": "partial",
     "priority": 2,
@@ -1820,7 +1820,7 @@
     "rust_exists": true,
     "loc": 9849,
     "status": "partial",
-    "notes": "R981 reads the raw sparse_infill_filament and solid_infill_filament options, including their zero defaults. Both profile values and both applied region values match PrintConfig.cpp 4680-4687, 6090-6100 and PrintObject.cpp 3742-3806 on 72 native cases. R983 binds a uniform physical slot on unpainted 3MF objects and parts. Distinct per-feature and per-part assignments remain partial in the live slicer.",
+    "notes": "R981 reads the raw sparse_infill_filament and solid_infill_filament options, including their zero defaults. Both profile values and both applied region values match PrintConfig.cpp 4680-4687, 6090-6100 and PrintObject.cpp 3742-3806 on 72 native cases. R983 binds a uniform physical slot on unpainted 3MF objects and parts. Distinct per-feature and per-part assignments remain partial in the live slicer. R984 connects differing physical feature assignments shared across unpainted parts. Distinct part regions remain partial.",
     "priority": 2,
     "fidelity": "fixed"
   },
@@ -2833,7 +2833,8 @@
     "rust_exists": true,
     "loc": 2933,
     "status": "deferred",
-    "priority": 5
+    "priority": 5,
+    "notes": "R984 connects physical single-region feature slots to live layer ordering and wiping overrides (167-217,939-1017,1197-1204). Six 3MF jobs cover 768 native layer orders. Support, mixed slots and flush-into-objects remain partial in the live collector."
   },
   {
     "cpp": "GCode/WipeTower.cpp",

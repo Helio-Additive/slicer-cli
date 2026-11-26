@@ -968,3 +968,126 @@ fn scoped_project_filaments_match_native_export() {
         assert_eq!(gcode.lines().find(|line| line.starts_with(";VT")).unwrap(), format!(";VT{} H-1", wall - 1), "{row}");
     }
 }
+
+/// ToolOrdering.cpp 829-1017 and GCode.cpp 5479. The actual filament
+/// selections in a single-region cube follow the collections on each layer.
+#[test]
+fn feature_filament_changes_match_native_layer_order() {
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::path::Path;
+    use zip::ZipArchive;
+
+    let _model_ids = MODEL_IDS.lock().unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/calib_base.3mf");
+    let mut archive = ZipArchive::new(File::open(&fixture).unwrap()).unwrap();
+    let mut profile: serde_json::Value =
+        serde_json::from_reader(archive.by_name("Metadata/project_settings.config").unwrap())
+            .unwrap();
+    profile["filament_diameter"] = serde_json::json!(["1.75", "1.75", "1.75"]);
+    profile["filament_colour"] = serde_json::json!(["#FFFFFF", "#000000", "#777777"]);
+    profile["filament_map"] = serde_json::json!(["1", "1", "1"]);
+    profile["flush_volumes_matrix"] =
+        serde_json::json!(["0", "280", "280", "280", "0", "280", "280", "280", "0"]);
+    let mut expected: HashMap<&str, Vec<(usize, u32)>> = HashMap::new();
+    for row in include_str!("data/print/feature_tool_orders.txt").lines() {
+        let mut fields = row.split_whitespace();
+        let case = fields.next().unwrap();
+        let layer = fields.next().unwrap().parse::<usize>().unwrap() + 1;
+        let commands = expected.entry(case).or_default();
+        for tool in fields.map(|s| s.parse::<u32>().unwrap()) {
+            if commands.last().map(|&(_, t)| t) != Some(tool) {
+                // Machine start selects the first filament before layer one.
+                commands.push((if commands.is_empty() { 0 } else { layer }, tool));
+            }
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("settings.json");
+    let out = dir.path().join("role-tools.gcode");
+    for (case, roles, tower, flush) in [
+        ("uniform", [2, 2, 2], true, false),
+        ("sparse", [2, 3, 2], true, false),
+        ("solid", [2, 2, 3], true, false),
+        ("three", [1, 2, 3], true, false),
+        ("no-tower", [2, 3, 2], false, false),
+        ("flush-infill", [2, 3, 2], true, true),
+    ] {
+        for (key, slot) in [
+            "wall_filament",
+            "sparse_infill_filament",
+            "solid_infill_filament",
+        ]
+        .into_iter()
+        .zip(roles)
+        {
+            profile[key] = slot.to_string().into();
+        }
+        profile["enable_prime_tower"] = u8::from(tower).to_string().into();
+        profile["flush_into_infill"] = u8::from(flush).to_string().into();
+        serde_json::to_writer(File::create(&settings).unwrap(), &profile).unwrap();
+        slicer::app_slice::slice_3mf_to_gcode(&fixture, Some(&settings), &out).unwrap();
+        let gcode = std::fs::read_to_string(&out).unwrap();
+        // Count XY deposition separately from stationary tower purges and
+        // retractions. These are the role/tool counts of the native cube.
+        let mut active = None;
+        let mut layer = 0;
+        let mut feature = "";
+        let mut selected = Vec::new();
+        let mut moves = HashMap::new();
+        for line in gcode.lines() {
+            if let Some(number) = line.strip_prefix("; layer num/total_layer_count: ") {
+                layer = number.split('/').next().unwrap().parse().unwrap();
+            }
+            if let Some(label) = line.strip_prefix("; FEATURE: ") {
+                feature = label.trim();
+            }
+            let code = line.split(';').next().unwrap().trim();
+            if let Some(tool) = code
+                .strip_prefix('T')
+                .and_then(|n| n.parse::<u32>().ok())
+                .filter(|&t| t < 3)
+            {
+                active = Some(tool);
+                selected.push((layer, tool));
+            }
+            if let Some(tool) = active {
+                if code.starts_with("G1 ")
+                    && code.split_whitespace().any(|v| v.starts_with(['X', 'Y']))
+                    && code.split_whitespace().any(|v| {
+                        v.strip_prefix('E')
+                            .and_then(|s| s.parse::<f64>().ok())
+                            .is_some_and(|e| e > 0.0)
+                    })
+                {
+                    *moves.entry((feature, tool)).or_insert(0) += 1;
+                }
+            }
+        }
+        let ordered = expected.remove(case).unwrap();
+        assert_eq!(selected, ordered, "{case}");
+        for (role, setting, total) in [
+            ("Outer wall", roles[0], 512),
+            ("Inner wall", roles[0], 508),
+            ("Sparse infill", roles[1], 3592),
+            ("Internal solid infill", roles[2], 880),
+            ("Top surface", roles[2], 92),
+            ("Bottom surface", roles[2], 140),
+        ] {
+            for tool in 0..3 {
+                let count = if role == "Sparse infill" && flush {
+                    [0, 3570, 22][tool as usize]
+                } else if tool + 1 == setting {
+                    total
+                } else {
+                    0
+                };
+                assert_eq!(
+                    moves.get(&(role, tool)).copied().unwrap_or(0),
+                    count,
+                    "{case} {role} T{tool}"
+                );
+            }
+        }
+    }
+}

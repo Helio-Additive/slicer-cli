@@ -13,6 +13,7 @@
 //   ./gen > vectors.txt
 //   ./gen --scarf-flags scarf_flags.txt
 //   ./gen --region-infill-filaments region_infill_filaments.txt
+//   ./gen --feature-tool-orders tests/fixtures/calib_base.3mf <temporary-directory> feature_tool_orders.txt
 //   ./gen --scoped-region-filaments scoped_region_filaments.txt
 //   ./gen --startup-filaments <temporary-directory> > startup_filaments.txt
 //
@@ -46,6 +47,9 @@
 #include "libslic3r/PrintApply.cpp"
 #undef protected
 #undef private
+#include "libslic3r/Format/bbs_3mf.hpp"
+#include "libslic3r/Preset.hpp"
+#include "libslic3r/Semver.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/GCode/ConflictChecker.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
@@ -653,8 +657,59 @@ static void scoped_region_filaments(const char *filename)
     }
 }
 
+// ToolOrdering.cpp 829-1017 registers the filament assigned to each real
+// fill collection. Read the resulting physical ordering for the same cube
+// geometry, including the jobs without a tower and with overridable infill.
+static void feature_tool_orders(const char *fixture, const char *tmpdir, const char *filename)
+{
+    set_temporary_dir(tmpdir);
+    Model model;
+    DynamicPrintConfig saved;
+    ConfigSubstitutionContext substitutions(ForwardCompatibilitySubstitutionRule::Enable);
+    PlateDataPtrs plates;
+    std::vector<Preset *> presets;
+    Semver version;
+    bool bbl = false;
+    if (!load_bbs_3mf(fixture, &saved, &substitutions, &model, &plates, &presets,
+                      &bbl, &version, nullptr, LoadStrategy::LoadModel | LoadStrategy::LoadConfig, nullptr, 0))
+        throw std::runtime_error("Cannot load the Bambu cube project");
+    release_PlateData_list(plates);
+    for (Preset *preset : presets) delete preset;
+    DynamicPrintConfig base = DynamicPrintConfig::full_print_config();
+    base.apply(saved);
+    base.set_num_filaments(3);
+    base.option<ConfigOptionFloats>("filament_diameter")->values.assign(3, 1.75);
+    base.option<ConfigOptionStrings>("filament_colour")->values = {"#FFFFFF", "#000000", "#777777"};
+    base.option<ConfigOptionInts>("filament_map")->values.assign(3, 1);
+    base.option<ConfigOptionFloats>("flush_volumes_matrix")->values = {0., 280., 280., 280., 0., 280., 280., 280., 0.};
+    struct Case { const char *name; int wall, sparse, solid; bool tower, flush; };
+    std::ofstream out(filename);
+    out.exceptions(std::ios::failbit | std::ios::badbit);
+    for (const Case &c : std::vector<Case>{
+            {"uniform",2,2,2,true,false}, {"sparse",2,3,2,true,false}, {"solid",2,2,3,true,false},
+            {"three",1,2,3,true,false}, {"no-tower",2,3,2,false,false}, {"flush-infill",2,3,2,true,true}}) {
+        DynamicPrintConfig cfg;
+        cfg.apply_only(base, base.keys());
+        cfg.set_key_value("wall_filament", new ConfigOptionInt(c.wall));
+        cfg.set_key_value("sparse_infill_filament", new ConfigOptionInt(c.sparse));
+        cfg.set_key_value("solid_infill_filament", new ConfigOptionInt(c.solid));
+        cfg.set_key_value("enable_prime_tower", new ConfigOptionBool(c.tower));
+        cfg.set_key_value("flush_into_infill", new ConfigOptionBool(c.flush));
+        Print print;
+        print.apply(model, cfg);
+        print.process();
+        size_t layer = 0;
+        for (const auto &lt : print.get_tool_ordering().layer_tools()) {
+            out << c.name << ' ' << layer++;
+            for (auto id : lt.extruders) out << ' ' << id;
+            out << '\n';
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 5 && std::string(argv[1]) == "--feature-tool-orders") { feature_tool_orders(argv[2], argv[3], argv[4]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--scoped-region-filaments") { scoped_region_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--startup-filaments") { startup_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--region-infill-filaments") { region_infill_filaments(argv[2]); return 0; }

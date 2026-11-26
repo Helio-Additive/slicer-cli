@@ -131,7 +131,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R983) |
+| Fixture | As brought over (R808) | Now (R984) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -141,11 +141,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R983:
+missing most often. Lines of the oracle's body the port has verbatim, at R984:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R983 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R984 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.
@@ -192,7 +192,11 @@ to the filament-start template. Cubes assigned to filament 2 or 3 now select
 that filament and report its material use. R983 also reads the filament
 from a 3MF's object and part settings when every part and role uses one
 physical slot. Five of 23 supplemental projects now select the native
-startup filament. The four standard fixtures still match R970 byte for byte.
+startup filament. R984 assigns each wall and infill collection to its
+physical filament on a single unpainted region. Six cube jobs match the
+native tool commands layer by layer, including 120 switches for a separate
+sparse-infill filament. A tower-disabled job still misses the material
+purged by the filament-change script. The four standard fixtures still match R970 byte for byte.
 
 The percentages of R852 are lower than R851's while the matched counts are
 higher: R852 writes the `M73 P.. R..` progress lines, which `seq_parity.py`
