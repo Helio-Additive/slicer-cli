@@ -232,8 +232,29 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1005 | Use the profile's extrusion mode in the writer preamble and reset absolute E on retraction. | GCode, GCodeWriter, PrintConfig | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1006 | Port circle and ellipse paths in the safe NanoSVG crate. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1007 | Apply the official per-extruder nozzle diameters on STL and Bambu 3MF. | root CLI, profile loading | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1008 | Resolve the four printer fields of a partial external profile over the Bambu project. | root file loading, BBS importer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1008. With a partial external settings bundle, R1007 discarded a saved
+  0.6 mm nozzle and used the 0.4 mm default. The native root file loader
+  first reads a typed config, then accepts numeric and mixed JSON arrays
+  per key. The second pass skips printer_variant. The 120 native snapshots
+  cover four fields with and without a project value, down to the nozzle
+  bits and the presence of each option. The root slice regression fails on
+  R1007 and passes on C++ and Rust. Five supplemental projects match all
+  four fields. The number of lines matching the native output in order
+  increases from 11,013 to 11,534 on the omitted and ignored settings,
+  from 7,992 to 8,629 on the numeric and mixed arrays, and from 11,563 to
+  11,576 on the numeric scalar. A config-only BBS read returns byte-identical
+  G-code to a full-model read in all five cases. Both readers ignore printer
+  fields embedded in an unmarked project. Native also writes an empty
+  printer_settings_id on that control, which Rust still omits. All 112
+  prior extrusion-mode source cases reproduce their native modes and
+  header values. All four standard files match R1007 with
+  `PROJECT_PRINTER_PROFILE` enabled and disabled. H2D matches 4,614,342
+  and 4,614,863 lines against the two saved runs. Parent-preset resolution
+  and rebasing the rest of a project's settings remain separate work.
 
 - R1007. The C++ CLI accepts `--nozzle-diameter` before loading a model.
   R1006 refused it with exit 254. The native option is a nullable double

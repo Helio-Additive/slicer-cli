@@ -146,8 +146,13 @@ fn common_model_wall_loops(model: &crate::model::Model, config: &DynamicPrintCon
 /// bbs_3mf.cpp:2263-2331. The importer decides whether to read embedded
 /// settings and custom tool changes based on the project's generator.
 fn load_bbs_model_and_config(path: &Path) -> Result<(crate::model::Model, DynamicPrintConfig)> {
+    use crate::format::bbs_3mf::LoadStrategy;
+    read_bbs_project(path, LoadStrategy::LoadModel | LoadStrategy::LoadConfig)
+}
+
+fn read_bbs_project(path: &Path, strategy: crate::format::bbs_3mf::LoadStrategy) -> Result<(crate::model::Model, DynamicPrintConfig)> {
     use crate::config::{ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
-    use crate::format::bbs_3mf::{load_bbs_3mf, LoadStrategy};
+    use crate::format::bbs_3mf::load_bbs_3mf;
 
     let backup = tempfile::tempdir().context("Creating the 3MF model backup directory")?;
     let mut model = crate::model::Model::new();
@@ -157,7 +162,7 @@ fn load_bbs_model_and_config(path: &Path) -> Result<(crate::model::Model, Dynami
     let loaded = load_bbs_3mf(
         path.to_str().context("3MF model path is not UTF-8")?, &mut config, &mut substitutions,
         &mut model, &mut Vec::new(), &mut Vec::new(), None, &mut crate::semver::Semver::new(), None,
-        LoadStrategy::LoadModel | LoadStrategy::LoadConfig, None, 0, None, None, None, None,
+        strategy, None, 0, None, None, None, None,
     )?;
     anyhow::ensure!(loaded, "Failed to load the model settings from {}", path.display());
     model.set_backup_path("detach");
@@ -223,6 +228,88 @@ fn apply_cli_temperature(config: &mut DynamicPrintConfig, key: &str, value: &str
     Ok(keys)
 }
 
+// main.cpp 735–756, 770–850, 883. An external bundle first applies the
+// settings-file conversion, then accepts additional JSON types per key.
+// printer_variant is metadata in the second pass and keeps its first-pass value.
+const PRINTER_PROFILE_KEYS: [&str; 4] = ["nozzle_diameter", "printer_model", "printer_variant", "printer_settings_id"];
+
+// main.cpp 808–850. These scalar strings, booleans and float vectors use
+// a comma separator and std::to_string(double) for numeric array elements.
+fn external_profile_token(value: &serde_json::Value) -> Option<String> {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Bool(b) => Some(u8::from(*b).to_string()),
+        Value::Number(n) if n.is_f64() => Some(format!("{:.6}", n.as_f64()?)),
+        Value::Number(n) => n.as_i64().map(|v| v as i32).or_else(|| n.as_u64().map(|v| v as i32))
+            .map(|v| v.to_string()),
+        Value::Array(items) => Some(items.iter().filter_map(|item| match item {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(format!("{:.6}", n.as_f64()?)),
+            _ => None,
+        }).collect::<Vec<_>>().join(",")),
+        _ => None,
+    }
+}
+
+fn external_printer_config(path: &Path, settings: &serde_json::Value) -> Result<DynamicPrintConfig> {
+    use crate::config::{ConfigBase, ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
+
+    let mut config = DynamicPrintConfig::new();
+    let mut context = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::EnableSilent);
+    let mut reason = String::new();
+    config.load_from_json_with_context(path.to_str().context("Profile path is not UTF-8")?,
+        &mut context, false, &mut Default::default(), &mut reason);
+    if !reason.is_empty() {
+        config = DynamicPrintConfig::new();
+    }
+    for key in ["nozzle_diameter", "printer_model", "printer_settings_id"] {
+        let Some(token) = external_profile_token(&settings[key]) else { continue };
+        if !token.is_empty() && token != "nil" {
+            let _ = config.set_deserialize(key, &token, &mut context, false);
+        }
+    }
+    Ok(config)
+}
+
+// main.cpp 9550–9596 overlays each file's actual settings on the project.
+// The BBS reader decides whether the project is allowed to supply them.
+fn resolve_project_printer(input: &Path, path: &Path, saved: Option<&str>, settings: &mut serde_json::Value,
+    imported: Option<&DynamicPrintConfig>) -> Result<()> {
+    use crate::config::ConfigOptionResolver;
+    let file = external_printer_config(path, settings)?;
+    let needs_saved = PRINTER_PROFILE_KEYS.iter().any(|key| !file.has(key)) &&
+        saved.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).is_some_and(|project|
+            PRINTER_PROFILE_KEYS.iter().any(|key| !file.has(key) && project.get(key).is_some()));
+    // Reuse an existing import. A profile lookup alone does not need the
+    // meshes or instances (bbs_3mf.hpp 169–181, LoadStrategy::LoadConfig).
+    let saved_config;
+    let project = if !needs_saved {
+        None
+    } else if let Some(config) = imported {
+        Some(config)
+    } else {
+        saved_config = read_bbs_project(input, crate::format::bbs_3mf::LoadStrategy::LoadConfig)?.1;
+        Some(&saved_config)
+    };
+    for key in PRINTER_PROFILE_KEYS {
+        let option = file.option(key).or_else(|| project?.option(key));
+        if let Some(option) = option {
+            if key == "nozzle_diameter" {
+                let rows = option.vector_values_any().and_then(|a| a.downcast_ref::<Vec<f64>>())
+                    .context("Expected a nozzle diameter vector")?;
+                let values: Vec<_> = rows.iter().map(|v| if v.is_nan() { "nil".into() } else { v.to_string() }).collect();
+                settings[key] = values.into();
+            } else {
+                settings[key] = option.serialize()?.into();
+            }
+        } else if let Some(obj) = settings.as_object_mut() {
+            obj.remove(key);
+        }
+    }
+    Ok(())
+}
+
 const EXTRUSION_MODE: &str = "use_relative_e_distances";
 
 /// main.cpp 735–756, 808–850, 883: external profiles get a second per-key
@@ -230,21 +317,7 @@ const EXTRUSION_MODE: &str = "use_relative_e_distances";
 fn external_extrusion_mode(path: &Path, value: &serde_json::Value) -> Option<bool> {
     use crate::config::{config_helpers::enum_looks_like_true_value, ConfigBase, ConfigOptionResolver,
         ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
-    use serde_json::Value;
-    let token = match value {
-        Value::String(s) => s.clone(),
-        Value::Bool(b) => return Some(*b),
-        Value::Number(n) if n.is_f64() => format!("{:.6}", n.as_f64()?),
-        // main.cpp 847 uses get<int>(), including its 32-bit narrowing.
-        Value::Number(n) => return Some(n.as_i64().map(|v| v as i32)
-            .or_else(|| n.as_u64().map(|v| v as i32))? == 1),
-        Value::Array(items) => items.iter().filter_map(|item| match item {
-            Value::String(s) => Some(s.clone()),
-            Value::Number(n) => Some(format!("{:.6}", n.as_f64()?)),
-            _ => None,
-        }).collect::<Vec<_>>().join(","),
-        _ => return None,
-    };
+    let token = external_profile_token(value)?;
     if !token.is_empty() && token != "nil" {
         // Config.hpp 1866–1878, Config.cpp 692–706 (substitutions enabled).
         return Some(token == "1" || enum_looks_like_true_value(&token));
@@ -1270,6 +1343,11 @@ pub fn slice_3mf_to_gcode_with_overrides(
         }
     }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
+    if crate::faithful_gate("PROJECT_PRINTER_PROFILE") {
+        if let Some(path) = settings_override {
+            resolve_project_printer(input, path, embedded_settings.as_deref(), &mut settings_value, imported.as_ref().map(|loaded| &loaded.1))?;
+        }
+    }
     let config = checked_job_config(&mut settings_value, overrides)?;
     legacy_gcode.apply(&mut settings_value);
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
@@ -3667,6 +3745,37 @@ mod circle_compensation_settings_tests {
 
     /// GCodeProcessor.cpp:2030-2036. A profile's second mode limits both X
     /// travels in the pin's end-to-end timing vectors (gen.cpp --axis-limits).
+    #[test]
+    fn printer_profile_overlays_match_the_native_file_loader() {
+        use crate::config::{ConfigBase, ConfigOptionFloatsNullable, ConfigOption};
+        use serde_json::{json, Value};
+        let saved = json!({"nozzle_diameter": ["0.6", "0.4"], "printer_model": "Bambu Lab X1 Carbon",
+            "printer_variant": "0.6", "printer_settings_id": "Saved preset"});
+        let mut seed = DynamicPrintConfig::new();
+        for key in PRINTER_PROFILE_KEYS {
+            let text = if key == "nozzle_diameter" { "0.6,0.4" } else { saved[key].as_str().unwrap() };
+            seed.set_deserialize_strict(key, text, false).unwrap();
+        }
+        let folder = tempfile::tempdir().unwrap();
+        let file = folder.path().join("profile.json");
+        for line in include_str!("../tests/data/cli_printer_profile/file-overlays.jsonl").lines() {
+            let case: Value = serde_json::from_str(line).unwrap();
+            let mut settings = case["file"].clone();
+            std::fs::write(&file, serde_json::to_vec(&settings).unwrap()).unwrap();
+            let seeded = case["seeded"].as_bool().unwrap();
+            let embedded = saved.to_string();
+            resolve_project_printer(&file, &file, seeded.then_some(embedded.as_str()), &mut settings,
+                seeded.then_some(&seed)).unwrap();
+            if let Some(rows) = settings.get("nozzle_diameter") {
+                let raw = rows.as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>().join(",");
+                let mut typed = ConfigOptionFloatsNullable::new();
+                assert!(typed.deserialize(&raw, false).unwrap());
+                settings["nozzle_diameter"] = json!(typed.values.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+            }
+            assert_eq!(settings, case["effective"], "{line}");
+        }
+    }
+
     #[test]
     fn profile_axis_limits_reach_the_time_estimator() {
         use crate::gcode::g_code_processor::{ETimeMode, GCodeProcessor};

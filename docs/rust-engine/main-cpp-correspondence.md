@@ -6,6 +6,7 @@
 |---|---|---|
 | `cli_command_line.cpp` 227–252, 496–516, 705–716 | `src/cli_command_line.rs::parse` | R1007. The official nozzle diameter option replaces the default vector on first use, appends repeated rows and validates before model loading. |
 | `main.cpp` 9687–9688, 10676–10681 | `src/engine_cli.rs::slice`, `crates/libslic3r-rs/src/app_slice.rs::checked_job_config` | R1007. Both the STL and Bambu 3MF entry points pass all typed diameters to the profile loader. |
+| `main.cpp` 735–756, 770–850, 883, 9550–9596 | `app_slice.rs::external_printer_config` and `resolve_project_printer` | R1008. A partial external bundle overlays the printer model, variant, preset ID and nozzle diameter of the Bambu project. |
 
 ## Historical driver at R526
 

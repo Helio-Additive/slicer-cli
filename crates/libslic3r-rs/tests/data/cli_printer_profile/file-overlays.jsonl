@@ -1,0 +1,120 @@
+{"effective":{},"file":{"nozzle_diameter":null},"seeded":false}
+{"effective":{"nozzle_diameter":[4607182418800017408]},"file":{"nozzle_diameter":true},"seeded":false}
+{"effective":{"nozzle_diameter":[0]},"file":{"nozzle_diameter":false},"seeded":false}
+{"effective":{"nozzle_diameter":[4607182418800017408]},"file":{"nozzle_diameter":1},"seeded":false}
+{"effective":{"nozzle_diameter":[4603579539098121011]},"file":{"nozzle_diameter":0.600000123456789},"seeded":false}
+{"effective":{"nozzle_diameter":[]},"file":{"nozzle_diameter":""},"seeded":false}
+{"effective":{"nozzle_diameter":[9221120237041090560]},"file":{"nozzle_diameter":"nil"},"seeded":false}
+{"effective":{"nozzle_diameter":[4603129179135383962]},"file":{"nozzle_diameter":"0.55"},"seeded":false}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714]},"file":{"nozzle_diameter":"0.6,0.4"},"seeded":false}
+{"effective":{"nozzle_diameter":[]},"file":{"nozzle_diameter":[]},"seeded":false}
+{"effective":{"nozzle_diameter":[4600877381545698509,9221120237041090560]},"file":{"nozzle_diameter":["0.400000123456789","nil"]},"seeded":false}
+{"effective":{"nozzle_diameter":[4600877379321698714,4604029899060858061]},"file":{"nozzle_diameter":[0.400000123456789,0.65]},"seeded":false}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714]},"file":{"nozzle_diameter":[true,"0.6",0.4]},"seeded":false}
+{"effective":{"nozzle_diameter":[4600877379321698714,4603579539098121011]},"file":{"nozzle_diameter":[["0.4","0.6"]]},"seeded":false}
+{"effective":{},"file":{"nozzle_diameter":{}},"seeded":false}
+{"effective":{},"file":{"printer_model":null},"seeded":false}
+{"effective":{"printer_model":"1"},"file":{"printer_model":true},"seeded":false}
+{"effective":{"printer_model":"0"},"file":{"printer_model":false},"seeded":false}
+{"effective":{"printer_model":"1"},"file":{"printer_model":1},"seeded":false}
+{"effective":{"printer_model":"0.600000"},"file":{"printer_model":0.600000123456789},"seeded":false}
+{"effective":{"printer_model":""},"file":{"printer_model":""},"seeded":false}
+{"effective":{"printer_model":"nil"},"file":{"printer_model":"nil"},"seeded":false}
+{"effective":{"printer_model":"0.55"},"file":{"printer_model":"0.55"},"seeded":false}
+{"effective":{"printer_model":"0.6,0.4"},"file":{"printer_model":"0.6,0.4"},"seeded":false}
+{"effective":{"printer_model":""},"file":{"printer_model":[]},"seeded":false}
+{"effective":{"printer_model":"0.400000123456789,nil"},"file":{"printer_model":["0.400000123456789","nil"]},"seeded":false}
+{"effective":{"printer_model":"0.400000,0.650000"},"file":{"printer_model":[0.400000123456789,0.65]},"seeded":false}
+{"effective":{"printer_model":"0.6,0.400000"},"file":{"printer_model":[true,"0.6",0.4]},"seeded":false}
+{"effective":{"printer_model":"0.4,0.6"},"file":{"printer_model":[["0.4","0.6"]]},"seeded":false}
+{"effective":{},"file":{"printer_model":{}},"seeded":false}
+{"effective":{},"file":{"printer_variant":null},"seeded":false}
+{"effective":{},"file":{"printer_variant":true},"seeded":false}
+{"effective":{},"file":{"printer_variant":false},"seeded":false}
+{"effective":{},"file":{"printer_variant":1},"seeded":false}
+{"effective":{},"file":{"printer_variant":0.600000123456789},"seeded":false}
+{"effective":{"printer_variant":""},"file":{"printer_variant":""},"seeded":false}
+{"effective":{"printer_variant":"nil"},"file":{"printer_variant":"nil"},"seeded":false}
+{"effective":{"printer_variant":"0.55"},"file":{"printer_variant":"0.55"},"seeded":false}
+{"effective":{"printer_variant":"0.6,0.4"},"file":{"printer_variant":"0.6,0.4"},"seeded":false}
+{"effective":{"printer_variant":""},"file":{"printer_variant":[]},"seeded":false}
+{"effective":{"printer_variant":"0.400000123456789,nil"},"file":{"printer_variant":["0.400000123456789","nil"]},"seeded":false}
+{"effective":{},"file":{"printer_variant":[0.400000123456789,0.65]},"seeded":false}
+{"effective":{},"file":{"printer_variant":[true,"0.6",0.4]},"seeded":false}
+{"effective":{"printer_variant":"0.4,0.6"},"file":{"printer_variant":[["0.4","0.6"]]},"seeded":false}
+{"effective":{},"file":{"printer_variant":{}},"seeded":false}
+{"effective":{},"file":{"printer_settings_id":null},"seeded":false}
+{"effective":{"printer_settings_id":"1"},"file":{"printer_settings_id":true},"seeded":false}
+{"effective":{"printer_settings_id":"0"},"file":{"printer_settings_id":false},"seeded":false}
+{"effective":{"printer_settings_id":"1"},"file":{"printer_settings_id":1},"seeded":false}
+{"effective":{"printer_settings_id":"0.600000"},"file":{"printer_settings_id":0.600000123456789},"seeded":false}
+{"effective":{"printer_settings_id":""},"file":{"printer_settings_id":""},"seeded":false}
+{"effective":{"printer_settings_id":"nil"},"file":{"printer_settings_id":"nil"},"seeded":false}
+{"effective":{"printer_settings_id":"0.55"},"file":{"printer_settings_id":"0.55"},"seeded":false}
+{"effective":{"printer_settings_id":"0.6,0.4"},"file":{"printer_settings_id":"0.6,0.4"},"seeded":false}
+{"effective":{"printer_settings_id":""},"file":{"printer_settings_id":[]},"seeded":false}
+{"effective":{"printer_settings_id":"0.400000123456789,nil"},"file":{"printer_settings_id":["0.400000123456789","nil"]},"seeded":false}
+{"effective":{"printer_settings_id":"0.400000,0.650000"},"file":{"printer_settings_id":[0.400000123456789,0.65]},"seeded":false}
+{"effective":{"printer_settings_id":"0.6,0.400000"},"file":{"printer_settings_id":[true,"0.6",0.4]},"seeded":false}
+{"effective":{"printer_settings_id":"0.4,0.6"},"file":{"printer_settings_id":[["0.4","0.6"]]},"seeded":false}
+{"effective":{},"file":{"printer_settings_id":{}},"seeded":false}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":null},"seeded":true}
+{"effective":{"nozzle_diameter":[4607182418800017408],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":true},"seeded":true}
+{"effective":{"nozzle_diameter":[0],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":false},"seeded":true}
+{"effective":{"nozzle_diameter":[4607182418800017408],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":1},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":0.600000123456789},"seeded":true}
+{"effective":{"nozzle_diameter":[],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":""},"seeded":true}
+{"effective":{"nozzle_diameter":[9221120237041090560],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":"nil"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603129179135383962],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":"0.55"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":"0.6,0.4"},"seeded":true}
+{"effective":{"nozzle_diameter":[],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":[]},"seeded":true}
+{"effective":{"nozzle_diameter":[4600877381545698509,9221120237041090560],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":["0.400000123456789","nil"]},"seeded":true}
+{"effective":{"nozzle_diameter":[4600877379321698714,4604029899060858061],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":[0.400000123456789,0.65]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":[true,"0.6",0.4]},"seeded":true}
+{"effective":{"nozzle_diameter":[4600877379321698714,4603579539098121011],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":[["0.4","0.6"]]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"nozzle_diameter":{}},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":null},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"1","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":true},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":false},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"1","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":1},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.600000","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":0.600000123456789},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":""},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"nil","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":"nil"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.55","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":"0.55"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.6,0.4","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":"0.6,0.4"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":[]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.400000123456789,nil","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":["0.400000123456789","nil"]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.400000,0.650000","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":[0.400000123456789,0.65]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.6,0.400000","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":[true,"0.6",0.4]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"0.4,0.6","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":[["0.4","0.6"]]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_model":{}},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":null},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":true},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":false},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":1},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":0.600000123456789},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":""},"file":{"printer_variant":""},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"nil"},"file":{"printer_variant":"nil"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.55"},"file":{"printer_variant":"0.55"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6,0.4"},"file":{"printer_variant":"0.6,0.4"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":""},"file":{"printer_variant":[]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.400000123456789,nil"},"file":{"printer_variant":["0.400000123456789","nil"]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":[0.400000123456789,0.65]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":[true,"0.6",0.4]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.4,0.6"},"file":{"printer_variant":[["0.4","0.6"]]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_variant":{}},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_settings_id":null},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"1","printer_variant":"0.6"},"file":{"printer_settings_id":true},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0","printer_variant":"0.6"},"file":{"printer_settings_id":false},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"1","printer_variant":"0.6"},"file":{"printer_settings_id":1},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.600000","printer_variant":"0.6"},"file":{"printer_settings_id":0.600000123456789},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"","printer_variant":"0.6"},"file":{"printer_settings_id":""},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"nil","printer_variant":"0.6"},"file":{"printer_settings_id":"nil"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.55","printer_variant":"0.6"},"file":{"printer_settings_id":"0.55"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.6,0.4","printer_variant":"0.6"},"file":{"printer_settings_id":"0.6,0.4"},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"","printer_variant":"0.6"},"file":{"printer_settings_id":[]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.400000123456789,nil","printer_variant":"0.6"},"file":{"printer_settings_id":["0.400000123456789","nil"]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.400000,0.650000","printer_variant":"0.6"},"file":{"printer_settings_id":[0.400000123456789,0.65]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.6,0.400000","printer_variant":"0.6"},"file":{"printer_settings_id":[true,"0.6",0.4]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"0.4,0.6","printer_variant":"0.6"},"file":{"printer_settings_id":[["0.4","0.6"]]},"seeded":true}
+{"effective":{"nozzle_diameter":[4603579539098121011,4600877379321698714],"printer_model":"Bambu Lab X1 Carbon","printer_settings_id":"Saved preset","printer_variant":"0.6"},"file":{"printer_settings_id":{}},"seeded":true}
