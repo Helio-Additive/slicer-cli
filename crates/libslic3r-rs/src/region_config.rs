@@ -645,6 +645,21 @@ impl PrintRegionConfig {
                 }
                 true
             }
+            // PrintConfig.hpp:1207,1239. Zero inherits the model part's
+            // filament when PrintObject.cpp:3742-3806 builds its region.
+            "sparse_infill_filament" | "solid_infill_filament" if crate::faithful_gate("REGION_CONFIG_INFILL_FILAMENTS") => {
+                use crate::config::{ConfigOption, ConfigOptionInt};
+                let mut option = ConfigOptionInt::new();
+                if matches!(option.deserialize(value, false), Ok(true)) {
+                    let filament = option.value.max(0) as usize;
+                    if key == "sparse_infill_filament" {
+                        self.sparse_infill_filament = filament;
+                    } else {
+                        self.solid_infill_filament = filament;
+                    }
+                }
+                true
+            }
             // === Perimeters ===
             "wall_loops" => {
                 if let Some(v) = parse_u32(value) {

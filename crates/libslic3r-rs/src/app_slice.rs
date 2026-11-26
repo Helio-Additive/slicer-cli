@@ -2254,6 +2254,12 @@ fn load_bambustudio_settings(
     let mut print_config = PrintConfig::default();
     let mut object_config = PrintObjectConfig::default();
     let mut region_config = PrintRegionConfig::default();
+    // PrintConfig.cpp:4680-4687,6090-6100. An unset profile slot inherits
+    // the model filament when Print::apply builds the effective region.
+    if crate::faithful_gate("REGION_CONFIG_INFILL_FILAMENTS") {
+        region_config.sparse_infill_filament = 0;
+        region_config.solid_infill_filament = 0;
+    }
 
     // Iterate all keys from the JSON and dispatch to config structs.
     let mut recognized = 0u32;
@@ -2852,6 +2858,37 @@ mod circle_compensation_settings_tests {
                     assert_eq!(&bits, native, "{state}");
                 }
             }
+        }
+    }
+
+    /// PrintConfig.cpp 4680-4687, 6090-6100 and PrintObject.cpp 3742-3806.
+    /// Compare the profile slots and the applied region of an unpainted part.
+    #[test]
+    fn global_infill_filament_slots_match_native() {
+        let rows = include_str!("../tests/data/print/region_infill_filaments.txt");
+        assert_eq!(rows.lines().count(), 72);
+        for row in rows.lines() {
+            let fields: Vec<_> = row.split_whitespace().collect();
+            let count: usize = fields[0].parse().unwrap();
+            let mut profile = serde_json::json!({
+                "filament_diameter": vec!["1.75"; count],
+                "filament_colour": vec!["#FFFFFF"; count],
+                "filament_map": vec!["1"; count],
+            });
+            let options = [("sparse_infill_filament", fields[1]), ("solid_infill_filament", fields[2])];
+            for (key, value) in options {
+                if value != "default" {
+                    profile[key] = serde_json::Value::String(value.to_owned());
+                }
+            }
+            let (config, _, region) = load_bambustudio_settings(&profile).unwrap();
+            let mut slots = vec![region.sparse_infill_filament, region.solid_infill_filament];
+            let mut print = Print::new();
+            print.apply(config, region);
+            let applied = print.get_print_region(0).config();
+            slots.extend([applied.sparse_infill_filament, applied.solid_infill_filament]);
+            let expected: Vec<usize> = fields[3..].iter().map(|n| n.parse().unwrap()).collect();
+            assert_eq!(slots, expected, "profile {profile}");
         }
     }
 

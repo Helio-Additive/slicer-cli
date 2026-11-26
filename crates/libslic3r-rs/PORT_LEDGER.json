@@ -1820,6 +1820,7 @@
     "rust_exists": true,
     "loc": 9849,
     "status": "partial",
+    "notes": "R981 reads the raw sparse_infill_filament and solid_infill_filament options, including their zero defaults. Both profile values and both applied region values match PrintConfig.cpp 4680-4687, 6090-6100 and PrintObject.cpp 3742-3806 on 72 native cases. Binding the live 3MF object's and part's filament settings to its printing regions remains partial.",
     "priority": 2,
     "fidelity": "fixed"
   },

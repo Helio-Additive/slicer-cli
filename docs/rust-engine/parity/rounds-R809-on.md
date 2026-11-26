@@ -205,8 +205,19 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R978 | Derive the scarf-seam flag in the full and typed configs from the model and its normalized settings (PrintApply.cpp 1323–1435). The 20 native model cases and 14 supplemental slice flags agree. All four standard jobs reproduce R977 with either gate setting. | `PRINT_APPLY_SCARF_SEAM` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R979 | Apply the S temperature on M104, M109 and their virtual commands to the filament indicated by I, to every filament on the physical extruder indicated by T, or to the active filament (GCodeProcessor.cpp 5449–5485, 5534–5542). All 400 native command/profile cases agree. | `PROCESSOR_TEMPERATURE_TARGETS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R980 | Finalize preview times for consecutive extrusion heights (GCodeProcessor.cpp 2881–2883, 6456–6507). The native mixed-color cube export has 381 preview runs for 128 logical layers. All run times agree in both modes. | `PROCESSOR_PREVIEW_LAYER_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R981 | Read the global sparse- and solid-infill filament slots and resolve their defaults through the applied region (PrintConfig.cpp 4680–4687, 6090–6100 and PrintObject.cpp 3742–3806). All 72 native cases agree. | `REGION_CONFIG_INFILL_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R981, global infill filament selection. On an unpainted 3MF with explicit
+  wall, sparse and solid slots of 2, 3 and 2, Rust previously applied 2, 1
+  and 1. Both typed profile slots and both effective slots now match native
+  across 72 configurations, including inherited and out-of-range slots.
+  Seven of 15 live 3MFs now match native on all three region assignments,
+  up from five. The other eight require object or part settings. The four
+  standard jobs and seven supplemental exports reproduce R980 with the
+  gate on and off. H2D retains 4,614,342 and 4,614,863 in order. On a job
+  assigned entirely to filament 2, the exporter still starts on filament 1.
 
 - R980, mixed-color preview. A two-layer program revisiting the same height
   had matching total and logical-layer times. The native result also had four

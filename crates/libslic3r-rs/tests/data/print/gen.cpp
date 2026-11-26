@@ -12,6 +12,7 @@
 //   c++ gen.o $BUILD/libslic3r_core.a <the libraries libslic3r_core links> -o gen
 //   ./gen > vectors.txt
 //   ./gen --scarf-flags scarf_flags.txt
+//   ./gen --region-infill-filaments region_infill_filaments.txt
 //
 // PrintApply.cpp is compiled into this file (its helpers are static), with the private members
 // of Print, PrintObject and PrintRegion made public to read the state `Print::apply` builds.
@@ -542,8 +543,40 @@ static void scarf_flags(const char *filename)
     }
 }
 
+// PrintConfig.cpp 4680-4687,6090-6100; PrintObject.cpp 3742-3806.
+// An unpainted part with no scoped overrides inherits the global feature slots.
+static void region_infill_filaments(const char *filename)
+{
+    std::ofstream out(filename);
+    for (int count : {1, 3}) {
+        for (const char *sparse : {"default", "0", "1", "2", "3", "4"}) {
+            for (const char *solid : {"default", "0", "1", "2", "3", "4"}) {
+                DynamicPrintConfig cfg = DynamicPrintConfig::full_print_config();
+                cfg.set_num_filaments(count);
+                cfg.option<ConfigOptionFloats>("filament_diameter")->values.assign(count, 1.75);
+                cfg.option<ConfigOptionStrings>("filament_colour")->values.assign(count, "#FFFFFF");
+                cfg.option<ConfigOptionInts>("filament_map")->values.assign(count, 1);
+                if (std::string(sparse) != "default")
+                    cfg.set_deserialize_strict("sparse_infill_filament", sparse);
+                if (std::string(solid) != "default")
+                    cfg.set_deserialize_strict("solid_infill_filament", solid);
+                Print print;
+                Model model = build_model(0);
+                print.apply(model, cfg);
+                if (print.config().filament_diameter.size() != size_t(count))
+                    throw std::runtime_error("Unexpected filament count after Print::apply");
+                const auto &region = print.get_print_region(0).config();
+                out << count << ' ' << sparse << ' ' << solid << ' '
+                    << cfg.opt_int("sparse_infill_filament") << ' ' << cfg.opt_int("solid_infill_filament") << ' '
+                    << region.sparse_infill_filament.value << ' ' << region.solid_infill_filament.value << '\n';
+            }
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 3 && std::string(argv[1]) == "--region-infill-filaments") { region_infill_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--scarf-flags") { scarf_flags(argv[2]); return 0; }
     for (int scenario = 0; scenario < 5; ++scenario) {
         Model model = build_model(scenario);
