@@ -225,8 +225,25 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R998 | Route unpainted Bambu part and height-range geometry to live layer regions. | PrintApply / PrintObjectSlice | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R999 | Keep cooling tiers in safe, exclusively borrowed Rust adjustments. | CoolingBuffer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1000 | Parse NanoSVG coordinate units and convert them to pixels in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1001 | Convert SVG line endpoints to open cubic paths in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1001. After identical XML callbacks, the line reader follows the pin's
+  attribute order. A font-size change affects subsequent endpoints in the
+  same element. The reader accepts the inherited font size, viewport and
+  resolved transform and uses the existing cubic path builder. Across 32
+  complete line documents, the open flag, every point and all bounds agree
+  bit for bit with native on macOS arm64 and x86_64. The cases include
+  coincident endpoints, omitted coordinates, repeated attributes, relative
+  units and a transform. Full styled document import remains partial. All
+  four standard jobs reproduce R1000 under both settings of the previous
+  geometry gate. H2D holds at 4,614,342 and 4,614,863. The complete CLI also
+  cross-linked for Linux musl on arm64 and x86_64 and for Windows GNU x86_64.
+  Both Linux binaries sliced the geometry-option cube byte-identically to
+  macOS arm64 (20,616 lines, including 10,853 motion commands). Windows
+  execution remains open. The four target-specific unsafe-code counts are
+  recorded in the engine README.
 
 - R1000. NanoSVG's raw coordinate parser reads up to 63 number bytes and
   recognizes the unit at the end of the full token. The conversion uses

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod coordinate;
+pub mod line;
 mod number;
 pub mod path;
 pub mod poly;

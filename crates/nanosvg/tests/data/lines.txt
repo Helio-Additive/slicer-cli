@@ -1,0 +1,96 @@
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fa00000 41b60000 3fa00000 41a00000 be555558 41a75555 bfd55555 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 3fe00000 41500000 3fe00000 40000000 c1aeaaab 40b55556 c235aaaa 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25px' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fa00000 41b60000 3fa00000 41a00000 be555558 41a75555 bfd55555 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25px' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 3fe00000 41500000 3fe00000 40000000 c1aeaaab 40b55556 c235aaaa 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25pt' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fd55556 41b60000 3fd55556 41a00000 3d8e38e0 41a75555 bfc38e38 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25pt' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 3faaaaaa 41500000 3faaaaaa 40000000 c1b0e38e 40b55556 c23638e4 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25pc' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 41a00000 41b60000 41a00000 41a00000 4144aaaa 41a75555 4092aaab 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25pc' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 c1880000 41500000 c1880000 40000000 c2095556 40b55556 c24eaaaa 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25mm' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 40972e5c 41b60000 40972e5c 41a00000 4006e87b 41a75555 bf022f0c 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25mm' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 bfdcb970 41500000 bfdcb970 40000000 c1c13264 40b55556 c23a4c9a 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25cm' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 423cf9f4 41b60000 423cf9f4 41a00000 41f3a29b 41a75555 415aa29a 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25cm' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 c230f9f4 41500000 c230f9f4 40000000 c251fbf8 40b55556 c272fdfc 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25in' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 42f00000 41b60000 42f00000 41a00000 429deaaa 41a75555 4217aaab 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25in' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c2ea0000 40000000 c28a0000 41500000 c2ea0000 40000000 c2ca0000 40b55556 c2aa0000 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25em' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 41820000 41b60000 41820000 41a00000 411caaaa 41a75555 40555556 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25em' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 c1540000 41500000 c1540000 40000000 c1feaaac 40b55556 c249aaaa 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25ex' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 41073333 41b60000 41073333 41a00000 4092eeee 41a75555 3f3bbbbc 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25ex' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 c0ae6666 41500000 c0ae6666 40000000 c1d51110 40b55556 c23f4444 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25%' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fcccccd 41b60000 3fcccccd 41a00000 3ccccd00 41a75555 bfc66667 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25%' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 40000000 41500000 40000000 40000000 c1ad5555 40b55556 c2355556 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25MM' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fa00000 41b60000 3fa00000 41a00000 be555558 41a75555 bfd55555 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25MM' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 3fe00000 41500000 3fe00000 40000000 c1aeaaab 40b55556 c235aaaa 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25unknown' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fa00000 41b60000 3fa00000 41a00000 be555558 41a75555 bfd55555 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25unknown' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 3fe00000 41500000 3fe00000 40000000 c1aeaaab 40b55556 c235aaaa 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='1.25%tail' y1='25%' x2='-3.125' y2='1.75em'/></svg>
+path 0 4 c0480000 41a00000 3fcccccd 41b60000 3fcccccd 41a00000 3ccccd00 41a75555 bfc66667 41aeaaab c0480000 41b60000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='10' y1='1.25%tail' x2='7' x2='21' y2='90%' transform='matrix(0 1 -1 0 3 -8)'/></svg>
+path 0 4 c28a0000 40000000 40000000 41500000 40000000 40000000 c1ad5555 40b55556 c2355556 41155556 c28a0000 41500000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='2em' font-size='20' x2='2em' y2='1ex'/></svg>
+path 0 4 41d00000 00000000 42200000 41266666 41d00000 00000000 41f55555 405ddddd 420d5555 40ddddde 42200000 41266666
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line font-size='2em' x1='1em' style='stroke: red; font-size: 50%' x2='1em'/></svg>
+path 0 4 41d00000 00000000 42557775 00000000 41d00000 00000000 420c7d27 00000000 4230fa4e 00000000 42557775 00000000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line style=' font-size : 3ex ; font-size: 1.5em;' x1='1em' y1='2ex'/></svg>
+path 0 4 00000000 00000000 41f35c28 41fd1829 41f35c28 41fd1829 41a23d70 41a8bac6 41223d70 4128bac6 00000000 00000000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='-0' y1='2px' x2='3.125mm' y2='8%'/></svg>
+path 0 4 00000000 40000000 413cf9f4 40cccccc 00000000 40000000 407bf7f0 405dddde 40fbf7f0 409ddddd 413cf9f4 40cccccc
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line /></svg>
+path 0 4 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+end
+svg <svg width='128' height='80' viewBox='0 0 128 80' font-size='13'><line x1='0' y1='3' x2='0' y2='3'/></svg>
+path 0 4 00000000 40400000 00000000 40400000 00000000 40400000 00000000 40400000 00000000 40400000 00000000 40400000
+end
