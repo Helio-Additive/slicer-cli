@@ -8,6 +8,17 @@ pub struct Path {
     pub bounds: [f32; 4],
 }
 
+// nanosvg.h: NSVG_KAPPA90, used by rounded rectangles, circles and ellipses.
+pub(crate) const KAPPA90: f32 = 0.5522847493;
+
+// The native build contracts the cubic handle's multiply and add on arm64.
+pub(crate) fn cubic_handle(center: f32, radius: f32, fraction: f32) -> f32 {
+    #[cfg(any(target_arch = "aarch64", target_feature = "fma"))]
+    { radius.mul_add(fraction, center) }
+    #[cfg(not(any(target_arch = "aarch64", target_feature = "fma")))]
+    { center + radius * fraction }
+}
+
 // nanosvg.h 540–544, nsvg__xformPoint.
 fn transform(point: Point, t: [f32; 6]) -> Point {
     // Under the pinned build flags clang contracts the first product on

@@ -8,6 +8,7 @@ pub mod line;
 mod number;
 pub mod path;
 pub mod poly;
+pub mod rect;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum XmlEvent<'a> {

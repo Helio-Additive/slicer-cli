@@ -238,8 +238,20 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1011 | Scope seam placement to the exporter and share prepared geometry with safe ownership. | GCode, GCodeWriter, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1012 | Evaluate final filament and machine G-code with the active writer and final layer. | GCode, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1013 | Apply the Bambu plate filament map and group a single filament on multi-extruder printers. | root CLI, BBS importer, Print, ToolOrdering | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1014 | Port NanoSVG sharp and rounded rectangles. | crates/nanosvg, nanosvg.h 2411–2464 | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1014. Both parsers reached the same rectangle start callbacks in 43 SVG
+  documents. The safe dependency now constructs the path with NanoSVG's
+  corner radii, per-axis units, cutoffs and cubic control points. Native
+  arm64 and x86_64 produced 39 paths. Every coordinate, bound and closure
+  matched on both architectures. The seven NanoSVG regression suites passed
+  on macOS arm64, macOS x86_64 under Rosetta, Linux musl x86_64 and Linux
+  musl arm64. The Windows GNU x86_64 suites linked. Callers still supply
+  the viewport and transform. Full styled-shape and image parsing remain open.
+  Four standard outputs in both plate-routing gate settings match R1013.
+  The H2D scores are 4,614,342 and 4,614,863.
 
 - R1013. The native and Rust BBS importers read identical plate data, but
   the Rust loader discarded it. A manual plate that assigned filament one

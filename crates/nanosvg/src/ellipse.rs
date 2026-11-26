@@ -1,7 +1,7 @@
 //! NanoSVG circle and ellipse geometry before the image-wide viewBox transform.
 use crate::coordinate::Coordinate;
 use crate::line::Viewport;
-use crate::path::{add_path, Path};
+use crate::path::{add_path, cubic_handle, Path, KAPPA90};
 
 /// nsvg__parseCircle (nanosvg.h 2466–2494). Percent radii use the viewport
 /// diagonal divided by the square root of two.
@@ -54,11 +54,7 @@ fn ellipse_path(cx: f32, cy: f32, rx: f32, ry: f32, transform: [f32; 6]) -> Opti
     if !(rx > 0. && ry > 0.) {
         return None;
     }
-    const KAPPA90: f32 = 0.5522847493;
-    #[cfg(any(target_arch = "aarch64", target_feature = "fma"))]
-    let handle = |center: f32, radius: f32| radius.mul_add(KAPPA90, center);
-    #[cfg(not(any(target_arch = "aarch64", target_feature = "fma")))]
-    let handle = |center: f32, radius: f32| center + radius * KAPPA90;
+    let handle = |center, radius| cubic_handle(center, radius, KAPPA90);
     let right = cx + rx;
     let left = cx - rx;
     let bottom = cy + ry;
