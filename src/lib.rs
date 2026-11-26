@@ -11,5 +11,6 @@
 //!   G-codes can be scored against each other.
 
 mod cli_command_line;
+mod cli_gcode_timing;
 pub mod engine_cli;
 pub mod parity;

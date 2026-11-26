@@ -2430,6 +2430,8 @@ pub struct GCodeProcessorResult {
     pub id: u32,
     pub moves: Vec<MoveVertex>,
     pub lines_ends: Vec<usize>,
+    /// GCodeProcessor.hpp 189. A newly built group can seed the next file import.
+    pub nozzle_group_result: Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>,
     pub toolpath_outside: bool,
     pub label_object_enabled: bool,
     pub long_retraction_when_cut: bool,
@@ -2481,6 +2483,7 @@ impl Default for GCodeProcessorResult {
             id: 0,
             moves: Vec::new(),
             lines_ends: Vec::new(),
+            nozzle_group_result: None,
             toolpath_outside: false,
             label_object_enabled: false,
             long_retraction_when_cut: false,
@@ -3112,7 +3115,7 @@ pub struct GCodeProcessor {
     /// GCodeProcessor.hpp `m_handle_hotend_as_extruder`.
     m_handle_hotend_as_extruder: bool,
     /// GCodeProcessor.hpp `m_nozzle_group_result`.
-    m_nozzle_group_result: Option<crate::multi_nozzle_utils::LayeredNozzleGroupResult>,
+    m_nozzle_group_result: Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>,
     /// GCodeProcessor.hpp:1172 `m_nozzle_status_recorder`.
     m_nozzle_status_recorder: crate::multi_nozzle_utils::NozzleStatusRecorder,
     m_g1_line_id: u32,
@@ -3123,6 +3126,7 @@ pub struct GCodeProcessor {
     m_seams_count: i32,
     m_detect_layer_based_on_tag: bool,
     m_measure_g29_time: bool,
+    quiet: bool,
     /// GCodeProcessor.hpp:1206 `SeamsDetector m_seams_detector;`
     m_seams_detector: SeamsDetector,
     /// GCodeProcessor.hpp:1233 `EProducer m_producer;`
@@ -3202,6 +3206,7 @@ impl GCodeProcessor {
             m_seams_count: 0,
             m_detect_layer_based_on_tag: false,
             m_measure_g29_time: false,
+            quiet: false,
             m_seams_detector: SeamsDetector::default(),
             m_producer: EProducer::Unknown,
             m_extruder_offsets: vec![[0.0; 3]; MIN_EXTRUDERS_COUNT],
@@ -3339,21 +3344,7 @@ impl GCodeProcessor {
     /// GCodeProcessor.cpp:2030-2036, 2055-2066. The envelope retains both timing
     /// modes. Per-axis speed and acceleration can also vary by nozzle row.
     pub fn apply_config(&mut self, config: &crate::print_config::PrintConfig) {
-        use crate::print_config::GCodeFlavor as CfgFlavor;
-
-        // GCodeProcessor.cpp:1908  m_flavor = config.gcode_flavor;
-        self.m_flavor = match config.gcode_flavor {
-            CfgFlavor::MarlinLegacy => GCodeFlavor::MarlinLegacy,
-            CfgFlavor::Marlin => GCodeFlavor::MarlinFirmware,
-            CfgFlavor::Klipper => GCodeFlavor::Klipper,
-            CfgFlavor::RepRapSprinter => GCodeFlavor::RepRapSprinter,
-            CfgFlavor::RepRapFirmware => GCodeFlavor::RepRapFirmware,
-            CfgFlavor::Repetier => GCodeFlavor::RepetierFirmware,
-            CfgFlavor::MakerWare => GCodeFlavor::MakerWare,
-            CfgFlavor::Sailfish => GCodeFlavor::Sailfish,
-            CfgFlavor::Smoothie => GCodeFlavor::Smoothie,
-            _ => GCodeFlavor::Other,
-        };
+        self.m_flavor = Self::processor_flavor(config.gcode_flavor);
 
         // GCodeProcessor.cpp:1964-1970 — machine_limits only for Marlin/Klipper.
         if matches!(
@@ -3510,6 +3501,28 @@ impl GCodeProcessor {
                 config.machine_prepare_compensation_time as f32;
         }
 
+        self.apply_machine_accelerations();
+    }
+
+    fn processor_flavor(flavor: crate::print_config::GCodeFlavor) -> GCodeFlavor {
+        use crate::print_config::GCodeFlavor as CfgFlavor;
+
+        // GCodeProcessor.cpp:1908  m_flavor = config.gcode_flavor;
+        match flavor {
+            CfgFlavor::MarlinLegacy => GCodeFlavor::MarlinLegacy,
+            CfgFlavor::Marlin => GCodeFlavor::MarlinFirmware,
+            CfgFlavor::Klipper => GCodeFlavor::Klipper,
+            CfgFlavor::RepRapSprinter => GCodeFlavor::RepRapSprinter,
+            CfgFlavor::RepRapFirmware => GCodeFlavor::RepRapFirmware,
+            CfgFlavor::Repetier => GCodeFlavor::RepetierFirmware,
+            CfgFlavor::MakerWare => GCodeFlavor::MakerWare,
+            CfgFlavor::Sailfish => GCodeFlavor::Sailfish,
+            CfgFlavor::Smoothie => GCodeFlavor::Smoothie,
+            _ => GCodeFlavor::Other,
+        }
+    }
+
+    fn apply_machine_accelerations(&mut self) {
         // GCodeProcessor.cpp:1985-1995 — per-mode machine acceleration setup.
         for i in 0..ETimeMode::COUNT {
             let max_acceleration = self.get_axis_max_acceleration_extruding(i);
@@ -4089,17 +4102,21 @@ impl GCodeProcessor {
     }
 
     /// GCodeProcessor.cpp:6223-6232  set_extrusion_role.
+    // GCodeProcessor.cpp 4124,4525,4910 use the last diameter for an
+    // unassigned filament. An imported profile may leave the list empty.
+    fn move_filament_diameter(&self, id: i32) -> f32 {
+        let rows = &self.m_result.filament_diameters;
+        rows.get(id as usize)
+            .or(rows.last())
+            .copied()
+            .unwrap_or(DEFAULT_FILAMENT_DIAMETER)
+    }
+
     fn set_extrusion_role(&mut self, role: ExtrusionRole) {
         // m_used_filaments.process_role_cache(this): the current filament's
         // diameter and density, the role before this one.
         let active_filament_id = self.get_filament_id(true);
-        let diameter = self
-            .m_result
-            .filament_diameters
-            .get(active_filament_id as usize)
-            .or(self.m_result.filament_diameters.last())
-            .copied()
-            .unwrap_or(DEFAULT_FILAMENT_DIAMETER);
+        let diameter = self.move_filament_diameter(active_filament_id);
         let density = self
             .m_result
             .filament_densities
@@ -4147,11 +4164,7 @@ impl GCodeProcessor {
         use crate::g_code_reader::Axis;
 
         let filament_id = self.get_filament_id(true);
-        let filament_diameter = if (filament_id as usize) < self.m_result.filament_diameters.len() {
-            self.m_result.filament_diameters[filament_id as usize]
-        } else {
-            *self.m_result.filament_diameters.last().unwrap()
-        };
+        let filament_diameter = self.move_filament_diameter(filament_id);
         let filament_radius = 0.5 * filament_diameter;
         let area_filament_cross_section = (PI as f32) * sqr(filament_radius);
 
@@ -5547,7 +5560,12 @@ impl GCodeProcessor {
         if let Some(result) =
             LayeredNozzleGroupResult::create(&filament_nozzle_map, &nozzle_list, &used_filaments)
         {
-            self.m_nozzle_group_result = Some(result);
+            let group = std::sync::Arc::new(result);
+            // GCodeProcessor.cpp 6046-6051. Only a newly created group is published.
+            if crate::faithful_gate("CLI_GCODE_TIMING") {
+                self.m_result.nozzle_group_result = Some(group.clone());
+            }
+            self.m_nozzle_group_result = Some(group);
         }
     }
 
@@ -5797,11 +5815,7 @@ impl GCodeProcessor {
 
         let filament_id = self.get_filament_id(true);
         let _last_filament_id = self.get_last_filament_id(false);
-        let filament_diameter = if (filament_id as usize) < self.m_result.filament_diameters.len() {
-            self.m_result.filament_diameters[filament_id as usize]
-        } else {
-            *self.m_result.filament_diameters.last().unwrap()
-        };
+        let filament_diameter = self.move_filament_diameter(filament_id);
         let filament_radius = 0.5 * filament_diameter;
         let area_filament_cross_section = (PI as f32) * sqr(filament_radius);
 
@@ -5958,7 +5972,7 @@ impl GCodeProcessor {
             {
                 // C++: m_width = (float)filament_diameters[id] * std::sqrt(dpE/delta_xyz);
                 // dpE/delta_xyz is double; sqrt is double; float*double -> double -> float.
-                let fd = self.m_result.filament_diameters[filament_id as usize];
+                let fd = filament_diameter;
                 self.m_width = (fd as f64 * (de / delta_xyz as f64).sqrt()) as f32;
             } else {
                 // C++: m_width = delta_pos[E] * static_cast<float>(M_PI*sqr(fr))
@@ -6306,11 +6320,7 @@ impl GCodeProcessor {
         use crate::g_code_reader::Axis;
         let filament_id = self.get_filament_id(true);
         let _last_filament_id = self.get_last_filament_id(false);
-        let filament_diameter = if (filament_id as usize) < self.m_result.filament_diameters.len() {
-            self.m_result.filament_diameters[filament_id as usize]
-        } else {
-            *self.m_result.filament_diameters.last().unwrap()
-        };
+        let filament_diameter = self.move_filament_diameter(filament_id);
         let filament_radius = 0.5 * filament_diameter;
         let area_filament_cross_section = (PI as f32) * sqr(filament_radius);
 
@@ -6467,7 +6477,7 @@ impl GCodeProcessor {
             {
                 // C++: m_width = (float)filament_diameters[id] * std::sqrt(dpE/delta_xyz);
                 // dpE/delta_xyz is double; sqrt is double; float*double -> double -> float.
-                let fd = self.m_result.filament_diameters[filament_id as usize];
+                let fd = filament_diameter;
                 self.m_width = (fd as f64 * (de / delta_xyz as f64).sqrt()) as f32;
             } else {
                 // C++: m_width = delta_pos[E] * static_cast<float>(M_PI*sqr(fr))
@@ -7241,7 +7251,7 @@ impl GCodeProcessor {
 
         // TIMEDBG: env-gated ground-truth dump of the estimator's per-role /
         // per-move-type time breakdown, to localize the rust-vs-native gap.
-        if std::env::var("TIMEDBG").is_ok() && id == ETimeMode::Normal as usize {
+        if !self.quiet && std::env::var("TIMEDBG").is_ok() && id == ETimeMode::Normal as usize {
             eprintln!("TIMEDBG mode=Normal total={:.1}s ({:.1}min)", time, time / 60.0);
             let mut rt: Vec<_> = roles_times.clone();
             rt.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
@@ -9216,6 +9226,301 @@ impl GCodeProcessor {
         self.m_detect_layer_based_on_tag = enabled;
     }
 
+    /// Suppress diagnostic output for the CLI's one-document timing mode.
+    pub fn set_quiet(&mut self, quiet: bool) {
+        self.quiet = quiet;
+    }
+
+    /// Import an existing G-code file without post-processing it. BambuStudio
+    /// GCodeProcessor.cpp 2671-2761. The second pass needs the producer and
+    /// configuration found in the first pass before it can interpret moves.
+    pub fn process_file(
+        &mut self,
+        filename: &str,
+        mut cancel: Option<&mut dyn FnMut()>,
+    ) -> anyhow::Result<()> {
+        use crate::config::{
+            ConfigBase, ConfigOptionInts, ConfigOptionStrings, ForwardCompatibilitySubstitutionRule,
+        };
+        use crate::print_config::config_def::{static_print_config_defaults, DynamicPrintConfig};
+
+        let mut reader = GCodeReader::new();
+        let mut has_layer_change = false;
+        let layer_change = reserved_tag(ETags::LayerChange).trim_start();
+        let complete = reader.parse_file_raw(filename, |r, line| {
+            let comment = line
+                .iter()
+                .position(|&c| !GCodeReader::is_whitespace(c))
+                .and_then(|start| line[start..].strip_prefix(b";"));
+            let Some(comment) = comment else { return };
+            let first = comment
+                .iter()
+                .position(|&c| !GCodeReader::is_whitespace(c))
+                .unwrap_or(comment.len());
+            let comment = String::from_utf8_lossy(&comment[first..]);
+            if self.m_producer == EProducer::Unknown {
+                has_layer_change |= comment == layer_change;
+                if self.detect_producer(&comment) {
+                    r.quit_parsing();
+                }
+            } else if comment.contains("CONFIG_BLOCK_END") {
+                r.quit_parsing();
+            }
+        })?;
+        anyhow::ensure!(complete, "could not read G-code");
+        reader.reset();
+
+        if self.m_producer == EProducer::BambuStudio {
+            let mut config = DynamicPrintConfig::new();
+            config.apply(static_print_config_defaults("FullPrintConfig"), false)?;
+            config.load_from_gcode_file(
+                filename,
+                ForwardCompatibilitySubstitutionRule::EnableSilent,
+            )?;
+            if let Some(count) = config
+                .opt::<ConfigOptionStrings>("filament_colour")
+                .map(|o| o.values.len())
+            {
+                if let Some(map) = config.opt_mut::<ConfigOptionInts>("filament_map", true)? {
+                    map.values.resize(count, 1);
+                }
+            }
+            self.apply_file_config(&config, &mut reader)?;
+        }
+        self.ensure_nozzle_group_result(self.m_result.filaments_count as i32);
+        if self.m_producer == EProducer::Unknown {
+            self.m_result.nozzle_group_result = None;
+            if has_layer_change {
+                self.m_detect_layer_based_on_tag = true;
+            }
+        }
+        self.initialize(filename);
+        let mut count = 10000;
+        let mut lines_ends = std::mem::take(&mut self.m_result.lines_ends);
+        let read = reader.parse_file_with_line_ends(
+            filename,
+            |_, line| {
+                count -= 1;
+                if count == 0 {
+                    count = 10000;
+                    if let Some(callback) = cancel.as_deref_mut() {
+                        callback();
+                    }
+                }
+                self.process_gcode_line(line, true);
+            },
+            &mut lines_ends,
+        );
+        self.m_result.lines_ends = lines_ends;
+        anyhow::ensure!(read?, "could not read G-code");
+        self.m_result.is_helio_gcode = self.m_is_helio_gcode;
+        self.finalize(false);
+        Ok(())
+    }
+
+    /// Dynamic profile consumed by process_file, GCodeProcessor.cpp 2106-2547.
+    /// A stored G-code embeds FullPrintConfig defaults. Its material arrays are
+    /// padded with the native defaults, and its offsets can be per extruder.
+    fn apply_file_config(
+        &mut self,
+        cfg: &crate::print_config::config_def::DynamicPrintConfig,
+        reader: &mut GCodeReader,
+    ) -> anyhow::Result<()> {
+        use crate::config::{
+            ConfigOptionBool, ConfigOptionEnumsGeneric, ConfigOptionFloat, ConfigOptionFloats,
+            ConfigOptionFloatsNullable, ConfigOptionInt, ConfigOptionInts, ConfigOptionPoints,
+            ConfigOptionResolver, ConfigOptionString, ConfigOptionStrings,
+        };
+        let bool_value = |key| cfg.opt::<ConfigOptionBool>(key).is_some_and(|o| o.value);
+        let float_value = |key: &str| cfg.opt::<ConfigOptionFloat>(key).map(|o| o.value);
+        let floats = |key| {
+            cfg.opt::<ConfigOptionFloats>(key)
+                .map(|o| o.values.iter().map(|&v| v as f32).collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
+        let limits = |key| {
+            cfg.opt::<ConfigOptionFloatsNullable>(key)
+                .map(|o| o.values.iter().map(|&v| v as f32).collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
+        let ints = |key| {
+            cfg.opt::<ConfigOptionInts>(key)
+                .map(|o| o.values.clone())
+                .unwrap_or_default()
+        };
+        let strings = |key| {
+            cfg.opt::<ConfigOptionStrings>(key)
+                .map(|o| o.values.clone())
+                .unwrap_or_default()
+        };
+        let string = |key| {
+            cfg.opt::<ConfigOptionString>(key)
+                .map(|o| o.value.clone())
+                .unwrap_or_default()
+        };
+        let points = |key| {
+            cfg.opt::<ConfigOptionPoints>(key)
+                .map(|o| o.values.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
+
+        // GCodeReader.cpp 24-26,86. Relative E affects the reader's
+        // position before the per-line callback.
+        let mut reader_config = reader.get_config();
+        reader_config.use_relative_e_distances = bool_value("use_relative_e_distances");
+        if let Some(flavor) = cfg.option("gcode_flavor") {
+            reader_config.gcode_flavor = crate::extruder::gcode_flavor_from_int(flavor.get_int()?);
+            self.m_flavor = Self::processor_flavor(reader_config.gcode_flavor);
+        }
+        reader.apply_config(reader_config);
+        self.m_nozzle_volume = limits("nozzle_volume");
+        self.m_handle_hotend_as_extruder = bool_value("handle_hotend_as_extruder");
+        self.m_physical_extruder_map = ints("physical_extruder_map");
+        self.m_result.printable_area = points("printable_area");
+        self.m_result.bed_exclude_area = points("bed_exclude_area");
+        self.m_result.wrapping_exclude_area = points("wrapping_exclude_area");
+        self.m_result.settings_ids.print = string("print_settings_id");
+        self.m_result.settings_ids.filament = strings("filament_settings_id");
+        self.m_result.settings_ids.printer = string("printer_settings_id");
+
+        self.m_result.filament_diameters = floats("filament_diameter");
+        let count = self.m_result.filament_diameters.len();
+        self.m_result.filaments_count = count;
+        fn pad<T: Clone>(mut rows: Vec<T>, count: usize, default: T) -> Vec<T> {
+            rows.resize(count.max(rows.len()), default);
+            rows
+        }
+        self.m_result.required_nozzle_hrc =
+            pad(ints("required_nozzle_HRC"), count, DEFAULT_FILAMENT_HRC);
+        self.m_result.filament_densities =
+            pad(floats("filament_density"), count, DEFAULT_FILAMENT_DENSITY);
+        self.m_filament_maps = ints("filament_map")
+            .iter()
+            .map(|v| v.saturating_sub(1))
+            .collect();
+        self.ensure_nozzle_group_result(count as i32);
+        self.m_result.filament_costs = pad(floats("filament_cost"), count, DEFAULT_FILAMENT_COST);
+        self.m_result.filament_vitrification_temperature = pad(
+            ints("temperature_vitrification"),
+            count,
+            DEFAULT_FILAMENT_VITRIFICATION_TEMPERATURE,
+        );
+        let offsets: Vec<_> = points("extruder_offset")
+            .into_iter()
+            .map(|(x, y)| [x as f32, y as f32, 0.0])
+            .collect();
+        // GCodeProcessor.cpp 6164-6200 reads the active tool (zero before
+        // any T) even when the embedded list of diameters is empty.
+        let tool_slots = count.max(1);
+        self.m_extruder_offsets = if bool_value("single_extruder_multi_material") {
+            vec![offsets.first().copied().unwrap_or([0.0; 3]); tool_slots]
+        } else {
+            pad(offsets, tool_slots, [0.0; 3])
+        };
+        let colors = strings("filament_colour");
+        if self.m_result.extruder_colors.len() == colors.len() {
+            for (dst, src) in self.m_result.extruder_colors.iter_mut().zip(colors) {
+                if dst.is_empty() {
+                    *dst = src;
+                }
+            }
+        }
+        self.m_result.printer_extruder_variant = strings("printer_extruder_variant");
+        self.m_result.printer_extruder_id = ints("printer_extruder_id");
+        if let Some(types) = cfg.opt::<ConfigOptionEnumsGeneric>("extruder_type") {
+            self.m_result.extruder_types = types
+                .values
+                .iter()
+                .copied()
+                .map(crate::extruder::ExtruderType::from_i32)
+                .collect();
+        }
+        let colors = &mut self.m_result.extruder_colors;
+        colors.resize(count.max(colors.len()), String::new());
+        for color in colors.iter_mut().filter(|c| c.is_empty()) {
+            *color = "#FF8000".into();
+        }
+        self.m_extruder_colors = (0..colors.len()).map(|i| i as u8).collect();
+        self.m_extruder_temps.resize(tool_slots, 0.0);
+
+        let time = &mut self.m_time_processor;
+        let ams = cfg
+            .opt::<ConfigOptionInt>("default_ams_type")
+            .map_or(-1, |o| o.value);
+        let load = crate::print_config::config_def::gather_ams_times(false, float_value);
+        let unload = crate::print_config::config_def::gather_ams_times(true, float_value);
+        let (_, load, unload) = crate::multi_nozzle_utils::resolve_ams_load_unload(
+            &load,
+            &unload,
+            ams,
+            float_value("machine_load_filament_time")
+                .map_or(time.filament_load_times, |v| v as f32),
+            float_value("machine_unload_filament_time")
+                .map_or(time.filament_unload_times, |v| v as f32),
+        );
+        time.filament_load_times = load;
+        time.filament_unload_times = unload;
+        if let Some(v) = float_value("machine_switch_extruder_time") {
+            time.extruder_change_times = v as f32;
+        }
+        if let Some(v) = float_value("machine_hotend_change_time") {
+            time.hotend_change_times = v as f32;
+        }
+        if let Some(v) = float_value("machine_prepare_compensation_time") {
+            time.prepare_compensation_time = v as f32;
+        }
+        if matches!(
+            self.m_flavor,
+            GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware | GCodeFlavor::Klipper
+        ) {
+            let ml = &mut time.machine_limits;
+            ml.machine_max_acceleration_x = limits("machine_max_acceleration_x");
+            ml.machine_max_acceleration_y = limits("machine_max_acceleration_y");
+            ml.machine_max_acceleration_z = limits("machine_max_acceleration_z");
+            ml.machine_max_acceleration_e = limits("machine_max_acceleration_e");
+            ml.machine_max_acceleration_extruding = limits("machine_max_acceleration_extruding");
+            ml.machine_max_acceleration_retracting = limits("machine_max_acceleration_retracting");
+            ml.machine_max_acceleration_travel = limits("machine_max_acceleration_travel");
+            ml.machine_max_speed_x = limits("machine_max_speed_x");
+            ml.machine_max_speed_y = limits("machine_max_speed_y");
+            ml.machine_max_speed_z = limits("machine_max_speed_z");
+            ml.machine_max_speed_e = limits("machine_max_speed_e");
+            ml.machine_max_jerk_x = limits("machine_max_jerk_x");
+            ml.machine_max_jerk_y = limits("machine_max_jerk_y");
+            ml.machine_max_jerk_z = limits("machine_max_jerk_z");
+            ml.machine_max_jerk_e = limits("machine_max_jerk_e");
+            ml.machine_min_extruding_rate = limits("machine_min_extruding_rate");
+            ml.machine_min_travel_rate = limits("machine_min_travel_rate");
+            if self.m_flavor == GCodeFlavor::MarlinLegacy {
+                ml.machine_max_acceleration_travel
+                    .clone_from(&ml.machine_max_acceleration_extruding);
+            }
+        }
+        self.apply_machine_accelerations();
+        if matches!(
+            self.m_flavor,
+            GCodeFlavor::MarlinLegacy | GCodeFlavor::MarlinFirmware
+        ) && bool_value("silent_mode")
+            && self
+                .m_time_processor
+                .machine_limits
+                .machine_max_acceleration_x
+                .len()
+                > 1
+        {
+            self.enable_stealth_time_estimator(true);
+        }
+        if let Some(v) = float_value("initial_layer_print_height") {
+            self.m_first_layer_height = v.abs() as f32;
+        }
+        if let Some(v) = float_value("printable_height") {
+            self.m_result.printable_height = v as f32;
+        }
+        self.m_detect_layer_based_on_tag =
+            bool_value("spiral_mode") || bool_value("has_scarf_joint_seam");
+        Ok(())
+    }
+
     /// GCodeProcessor.cpp:2763-2777 `void GCodeProcessor::initialize(const std::string& filename)`:
     /// the streaming interface's start; the first move is a dummy move.
     pub fn initialize(&mut self, filename: &str) {
@@ -9230,7 +9535,12 @@ impl GCodeProcessor {
     /// GCodeProcessor.cpp:2779-2783 `void GCodeProcessor::initialize_from_context(const
     /// std::shared_ptr<MultiNozzleUtils::NozzleGroupResultBase>& nozzle_group_result)`
     pub fn initialize_from_context(&mut self, nozzle_group_result: Option<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
-        self.m_nozzle_group_result = nozzle_group_result;
+        self.m_nozzle_group_result = nozzle_group_result.map(std::sync::Arc::new);
+    }
+
+    /// GCodeProcessor.cpp 2779-2782. Reuse the original import's shared group.
+    pub fn initialize_from_shared_context(&mut self, group: std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>) {
+        self.m_nozzle_group_result = Some(group);
     }
 
     /// The processor's `m_nozzle_group_result` (the one `GCodeProcessor::finalize(true)` hands to the
@@ -9238,7 +9548,7 @@ impl GCodeProcessor {
     /// `TimeProcessor::post_process_with_context`.
     pub fn time_process_inputs(&self) -> (Option<&crate::multi_nozzle_utils::LayeredNozzleGroupResult>, Vec<MoveVertexTime>) {
         (
-            self.m_nozzle_group_result.as_ref(),
+            self.m_nozzle_group_result.as_deref(),
             self.m_result.moves.iter().map(|m| MoveVertexTime { gcode_id: m.gcode_id, time: m.time }).collect(),
         )
     }
@@ -9911,6 +10221,65 @@ pub const SMOOTH_TIMELAPSE_WITHOUT_PRIME_TOWER: &str = "smooth_timelapse_without
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_file_import_times_and_nozzle_groups() {
+        use std::{collections::BTreeMap, fs};
+        let dir = tempfile::tempdir().unwrap();
+        let single = include_str!("../../tests/data/g_code_processor/import_profile.gcode")
+            .replace("\r\n", "\n");
+        let dual = single.replace("; filament_map = 1,1,1,1", "; filament_map = 1,2,2,1");
+        let travel = "G90\r\nG1 X0 Y0 Z0.2 F1800\r\nG1 X30 Y0 F600";
+        let inputs = BTreeMap::from([
+            ("plain", travel.to_owned()), ("dual", dual),
+            ("empty-diameter", single.replace("filament_diameter = 1.75,1.75,1.75,1.75", "filament_diameter = ")),
+            ("single", single),
+            ("tagged", format!("; CHANGE_LAYER\n{travel}")),
+            ("missing", format!("; BambuStudio\n{travel}")),
+            ("short", format!("; BambuStudio\n; CONFIG_BLOCK_START\n; layer_height = 0.2\n; CONFIG_BLOCK_END\n{travel}")),
+        ]);
+        let mut groups = BTreeMap::new();
+        let vectors = include_str!("../../tests/data/g_code_processor/file_import.txt");
+        for (name, body) in &inputs {
+            fs::write(dir.path().join(name), body).unwrap();
+        }
+        for row in vectors.lines() {
+            let mut fields = row.split_whitespace();
+            let seed = fields.next().unwrap();
+            let name = fields.next().unwrap();
+            let path = dir.path().join(name);
+            let mut processor = GCodeProcessor::new();
+            if let Some(Some(group)) = groups.get(seed).cloned() {
+                processor.initialize_from_shared_context(group);
+            } else {
+                processor.init_filament_maps_when_import_only_gcode();
+            }
+            let parsed = processor.process_file(path.to_str().unwrap(), None);
+            assert_eq!(fs::read(&path).unwrap(), inputs[name].as_bytes(), "{row}");
+            if fields.clone().next() == Some("error") {
+                assert!(parsed.is_err(), "{row}");
+                continue;
+            }
+            parsed.unwrap();
+            let r = processor.result();
+            if seed == "none" {
+                groups.insert(name, r.nozzle_group_result.clone());
+            }
+            let state = format!(
+                "{} {} {} {} {} {} {:08x} {:08x}",
+                r.filaments_count,
+                r.moves.len(),
+                r.lines_ends.len(),
+                r.lines_ends.last().unwrap(),
+                u8::from(processor.m_detect_layer_based_on_tag),
+                u8::from(r.nozzle_group_result.is_some()),
+                processor.get_time(ETimeMode::Normal).to_bits(),
+                processor.get_time(ETimeMode::Stealth).to_bits()
+            );
+            assert_eq!(state, fields.collect::<Vec<_>>().join(" "), "{row}");
+        }
+        assert_eq!(vectors.lines().count(), 28);
+    }
+
     use super::*;
 
     /// GCodeProcessor.cpp:5449-5485,5534-5542. Compare the internal state

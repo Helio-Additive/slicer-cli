@@ -26,7 +26,7 @@ grep -q -- '--config FILE' "$TMP/out" && ok help-names-config || fail help-names
 
 # A flag of slicer_cli that this program does not take: refused by name, with
 # CLI_INVALID_PARAMS (-2, exit status 254), pointing at slicer_cli.
-for flag in --slice --arrange --load-settings --export-3mf --gcode-timing --simplify --plate --engine-info; do
+for flag in --slice --arrange --load-settings --export-3mf --simplify --plate --engine-info; do
     expect_exit "refuses$flag" 254 -- "$BIN" "$flag" 1 "$DATA/painted_cube.3mf"
     if grep -q "^$flag is not a flag of slicer_cli-rust" "$TMP/err" && grep -q 'Use slicer_cli ' "$TMP/err"; then
         ok "sentence$flag"
@@ -34,6 +34,9 @@ for flag in --slice --arrange --load-settings --export-3mf --gcode-timing --simp
         fail "sentence$flag" "$(cat "$TMP/err")"
     fi
 done
+
+expect_exit timing-missing-input 1 -- "$BIN" --gcode-timing "$TMP/missing.gcode" "$TMP/missing.gcode"
+grep -q '"error_code":"INPUT_UNREADABLE"' "$TMP/out" && test ! -s "$TMP/err" && ok timing-error-json || fail timing-error-json "$(cat "$TMP/out" "$TMP/err")"
 
 # The refusal comes before anything loads: the model file here does not exist.
 expect_exit refused-before-loading 254 -- "$BIN" "$TMP/no-such.stl" --orient

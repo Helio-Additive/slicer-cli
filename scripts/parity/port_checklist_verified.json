@@ -5572,5 +5572,14 @@
   "functions": [
    "GCodeProcessor::update_preview_layers_times_stats"
   ]
+ },
+ {
+  "unit": "GCode/GCodeProcessor",
+  "round": 992,
+  "evidence": "native_file_import_times_and_nozzle_groups checks the published group and subsequent timing in 28 native imports. Cross-seeded full Majora and H2D files also reproduce the root CLI JSON.",
+  "functions": [
+   "GCodeProcessor::ensure_nozzle_group_result",
+   "GCodeProcessor::initialize_from_context"
+  ]
  }
 ]

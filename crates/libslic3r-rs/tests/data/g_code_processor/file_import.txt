@@ -1,0 +1,28 @@
+none dual 4 9 101 2856 0 1 41901eb8 00000000
+none empty-diameter 0 5 101 2837 0 1 407ffffe 00000000
+none missing error
+none plain 0 3 2 26 0 0 40411110 00000000
+none short error
+none single 4 9 101 2856 0 1 4040f5c1 00000000
+none tagged 0 3 3 41 1 0 40411110 00000000
+plain dual 4 9 101 2856 0 1 41901eb8 00000000
+plain empty-diameter 0 5 101 2837 0 1 407ffffe 00000000
+plain missing error
+plain plain 0 3 2 26 0 0 40411110 00000000
+plain short error
+plain single 4 9 101 2856 0 1 4040f5c1 00000000
+plain tagged 0 3 3 41 1 0 40411110 00000000
+single dual 4 9 101 2856 0 0 4040f5c1 00000000
+single empty-diameter 0 5 101 2837 0 0 407ffffe 00000000
+single missing error
+single plain 0 3 2 26 0 0 40411110 00000000
+single short error
+single single 4 9 101 2856 0 0 4040f5c1 00000000
+single tagged 0 3 3 41 1 0 40411110 00000000
+dual dual 4 9 101 2856 0 0 41901eb8 00000000
+dual empty-diameter 0 5 101 2837 0 0 407ffffe 00000000
+dual missing error
+dual plain 0 3 2 26 0 0 40411110 00000000
+dual short error
+dual single 4 9 101 2856 0 0 41901eb8 00000000
+dual tagged 0 3 3 41 1 0 40411110 00000000

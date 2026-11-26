@@ -66,6 +66,7 @@
 #include <numeric>
 #include <boost/algorithm/string.hpp>
 #include <boost/log/trivial.hpp>
+#include <boost/log/core.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/nowide/cstdio.hpp>
 #include <boost/filesystem.hpp>
@@ -1250,6 +1251,55 @@ int main(int argc, char **argv)
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    // GCodeProcessor.cpp 2671-2761, cli_gcode_timing.cpp 237-247.
+    if (std::string(argv[1]) == "--file-import") {
+        if (argc != 4) return 1;
+        boost::log::core::get()->set_logging_enabled(false);
+        std::ifstream input(argv[2], std::ios::binary);
+        if (!input) return 1;
+        std::string single{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+        boost::replace_all(single, "\r\n", "\n");
+        std::string dual = single;
+        const std::string map = "; filament_map = 1,1,1,1";
+        dual.replace(dual.find(map), map.size(), "; filament_map = 1,2,2,1");
+        const std::string travel = "G90\r\nG1 X0 Y0 Z0.2 F1800\r\nG1 X30 Y0 F600";
+        const std::map<std::string, std::string> cases = {
+            {"plain", travel}, {"single", single}, {"dual", dual},
+            {"empty-diameter", boost::replace_all_copy(single, "filament_diameter = 1.75,1.75,1.75,1.75", "filament_diameter = ")},
+            {"tagged", "; CHANGE_LAYER\n" + travel},
+            {"missing", "; BambuStudio\n" + travel},
+            {"short", "; BambuStudio\n; CONFIG_BLOCK_START\n; layer_height = 0.2\n; CONFIG_BLOCK_END\n" + travel}
+        };
+        for (const auto &[name, body] : cases) {
+            std::ofstream file(std::string(argv[3]) + "/" + name + ".gcode", std::ios::binary);
+            file << body;
+            if (!file) return 1;
+        }
+        using Group = std::shared_ptr<MultiNozzleUtils::NozzleGroupResultBase>;
+        std::map<std::string, Group> groups;
+        for (const std::string seed : {"none", "plain", "single", "dual"}) {
+            for (const auto &[name, body] : cases) {
+                GCodeProcessor p;
+                if (auto group = groups[seed]) p.initialize_from_context(group);
+                else p.init_filament_maps_when_import_only_gcode();
+                const std::string path = std::string(argv[3]) + "/" + name + ".gcode";
+                try {
+                    p.process_file(path);
+                } catch (const std::exception &) {
+                    std::cout << seed << " " << name << " error\n";
+                    continue;
+                }
+                const auto &r = p.get_result();
+                if (seed == "none") groups[name] = r.nozzle_group_result;
+                std::cout << seed << " " << name << " " << r.filaments_count << " "
+                          << r.moves.size() << " " << r.lines_ends.size() << " " << r.lines_ends.back()
+                          << " " << int(p.m_detect_layer_based_on_tag) << " " << bool(r.nozzle_group_result)
+                          << " " << f32(p.get_time(PrintEstimatedStatistics::ETimeMode::Normal))
+                          << " " << f32(p.get_time(PrintEstimatedStatistics::ETimeMode::Stealth)) << "\n";
+            }
+        }
+        return 0;
     }
     if (std::string(argv[1]) == "--processor-printer") {
         if (argc != 3) return 1;

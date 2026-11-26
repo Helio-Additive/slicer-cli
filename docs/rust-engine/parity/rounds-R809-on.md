@@ -216,8 +216,25 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R989 | Move Boost.Polygon Voronoi construction and libc++ comparator sorting to safe workspace crates. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R990 | Register the G-code processor's Rust handler methods directly in its command trie. | G-code processor safety | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R991 | Apply the export's printer kind to bed-level timing, estimated-time headers and the M981 startup command. | Root CLI and G-code export | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R992 | Import and time existing G-code pairs through the root command line. | Root CLI and G-code processor | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R992. The root Bambu timing command reads the embedded profile before
+  motion and reuses the original file's published nozzle grouping. The
+  793 native option checks cover cases where an earlier option consumes the
+  timing token. The file-import generator records 28 states for seven inputs
+  and four seed contexts, including an unknown producer, an empty diameter
+  list and incomplete profiles. The two full Benchys report 2851.219970703125
+  and 2873.909912109375 seconds. H2D reports 540256.4375 seconds after Majora
+  and 499681.3125 seconds after itself, exactly as the native CLI does. All
+  three pairs preserve their input hashes. The C++ viewer reads the back of
+  an empty diameter vector for geometry in that edge case. Rust uses its
+  existing default diameter there and retains the native zero filament count
+  and timing. Dynamic viewer-only metadata and thermal post-processing remain
+  partial. Both H2D scores hold at 4,614,342 and 4,614,863. The prior R991
+  fixture driver toggled the older CLI normalization gate. A repeat with
+  `EXPORT_PRINTER_KIND=0` reproduced R990 on all four files.
 
 - R991, printer vendor. With identical moves and 12.5 seconds of configured
   compensation, a generic printer adds the compensation on a plain G29.

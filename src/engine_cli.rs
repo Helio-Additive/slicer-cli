@@ -2,7 +2,8 @@
 //!
 //! The flags it takes are the ones of `slicer_cli`'s default call that the
 //! Rust engine can honour today (`cli_command_line.cpp`, `legacy_flags()`):
-//! `--config`, `-o`/`--output`, `-v`/`--verbose`, `--input`, `--single-instance` and `--no-normalize-legacy-gcode`. Every other flag
+//! `--config`, `-o`/`--output`, `-v`/`--verbose`, `--input`, `--single-instance` and
+//! `--no-normalize-legacy-gcode`. The separate `--gcode-timing` mode reads a pair of existing files. Every other flag
 //! is refused by name, before anything loads, with a sentence that names the
 //! program to use instead (the convention of `cli_flag_support.cpp`).
 //!
@@ -176,6 +177,10 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
 
 /// Run the program; the return value is the process exit status.
 pub fn run(args: &[String]) -> u8 {
+    // main.cpp 13486-13498. The timing mode returns before logging and slicing.
+    if slicer::faithful_gate("CLI_GCODE_TIMING") && crate::cli_command_line::gcode_timing_requested(args) {
+        return crate::cli_gcode_timing::run(args);
+    }
     let request = match parse(args) {
         Ok(request) => request,
         Err((sentence, code)) => {
@@ -195,7 +200,12 @@ pub fn run(args: &[String]) -> u8 {
             } else {
                 ""
             };
-            print!("{USAGE}{additional}{legacy}{USAGE_TAIL}");
+            let timing = if slicer::faithful_gate("CLI_GCODE_TIMING") {
+                "      --gcode-timing ORIGINAL OPTIMIZED  Report both G-code print times as JSON\n"
+            } else {
+                ""
+            };
+            print!("{USAGE}{additional}{legacy}{timing}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,
@@ -286,8 +296,8 @@ mod tests {
     #[test]
     fn refused_before_anything_loads() {
         // The model file does not exist; the flag is still what is reported.
-        let (sentence, _) = parse(&args(&["no-such.stl", "--gcode-timing"])).unwrap_err();
-        assert!(sentence.starts_with("--gcode-timing"), "{sentence}");
+        let (sentence, _) = parse(&args(&["no-such.stl", "--orient"])).unwrap_err();
+        assert!(sentence.starts_with("--orient"), "{sentence}");
     }
 
     #[test]

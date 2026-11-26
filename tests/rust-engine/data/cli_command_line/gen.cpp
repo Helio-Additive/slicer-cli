@@ -3,6 +3,7 @@
 #include "cli_command_line.hpp"
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <set>
 
 static void sample(std::vector<std::string> words)
 {
@@ -31,8 +32,31 @@ static void sample(std::vector<std::string> words)
     std::cout << row.dump() << '\n';
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    // cli_command_line.cpp 388-422. A timing token consumed as the value
+    // of a preceding switch never selects the early timing command.
+    if (argc == 2 && std::string(argv[1]) == "--timing-options") {
+        std::set<std::string> names;
+        Slic3r::DynamicPrintAndCLIConfig config;
+        for (const auto &[key, def] : config.def()->options)
+            for (const auto &name : def.cli_args(key)) names.insert(name);
+        for (const auto *name : {"o", "output", "v", "verbose", "input", "machine", "filament",
+                "process", "config", "infill", "perimeters", "nozzle", "temp", "bed-temp", "plate",
+                "calib-mode", "calib-start", "calib-end", "calib-step", "calib-extruder-id",
+                "calib-no-numbers", "layout", "layout-plan", "progress", "printer-preset",
+                "process-preset", "filament-preset", "list-presets", "list-settings", "list-flags",
+                "printer", "allow-substitution", "engine-info", "single-instance", "simplify",
+                "simplify-ratio", "simplify-triangles", "simplify-objects", "simplify-keep-paint",
+                "no-normalize-legacy-gcode", "project-settings-as-saved", "unrecognized-name"})
+            names.insert(name);
+        for (const auto &name : names) {
+            std::string program = "slicer_cli", flag = "--" + name, timing = "--gcode-timing";
+            char *words[] = {program.data(), flag.data(), timing.data(), nullptr};
+            std::cout << name << ' ' << slicer_cli::gcode_timing_requested(3, words) << '\n';
+        }
+        return 0;
+    }
     sample({"--", "-cube.stl"});
     sample({"--", "--help"});
     sample({"--", "--"});
