@@ -1293,8 +1293,13 @@ jobs:
           KUBAZIP_PORT="$VCPKG_INSTALLATION_ROOT/ports/kubazip/portfile.cmake"
           KUBAZIP_SHA_OLD="fb5841f11fa5a7f6f1457952d57b61349ad2bcdda0b2b7b0045655a03bd6c743ad3b68cc510147b3b9bbd1962f753d46f66d251df82bf6dc65c117dd23b8e743"
           KUBAZIP_SHA_NEW="287bcb5c5441523c874c2bedd77fb63247a428fc9284affb3630c0490cef413b45af1ac512785b913072c24ead65c6437f1120064927f25ab57fbe8696608e3e"
-          grep -Fq "$KUBAZIP_SHA_OLD" "$KUBAZIP_PORT" || { echo "Expected kubazip archive pin not found"; exit 1; }
-          sed -i -e "s#${KUBAZIP_SHA_OLD}#${KUBAZIP_SHA_NEW}#" "$KUBAZIP_PORT"
+          # A runner image whose vcpkg already has another pin is left alone:
+          # vcpkg itself stops on an archive that does not match its pin.
+          if grep -Fq "$KUBAZIP_SHA_OLD" "$KUBAZIP_PORT"; then
+            sed -i -e "s#${KUBAZIP_SHA_OLD}#${KUBAZIP_SHA_NEW}#" "$KUBAZIP_PORT"
+          else
+            echo "kubazip: the old archive pin is not in this vcpkg; port left as it is"
+          fi
           "$VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
           # Use vcpkg meta-package "boost" instead of individual components:
           # BBS source pulls in boost/assign, boost/beast, boost/dll, etc.
