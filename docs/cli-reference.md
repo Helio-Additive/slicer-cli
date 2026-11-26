@@ -924,6 +924,9 @@ slicer_cli-rust [--config FILE] [-o FILE] [-v] MODEL
 | `--config FILE` | Settings bundle (JSON), as `slicer_cli --config` takes. Required for an STL; for a 3MF it overrides the settings in the file |
 | `-o FILE`, `--output FILE` | Output G-code file (default: `output.gcode`) |
 | `-v`, `--verbose` | Verbose engine log |
+| `--no-normalize-legacy-gcode` | Preserve legacy placeholders in custom G-code templates. By default the CLI normalizes them and reports any replacements in a `config_normalized` event |
+| `--single-instance` | Accepted for desktop compatibility |
+| `--` | End option parsing to pass a model name starting with a dash |
 | `-h`, `--help` | The call and this list |
 
 Every other flag is refused by name before anything is loaded, with a sentence

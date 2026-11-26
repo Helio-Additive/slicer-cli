@@ -136,7 +136,14 @@ fn load_bbs_model_and_config(path: &Path) -> Result<(crate::model::Model, Dynami
 ///   C++ `slicer_cli` binary accepts via `--config`).
 /// * `output` — path to write the generated G-code to.
 pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Result<()> {
-    let (print, __proc_s) = slice_stl_print(input, settings_json)?;
+    slice_to_gcode_with_legacy_gcode(input, settings_json, output, LegacyGcode::Normalize)
+}
+
+/// Slice an STL with the caller's per-job G-code template policy.
+pub fn slice_to_gcode_with_legacy_gcode(
+    input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>,
+) -> Result<()> {
+    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode)?;
     let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
 
     // Export G-code using Print::export_gcode().
@@ -171,10 +178,10 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
 /// The part of [`slice_to_gcode`] before the G-code export: load and place the STL, build the Print and run
 /// `Print::process()`. Returns the processed Print (for tests that read its objects' layers and support layers).
 pub fn slice_stl_to_print(input: &Path, settings_json: &Path) -> Result<Print> {
-    slice_stl_print(input, settings_json).map(|(print, _)| print)
+    slice_stl_print(input, settings_json, LegacyGcode::Normalize).map(|(print, _)| print)
 }
 
-fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
+fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>) -> Result<(Print, f64)> {
     info!("Slicing (in-process): {:?}", input);
 
     // Load mesh — only STL is wired for the library entrypoint.
@@ -200,10 +207,10 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
         .with_context(|| format!("Failed to read settings: {:?}", settings_json))?;
     let mut settings_value: serde_json::Value = serde_json::from_str(&settings_str)
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
-    normalize_legacy_gcode_tokens(&mut settings_value);
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
     let config = crate::print::full_print_config_from_settings(&settings_value);
     check_config_values(&config)?;
+    legacy_gcode.apply(&mut settings_value);
     if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM") && profile_can_enable_scarf(&config) {
         use crate::model::{Model, ModelMesh, ModelVolume, ModelVolumeType};
         // STL.cpp:36-39, Model.cpp:605-621,3416-3466. get_extruders uses
@@ -646,17 +653,35 @@ fn check_config_values(config: &DynamicPrintConfig) -> Result<()> {
     Ok(())
 }
 
-/// `slicer_cli` rewrites the placeholder `initial_no_support_filament_id` to
-/// `initial_no_support_extruder` in every custom G-code setting before the
-/// engine sees the settings (main.cpp `normalize_legacy_gcode_tokens`, 486-580):
-/// whole tokens only, the character on either side must not be an identifier
-/// character. Gate GCODE_TOKEN_ALIAS, on.
-fn normalize_legacy_gcode_tokens(settings: &mut serde_json::Value) {
-    if !crate::faithful_gate("GCODE_TOKEN_ALIAS") {
-        return;
+/// Treatment of the legacy placeholder for a single slice (main.cpp 540–610,
+/// 11558–11559). Library entry points use the silent normalization mode.
+#[derive(Clone, Copy)]
+pub enum LegacyGcode<'a> {
+    Preserve,
+    Normalize,
+    NormalizeAndReport(&'a dyn Fn(&[&str], usize)),
+}
+
+pub const LEGACY_FILAMENT_TOKEN: &str = "initial_no_support_filament_id";
+pub const BOUND_EXTRUDER_TOKEN: &str = "initial_no_support_extruder";
+
+impl LegacyGcode<'_> {
+    /// Rewrite whole identifiers in native key order and return their total count.
+    pub fn apply(self, settings: &mut serde_json::Value) -> usize {
+        if matches!(self, Self::Preserve) || !crate::faithful_gate("GCODE_TOKEN_ALIAS") {
+            return 0;
+        }
+        let (count, keys) = normalize_legacy_gcode_tokens(settings);
+        if count > 0 {
+            if let Self::NormalizeAndReport(report) = self {
+                report(&keys, count);
+            }
+        }
+        count
     }
-    const LEGACY: &str = "initial_no_support_filament_id";
-    const BOUND: &str = "initial_no_support_extruder";
+}
+
+fn normalize_legacy_gcode_tokens(settings: &mut serde_json::Value) -> (usize, Vec<&'static str>) {
     // main.cpp kGcodeStringKeys and kGcodeStringsKeys (the Bambu engine's own).
     const KEYS: &[&str] = &[
         "machine_start_gcode", "machine_end_gcode", "before_layer_change_gcode",
@@ -667,49 +692,55 @@ fn normalize_legacy_gcode_tokens(settings: &mut serde_json::Value) {
     fn is_ident(c: u8) -> bool {
         c.is_ascii_alphanumeric() || c == b'_'
     }
-    fn rewrite(v: &str) -> String {
+    fn rewrite_text(text: &mut String) -> usize {
+        if !text.contains(LEGACY_FILAMENT_TOKEN) {
+            return 0;
+        }
+        let v = text.as_str();
+        let mut count = 0;
         let bytes = v.as_bytes();
         let mut out = String::with_capacity(v.len());
         let mut pos = 0;
         while pos < v.len() {
-            let Some(found) = v[pos..].find(LEGACY).map(|i| i + pos) else {
+            let Some(found) = v[pos..].find(LEGACY_FILAMENT_TOKEN).map(|i| i + pos) else {
                 out.push_str(&v[pos..]);
                 break;
             };
-            let after = found + LEGACY.len();
+            let after = found + LEGACY_FILAMENT_TOKEN.len();
             let left_ok = found == 0 || !is_ident(bytes[found - 1]);
             let right_ok = after >= v.len() || !is_ident(bytes[after]);
             if left_ok && right_ok {
                 out.push_str(&v[pos..found]);
-                out.push_str(BOUND);
+                out.push_str(BOUND_EXTRUDER_TOKEN);
+                count += 1;
                 pos = after;
             } else {
                 out.push_str(&v[pos..found + 1]);
                 pos = found + 1;
             }
         }
-        out
+        *text = out;
+        count
     }
-    let Some(map) = settings.as_object_mut() else {
-        return;
-    };
-    for key in KEYS {
-        match map.get_mut(*key) {
-            Some(serde_json::Value::String(text)) if text.contains(LEGACY) => {
-                *text = rewrite(text);
+    let mut count = 0;
+    let mut keys = Vec::new();
+    if let Some(map) = settings.as_object_mut() {
+        for &key in KEYS {
+            let rewrites = match map.get_mut(key) {
+                Some(serde_json::Value::String(text)) => rewrite_text(text),
+                Some(serde_json::Value::Array(items)) => items.iter_mut().map(|item| match item {
+                    serde_json::Value::String(text) => rewrite_text(text),
+                    _ => 0,
+                }).sum(),
+                _ => 0,
+            };
+            if rewrites > 0 {
+                keys.push(key);
+                count += rewrites;
             }
-            Some(serde_json::Value::Array(items)) => {
-                for item in items {
-                    if let serde_json::Value::String(text) = item {
-                        if text.contains(LEGACY) {
-                            *text = rewrite(text);
-                        }
-                    }
-                }
-            }
-            _ => {}
         }
     }
+    (count, keys)
 }
 
 /// What `desktop_place_stl` works out for one model file.
@@ -968,6 +999,13 @@ pub fn slice_3mf_to_gcode(
     settings_override: Option<&Path>,
     output: &Path,
 ) -> Result<()> {
+    slice_3mf_to_gcode_with_legacy_gcode(input, settings_override, output, LegacyGcode::Normalize)
+}
+
+/// Slice a 3MF with the caller's per-job G-code template policy.
+pub fn slice_3mf_to_gcode_with_legacy_gcode(
+    input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>,
+) -> Result<()> {
     info!("Slicing 3MF (in-process): {:?}", input);
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
@@ -1021,10 +1059,10 @@ pub fn slice_3mf_to_gcode(
 
     let mut settings_value: serde_json::Value =
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
-    normalize_legacy_gcode_tokens(&mut settings_value);
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
     let config = crate::print::full_print_config_from_settings(&settings_value);
     check_config_values(&config)?;
+    legacy_gcode.apply(&mut settings_value);
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
         && (scoped.scarf || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"));
     // Validate global role assignments against the actual imported model as

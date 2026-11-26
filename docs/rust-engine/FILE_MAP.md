@@ -171,7 +171,7 @@ their function names come from, when there is one.
 |-|-|-|-|
 | `algorithm/line_segmentation/mod.rs` | module | 0 |  |
 | `algorithm/mod.rs` | module | 0 |  |
-| `app_slice.rs` | no C++ file of this name | 51 |  |
+| `app_slice.rs` | no C++ file of this name | 54 |  |
 | `arachne/beading_strategy/mod.rs` | module | 0 |  |
 | `arachne/mod.rs` | module | 0 |  |
 | `arachne/utils/mod.rs` | module | 0 |  |
@@ -1137,7 +1137,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `ArrangePolygon::apply` :86 (21 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `ArrangePolygon::apply` :86 (21 tokens) — in `app_slice.rs`, `config.rs`, `extruder.rs`
 - `ArrangePolygon::is_arranged` :94 (7 tokens) — in `model_arrange.rs`
 - `ArrangePolygon::transformed_poly` :96 (34 tokens) — in `model_arrange.rs`
 - `arrange` :219 (14 tokens) — in `geometry/geometry.rs`
@@ -7111,7 +7111,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `OrientMesh::apply` :47 (12 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `OrientMesh::apply` :47 (12 tokens) — in `app_slice.rs`, `config.rs`, `extruder.rs`
 - `AutoOrienter::process` :117 (482 tokens) — in `gcode/gcode_template.rs`, `gcode/pressure_equalizer.rs`, `placeholder_parser.rs`
 - `AutoOrienter::preprocess` :186 (328 tokens) — in `format/step.rs`
 - `AutoOrienter::add_principal_axes` :302 (427 tokens)
@@ -7456,7 +7456,7 @@ Missing in the Rust file:
 - `get_extents` :264 (30 tokens, overload) — in `emboss.rs`, `ex_polygon.rs`, `ex_polygon_collection.rs`
 - `get_extents` :274 (24 tokens, overload) — in `emboss.rs`, `ex_polygon.rs`, `ex_polygon_collection.rs`
 - `ClosestPointInRadiusLookup::insert` :413 (49 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `arachne/utils/sparse_line_grid.rs`, `arachne/utils/sparse_point_grid.rs`
-- `apply` :603 (26 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `apply` :603 (26 tokens, overload) — in `app_slice.rs`, `config.rs`, `extruder.rs`
 - `point_traits<Slic3r::Point>::get` :661 (22 tokens) — in `any_ptr.rs`, `app_config.rs`, `clipper_utils.rs`
 - `point_mutable_traits<Slic3r::Point>::set` :669 (17 tokens) — in `app_config.rs`, `color.rs`, `config.rs`
 - `point_mutable_traits<Slic3r::Point>::construct` :672 (12 tokens) — in `boost_polygon_voronoi.rs`, `fill/fill_adaptive.rs`, `geometry/bounding_box.rs`
@@ -8511,7 +8511,7 @@ Missing in the Rust file:
 - `PrintObjectStatusDB::get_range` :526 (15 tokens, overload)
 - `PrintObjectStatusDB::begin` :534 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `boost_polygon_voronoi.rs`, `clipper_utils.rs`
 - `PrintObjectStatusDB::end` :535 (9 tokens, overload) — in `arachne/utils/extrusion_line.rs`, `clipper_utils.rs`, `edge_grid.rs`
-- `Print::apply` :1296 (7946 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `Print::apply` :1296 (7946 tokens) — in `app_slice.rs`, `config.rs`, `extruder.rs`
 
 Rust only:
 
@@ -13197,9 +13197,9 @@ Tier 3. C++ functions 24 (plus 1 constructors, 0 destructors, 0 operators), Rust
 
 Missing in the Rust file:
 
-- `QuantKMeans::apply` :36 (42 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `QuantKMeans::apply` :57 (128 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
-- `QuantKMeans::apply` :80 (428 tokens, overload) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `QuantKMeans::apply` :36 (42 tokens, overload) — in `app_slice.rs`, `config.rs`, `extruder.rs`
+- `QuantKMeans::apply` :57 (128 tokens, overload) — in `app_slice.rs`, `config.rs`, `extruder.rs`
+- `QuantKMeans::apply` :80 (428 tokens, overload) — in `app_slice.rs`, `config.rs`, `extruder.rs`
 
 Rust only:
 
@@ -14873,7 +14873,7 @@ Missing in the Rust file:
 - `SLAPrintObject::level` :166 (46 tokens) — in `clipper2/clipper_engine.rs`, `zipper.rs`
 - `SLAPrintObject::create_slice_record` :173 (52 tokens)
 - `SLAPrint::print_object_ids` :177 (46 tokens) — in `print.rs`
-- `SLAPrint::apply` :187 (2358 tokens) — in `config.rs`, `extruder.rs`, `format/sl1.rs`
+- `SLAPrint::apply` :187 (2358 tokens) — in `app_slice.rs`, `config.rs`, `extruder.rs`
 - `SLAPrintObject::closest_slice_record` :187 (224 tokens)
 - `SLAPrintObject::config_apply` :268 (11 tokens) — in `print.rs`
 - `SLAPrintObject::config_apply_only` :269 (13 tokens) — in `print.rs`

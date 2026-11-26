@@ -1,0 +1,37 @@
+{"count":0,"settings":{}}
+{"count":0,"settings":{}}
+{"count":0,"settings":{}}
+{"count":0,"settings":{"machine_start_gcode":"clean"}}
+{"count":0,"settings":{"machine_start_gcode":"clean"}}
+{"count":0,"settings":{"machine_start_gcode":"clean"}}
+
+[[SLICER_EVENT]] {"count":1,"event":"config_normalized","from":"initial_no_support_filament_id","keys":["machine_start_gcode"],"message":"Aliased unbound placeholder 'initial_no_support_filament_id' -> 'initial_no_support_extruder' in 1 custom-gcode key(s); 1 occurrence(s) rewritten","tag":"LegacyGcodeTokenAliased","to":"initial_no_support_extruder"}
+{"count":1,"settings":{"machine_start_gcode":"initial_no_support_extruder"}}
+{"count":0,"settings":{"machine_start_gcode":"initial_no_support_filament_id"}}
+{"count":1,"settings":{"machine_start_gcode":"initial_no_support_extruder"}}
+
+[[SLICER_EVENT]] {"count":2,"event":"config_normalized","from":"initial_no_support_filament_id","keys":["machine_start_gcode"],"message":"Aliased unbound placeholder 'initial_no_support_filament_id' -> 'initial_no_support_extruder' in 1 custom-gcode key(s); 2 occurrence(s) rewritten","tag":"LegacyGcodeTokenAliased","to":"initial_no_support_extruder"}
+{"count":2,"settings":{"machine_start_gcode":"initial_no_support_extruder initial_no_support_extruder"}}
+{"count":0,"settings":{"machine_start_gcode":"initial_no_support_filament_id initial_no_support_filament_id"}}
+{"count":2,"settings":{"machine_start_gcode":"initial_no_support_extruder initial_no_support_extruder"}}
+{"count":0,"settings":{"machine_start_gcode":"_initial_no_support_filament_id initial_no_support_filament_id_ initial_no_support_filament_id1 ainitial_no_support_filament_id"}}
+{"count":0,"settings":{"machine_start_gcode":"_initial_no_support_filament_id initial_no_support_filament_id_ initial_no_support_filament_id1 ainitial_no_support_filament_id"}}
+{"count":0,"settings":{"machine_start_gcode":"_initial_no_support_filament_id initial_no_support_filament_id_ initial_no_support_filament_id1 ainitial_no_support_filament_id"}}
+
+[[SLICER_EVENT]] {"count":3,"event":"config_normalized","from":"initial_no_support_filament_id","keys":["machine_start_gcode"],"message":"Aliased unbound placeholder 'initial_no_support_filament_id' -> 'initial_no_support_extruder' in 1 custom-gcode key(s); 3 occurrence(s) rewritten","tag":"LegacyGcodeTokenAliased","to":"initial_no_support_extruder"}
+{"count":3,"settings":{"machine_start_gcode":"üinitial_no_support_extruder:/initial_no_support_extruderé;[initial_no_support_extruder]"}}
+{"count":0,"settings":{"machine_start_gcode":"üinitial_no_support_filament_id:/initial_no_support_filament_idé;[initial_no_support_filament_id]"}}
+{"count":3,"settings":{"machine_start_gcode":"üinitial_no_support_extruder:/initial_no_support_extruderé;[initial_no_support_extruder]"}}
+
+[[SLICER_EVENT]] {"count":3,"event":"config_normalized","from":"initial_no_support_filament_id","keys":["filament_start_gcode"],"message":"Aliased unbound placeholder 'initial_no_support_filament_id' -> 'initial_no_support_extruder' in 1 custom-gcode key(s); 3 occurrence(s) rewritten","tag":"LegacyGcodeTokenAliased","to":"initial_no_support_extruder"}
+{"count":3,"settings":{"filament_start_gcode":["","initial_no_support_extruder","initial_no_support_filament_id_initial_no_support_filament_id","[initial_no_support_extruder][initial_no_support_extruder]"]}}
+{"count":0,"settings":{"filament_start_gcode":["","initial_no_support_filament_id","initial_no_support_filament_id_initial_no_support_filament_id","[initial_no_support_filament_id][initial_no_support_filament_id]"]}}
+{"count":3,"settings":{"filament_start_gcode":["","initial_no_support_extruder","initial_no_support_filament_id_initial_no_support_filament_id","[initial_no_support_extruder][initial_no_support_extruder]"]}}
+
+[[SLICER_EVENT]] {"count":14,"event":"config_normalized","from":"initial_no_support_filament_id","keys":["machine_start_gcode","machine_end_gcode","before_layer_change_gcode","layer_change_gcode","change_filament_gcode","time_lapse_gcode","machine_pause_gcode","printing_by_object_gcode","template_custom_gcode","wrapping_detection_gcode","filament_start_gcode","filament_end_gcode"],"message":"Aliased unbound placeholder 'initial_no_support_filament_id' -> 'initial_no_support_extruder' in 12 custom-gcode key(s); 14 occurrence(s) rewritten","tag":"LegacyGcodeTokenAliased","to":"initial_no_support_extruder"}
+{"count":14,"settings":{"before_layer_change_gcode":"initial_no_support_extruder","change_filament_gcode":"initial_no_support_extruder","filament_end_gcode":["initial_no_support_extruder","","initial_no_support_extruder"],"filament_start_gcode":["initial_no_support_extruder","","initial_no_support_extruder"],"layer_change_gcode":"initial_no_support_extruder","machine_end_gcode":"initial_no_support_extruder","machine_pause_gcode":"initial_no_support_extruder","machine_start_gcode":"initial_no_support_extruder","printing_by_object_gcode":"initial_no_support_extruder","template_custom_gcode":"initial_no_support_extruder","time_lapse_gcode":"initial_no_support_extruder","wrapping_detection_gcode":"initial_no_support_extruder"}}
+{"count":0,"settings":{"before_layer_change_gcode":"initial_no_support_filament_id","change_filament_gcode":"initial_no_support_filament_id","filament_end_gcode":["initial_no_support_filament_id","","initial_no_support_filament_id"],"filament_start_gcode":["initial_no_support_filament_id","","initial_no_support_filament_id"],"layer_change_gcode":"initial_no_support_filament_id","machine_end_gcode":"initial_no_support_filament_id","machine_pause_gcode":"initial_no_support_filament_id","machine_start_gcode":"initial_no_support_filament_id","printing_by_object_gcode":"initial_no_support_filament_id","template_custom_gcode":"initial_no_support_filament_id","time_lapse_gcode":"initial_no_support_filament_id","wrapping_detection_gcode":"initial_no_support_filament_id"}}
+{"count":14,"settings":{"before_layer_change_gcode":"initial_no_support_extruder","change_filament_gcode":"initial_no_support_extruder","filament_end_gcode":["initial_no_support_extruder","","initial_no_support_extruder"],"filament_start_gcode":["initial_no_support_extruder","","initial_no_support_extruder"],"layer_change_gcode":"initial_no_support_extruder","machine_end_gcode":"initial_no_support_extruder","machine_pause_gcode":"initial_no_support_extruder","machine_start_gcode":"initial_no_support_extruder","printing_by_object_gcode":"initial_no_support_extruder","template_custom_gcode":"initial_no_support_extruder","time_lapse_gcode":"initial_no_support_extruder","wrapping_detection_gcode":"initial_no_support_extruder"}}
+{"count":0,"settings":{"filament_end_gcode":[],"printer_model":"initial_no_support_filament_id"}}
+{"count":0,"settings":{"filament_end_gcode":[],"printer_model":"initial_no_support_filament_id"}}
+{"count":0,"settings":{"filament_end_gcode":[],"printer_model":"initial_no_support_filament_id"}}

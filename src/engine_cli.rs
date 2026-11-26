@@ -2,7 +2,7 @@
 //!
 //! The flags it takes are the ones of `slicer_cli`'s default call that the
 //! Rust engine can honour today (`cli_command_line.cpp`, `legacy_flags()`):
-//! `--config`, `-o`/`--output`, `-v`/`--verbose`, `--input` and `--single-instance`. Every other flag
+//! `--config`, `-o`/`--output`, `-v`/`--verbose`, `--input`, `--single-instance` and `--no-normalize-legacy-gcode`. Every other flag
 //! is refused by name, before anything loads, with a sentence that names the
 //! program to use instead (the convention of `cli_flag_support.cpp`).
 //!
@@ -87,6 +87,27 @@ where
     (format!("The Rust engine could not slice: {e:#}"), CLI_SLICING_ERROR)
 }
 
+/// main.cpp 597–608 and diagnostic_output.hpp 14–18.
+fn legacy_alias_record(keys: &[&str], count: usize) -> String {
+    use slicer::app_slice::{BOUND_EXTRUDER_TOKEN as to, LEGACY_FILAMENT_TOKEN as from};
+    let message = format!(
+        "Aliased unbound placeholder '{from}' -> '{to}' in {} custom-gcode key(s); {count} occurrence(s) rewritten",
+        keys.len()
+    );
+    let event = serde_json::json!({
+        "event": "config_normalized", "tag": "LegacyGcodeTokenAliased",
+        "message": message, "from": from, "to": to, "keys": keys, "count": count,
+    });
+    format!("\n[[SLICER_EVENT]] {event}\n")
+}
+
+fn report_legacy_alias(keys: &[&str], count: usize) {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(legacy_alias_record(keys, count).as_bytes());
+    let _ = out.flush();
+}
+
 fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     if !request.input.is_file() {
         return Err((
@@ -113,6 +134,14 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
         }
     }
 
+    use slicer::app_slice::LegacyGcode;
+    let legacy_gcode = if !request.normalize_legacy_gcode {
+        LegacyGcode::Preserve
+    } else if slicer::faithful_gate("CLI_LEGACY_GCODE") {
+        LegacyGcode::NormalizeAndReport(&report_legacy_alias)
+    } else {
+        LegacyGcode::Normalize
+    };
     let failed = engine_failure;
     match extension(&request.input).as_str() {
         "stl" => {
@@ -125,13 +154,14 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
                     CLI_INVALID_PARAMS,
                 )
             })?;
-            slicer::app_slice::slice_to_gcode(&request.input, config, &request.output)
+            slicer::app_slice::slice_to_gcode_with_legacy_gcode(&request.input, config, &request.output, legacy_gcode)
                 .map_err(failed)
         }
-        "3mf" => slicer::app_slice::slice_3mf_to_gcode(
+        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_legacy_gcode(
             &request.input,
             request.config.as_deref(),
             &request.output,
+            legacy_gcode,
         )
         .map_err(failed),
         other => Err((
@@ -160,7 +190,12 @@ pub fn run(args: &[String]) -> u8 {
             } else {
                 ""
             };
-            print!("{USAGE}{additional}{USAGE_TAIL}");
+            let legacy = if slicer::faithful_gate("CLI_LEGACY_GCODE") {
+                "      --no-normalize-legacy-gcode  Keep legacy placeholders in custom G-code templates\n"
+            } else {
+                ""
+            };
+            print!("{USAGE}{additional}{legacy}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,
@@ -188,6 +223,33 @@ mod tests {
     }
 
     #[test]
+    fn legacy_gcode_normalization_matches_native_records() {
+        use slicer::app_slice::LegacyGcode;
+        use std::cell::Cell;
+        use std::fmt::Write;
+        let mut actual = String::new();
+        for line in include_str!("../tests/rust-engine/data/legacy_gcode/inputs.jsonl").lines() {
+            let mut input: serde_json::Value = serde_json::from_str(line).unwrap();
+            let mut settings = input["settings"].take();
+            let event = Cell::new(None);
+            let report = |keys: &[&str], count| event.set(Some(legacy_alias_record(keys, count)));
+            let policy = if input["normalize"] == false {
+                LegacyGcode::Preserve
+            } else if input["report"] == true {
+                LegacyGcode::NormalizeAndReport(&report)
+            } else {
+                LegacyGcode::Normalize
+            };
+            let count = policy.apply(&mut settings);
+            if let Some(record) = event.take() {
+                actual.push_str(&record);
+            }
+            writeln!(actual, "{}", serde_json::json!({"count": count, "settings": settings})).unwrap();
+        }
+        assert_eq!(actual, include_str!("../tests/rust-engine/data/legacy_gcode/native.txt"));
+    }
+
+    #[test]
     fn default_call_parses() {
         let request = parse(&args(&["--config", "c.json", "-o", "out.gcode", "-v", "m.stl"]));
         assert_eq!(
@@ -197,6 +259,7 @@ mod tests {
                 config: Some("c.json".into()),
                 output: "out.gcode".into(),
                 verbose: true,
+                normalize_legacy_gcode: true,
             }))
         );
     }

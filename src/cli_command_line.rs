@@ -18,6 +18,7 @@ pub struct SliceRequest {
     pub config: Option<PathBuf>,
     pub output: PathBuf,
     pub verbose: bool,
+    pub normalize_legacy_gcode: bool,
 }
 
 pub fn refusal(flag: &str) -> String {
@@ -26,8 +27,9 @@ pub fn refusal(flag: &str) -> String {
     } else {
         "--config, -o/--output, -v/--verbose and --input"
     };
+    let extra = if slicer::faithful_gate("CLI_LEGACY_GCODE") { ", plus --no-normalize-legacy-gcode" } else { "" };
     format!(
-        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags} so far. \
+        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{extra} so far. \
          Use slicer_cli (the Bambu Studio engine) for {flag}."
     )
 }
@@ -41,6 +43,7 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
     let mut config = None;
     let mut output = None;
     let mut verbose = false;
+    let mut normalize_legacy_gcode = true;
     let mut help = false;
     let mut parse_options = true;
     let multiple_models = || {
@@ -74,6 +77,7 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
                         | "--output"
                         | "--config"
                         | "--input"
+                        | "--no-normalize-legacy-gcode"
                 )
             {
                 return Err((refusal(spelling), CLI_INVALID_PARAMS));
@@ -118,6 +122,10 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
                 "o" | "output" => output = Some(value()?),
                 "input" => inputs.push(value()?),
                 "single-instance" if native => {}
+                // cli_command_line.cpp 572, cli_options.hpp 29.
+                "no-normalize-legacy-gcode" if slicer::faithful_gate("CLI_LEGACY_GCODE") => {
+                    normalize_legacy_gcode = false;
+                }
                 _ => return Err((refusal(spelling), CLI_INVALID_PARAMS)),
             }
         }
@@ -142,5 +150,6 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
         config,
         output: output.unwrap_or_else(|| PathBuf::from("output.gcode")),
         verbose,
+        normalize_legacy_gcode,
     }))
 }

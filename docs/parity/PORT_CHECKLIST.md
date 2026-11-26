@@ -1139,7 +1139,7 @@ Rust file: `arrange.rs`. Status: **partial**. Not listed: 5 constructors, 2 oper
 
 **class `ArrangePolygon`**
 
-- [~] `apply` (line 86) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 86) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 - [~] `is_arranged` (line 94) → `model_arrange.rs` — not in the paired file
 - [~] `transformed_poly` (line 96) → `model_arrange.rs` — not in the paired file
 
@@ -9627,11 +9627,11 @@ Rust file: `obj_color_utils.rs`. Status: **partial**. Not listed: 1 constructors
 
 **class `QuantKMeans`**
 
-- [~] `apply` (line 36) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 36) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 - [v] `apply_aplha` (line 45) → `obj_color_utils.rs:1336` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
-- [~] `apply` (line 57) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 57) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 - [v] `apply` (line 68) → `obj_color_utils.rs:1383` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
-- [~] `apply` (line 80) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 80) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 - [v] `apply_color_cluster_kmeans` (line 127) → `obj_color_utils.rs:1466` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
 - [v] `apply_color_cluster_image` (line 136) → `obj_color_utils.rs:1484` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
 - [v] `sort_center_and_relabel` (line 155) → `obj_color_utils.rs:1509` — R916: tests/obj_color_utils_native_parity.rs: the pin's ObjColorUtils.cpp with OpenCV 4.13 (kmeans, colour conversions, the 3MF colour helpers), bit for bit (wide-row SIMD HSV lines reported, not counted)
@@ -9828,7 +9828,7 @@ Rust file: `orient.rs`. Status: **partial**. Not listed: 3 constructors, 1 opera
 
 **class `OrientMesh`**
 
-- [~] `apply` (line 47) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 47) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 
 ### `OverhangDetector` (.cpp+.hpp)
 
@@ -10220,7 +10220,7 @@ Rust file: `geometry/point.rs`. Status: **partial**. Not listed: 8 constructors,
 - [v] `align_to_grid` (line 591) → `geometry/point.rs:2167` — R950: tests/point_cpp_names_native_parity.rs (point_cpp_names_match_the_pin) against tests/data/point_cpp_names/gen.cpp (vectors.txt.gz, 1,271,689 B): 28 groups, 0 mismatches, bit for bit: align_to_grid x4 (4,000 each, coords to +-2e6, spacing 1-50,000, base +-3e5), scaled<double>(double) / scaled<float>(float) / scaled<coord_t>(double) / scaled<coord_t>(Vec2d) (4,000 each incl. 16 literals 0.5, 1, 0.005, 0.01 ...), unscaled<double> / unscaled<float> (coord_t) / unscaled(Point) (4,000 each, coords to +-2e9), Point::new_scale x3 (4,000 each), has_duplicate_points(const Points&) (2,000), Point::rotate x3 and Point::rotated x3 (6,000 each, fused as clang), Point::ccw x2 (6,000 each), Point::any_comp x2 (6,000 each), Point::nearest_point_index x3 (3,000 each). C++ overloads are trait impls in geometry/point.rs: AlignToGrid, Scaled, Unscaled, HasDuplicatePoints, PointRotate, PointRotated, PointCcw, NewScale, AnyComp, NearestPointIndex.
 - [v] `align_to_grid` (line 593) → `geometry/point.rs:2175` — R950: tests/point_cpp_names_native_parity.rs (point_cpp_names_match_the_pin) against tests/data/point_cpp_names/gen.cpp (vectors.txt.gz, 1,271,689 B): 28 groups, 0 mismatches, bit for bit: align_to_grid x4 (4,000 each, coords to +-2e6, spacing 1-50,000, base +-3e5), scaled<double>(double) / scaled<float>(float) / scaled<coord_t>(double) / scaled<coord_t>(Vec2d) (4,000 each incl. 16 literals 0.5, 1, 0.005, 0.01 ...), unscaled<double> / unscaled<float> (coord_t) / unscaled(Point) (4,000 each, coords to +-2e9), Point::new_scale x3 (4,000 each), has_duplicate_points(const Points&) (2,000), Point::rotate x3 and Point::rotated x3 (6,000 each, fused as clang), Point::ccw x2 (6,000 each), Point::any_comp x2 (6,000 each), Point::nearest_point_index x3 (3,000 each). C++ overloads are trait impls in geometry/point.rs: AlignToGrid, Scaled, Unscaled, HasDuplicatePoints, PointRotate, PointRotated, PointCcw, NewScale, AnyComp, NearestPointIndex.
 - [v] `align_to_grid` (line 595) → `geometry/point.rs:2185` — R950: tests/point_cpp_names_native_parity.rs (point_cpp_names_match_the_pin) against tests/data/point_cpp_names/gen.cpp (vectors.txt.gz, 1,271,689 B): 28 groups, 0 mismatches, bit for bit: align_to_grid x4 (4,000 each, coords to +-2e6, spacing 1-50,000, base +-3e5), scaled<double>(double) / scaled<float>(float) / scaled<coord_t>(double) / scaled<coord_t>(Vec2d) (4,000 each incl. 16 literals 0.5, 1, 0.005, 0.01 ...), unscaled<double> / unscaled<float> (coord_t) / unscaled(Point) (4,000 each, coords to +-2e9), Point::new_scale x3 (4,000 each), has_duplicate_points(const Points&) (2,000), Point::rotate x3 and Point::rotated x3 (6,000 each, fused as clang), Point::ccw x2 (6,000 each), Point::any_comp x2 (6,000 each), Point::nearest_point_index x3 (3,000 each). C++ overloads are trait impls in geometry/point.rs: AlignToGrid, Scaled, Unscaled, HasDuplicatePoints, PointRotate, PointRotated, PointCcw, NewScale, AnyComp, NearestPointIndex.
-- [~] `apply` (line 603) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 603) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 - [x] `apply` (line 608) → `geometry/point.rs:1731`
 - [~] `serialize` (line 683) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
 - [~] `serialize` (line 684) → `config.rs, ex_polygon_serialize.rs, multi_nozzle_utils.rs` — not in the paired file
@@ -11109,7 +11109,7 @@ Rust file: `print_apply.rs`. Status: **partial**. Not listed: 6 constructors, 1 
 
 **class `Print`**
 
-- [~] `apply` (line 1296) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 1296) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 
 **class `PrintObjectStatusDB`**
 
@@ -12372,7 +12372,7 @@ Rust file: `sla_print.rs`. Status: **partial**. Not listed: 7 constructors, 2 de
 - [~] `clear` (line 117) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, arachne/utils/extrusion_line.rs` — not in the paired file
 - [ ] `sla_trafo` (line 129) → `sla_print.rs`
 - [~] `print_object_ids` (line 177) → `print.rs` — not in the paired file
-- [~] `apply` (line 187) → `config.rs, extruder.rs, format/sl1.rs` — not in the paired file
+- [~] `apply` (line 187) → `app_slice.rs, config.rs, extruder.rs` — not in the paired file
 - [~] `technology` (line 446) → `print.rs` — not in the paired file
 - [~] `empty` (line 449) → `aabb_tree_indirect.rs, aabb_tree_lines.rs, boost_polygon_voronoi.rs` — not in the paired file
 - [~] `finished` (line 459) → `gcode/wipe_tower.rs, print.rs` — not in the paired file

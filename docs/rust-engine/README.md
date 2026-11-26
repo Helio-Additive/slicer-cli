@@ -22,11 +22,19 @@ program built from it; it is not packaged.
 The root CLI accepts the native single- and double-dash spellings of its
 supported flags. Use `--` before a model name that starts with a dash.
 It also accepts the desktop compatibility flag `--single-instance`.
-`CLI_OPTION_TOKENS=0` restores the previous parser.
+`CLI_OPTION_TOKENS=0` restores the previous option spellings. During a slice,
+the root driver reports any legacy placeholder rewrites. Use
+`--no-normalize-legacy-gcode` to retain the original template spellings.
+`CLI_LEGACY_GCODE=0` restores the previous flag and event behavior.
 
 The rewrite covers the Bambu paths in the repository's `main.cpp` and
 `cli_*.cpp`, the slicing engine and the parts of its dependencies those paths
-use. The root Cargo package builds the CLI and forbids unsafe code in its own
+use. Completion requires the root Cargo program to replicate the Bambu CLI's
+flags, run modes, diagnostics, output files and exit codes, along with the
+engine's slicing behavior. The required portions of upstream libraries belong
+in `crates/`. The production CLI, engine and dependency graph must build in
+safe Rust on all supported targets. Fixture scores and libslic3r checklist
+counts each measure only part of that goal. The root Cargo package builds the CLI and forbids unsafe code in its own
 targets. The engine still contains unsafe Rust. Compiling the production
 engine on macOS arm64 with `--forbid unsafe_code` at R985 reported 111
 diagnostics across 18 source files. The four native test oracles and the
@@ -148,7 +156,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R987) |
+| Fixture | As brought over (R808) | Now (R988) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -158,11 +166,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R987:
+missing most often. Lines of the oracle's body the port has verbatim, at R988:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R987 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R988 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

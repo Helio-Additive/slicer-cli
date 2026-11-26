@@ -212,9 +212,19 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R985 | Build the Rust front end from the root Cargo package and forbid unsafe code in its targets. The 12 Rust source files move without edits. | Package layout | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R986 | Extract the affine Eigen kernels into a production Rust dependency and port NanoSVG's XML callback parser. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R987 | Port native token handling for the root CLI's supported options and the desktop single-instance compatibility flag. | Root CLI parser | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R988 | Port the root CLI's legacy G-code opt-out and the ordered normalization event. | Root CLI and STL/3MF settings | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
 
+- R988, legacy placeholders. The previous Rust CLI refused
+  `--no-normalize-legacy-gcode` and silently rewrote templates by default.
+  The checkout's C++ normalizer and Rust now agree on 27 settings snapshots
+  and five exact event records. On a real STL the default reports three
+  replacements across two keys. A 3MF reports two across the same keys.
+  Preserving the spellings keeps both historical placeholder names usable
+  by the Bambu exporter. The event follows early configuration checks and
+  precedes print validation. All four fixtures reproduce R987 in both gate
+  positions, including H2D at 4,614,342 and 4,614,863.
 - R987, the root command line. The native parser accepts `-- -calib.3mf`,
   one or two dashes before option names, and `--single-instance`. The Rust
   parser previously refused these calls. The new parser matches all 29

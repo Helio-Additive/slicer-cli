@@ -9,7 +9,7 @@ are the exception). How to build, run and score it in this repository:
 
 ## Where things stand
 
-- **Parity (R987), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+- **Parity (R988), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
   Benchy classic 190,680 lines in order (100.00%), Benchy arachne 243,167 (100.00%), Majora
   2,864,040 (99.86%), prime tower 99.96%. `docs/rust-engine/README.md` has what the numbers
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
@@ -51,9 +51,9 @@ are the exception). How to build, run and score it in this repository:
 
 ## Test status
 
-R987 on macOS arm64: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
+R988 on macOS arm64: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
 test_tree_support_many_layers` gives 2,747 passed, 0 failed, one ignored timing diagnostic and one filtered test (debug profile), and `cargo test -p
-slicer-cli-rust` 16 passed. R913 settled the 67 that failed in R912 one by one against the pin (a
+slicer-cli-rust` 19 passed. R913 settled the 67 that failed in R912 one by one against the pin (a
 standalone generator calling the pin's function): most expected values of an older, invented API
 and were corrected to the C++ result with a comment saying where it comes from; the rest were
 engine code that departed from the C++ and was fixed (behind faithful gates where the slicing
