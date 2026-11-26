@@ -233,8 +233,36 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1006 | Port circle and ellipse paths in the safe NanoSVG crate. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1007 | Apply the official per-extruder nozzle diameters on STL and Bambu 3MF. | root CLI, profile loading | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1008 | Resolve the four printer fields of a partial external profile over the Bambu project. | root file loading, BBS importer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1009 | Check physical nozzle diameters and apply the legacy nozzle override on STL and Bambu 3MF. | root CLI, desktop presets, typed config | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1009. R1008 refused the legacy `--nozzle` flag at the parser. C++ checks
+  a fully consumed finite diameter against every resolved nozzle with a
+  strict tolerance of 0.000001 mm. It separately accepts a numeric prefix
+  when applying the raw override. The port follows both operations. The
+  native generator gives 105 presence and double-bit snapshots, including
+  partial list mutation, overflows and subnormals. Fourteen live edge cases
+  match the native exits and events. Twelve comparisons reproduce the exact
+  printer-variant refusal with the two packaged layouts and an empty catalogue.
+  Eight supported project/profile cases and 16 file-parent cases reproduce
+  the native results. Two additional synthetic projects hit a separate
+  native printer-fit check that Rust has yet to implement. The broader
+  application of file inheritance without a nozzle request is still open.
+  Ten successful flag jobs reproduce every motion and the nozzle header
+  of their equivalent settings file within each engine. The two engines'
+  underlying motion still differs, including 9,760 native cube commands
+  and 9,632 Rust commands at 0.6 mm. With `CLI_NOZZLE_OVERRIDE=0` the
+  earlier flag refusal is byte-identical. Both Benchys, Majora and H2D
+  match R1008 byte for byte with the gate on and off. The two H2D scores
+  are 4,614,342 and 4,614,863. The root binary links on all four targets.
+  macOS and both Linux targets produced the same 21,024-line cube with
+  `--nozzle 0.6mm`. The Windows PE was inspected. The typed snapshots
+  use the macOS C++ oracle. A C runtime probe found a platform difference
+  for the exact decimal spelling of the smallest positive float. macOS
+  reports underflow, while Ubuntu glibc accepts it. Linux musl also accepts
+  some inexact subnormal inputs that glibc rejects. Linux C++ CLI diagnostic
+  parity on these subnormal arguments remains open.
 
 - R1008. With a partial external settings bundle, R1007 discarded a saved
   0.6 mm nozzle and used the 0.4 mm default. The native root file loader

@@ -116,12 +116,6 @@ fn geometry_options_match_native_parse_state() {
     for row in include_str!("rust-engine/data/cli_command_line/geometry-options.jsonl").lines()
         .chain(include_str!("rust-engine/data/cli_command_line/nozzle-options.jsonl").lines()) {
         let case: GeometryCase = serde_json::from_str(row).unwrap();
-        // The physical nozzle setting still has a named refusal.
-        if let Some(flag) = case.args.iter().filter_map(|arg| arg.split('=').next())
-            .find(|flag| *flag == "--nozzle") {
-            assert!(parse(&case.args).unwrap_err().0.starts_with(flag), "{row}");
-            continue;
-        }
         let result = parse(&case.args);
         if let Some(error) = case.error {
             assert_eq!(result, Err((format!("Error: {error}"), 1)), "{row}");

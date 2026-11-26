@@ -1,0 +1,105 @@
+{"argument":"0.4","bits":[4600877379321698714],"initial":"absent","present":true}
+{"argument":"0.6","bits":[4603579539098121011],"initial":"absent","present":true}
+{"argument":"0.4,0.6","bits":[4600877379321698714,4603579539098121011],"initial":"absent","present":true}
+{"argument":".4000004","bits":[4600877386527458117],"initial":"absent","present":true}
+{"argument":"0.3,0.65,0.8","bits":[4599075939470750515,4604029899060858061,4605380978949069210],"initial":"absent","present":true}
+{"argument":"1e-1","bits":[4591870180066957722],"initial":"absent","present":true}
+{"argument":"0.6mm","bits":[4603579539098121011],"initial":"absent","present":true}
+{"argument":" 0.2","bits":[4596373779694328218],"initial":"absent","present":true}
+{"argument":"0.6 ","bits":[4603579539098121011],"initial":"absent","present":true}
+{"argument":"0.4,bad","bits":[4600877379321698714,0],"initial":"absent","present":true}
+{"argument":"bad","bits":[],"initial":"absent","present":false}
+{"argument":"","bits":[],"initial":"absent","present":false}
+{"argument":"0.00000001","bits":[4487126258331716666],"initial":"absent","present":true}
+{"argument":"0.4,nil","bits":[4600877379321698714,9221120237041090560],"initial":"absent","present":true}
+{"argument":"1e-39mm","bits":[],"initial":"absent","present":false}
+{"argument":"1e-499mm","bits":[],"initial":"absent","present":false}
+{"argument":"0x1p-149mm","bits":[3936146074321813504],"initial":"absent","present":true}
+{"argument":"0x1p-150mm","bits":[],"initial":"absent","present":false}
+{"argument":"1e40mm","bits":[],"initial":"absent","present":false}
+{"argument":"0x1.0000000000001p-149mm","bits":[],"initial":"absent","present":false}
+{"argument":"1.40129846432481707092372958328991613128026194187651577175706828388979108268586060148663818836212158203125e-45mm","bits":[],"initial":"absent","present":false}
+{"argument":"0.4","bits":[4600877379321698714],"initial":"empty","present":true}
+{"argument":"0.6","bits":[4603579539098121011],"initial":"empty","present":true}
+{"argument":"0.4,0.6","bits":[4600877379321698714,4603579539098121011],"initial":"empty","present":true}
+{"argument":".4000004","bits":[4600877386527458117],"initial":"empty","present":true}
+{"argument":"0.3,0.65,0.8","bits":[4599075939470750515,4604029899060858061,4605380978949069210],"initial":"empty","present":true}
+{"argument":"1e-1","bits":[4591870180066957722],"initial":"empty","present":true}
+{"argument":"0.6mm","bits":[4603579539098121011],"initial":"empty","present":true}
+{"argument":" 0.2","bits":[4596373779694328218],"initial":"empty","present":true}
+{"argument":"0.6 ","bits":[4603579539098121011],"initial":"empty","present":true}
+{"argument":"0.4,bad","bits":[4600877379321698714,0],"initial":"empty","present":true}
+{"argument":"bad","bits":[],"initial":"empty","present":true}
+{"argument":"","bits":[],"initial":"empty","present":true}
+{"argument":"0.00000001","bits":[4487126258331716666],"initial":"empty","present":true}
+{"argument":"0.4,nil","bits":[4600877379321698714],"initial":"empty","present":true}
+{"argument":"1e-39mm","bits":[],"initial":"empty","present":true}
+{"argument":"1e-499mm","bits":[],"initial":"empty","present":true}
+{"argument":"0x1p-149mm","bits":[3936146074321813504],"initial":"empty","present":true}
+{"argument":"0x1p-150mm","bits":[],"initial":"empty","present":true}
+{"argument":"1e40mm","bits":[],"initial":"empty","present":true}
+{"argument":"0x1.0000000000001p-149mm","bits":[],"initial":"empty","present":true}
+{"argument":"1.40129846432481707092372958328991613128026194187651577175706828388979108268586060148663818836212158203125e-45mm","bits":[],"initial":"empty","present":true}
+{"argument":"0.4","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"0.6","bits":[4603579539098121011],"initial":"0.4","present":true}
+{"argument":"0.4,0.6","bits":[4600877379321698714,4603579539098121011],"initial":"0.4","present":true}
+{"argument":".4000004","bits":[4600877386527458117],"initial":"0.4","present":true}
+{"argument":"0.3,0.65,0.8","bits":[4599075939470750515,4604029899060858061,4605380978949069210],"initial":"0.4","present":true}
+{"argument":"1e-1","bits":[4591870180066957722],"initial":"0.4","present":true}
+{"argument":"0.6mm","bits":[4603579539098121011],"initial":"0.4","present":true}
+{"argument":" 0.2","bits":[4596373779694328218],"initial":"0.4","present":true}
+{"argument":"0.6 ","bits":[4603579539098121011],"initial":"0.4","present":true}
+{"argument":"0.4,bad","bits":[4600877379321698714,0],"initial":"0.4","present":true}
+{"argument":"bad","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"0.00000001","bits":[4487126258331716666],"initial":"0.4","present":true}
+{"argument":"0.4,nil","bits":[4600877379321698714,9221120237041090560],"initial":"0.4","present":true}
+{"argument":"1e-39mm","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"1e-499mm","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"0x1p-149mm","bits":[3936146074321813504],"initial":"0.4","present":true}
+{"argument":"0x1p-150mm","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"1e40mm","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"0x1.0000000000001p-149mm","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"1.40129846432481707092372958328991613128026194187651577175706828388979108268586060148663818836212158203125e-45mm","bits":[4600877379321698714],"initial":"0.4","present":true}
+{"argument":"0.4","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"0.6","bits":[4603579539098121011,4603579539098121011],"initial":"0.4,0.4","present":true}
+{"argument":"0.4,0.6","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.4","present":true}
+{"argument":".4000004","bits":[4600877386527458117,4600877386527458117],"initial":"0.4,0.4","present":true}
+{"argument":"0.3,0.65,0.8","bits":[4599075939470750515,4604029899060858061,4605380978949069210],"initial":"0.4,0.4","present":true}
+{"argument":"1e-1","bits":[4591870180066957722,4591870180066957722],"initial":"0.4,0.4","present":true}
+{"argument":"0.6mm","bits":[4603579539098121011,4603579539098121011],"initial":"0.4,0.4","present":true}
+{"argument":" 0.2","bits":[4596373779694328218,4596373779694328218],"initial":"0.4,0.4","present":true}
+{"argument":"0.6 ","bits":[4603579539098121011,4603579539098121011],"initial":"0.4,0.4","present":true}
+{"argument":"0.4,bad","bits":[4600877379321698714,0],"initial":"0.4,0.4","present":true}
+{"argument":"bad","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"0.00000001","bits":[4487126258331716666,4487126258331716666],"initial":"0.4,0.4","present":true}
+{"argument":"0.4,nil","bits":[4600877379321698714,9221120237041090560],"initial":"0.4,0.4","present":true}
+{"argument":"1e-39mm","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"1e-499mm","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"0x1p-149mm","bits":[3936146074321813504,3936146074321813504],"initial":"0.4,0.4","present":true}
+{"argument":"0x1p-150mm","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"1e40mm","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"0x1.0000000000001p-149mm","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"1.40129846432481707092372958328991613128026194187651577175706828388979108268586060148663818836212158203125e-45mm","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.4","present":true}
+{"argument":"0.4","bits":[4600877379321698714,4600877379321698714],"initial":"0.4,0.6","present":true}
+{"argument":"0.6","bits":[4603579539098121011,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"0.4,0.6","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":".4000004","bits":[4600877386527458117,4600877386527458117],"initial":"0.4,0.6","present":true}
+{"argument":"0.3,0.65,0.8","bits":[4599075939470750515,4604029899060858061,4605380978949069210],"initial":"0.4,0.6","present":true}
+{"argument":"1e-1","bits":[4591870180066957722,4591870180066957722],"initial":"0.4,0.6","present":true}
+{"argument":"0.6mm","bits":[4603579539098121011,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":" 0.2","bits":[4596373779694328218,4596373779694328218],"initial":"0.4,0.6","present":true}
+{"argument":"0.6 ","bits":[4603579539098121011,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"0.4,bad","bits":[4600877379321698714,0],"initial":"0.4,0.6","present":true}
+{"argument":"bad","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"0.00000001","bits":[4487126258331716666,4487126258331716666],"initial":"0.4,0.6","present":true}
+{"argument":"0.4,nil","bits":[4600877379321698714,9221120237041090560],"initial":"0.4,0.6","present":true}
+{"argument":"1e-39mm","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"1e-499mm","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"0x1p-149mm","bits":[3936146074321813504,3936146074321813504],"initial":"0.4,0.6","present":true}
+{"argument":"0x1p-150mm","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"1e40mm","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"0x1.0000000000001p-149mm","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}
+{"argument":"1.40129846432481707092372958328991613128026194187651577175706828388979108268586060148663818836212158203125e-45mm","bits":[4600877379321698714,4603579539098121011],"initial":"0.4,0.6","present":true}

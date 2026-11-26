@@ -11,6 +11,8 @@
 //! (libslic3r `Utils.hpp`, `CLI_*`), as the process exit status; a job
 //! `Print::validate()` refuses exits 1, as `slicer_cli` does (main.cpp:11635-11636).
 
+mod printer;
+
 pub use crate::cli_command_line::{parse, refusal, Request, SliceRequest};
 use std::path::Path;
 
@@ -74,6 +76,13 @@ where
             let _ = out.write_all(refusal.event_record().as_bytes());
             let _ = out.flush();
             return (refusal.stderr_text(), refusal.exit_code());
+        }
+        if let Some(refusal) = err.downcast_ref::<slicer::app_slice::NozzleVariantRefusal>() {
+            let event = serde_json::json!({"event": "config_refused", "tag": "NozzleFlagNotAPrinterVariant",
+                "message": refusal.message, "nozzle": refusal.given, "printer_variant": refusal.printer_variant,
+                "printer_preset": refusal.printer_preset});
+            println!("\n[[SLICER_EVENT]] {event}");
+            return (format!("Error: {}", refusal.message), 1);
         }
         if let Some(refusal) = err.downcast_ref::<slicer::app_slice::ConfigRefusal>() {
             // main.cpp:9583-9590: the config_refused event on stdout, the sentence on stderr, exit 1.
@@ -149,7 +158,25 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     let mut values = request.geometry.extra_config.clone();
     let mut rejected = Vec::new();
     let mut fill_density = None;
+    let nozzle_rejected = std::cell::Cell::new(false);
+    let reject_nozzle = || nozzle_rejected.set(true);
+    // main.cpp 9554–9568 applies the file's bundled parent before the
+    // physical check. A flat settings file does not require a catalogue.
+    let inherited = request.geometry.overrides.contains_key("nozzle_diameter").then(|| {
+        let path = request.config.as_deref()?;
+        let doc: serde_json::Value = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(path).ok()?)).ok()?;
+        if doc.get("inherits")?.as_str()?.is_empty() { return None; }
+        crate::desktop_presets::inherited_settings(&printer::profiles_dir()?, path)
+    }).flatten();
+    let nozzle = request.geometry.overrides.get("nozzle_diameter").map(|raw| slicer::app_slice::NozzleOverride {
+        given: raw.as_str(), inherited: inherited.as_ref(), check_variant: &printer::check_nozzle_variant, rejected: &reject_nozzle,
+    });
     for (key, raw) in &request.geometry.overrides {
+        if key == "nozzle_diameter" {
+            // Checked on the resolved printer, after the official flags have landed.
+            rejected.push((key, raw));
+            continue;
+        }
         match slicer::preset_bundle::std_stoi(raw) {
             Ok(value) if key == "fill_density" => {
                 values.insert("sparse_infill_density".into(), format!("{value}%"));
@@ -162,6 +189,7 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     }
     let report = || {
         for &(key, value) in &rejected {
+            if key == "nozzle_diameter" && !nozzle_rejected.get() { continue; }
             let message = format!("Command-line override for '{key}' was rejected and had no effect");
             let event = serde_json::json!({"event": "override_rejected", "message": message,
                 "opt_key": key, "tag": "InvalidOverrideValue", "value": value});
@@ -183,15 +211,16 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
                     CLI_INVALID_PARAMS,
                 )
             })?;
-            slicer::app_slice::slice_to_gcode_with_overrides(&request.input, config, &request.output, legacy_gcode, overrides)
+            slicer::app_slice::slice_to_gcode_with_cli_overrides(&request.input, config, &request.output, legacy_gcode, overrides, nozzle.as_ref())
                 .map_err(failed)
         }
-        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_overrides(
+        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_cli_overrides(
             &request.input,
             request.config.as_deref(),
             &request.output,
             legacy_gcode,
             overrides,
+            nozzle.as_ref(),
         )
         .map_err(failed),
         other => Err((
@@ -240,10 +269,13 @@ pub fn run(args: &[String]) -> u8 {
             let diameter = if crate::cli_command_line::nozzle_diameter_enabled() {
                 "      --nozzle-diameter MM[,MM...]  Set the per-extruder nozzle diameters\n"
             } else { "" };
+            let nozzle = if crate::cli_command_line::nozzle_override_enabled() {
+                "      --nozzle MM        Check the printer variant and set the nozzle diameter\n"
+            } else { "" };
             let thermal = if crate::cli_command_line::temperature_options_enabled() {
                 "      --temp C           Set the nozzle temperature after the first layer\n      --bed-temp C       Set the selected plate temperature for both phases\n"
             } else { "" };
-            print!("{USAGE}{additional}{geometry}{diameter}{thermal}{legacy}{timing}{USAGE_TAIL}");
+            print!("{USAGE}{additional}{geometry}{diameter}{nozzle}{thermal}{legacy}{timing}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,

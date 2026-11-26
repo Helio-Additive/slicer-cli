@@ -38,6 +38,10 @@ pub(crate) fn nozzle_diameter_enabled() -> bool {
     native_tokens() && slicer::faithful_gate("CLI_NOZZLE_DIAMETER")
 }
 
+pub(crate) fn nozzle_override_enabled() -> bool {
+    native_tokens() && slicer::faithful_gate("CLI_NOZZLE_OVERRIDE")
+}
+
 pub(crate) fn temperature_options_enabled() -> bool {
     native_tokens() && slicer::faithful_gate("CLI_TEMPERATURE_OPTIONS")
 }
@@ -51,10 +55,11 @@ pub fn refusal(flag: &str) -> String {
     let extra = if slicer::faithful_gate("CLI_LEGACY_GCODE") { ", plus --no-normalize-legacy-gcode" } else { "" };
     let geometry = if geometry_options_enabled() { ", --layer-height, --wall-loops, --sparse-infill-density, --perimeters and --infill" } else { "" };
     let diameter = if nozzle_diameter_enabled() { ", --nozzle-diameter" } else { "" };
+    let nozzle = if nozzle_override_enabled() { ", --nozzle" } else { "" };
     let temperatures = if temperature_options_enabled() { ", --temp and --bed-temp" } else { "" };
     let timing = if slicer::faithful_gate("CLI_GCODE_TIMING") { ", and --gcode-timing" } else { "" };
     format!(
-        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{diameter}{temperatures}{extra}{timing} so far. \
+        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{diameter}{nozzle}{temperatures}{extra}{timing} so far. \
          Use slicer_cli (the Bambu Studio engine) for {flag}."
     )
 }
@@ -199,6 +204,9 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
                 "infill" | "perimeters" if geometry_options_enabled() => {
                     let key = if flag == "infill" { "fill_density" } else { "perimeters" };
                     geometry.overrides.insert(key.into(), value()?.to_string_lossy().into_owned());
+                }
+                "nozzle" if nozzle_override_enabled() => {
+                    geometry.overrides.insert("nozzle_diameter".into(), value()?.to_string_lossy().into_owned());
                 }
                 "temp" | "bed-temp" if temperature_options_enabled() => {
                     let key = if flag == "temp" { "nozzle_temperature" } else { "bed_temperature" };

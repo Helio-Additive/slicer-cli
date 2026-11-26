@@ -12,5 +12,6 @@
 
 mod cli_command_line;
 mod cli_gcode_timing;
+mod desktop_presets;
 pub mod engine_cli;
 pub mod parity;

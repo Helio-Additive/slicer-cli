@@ -189,6 +189,42 @@ pub struct SliceOverrides<'a> {
     pub report_rejections: &'a dyn Fn(),
 }
 
+// main.cpp 9696–9790. The root CLI resolves a printer variant against the
+// preset catalogue. The engine owns the config at this point in the slice.
+pub struct NozzleOverride<'a> {
+    pub given: &'a str,
+    pub inherited: Option<&'a DynamicPrintConfig>,
+    pub check_variant: &'a dyn Fn(&DynamicPrintConfig, &str) -> Option<NozzleVariantRefusal>,
+    pub rejected: &'a dyn Fn(),
+}
+
+#[derive(Debug)]
+pub struct NozzleVariantRefusal {
+    pub given: String,
+    pub printer_variant: String,
+    pub printer_preset: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for NozzleVariantRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.message) }
+}
+
+impl std::error::Error for NozzleVariantRefusal {}
+
+// main.cpp 7244–7257. std::stof checks the prefix, but the option reads
+// the original string into doubles. A scalar leaves the extruder count intact.
+fn apply_command_line_nozzle(config: &mut DynamicPrintConfig, raw: &str) -> bool {
+    use crate::config::{ConfigBase, ConfigOptionResolver};
+    if !crate::config::valid_float_prefix(raw) { return false; }
+    let count = config.option("nozzle_diameter").and_then(|v| v.vector_values_any()?.downcast_ref::<Vec<f64>>())
+        .map_or(1, |rows| rows.len().max(1));
+    let text = if count > 1 && !raw.contains(',') {
+        vec![raw; count].join(",")
+    } else { raw.into() };
+    config.set_deserialize_strict("nozzle_diameter", &text, false).is_ok()
+}
+
 // main.cpp 7267-7327. The Bambu nozzle option is nullable: the native
 // strict setter stores one value before Print::apply expands it. The two
 // active plate options keep their own vector lengths.
@@ -274,10 +310,10 @@ fn external_printer_config(path: &Path, settings: &serde_json::Value) -> Result<
 
 // main.cpp 9550–9596 overlays each file's actual settings on the project.
 // The BBS reader decides whether the project is allowed to supply them.
-fn resolve_project_printer(input: &Path, path: &Path, saved: Option<&str>, settings: &mut serde_json::Value,
+fn resolve_project_printer(input: &Path, path: Option<&Path>, saved: Option<&str>, settings: &mut serde_json::Value,
     imported: Option<&DynamicPrintConfig>) -> Result<()> {
     use crate::config::ConfigOptionResolver;
-    let file = external_printer_config(path, settings)?;
+    let file = match path { Some(path) => external_printer_config(path, settings)?, None => DynamicPrintConfig::new() };
     let needs_saved = PRINTER_PROFILE_KEYS.iter().any(|key| !file.has(key)) &&
         saved.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok()).is_some_and(|project|
             PRINTER_PROFILE_KEYS.iter().any(|key| !file.has(key) && project.get(key).is_some()));
@@ -342,12 +378,63 @@ fn project_can_select_absolute(value: Option<&serde_json::Value>) -> bool {
     }
 }
 
-fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&SliceOverrides<'_>>) -> Result<DynamicPrintConfig> {
+// main.cpp 5493–5517 applies the resolved parent and the file's own typed
+// options over the job. Keep doubles at full precision in the JSON bridge.
+fn apply_inherited_profile(settings: &mut serde_json::Value, inherited: &DynamicPrintConfig) -> Result<()> {
+    use crate::config::{ConfigBase, ConfigOptionResolver, ConfigOptionType as Kind, ConfigOptionFloatOrPercent,
+        ConfigOptionPoint, ConfigOptionPoint3, ConfigOptionPoints, ConfigOptionPointsGroups, FloatOrPercent};
+    let point = |p: &crate::geometry::Vec2d| format!("{}x{}", p.x, p.y);
+    let number = |value: f64, percent| if value.is_nan() { "nil".into() } else if percent { format!("{value}%") } else { value.to_string() };
+    for key in inherited.keys() {
+        let option = inherited.option(&key).context("Missing inherited option")?;
+        let value: serde_json::Value = match option.r#type() {
+            Kind::CoFloat | Kind::CoPercent => number(option.get_float()?, option.r#type() == Kind::CoPercent).into(),
+            Kind::CoFloatOrPercent => {
+                let v = option.as_any().downcast_ref::<ConfigOptionFloatOrPercent>().context("Expected a float or percentage")?;
+                number(v.value, v.percent).into()
+            }
+            Kind::CoFloats | Kind::CoPercents => {
+                let rows = option.vector_values_any().and_then(|v| v.downcast_ref::<Vec<f64>>()).context("Expected float rows")?;
+                rows.iter().map(|v| number(*v, option.r#type() == Kind::CoPercents)).collect::<Vec<_>>().into()
+            }
+            Kind::CoFloatsOrPercents => {
+                let rows = option.vector_values_any().and_then(|v| v.downcast_ref::<Vec<FloatOrPercent>>()).context("Expected float or percentage rows")?;
+                rows.iter().map(|v| number(v.value, v.percent)).collect::<Vec<_>>().into()
+            }
+            Kind::CoPoint => point(&option.as_any().downcast_ref::<ConfigOptionPoint>().context("Expected a point")?.value).into(),
+            Kind::CoPoint3 => {
+                let p = &option.as_any().downcast_ref::<ConfigOptionPoint3>().context("Expected a 3D point")?.value;
+                format!("{},{},{}", p.x, p.y, p.z).into()
+            }
+            Kind::CoPoints => option.as_any().downcast_ref::<ConfigOptionPoints>().context("Expected points")?.values.iter().map(point).collect::<Vec<_>>().into(),
+            Kind::CoPointsGroups => option.as_any().downcast_ref::<ConfigOptionPointsGroups>().context("Expected point groups")?.values.iter()
+                .map(|group| group.iter().map(point).collect::<Vec<_>>()).collect::<Vec<_>>().into(),
+            Kind::CoString => option.single_value_any().and_then(|value| value.downcast_ref::<String>()).context("Expected a string")?.clone().into(),
+            _ => match option.as_vector_base() {
+                Some(v) => v.vserialize()?.into(),
+                None => option.serialize()?.into(),
+            }
+        };
+        settings[&key] = value;
+    }
+    Ok(())
+}
+
+fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&SliceOverrides<'_>>, nozzle: Option<&NozzleOverride<'_>>) -> Result<DynamicPrintConfig> {
+    use crate::config::ConfigOptionResolver;
+    if let Some(nozzle) = nozzle {
+        // main.cpp 1125 initializes this ID even for an unnamed printer.
+        if settings.get("printer_settings_id").is_none() { settings["printer_settings_id"] = "".into(); }
+        if let Some(inherited) = nozzle.inherited { apply_inherited_profile(settings, inherited)?; }
+    }
     let file = crate::print::full_print_config_from_settings(settings);
-    let Some(overrides) = overrides else {
-        check_config_values(&file, &file)?;
+    if overrides.is_none() && nozzle.is_none() {
+        check_config_values(&file, &file, false)?;
         return Ok(file);
-    };
+    }
+    let empty = std::collections::BTreeMap::new();
+    let defaults = SliceOverrides { values: &empty, fill_density: None, report_rejections: &|| {} };
+    let overrides = overrides.unwrap_or(&defaults);
     for (key, value) in overrides.values {
         if key == "nozzle_diameter" && crate::faithful_gate("CLI_NOZZLE_DIAMETER") {
             // main.cpp 9687, 10614–10681: the official extra_config supplies
@@ -370,7 +457,16 @@ fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&Slice
             }
         }
     }
-    check_config_values(&config, &file)?;
+    if let Some(nozzle) = nozzle {
+        if let Some(refusal) = (nozzle.check_variant)(&config, nozzle.given) { return Err(refusal.into()); }
+        if !apply_command_line_nozzle(&mut config, nozzle.given) { (nozzle.rejected)(); }
+        if let Some(value) = config.option("nozzle_diameter") {
+            let rows = value.vector_values_any().and_then(|a| a.downcast_ref::<Vec<f64>>())
+                .context("Expected a nozzle diameter vector")?;
+            settings["nozzle_diameter"] = rows.iter().map(|v| if v.is_nan() { "nil".into() } else { v.to_string() }).collect::<Vec<_>>().into();
+        }
+    }
+    check_config_values(&config, &file, nozzle.is_some())?;
     (overrides.report_rejections)();
     Ok(config)
 }
@@ -385,7 +481,14 @@ pub fn slice_to_gcode_with_legacy_gcode(
 pub fn slice_to_gcode_with_overrides(
     input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
 ) -> Result<()> {
-    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode, overrides)?;
+    slice_to_gcode_with_cli_overrides(input, settings_json, output, legacy_gcode, overrides, None)
+}
+
+pub fn slice_to_gcode_with_cli_overrides(
+    input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
+    nozzle: Option<&NozzleOverride<'_>>,
+) -> Result<()> {
+    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode, overrides, nozzle)?;
     let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
 
     // Export G-code using Print::export_gcode().
@@ -420,10 +523,10 @@ pub fn slice_to_gcode_with_overrides(
 /// The part of [`slice_to_gcode`] before the G-code export: load and place the STL, build the Print and run
 /// `Print::process()`. Returns the processed Print (for tests that read its objects' layers and support layers).
 pub fn slice_stl_to_print(input: &Path, settings_json: &Path) -> Result<Print> {
-    slice_stl_print(input, settings_json, LegacyGcode::Normalize, None).map(|(print, _)| print)
+    slice_stl_print(input, settings_json, LegacyGcode::Normalize, None, None).map(|(print, _)| print)
 }
 
-fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>) -> Result<(Print, f64)> {
+fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>, nozzle: Option<&NozzleOverride<'_>>) -> Result<(Print, f64)> {
     info!("Slicing (in-process): {:?}", input);
 
     // Load mesh — only STL is wired for the library entrypoint.
@@ -455,8 +558,11 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
             settings_value[EXTRUSION_MODE] = u8::from(relative).to_string().into();
         }
     }
+    if nozzle.is_some() {
+        resolve_project_printer(input, Some(settings_json), None, &mut settings_value, None)?;
+    }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
-    let config = checked_job_config(&mut settings_value, overrides)?;
+    let config = checked_job_config(&mut settings_value, overrides, nozzle)?;
     legacy_gcode.apply(&mut settings_value);
     if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM") && profile_can_enable_scarf(&config) {
         use crate::model::{Model, ModelMesh, ModelVolume, ModelVolumeType};
@@ -851,7 +957,7 @@ impl ConfigRefusal {
 /// stderr, main.cpp:7894-7897); any other (the spiral-vase checks) refuses the job ([`ConfigRefusal`]). The checked config includes CLI overrides.
 /// The desktop baseline is the file before those overrides (main.cpp 9858-9899). Gate FRONT_END_CONFIG_VALIDATE_PIN
 /// (faithful, R949); off, no check.
-fn check_config_values(config: &DynamicPrintConfig, file: &DynamicPrintConfig) -> Result<()> {
+fn check_config_values(config: &DynamicPrintConfig, file: &DynamicPrintConfig, nozzle_given: bool) -> Result<()> {
     if !crate::faithful_gate("FRONT_END_CONFIG_VALIDATE_PIN") {
         return Ok(());
     }
@@ -861,7 +967,7 @@ fn check_config_values(config: &DynamicPrintConfig, file: &DynamicPrintConfig) -
     if !found.is_empty() {
         let desktop = file.validate(false).map_err(|e| anyhow::anyhow!("{}", e))?;
         for (key, why) in found {
-            if desktop.get(&key) == Some(&why) {
+            if !(nozzle_given && key == "nozzle_diameter") && desktop.get(&key) == Some(&why) {
                 noted.insert(key, why);
             } else {
                 validity.insert(key, why);
@@ -1260,6 +1366,13 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
 pub fn slice_3mf_to_gcode_with_overrides(
     input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
 ) -> Result<()> {
+    slice_3mf_to_gcode_with_cli_overrides(input, settings_override, output, legacy_gcode, overrides, None)
+}
+
+pub fn slice_3mf_to_gcode_with_cli_overrides(
+    input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
+    nozzle: Option<&NozzleOverride<'_>>,
+) -> Result<()> {
     info!("Slicing 3MF (in-process): {:?}", input);
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
@@ -1343,12 +1456,10 @@ pub fn slice_3mf_to_gcode_with_overrides(
         }
     }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
-    if crate::faithful_gate("PROJECT_PRINTER_PROFILE") {
-        if let Some(path) = settings_override {
-            resolve_project_printer(input, path, embedded_settings.as_deref(), &mut settings_value, imported.as_ref().map(|loaded| &loaded.1))?;
-        }
+    if nozzle.is_some() || (crate::faithful_gate("PROJECT_PRINTER_PROFILE") && settings_override.is_some()) {
+        resolve_project_printer(input, settings_override, embedded_settings.as_deref(), &mut settings_value, imported.as_ref().map(|loaded| &loaded.1))?;
     }
-    let config = checked_job_config(&mut settings_value, overrides)?;
+    let config = checked_job_config(&mut settings_value, overrides, nozzle)?;
     legacy_gcode.apply(&mut settings_value);
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
         && (scoped.scarf || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"));
@@ -1383,6 +1494,7 @@ pub fn slice_3mf_to_gcode_with_overrides(
                     }
                 }
             }
+            if let Some(nozzle) = nozzle { apply_command_line_nozzle(&mut base, nozzle.given); }
             base
         })?;
         if needs_scarf {
@@ -3746,6 +3858,29 @@ mod circle_compensation_settings_tests {
     /// GCodeProcessor.cpp:2030-2036. A profile's second mode limits both X
     /// travels in the pin's end-to-end timing vectors (gen.cpp --axis-limits).
     #[test]
+    fn legacy_nozzle_override_matches_native_row_count_and_bits() {
+        use crate::config::{ConfigBase, ConfigOptionFloats, ConfigOptionResolver};
+        use serde::Deserialize;
+        #[derive(Deserialize)]
+        struct Case { initial: String, argument: String, present: bool, bits: Vec<u64> }
+        for line in include_str!("../tests/data/cli_nozzle/overrides.jsonl").lines() {
+            let case: Case = serde_json::from_str(line).unwrap();
+            let mut cfg = DynamicPrintConfig::new();
+            match case.initial.as_str() {
+                "absent" => {}
+                "empty" => { cfg.set_key_value("nozzle_diameter", Box::new(ConfigOptionFloats::new())); }
+                initial => cfg.set_deserialize_strict("nozzle_diameter", initial, false).unwrap(),
+            }
+            apply_command_line_nozzle(&mut cfg, &case.argument);
+            let value = cfg.option("nozzle_diameter");
+            assert_eq!(value.is_some(), case.present, "{line}");
+            let values = value.and_then(|v| v.vector_values_any()?.downcast_ref::<Vec<f64>>());
+            let bits: Vec<_> = values.into_iter().flatten().map(|v| v.to_bits()).collect();
+            assert_eq!(bits, case.bits, "{line}");
+        }
+    }
+
+    #[test]
     fn printer_profile_overlays_match_the_native_file_loader() {
         use crate::config::{ConfigBase, ConfigOptionFloatsNullable, ConfigOption};
         use serde_json::{json, Value};
@@ -3764,7 +3899,7 @@ mod circle_compensation_settings_tests {
             std::fs::write(&file, serde_json::to_vec(&settings).unwrap()).unwrap();
             let seeded = case["seeded"].as_bool().unwrap();
             let embedded = saved.to_string();
-            resolve_project_printer(&file, &file, seeded.then_some(embedded.as_str()), &mut settings,
+            resolve_project_printer(&file, Some(&file), seeded.then_some(embedded.as_str()), &mut settings,
                 seeded.then_some(&seed)).unwrap();
             if let Some(rows) = settings.get("nozzle_diameter") {
                 let raw = rows.as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>().join(",");

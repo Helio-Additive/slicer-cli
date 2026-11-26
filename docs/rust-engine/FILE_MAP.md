@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 91 |
 | of the rest, 25 tokens or more | 277 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8937 |
+| Rust functions with no C++ function of that name in the pair | 8940 |
 
 By tier:
 
@@ -171,7 +171,7 @@ their function names come from, when there is one.
 |-|-|-|-|
 | `algorithm/line_segmentation/mod.rs` | module | 0 |  |
 | `algorithm/mod.rs` | module | 0 |  |
-| `app_slice.rs` | no C++ file of this name | 65 |  |
+| `app_slice.rs` | no C++ file of this name | 70 |  |
 | `arachne/beading_strategy/mod.rs` | module | 0 |  |
 | `arachne/mod.rs` | module | 0 |  |
 | `arachne/utils/mod.rs` | module | 0 |  |
@@ -1965,46 +1965,46 @@ Rust only:
 
 ### `Config` (.cpp+.hpp) and `config.rs`
 
-Tier 1. C++ functions 327 (plus 103 constructors, 2 destructors, 64 operators), Rust functions 627. Matched 271: faithful 235, partial 32, divergent 4, stub 0.
+Tier 1. C++ functions 327 (plus 103 constructors, 2 destructors, 64 operators), Rust functions 631. Matched 271: faithful 235, partial 32, divergent 4, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `enum_looks_like_true_value` :101 and `enum_looks_like_true_value` :52 (33%, 0.91x)
 - partial: `unescape_string_cstyle` :137 and `unescape_string_cstyle` :292 (50%, 0.95x)
-- partial: `ConfigOption::overriden_by` :291 and `ConfigOption::overriden_by` :1592 (33%, 0.31x)
-- partial: `ConfigOptionSingle::set` :315 and `ConfigOptionFloatOrPercent::set` :3546 (50%, 1.25x)
-- partial: `ConfigOptionVector::set` :400 and `ConfigOptionEnumsGenericTempl::set` :4917 (50%, 1.24x)
-- partial: `ConfigOptionFloat::deserialize` :842 and `ConfigOptionFloat::deserialize` :2662 (40%, 1.34x)
-- partial: `ConfigOptionFloatsTempl::set_at_to_nil` :889 and `ConfigOptionPercentsTempl::set_at_to_nil` :3459 (50%, 0.47x)
-- partial: `ConfigOptionFloatsTempl::deserialize` :918 and `ConfigOptionFloatsOrPercentsTempl::deserialize` :3729 (64%, 1.19x)
-- partial: `ConfigOptionInt::deserialize` :1013 and `ConfigOptionInt::deserialize` :2941 (40%, 1.34x)
-- partial: `ConfigOptionIntsTempl::set_at_to_nil` :1055 and `ConfigOptionFloatsOrPercentsTempl::set_at_to_nil` :3773 (50%, 0.47x)
-- partial: `ConfigOptionIntsTempl::deserialize` :1084 and `ConfigOptionIntsTempl::deserialize` :3058 (64%, 1.05x)
-- partial: `ConfigOptionPercent::serialize` :1218 and `ConfigOptionPercent::serialize` :3315 (50%, 0.71x)
-- partial: `ConfigOptionPercent::deserialize` :1227 and `ConfigOptionPercent::deserialize` :3321 (40%, 1.34x)
-- partial: `ConfigBase::load_from_ini_string` :1257 and `ConfigBase::load_from_ini_string` :7664 (40%, 0.63x)
-- partial: `ConfigBase::load_from_ini_string_commented` :1267 and `ConfigBase::load_from_ini_string_commented` :7672 (50%, 0.96x)
-- partial: `ConfigOptionFloatOrPercent::set` :1325 and `ConfigOptionSingle::set` :1864 (40%, 0.78x)
-- partial: `ConfigOptionFloatOrPercent::deserialize` :1341 and `ConfigOptionFloatOrPercent::deserialize` :3567 (44%, 1.15x)
-- partial: `ConfigOptionFloatsOrPercentsTempl::set_at_to_nil` :1384 and `ConfigOptionBoolsTempl::set_at_to_nil` :4555 (50%, 0.47x)
-- divergent: `ConfigOptionFloatsOrPercentsTempl::deserialize` :1413 and `ConfigOptionFloatsTempl::deserialize` :2851 (14%, 0.12x)
-- partial: `ReverseLineReader::getline` :1421 and `ReverseLineReader::getline` :8844 (53%, 1.33x)
-- divergent: `ConfigOptionPoint::deserialize` :1512 and `ConfigOptionPoint::deserialize` :3860 (28%, 1.05x)
-- partial: `ConfigOptionPoints::deserialize` :1569 and `ConfigOptionPoints::deserialize` :3943 (30%, 0.33x)
-- partial: `ConfigBase::save_to_json` :1583 and `ConfigBase::save_to_json` :7978 (55%, 1.87x)
-- partial: `ConfigOptionPoint3::deserialize` :1630 and `ConfigOptionPoint3::deserialize` :4034 (38%, 1.05x)
-- partial: `ConfigBase::save` :1638 and `ConfigBase::save` :8062 (46%, 1.81x)
-- partial: `ConfigOptionPointsGroups::deserialize` :1688 and `ConfigOptionPointsGroups::deserialize` :4135 (42%, 0.42x)
-- partial: `ConfigOptionPointsGroups::vserialize_single` :1714 and `ConfigOptionIntsGroups::vserialize_single` :4211 (50%, 0.39x)
-- divergent: `ConfigOptionIntsGroups::deserialize` :1801 and `ConfigOptionPercentsTempl::deserialize` :3434 (20%, 0.17x)
-- partial: `ConfigOptionBool::deserialize` :1866 and `ConfigOptionIntsGroups::deserialize` :4271 (75%, 2.15x)
-- partial: `dynamic_config_iterate` :1883 and `dynamic_config_iterate` :8744 (50%, 0.98x)
-- partial: `ConfigOptionBoolsTempl::set_at_to_nil` :1909 and `ConfigOptionEnumsGenericTempl::set_at_to_nil` :4982 (50%, 0.47x)
-- partial: `ConfigOptionEnumGeneric::deserialize` :2113 and `ConfigOptionEnumGeneric::deserialize` :4777 (50%, 1.0x)
-- divergent: `ConfigOptionEnumsGenericTempl::serialize_single_value` :2210 and `ConfigOptionPointsGroups::serialize_single_value` :4084 (28%, 0.67x)
-- partial: `ConfigDef::get` :2456 and `ConfigDef::get` :5263 (50%, 0.23x)
-- partial: `DynamicConfig::erase` :2755 and `DynamicConfig::erase` :8272 (50%, 0.34x)
-- partial: `DynamicConfig::set_key_value` :2785 and `DynamicConfig::set_key_value` :8311 (60%, 0.34x)
+- partial: `ConfigOption::overriden_by` :291 and `ConfigOption::overriden_by` :1758 (33%, 0.31x)
+- partial: `ConfigOptionSingle::set` :315 and `ConfigOptionFloatOrPercent::set` :3712 (50%, 1.25x)
+- partial: `ConfigOptionVector::set` :400 and `ConfigOptionEnumsGenericTempl::set` :5083 (50%, 1.24x)
+- partial: `ConfigOptionFloat::deserialize` :842 and `ConfigOptionFloat::deserialize` :2828 (40%, 1.34x)
+- partial: `ConfigOptionFloatsTempl::set_at_to_nil` :889 and `ConfigOptionPercentsTempl::set_at_to_nil` :3625 (50%, 0.47x)
+- partial: `ConfigOptionFloatsTempl::deserialize` :918 and `ConfigOptionFloatsOrPercentsTempl::deserialize` :3895 (64%, 1.19x)
+- partial: `ConfigOptionInt::deserialize` :1013 and `ConfigOptionInt::deserialize` :3107 (40%, 1.34x)
+- partial: `ConfigOptionIntsTempl::set_at_to_nil` :1055 and `ConfigOptionFloatsOrPercentsTempl::set_at_to_nil` :3939 (50%, 0.47x)
+- partial: `ConfigOptionIntsTempl::deserialize` :1084 and `ConfigOptionIntsTempl::deserialize` :3224 (64%, 1.05x)
+- partial: `ConfigOptionPercent::serialize` :1218 and `ConfigOptionPercent::serialize` :3481 (50%, 0.71x)
+- partial: `ConfigOptionPercent::deserialize` :1227 and `ConfigOptionPercent::deserialize` :3487 (40%, 1.34x)
+- partial: `ConfigBase::load_from_ini_string` :1257 and `ConfigBase::load_from_ini_string` :7830 (40%, 0.63x)
+- partial: `ConfigBase::load_from_ini_string_commented` :1267 and `ConfigBase::load_from_ini_string_commented` :7838 (50%, 0.96x)
+- partial: `ConfigOptionFloatOrPercent::set` :1325 and `ConfigOptionSingle::set` :2030 (40%, 0.78x)
+- partial: `ConfigOptionFloatOrPercent::deserialize` :1341 and `ConfigOptionFloatOrPercent::deserialize` :3733 (44%, 1.15x)
+- partial: `ConfigOptionFloatsOrPercentsTempl::set_at_to_nil` :1384 and `ConfigOptionBoolsTempl::set_at_to_nil` :4721 (50%, 0.47x)
+- divergent: `ConfigOptionFloatsOrPercentsTempl::deserialize` :1413 and `ConfigOptionFloatsTempl::deserialize` :3017 (14%, 0.12x)
+- partial: `ReverseLineReader::getline` :1421 and `ReverseLineReader::getline` :9010 (53%, 1.33x)
+- divergent: `ConfigOptionPoint::deserialize` :1512 and `ConfigOptionPoint::deserialize` :4026 (28%, 1.05x)
+- partial: `ConfigOptionPoints::deserialize` :1569 and `ConfigOptionPoints::deserialize` :4109 (30%, 0.33x)
+- partial: `ConfigBase::save_to_json` :1583 and `ConfigBase::save_to_json` :8144 (55%, 1.87x)
+- partial: `ConfigOptionPoint3::deserialize` :1630 and `ConfigOptionPoint3::deserialize` :4200 (38%, 1.05x)
+- partial: `ConfigBase::save` :1638 and `ConfigBase::save` :8228 (46%, 1.81x)
+- partial: `ConfigOptionPointsGroups::deserialize` :1688 and `ConfigOptionPointsGroups::deserialize` :4301 (42%, 0.42x)
+- partial: `ConfigOptionPointsGroups::vserialize_single` :1714 and `ConfigOptionIntsGroups::vserialize_single` :4377 (50%, 0.39x)
+- divergent: `ConfigOptionIntsGroups::deserialize` :1801 and `ConfigOptionPercentsTempl::deserialize` :3600 (20%, 0.17x)
+- partial: `ConfigOptionBool::deserialize` :1866 and `ConfigOptionIntsGroups::deserialize` :4437 (75%, 2.15x)
+- partial: `dynamic_config_iterate` :1883 and `dynamic_config_iterate` :8910 (50%, 0.98x)
+- partial: `ConfigOptionBoolsTempl::set_at_to_nil` :1909 and `ConfigOptionEnumsGenericTempl::set_at_to_nil` :5148 (50%, 0.47x)
+- partial: `ConfigOptionEnumGeneric::deserialize` :2113 and `ConfigOptionEnumGeneric::deserialize` :4943 (50%, 1.0x)
+- divergent: `ConfigOptionEnumsGenericTempl::serialize_single_value` :2210 and `ConfigOptionPointsGroups::serialize_single_value` :4250 (28%, 0.67x)
+- partial: `ConfigDef::get` :2456 and `ConfigDef::get` :5429 (50%, 0.23x)
+- partial: `DynamicConfig::erase` :2755 and `DynamicConfig::erase` :8438 (50%, 0.34x)
+- partial: `DynamicConfig::set_key_value` :2785 and `DynamicConfig::set_key_value` :8477 (60%, 0.34x)
 
 Missing in the Rust file:
 
@@ -2085,344 +2085,348 @@ Rust only:
 - `ldexp` :588
 - `nan_payload` :610
 - `strtod_c` :631
-- `istream_double` :836
-- `istream_int` :917
-- `scanf_float_field` :983
-- `sscanf_doubles` :1006
-- `std_hash_double` :1063
-- `std_hash_int` :1072
-- `boost_hash_combine` :1078
-- `std_hash_string` :1091
-- `std_hash_float_or_percent` :1228
-- `std_hash_vec2d` :1238
-- `std_hash_vec3d` :1245
-- `std_hash_vec2ds` :1253
-- `std_hash_vector_int` :1269
-- `ConfigurationError::new` :1327
-- `ConfigurationError::with_kind` :1332
-- `ConfigurationError::what` :1337 — C++ has it in `FilamentGroupUtils`, `PlaceholderParser`, `PrintBase`
-- `ConfigurationError::is_configuration_error` :1343
-- `ConfigurationError::fmt` :1349
-- `UnknownOptionException::new` :1363
-- `UnknownOptionException::with_key` :1368
-- `NoDefinitionException::new` :1381
-- `NoDefinitionException::with_key` :1386
-- `BadOptionTypeException::new` :1399
-- `BadOptionTypeException::with_message` :1404
-- `BadOptionValueException::new` :1414
-- `BadOptionValueException::with_message` :1419
-- `ConfigSubstitution::operator_lt` :1489
-- `ConfigSubstitution::operator_eq` :1497
-- `ConfigSubstitutionContext::new` :1520
-- `ConfigOption::operator_ne` :1569
-- `ConfigOption::nullable` :1583
-- `ConfigOption::as_vector_base` :1615
-- `ConfigOption::as_vector_base_mut` :1619
-- `ConfigOption::single_value_any` :1623
-- `ConfigOption::vector_values_any` :1627
-- `ConfigOption::vector_values_any_mut` :1631
-- `single_ref` :1719
-- `f64::from_single` :1726
-- `f64::std_hash` :1729
-- `f64::value_initialized` :1732
-- `i32::from_single` :1738
-- `i32::std_hash` :1746
-- `i32::value_initialized` :1749
-- `String::from_single` :1755
-- `String::std_hash` :1758
-- `String::value_initialized` :1761
-- `FloatOrPercent::from_single` :1767
-- `FloatOrPercent::std_hash` :1777
-- `FloatOrPercent::value_initialized` :1780
-- `Vec2d::from_single` :1786
-- `Vec2d::std_hash` :1789
-- `Vec2d::value_initialized` :1792
-- `Vec3d::from_single` :1798
-- `Vec3d::std_hash` :1801
-- `Vec3d::value_initialized` :1804
-- `Vec2ds::from_single` :1810
-- `Vec2ds::std_hash` :1813
-- `Vec2ds::value_initialized` :1816
-- `Vec::from_single` :1822
-- `Vec::std_hash` :1825
-- `Vec::value_initialized` :1828
-- `u8::from_single` :1834
-- `u8::std_hash` :1838
-- `u8::value_initialized` :1841
-- `bool::from_single` :1847
-- `bool::std_hash` :1850
-- `bool::value_initialized` :1853
-- `ConfigOptionSingle::operator_eq` :1873
-- `ConfigOptionSingle::hash` :1881 — C++ has it in `SLAPrintSteps`
-- `vector_ref` :1886
-- `vector_mut` :1892
-- `is_nil_of` :1898
-- `ConfigOptionVector::scalar_type` :1909
-- `ConfigOptionVector::set_from_options` :1938
-- `ConfigOptionVector::set_range` :1999
-- `ConfigOptionVector::get_at` :2275
-- `ConfigOptionVector::get_at_mut` :2285
-- `ConfigOptionVector::operator_eq` :2333
-- `lexicographical_less` :2586
-- `float_or_percent_less` :2601
-- `ConfigOptionFloat::new` :2618
-- `ConfigOptionFloat::with_value` :2622
-- `ConfigOptionFloat::static_type` :2626
-- `ConfigOptionFloat::operator_lt` :2630
-- `ConfigOptionFloat::r#type` :2646
-- `ConfigOptionFloat::get_float` :2650
-- `ConfigOptionFloatsTempl::new` :2689
-- `ConfigOptionFloatsTempl::with_size` :2693
-- `ConfigOptionFloatsTempl::from_values` :2697
-- `ConfigOptionFloatsTempl::static_type` :2701
-- `ConfigOptionFloatsTempl::operator_lt` :2705
-- `ConfigOptionFloatsTempl::nil_value` :2709
-- `ConfigOptionFloatsTempl::get_at` :2713
-- `ConfigOptionFloatsTempl::get_at_mut` :2717
-- `ConfigOptionFloatsTempl::deserialize_values` :2723
-- `ConfigOptionFloatsTempl::r#type` :2812
-- `ConfigOptionFloatsTempl::operator_eq` :2820
-- `ConfigOptionFloatsTempl::is_nil_at` :2869
-- `ConfigOptionFloatsTempl::set_at_to_nil` :2873
-- `ConfigOptionInt::new` :2892
-- `ConfigOptionInt::with_value` :2896
-- `ConfigOptionInt::with_double` :2900
-- `ConfigOptionInt::static_type` :2904
-- `ConfigOptionInt::r#type` :2920
-- `ConfigOptionInt::get_int` :2924
-- `ConfigOptionInt::set_int` :2928
-- `ConfigOptionIntsTempl::new` :2968
-- `ConfigOptionIntsTempl::with_size` :2972
-- `ConfigOptionIntsTempl::from_values` :2976
-- `ConfigOptionIntsTempl::static_type` :2980
-- `ConfigOptionIntsTempl::operator_lt` :2984
-- `ConfigOptionIntsTempl::nil_value` :2988
-- `ConfigOptionIntsTempl::get_at` :2992
-- `ConfigOptionIntsTempl::get_at_mut` :2996
-- `ConfigOptionIntsTempl::r#type` :3026
-- `ConfigOptionIntsTempl::is_nil_at` :3097
-- `ConfigOptionIntsTempl::set_at_to_nil` :3101
-- `ConfigOptionString::new` :3120
-- `ConfigOptionString::with_value` :3124
-- `ConfigOptionString::static_type` :3128
-- `ConfigOptionString::operator_lt` :3132
-- `ConfigOptionString::r#type` :3152
-- `ConfigOptionStrings::new` :3183
-- `ConfigOptionStrings::with_size` :3187
-- `ConfigOptionStrings::from_values` :3191
-- `ConfigOptionStrings::static_type` :3195
-- `ConfigOptionStrings::operator_lt` :3199
-- `ConfigOptionStrings::get_at` :3203
-- `ConfigOptionStrings::get_at_mut` :3207
-- `ConfigOptionStrings::r#type` :3224
-- `ConfigOptionStrings::is_nil_at` :3251
-- `ConfigOptionStrings::set_at_to_nil` :3255
-- `ConfigOptionPercent::new` :3271
-- `ConfigOptionPercent::with_value` :3275
-- `ConfigOptionPercent::static_type` :3279
-- `ConfigOptionPercent::operator_lt` :3283
-- `ConfigOptionPercent::r#type` :3303
-- `ConfigOptionPercent::get_float` :3307
-- `ConfigOptionPercentsTempl::new` :3348
-- `ConfigOptionPercentsTempl::with_size` :3352
-- `ConfigOptionPercentsTempl::from_values` :3356
-- `ConfigOptionPercentsTempl::static_type` :3360
-- `ConfigOptionPercentsTempl::operator_lt` :3364
-- `ConfigOptionPercentsTempl::get_at` :3372
-- `ConfigOptionPercentsTempl::get_at_mut` :3376
-- `ConfigOptionPercentsTempl::r#type` :3392
-- `ConfigOptionPercentsTempl::operator_eq` :3400
-- `ConfigOptionPercentsTempl::is_nil_at` :3455
-- `ConfigOptionFloatOrPercent::new` :3479
-- `ConfigOptionFloatOrPercent::with_value` :3483
-- `ConfigOptionFloatOrPercent::static_type` :3487
-- `ConfigOptionFloatOrPercent::operator_lt` :3491
-- `ConfigOptionFloatOrPercent::r#type` :3514
-- `ConfigOptionFloatOrPercent::operator_eq` :3526
-- `ConfigOptionFloatsOrPercentsTempl::new` :3595
-- `ConfigOptionFloatsOrPercentsTempl::with_size` :3599
-- `ConfigOptionFloatsOrPercentsTempl::from_values` :3603
-- `ConfigOptionFloatsOrPercentsTempl::static_type` :3607
-- `ConfigOptionFloatsOrPercentsTempl::operator_lt` :3611
-- `ConfigOptionFloatsOrPercentsTempl::get_at` :3619
-- `ConfigOptionFloatsOrPercentsTempl::get_at_mut` :3623
-- `ConfigOptionFloatsOrPercentsTempl::r#type` :3690
-- `ConfigOptionFloatsOrPercentsTempl::operator_eq` :3698
-- `ConfigOptionFloatsOrPercentsTempl::is_nil_at` :3769
-- `serialize_point_x` :3780
-- `deserialize_point_x` :3787
-- `ConfigOptionPoint::new` :3816
-- `ConfigOptionPoint::with_value` :3820
-- `ConfigOptionPoint::static_type` :3824
-- `ConfigOptionPoint::operator_lt` :3829
-- `ConfigOptionPoint::r#type` :3845
-- `ConfigOptionPoints::new` :3882
-- `ConfigOptionPoints::with_size` :3886
-- `ConfigOptionPoints::from_values` :3890
-- `ConfigOptionPoints::static_type` :3894
-- `ConfigOptionPoints::operator_lt` :3899
-- `ConfigOptionPoints::get_at` :3903
-- `ConfigOptionPoints::get_at_mut` :3907
-- `ConfigOptionPoints::r#type` :3924
-- `ConfigOptionPoints::is_nil_at` :3967
-- `ConfigOptionPoints::set_at_to_nil` :3971
-- `ConfigOptionPoint3::new` :3987
-- `ConfigOptionPoint3::with_value` :3991
-- `ConfigOptionPoint3::static_type` :3995
-- `ConfigOptionPoint3::operator_lt` :3999
-- `ConfigOptionPoint3::r#type` :4017
-- `ConfigOptionPointsGroups::new` :4057
-- `ConfigOptionPointsGroups::from_values` :4061
-- `ConfigOptionPointsGroups::static_type` :4065
-- `ConfigOptionPointsGroups::get_at` :4069
-- `ConfigOptionPointsGroups::r#type` :4105
-- `ConfigOptionPointsGroups::operator_eq` :4113
-- `ConfigOptionPointsGroups::is_nil_at` :4163
-- `ConfigOptionPointsGroups::set_at_to_nil` :4167
-- `ConfigOptionIntsGroups::new` :4183
-- `ConfigOptionIntsGroups::from_values` :4187
-- `ConfigOptionIntsGroups::static_type` :4191
-- `ConfigOptionIntsGroups::operator_lt` :4196
-- `ConfigOptionIntsGroups::get_at` :4207
-- `ConfigOptionIntsGroups::r#type` :4241
-- `ConfigOptionIntsGroups::operator_eq` :4249
-- `ConfigOptionIntsGroups::is_nil_at` :4305
-- `ConfigOptionBool::new` :4325
-- `ConfigOptionBool::with_value` :4329
-- `ConfigOptionBool::static_type` :4333
-- `ConfigOptionBool::operator_lt` :4337
-- `ConfigOptionBool::r#type` :4353
-- `ConfigOptionBool::deserialize` :4369 — C++ has it in `MultiNozzleUtils`, `Support/SupportMaterial`, `TriangleSelector`
-- `ConfigOptionBoolsTempl::new` :4400
-- `ConfigOptionBoolsTempl::with_size` :4404
-- `ConfigOptionBoolsTempl::from_bools` :4408
-- `ConfigOptionBoolsTempl::from_values` :4412
-- `ConfigOptionBoolsTempl::static_type` :4416
-- `ConfigOptionBoolsTempl::operator_lt` :4420
-- `ConfigOptionBoolsTempl::get_at_mut` :4428
-- `ConfigOptionBoolsTempl::r#type` :4500
-- `ConfigOptionBoolsTempl::is_nil_at` :4551
-- `ConfigOptionEnum::new` :4586
-- `ConfigOptionEnum::with_value` :4590
-- `ConfigOptionEnum::static_type` :4594
-- `ConfigOptionEnum::operator_lt` :4598
-- `ConfigOptionEnum::get_enum_names` :4611
-- `ConfigOptionEnum::get_enum_values` :4615
-- `ConfigOptionEnum::static_type` :4632
-- `ConfigOptionEnum::r#type` :4641
-- `ConfigOptionEnum::operator_eq` :4658
-- `ConfigOptionEnumGeneric::new` :4703
-- `ConfigOptionEnumGeneric::with_value` :4707
-- `ConfigOptionEnumGeneric::operator_lt` :4715
-- `ConfigOptionEnumGeneric::r#type` :4730
-- `ConfigOptionEnumGeneric::operator_eq` :4747
-- `ConfigOptionEnumGeneric::hash` :4764 — C++ has it in `SLAPrintSteps`
-- `ints_of` :4790
-- `ConfigOptionEnumsGenericTempl::new` :4823
-- `ConfigOptionEnumsGenericTempl::with_size` :4827
-- `ConfigOptionEnumsGenericTempl::from_values` :4831
-- `ConfigOptionEnumsGenericTempl::static_type` :4835
-- `ConfigOptionEnumsGenericTempl::operator_lt` :4841
-- `ConfigOptionEnumsGenericTempl::operator_eq_ints` :4846
-- `ConfigOptionEnumsGenericTempl::get_at` :4857
-- `ConfigOptionEnumsGenericTempl::get_at_mut` :4861
-- `ConfigOptionEnumsGenericTempl::r#type` :4895
-- `ConfigOptionEnumsGenericTempl::clone` :4899 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
-- `ConfigOptionEnumsGenericTempl::is_nil_at` :4978
-- `ConfigOptionDef::default` :5080
-- `ConfigDef::new` :5253
-- `ConfigDef::print_cli_help` :5296
-- `ConfigOptionResolverTyped::option_typed` :5453
-- `ConfigOptionResolverTyped::option_throw_typed` :5461
-- `c_atoi` :5554
-- `iequals` :5573
-- `token_type_name` :5607
-- `Lexer::new` :5662
-- `Lexer::get_character` :5679
-- `Lexer::get_codepoint` :5689
-- `Lexer::next_byte_in_range` :5708
-- `Lexer::scan_string` :5725
-- `Lexer::scan_number` :5893
-- `Lexer::scan_literal` :6051
-- `Lexer::reset` :6063 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
-- `Lexer::get` :6070 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `Lexer::unget` :6090
-- `Lexer::add` :6107 — C++ has it in `GCode/SpiralVase`, `PrintApply`, `SLA/Pad`
-- `Lexer::get_token_string` :6112
-- `Lexer::skip_bom` :6125
-- `Lexer::skip_whitespace` :6136
-- `Lexer::scan` :6147
-- `Parser::new` :6191
-- `Parser::get_token` :6198
-- `Parser::exception_message` :6204
-- `Parser::parse_error` :6226 — C++ has it in `Format/3mf`, `Format/bbs_3mf`
-- `Parser::handle_value` :6238
-- `Parser::sax_parse_internal` :6250
-- `parse` :6397 — C++ has it in `PlaceholderParser`, `Semver`
-- `parse_strict` :6406
-- `json_type_name` :6418
-- `nlohmann_json_parse` :6432
-- `nlohmann_json_parse_strict` :6443
-- `nlohmann_type_name` :6451
-- `c_atoi_str` :6456
-- `json_to_string` :6463
-- `parse_str_arr` :6474
-- `property_tree_read_ini` :6527
-- `json_dump_string` :6607
-- `SetDeserializeItem::new` :6635
-- `SetDeserializeItem::from_bool` :6639
-- `SetDeserializeItem::from_int` :6643
-- `SetDeserializeItem::from_float` :6647
-- `SetDeserializeItem::from_double` :6655
-- `option_throw_typed_mut` :6665
-- `ConfigBase::option_mut` :6704
-- `ConfigBase::option_throw_mut` :6709
-- `ConfigBase::set_bool` :6856 — C++ has it in `AppConfig`
-- `ConfigBase::set_int` :6862
-- `ConfigBase::set_double` :6890
-- `ConfigBase::set_string` :6915
-- `ConfigBase::set_deserialize_items` :6969
-- `ConfigBase::set_deserialize_strict_items` :6977
-- `ConfigBase::get_abs_value_over` :7172
-- `ConfigBase::load_from_json_with_context` :7285
-- `ConfigBase::load_tree` :7732
-- `different_settings_to_system_mut` :8109
-- `ConfigBaseTyped::option_typed_mut` :8122
-- `ConfigBaseTyped::option_throw_typed_mut` :8130
-- `DynamicConfig::default` :8155
-- `DynamicConfig::clone` :8162 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
-- `DynamicConfig::new` :8171
-- `DynamicConfig::with_def` :8177
-- `DynamicConfig::from_config` :8183 — C++ has it in `Model`
-- `DynamicConfig::assign` :8194 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
-- `DynamicConfig::assign_move` :8202
-- `DynamicConfig::operator_add_assign` :8213
-- `DynamicConfig::operator_add_assign_move` :8232
-- `DynamicConfig::operator_eq` :8239
-- `DynamicConfig::operator_ne` :8257
-- `DynamicConfig::opt_mut` :8294
-- `DynamicConfig::opt_expect` :8359
-- `DynamicConfig::opt_expect_mut` :8363
-- `DynamicConfig::opt_string_mut` :8370
-- `DynamicConfig::opt_string` :8377
-- `DynamicConfig::opt_string_at_mut` :8384
-- `DynamicConfig::opt_string_at` :8391
-- `DynamicConfig::opt_float_mut` :8398
-- `DynamicConfig::opt_float` :8407
-- `DynamicConfig::opt_float_at_mut` :8421
-- `DynamicConfig::opt_float_at` :8431
-- `DynamicConfig::opt_float_nullable_mut` :8438
-- `DynamicConfig::opt_float_nullable` :8445
-- `DynamicConfig::opt_int_mut` :8455
-- `DynamicConfig::opt_int_at_mut` :8471
-- `DynamicConfig::opt_int_at` :8480
-- `DynamicConfig::opt_int_nullable_mut` :8492
-- `DynamicConfig::opt_int_nullable` :8499
-- `DynamicConfig::opt_enum_at` :8513
-- `DynamicConfig::opt_bool_at` :8540
-- `DynamicConfig::optptr_mut` :8702
-- `DynamicConfig::handle_legacy` :8735 — C++ has it in `PrintConfig`
-- `ReverseLineReader::new` :8837
+- `float_prefix_value` :832
+- `exact_hex_float_subnormal` :957
+- `complete_finite_double` :975
+- `valid_float_prefix` :983
+- `istream_double` :1002
+- `istream_int` :1083
+- `scanf_float_field` :1149
+- `sscanf_doubles` :1172
+- `std_hash_double` :1229
+- `std_hash_int` :1238
+- `boost_hash_combine` :1244
+- `std_hash_string` :1257
+- `std_hash_float_or_percent` :1394
+- `std_hash_vec2d` :1404
+- `std_hash_vec3d` :1411
+- `std_hash_vec2ds` :1419
+- `std_hash_vector_int` :1435
+- `ConfigurationError::new` :1493
+- `ConfigurationError::with_kind` :1498
+- `ConfigurationError::what` :1503 — C++ has it in `FilamentGroupUtils`, `PlaceholderParser`, `PrintBase`
+- `ConfigurationError::is_configuration_error` :1509
+- `ConfigurationError::fmt` :1515
+- `UnknownOptionException::new` :1529
+- `UnknownOptionException::with_key` :1534
+- `NoDefinitionException::new` :1547
+- `NoDefinitionException::with_key` :1552
+- `BadOptionTypeException::new` :1565
+- `BadOptionTypeException::with_message` :1570
+- `BadOptionValueException::new` :1580
+- `BadOptionValueException::with_message` :1585
+- `ConfigSubstitution::operator_lt` :1655
+- `ConfigSubstitution::operator_eq` :1663
+- `ConfigSubstitutionContext::new` :1686
+- `ConfigOption::operator_ne` :1735
+- `ConfigOption::nullable` :1749
+- `ConfigOption::as_vector_base` :1781
+- `ConfigOption::as_vector_base_mut` :1785
+- `ConfigOption::single_value_any` :1789
+- `ConfigOption::vector_values_any` :1793
+- `ConfigOption::vector_values_any_mut` :1797
+- `single_ref` :1885
+- `f64::from_single` :1892
+- `f64::std_hash` :1895
+- `f64::value_initialized` :1898
+- `i32::from_single` :1904
+- `i32::std_hash` :1912
+- `i32::value_initialized` :1915
+- `String::from_single` :1921
+- `String::std_hash` :1924
+- `String::value_initialized` :1927
+- `FloatOrPercent::from_single` :1933
+- `FloatOrPercent::std_hash` :1943
+- `FloatOrPercent::value_initialized` :1946
+- `Vec2d::from_single` :1952
+- `Vec2d::std_hash` :1955
+- `Vec2d::value_initialized` :1958
+- `Vec3d::from_single` :1964
+- `Vec3d::std_hash` :1967
+- `Vec3d::value_initialized` :1970
+- `Vec2ds::from_single` :1976
+- `Vec2ds::std_hash` :1979
+- `Vec2ds::value_initialized` :1982
+- `Vec::from_single` :1988
+- `Vec::std_hash` :1991
+- `Vec::value_initialized` :1994
+- `u8::from_single` :2000
+- `u8::std_hash` :2004
+- `u8::value_initialized` :2007
+- `bool::from_single` :2013
+- `bool::std_hash` :2016
+- `bool::value_initialized` :2019
+- `ConfigOptionSingle::operator_eq` :2039
+- `ConfigOptionSingle::hash` :2047 — C++ has it in `SLAPrintSteps`
+- `vector_ref` :2052
+- `vector_mut` :2058
+- `is_nil_of` :2064
+- `ConfigOptionVector::scalar_type` :2075
+- `ConfigOptionVector::set_from_options` :2104
+- `ConfigOptionVector::set_range` :2165
+- `ConfigOptionVector::get_at` :2441
+- `ConfigOptionVector::get_at_mut` :2451
+- `ConfigOptionVector::operator_eq` :2499
+- `lexicographical_less` :2752
+- `float_or_percent_less` :2767
+- `ConfigOptionFloat::new` :2784
+- `ConfigOptionFloat::with_value` :2788
+- `ConfigOptionFloat::static_type` :2792
+- `ConfigOptionFloat::operator_lt` :2796
+- `ConfigOptionFloat::r#type` :2812
+- `ConfigOptionFloat::get_float` :2816
+- `ConfigOptionFloatsTempl::new` :2855
+- `ConfigOptionFloatsTempl::with_size` :2859
+- `ConfigOptionFloatsTempl::from_values` :2863
+- `ConfigOptionFloatsTempl::static_type` :2867
+- `ConfigOptionFloatsTempl::operator_lt` :2871
+- `ConfigOptionFloatsTempl::nil_value` :2875
+- `ConfigOptionFloatsTempl::get_at` :2879
+- `ConfigOptionFloatsTempl::get_at_mut` :2883
+- `ConfigOptionFloatsTempl::deserialize_values` :2889
+- `ConfigOptionFloatsTempl::r#type` :2978
+- `ConfigOptionFloatsTempl::operator_eq` :2986
+- `ConfigOptionFloatsTempl::is_nil_at` :3035
+- `ConfigOptionFloatsTempl::set_at_to_nil` :3039
+- `ConfigOptionInt::new` :3058
+- `ConfigOptionInt::with_value` :3062
+- `ConfigOptionInt::with_double` :3066
+- `ConfigOptionInt::static_type` :3070
+- `ConfigOptionInt::r#type` :3086
+- `ConfigOptionInt::get_int` :3090
+- `ConfigOptionInt::set_int` :3094
+- `ConfigOptionIntsTempl::new` :3134
+- `ConfigOptionIntsTempl::with_size` :3138
+- `ConfigOptionIntsTempl::from_values` :3142
+- `ConfigOptionIntsTempl::static_type` :3146
+- `ConfigOptionIntsTempl::operator_lt` :3150
+- `ConfigOptionIntsTempl::nil_value` :3154
+- `ConfigOptionIntsTempl::get_at` :3158
+- `ConfigOptionIntsTempl::get_at_mut` :3162
+- `ConfigOptionIntsTempl::r#type` :3192
+- `ConfigOptionIntsTempl::is_nil_at` :3263
+- `ConfigOptionIntsTempl::set_at_to_nil` :3267
+- `ConfigOptionString::new` :3286
+- `ConfigOptionString::with_value` :3290
+- `ConfigOptionString::static_type` :3294
+- `ConfigOptionString::operator_lt` :3298
+- `ConfigOptionString::r#type` :3318
+- `ConfigOptionStrings::new` :3349
+- `ConfigOptionStrings::with_size` :3353
+- `ConfigOptionStrings::from_values` :3357
+- `ConfigOptionStrings::static_type` :3361
+- `ConfigOptionStrings::operator_lt` :3365
+- `ConfigOptionStrings::get_at` :3369
+- `ConfigOptionStrings::get_at_mut` :3373
+- `ConfigOptionStrings::r#type` :3390
+- `ConfigOptionStrings::is_nil_at` :3417
+- `ConfigOptionStrings::set_at_to_nil` :3421
+- `ConfigOptionPercent::new` :3437
+- `ConfigOptionPercent::with_value` :3441
+- `ConfigOptionPercent::static_type` :3445
+- `ConfigOptionPercent::operator_lt` :3449
+- `ConfigOptionPercent::r#type` :3469
+- `ConfigOptionPercent::get_float` :3473
+- `ConfigOptionPercentsTempl::new` :3514
+- `ConfigOptionPercentsTempl::with_size` :3518
+- `ConfigOptionPercentsTempl::from_values` :3522
+- `ConfigOptionPercentsTempl::static_type` :3526
+- `ConfigOptionPercentsTempl::operator_lt` :3530
+- `ConfigOptionPercentsTempl::get_at` :3538
+- `ConfigOptionPercentsTempl::get_at_mut` :3542
+- `ConfigOptionPercentsTempl::r#type` :3558
+- `ConfigOptionPercentsTempl::operator_eq` :3566
+- `ConfigOptionPercentsTempl::is_nil_at` :3621
+- `ConfigOptionFloatOrPercent::new` :3645
+- `ConfigOptionFloatOrPercent::with_value` :3649
+- `ConfigOptionFloatOrPercent::static_type` :3653
+- `ConfigOptionFloatOrPercent::operator_lt` :3657
+- `ConfigOptionFloatOrPercent::r#type` :3680
+- `ConfigOptionFloatOrPercent::operator_eq` :3692
+- `ConfigOptionFloatsOrPercentsTempl::new` :3761
+- `ConfigOptionFloatsOrPercentsTempl::with_size` :3765
+- `ConfigOptionFloatsOrPercentsTempl::from_values` :3769
+- `ConfigOptionFloatsOrPercentsTempl::static_type` :3773
+- `ConfigOptionFloatsOrPercentsTempl::operator_lt` :3777
+- `ConfigOptionFloatsOrPercentsTempl::get_at` :3785
+- `ConfigOptionFloatsOrPercentsTempl::get_at_mut` :3789
+- `ConfigOptionFloatsOrPercentsTempl::r#type` :3856
+- `ConfigOptionFloatsOrPercentsTempl::operator_eq` :3864
+- `ConfigOptionFloatsOrPercentsTempl::is_nil_at` :3935
+- `serialize_point_x` :3946
+- `deserialize_point_x` :3953
+- `ConfigOptionPoint::new` :3982
+- `ConfigOptionPoint::with_value` :3986
+- `ConfigOptionPoint::static_type` :3990
+- `ConfigOptionPoint::operator_lt` :3995
+- `ConfigOptionPoint::r#type` :4011
+- `ConfigOptionPoints::new` :4048
+- `ConfigOptionPoints::with_size` :4052
+- `ConfigOptionPoints::from_values` :4056
+- `ConfigOptionPoints::static_type` :4060
+- `ConfigOptionPoints::operator_lt` :4065
+- `ConfigOptionPoints::get_at` :4069
+- `ConfigOptionPoints::get_at_mut` :4073
+- `ConfigOptionPoints::r#type` :4090
+- `ConfigOptionPoints::is_nil_at` :4133
+- `ConfigOptionPoints::set_at_to_nil` :4137
+- `ConfigOptionPoint3::new` :4153
+- `ConfigOptionPoint3::with_value` :4157
+- `ConfigOptionPoint3::static_type` :4161
+- `ConfigOptionPoint3::operator_lt` :4165
+- `ConfigOptionPoint3::r#type` :4183
+- `ConfigOptionPointsGroups::new` :4223
+- `ConfigOptionPointsGroups::from_values` :4227
+- `ConfigOptionPointsGroups::static_type` :4231
+- `ConfigOptionPointsGroups::get_at` :4235
+- `ConfigOptionPointsGroups::r#type` :4271
+- `ConfigOptionPointsGroups::operator_eq` :4279
+- `ConfigOptionPointsGroups::is_nil_at` :4329
+- `ConfigOptionPointsGroups::set_at_to_nil` :4333
+- `ConfigOptionIntsGroups::new` :4349
+- `ConfigOptionIntsGroups::from_values` :4353
+- `ConfigOptionIntsGroups::static_type` :4357
+- `ConfigOptionIntsGroups::operator_lt` :4362
+- `ConfigOptionIntsGroups::get_at` :4373
+- `ConfigOptionIntsGroups::r#type` :4407
+- `ConfigOptionIntsGroups::operator_eq` :4415
+- `ConfigOptionIntsGroups::is_nil_at` :4471
+- `ConfigOptionBool::new` :4491
+- `ConfigOptionBool::with_value` :4495
+- `ConfigOptionBool::static_type` :4499
+- `ConfigOptionBool::operator_lt` :4503
+- `ConfigOptionBool::r#type` :4519
+- `ConfigOptionBool::deserialize` :4535 — C++ has it in `MultiNozzleUtils`, `Support/SupportMaterial`, `TriangleSelector`
+- `ConfigOptionBoolsTempl::new` :4566
+- `ConfigOptionBoolsTempl::with_size` :4570
+- `ConfigOptionBoolsTempl::from_bools` :4574
+- `ConfigOptionBoolsTempl::from_values` :4578
+- `ConfigOptionBoolsTempl::static_type` :4582
+- `ConfigOptionBoolsTempl::operator_lt` :4586
+- `ConfigOptionBoolsTempl::get_at_mut` :4594
+- `ConfigOptionBoolsTempl::r#type` :4666
+- `ConfigOptionBoolsTempl::is_nil_at` :4717
+- `ConfigOptionEnum::new` :4752
+- `ConfigOptionEnum::with_value` :4756
+- `ConfigOptionEnum::static_type` :4760
+- `ConfigOptionEnum::operator_lt` :4764
+- `ConfigOptionEnum::get_enum_names` :4777
+- `ConfigOptionEnum::get_enum_values` :4781
+- `ConfigOptionEnum::static_type` :4798
+- `ConfigOptionEnum::r#type` :4807
+- `ConfigOptionEnum::operator_eq` :4824
+- `ConfigOptionEnumGeneric::new` :4869
+- `ConfigOptionEnumGeneric::with_value` :4873
+- `ConfigOptionEnumGeneric::operator_lt` :4881
+- `ConfigOptionEnumGeneric::r#type` :4896
+- `ConfigOptionEnumGeneric::operator_eq` :4913
+- `ConfigOptionEnumGeneric::hash` :4930 — C++ has it in `SLAPrintSteps`
+- `ints_of` :4956
+- `ConfigOptionEnumsGenericTempl::new` :4989
+- `ConfigOptionEnumsGenericTempl::with_size` :4993
+- `ConfigOptionEnumsGenericTempl::from_values` :4997
+- `ConfigOptionEnumsGenericTempl::static_type` :5001
+- `ConfigOptionEnumsGenericTempl::operator_lt` :5007
+- `ConfigOptionEnumsGenericTempl::operator_eq_ints` :5012
+- `ConfigOptionEnumsGenericTempl::get_at` :5023
+- `ConfigOptionEnumsGenericTempl::get_at_mut` :5027
+- `ConfigOptionEnumsGenericTempl::r#type` :5061
+- `ConfigOptionEnumsGenericTempl::clone` :5065 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
+- `ConfigOptionEnumsGenericTempl::is_nil_at` :5144
+- `ConfigOptionDef::default` :5246
+- `ConfigDef::new` :5419
+- `ConfigDef::print_cli_help` :5462
+- `ConfigOptionResolverTyped::option_typed` :5619
+- `ConfigOptionResolverTyped::option_throw_typed` :5627
+- `c_atoi` :5720
+- `iequals` :5739
+- `token_type_name` :5773
+- `Lexer::new` :5828
+- `Lexer::get_character` :5845
+- `Lexer::get_codepoint` :5855
+- `Lexer::next_byte_in_range` :5874
+- `Lexer::scan_string` :5891
+- `Lexer::scan_number` :6059
+- `Lexer::scan_literal` :6217
+- `Lexer::reset` :6229 — C++ has it in `AppConfig`, `BoundingBox`, `Clipper2ZUtils`
+- `Lexer::get` :6236 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `Lexer::unget` :6256
+- `Lexer::add` :6273 — C++ has it in `GCode/SpiralVase`, `PrintApply`, `SLA/Pad`
+- `Lexer::get_token_string` :6278
+- `Lexer::skip_bom` :6291
+- `Lexer::skip_whitespace` :6302
+- `Lexer::scan` :6313
+- `Parser::new` :6357
+- `Parser::get_token` :6364
+- `Parser::exception_message` :6370
+- `Parser::parse_error` :6392 — C++ has it in `Format/3mf`, `Format/bbs_3mf`
+- `Parser::handle_value` :6404
+- `Parser::sax_parse_internal` :6416
+- `parse` :6563 — C++ has it in `PlaceholderParser`, `Semver`
+- `parse_strict` :6572
+- `json_type_name` :6584
+- `nlohmann_json_parse` :6598
+- `nlohmann_json_parse_strict` :6609
+- `nlohmann_type_name` :6617
+- `c_atoi_str` :6622
+- `json_to_string` :6629
+- `parse_str_arr` :6640
+- `property_tree_read_ini` :6693
+- `json_dump_string` :6773
+- `SetDeserializeItem::new` :6801
+- `SetDeserializeItem::from_bool` :6805
+- `SetDeserializeItem::from_int` :6809
+- `SetDeserializeItem::from_float` :6813
+- `SetDeserializeItem::from_double` :6821
+- `option_throw_typed_mut` :6831
+- `ConfigBase::option_mut` :6870
+- `ConfigBase::option_throw_mut` :6875
+- `ConfigBase::set_bool` :7022 — C++ has it in `AppConfig`
+- `ConfigBase::set_int` :7028
+- `ConfigBase::set_double` :7056
+- `ConfigBase::set_string` :7081
+- `ConfigBase::set_deserialize_items` :7135
+- `ConfigBase::set_deserialize_strict_items` :7143
+- `ConfigBase::get_abs_value_over` :7338
+- `ConfigBase::load_from_json_with_context` :7451
+- `ConfigBase::load_tree` :7898
+- `different_settings_to_system_mut` :8275
+- `ConfigBaseTyped::option_typed_mut` :8288
+- `ConfigBaseTyped::option_throw_typed_mut` :8296
+- `DynamicConfig::default` :8321
+- `DynamicConfig::clone` :8328 — C++ has it in `ExtrusionEntity`, `ExtrusionEntityCollection`, `Fill/Fill3DHoneycomb`
+- `DynamicConfig::new` :8337
+- `DynamicConfig::with_def` :8343
+- `DynamicConfig::from_config` :8349 — C++ has it in `Model`
+- `DynamicConfig::assign` :8360 — C++ has it in `Model`, `MutablePolygon`, `PrintApply`
+- `DynamicConfig::assign_move` :8368
+- `DynamicConfig::operator_add_assign` :8379
+- `DynamicConfig::operator_add_assign_move` :8398
+- `DynamicConfig::operator_eq` :8405
+- `DynamicConfig::operator_ne` :8423
+- `DynamicConfig::opt_mut` :8460
+- `DynamicConfig::opt_expect` :8525
+- `DynamicConfig::opt_expect_mut` :8529
+- `DynamicConfig::opt_string_mut` :8536
+- `DynamicConfig::opt_string` :8543
+- `DynamicConfig::opt_string_at_mut` :8550
+- `DynamicConfig::opt_string_at` :8557
+- `DynamicConfig::opt_float_mut` :8564
+- `DynamicConfig::opt_float` :8573
+- `DynamicConfig::opt_float_at_mut` :8587
+- `DynamicConfig::opt_float_at` :8597
+- `DynamicConfig::opt_float_nullable_mut` :8604
+- `DynamicConfig::opt_float_nullable` :8611
+- `DynamicConfig::opt_int_mut` :8621
+- `DynamicConfig::opt_int_at_mut` :8637
+- `DynamicConfig::opt_int_at` :8646
+- `DynamicConfig::opt_int_nullable_mut` :8658
+- `DynamicConfig::opt_int_nullable` :8665
+- `DynamicConfig::opt_enum_at` :8679
+- `DynamicConfig::opt_bool_at` :8706
+- `DynamicConfig::optptr_mut` :8868
+- `DynamicConfig::handle_legacy` :8901 — C++ has it in `PrintConfig`
+- `ReverseLineReader::new` :9003
 
 ### `CustomGCode` (.cpp+.hpp) and `custom_g_code.rs`
 
@@ -4487,38 +4491,38 @@ Rust only:
 
 ### `GCode/GCodeProcessor` (.cpp+.hpp) and `gcode/g_code_processor.rs`
 
-Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 290. Matched 200: faithful 172, partial 24, divergent 4, stub 0.
+Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 289. Matched 200: faithful 172, partial 24, divergent 4, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `get_object_label_id` :152 and `get_object_label_id` :617 (36%, 0.74x)
 - partial: `get_z_height` :167 and `get_z_height` :636 (40%, 0.71x)
 - partial: `GCodeProcessor::CachedPosition::reset` :234 and `CachedPosition::reset` :506 (50%, 0.96x)
-- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2689 (0%, 0.0x)
-- partial: `GCodeProcessor::OptionsZCorrector::set` :1077 and `OptionsZCorrector::set` :3026 (40%, 1.19x)
-- partial: `GCodeProcessor::OptionsZCorrector::update` :1082 and `OptionsZCorrector::update` :3030 (45%, 1.16x)
-- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1656 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1669 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1682 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1697 (43%, 0.71x)
-- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3232 (8%, 0.04x)
-- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3346 (44%, 1.07x)
-- partial: `GCodeProcessor::process_file` :2671 and `GCodeProcessor::process_file` :9237 (49%, 1.02x)
-- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9526 (50%, 1.17x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7066 (43%, 0.79x)
-- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3813 (74%, 1.39x)
-- divergent: `parse_number` :3137 and `parse_number` :7539 (9%, 0.16x)
-- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9647 (35%, 0.9x)
-- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9706 (44%, 0.93x)
-- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9843 (41%, 0.93x)
-- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9884 (44%, 0.87x)
-- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9938 (40%, 0.83x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5808 (74%, 0.98x)
-- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6319 (86%, 1.23x)
-- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4163 (66%, 1.0x)
-- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5444 (46%, 0.72x)
-- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :10072 (53%, 0.74x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5751 (23%, 0.27x)
+- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2562 (0%, 0.0x)
+- partial: `GCodeProcessor::OptionsZCorrector::set` :1077 and `OptionsZCorrector::set` :2899 (40%, 1.19x)
+- partial: `GCodeProcessor::OptionsZCorrector::update` :1082 and `OptionsZCorrector::update` :2903 (45%, 1.16x)
+- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1529 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1542 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1555 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1570 (43%, 0.71x)
+- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3105 (8%, 0.04x)
+- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3219 (44%, 1.07x)
+- partial: `GCodeProcessor::process_file` :2671 and `GCodeProcessor::process_file` :9110 (49%, 1.02x)
+- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9399 (50%, 1.17x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :6939 (43%, 0.79x)
+- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3686 (74%, 1.39x)
+- divergent: `parse_number` :3137 and `parse_number` :7412 (9%, 0.16x)
+- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9520 (35%, 0.9x)
+- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9579 (44%, 0.93x)
+- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9716 (41%, 0.93x)
+- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9757 (44%, 0.87x)
+- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9811 (40%, 0.83x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5681 (74%, 0.98x)
+- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6192 (86%, 1.23x)
+- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4036 (66%, 1.0x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5317 (46%, 0.72x)
+- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9945 (53%, 0.74x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5624 (23%, 0.27x)
 
 Missing in the Rust file:
 
@@ -4558,76 +4562,75 @@ Rust only:
 - `CachedPosition::default` :516
 - `parse_stoi` :649
 - `parse_stof` :671
-- `parse_stof_pin` :719
-- `parse_number_f32` :843
-- `parse_number_i32` :854
-- `TrieNode::new` :889
-- `CommandProcessor::new` :905
-- `CommandProcessor::empty` :912 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
-- `CommandProcessor::default` :953
-- `TimeBlock::default` :1036
-- `TimeMachine::default` :1301
-- `reserved_tag` :1869
-- `custom_tags` :1874
-- `default_bbl_printer` :1887
-- `trim_spaces` :2002
-- `is_end_of_word` :2201 — C++ has it in `Config`, `GCodeReader`
-- `fast_float_from_chars` :2212
-- `fast_float_from_chars_f64` :2251
-- `trim_leading_spaces_trailing_semis_spaces` :2291
-- `EMovePathType::default` :2312
-- `MoveVertex::default` :2358
-- `GCodeProcessorResult::default` :2480
-- `MachineLimits::machine_envelope_config` :2593
-- `ml_get` :2623
-- `ml_set` :2635
-- `TimeProcessor::printer_is_bbl` :2669
-- `TimeProcessor::post_process_first_pass` :2697
-- `TimeProcessor::default` :2919
-- `GCodeProcessor::new` :3145
-- `GCodeProcessor::processor_flavor` :3507
-- `GCodeProcessor::apply_machine_accelerations` :3525
-- `GCodeProcessor::get_axis_max_acceleration_extruding` :3554
-- `GCodeProcessor::get_machine_limit_retract_acceleration` :3559
-- `GCodeProcessor::get_machine_limit_travel_acceleration` :3564
-- `GCodeProcessor::result` :3582
-- `GCodeProcessor::result_mut` :3586
-- `GCodeProcessor::process_gcode` :3807
-- `GCodeProcessor::move_filament_diameter` :4107
-- `GCodeProcessor::set_is_bbl_printer` :4647 — C++ has it in `GCodeWriter`
-- `GCodeProcessor::time_processor` :4652
-- `GCodeProcessor::process_t_command` :5485
-- `GCodeProcessor::process_filaments_tool_change` :5720
-- `GCodeProcessor::run_calculate_time` :5763
-- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6876
-- `GCodeProcessor::process_used_filaments_caches` :7172
-- `GCodeProcessor::update_mode` :7219
-- `GCodeProcessor::print_time` :7276
-- `GCodeProcessor::default` :7282
-- `emove_type_from_index` :7291
-- `extrusion_role_from_index` :7308
-- `normalize3` :7339
-- `normalized3` :7349
-- `klipper_regex_value` :7360
-- `parse_klipper_kv` :7394
-- `f32::parse_number_impl` :7505
-- `i32::parse_number_impl` :7514
-- `ExtruderUsageBlcok::default` :7569
-- `FilamentUsageBlock::new` :7660
-- `TimeProcessContext::from_config` :7716 — C++ has it in `Model`
-- `PreCoolingInjector::new` :7816
-- `PreCoolingInjector::sort_free_blocks` :7950
-- `istream_int` :8542
-- `istream_nozzle_after` :8566
-- `nozzle_change_fields` :8576
-- `toolchange_wipe_fields` :8619
-- `TimeProcessor::post_process_with_context` :8647
-- `DataChecker::new` :8997
-- `helio_regex_search` :9122
-- `GCodeProcessor::set_quiet` :9230
-- `GCodeProcessor::apply_file_config` :9324
-- `GCodeProcessor::initialize_from_shared_context` :9542
-- `GCodeProcessor::time_process_inputs` :9549
+- `parse_number_f32` :716
+- `parse_number_i32` :727
+- `TrieNode::new` :762
+- `CommandProcessor::new` :778
+- `CommandProcessor::empty` :785 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `CommandProcessor::default` :826
+- `TimeBlock::default` :909
+- `TimeMachine::default` :1174
+- `reserved_tag` :1742
+- `custom_tags` :1747
+- `default_bbl_printer` :1760
+- `trim_spaces` :1875
+- `is_end_of_word` :2074 — C++ has it in `Config`, `GCodeReader`
+- `fast_float_from_chars` :2085
+- `fast_float_from_chars_f64` :2124
+- `trim_leading_spaces_trailing_semis_spaces` :2164
+- `EMovePathType::default` :2185
+- `MoveVertex::default` :2231
+- `GCodeProcessorResult::default` :2353
+- `MachineLimits::machine_envelope_config` :2466
+- `ml_get` :2496
+- `ml_set` :2508
+- `TimeProcessor::printer_is_bbl` :2542
+- `TimeProcessor::post_process_first_pass` :2570
+- `TimeProcessor::default` :2792
+- `GCodeProcessor::new` :3018
+- `GCodeProcessor::processor_flavor` :3380
+- `GCodeProcessor::apply_machine_accelerations` :3398
+- `GCodeProcessor::get_axis_max_acceleration_extruding` :3427
+- `GCodeProcessor::get_machine_limit_retract_acceleration` :3432
+- `GCodeProcessor::get_machine_limit_travel_acceleration` :3437
+- `GCodeProcessor::result` :3455
+- `GCodeProcessor::result_mut` :3459
+- `GCodeProcessor::process_gcode` :3680
+- `GCodeProcessor::move_filament_diameter` :3980
+- `GCodeProcessor::set_is_bbl_printer` :4520 — C++ has it in `GCodeWriter`
+- `GCodeProcessor::time_processor` :4525
+- `GCodeProcessor::process_t_command` :5358
+- `GCodeProcessor::process_filaments_tool_change` :5593
+- `GCodeProcessor::run_calculate_time` :5636
+- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6749
+- `GCodeProcessor::process_used_filaments_caches` :7045
+- `GCodeProcessor::update_mode` :7092
+- `GCodeProcessor::print_time` :7149
+- `GCodeProcessor::default` :7155
+- `emove_type_from_index` :7164
+- `extrusion_role_from_index` :7181
+- `normalize3` :7212
+- `normalized3` :7222
+- `klipper_regex_value` :7233
+- `parse_klipper_kv` :7267
+- `f32::parse_number_impl` :7378
+- `i32::parse_number_impl` :7387
+- `ExtruderUsageBlcok::default` :7442
+- `FilamentUsageBlock::new` :7533
+- `TimeProcessContext::from_config` :7589 — C++ has it in `Model`
+- `PreCoolingInjector::new` :7689
+- `PreCoolingInjector::sort_free_blocks` :7823
+- `istream_int` :8415
+- `istream_nozzle_after` :8439
+- `nozzle_change_fields` :8449
+- `toolchange_wipe_fields` :8492
+- `TimeProcessor::post_process_with_context` :8520
+- `DataChecker::new` :8870
+- `helio_regex_search` :8995
+- `GCodeProcessor::set_quiet` :9103
+- `GCodeProcessor::apply_file_config` :9197
+- `GCodeProcessor::initialize_from_shared_context` :9415
+- `GCodeProcessor::time_process_inputs` :9422
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 

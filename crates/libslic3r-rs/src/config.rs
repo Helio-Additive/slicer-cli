@@ -824,6 +824,172 @@ pub(crate) fn strtod_c(s: &[u8]) -> Strtod {
     Strtod { value: apply_sign(value), consumed: k, erange }
 }
 
+/// `std::stof(str)` (libc++: `strtof` over the C string, `invalid_argument` when nothing is read,
+/// `out_of_range` when errno is ERANGE): leading C-locale white space, a sign, then "inf"/"infinity",
+/// "nan", a hexadecimal float (`0x` digits, '.', binary exponent `p`) or a decimal float. None for the
+/// two exceptions. An underflow keeps what the decimal reader gives (the pin's vectors agree with it for
+/// the smallest normal and a subnormal input).
+pub(crate) fn float_prefix_value(s: &str) -> Option<f32> {
+    let b = s.as_bytes();
+    let mut i = 0usize;
+    while i < b.len() && matches!(b[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        neg = b[i] == b'-';
+        i += 1;
+    }
+    let rest = &b[i..];
+    let lower_starts = |w: &[u8]| rest.len() >= w.len() && rest[..w.len()].eq_ignore_ascii_case(w);
+    let signed = |v: f32| if neg { -v } else { v };
+    if lower_starts(b"inf") {
+        return Some(signed(f32::INFINITY));
+    }
+    if lower_starts(b"nan") {
+        return Some(signed(f32::NAN));
+    }
+    // Hexadecimal float: "0x" then at least one hex digit (before or after the point).
+    if rest.len() >= 2 && rest[0] == b'0' && (rest[1] == b'x' || rest[1] == b'X') {
+        let mut j = 2usize;
+        let mut mant: u64 = 0;
+        let mut exp: i64 = 0;
+        let mut any = false;
+        let mut sticky = false;
+        let mut seen_dot = false;
+        while j < rest.len() {
+            let c = rest[j];
+            if c == b'.' && !seen_dot {
+                seen_dot = true;
+                j += 1;
+                continue;
+            }
+            let d = match (c as char).to_digit(16) {
+                Some(d) => d as u64,
+                None => break,
+            };
+            any = true;
+            if mant >> 56 == 0 {
+                mant = (mant << 4) | d;
+                if seen_dot {
+                    exp -= 4;
+                }
+            } else {
+                sticky |= d != 0;
+                if !seen_dot {
+                    exp += 4;
+                }
+            }
+            j += 1;
+        }
+        if any {
+            if j < rest.len() && (rest[j] == b'p' || rest[j] == b'P') {
+                let mut k = j + 1;
+                let mut eneg = false;
+                if k < rest.len() && (rest[k] == b'+' || rest[k] == b'-') {
+                    eneg = rest[k] == b'-';
+                    k += 1;
+                }
+                let ds = k;
+                let mut e: i64 = 0;
+                while k < rest.len() && rest[k].is_ascii_digit() {
+                    e = (e * 10 + (rest[k] - b'0') as i64).min(1 << 20);
+                    k += 1;
+                }
+                if k > ds {
+                    exp += if eneg { -e } else { e };
+                }
+            }
+            if sticky {
+                mant |= 1;
+            }
+            // One rounding to float (u64 -> f32), then an exact scaling by a power of two in double.
+            let v = ((mant as f32) as f64 * 2f64.powi(exp.clamp(-2000, 2000) as i32)) as f32;
+            if v.is_infinite() {
+                return None; // ERANGE: std::out_of_range
+            }
+            return Some(signed(v));
+        }
+        // "0x" without digits: strtof reads the "0".
+        return Some(signed(0.0));
+    }
+    // Decimal: digits, an optional point and digits (at least one digit), an exponent only when digits
+    // follow it.
+    let mut j = 0usize;
+    let mut digits = 0usize;
+    while j < rest.len() && rest[j].is_ascii_digit() {
+        j += 1;
+        digits += 1;
+    }
+    if j < rest.len() && rest[j] == b'.' {
+        j += 1;
+        while j < rest.len() && rest[j].is_ascii_digit() {
+            j += 1;
+            digits += 1;
+        }
+    }
+    if digits == 0 {
+        return None; // std::invalid_argument
+    }
+    if j < rest.len() && (rest[j] == b'e' || rest[j] == b'E') {
+        let mut k = j + 1;
+        if k < rest.len() && (rest[k] == b'+' || rest[k] == b'-') {
+            k += 1;
+        }
+        if k < rest.len() && rest[k].is_ascii_digit() {
+            while k < rest.len() && rest[k].is_ascii_digit() {
+                k += 1;
+            }
+            j = k;
+        }
+    }
+    let text = std::str::from_utf8(&rest[..j]).ok()?;
+    let v = text.parse::<f32>().ok()?;
+    if v.is_infinite() {
+        return None; // ERANGE: std::out_of_range
+    }
+    Some(signed(v))
+}
+
+// The native strtof accepts exact hexadecimal subnormals and reports ERANGE
+// for decimal subnormals. Check the lowest set bit of the hex significand
+// before rounding, including digits below the precision of a double.
+fn exact_hex_float_subnormal(prefix: &str) -> bool {
+    let unsigned = prefix.trim_ascii_start().trim_start_matches(['+', '-']);
+    let Some(hex) = unsigned.strip_prefix("0x").or_else(|| unsigned.strip_prefix("0X")) else {
+        return false;
+    };
+    let (mantissa, exponent) = hex.split_once(['p', 'P']).unwrap_or((hex, "0"));
+    let decimals = mantissa.split_once('.').map_or(0, |(_, fraction)| fraction.len());
+    let digits = mantissa.replace('.', "");
+    let significant = digits.trim_end_matches('0');
+    let Some(last) = significant.as_bytes().last().and_then(|d| hex_digit_value(*d)) else {
+        return false;
+    };
+    let shift = exponent.parse::<i128>().unwrap_or(0) - 4 * decimals as i128
+        + 4 * (digits.len() - significant.len()) as i128 + i128::from(last.trailing_zeros());
+    shift >= -149
+}
+
+/// main.cpp 9745–9753 uses std::stod and requires the end of the input.
+pub fn complete_finite_double(text: &str) -> Option<f64> {
+    let p = strtod_c(text.as_bytes());
+    (p.consumed != 0 && p.consumed == text.len() && !p.erange && p.value.is_finite())
+        .then_some(p.value)
+}
+
+/// main.cpp 7250 checks std::stof's exceptions, then the option deserializes
+/// the original string as doubles. Trailing text is accepted by this check.
+pub(crate) fn valid_float_prefix(text: &str) -> bool {
+    let p = strtod_c(text.as_bytes());
+    if p.consumed == 0 || p.erange { return false; }
+    if !p.value.is_finite() { return true; } // Explicit infinity or NaN.
+    let Some(rounded) = float_prefix_value(text) else { return false };
+    if rounded == 0.0 { return p.value == 0.0; }
+    if !rounded.is_subnormal() { return true; }
+    p.value == f64::from(rounded) && exact_hex_float_subnormal(&text[..p.consumed])
+}
+
 /// What `std::istringstream(str) >> double` did: `value` is `None` when the sentry failed
 /// (empty input or white space only: the target is left untouched), `fail` is `iss.fail()`.
 struct IstreamResult<T> {
