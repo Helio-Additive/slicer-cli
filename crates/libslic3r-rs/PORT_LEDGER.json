@@ -1639,7 +1639,7 @@
     "status": "partial",
     "priority": 2,
     "fidelity": "fixed",
-    "notes": "R978 ports the model-derived scarf-seam flag at PrintApply.cpp 1339-1435. All 20 full/typed native model results match after normalization, including tool changes and scoped filament, circle and seam options. The live STL and 3MF entries reproduce the native flag on 14 supplemental jobs."
+    "notes": "R978 ports the model-derived scarf-seam flag at PrintApply.cpp 1339-1435. All 20 full/typed native model results match after normalization, including tool changes and scoped filament, circle and seam options. The live STL and 3MF entries reproduce the native flag on 14 supplemental jobs. R983 connects the live 3MF path to the existing region resolver when all parts and roles agree on one physical filament (PrintApply.cpp 1045-1055,1091 and PrintObject.cpp 3742-3806). Six native region vectors and 23 real projects cover the assignment. Differing part or role slots, modifiers and layer-specific settings still need separate live regions and tool ordering."
   },
   {
     "cpp": "Brim.cpp",
@@ -1820,7 +1820,7 @@
     "rust_exists": true,
     "loc": 9849,
     "status": "partial",
-    "notes": "R981 reads the raw sparse_infill_filament and solid_infill_filament options, including their zero defaults. Both profile values and both applied region values match PrintConfig.cpp 4680-4687, 6090-6100 and PrintObject.cpp 3742-3806 on 72 native cases. Binding the live 3MF object's and part's filament settings to its printing regions remains partial.",
+    "notes": "R981 reads the raw sparse_infill_filament and solid_infill_filament options, including their zero defaults. Both profile values and both applied region values match PrintConfig.cpp 4680-4687, 6090-6100 and PrintObject.cpp 3742-3806 on 72 native cases. R983 binds a uniform physical slot on unpainted 3MF objects and parts. Distinct per-feature and per-part assignments remain partial in the live slicer.",
     "priority": 2,
     "fidelity": "fixed"
   },

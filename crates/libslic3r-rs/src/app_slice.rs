@@ -35,26 +35,81 @@ fn profile_can_enable_scarf(config: &DynamicPrintConfig) -> bool {
             .is_some_and(|opt| opt.values.iter().any(|&kind| kind != 0))
 }
 
-/// Apply the flag before the config block and the typed processor config are
-/// built. PrintApply.cpp:1323-1325 normalizes against the *previous* Print,
-/// which has no objects or used filaments on a fresh CLI slice.
-fn apply_model_scarf_flag(
-    settings: &mut serde_json::Value,
-    mut config: DynamicPrintConfig,
-    model: &crate::model::Model,
-) -> Result<()> {
+/// PrintApply.cpp 1323-1325 normalizes against the previous print, which has
+/// no objects or used filaments on a fresh CLI slice.
+fn normalized_model_config(mut config: DynamicPrintConfig) -> Result<DynamicPrintConfig> {
     config.normalize_fdm_1()?;
     config.normalize_fdm_2(0, 0, None)?;
-    let has_scarf = config.opt_bool("has_scarf_joint_seam") || crate::print_apply::model_uses_scarf_seam(model, &config);
+    Ok(config)
+}
+
+/// Apply the flag before building the config block and typed processor config.
+fn apply_model_scarf_flag(
+    settings: &mut serde_json::Value,
+    config: &DynamicPrintConfig,
+    model: &crate::model::Model,
+) {
+    let has_scarf = config.opt_bool("has_scarf_joint_seam") || crate::print_apply::model_uses_scarf_seam(model, config);
     if has_scarf || settings.get("has_scarf_joint_seam").is_some() {
         settings["has_scarf_joint_seam"] = serde_json::Value::String(u8::from(has_scarf).to_string());
     }
-    Ok(())
+}
+
+const FEATURE_FILAMENT_KEYS: [&str; 3] = ["wall_filament", "sparse_infill_filament", "solid_infill_filament"];
+
+/// PrintApply.cpp 1045-1055,1091 builds a region per part. The merged 3MF
+/// mesh can use their assignment when all parts and roles resolve to one
+/// physical filament. Mixed slots need per-layer component ordering.
+fn uniform_model_filament(model: &crate::model::Model, config: &DynamicPrintConfig) -> Option<usize> {
+    use crate::gcode::wipe_tower::{cfg_bools, cfg_floats};
+
+    // PrintApply.cpp 1649. Embedded settings from an unmarked 3MF may have
+    // been ignored by the native-format importer.
+    let count = cfg_floats(config, "filament_diameter").len();
+    if count <= 1 {
+        return None;
+    }
+    let mut base = crate::print::faithful::static_config_defaults("PrintRegionConfig");
+    for key in FEATURE_FILAMENT_KEYS {
+        *base.opt_int_mut(key) = config.opt_int(key);
+    }
+    let mixed = cfg_bools(config, "filament_is_mixed");
+    let mut selected = None;
+    let mut variant = Vec::new();
+    for object in &model.objects {
+        if !object.printable
+            || object.instances.is_empty()
+            || object.instances.iter().any(|instance| !instance.printable)
+            || !object.layer_config_ranges.is_empty()
+        {
+            return None;
+        }
+        for volume in &object.volumes {
+            if !volume.is_model_part() || !volume.printable() || volume.is_mm_painted() {
+                return None;
+            }
+            // PrintObject.cpp 3742-3806 resolves the part over its object,
+            // material and global feature settings, then clamps the result.
+            let region = crate::print_apply::region_config_from_model_volume(
+                &base, None, volume, object, Some(model), count, &mut variant,
+            );
+            let [wall, sparse, solid] = FEATURE_FILAMENT_KEYS.map(|key| region.opt_int(key));
+            if wall <= 0 || sparse != wall || solid != wall {
+                return None;
+            }
+            let slot = wall as usize;
+            if mixed.get(slot - 1) == Some(&true) || selected.is_some_and(|prev| prev != slot) {
+                return None;
+            }
+            selected = Some(slot);
+        }
+    }
+    selected
 }
 
 /// bbs_3mf.cpp:2263-2331. The importer decides whether to read embedded
 /// settings and custom tool changes based on the project's generator.
-fn load_scarf_project(path: &Path) -> Result<(crate::model::Model, DynamicPrintConfig)> {
+fn load_bbs_model_and_config(path: &Path) -> Result<(crate::model::Model, DynamicPrintConfig)> {
     use crate::config::{ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
     use crate::format::bbs_3mf::{load_bbs_3mf, LoadStrategy};
 
@@ -159,7 +214,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path) -> Result<(Print, f64)> {
         let mut part = ModelVolume::new_shared(ModelMesh::from_triangle_mesh(&mesh).into(), ModelVolumeType::ModelPart);
         part.set_model_object(Some(object.id()));
         object.volumes.push(part);
-        apply_model_scarf_flag(&mut settings_value, config, &model)?;
+        apply_model_scarf_flag(&mut settings_value, &normalized_model_config(config)?, &model);
     }
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     engine_settings_as_the_pin_reads(&mut settings_value);
@@ -900,11 +955,11 @@ fn desktop_place_stl(mesh: &TriangleMesh, settings: &serde_json::Value) -> Deskt
 /// in-process host (`helio-slicer-cli --engine rust`) and the standalone binary
 /// produce identical G-code.
 ///
-/// Tier-1 scope: all objects are merged into a single mesh and sliced with one
-/// material. Painted MMU segmentation / per-object filaments are NOT yet applied
-/// (multicolour parity is a separate milestone).
+/// The geometry loader merges objects. A common physical filament across
+/// every part and feature can be applied to the shared region. Distinct
+/// unpainted part assignments require separate slicing regions.
 ///
-/// * `input` — path to a `.3mf` file.
+////// * `input` — path to a `.3mf` file.
 /// * `settings_override` — optional BambuStudio settings JSON that takes
 ///   precedence over the 3MF's embedded config.
 /// * `output` — path to write the generated G-code to.
@@ -917,7 +972,7 @@ pub fn slice_3mf_to_gcode(
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
     info!("Loading 3MF...");
-    let (loaded, scoped_scarf_settings) = load_3mf_model(input, crate::faithful_gate("PRINT_APPLY_SCARF_SEAM"))
+    let (loaded, scoped) = load_3mf_model(input, true)
         .with_context(|| format!("Failed to load 3MF: {:?}", input))?;
     let Loaded3mf {
         mut mesh,
@@ -970,22 +1025,36 @@ pub fn slice_3mf_to_gcode(
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
     let config = crate::print::full_print_config_from_settings(&settings_value);
     check_config_values(&config)?;
-    if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
-        && (scoped_scarf_settings || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"))
-    {
-        let (model, embedded) = load_scarf_project(input)?;
-        let config = if settings_override.is_some() {
+    let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
+        && (scoped.scarf || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"));
+    let needs_filament = scoped.filament && mmu_facets.is_empty()
+        && ["filament_diameter", "filament_colour"].iter().any(|key|
+            settings_value[*key].as_array().is_some_and(|values| values.len() > 1));
+    let mut model_filament = None;
+    if needs_scarf || needs_filament {
+        let (model, embedded) = load_bbs_model_and_config(input)?;
+        let full = normalized_model_config(if settings_override.is_some() {
             config
         } else {
             crate::print_config::config_def::full_print_config_of(&embedded)?
-        };
-        apply_model_scarf_flag(&mut settings_value, config, &model)?;
+        })?;
+        if needs_scarf {
+            apply_model_scarf_flag(&mut settings_value, &full, &model);
+        }
+        if needs_filament {
+            model_filament = uniform_model_filament(&model, &full);
+        }
     }
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
     engine_settings_as_the_pin_reads(&mut settings_value);
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
-    let (print_config, object_config, region_config) = load_bambustudio_settings(&settings_value)?;
+    let (print_config, object_config, mut region_config) = load_bambustudio_settings(&settings_value)?;
+    if let Some(slot) = model_filament.filter(|&slot| slot <= print_config.num_filaments()) {
+        region_config.wall_filament = slot;
+        region_config.sparse_infill_filament = slot;
+        region_config.solid_infill_filament = slot;
+    }
 
     // Drop the model onto the bed surface (Z=0), and XY-center it on the bed.
     //
@@ -1470,7 +1539,39 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
     Ok(load_3mf_model(path, false)?.0)
 }
 
-fn load_3mf_model(path: &Path, check_scarf: bool) -> Result<(Loaded3mf, bool)> {
+struct ScopedModelSettings {
+    scarf: bool,
+    filament: bool,
+}
+
+// bbs_3mf.cpp 2676-2701 supplies object slot one on import. An ordinary
+// object with only that assignment can use the existing geometry pass.
+fn has_scoped_filament_setting(xml: &str) -> bool {
+    use quick_xml::{events::Event, Reader};
+    let mut reader = Reader::from_str(xml);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Empty(tag) | Event::Start(tag)) if tag.name().as_ref() == b"metadata" => {
+                let attr = |name: &str| tag.try_get_attribute(name).ok().flatten()
+                    .and_then(|a| a.unescape_value().ok().map(|s| s.into_owned()));
+                let Some(key) = attr("key") else { continue };
+                if FEATURE_FILAMENT_KEYS.contains(&key.as_str()) {
+                    return true;
+                }
+                if key == "extruder" {
+                    let slot = attr("value").and_then(|value| value.trim().parse::<i32>().ok());
+                    if !matches!(slot, Some(0 | 1)) {
+                        return true;
+                    }
+                }
+            }
+            Ok(Event::Eof) | Err(_) => return false,
+            _ => {}
+        }
+    }
+}
+
+fn load_3mf_model(path: &Path, inspect_settings: bool) -> Result<(Loaded3mf, ScopedModelSettings)> {
     use zip::ZipArchive;
 
     let file =
@@ -1495,7 +1596,7 @@ fn load_3mf_model(path: &Path, check_scarf: bool) -> Result<(Loaded3mf, bool)> {
     let negative_ids = parse_negative_part_ids_from_model_settings(&model_settings);
 
     // Ordinary 3MFs need only the existing geometry pass. Consult the full
-    // importer when a scoped option might enable scarf. Account for XML
+    // importer for potential scarf or filament overrides. Account for XML
     // character references and the importer's case-insensitive entry names.
     let may_override = |xml: &str| {
         let decoded = quick_xml::escape::unescape(xml);
@@ -1504,20 +1605,29 @@ fn load_3mf_model(path: &Path, check_scarf: bool) -> Result<(Loaded3mf, bool)> {
                 .iter().any(|key| text.contains(key))
         })
     };
-    let mut scoped_scarf = check_scarf && may_override(&model_settings);
-    if check_scarf && !scoped_scarf {
+    let check_scarf = inspect_settings && crate::faithful_gate("PRINT_APPLY_SCARF_SEAM");
+    let check_filament = inspect_settings
+        && crate::faithful_gate("SCOPED_MODEL_FILAMENT")
+        && crate::faithful_gate("REGION_CONFIG_WALL_FILAMENT")
+        && crate::faithful_gate("REGION_CONFIG_INFILL_FILAMENTS")
+        && crate::faithful_gate("REGION_CONFIG_FILAMENT_CLAMP");
+    let mut scoped = ScopedModelSettings {
+        scarf: check_scarf && may_override(&model_settings),
+        filament: check_filament && has_scoped_filament_setting(&model_settings),
+    };
+    if (check_scarf && !scoped.scarf) || (check_filament && !scoped.filament) {
         use crate::format::bbs_3mf::{BBS_MODEL_CONFIG_FILE, LAYER_CONFIG_RANGES_FILE};
         let config_entries: Vec<String> = archive.file_names().filter(|name| {
             let normalized = name.replace('\\', "/");
-            normalized.eq_ignore_ascii_case(LAYER_CONFIG_RANGES_FILE)
+            (check_scarf && !scoped.scarf && normalized.eq_ignore_ascii_case(LAYER_CONFIG_RANGES_FILE))
                 || (*name != BBS_MODEL_CONFIG_FILE && normalized.eq_ignore_ascii_case(BBS_MODEL_CONFIG_FILE))
         }).map(str::to_owned).collect();
         for name in config_entries {
             let mut xml = String::new();
             archive.by_name(&name)?.read_to_string(&mut xml)?;
-            if may_override(&xml) {
-                scoped_scarf = true;
-                break;
+            scoped.scarf |= check_scarf && may_override(&xml);
+            if check_filament && !scoped.filament && name.replace('\\', "/").eq_ignore_ascii_case(BBS_MODEL_CONFIG_FILE) {
+                scoped.filament = has_scoped_filament_setting(&xml);
             }
         }
     }
@@ -1547,7 +1657,7 @@ fn load_3mf_model(path: &Path, check_scarf: bool) -> Result<(Loaded3mf, bool)> {
         paint_raw_vertices: parsed.paint_raw_vertices,
         paint_instance_matrix: parsed.paint_instance_matrix,
         negative_segments: parsed.negative_segments,
-    }, scoped_scarf))
+    }, scoped))
 }
 
 /// R703 — the `<object id>`s that `Metadata/model_settings.config` marks
@@ -2787,6 +2897,50 @@ fn compose12_rows(a: &[f64; 12], b: &[f64; 12]) -> [f64; 12] {
 #[cfg(test)]
 mod circle_compensation_settings_tests {
     use super::*;
+
+    // PrintApply.cpp 1091 creates distinct regions when two parts' feature
+    // settings differ. The flattened mesh may select a slot only by consensus.
+    #[test]
+    fn uniform_filament_requires_every_part_and_role() {
+        use crate::model::{Model, ModelMesh, ModelVolumeType};
+
+        let full = crate::print::full_print_config_from_settings(&serde_json::json!({
+            "filament_diameter": ["1.75", "1.75", "1.75"],
+            "filament_is_mixed": ["0", "0", "1"],
+        }));
+        let mut model = Model::new();
+        let obj = model.add_object_new();
+        obj.add_instance();
+        obj.config.set("extruder", 2);
+        obj.add_volume_mesh(ModelMesh::new(), ModelVolumeType::ModelPart, false);
+        obj.add_volume_mesh(ModelMesh::new(), ModelVolumeType::ModelPart, false);
+        assert_eq!(uniform_model_filament(&model, &full), Some(2));
+
+        model.objects[0].volumes[1].config.set("extruder", 1);
+        assert_eq!(uniform_model_filament(&model, &full), None);
+        model.objects[0].volumes[1].config.set("extruder", 2);
+        model.objects[0].volumes[1].config.set("solid_infill_filament", 1);
+        assert_eq!(uniform_model_filament(&model, &full), None);
+
+        let second = model.add_object_new();
+        second.add_instance();
+        second.config.set("extruder", 1);
+        second.add_volume_mesh(ModelMesh::new(), ModelVolumeType::ModelPart, false);
+        model.objects[0].volumes[1].config.set("solid_infill_filament", 2);
+        assert_eq!(uniform_model_filament(&model, &full), None);
+        model.objects[1].config.set("extruder", 2);
+        assert_eq!(uniform_model_filament(&model, &full), Some(2));
+
+        // A unanimous virtual slot still requires mixed-component ordering.
+        for obj in &mut model.objects {
+            obj.config.set("extruder", 3);
+            for part in &mut obj.volumes {
+                part.config.set("extruder", 3);
+                part.config.set("solid_infill_filament", 3);
+            }
+        }
+        assert_eq!(uniform_model_filament(&model, &full), None);
+    }
 
     /// GCodeProcessor.cpp:1577-1590, 2072, 2089-2091. Reuse each processor
     /// through the same profile changes and resets as the native generator.

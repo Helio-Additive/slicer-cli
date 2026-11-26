@@ -207,9 +207,26 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R980 | Finalize preview times for consecutive extrusion heights (GCodeProcessor.cpp 2881–2883, 6456–6507). The native mixed-color cube export has 381 preview runs for 128 logical layers. All run times agree in both modes. | `PROCESSOR_PREVIEW_LAYER_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R981 | Read the global sparse- and solid-infill filament slots and resolve their defaults through the applied region (PrintConfig.cpp 4680–4687, 6090–6100 and PrintObject.cpp 3742–3806). All 72 native cases agree. | `REGION_CONFIG_INFILL_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R982 | Pass the first and first non-support filaments to the startup templates and the virtual tool tag (GCode.cpp 2840–2863, 2898–2927, 3184–3236). Three single-filament cube exports and a support-first header reproduce native startup. | `EXPORT_STARTUP_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R983 | Apply a common physical filament across all unpainted 3MF parts and roles (PrintApply.cpp 1045–1055, 1091 and PrintObject.cpp 3742–3806). Five of 23 supplemental projects gained five in-order lines each. | `SCOPED_MODEL_FILAMENT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
 
+- R983, object and part filaments in a merged 3MF. The Rust Bambu 3MF model
+  importer and region resolver reproduced all 15 native region
+  assignments. The live geometry loader had discarded the scopes. The
+  shared slicing region now takes the resolved slot when all printable
+  parts and all three feature roles agree on one physical filament. The
+  existing scarf check shares the model read. A 3MF slice test compares
+  object, part, global and out-of-range settings with six native region
+  configurations. Five live projects, including two parts with the
+  same assignment, now match the native filament header, virtual tool and
+  three AMS startup commands. Each gains five in-order lines (10,174 to
+  10,179 on the cubes and 21,150 to 21,155 on the two-part job). The other
+  18 controls and all 23 gate-off files match R982 byte for byte. Across
+  both gate positions the four standard files reproduce R982, including
+  H2D at 4,614,342 and 4,614,863. Distinct part and role filaments, layer
+  overrides, painted regions and virtual-slot expansion still need their
+  own region and tool ordering.
 - R982, startup filament selection. The native layer tool ordering selected
   zero-based slot 1 for a cube assigned entirely to filament 2. Rust had the
   correct applied region but passed slot 0 to the startup templates. Both

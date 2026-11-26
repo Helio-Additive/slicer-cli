@@ -901,3 +901,70 @@ fn project_layer_range_scarf_matches_native_export() {
         assert_eq!(gcode.lines().find_map(|line| line.strip_prefix("; has_scarf_joint_seam = ")), Some(switch));
     }
 }
+
+/// PrintObject.cpp 3742-3806 resolves all three roles before the first tool
+/// is selected. Exercise the BBS importer through the same 3MF entry point as
+/// the CLI, including an external profile overriding the embedded global slots.
+#[test]
+fn scoped_project_filaments_match_native_export() {
+    use std::fs::File;
+    use std::io::{Read, Write};
+    use std::path::Path;
+    use zip::{write::FileOptions, ZipArchive, ZipWriter};
+
+    let _model_ids = MODEL_IDS.lock().unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/calib_base.3mf");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("model.3mf");
+    let settings_path = dir.path().join("settings.json");
+    let output = dir.path().join("out.gcode");
+    let roles = ["wall_filament", "sparse_infill_filament", "solid_infill_filament"];
+    let vectors = include_str!("data/print/scoped_region_filaments.txt");
+    for row in vectors.lines() {
+        let fields: Vec<_> = row.split_whitespace().map(|s| s.parse::<usize>().unwrap()).collect();
+        let [object, part, global, wall, sparse, solid]: [usize; 6] = fields.try_into().unwrap();
+        assert_eq!([wall, sparse, solid], [wall; 3]);
+        let external = global != 0;
+        let mut source = ZipArchive::new(File::open(&fixture).unwrap()).unwrap();
+        let mut dest = ZipWriter::new(File::create(&path).unwrap());
+        for index in 0..source.len() {
+            let mut entry = source.by_index(index).unwrap();
+            match entry.name() {
+                "Metadata/project_settings.config" => {
+                    let mut profile: serde_json::Value = serde_json::from_reader(&mut entry).unwrap();
+                    let preset = profile["filament_settings_id"][0].clone();
+                    profile["filament_settings_id"] = vec![preset; 3].into();
+                    profile["filament_diameter"] = serde_json::json!(["1.75", "1.75", "1.75"]);
+                    profile["filament_colour"] = serde_json::json!(["#FFFFFF", "#000000", "#777777"]);
+                    profile["filament_map"] = serde_json::json!(["1", "1", "1"]);
+                    profile["flush_volumes_matrix"] = serde_json::json!(["0","280","280","280","0","280","280","280","0"]);
+                    dest.start_file(entry.name(), FileOptions::default()).unwrap();
+                    serde_json::to_writer(&mut dest, &profile).unwrap();
+                    if external {
+                        for key in roles { profile[key] = global.to_string().into(); }
+                        serde_json::to_writer(File::create(&settings_path).unwrap(), &profile).unwrap();
+                    }
+                }
+                "Metadata/model_settings.config" => {
+                    let mut xml = String::new();
+                    entry.read_to_string(&mut xml).unwrap();
+                    xml = xml.replace(r#"key="extruder" value="1""#, &format!(r#"key="extruder" value="{object}""#))
+                        .replace(r#"key="filament_maps" value="1""#, r#"key="filament_maps" value="1 1 1""#)
+                        .replace(r#"key="filament_volume_maps" value="0""#, r#"key="filament_volume_maps" value="0 0 0""#);
+                    if part != 0 {
+                        let options: String = roles.iter().map(|key| format!(r#"<metadata key="{key}" value="{part}"/>"#)).collect();
+                        xml = xml.replace("</part>", &(options + "</part>"));
+                    }
+                    dest.start_file(entry.name(), FileOptions::default()).unwrap();
+                    dest.write_all(xml.as_bytes()).unwrap();
+                }
+                _ => dest.raw_copy_file(entry).unwrap(),
+            }
+        }
+        dest.finish().unwrap();
+        slicer::app_slice::slice_3mf_to_gcode(&path, external.then_some(settings_path.as_path()), &output).unwrap();
+        let gcode = std::fs::read_to_string(&output).unwrap();
+        assert_eq!(gcode.lines().find(|line| line.starts_with("; filament: ")).unwrap(), format!("; filament: {wall}"), "{row}");
+        assert_eq!(gcode.lines().find(|line| line.starts_with(";VT")).unwrap(), format!(";VT{} H-1", wall - 1), "{row}");
+    }
+}

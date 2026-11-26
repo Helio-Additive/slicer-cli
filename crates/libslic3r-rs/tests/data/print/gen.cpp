@@ -13,6 +13,7 @@
 //   ./gen > vectors.txt
 //   ./gen --scarf-flags scarf_flags.txt
 //   ./gen --region-infill-filaments region_infill_filaments.txt
+//   ./gen --scoped-region-filaments scoped_region_filaments.txt
 //   ./gen --startup-filaments <temporary-directory> > startup_filaments.txt
 //
 // PrintApply.cpp is compiled into this file (its helpers are static), with the private members
@@ -624,8 +625,37 @@ static void startup_filaments(const std::string &dir)
     }
 }
 
+// PrintApply.cpp 1045-1055,1091 and PrintObject.cpp 3742-3806.
+// An unpainted model part may inherit the object slot, use a global feature
+// slot, or set its own feature slots. Read the effective region after apply.
+static void scoped_region_filaments(const char *filename)
+{
+    std::ofstream out(filename);
+    out.exceptions(std::ios::failbit | std::ios::badbit);
+    struct Scenario { int object, part, global; };
+    for (const Scenario &s : std::vector<Scenario>{{1, 0, 0}, {2, 0, 0}, {3, 0, 0},
+                                                   {8, 0, 0}, {3, 0, 2}, {3, 2, 0}}) {
+        Model model = build_model(0);
+        ModelObject &object = *model.objects.front();
+        object.config.set("extruder", s.object);
+        DynamicPrintConfig cfg = base_config(0);
+        cfg.option<ConfigOptionFloats>("filament_diameter")->values.assign(3, 1.75);
+        for (const char *key : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"}) {
+            cfg.set_key_value(key, new ConfigOptionInt(s.global));
+            if (s.part != 0) object.volumes.front()->config.set(key, s.part);
+        }
+        Print print;
+        print.apply(model, cfg);
+        const auto &r = print.get_print_region(0).config();
+        out << s.object << ' ' << s.part << ' ' << s.global << ' '
+            << r.wall_filament.value << ' ' << r.sparse_infill_filament.value << ' '
+            << r.solid_infill_filament.value << '\n';
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 3 && std::string(argv[1]) == "--scoped-region-filaments") { scoped_region_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--startup-filaments") { startup_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--region-infill-filaments") { region_infill_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--scarf-flags") { scarf_flags(argv[2]); return 0; }
