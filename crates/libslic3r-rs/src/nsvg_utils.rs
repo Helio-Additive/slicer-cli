@@ -11,7 +11,7 @@
 //! The bulk of this translation unit consumes the `nanosvg` C library's
 //! `NSVGimage` / `NSVGshape` / `NSVGpath` structures (and the `nsvgParse` /
 //! `nsvgParseFromFile` / `nsvgDelete` entry points). The `nanosvg` workspace
-//! crate ports the XML tokenizer. Its SVG image, shape and path construction
+//! crate ports XML tokenization and transformed cubic paths. SVG images and shapes
 //! are still needed by this module and by [`crate::format::svg`].
 //!
 //! The other dependencies that earlier blocked this file are now AVAILABLE and
@@ -29,17 +29,17 @@
 //!   [`crate::clipper_utils::offset_polyline`]).
 //!
 //! Consequently the following symbols remain BLOCKED on the native nanosvg
-//! `NSVGimage`/`NSVGshape`/`NSVGpath` structures (they iterate `image.shapes`,
+//! `NSVGimage`/`NSVGshape` structures (they iterate `image.shapes`,
 //! `shape.paths`, `path->pts`, `path->npts`, `path->closed`, etc.):
 //! `create_shape_with_ids`, `to_polygons(image)`, `bounds`, `get_shapes_count`,
-//! `linearize_path`, `fill_to_expolygons`, `stroke_to_expolygons`, and the
+//! `fill_to_expolygons`, `stroke_to_expolygons`, and the
 //! `DashesParam` constructor. The parse wrappers `nsvgParseFromFile`,
 //! `nsvgParse`, and `init_image` are likewise blocked because they
 //! construct/return the native `NSVGimage` (via `::nsvgParse`).
 //!
 //! Everything tractable around nanosvg is ported faithfully:
 //! - the self-contained curve-flattening math `to_coor`, `need_flattening`,
-//!   `is_line`, and `flatten_cubic_bez` (what `linearize_path` calls);
+//!   `is_line`, and `flatten_cubic_bez`, and their path-list consumer `linearize_path`;
 //! - the dependency-free dash splitter `to_dashes` and the `DashesParam` struct
 //!   fields (only its `NSVGshape`-reading constructor is blocked);
 //! - the pure file-I/O helper `read_from_disk` (NSVGUtils.cpp:99-107), which is
@@ -54,7 +54,8 @@
 
 // NSVGUtils.cpp:1-9  #include "NSVGUtils.hpp" / <array> / <charconv> / boost nowide /
 //                    "ClipperUtils.hpp" / "Emboss.hpp" (heal for shape)
-use crate::geometry::{Point, Points, Polyline, Polylines};
+use crate::geometry::{Point, Points, Polygon, Polygons, Polyline, Polylines};
+use nanosvg::path::Path;
 
 // ============================================================================
 // NSVGUtils.hpp:18-44  struct NSVGLineParams
@@ -328,6 +329,54 @@ pub fn flatten_cubic_bez(
     flatten_cubic_bez(points, tess_tol, p1, &p12, &p123, &p1234, level);
     // NSVGUtils.cpp:322  flatten_cubic_bez(points, tessTol, p1234, p234, p34, p4, level);
     flatten_cubic_bez(points, tess_tol, &p1234, &p234, &p34, p4, level);
+}
+
+// BambuStudio 56a57d0 NSVGUtils.cpp 15-18,325-374. Input paths follow NSVGshape::paths order.
+#[derive(Default)]
+pub struct LinesPath {
+    pub polygons: Polygons,
+    pub polylines: Polylines,
+}
+
+pub fn linearize_path(paths: &[Path], params: &NSVGLineParams) -> LinesPath {
+    let mut result = LinesPath::default();
+    for path in paths {
+        let Some(first) = path.points.first() else {
+            continue;
+        };
+        let to_point =
+            |p: &[f32; 2]| Point::new(to_coor(p[0], params.scale), to_coor(p[1], params.scale));
+        let mut points = vec![to_point(first)];
+        for curve in path.points.windows(4).step_by(3) {
+            if is_line(curve.as_flattened(), IS_LINE_DEFAULT_PRECISION) {
+                points.push(to_point(&curve[3]));
+            } else {
+                let v = |p: [f32; 2]| Vec2f::new(p[0], p[1]) * params.scale as f32;
+                flatten_cubic_bez(
+                    &mut points,
+                    params.tesselation_tolerance as f32,
+                    &v(curve[0]),
+                    &v(curve[1]),
+                    &v(curve[2]),
+                    &v(curve[3]),
+                    params.max_level,
+                );
+            }
+        }
+        if params.is_y_negative {
+            for p in &mut points {
+                p.y = -p.y;
+            }
+        }
+        if path.closed {
+            result.polygons.push(Polygon::from_points(points));
+        } else {
+            result.polylines.push(Polyline::from_points(points));
+        }
+    }
+    crate::geometry::polygon::remove_same_neighbor_polygons(&mut result.polygons);
+    crate::geometry::remove_same_neighbor_polylines(&mut result.polylines);
+    result
 }
 
 // ============================================================================

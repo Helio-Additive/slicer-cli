@@ -218,8 +218,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R991 | Apply the export's printer kind to bed-level timing, estimated-time headers and the M981 startup command. | Root CLI and G-code export | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R992 | Import and time existing G-code pairs through the root command line. | Root CLI and G-code processor | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R993 | Write binary STL headers, face counts and facets with safe little-endian conversions. | TriangleMesh | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R994 | Build transformed NanoSVG cubic paths and convert them to polygons and polylines in safe Rust. | NanoSVG / NSVGUtils | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R994. All 344 native cubic-path vectors reproduce the point and bounds
+  bits on macOS arm64 and baseline x86_64 under Rosetta. Clang contracts
+  the first product in the arm64 transform. The native min/max helpers
+  select their second operand on ties, including signed zero. The engine's
+  path conversion reproduces 51 native lists of polygons and polylines
+  from 21 SVG path strings. The safe NanoSVG crate and its tests also
+  compile for Linux musl on x86_64 and arm64, and Windows GNU on x86_64.
+  These are crate-level compile checks. Styled documents and the complete
+  SVG import pipeline remain partial. This round adds a callable engine
+  function. Standard slicing jobs do not read SVG paths. All four outputs
+  reproduce R993 with the previous STL gate in both positions. Both H2D
+  scores hold at 4,614,342 and 4,614,863.
 
 - R993. The native STL label stops at the first zero byte. With the label
   `A\0B`, Rust had written `B` at offset 2. This was the only differing

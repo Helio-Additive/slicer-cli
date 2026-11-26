@@ -11,14 +11,14 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 
 ## Overall
 
-**78.3% of the named C++ functions are ported or verified (7493 of 9574); 77.2% by size of body.**
+**78.3% of the named C++ functions are ported or verified (7494 of 9574); 77.2% by size of body.**
 
 | Status | Functions | Share | By body tokens |
 |-|-|-|-|
-| not started `[ ]` | 412 | 4.3% | 6.3% |
+| not started `[ ]` | 411 | 4.3% | 6.3% |
 | partial `[~]` | 1669 | 17.4% | 16.5% |
 | ported `[x]` | 3693 | 38.6% | 23.8% |
-| verified `[v]` | 3800 | 39.7% | 53.4% |
+| verified `[v]` | 3801 | 39.7% | 53.4% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -270,7 +270,7 @@ Entries of `port_checklist_verified.json` that match no function now: `_fill_sur
 | `MutablePriorityQueue` | 1 | `mutable_priority_queue.rs` | partial | 37 | 0 | 17 | 20 | 0 |
 | `NormalUtils` | 3 | `normal_utils.rs` | ported | 7 | 0 | 0 | 7 | 0 |
 | `NozzleInventory` | 3 | `nozzle_inventory.rs` | partial | 49 | 1 | 0 | 0 | 48 |
-| `NSVGUtils` | 3 | `nsvg_utils.rs` | partial | 16 | 8 | 3 | 5 | 0 |
+| `NSVGUtils` | 3 | `nsvg_utils.rs` | partial | 16 | 7 | 3 | 5 | 1 |
 | `ObjColorUtils` | 3 | `obj_color_utils.rs` | partial | 24 | 0 | 3 | 0 | 21 |
 | `ObjectID` | 3 | `object_id.rs` | partial | 31 | 1 | 4 | 26 | 0 |
 | `OpenVDBUtils` | 3 | `open_vdb_utils.rs` | partial | 10 | 0 | 3 | 7 | 0 |
@@ -9600,17 +9600,17 @@ Rust file: `nsvg_utils.rs`. Status: **partial**. Not listed: 2 constructors.
 - [~] `to_polygons` (line 62) → `brim.rs, clipper_utils.rs, ex_polygon.rs` — not in the paired file
 - [~] `bounds` (line 78) → `optimize/optimizer.rs` — not in the paired file
 - [ ] `nsvgParseFromFile` (line 93) → `nsvg_utils.rs`
-- [~] `read_from_disk` (line 99) → `nsvg_utils.rs:510` — divergent
+- [~] `read_from_disk` (line 99) → `nsvg_utils.rs:559` — divergent
 - [ ] `nsvgParse` (line 109) → `nsvg_utils.rs`
 - [ ] `init_image` (line 120) → `nsvg_utils.rs`
 - [ ] `get_shapes_count` (line 142) → `nsvg_utils.rs`
-- [x] `to_coor` (line 255) → `nsvg_utils.rs:202`
-- [x] `need_flattening` (line 257) → `nsvg_utils.rs:209`
-- [x] `is_line` (line 275) → `nsvg_utils.rs:243`
-- [x] `flatten_cubic_bez` (line 302) → `nsvg_utils.rs:287`
-- [ ] `linearize_path` (line 325) → `nsvg_utils.rs`
+- [x] `to_coor` (line 255) → `nsvg_utils.rs:203`
+- [x] `need_flattening` (line 257) → `nsvg_utils.rs:210`
+- [x] `is_line` (line 275) → `nsvg_utils.rs:244`
+- [x] `flatten_cubic_bez` (line 302) → `nsvg_utils.rs:288`
+- [v] `linearize_path` (line 325) → `nsvg_utils.rs:341` — R994: linearized_native_paths_match_polygons_and_polylines compares every output vertex in 51 native conversions, including open and closed paths, adaptive curves, scale and Y inversion. (the body reads as partial to the estimate)
 - [ ] `fill_to_expolygons` (line 377) → `nsvg_utils.rs`
-- [x] `to_dashes` (line 439) → `nsvg_utils.rs:384`
+- [x] `to_dashes` (line 439) → `nsvg_utils.rs:433`
 - [ ] `stroke_to_expolygons` (line 500) → `nsvg_utils.rs`
 
 ### `ObjColorUtils` (.cpp+.hpp)

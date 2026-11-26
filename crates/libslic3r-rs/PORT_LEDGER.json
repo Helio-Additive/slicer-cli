@@ -1184,7 +1184,7 @@
     "status": "partial",
     "priority": 2,
     "fidelity": "fixed",
-    "notes": "R986 ports the NanoSVG XML tokenizer in crates/nanosvg. Constructing the SVG image, shapes and paths for the stroke and fill consumers is pending."
+    "notes": "R986 ports NanoSVG XML callbacks. R994 ports transformed cubic paths, curve bounds and NSVGUtils::linearize_path. Tests compare all points, bounds and flattened lines with the pin. Parsing styled shapes and images, fill and stroke conversion, and the SVG import path remain partial."
   },
   {
     "cpp": "GCodeSender.cpp",

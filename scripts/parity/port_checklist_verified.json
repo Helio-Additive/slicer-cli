@@ -5581,5 +5581,13 @@
    "GCodeProcessor::ensure_nozzle_group_result",
    "GCodeProcessor::initialize_from_context"
   ]
+ },
+ {
+  "unit": "NSVGUtils",
+  "round": 994,
+  "evidence": "linearized_native_paths_match_polygons_and_polylines compares every output vertex in 51 native conversions, including open and closed paths, adaptive curves, scale and Y inversion.",
+  "functions": [
+   "linearize_path"
+  ]
  }
 ]

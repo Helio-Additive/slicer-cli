@@ -1,6 +1,8 @@
-//! Safe Rust port of the XML callbacks used by NanoSVG.
+//! Safe Rust port of NanoSVG XML callbacks and cubic path geometry.
 //! BambuStudio 56a57d0, src/nanosvg/nanosvg.h 221–226 and 241–355.
 #![forbid(unsafe_code)]
+
+pub mod path;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum XmlEvent<'a> {

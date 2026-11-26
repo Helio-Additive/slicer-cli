@@ -1454,6 +1454,7 @@ dependencies = [
  "libcxx-sort",
  "log",
  "nalgebra",
+ "nanosvg",
  "ordered-float 4.6.0",
  "parking_lot",
  "pretty_assertions",

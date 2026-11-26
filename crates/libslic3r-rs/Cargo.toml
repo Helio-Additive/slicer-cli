@@ -25,6 +25,7 @@ path = "src/bin/generate-test-meshes.rs"
 # Geometry & Math
 nalgebra = "0.32"
 eigen-transform = { path = "../eigen-transform" }
+nanosvg = { path = "../nanosvg" }
 ordered-float = "4.2"
 boostvoronoi = "0.12"
 boost-polygon-voronoi = { path = "../boost-polygon-voronoi" }

@@ -44,16 +44,16 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 67 (plus 24 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 7487 (83%) |
+| matched to a Rust function in the paired file | 7488 (83%) |
 | estimate: faithful | 6549 (87% of matched) |
-| estimate: partial | 619 (8% of matched) |
+| estimate: partial | 620 (8% of matched) |
 | estimate: divergent | 287 (4% of matched) |
 | estimate: stub | 32 (0% of matched) |
-| missing in the paired Rust file | 1543 |
+| missing in the paired Rust file | 1542 |
 | of those, a function of that name exists in another Rust file | 873 |
 | of the rest, another overload of the name is ported | 301 |
 | of the rest, under 25 tokens (accessors, one-liners) | 91 |
-| of the rest, 25 tokens or more | 278 |
+| of the rest, 25 tokens or more | 277 |
 | in a C++ unit with no Rust file | 22 |
 | Rust functions with no C++ function of that name in the pair | 8931 |
 
@@ -63,7 +63,7 @@ By tier:
 |-|-|-|-|-|-|-|-|-|-|
 | 1 | 180 | 180 | 6851 | 5764 | 5042 | 489 | 213 | 20 | 1087 |
 | 2 | 15 | 15 | 392 | 356 | 305 | 37 | 13 | 1 | 36 |
-| 3 | 92 | 89 | 1374 | 1119 | 982 | 74 | 57 | 6 | 255 |
+| 3 | 92 | 89 | 1374 | 1120 | 982 | 75 | 57 | 6 | 254 |
 | 4 | 23 | 23 | 435 | 248 | 220 | 19 | 4 | 5 | 187 |
 
 ## Biggest gaps
@@ -13124,11 +13124,12 @@ Rust only:
 
 ### `NSVGUtils` (.cpp+.hpp) and `nsvg_utils.rs`
 
-Tier 3. C++ functions 16 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 15. Matched 6: faithful 5, partial 0, divergent 1, stub 0.
+Tier 3. C++ functions 16 (plus 2 constructors, 0 destructors, 0 operators), Rust functions 16. Matched 7: faithful 5, partial 1, divergent 1, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `read_from_disk` :99 and `read_from_disk` :510 (28%, 0.74x)
+- divergent: `read_from_disk` :99 and `read_from_disk` :559 (28%, 0.74x)
+- partial: `linearize_path` :325 and `linearize_path` :341 (47%, 0.82x)
 
 Missing in the Rust file:
 
@@ -13139,21 +13140,20 @@ Missing in the Rust file:
 - `nsvgParse` :109 (82 tokens)
 - `init_image` :120 (104 tokens)
 - `get_shapes_count` :142 (33 tokens)
-- `linearize_path` :325 (386 tokens)
 - `fill_to_expolygons` :377 (66 tokens)
 - `stroke_to_expolygons` :500 (348 tokens)
 
 Rust only:
 
-- `NSVGLineParams::new` :112
-- `Vec2f::new` :154
-- `Vec2f::x` :158 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Vec2f::y` :162 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Vec2f::squared_norm` :167
-- `Vec2f::add` :175 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `Vec2f::sub` :183 — C++ has it in `CutUtils`
-- `Vec2f::mul` :191
-- `is_approx_f32` :271
+- `NSVGLineParams::new` :113
+- `Vec2f::new` :155
+- `Vec2f::x` :159 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Vec2f::y` :163 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Vec2f::squared_norm` :168
+- `Vec2f::add` :176 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `Vec2f::sub` :184 — C++ has it in `CutUtils`
+- `Vec2f::mul` :192
+- `is_approx_f32` :272
 
 ### `NormalUtils` (.cpp+.hpp) and `normal_utils.rs`
 

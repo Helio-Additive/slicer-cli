@@ -14,8 +14,8 @@
 //! - **nanosvg** (`#include "nanosvg/nanosvg.h"`, svg.cpp:7) supplies the
 //!   `NSVGimage` / `NSVGshape` / `NSVGpath` structures and the
 //!   `nsvgParseFromFile` / `nsvgDelete` entry points that feed
-//!   [`get_svg_profile`]. The `nanosvg` workspace crate handles XML events.
-//!   Building the image and its shapes and paths remains pending.
+//!   [`get_svg_profile`]. The `nanosvg` workspace crate handles XML events and transformed
+//!   cubic paths. Parsing complete SVG documents into shapes remains pending.
 //! - **OpenCascade / OCCT** (svg.cpp:13-22) supplies `gp_Pnt`,
 //!   `BRepBuilderAPI_MakeWire` / `MakeEdge` / `MakeFace`,
 //!   `BRepPrimAPI_MakePrism`, `BRepMesh_IncrementalMesh`, `TopExp_Explorer`,
