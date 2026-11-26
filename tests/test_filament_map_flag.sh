@@ -7,7 +7,7 @@
 # One filament, a bare STL and a bare 3MF (the STL saved as a project, never
 # sliced), on "Bambu Lab H2C 0.4 nozzle" (extruder_max_nozzle_count 1,6, master
 # extruder 2) for slicer_cli and "Bambu Lab H2D 0.4 nozzle" for
-# slicer_cli-orcaslicer, whose engine has no H2C:
+# slicer_cli-orcaslicer:
 #   - no flag: Auto For Flush, the engine picks the nozzle; result.json states
 #     the nozzle the plate's slice_info.config filament_maps states;
 #   - --filament-map 1 and --filament-map 2: slice_info filament_maps is that
@@ -34,11 +34,11 @@ ONE_NOZZLE="Bambu Lab A1 mini 0.4 nozzle"
 H2D="Bambu Lab H2D 0.4 nozzle"
 H3C="Bambu Lab H3C 0.4 nozzle"
 # The printer of the one-filament cases, and every left/right printer the engine has.
-# A bare model on Orca's H2D is a project of two filaments (the preset's two
-# slots), on Bambu's H2C of one: L and R send every filament left or right.
+# A bare model is a project of one filament on both (OrcaSlicer 2.4 made it two
+# on the H2D, the preset's two slots): L and R send the filament left or right.
 if [ "$ENGINE" = orcaslicer ]; then
     ONE="$H2D"; SPLIT=("$H2D" "Bambu Lab H2D Pro 0.4 nozzle" "Bambu Lab X2D 0.4 nozzle")
-    L="1,1"; R="2,2"; SHORT="1"; SHORT_SENTENCE="--filament-map gives 1 value but the project has 2 filaments"; BAD="3,1"
+    L="1"; R="2"; SHORT="1,2"; SHORT_SENTENCE="--filament-map gives 2 values but the project has 1 filament"; BAD="3"
 else
     ONE="$H2C"; SPLIT=("$H2D" "Bambu Lab H2D Pro 0.4 nozzle" "Bambu Lab X2D 0.4 nozzle" "$H2C")
     L="1"; R="2"; SHORT="1,2"; SHORT_SENTENCE="--filament-map gives 2 values but the project has 1 filament"; BAD="3"
@@ -363,7 +363,7 @@ with open(sys.argv[1], "w") as f:
         f.write("endloop\nendfacet\n")
     f.write("endsolid cube\n")
 PY
-EDGE_L="${L%%,*}"; EDGE_R="${R%%,*}"; [ "$ENGINE" = orcaslicer ] && { EDGE_L="1,1"; EDGE_R="2,2"; }
+EDGE_L="${L%%,*}"; EDGE_R="${R%%,*}"
 expect_refusal "refuse-zero-in-auto-mode" "$WORKDIR/two.3mf" "$H2D" "values start at 1" "${D2[@]}" \
     --filament-map-mode "Auto For Flush" --filament-map 0,1
 CODE=-66 expect_refusal "refuse-extruder-cannot-reach" "$WORKDIR/edge.stl" "$H2D" "cannot reach" --arrange 0 --filament-map "$EDGE_R"
@@ -376,7 +376,8 @@ expect_header "flow-type-per-extruder" "nozzle_volume_type = High Flow,Standard"
 if [ "$ENGINE" = orcaslicer ]; then
     expect_refusal "refuse-own-extruder-per-filament" "$WORKDIR/two.3mf" "Prusa XL 5T 0.4 nozzle" \
         "every filament has its own extruder" --filament-map 2,1,3,4,5
-else
+fi
+if [ "$ENGINE" != snapmaker ]; then
     expect_header "manual-flow-type-follows-extruder" "filament_map = 1,2;;filament_volume_map = 1,0;;filament_map_mode = Manual" "" \
         "${D2[@]}" --filament-map 1,2 --nozzle-volume-type "High Flow,Standard"
     # A plate that remembers a filament switcher and smart filament
@@ -420,27 +421,51 @@ PY
         "${CF[@]}" --filament-map 2,2
     expect_refusal "refuse-nozzle-manual-no-rack" "$WORKDIR/two.3mf" "$H2D" "has no nozzle rack" "${D2[@]}" \
         --filament-map-mode "Nozzle Manual" --filament-map 1,2
-    expect_refusal "refuse-quality-same-extruders" "$WORKDIR/two.3mf" "$H2D" "has no two extruders of different types" \
-        "${D2[@]}" --filament-map-mode "Auto For Quality"
-    PRINTER="Bambu Lab X2D 0.4 nozzle"
-    expect_header "quality-mode" "filament_map_mode = Auto For Quality" "" \
-        --filament-preset "Bambu PLA Basic @BBL X2D 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL X2D 0.4 nozzle" \
-        --filament-map-mode "Auto For Quality"
+    # OrcaSlicer has no "Auto For Quality" mode (PrintConfig.hpp 633-639 at f92a7c0).
+    if [ "$ENGINE" = bambustudio ]; then
+        expect_refusal "refuse-quality-same-extruders" "$WORKDIR/two.3mf" "$H2D" "has no two extruders of different types" \
+            "${D2[@]}" --filament-map-mode "Auto For Quality"
+        PRINTER="Bambu Lab X2D 0.4 nozzle"
+        expect_header "quality-mode" "filament_map_mode = Auto For Quality" "" \
+            --filament-preset "Bambu PLA Basic @BBL X2D 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL X2D 0.4 nozzle" \
+            --filament-map-mode "Auto For Quality"
+    fi
 
     # The H2C: left extruder one nozzle, right extruder a rack.
     PRINTER="$H2C"; C2=(--filament-preset "Bambu PLA Basic @BBL H2C" --filament-preset "Bambu PLA Basic @BBL H2C")
-    expect_header "h2c-rack-from-command-line" 'extruder_nozzle_count = 1,3;;extruder_nozzle_stats = Standard#1;"Standard#2|High Flow#1"' "" \
-        "${C2[@]}" --filament-map 2,2 --extruder-nozzle-count 1,3 \
-        --extruder-nozzle-volume-type "Standard,Standard,High Flow,Standard"
-    expect_header "h2c-nozzle-manual" "filament_map_mode = Nozzle Manual;;filament_nozzle_map = 1,3" "1,3" \
-        "${C2[@]}" --filament-map-mode "Nozzle Manual" --filament-map 2,2 --filament-volume-map 0,0 \
-        --filament-nozzle-map 1,3 --extruder-nozzle-count 1,3 \
-        --extruder-nozzle-volume-type "Standard,Standard,Standard,Standard"
+    # The rack as the command line describes it is Bambu Studio's
+    # (BambuStudio.cpp 7103-7172). OrcaSlicer's command line has no rack flags
+    # and takes Nozzle Manual from the three maps alone (OrcaSlicer.cpp
+    # 6847-6857 at f92a7c0).
+    if [ "$ENGINE" = bambustudio ]; then
+        expect_header "h2c-rack-from-command-line" 'extruder_nozzle_count = 1,3;;extruder_nozzle_stats = Standard#1;"Standard#2|High Flow#1"' "" \
+            "${C2[@]}" --filament-map 2,2 --extruder-nozzle-count 1,3 \
+            --extruder-nozzle-volume-type "Standard,Standard,High Flow,Standard"
+        expect_header "h2c-nozzle-manual" "filament_map_mode = Nozzle Manual;;filament_nozzle_map = 1,3" "1,3" \
+            "${C2[@]}" --filament-map-mode "Nozzle Manual" --filament-map 2,2 --filament-volume-map 0,0 \
+            --filament-nozzle-map 1,3 --extruder-nozzle-count 1,3 \
+            --extruder-nozzle-volume-type "Standard,Standard,Standard,Standard"
+    else
+        # On OrcaSlicer the H2C slices a bare model with the engine's grouping
+        # and with a manual left/right map. Nozzle Manual also needs the
+        # nozzles that are in the rack (extruder_nozzle_stats), which only a
+        # project saved by the app carries: OrcaSlicer has no flag for them.
+        expect_header "h2c-auto" "filament_map_mode = Auto For Flush" "" "${C2[@]}"
+        expect_header "h2c-manual" "filament_map = 2,2;;filament_map_mode = Manual" "" "${C2[@]}" --filament-map 2,2
+        # Without the rack the engine cannot rebuild its grouping from the
+        # three maps (ToolOrdering.cpp 1822-1838 at f92a7c0), so the run is
+        # refused before it slices, with what to give instead.
+        expect_refusal "refuse-h2c-nozzle-manual-no-rack" "$WORKDIR/two.3mf" "$H2C" \
+            "the nozzle rack these settings describe (extruder_nozzle_stats, not stated)" "${C2[@]}" \
+            --filament-map-mode "Nozzle Manual" --filament-map 2,2 --filament-volume-map 0,0 --filament-nozzle-map 1,3
+    fi
     expect_refusal "refuse-nozzle-manual-incomplete" "$WORKDIR/two.3mf" "$H2C" \
         "needs the rack and every filament's place in it" "${C2[@]}" --filament-map-mode "Nozzle Manual" --filament-map 2,2
 
     # The H3C: one extruder with a rack. --filament-map is Bambu Studio's
     # grouping, 1 = the nozzle the AMS feeds, 2 = the fixed nozzles.
+    # OrcaSlicer 2.5.2 ships no H3C.
+    if [ "$ENGINE" = bambustudio ]; then
     PRINTER="$H3C"; H2=(--filament-preset "Bambu PLA Basic @BBL H3C" --filament-preset "Bambu PLA Basic @BBL H3C")
     # --ams-nozzle-idx states the AMS the person has; nothing is assumed.
     expect_header "h3c-ams-then-fixed" "filament_map = 1,1;;filament_nozzle_map = 0,1;;filament_map_mode = Manual" "0,1" \
@@ -469,6 +494,7 @@ assert ints("filament_nozzle_map") == [0, 1], s["filament_nozzle_map"]' "$WORKDI
         "${H2[@]}" --filament-map 1,2
     expect_refusal "refuse-h3c-group" "$WORKDIR/two.3mf" "$H3C" "has one extruder with a nozzle rack" \
         "${H2[@]}" --ams-nozzle-idx 0 --filament-map 3,1
+    fi
 fi
 PRINTER="$ONE"
 

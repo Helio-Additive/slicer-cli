@@ -60,6 +60,18 @@ def box(path, s, h):
 box("cube.stl", 20, 20)
 box("big.stl", 300, 10)          # larger than the A1 mini bed in both directions
 box("big200.stl", 200, 20)       # fits the bed alone, not two of them together
+
+def bar(path, sx, sy, h):
+    v = [(x, y, z) for z in (0, h) for y in (0, sy) for x in (0, sx)]
+    f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+    with open(path, "w") as o:
+        o.write("solid t\n")
+        for a, b, c in f:
+            o.write("facet normal 0 0 0\nouter loop\n")
+            for i in (a, b, c): o.write("vertex %g %g %g\n" % v[i])
+            o.write("endloop\nendfacet\n")
+        o.write("endsolid t\n")
+bar("long322.stl", 20, 322, 5)   # longer than the H2D bed is deep (320), shorter than it is wide
 open("empty.stl", "w").write("solid t\nendsolid t\n")
 open("zero.stl", "wb").write(b"\0" * 80 + struct.pack("<I", 0))
 open("garbage.json", "w").write("not json at all")
@@ -71,6 +83,7 @@ def lst(path, obj, arrange=False):
 lst("nopath.json", {"path": "missing.stl", "count": 1, "filaments": [1]})
 lst("emptylist.json", {"path": "cube.stl", "count": 1, "filaments": [1]})
 lst("nofil.json", {"path": "cube.stl", "count": 1, "filaments": []})
+lst("pastfil.json", {"path": "cube.stl", "count": 2, "filaments": [1, 2]})
 lst("readfail.json", {"path": "empty.stl", "count": 1, "filaments": [1]})
 lst("junkobj.json", {"path": "junk.obj", "count": 1, "filaments": [1]})
 # Two 200 mm cubes on one plate of the 180 mm A1 mini bed: each fits alone,
@@ -457,7 +470,7 @@ check_slices mixed-filament bambu filament_is_mixed 1 "mixed-bambu.3mf" --slice 
 # 5873b5f). The plates the sentence names are the ones both filaments have a bed
 # temperature on. Both runs place the two-filament prime tower by hand: at the
 # desktop's own spot for it this pair's tower runs past the engine's G-code
-# check (-104, GCodeProcessor.cpp 1861-1883; the tower-outside case below),
+# check (-104, GCodeProcessor.cpp 1861-1883; the tower cases below),
 # which is not this sentence's subject.
 both plate-filament-hint  "*Pick a plate this filament supports: --curr-bed-type \"High Temp Plate\" (or*" \
      --load-assemble-list twomix.json --slice 1 --printer-preset "$X1C" \
@@ -473,18 +486,42 @@ check_slices plate-filament-retry-orca orca curr_bed_type "High Temp Plate" \
      --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C" \
      --allow-mix-temp=1 --curr-bed-type "High Temp Plate" --wipe-tower-x 30 --wipe-tower-y 220
 
-# The prime-tower refusal (-104) says how to move the tower or turn it off. On
-# the Orca build the tower stands where the desktop puts it for a new plate
-# (set_default_wipe_tower_pos_for_plate, PartPlate.cpp 4115-4190), but this
-# pair's tower is deeper than that spot's estimate and runs past the 2 mm the
-# engine's G-code check allows (GCodeProcessor.cpp 1861-1883). Each flag the
-# sentence names gets the same plate to slice.
+# The prime tower on the Orca build. The tower stands where the desktop puts it
+# for a new plate (set_default_wipe_tower_pos_for_plate, PartPlate.cpp), but
+# this pair's tower is deeper than that spot's estimate. OrcaSlicer 2.4 found
+# it outside the plate after the slice (-104). OrcaSlicer from 2.5 fits every
+# plate's tower into the plate before it slices (OrcaSlicer.cpp 6495-6526 at
+# f92a7c0), so the pair slices; a position a flag gives is fitted the same way.
 TOWER=(--load-assemble-list twomix.json --slice 1 --printer-preset "$X1C"
        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG HF @BBL X1C"
        --allow-mix-temp=1 --curr-bed-type "Textured PEI Plate")
-check tower-outside orca \
-      "*It comes from the prime tower*Move the prime tower with --wipe-tower-x and --wipe-tower-y, or turn it off with --enable-prime-tower=0." \
-      "${TOWER[@]}"
+check_slices tower-fitted orca enable_prime_tower 1 "${TOWER[@]}"
+# A tower that fits the plate but stands where one of the H2D's two nozzles
+# cannot reach stays where the flag put it, and the engine refuses it before
+# the slice (Print.cpp 1734-1750 at f92a7c0). The refusal says how to move
+# the tower or turn it off.
+check tower-unreachable orca \
+      "*Prime tower is partially outside the printable area*Move the prime tower with --wipe-tower-x and --wipe-tower-y, or turn it off with --enable-prime-tower=0." \
+      --load-assemble-list twomix.json --slice 1 --printer-preset "Bambu Lab H2D 0.4 nozzle" \
+      --filament-preset "Bambu PLA Basic @BBL H2D" --filament-preset "Bambu PLA Basic @BBL H2D" \
+      --wipe-tower-x 15 --wipe-tower-y 220
+# OrcaSlicer 2.5 flags this binary does not run: the two reports made with
+# app code, and the settings written to stdout (this binary's stdout carries
+# its events). Each is refused by name, not passed over.
+check inspect-mesh orca "*--inspect-mesh is a flag of OrcaSlicer's own command line that slicer-cli does not support*" \
+      cube.stl --slice 1 --inspect-mesh
+check inspect-paint orca "*--inspect-paint is a flag of OrcaSlicer's own command line that slicer-cli does not support*" \
+      cube.stl --slice 1 --inspect-paint
+check export-settings-stdout orca "*--export-settings - writes the settings to stdout in OrcaSlicer's own command line*give a file name*" \
+      cube.stl --slice 1 --printer-preset "Bambu Lab A1 mini 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL A1M" --export-settings -
+
+# An object that fits the bed only when turned: the arrange does not turn
+# objects unless --allow-rotations is given, and the refusal names the flag.
+TURN=(long322.stl --slice 1 --arrange 1 --printer-preset "Bambu Lab H2D 0.4 nozzle" --filament-preset "Bambu PLA Basic @BBL H2D")
+both turn-needs-flag "*'long322.stl' fits the bed only turned 90 degrees, which this arrange does not do; pass --allow-rotations, or turn it in the file." "${TURN[@]}"
+for e in bambu orca; do
+    check_slices turn-with-flag $e printer_settings_id "Bambu Lab H2D 0.4 nozzle" "${TURN[@]}" --allow-rotations
+done
 check_slices tower-moved orca wipe_tower_y 200.000 "${TOWER[@]}" --wipe-tower-x 30 --wipe-tower-y 200
 check_slices tower-off orca enable_prime_tower 0 "${TOWER[@]}" --enable-prime-tower=0
 
@@ -515,6 +552,8 @@ both assemble-list-badjson    "*could not be read*; check the file*" \
      --load-assemble-list garbage.json --slice 1 --printer-preset "$A1M"
 both assemble-no-filament     "*give a filament for it*" \
      --load-assemble-list nofil.json --slice 1 --printer-preset "$A1M"
+both assemble-filament-past   "*filament 2, but this run has 1 filament(s); name 2 filaments with --filament-preset or --load-filaments*" \
+     --load-assemble-list pastfil.json --slice 1 --printer-preset "$A1M"
 both assemble-stl-read        "*could not be read; check the file*" \
      --load-assemble-list readfail.json --slice 1 --printer-preset "$A1M"
 both assemble-obj-mesh        "*holds no usable mesh*; check the file*" \
@@ -528,7 +567,7 @@ echo
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"
 echo "Skipped: 10 (no input reaches the sentence):"
-echo "  --<flag> is not implemented (cli_run_steps.cpp); 'The STL ... holds no mesh';"
+echo "  --<flag> is not implemented (src/cli_run_steps.cpp); 'The STL ... holds no mesh';"
 echo "  'The STL ... could not be added'; 'The OBJ ... could not be added';"
 echo "  'The colours of the OBJ ... could not be turned into filaments';"
 echo "  'The assemble list's parts could not be built'; 'The model files hold no object to print';"

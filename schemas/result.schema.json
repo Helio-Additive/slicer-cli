@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Helio-Additive/slicer-cli/blob/main/schemas/result.schema.json",
   "title": "slicer-cli result.json",
-  "description": "The result.json a --slice run writes into --outputdir (write_result_json in main.cpp): the official CLI's record_exit_reson keys (BambuStudio.cpp 476-593 at 5873b5f), plus engine, error_reason, unknown_settings and, per plate, warnings, gcode_file, objects and filaments. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
+  "description": "The result.json a --slice run writes into --outputdir (write_result_json in src/cli_result_json.cpp): the official CLI's record_exit_reson keys (BambuStudio.cpp 476-593 at 5873b5f), plus engine, error_reason, unknown_settings and, per plate, warnings, gcode_file, objects and filaments. tests/test-complete-slice-path.sh checks the documents it makes against this schema, so a change to the output must change this file too.",
   "type": "object",
   "required": [
     "plate_index",
@@ -83,6 +83,23 @@
         "type": "string"
       },
       "description": "Settings the file states that this engine has no definition for; the engine ignores them."
+    },
+    "strict_mode": {
+      "type": "boolean",
+      "description": "slicer_cli-orcaslicer only (OrcaSlicer from 2.5): whether --strict was on. Under --strict a non-critical slicing warning ends the run with return_code -100."
+    },
+    "warnings": {
+      "type": "array",
+      "description": "slicer_cli-orcaslicer only (OrcaSlicer from 2.5): the non-critical slicing warnings of the run, each with a stable class. An entry here does not by itself mean the run failed. The per-plate lists are in sliced_plates[].warnings.",
+      "items": {
+        "type": "object",
+        "required": ["class"],
+        "properties": {
+          "class": {"type": "string", "description": "slicing_warning_non_critical: the engine raised a warning it only logs, such as a model that needs support while support is off."},
+          "plate_id": {"type": "integer"},
+          "text": {"type": "string"}
+        }
+      }
     },
     "settings_replaced_by_presets": {
       "type": "array",

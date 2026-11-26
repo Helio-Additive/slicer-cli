@@ -162,9 +162,12 @@ fx_list() {  # fx_list ENGINE NAME LIST [extra args]: an X1 Carbon project from 
 }
 fx_ftow() {
     [ -s ftow-$1.3mf ] && return 0
+    # The tower at x 25: at x 20 its brim stands within the 18 mm corner the X1 Carbon
+    # excludes, and OrcaSlicer from 2.5 refuses that before it slices ("Prime tower is too
+    # close to an exclusion area", Print.cpp 1723 at f92a7c0).
     run fxftow-$1 "$(bin_of $1)" --load-assemble-list ftow.json --slice 1 --printer-preset "$X1C" \
         --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
-        --enable-prime-tower --wipe-tower-x 20 --wipe-tower-y 20 --outputdir fxftow-$1/out --export-3mf ftow.3mf
+        --enable-prime-tower --wipe-tower-x 25 --wipe-tower-y 20 --outputdir fxftow-$1/out --export-3mf ftow.3mf
     cp fxftow-$1/out/ftow.3mf ftow-$1.3mf 2>/dev/null
 }
 # bigtow-<e>.3mf: two 160 x 100 mm plates on two filaments, laid out by the list, the
@@ -195,7 +198,7 @@ want() { for b in "${BLOCKS[@]}"; do [ "$b" = "$1" ] && return 0; done; return 1
 # printable, as the official marks it on the model it exports (BambuStudio.cpp
 # 6545-6551 then export_project 7537/8156; OrcaSlicer.cpp 5663-5668, 6331).
 # ba0dcfb reloads the file for the export, so the instance is printable again
-# (main.cpp 8296-8316) and a re-slice of the export prints it.
+# (ba0dcfb:main.cpp 8296-8316) and a re-slice of the export prints it.
 F1() {
     for e in bambu orca; do
         fx_skip2 $e; bin=$(bin_of $e)
@@ -362,7 +365,7 @@ print("ok" if kept == [0] and abs(gx - 210) < 0.01 and abs(gy - 40) < 0.01 else 
 # ---------------------------------------------------------------- F6
 # A plate's print sequence is its own print_sequence or the project's
 # (get_print_sequence, BambuStudio.cpp 4403-4416). plate_N.json is a slice
-# output; ba0dcfb reads its is_seq_print and forces "by object" (main.cpp
+# output; ba0dcfb reads its is_seq_print and forces "by object" (ba0dcfb:main.cpp
 # 5893-5937). The default product call is the one checked.
 F6() {
     for e in bambu orca; do
@@ -618,7 +621,7 @@ F7o() {
 # 6905-6910; OrcaSlicer.cpp 5908-5913), not the plate's. An assemble list's
 # plate_params are plate settings (BambuStudio.cpp 1071-1077): the G-code uses
 # them, result.json and --export-settings state the project's. ba0dcfb reads
-# the plate-overlaid config (main.cpp 4124-4127, 7764).
+# the plate-overlaid config (ba0dcfb:main.cpp 4124-4127, 7764).
 F10() {
     for e in bambu orca; do
         bin=$(bin_of $e)

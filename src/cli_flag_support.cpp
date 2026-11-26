@@ -1,0 +1,242 @@
+// cli_flag_support.cpp — see cli_flag_support.hpp.
+#include "cli_flag_support.hpp"
+
+#include <map>
+#include <set>
+
+namespace slicer_cli {
+namespace {
+
+#ifdef ENGINE_SNAPMAKER
+const char* const kThisApp  = "Snapmaker Orca";
+const char* const kOtherApp = "OrcaSlicer";
+#elif defined(ENGINE_ORCA)
+const char* const kThisApp  = "OrcaSlicer";
+const char* const kOtherApp = "BambuStudio";
+#else
+const char* const kThisApp  = "BambuStudio";
+const char* const kOtherApp = "OrcaSlicer";
+#endif
+
+// Official CLI flags only BambuStudio has: its CLI defs at 5873b5f
+// (PrintConfig.cpp export_png 9549, estimate_mode 9867, skip_useless_pick
+// 9917, camera_view 9959) have no counterpart in OrcaSlicer's at 31f6803
+// (PrintConfig.cpp 10329-10800). OrcaSlicer's CLI has no flag BambuStudio lacks.
+const std::set<std::string>& bambu_only_keys() {
+    static const std::set<std::string> keys = {"export_png", "estimate_mode", "skip_useless_pick", "camera_view"};
+    return keys;
+}
+
+// Flags only OrcaSlicer's command line defines, all new in OrcaSlicer 2.5
+// (PrintConfig.cpp CLI definitions at f92a7c0).
+const std::set<std::string>& orca_only_keys() {
+    static const std::set<std::string> keys = {"strict", "export_statistics", "align_to_y_axis", "ground_largest_face",
+                                               "ground_face_normal", "ground_face_point", "repair", "inspect_mesh",
+                                               "inspect_paint"};
+    return keys;
+}
+
+// Official flags this binary has but slicer-cli does not run, with the reason.
+const std::map<std::string, std::string>& not_supported() {
+    static const std::map<std::string, std::string> why = {
+        // The official CLI renders plate pictures with OpenGL (GUI code);
+        // slicer-cli makes no pictures.
+        {"export_png",  "slicer-cli makes no pictures (the official CLI draws them with its GUI renderer)"},
+        {"camera_view", "slicer-cli makes no pictures (the official CLI draws them with its GUI renderer)"},
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        // OrcaSlicer 2.5 makes these two reports with app code
+        // (slic3r/Utils/MeshInspect.hpp and PaintCLI.hpp at f92a7c0), which
+        // slicer-cli does not build.
+        {"inspect_mesh",  "the report is made with app code that slicer-cli does not build"},
+        {"inspect_paint", "the report is made with app code that slicer-cli does not build"},
+#endif
+#if !defined(__linux__) && !defined(__LINUX__)
+        // The official pipe works on Linux only (BambuStudio.cpp 244-437,
+        // OrcaSlicer.cpp 220-410; cli_pipe.cpp ports it there). Elsewhere
+        // progress comes as events on stdout instead (--progress).
+        {"pipe",        "the official pipe exists on Linux only; slicer-cli reports progress on every OS as events on stdout (--progress)"},
+#endif
+#ifdef ENGINE_SNAPMAKER
+        // Snapmaker Orca defines downward_check twice: a CLI action taking a
+        // list of machine files (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp:8542
+        // at bac6fd5) and the on/off switch (8798). The command line holds the
+        // list, so there is no on/off value to read; Snapmaker's own CLI checks
+        // for that before reading it (Snapmaker_Orca.cpp:1136-1140).
+        {"downward_check",    "Snapmaker Orca defines downward_check as an action that takes a list of machine files, "
+                              "so the on/off check has no value to read; this build cannot run the downward check. "
+                              "Drop the flag to slice"},
+        {"downward_settings", "it names the printers for --downward-check, which this build cannot run. Drop the flag "
+                              "to slice"},
+#endif
+    };
+    return why;
+}
+
+// Names the official CLIs define only inside comments at our pins
+// (BambuStudio PrintConfig.cpp 9473-9964, OrcaSlicer 10329-10800).
+const std::set<std::string>& commented_out_names() {
+    static const std::set<std::string> names = {
+        "export-obj", "export-svg", "export-sla", "sla", "export-amf", "export-gcode", "gcode", "g",
+        "help-fff", "help-sla", "align-xy", "cut", "cut-grid", "cut-x", "cut-y", "center", "copy",
+        "duplicate-grid", "split", "scale-to-fit", "ignore-nonexistent-config",
+#if !defined(ENGINE_ORCA) || defined(ENGINE_SNAPMAKER)
+        "repair",   // a flag of OrcaSlicer from 2.5 (orca_only_keys)
+#endif
+        "config-compatibility", "load", "autosave", "gcodeviewer", "sw-renderer",
+    };
+    return names;
+}
+
+std::string dashed(std::string key) {
+    for (char& c : key)
+        if (c == '_') c = '-';
+    return key;
+}
+
+} // namespace
+
+std::string official_flag_refusal(const std::string& key) {
+    auto it = not_supported().find(key);
+    if (it == not_supported().end())
+        return {};
+#ifdef ENGINE_SNAPMAKER
+    // --pipe is an active CLI flag at bac6fd5 too
+    // (references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp CLI defs).
+    return "--" + dashed(key) + " is a flag of Snapmaker Orca's own command line that slicer-cli does not support: " +
+           it->second;
+#else
+    return "--" + dashed(key) + " is a flag of " +
+           (bambu_only_keys().count(key) ? std::string("Bambu Studio's")
+            : orca_only_keys().count(key) ? std::string("OrcaSlicer's") : std::string("Bambu Studio's and OrcaSlicer's")) +
+           " own command line that slicer-cli does not support: " + it->second;
+#endif
+}
+
+std::string all_binaries_label() {
+    return "slicer_cli, slicer_cli-orcaslicer and slicer_cli-snapmaker";
+}
+
+std::string works_in(const std::string& key) {
+    if (bambu_only_keys().count(key))
+        return "slicer_cli only (Bambu Studio engine)";
+    if (orca_only_keys().count(key))
+        return "slicer_cli-orcaslicer only (OrcaSlicer engine)";
+    // The Snapmaker build refuses --downward-check: its engine defines
+    // downward_check as a list of machine files, not the on/off switch.
+    if (key == "downward_check" || key == "downward_settings")
+        return "slicer_cli and slicer_cli-orcaslicer";
+    return all_binaries_label();
+}
+
+std::string foreign_flag_refusal(const std::string& cli_name) {
+#ifdef ENGINE_SNAPMAKER
+    // The engine keeps the filament map off its command line (nocli at
+    // bac6fd5) and its plate carries none.
+    if (cli_name == "filament-map" || cli_name == "filament-map-mode")
+        return "--" + cli_name + " works in slicer_cli and slicer_cli-orcaslicer, for printers with a left and a right "
+               "extruder; slicer_cli-snapmaker runs the Snapmaker Orca engine, which keeps no filament map on a plate.";
+#endif
+#ifdef ENGINE_ORCA
+    for (const std::string& key : bambu_only_keys())
+        if (dashed(key) == cli_name)
+            return "--" + cli_name + " works only in slicer_cli (the Bambu Studio engine); "
+#ifdef ENGINE_SNAPMAKER
+                   "slicer_cli-snapmaker runs the Snapmaker Orca engine, which has no such flag.";
+#else
+                   "slicer_cli-orcaslicer runs the OrcaSlicer engine, which has no such flag.";
+#endif
+#endif
+#if !defined(ENGINE_ORCA) || defined(ENGINE_SNAPMAKER)
+    for (const std::string& key : orca_only_keys())
+        if (dashed(key) == cli_name)
+            return "--" + cli_name + " works only in slicer_cli-orcaslicer (the OrcaSlicer engine); "
+#ifdef ENGINE_SNAPMAKER
+                   "slicer_cli-snapmaker runs the Snapmaker Orca engine, which has no such flag.";
+#else
+                   "slicer_cli runs the Bambu Studio engine, which has no such flag.";
+#endif
+#endif
+    if (commented_out_names().count(cli_name))
+#ifdef ENGINE_SNAPMAKER
+        // Commented out in Snapmaker's CLI defs as well (block comments in
+        // references/SnapmakerOrca/src/libslic3r/PrintConfig.cpp 8454-8900 at bac6fd5).
+        return "--" + cli_name + " is not a flag of slicer-cli: Snapmaker Orca's own command line does not "
+               "have it either (it is commented out there)";
+#else
+        return "--" + cli_name + " is not a flag of slicer-cli: Bambu Studio's and OrcaSlicer's own "
+               "command lines do not have it either (it is commented out in both)";
+#endif
+    (void)kOtherApp;
+    return {};
+}
+
+std::vector<std::string> other_engine_only_flags() {
+    std::vector<std::string> out;
+#ifdef ENGINE_ORCA
+    for (const std::string& key : bambu_only_keys())
+        out.push_back(dashed(key));
+#endif
+#if !defined(ENGINE_ORCA) || defined(ENGINE_SNAPMAKER)
+    for (const std::string& key : orca_only_keys())
+        out.push_back(dashed(key));
+#endif
+    return out;
+}
+
+std::string setting_flag_refusal(const std::string& key) {
+    // Settings the official CLI does more with than lay them over the loaded
+    // config. slicer-cli refuses them by name until it does the same:
+    //   BambuStudio.cpp at 5873b5f: nozzle_volume_type 3408-3420, 3889-3890; filament_map_mode,
+    //   extruder_nozzle_count, extruder_nozzle_volume_type 4050-4087;
+    //   filament_map, filament_volume_map, filament_nozzle_map 6662-6837.
+    //   OrcaSlicer.cpp at 31f6803: nozzle_volume_type 2950-2951, 3383-3384; filament_map_mode,
+    //   filament_map 5778-5854.
+    //   BambuStudio.cpp at v02.09.01.70: the per-slot layout keys extruder_nozzle_diameter,
+    //   extruder_nozzle_slot and ams_nozzle_idx rebuild the nozzle layout with
+    //   extruder_nozzle_count / extruder_nozzle_volume_type (7104-7172).
+    // slicer_cli and slicer_cli-orcaslicer take filament_map (with Manual
+    // mode, cli_filament_map.cpp and cli_slice_plate.cpp's apply_filament_map_flag).
+    // slicer_cli takes every one of them as the official CLI does
+    // (cli_nozzle_options.cpp, cli_filament_map.cpp, cli_load_settings.cpp).
+    // slicer_cli-orcaslicer takes the ones its official CLI reads: from
+    // OrcaSlicer 2.5 that includes filament_volume_map and filament_nozzle_map
+    // (OrcaSlicer.cpp 6846-6892 at f92a7c0). The rack keys are refused there:
+    // OrcaSlicer.cpp reads none of them at f92a7c0.
+    // slicer_cli-snapmaker takes nozzle_volume_type, the desktop's nozzle flow
+    // types, with filament_volume_type as its grouping dialog's answer
+    // (cli_snapmaker.cpp sync_filament_volume_types). Its engine has no
+    // filament map flag (foreign_flag_refusal names the programs that do).
+    static const std::map<std::string, const char*> special = {
+#ifdef ENGINE_SNAPMAKER
+        {"filament_volume_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
+        {"filament_nozzle_map",         "the official CLI re-derives the filament-to-nozzle grouping from it"},
+#endif
+#if defined(ENGINE_ORCA) && !defined(ENGINE_SNAPMAKER)
+        {"extruder_nozzle_count",       "the official CLI re-derives the nozzle setup from it"},
+        {"extruder_nozzle_volume_type", "the official CLI re-derives the nozzle setup from it"},
+        {"extruder_nozzle_diameter",    "the official CLI re-derives the nozzle setup from it"},
+        {"extruder_nozzle_slot",        "the official CLI re-derives the nozzle setup from it"},
+        {"ams_nozzle_idx",              "the official CLI re-derives the nozzle setup from it"},
+#endif
+    };
+    // Neither official CLI runs post-processing scripts (the call is
+    // commented out: BambuStudio.cpp 7238, OrcaSlicer.cpp 6175), so the
+    // setting would be taken and silently do nothing.
+    if (key == "post_process")
+        return "--post-process: slicer-cli does not run post-processing scripts, as the official command "
+               "lines do not; run the script on the G-code yourself.";
+    auto it = special.find(key);
+    if (it != special.end())
+        return "--" + dashed(key) + " is a " + kThisApp + " setting that slicer-cli does not take on the "
+               "command line yet: " + it->second + ". Set it in the 3MF or the presets instead.";
+    return {};
+}
+
+std::string extra_config_refusal(const Slic3r::DynamicPrintConfig& extra) {
+    for (const std::string& key : extra.keys())
+        if (const std::string why = setting_flag_refusal(key); !why.empty())
+            return why;
+    return {};
+}
+
+} // namespace slicer_cli

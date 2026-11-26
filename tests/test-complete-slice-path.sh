@@ -43,6 +43,12 @@ run() {
     set -e
 }
 rc() { cat "$1/rc"; }
+# code NAME: a refusal's return code as a POSIX shell shows it (0..255), read
+# from the run's result.json. Git Bash on Windows shows 127 for every negative
+# native status, so a refusal's code is compared through this, not through rc.
+code() { python3 -c 'import json, sys
+try: print(json.load(open(sys.argv[1]))["return_code"] % 256)
+except Exception: print(open(sys.argv[2]).read().strip())' "$1/out/result.json" "$1/rc"; }
 show() { tail -n 20 "$1/stderr"; grep '^\[\[SLICER_EVENT\]\]' "$1/stdout" | grep -v engine_log | tail -n 5 || true; }
 # py SCRIPT ARGS... : python3 on Windows runners needs native paths, so pass relative ones.
 py() { python3 -c "$@"; }
@@ -1159,21 +1165,23 @@ assert "0.20mm Standard @BBL A1M" in d["processes"]
 done
 echo "PASS: --list-presets names the default process (both engines)"
 
-# The Snapmaker U1 0.4 names a default process Orca does not ship ("0.20mm
-# Standard @Snapmaker", fdm_toolchanger.json) and a default filament it has no
-# compatible preset of ("Snapmaker PLA"). A fresh OrcaSlicer 2.4.2 app then
-# selects "0.08 Extra Fine @Snapmaker U1 (0.4 nozzle)" and "Generic ABS
-# @System"; a slice with only --printer-preset takes the same, and says so.
+# The Snapmaker U1 0.4 names its own default process from OrcaSlicer 2.5
+# ("0.20 Standard @Snapmaker U1 (0.4 nozzle)", line 312 of its machine profile
+# at f92a7c0; 2.4.2 took fdm_toolchanger.json's "0.20mm Standard @Snapmaker",
+# which Orca does not ship). Its default filament is still one it has no
+# compatible preset of ("Snapmaker PLA"): the run takes "Generic ABS @System"
+# for it, by the app's selection rule, and says so; a slice with only
+# --printer-preset takes the same.
 "$O" --list-presets --printer "Snapmaker U1 (0.4 nozzle)" > list-u1.json
 py '
 import json; d = json.load(open("list-u1.json"))
-assert d["default_process"] == "0.08 Extra Fine @Snapmaker U1 (0.4 nozzle)", d["default_process"]
+assert d["default_process"] == "0.20 Standard @Snapmaker U1 (0.4 nozzle)", d["default_process"]
 assert d["default_filaments"] == ["Generic ABS @System"], d["default_filaments"]
-assert len(d["processes"]) == 15, len(d["processes"])
-assert any(r.startswith("process") for r in d["defaults_replaced"]), d["defaults_replaced"]
+assert len(d["processes"]) == 16, len(d["processes"])
+assert not any(r.startswith("process") for r in d["defaults_replaced"]), d["defaults_replaced"]
 assert any(r.startswith("filament") for r in d["defaults_replaced"]), d["defaults_replaced"]
 '
-echo "PASS: the Snapmaker U1 0.4 defaults are the ones the OrcaSlicer app selects"
+echo "PASS: the Snapmaker U1 0.4 keeps its own default process and replaces the default filament it has no preset of"
 
 # The Snapmaker U1 0.4+0.6 with its own presets: the settings check finds
 # bridge_line_width (100% of the 0.6 nozzle) over the 0.4 nozzle. The desktop
@@ -1349,13 +1357,15 @@ echo "PASS: --arrange keeps clear of the prime tower a feature filament brings, 
 # A single-nozzle multi-material printer of another maker (Creality K2 Plus:
 # one nozzle, single_extruder_multi_material, its processes enable the prime
 # tower), a two-filament project with support off whose top surfaces print with
-# filament 2. The desktop applies the settings again before it slices, once
-# the regions that use filament 2 exist, and keeps the tower (Plater.cpp
-# 7983, 15893 at v2.4.2); one apply alone counts one filament and turns it off
-# (PrintApply.cpp 1620, PrintConfig.cpp 8692).
+# filament 2. The tower must stay. OrcaSlicer from 2.5 checks the tower again
+# inside the same apply, with the filaments the new model uses (PrintApply.cpp
+# 1379-1382 and 2243 at f92a7c0), so one apply keeps it and the second apply
+# the run makes, as the desktop does before it slices, changes nothing. (In
+# 2.4.2 one apply counted one filament and turned the tower off; only the
+# second apply kept it.)
 K2P="Creality K2 Plus 0.4 nozzle"
 run k2proj "$O" cube.stl --slice 1 --printer-preset "$K2P" --filament-preset "Generic PLA @K2 Plus-all" \
-    --filament-preset "Generic PLA Matte @System" --outputdir k2proj/out --export-3mf k2proj.3mf
+    --filament-preset "Generic PLA Matte @Creality K2-all" --outputdir k2proj/out --export-3mf k2proj.3mf
 [ "$(rc k2proj)" = 0 ] || { show k2proj; fail "the two-filament K2 Plus project exit $(rc k2proj)"; }
 py '
 import json, zipfile
@@ -1384,8 +1394,8 @@ assert re.search(r"^; enable_prime_tower = 1", g, re.M), "the prime tower was tu
 assert re.search(r"^; ?(?:FEATURE|TYPE): ?(?:Prime|Wipe) tower$", g, re.M), "no prime tower in the G-code"
 assert re.search(r"^T1", g, re.M), "no change to filament 2"
 ' || { show k2surf; fail "the K2 Plus plate whose top surfaces print with filament 2 has no prime tower"; }
-grep '"tag":"PrintReapplied"' k2surf/stdout | grep -q enable_prime_tower || { show k2surf; fail "no PrintReapplied event naming enable_prime_tower"; }
-echo "PASS: a filament used only by a feature setting keeps the prime tower on a single-nozzle printer, as the desktop's second apply does (Orca build)"
+grep '"tag":"PrintReapplied"' k2surf/stdout | grep -q enable_prime_tower && { show k2surf; fail "the second apply still changed enable_prime_tower"; }
+echo "PASS: a filament used only by a feature setting keeps the prime tower on a single-nozzle printer (Orca build)"
 
 # Default path: the plate's own settings apply over the project's (official
 # new_print_config.apply(plate config)); plate 1 states a Cool Plate.
@@ -1537,7 +1547,9 @@ bed_line() { tr -d '\r' < "$1" > "$1.lf"; grep -m1 '^; curr_bed_type' "$1.lf" ||
 # picks for that printer, and the exported project keeps the filaments'
 # filament_printable (no INT_MAX "nil" marker).
 #   BambuStudio: a Bambu Lab printer's model default_bed_type when offered.
-#   OrcaSlicer: Preset::get_default_bed_type (a number, else by model id).
+#   OrcaSlicer: Preset::get_default_bed_type (the profile's plate name or
+#   number, else by model id; Preset.cpp 1140-1171 at f92a7c0. 2.4.2 read only
+#   a number, so the Snapmaker U1's "Textured PEI Plate" fell to the fallback).
 bed_case() {  # engine binary printer expected-plate
     local e=$1 bin=$2 printer=$3 want=$4 n
     n="bed-$e-$(printf '%s' "$printer" | tr -c 'A-Za-z0-9' '_')"
@@ -1557,7 +1569,7 @@ bed_case bambu "$B" "Bambu Lab A1 mini 0.4 nozzle" "Textured PEI Plate"
 bed_case bambu "$B" "Bambu Lab X1 Carbon 0.4 nozzle" "Textured PEI Plate"
 bed_case bambu "$B" "Bambu Lab H2D 0.4 nozzle" "Textured PEI Plate"
 bed_case bambu "$B" "Bambu Lab P1S 0.4 nozzle" "Textured PEI Plate"
-bed_case orca "$O" "Snapmaker U1 (0.4 nozzle)" "High Temp Plate"
+bed_case orca "$O" "Snapmaker U1 (0.4 nozzle)" "Textured PEI Plate"
 bed_case orca "$O" "Bambu Lab X1 Carbon 0.4 nozzle" "Cool Plate"
 bed_case orca "$O" "Prusa MK4 0.4 nozzle" "High Temp Plate"
 bed_case orca "$O" "Creality K1C 0.4 nozzle" "High Temp Plate"
@@ -1873,6 +1885,15 @@ assert d["kind"] == "step" and "error" not in d, d
 done
 echo "PASS: --engine-info on a STEP file prints only its JSON (both engines)"
 
+# OrcaSlicer's own test model for its OpenCASCADE patch
+# (deps/OCCT/0001-BRepMesh-seam-pcurve-selection.patch at f92a7c0): a cone
+# with a tilted seam. Without the patch the mesh is empty and no layer is found.
+cp "$SCRIPT_DIR/../references/OrcaSlicer/tests/data/cone_tilted_seam_pcurve.step" cone.step
+run cone-orca "$O" cone.step --slice 1 --printer-preset "$A1M" --outputdir cone-orca/out
+[ "$(rc cone-orca)" = 0 ] || { show cone-orca; fail "orca: the tilted-seam cone STEP file does not slice (OpenCASCADE 8.0.1 without OrcaSlicer's patch?)"; }
+grep -q '^; total layer number: [1-9]' cone-orca/out/plate_1.gcode || fail "orca: the cone STEP file gave no layers"
+echo "PASS: OrcaSlicer slices its tilted-seam cone STEP file (patched OpenCASCADE 8.0.1)"
+
 # Transforms, in command-line order: --scale, --rotate, --orient, --assemble.
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
@@ -2020,10 +2041,10 @@ echo "PASS: --repetitions copies the plate (both engines)"
 # --repetitions on one plate of a multi-plate project. The search for a count
 # that fits retries, and a retry used to put the saved model back with a Model
 # assignment: that frees every object and instance the model holds, while the
-# plate's own scope (main.cpp PlateScope) and the run's plates still name them —
+# plate's own scope (src/cli_plate_scope.cpp PlateScope) and the run's plates still name them —
 # the scope wrote through the freed objects on its way out, and the other
 # plates were left with no members. The search now runs on a copy of the model
-# (cli_repetitions.cpp), so nothing the run still names is freed.
+# (src/cli_repetitions.cpp), so nothing the run still names is freed.
 #
 # A real multi-plate project, external like the other corpus case: the run goes
 # where it is, and skips where it is not.
@@ -2677,6 +2698,9 @@ echo "PASS: a printer change moves the plate onto the new bed, and a wider clear
 # the box). Its two cubes stand side by side (a copy is the first cube moved
 # again by its own entry, BambuStudio.cpp 1253-1259), so their box is
 # 50 x 20 mm and lands at 65..115 x 80..100 on the 180 mm bed.
+# The tower stands at x 25: OrcaSlicer checks the tower with its brim (3 mm)
+# against the X1 Carbon's exclusion area (0..18 x 0..28) from 2.5
+# (Print.cpp 1691-1723 at f92a7c0), so x 20 is refused there.
 py '
 import json
 json.dump({"plates": [{"plate_name": "t", "need_arrange": False,
@@ -2685,9 +2709,12 @@ json.dump({"plates": [{"plate_name": "t", "need_arrange": False,
 '
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
+    # The tower at x 25: at x 20 its brim stands within the 18 mm corner the X1 Carbon
+    # excludes, and OrcaSlicer from 2.5 refuses that before it slices ("Prime tower is too
+    # close to an exclusion area", Print.cpp 1723 at f92a7c0).
     run ftow-$e "$bin" --load-assemble-list ftow.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
         --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Matte @BBL X1C" \
-        --enable-prime-tower --wipe-tower-x 20 --wipe-tower-y 20 --outputdir ftow-$e/out --export-3mf ftow.3mf
+        --enable-prime-tower --wipe-tower-x 25 --wipe-tower-y 20 --outputdir ftow-$e/out --export-3mf ftow.3mf
     [ "$(rc ftow-$e)" = 0 ] || { show ftow-$e; fail "$e: two-filament X1 Carbon project exit $(rc ftow-$e)"; }
     run swt-$e "$bin" ftow-$e/out/ftow.3mf --slice 1 --load-settings a1m-$e.json --enable-prime-tower=0 --outputdir swt-$e/out
     [ "$(rc swt-$e)" = 0 ] || { show swt-$e; fail "$e: printer change with --enable-prime-tower=0 exit $(rc swt-$e)"; }
@@ -2829,11 +2856,12 @@ m = flat("machine", "Snapmaker U1 (0.4 nozzle)")
 m.update({"type": "machine", "from": "system", "name": "Snapmaker U1 (0.4 nozzle)", "instantiation": "true"})
 assert "layer_height" not in m, sorted(m)
 # The pick the desktop makes: first_compatible_idx over the vendor list with
-# PreferedPrintProfileMatch (Preset.hpp 686-709, PresetBundle.cpp 5196-5247),
-# skipping presets a user cannot instantiate (Preset.cpp 1620). The project
-# process is 0.20mm Standard @BBL X1C, layer height 0.2; no Snapmaker process
-# carries that alias, so the first process of the list that suits the U1 at
-# this layer height wins.
+# PreferedPrintProfileMatch (PresetBundle.cpp 8721-8769 and 8838 at f92a7c0),
+# skipping presets a user cannot instantiate. The project process is 0.20mm
+# Standard @BBL X1C, layer height 0.2; no Snapmaker process carries that alias.
+# The default_print_profile of the printer counts one point more than any
+# other process, and the U1 names one that exists from OrcaSlicer 2.5 ("0.20
+# Standard @Snapmaker U1 (0.4 nozzle)", layer height 0.2), so that process wins.
 def first(v):
     return v[0] if isinstance(v, list) else v
 order = json.load(open(os.path.join(vendor, "..", "Snapmaker.json")))["process_list"]
@@ -2846,7 +2874,7 @@ for entry in order:
     c = flat("process", n)
     if "Snapmaker U1 (0.4 nozzle)" not in (c.get("compatible_printers") or []):
         continue
-    q = 10 ** 9 if n.split("@")[0].rstrip() == "0.20mm Standard" else 2
+    q = 10 ** 9 if n.split("@")[0].rstrip() == "0.20mm Standard" else 2 + (n == first(m.get("default_print_profile")))
     lh = c.get("layer_height")
     if q < 10 ** 9 and lh is not None and abs(float(first(lh)) - 0.2) < 0.0005:
         q *= 10
@@ -2855,7 +2883,7 @@ for entry in order:
 json.dump({"name": best, "config": flat("process", best)}, open("u1-process-orca.json", "w", encoding="utf-8"), indent=1)
 print(best)
 ' "$ORCA_PROFILES/Snapmaker" > u1-pick.txt || fail "orca: the Snapmaker presets could not be flattened"
-U1_PICK="0.20 Bambu Support W @Snapmaker U1 (0.4 nozzle)"
+U1_PICK="0.20 Standard @Snapmaker U1 (0.4 nozzle)"
 [ "$(cat u1-pick.txt)" = "$U1_PICK" ] || { cat u1-pick.txt; fail "orca: the desktop pick for the Snapmaker U1 was not $U1_PICK"; }
 # The file the PACKAGE ships, not a flattened copy of it: it holds only its
 # differences from its parents (74 keys of a machine preset's several hundred),
@@ -2925,7 +2953,10 @@ if a != b:
                "; ".join("%s: %r vs %r" % (k, a[k], b[k]) for k in KEYS if a[k] != b[k]))
 for k in ("layer_height", "wall_loops", "sparse_infill_density", "travel_speed", "default_acceleration",
           "outer_wall_speed", "enable_support", "prime_volume"):
-    if k in want["config"] and b[k] != first(want["config"][k]):
+    # OrcaSlicer 2.5 keeps speeds and accelerations per extruder: the header
+    # holds one value for each of the four extruders of the U1, every one the
+    # value of the process.
+    if k in want["config"] and (b[k] is None or set(b[k].split(",")) != {first(want["config"][k])}):
         bad.append("%s: G-code %r, the flattened Snapmaker U1 process %r" % (k, b[k], first(want["config"][k])))
 if b["print_settings_id"] != pick:
     bad.append("print_settings_id: G-code %r, the pick the desktop makes %r" % (b["print_settings_id"], pick))
@@ -3045,21 +3076,24 @@ python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" mac
     fail "orca: the shipped Snapmaker U1 machine file did not arrive with its parents' values"
 
 # An STL through the three legacy flags, with the files the package ships, and
-# the filament a U1 user has: "Snapmaker PLA @U1". KNOWN FAILURE, kept as the
-# user's own call -- the trio leaves curr_bed_type at the config default (Cool
-# Plate; the printer's own Textured PEI Plate refuses the same way), and the
-# shipped Snapmaker PLA @U1 chain defines no temperature for either plate type
-# (only hot_plate_temp 55), so the engine refuses -103, "Found some filament
-# unprintable at first layer on current Plate". That is audit row 18 (an STL
-# plus settings files gets a plate type that is not the printer's default);
-# lane-shorthand owns it. The rest of this case is what passes today: the same
-# trio with a system filament that names every plate slices, and the preset
-# path picks a plate the shipped filament has a temperature for.
+# the filament a U1 user has: "Snapmaker PLA @U1". From OrcaSlicer 2.5 the U1
+# offers several plate types (fdm_U1 support_multi_bed_types 1) and its
+# default is read by name, "Textured PEI Plate" (Preset::get_default_bed_type),
+# while the shipped Snapmaker PLA @U1 chain has a temperature for the smooth
+# plate only (hot_plate_temp 55; textured_plate_temp 0 from
+# fdm_filament_common). So the engine refuses the printer's own default plate
+# for this filament (Print.cpp, "Plate 1: Textured PEI Plate does not support
+# filament 1", -61) and the run names the plate to give. With that plate the
+# trio slices, and each file is read over its parents.
+run u1legdef "$O" cube.stl --slice 1 --machine "$U1_MACHINE" --process "$U1_PROCESS" --filament "$U1_FILAMENT" \
+    --outputdir u1legdef/out
+[ "$(code u1legdef)" = 195 ] || { show u1legdef; fail "orca: the shipped Snapmaker trio on the default plate exit $(code u1legdef), want 195 (-61)"; }
+grep -q -- '--curr-bed-type "High Temp Plate"' u1legdef/stderr || { show u1legdef; fail "orca: the plate refusal does not name the plate to give"; }
 run u1leg "$O" cube.stl --slice 1 --machine "$U1_MACHINE" --process "$U1_PROCESS" --filament "$U1_FILAMENT" \
-    --outputdir u1leg/out
+    --curr-bed-type "High Temp Plate" --outputdir u1leg/out
 if [ "$(rc u1leg)" != 0 ]; then
     show u1leg
-    fail "orca: the shipped Snapmaker trio through --machine/--process/--filament exit $(rc u1leg) (row 18: the plate type, not this lane)"
+    fail "orca: the shipped Snapmaker trio through --machine/--process/--filament exit $(rc u1leg)"
 else
     python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" machine \
         "Snapmaker U1 (0.4 nozzle)" u1leg/out/plate_1.gcode ||
@@ -3074,7 +3108,7 @@ fi
 
 # --load-filaments with a shipped filament, on the printer it belongs to.
 run u1fil "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
-    --load-filaments "$U1_FILAMENT" --outputdir u1fil/out
+    --load-filaments "$U1_FILAMENT" --curr-bed-type "High Temp Plate" --outputdir u1fil/out
 [ "$(rc u1fil)" = 0 ] || { show u1fil; fail "orca: the shipped Snapmaker filament through --load-filaments exit $(rc u1fil)"; }
 python3 "$SCRIPT_DIR/tools/check_preset_gcode.py" "$ORCA_PROFILES/Snapmaker" filament \
     "Snapmaker PLA @U1" u1fil/out/plate_1.gcode ||
@@ -3411,7 +3445,8 @@ json.dump({"type": "process", "name": "conv-process", "from": "system", "instant
            "wall_infill_order": "infill/outer wall/inner wall", "support_type": "hybrid(auto)"},
           open("g7-process.json", "w"))
 json.dump({"type": "machine", "name": "conv-bad", "from": "system", "instantiation": "true",
-           "machine_start_gcode": "G28\n{if nozzle_diameter_at_nozzle_id[initial_nozzle_id] > 0.4}M900\n{endif}"},
+           "machine_start_gcode": "G28\n{if nozzle_diameter_at_nozzle_id[initial_nozzle_id] > 0.4}M900\n{endif}",
+           "layer_change_gcode": "G92 E0"},
           open("g8-bad.json", "w"))
 ' || fail "orca: the conversion fixtures could not be written"
 
@@ -3509,14 +3544,17 @@ grep -q '^; is_infill_first = 1$' g7.gcode || { grep -m1 is_infill_first g7.gcod
 grep -q '^; support_style = tree_hybrid$' g7.gcode || { grep -m1 support_style g7.gcode; fail "support_type hybrid(auto) was not converted"; }
 echo "PASS: a --process file's own words convert the way a settings file's do"
 
-# G8: a Bambu Studio placeholder in the machine's own start G-code is refused
-# before the run slices, naming it and the value to use instead.
+# G8: a Bambu Studio placeholder in the machine's own start G-code. OrcaSlicer
+# binds nozzle_diameter_at_nozzle_id and initial_nozzle_id from 2.5 (GCode.cpp
+# 3785-3786 at f92a7c0), so the run slices and the condition is resolved: the
+# 0.4 nozzle is not over 0.4, and the M900 line stays out. slicer_cli-snapmaker
+# still refuses the placeholder (tests/test_excluded_features.sh).
 run g8 "$O" cube.stl -o g8.gcode --machine g8-bad.json
-[ "$(rc g8)" != 0 ] || fail "orca: a Bambu-only G-code placeholder was sliced"
-grep -q 'BambuOnlyGcodePlaceholder' g8/stdout || { show g8; fail "no refusal for the placeholder"; }
-grep -q 'nozzle_diameter_at_nozzle_id' g8/stderr || { show g8; fail "the refusal does not name the placeholder"; }
-grep -q '{nozzle_diameter\[initial_extruder\]}' g8/stderr || { show g8; fail "the refusal does not say what to use instead"; }
-echo "PASS: a Bambu-only G-code placeholder is refused before slicing, naming what to use instead"
+[ "$(rc g8)" = 0 ] || { show g8; fail "orca: a Bambu Studio G-code placeholder in the start G-code exit $(rc g8)"; }
+grep -q 'BambuOnlyGcodePlaceholder' g8/stdout && { show g8; fail "orca: the placeholder was refused"; }
+grep -q 'nozzle_diameter_at_nozzle_id\[' <(grep -v '^;' g8.gcode) && fail "orca: the placeholder is unresolved in the G-code"
+grep -qx 'M900' g8.gcode && fail "orca: the start G-code condition on the 0.4 nozzle came out true"
+echo "PASS: a Bambu Studio G-code placeholder in the start G-code is resolved by the engine (Orca build)"
 
 # The engine's 3MF loader extracts Metadata/project_settings.config and the
 # embedded presets as <backup>/_temp_3.config / _temp_2.config and parses them
@@ -4356,14 +4394,17 @@ def resolve(n, seen=()):
     d = profiles.get(n)
     if d is None or n in seen: return {}
     r = resolve(d.get("inherits", ""), seen + (n,)) if d.get("inherits") else {}
+    # A template the preset includes holds values too, one per nozzle variant
+    # (the BBL tree of Bambu Studio, and of OrcaSlicer from 2.5).
+    for inc in d.get("include", []): r.update(resolve(inc, seen + (n,)))
     r.update(d); return r
 fil = s["filament_settings_id"][0]
 p = resolve(fil)
 assert p, "no filament preset " + fil
-skip = {"name", "inherits", "from", "type", "instantiation", "setting_id", "filament_id", "compatible_printers",
+skip = {"name", "inherits", "include", "from", "type", "instantiation", "setting_id", "filament_id", "compatible_printers",
         "compatible_printers_condition", "compatible_prints", "compatible_prints_condition", "version", "description"}
 # filament_extruder_variant is the variant-slot table, sized by the extruders
-# of the printer on purpose (see the padding in main.cpp), not one value per filament.
+# of the printer on purpose (see the NORM_VEC pass in src/cli_load_slice_inputs.cpp), not one value per filament.
 skip.add("filament_extruder_variant")
 bad = []
 for k, v in p.items():
@@ -4620,6 +4661,14 @@ done
 # Official values: Bambu filament_map 1, Orca 2; nozzle_volume 130,145; the
 # printer's flush_volumes_matrix (16 values); flush_multiplier one value
 # (Bambu 1, Orca 0.3); wipe_tower_x/y and the print sequences one value.
+# OrcaSlicer from 2.5, --load-filaments on a model file: its command line now
+# gives every loaded filament a colour (white) and builds the flush matrix
+# again for them (OrcaSlicer.cpp 3874-3886 and 3973-4047 at f92a7c0), so the
+# matrix holds filaments x filaments values per extruder (here 1 x 1 x 2) and
+# flush_multiplier one value per extruder (the option's 0.3, then 1). These
+# two values are read from that code, not measured with the 2.5.2 app's
+# command line. The --machine/--filament/--process route does not go through
+# that merge and keeps the values above.
 e3_ok=1
 for e in bambu orca; do
     bin=$B; [ $e = orca ] && bin=$O
@@ -4636,17 +4685,18 @@ import re, sys
 g = open(sys.argv[1], errors="replace").read(); e = sys.argv[2]
 def hdr(k):
     return re.findall(r"^; " + re.escape(k) + r" = (.*)$", g, re.M)
+rebuilt = e == "orca" and sys.argv[3] == "l"
 want = {"filament_map": "1" if e == "bambu" else "2", "nozzle_volume": "130,145",
-        "flush_multiplier": "1" if e == "bambu" else "0.3"}
+        "flush_multiplier": "1" if e == "bambu" else "0.3,1" if rebuilt else "0.3"}
 bad = ["%s = %s (official %s)" % (k, hdr(k), v) for k, v in want.items() if hdr(k)[-1:] != [v]]
 for k in ("wipe_tower_x", "wipe_tower_y", "flush_multiplier_fast", "first_layer_print_sequence", "other_layers_print_sequence"):
     if any("," in v for v in hdr(k)):
         bad.append("%s = %s (official: one value)" % (k, hdr(k)))
 m = hdr("flush_volumes_matrix")
-if not m or len(m[-1].split(",")) != 16:
-    bad.append("flush_volumes_matrix = %s (official: the printer 16 values)" % m)
+if not m or len(m[-1].split(",")) != (2 if rebuilt else 16):
+    bad.append("flush_volumes_matrix = %s (official: %s)" % (m, "1 x 1 values for each of the 2 extruders" if rebuilt else "the printer 16 values"))
 assert not bad, "; ".join(bad)
-' $g $e || { fail "E3 $e: route $n differs from the official CLI"; e3_ok=0; }
+' $g $e $n || { fail "E3 $e: route $n differs from the official CLI"; e3_ok=0; }
     done
 done
 [ $e3_ok = 1 ] && echo "PASS: E3 an H2D STL with settings files gets the official CLI's variants, flush settings and filament map (both engines)"
@@ -4724,23 +4774,31 @@ for n, c, s in (("2", c2, s2), ("3", c3, s3)):
         bad.append("plate %s: the full-list control is not the 165/250 default, corner (%.3f, %.3f)" % (n, c[0], c[1]))
         continue
     bx, by = 165.0 - c[0], 250.0 - c[1]          # the tower footprint offset (brim)
-    ex, ey = 15.0 - bx, 220.0 - by               # the option default, minus that offset
+    # Bambu Studio: the option default. OrcaSlicer from 2.5: the first value
+    # of the list, which its command line writes for the plate when it fits the
+    # tower before the slice (get_at then set_at, OrcaSlicer.cpp 6495-6526 at
+    # f92a7c0), so the header lists that value once per plate up to this one.
+    wx, wy = (100.0, 120.0) if sys.argv[5] == "orca" else (15.0, 220.0)
+    ex, ey = wx - bx, wy - by
     if abs(s[0] - ex) > 1 or abs(s[1] - ey) > 1:
-        bad.append("plate %s: one-value corner (%.3f, %.3f), want the option default 15/220 minus the brim (%.3f, %.3f)" % (n, s[0], s[1], ex, ey))
+        bad.append("plate %s: one-value corner (%.3f, %.3f), want %g/%g minus the brim (%.3f, %.3f)" % (n, s[0], s[1], wx, wy, ex, ey))
 g = open(sys.argv[3], errors="replace").read()
 for k in ("wipe_tower_x", "wipe_tower_y"):
     for v in re.findall(r"^; " + k + r" = (.*)$", g, re.M):
-        if "," in v:
+        if sys.argv[5] == "orca":
+            if len(set(float(x) for x in v.split(","))) != 1:
+                bad.append("%s = %s in the header (the first value for every plate)" % (k, v))
+        elif "," in v:
             bad.append("%s = %s in the header (one value per plate)" % (k, v))
 assert not bad, "; ".join(bad)
-' e4c2-$e.gcode e4c3-$e.gcode e4s2-$e.gcode e4s3-$e.gcode || { fail "E4 $e: a plate without its own wipe_tower entry does not stand on the option's default corner"; e4_ok=0; }
+' e4c2-$e.gcode e4c3-$e.gcode e4s2-$e.gcode e4s3-$e.gcode $e || { fail "E4 $e: a plate without its own wipe_tower entry does not stand where the engine reads it (Bambu Studio: the option default; OrcaSlicer: the first plate's)"; e4_ok=0; }
 done
 # The same project loaded the way the apps load it (the default): a plate the
 # list holds no tower position for takes the first plate's, here 100/120.
 # Bambu Studio fills the list when it opens the project and keeps the tower
 # inside the plate (PartPlate.cpp 5146-5148, 5153-5157 at v02.09.01.70);
 # OrcaSlicer reads a short list as its first value when it slices (get_at,
-# Config.hpp 627 at 8500fcd).
+# Config.hpp 676-680 at f92a7c0).
 if [ $e4_ok = 1 ]; then
     for e in bambu orca; do
         bin=$B; [ $e = orca ] && bin=$O
@@ -4765,7 +4823,7 @@ for path in sys.argv[1:]:
     assert abs(x - 100.0) < 3 and abs(y - 120.0) < 3, (path, x, y, "want the first plate position 100/120, less the brim")
 ' e4a2-bambu.gcode e4a3-bambu.gcode e4a2-orca.gcode e4a3-orca.gcode || { fail "E4: loaded the app way, a plate without its own tower position does not take the first plate's"; e4_ok=0; }; }
 fi
-[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; a plate without its entry takes the first plate's tower position as the apps load it, and the option's default corner as saved (both engines)"
+[ $e4_ok = 1 ] && echo "PASS: E4 one-value settings are not padded with 0; a plate without its entry takes the first plate's tower position as the apps load it, and, read as saved, the option's default corner (Bambu Studio) or the first plate's position (OrcaSlicer)"
 
 # inherits_group and different_settings_to_system carry one entry per preset in
 # the project's order - process, filament 1 .. filament N, printer - or are
@@ -5494,6 +5552,11 @@ done
 # Plate". The U1's own plate (the one the desktop app picks for the printer)
 # slices it. Both routes are checked: the product's --machine/--process/
 # --filament, and --printer-preset/--filament-preset (which already takes it).
+# OrcaSlicer 2.5.2: the U1 now offers several plate types
+# (fdm_U1 support_multi_bed_types 1) and "Snapmaker PLA @U1" still states a
+# temperature for the smooth plate only, so the engine refuses the U1's own
+# default plate (-61) on both routes and the run names the plate to give;
+# with that plate both routes slice and heat the bed the same.
 f18b_ok=1
 u1m="$RES/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json"
 u1p="$RES/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json"
@@ -5502,10 +5565,19 @@ for f in "$u1m" "$u1p" "$u1f"; do
     [ -f "$f" ] || { fail "F18b: the package ships no $f"; f18b_ok=0; }
 done
 if [ $f18b_ok = 1 ]; then
+    run f18bnd "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
+        --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" --filament-preset "Snapmaker PLA @U1" \
+        --outputdir f18bnd/out
+    run f18bfd "$O" cube.stl --slice 1 --machine "$u1m" --process "$u1p" --filament "$u1f" --outputdir f18bfd/out
+    for n in f18bnd f18bfd; do
+        [ "$(code $n)" = 195 ] && grep -q -- '--curr-bed-type "High Temp Plate"' $n/stderr ||
+            { show $n; fail "F18b orca: $n on the default plate exit $(rc $n), want 195 (-61) with the plate to give"; f18b_ok=0; }
+    done
     run f18bn "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" \
         --process-preset "0.20 Standard @Snapmaker U1 (0.4 nozzle)" --filament-preset "Snapmaker PLA @U1" \
-        --outputdir f18bn/out
-    run f18bf "$O" cube.stl --slice 1 --machine "$u1m" --process "$u1p" --filament "$u1f" --outputdir f18bf/out
+        --curr-bed-type "High Temp Plate" --outputdir f18bn/out
+    run f18bf "$O" cube.stl --slice 1 --machine "$u1m" --process "$u1p" --filament "$u1f" \
+        --curr-bed-type "High Temp Plate" --outputdir f18bf/out
     for n in f18bn f18bf; do
         [ "$(rc $n)" = 0 ] && [ -s $n/out/plate_1.gcode ] ||
             { show $n; fail "F18b orca: $n exit $(rc $n)"; f18b_ok=0; }
@@ -5527,7 +5599,7 @@ assert a == b, (a, b)
 ' f18bn/out/plate_1.gcode f18bf/out/plate_1.gcode ||
         { show f18bf; fail "F18b orca: the shipped U1 files do not heat the bed as the printer preset does"; f18b_ok=0; }
 fi
-[ $f18b_ok = 1 ] && echo "PASS: F18b the shipped U1 files slice on the U1's own plate with its bed temperature, through both routes (Orca build)"
+[ $f18b_ok = 1 ] && echo "PASS: F18b the shipped U1 files are refused on a plate the filament has no temperature for and slice on the one it has, the same through both routes (Orca build)"
 
 # Bambu Studio 2.9.1 (Bambu build). A project this engine writes carries its
 # own version, so it slices again without --allow-newer-file (the 2.8.2
@@ -5655,6 +5727,320 @@ run h3cmix2 "$B" cube.stl --load-settings "h3c-bambu-machine.json;h3c-bambu-proc
 [ "$(rc h3cmix2)" = 0 ] || { show h3cmix2; fail "H3C: --allow-mix-temp refused the single-file call (exit $(rc h3cmix2))"; h3c_ok=0; }
 grep -q '"tag":"AllowMixTempIgnored"' h3cmix2/stdout || { h3c_ok=0; fail "H3C: no AllowMixTempIgnored warning on the single-file call"; }
 [ $h3c_ok = 1 ] && echo "PASS: mixed nozzle diameters: the map fills from the printer, mode off checks nothing, and single-diameter maps and plates are refused (-108)"
+
+# ── OrcaSlicer 2.5 ───────────────────────────────────────────────────────
+# What OrcaSlicer's own command line does from 2.5 (f92a7c0); the sources cite
+# the lines. Each check below failed on the 2.4.2 engine.
+
+# A user preset's changed settings go into the exported project
+# (different_settings_to_system): with an empty column the app shows changes
+# nobody made when it opens the export, and can put inherited values back.
+py '
+import json
+json.dump({"type": "process", "name": "my process", "from": "User", "inherits": "0.20mm Standard @BBL X1C",
+           "wall_loops": "4", "sparse_infill_density": "33%"}, open("o25-proc.json", "w"))
+json.dump({"type": "filament", "name": "my pla", "from": "User", "inherits": "Bambu PLA Basic @BBL X1C",
+           "nozzle_temperature": ["231"], "filament_max_volumetric_speed": ["17"]}, open("o25-fil.json", "w"))
+json.dump({"type": "machine", "name": "my x1c", "from": "User", "inherits": "Bambu Lab X1 Carbon 0.4 nozzle",
+           "retraction_length": ["1.1"]}, open("o25-mach.json", "w"))
+'
+run o25diff "$O" cube.stl --slice 1 --load-settings "o25-mach.json;o25-proc.json" --load-filaments o25-fil.json \
+    --outputdir o25diff/out --export-3mf o.3mf
+if [ "$(rc o25diff)" = 0 ] && py '
+import json, sys, zipfile
+d = json.loads(zipfile.ZipFile(sys.argv[1]).read("Metadata/project_settings.config"))
+got = [sorted(c.split(";")) for c in d["different_settings_to_system"]]
+want = [["sparse_infill_density", "wall_loops"], ["filament_max_volumetric_speed", "nozzle_temperature"], ["retraction_length"]]
+assert got == want, got
+assert d["inherits_group"] == ["0.20mm Standard @BBL X1C", "Bambu PLA Basic @BBL X1C", "Bambu Lab X1 Carbon 0.4 nozzle"], d["inherits_group"]
+' o25diff/out/o.3mf; then
+    echo "PASS: OrcaSlicer: an exported project lists what each user preset changes against its system parent"
+else
+    show o25diff; fail "OrcaSlicer: the exported project does not list the user presets' changed settings (exit $(rc o25diff))"
+fi
+
+# A process that states its printers by condition only (no list) suits the
+# printer the condition accepts, as in the app; the name match refused it (-17).
+py '
+import json
+P = lambda cond: {"type": "process", "name": "cond process", "from": "User", "inherits": "0.20mm Standard @BBL X1C",
+                  "compatible_printers": [], "compatible_printers_condition": cond}
+json.dump(P("nozzle_diameter[0]==0.4"), open("o25-cond-ok.json", "w"))
+json.dump(P("nozzle_diameter[0]==0.8"), open("o25-cond-no.json", "w"))
+'
+run o25cond-ok "$O" cube.stl --slice 1 --load-settings "o25-mach.json;o25-cond-ok.json" --load-filaments o25-fil.json --outputdir o25cond-ok/out
+run o25cond-no "$O" cube.stl --slice 1 --load-settings "o25-mach.json;o25-cond-no.json" --load-filaments o25-fil.json --outputdir o25cond-no/out
+if [ "$(rc o25cond-ok)" = 0 ] && [ -s o25cond-ok/out/plate_1.gcode ] && [ "$(code o25cond-no)" = 239 ] &&
+   grep -q "The process does not suit the printer" o25cond-no/stderr; then
+    echo "PASS: OrcaSlicer: a process is checked against the printer by its compatibility condition too"
+else
+    show o25cond-ok; show o25cond-no
+    fail "OrcaSlicer: compatibility condition: exits $(rc o25cond-ok) (want 0) and $(rc o25cond-no) (want 239)"
+fi
+
+# OrcaSlicer names filaments by ids of its own ("OF..."). A Bambu Lab printer
+# knows only Bambu ids, so the sliced file names those; the project keeps
+# OrcaSlicer ids, and another maker printer gets them unchanged.
+run o25fid-x1c "$O" cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+    --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir o25fid-x1c/out --export-3mf o.3mf
+run o25fid-u1 "$O" cube.stl --slice 1 --printer-preset "Snapmaker U1 (0.4 nozzle)" --filament-preset "Snapmaker PLA @U1" \
+    --curr-bed-type "High Temp Plate" --outputdir o25fid-u1/out --export-3mf o.3mf
+if [ "$(rc o25fid-x1c)" = 0 ] && [ "$(rc o25fid-u1)" = 0 ] && py '
+import json, re, sys, zipfile
+def ids(path):
+    z = zipfile.ZipFile(path)
+    tray = re.findall(r"<filament [^>]*tray_info_idx=\"([^\"]*)\"", z.read("Metadata/slice_info.config").decode())
+    return tray, json.loads(z.read("Metadata/project_settings.config"))["filament_ids"]
+tray, project = ids(sys.argv[1])
+assert tray == ["GFA00"], ("Bambu printer: the sliced file names", tray)
+assert project[0].startswith("OF"), ("the project keeps the OrcaSlicer id", project)
+tray, project = ids(sys.argv[2])
+assert tray == project[:1] and tray[0].startswith("OF"), ("another maker printer", tray, project)
+' o25fid-x1c/out/o.3mf o25fid-u1/out/o.3mf; then
+    echo "PASS: OrcaSlicer: a Bambu Lab printer gets Bambu filament ids in the sliced file; other printers keep OrcaSlicer ids"
+else
+    show o25fid-x1c; show o25fid-u1; fail "OrcaSlicer: filament ids in the sliced file (exits $(rc o25fid-x1c), $(rc o25fid-u1))"
+fi
+
+# Mixed filaments: a slot that mixes two loaded filaments. Made as the app
+# saves it, by adding the slot's lists to an exported project.
+py '
+import json
+json.dump({"plates": [{"plate_name": "m", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 1, "filaments": [3]}]}]},
+          open("o25-mix.json", "w"))
+'
+cat > o25-mix.py <<'PYMIX'
+import json, sys, zipfile
+src, dst, slots = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data)
+            pad = lambda last, fill="": [fill] * (slots - 1) + [last]
+            d.update({"filament_is_mixed": pad("1", "0"), "filament_mixed_components": pad("1,2"),
+                      "filament_mixed_sublayer_ratios": pad("0.5,0.5"), "filament_mixed_gradient": pad("0", "0"),
+                      "filament_mixed_gradient_range": pad(""), "filament_mixed_gradient_curve": pad(""),
+                      "filament_mixed_gradient_per_part": pad("0", "0")})
+            data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+PYMIX
+o25mix_ok=1
+for kind in same diff; do
+    second="Bambu PLA Basic @BBL X1C"; [ $kind = diff ] && second="Bambu PETG Basic @BBL X1C"
+    run o25mixmk-$kind "$O" --load-assemble-list o25-mix.json --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "$second" --filament-preset "Bambu PLA Basic @BBL X1C" \
+        --filament-colour "#FF0000;#0000FF;#800080" --outputdir o25mixmk-$kind/out --export-3mf p.3mf
+    [ "$(rc o25mixmk-$kind)" = 0 ] || { show o25mixmk-$kind; fail "OrcaSlicer mixed filament: project for '$kind' exit $(rc o25mixmk-$kind)"; o25mix_ok=0; }
+done
+if [ $o25mix_ok = 1 ]; then
+    python3 o25-mix.py o25mixmk-same/out/p.3mf o25-mix-same.3mf 3
+    python3 o25-mix.py o25mixmk-diff/out/p.3mf o25-mix-diff.3mf 3
+    python3 o25-mix.py o25mixmk-same/out/p.3mf o25-mix-past.3mf 4
+    run o25mix-same "$O" o25-mix-same.3mf --slice 1 --outputdir o25mix-same/out --export-3mf o.3mf
+    run o25mix-diff "$O" o25-mix-diff.3mf --slice 1 --outputdir o25mix-diff/out
+    run o25mix-past "$O" o25-mix-past.3mf --slice 1 --outputdir o25mix-past/out
+    run o25mix-pasts "$O" o25-mix-past.3mf --slice 1 --project-settings-as-saved --outputdir o25mix-pasts/out
+    # The same by flags on a model file: the lists hold one entry per filament.
+    MIXF=(cube.stl --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" --filament-is-mixed=0,0,1
+          --filament-mixed-components=";;1,2" --filament-mixed-sublayer-ratios=";;0.5,0.5" --load-filament-ids 3
+          --filament-colour "#FF0000;#0000FF;#800080")
+    run o25mix-flags "$O" "${MIXF[@]}" --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PLA Basic @BBL X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir o25mix-flags/out
+    run o25mix-flagsd "$O" "${MIXF[@]}" --filament-preset "Bambu PLA Basic @BBL X1C" --filament-preset "Bambu PETG Basic @BBL X1C" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir o25mix-flagsd/out
+    # Both components print (tool changes) and the prime tower stands, also
+    # with every filament preset the same. The exported project names the
+    # mixed filament the plate printed with, and the first layer time.
+    if [ "$(rc o25mix-same)" = 0 ] && grep -q "FEATURE: Prime tower" o25mix-same/out/plate_1.gcode &&
+       [ "$(grep -c '^T[01]$' o25mix-same/out/plate_1.gcode)" -gt 10 ] && py '
+import re, sys, zipfile
+info = zipfile.ZipFile(sys.argv[1]).read("Metadata/slice_info.config").decode()
+assert re.search(r"<mixed_filament id=\"3\"[^>]*components=\"1,2\"", info), "no mixed filament 3 in slice_info.config"
+m = re.search(r"key=\"first_layer_time\" value=\"([^\"]*)\"", info)
+assert m and float(m.group(1)) > 0, ("first_layer_time", m and m.group(1))
+' o25mix-same/out/o.3mf; then
+        echo "PASS: OrcaSlicer: a mixed filament prints with both components, keeps the prime tower, and is named in the exported project"
+    else
+        show o25mix-same; fail "OrcaSlicer: a mixed filament of two same-type filaments exit $(rc o25mix-same), or no tower / tool changes"
+    fi
+    if [ "$(code o25mix-diff)" = 187 ] && grep -q "Mixed filament 3 mixes components of different filament types" o25mix-diff/stderr &&
+       [ "$(code o25mix-past)" = 187 ] && grep -q "Mixed filament slot 4 has no filament of its own" o25mix-past/stderr &&
+       [ "$(code o25mix-pasts)" = 187 ] && grep -q "Mixed filament slot 4 has no filament of its own" o25mix-pasts/stderr; then
+        echo "PASS: OrcaSlicer: a mixed filament of two material types, and a mixed slot with no filament, are refused (-69)"
+    else
+        show o25mix-diff; show o25mix-past; show o25mix-pasts
+        fail "OrcaSlicer: mixed filament refusals: exits $(rc o25mix-diff), $(rc o25mix-past) and $(rc o25mix-pasts), want 187 with the sentences"
+    fi
+    if [ "$(rc o25mix-flags)" = 0 ] && grep -q "FEATURE: Prime tower" o25mix-flags/out/plate_1.gcode &&
+       [ "$(grep -c '^T[01]$' o25mix-flags/out/plate_1.gcode)" -gt 10 ] &&
+       [ "$(code o25mix-flagsd)" = 187 ] && grep -q "Mixed filament 3 mixes components of different filament types" o25mix-flagsd/stderr; then
+        echo "PASS: OrcaSlicer: a mixed filament given by flags prints with both components; two material types are refused"
+    else
+        show o25mix-flags; show o25mix-flagsd
+        fail "OrcaSlicer: mixed filament by flags: exits $(rc o25mix-flags) (want 0, tower, tool changes) and $(rc o25mix-flagsd) (want 187)"
+    fi
+fi
+
+# A value the engine does not know is named on stderr and in result.json
+# ("warnings", class config_value_substituted). The run is refused as before:
+# this front end does not slice a project with a value it had to replace.
+py '
+import struct
+v = [(x, y, z) for z in (0, 60) for y in (0, 40) for x in (0, 10)]
+f = [(0,2,1),(1,2,3),(4,5,6),(5,7,6),(0,1,4),(1,5,4),(2,6,3),(3,6,7),(0,4,2),(2,4,6),(1,3,5),(3,7,5)]
+with open("o25-slab.stl", "wb") as o:
+    o.write(b"\0" * 80 + struct.pack("<I", len(f)))
+    for t in f:
+        o.write(struct.pack("<3f", 0, 0, 0))
+        for i in t: o.write(struct.pack("<3f", *v[i]))
+        o.write(b"\0\0")
+'
+run o25slabmk "$O" o25-slab.stl --slice 0 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+    --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir o25slabmk/out --export-3mf slab.3mf
+if [ "$(rc o25slabmk)" = 0 ] && [ -s o25slabmk/out/slab.3mf ]; then
+    py '
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["sparse_infill_pattern"] = "nonexistentpattern"; data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' o25slabmk/out/slab.3mf o25-subst.3mf
+    run o25subst "$O" o25-subst.3mf --slice 1 --outputdir o25subst/out
+    if [ "$(code o25subst)" = 238 ] &&
+       grep -q 'warning: 3mf:project_settings.config: value "nonexistentpattern" for sparse_infill_pattern is not valid, using "' o25subst/stderr && py '
+import json, sys
+w = json.load(open(sys.argv[1]))["warnings"]
+hit = [x for x in w if x.get("class") == "config_value_substituted" and x.get("key") == "sparse_infill_pattern"]
+assert hit and hit[0]["old_value"] == "nonexistentpattern" and hit[0]["new_value"], w
+' o25subst/out/result.json; then
+        echo "PASS: OrcaSlicer: a replaced setting value is named on stderr and in result.json"
+    else
+        show o25subst; fail "OrcaSlicer: a replaced setting value is not reported (exit $(rc o25subst), want 238 with the warning)"
+    fi
+    # --ground-largest-face lays a project object on its largest face too
+    # (an object with an instance of its own): 60 mm tall becomes 10 mm.
+    run o25ground "$O" o25slabmk/out/slab.3mf --slice 1 --ground-largest-face --outputdir o25ground/out
+    run o25stand "$O" o25slabmk/out/slab.3mf --slice 1 --outputdir o25stand/out
+    if [ "$(rc o25ground)" = 0 ] && [ "$(rc o25stand)" = 0 ] &&
+       grep -q "^; max_z_height: 10.00" o25ground/out/plate_1.gcode && grep -q "^; max_z_height: 60.00" o25stand/out/plate_1.gcode; then
+        echo "PASS: OrcaSlicer: --ground-largest-face lays a project's object on its largest face"
+    else
+        show o25ground; fail "OrcaSlicer: --ground-largest-face on a project (exits $(rc o25ground), $(rc o25stand)): want heights 10 and 60"
+    fi
+else
+    show o25slabmk; fail "OrcaSlicer: slab project exit $(rc o25slabmk)"
+fi
+
+# A filament number in the assemble list that the run has no filament for is
+# refused (-2): the engine would print the object with the
+# first filament and say nothing. The official command line has the rule for
+# --load-filament-ids. With a filament named for each number the plate slices
+# with both; 0 stays the default filament.
+py '
+import json
+P = lambda fil: {"plates": [{"plate_name": "m", "need_arrange": True, "objects": [{"path": "cube.stl", "count": len(fil), "filaments": fil}]}]}
+json.dump(P([1, 2]), open("fil-two.json", "w")); json.dump(P([0]), open("fil-zero.json", "w"))
+'
+fil_ok=1
+for e in bambu orca; do
+    bin=$B; [ $e = orca ] && bin=$O
+    run fil-past-$e "$bin" --load-assemble-list fil-two.json --slice 1 --printer-preset "$A1M" --outputdir fil-past-$e/out
+    [ "$(code fil-past-$e)" = 254 ] || { fil_ok=0; show fil-past-$e; fail "$e: filament 2 asked with one filament loaded exit $(code fil-past-$e), want 254 (-2)"; }
+    grep -q "gives object cube.stl on plate 1 filament 2, but this run has 1 filament" fil-past-$e/out/result.json \
+        || { fil_ok=0; fail "$e: the refusal does not name the object, the filament and the count: $(grep -o '"error_string"[^}]*' fil-past-$e/out/result.json | cut -c1-300)"; }
+    [ ! -e fil-past-$e/out/plate_1.gcode ] || { fil_ok=0; fail "$e: a refused plate left a G-code file"; }
+    run fil-named-$e "$bin" --load-assemble-list fil-two.json --slice 1 --printer-preset "$A1M" \
+        --filament-preset "$A1M_FILAMENT" --filament-preset "$A1M_FILAMENT" --outputdir fil-named-$e/out
+    [ "$(rc fil-named-$e)" = 0 ] || { fil_ok=0; show fil-named-$e; fail "$e: filaments 1 and 2 with two filaments named exit $(rc fil-named-$e)"; }
+    grep -q "^T1$" fil-named-$e/out/plate_1.gcode || { fil_ok=0; fail "$e: two filaments named, but the G-code never changes to the second"; }
+    run fil-zero-$e "$bin" --load-assemble-list fil-zero.json --slice 1 --printer-preset "$A1M" --outputdir fil-zero-$e/out
+    [ "$(rc fil-zero-$e)" = 0 ] || { fil_ok=0; show fil-zero-$e; fail "$e: filament 0 (the default filament) exit $(rc fil-zero-$e)"; }
+done
+[ $fil_ok = 1 ] && echo "PASS: a filament number past the loaded filaments is refused (-2); with a filament named for each number the plate uses both (both engines)"
+
+# "Nozzle Manual" on a printer with a nozzle rack (H2C): the engine rebuilds
+# its nozzle grouping from the three maps and the rack the project states
+# (extruder_nozzle_stats). The rack is kept when the project is loaded, so the
+# run slices; without it the run is refused (test_filament_map_flag.sh).
+py '
+import json
+json.dump({"plates": [{"plate_name": "m", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 2, "filaments": [1, 2]}]}]},
+          open("o25-two.json", "w"))
+'
+run o25rackmk "$O" --load-assemble-list o25-two.json --slice 0 --printer-preset "Bambu Lab H2C 0.4 nozzle" \
+    --filament-preset "Bambu PLA Basic @BBL H2C" --filament-preset "Bambu PLA Basic @BBL H2C" \
+    --filament-colour "#FF0000;#0000FF" --outputdir o25rackmk/out --export-3mf two.3mf
+if [ "$(rc o25rackmk)" = 0 ] && [ -s o25rackmk/out/two.3mf ]; then
+    py '
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(sys.argv[2], "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "Metadata/project_settings.config":
+            d = json.loads(data); d["extruder_nozzle_stats"] = ["Standard#1", "Standard#6"]; data = json.dumps(d, indent=4).encode()
+        zout.writestr(item, data)
+' o25rackmk/out/two.3mf o25-rack.3mf
+    run o25rack "$O" o25-rack.3mf --slice 1 --filament-map-mode "Nozzle Manual" --filament-map 2,2 \
+        --filament-volume-map 0,0 --filament-nozzle-map 1,3 --outputdir o25rack/out
+    # The map is used: two rack places give two nozzles (the engine numbers
+    # them 1 and 2), one place for both filaments gives one nozzle.
+    run o25rack1 "$O" o25-rack.3mf --slice 1 --filament-map-mode "Nozzle Manual" --filament-map 2,2 \
+        --filament-volume-map 0,0 --filament-nozzle-map 1,1 --outputdir o25rack1/out
+    if [ "$(rc o25rack)" = 0 ] && grep -q "^; filament_map_mode = Nozzle Manual" o25rack/out/plate_1.gcode &&
+       grep -q "^; filament_map = 2,2" o25rack/out/plate_1.gcode &&
+       grep -q "^; extruder_nozzle_stats = Standard#1;Standard#6" o25rack/out/plate_1.gcode &&
+       grep -q "^; filament_nozzle_map = 1,2" o25rack/out/plate_1.gcode &&
+       [ "$(rc o25rack1)" = 0 ] && grep -q "^; filament_nozzle_map = 1,1" o25rack1/out/plate_1.gcode; then
+        echo "PASS: OrcaSlicer: Nozzle Manual slices a project that states its nozzle rack"
+    else
+        show o25rack; fail "OrcaSlicer: Nozzle Manual with a stated nozzle rack exit $(rc o25rack), or the header lacks the mode, the map or the rack"
+    fi
+else
+    show o25rackmk; fail "OrcaSlicer: H2C two-filament project exit $(rc o25rackmk)"
+fi
+
+# Two filament files that name no colour, on a model file: every loaded
+# filament gets a colour (white) and the flush matrix is built for them, one
+# 2 x 2 block per extruder. OrcaSlicer 2.4 had one colour for two filaments
+# there, and this command line refused the run (-5).
+flat_presets orca o25h2d "Bambu Lab H2D 0.4 nozzle"
+run o25white "$O" cube.stl --load-settings "o25h2d-orca-machine.json;o25h2d-orca-process.json" \
+    --load-filaments "o25h2d-orca-filament.json;o25h2d-orca-filament.json" --slice 1 --outputdir o25white/out
+if [ "$(rc o25white)" = 0 ] && py '
+import re, sys
+g = open(sys.argv[1], errors="replace").read()
+hdr = lambda k: re.findall(r"^; " + re.escape(k) + r" = (.*)$", g, re.M)[-1]
+assert hdr("filament_colour") == "#FFFFFF;#FFFFFF", hdr("filament_colour")
+m = [float(v) for v in hdr("flush_volumes_matrix").split(",")]
+assert len(m) == 8, m
+for block in (m[:4], m[4:]):
+    assert block[0] == 0 and block[3] == 0 and block[1] == block[2] > 0, m
+' o25white/out/plate_1.gcode; then
+    echo "PASS: OrcaSlicer: filament files without colours get white for every filament and a flush matrix of their size"
+else
+    show o25white; fail "OrcaSlicer: two filament files without colours on a model file (exit $(rc o25white)): want white for both and a 2 x 2 flush block per extruder"
+fi
+
+# An assemble list object with no filament or a negative filament id is
+# refused when the list is read.
+py '
+import json
+A = lambda f: {"plates": [{"plate_name": "m", "need_arrange": True, "objects": [{"path": "cube.stl", "count": 1, "filaments": f}]}]}
+json.dump(A([]), open("o25-asm-empty.json", "w")); json.dump(A([-1]), open("o25-asm-neg.json", "w"))
+'
+for a in empty neg; do
+    run o25asm-$a "$O" --load-assemble-list o25-asm-$a.json --slice 1 --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+        --filament-preset "Bambu PLA Basic @BBL X1C" --outputdir o25asm-$a/out
+done
+if [ "$(code o25asm-empty)" = 251 ] && grep -q "no filament; give a filament for it" o25asm-empty/stderr &&
+   [ "$(code o25asm-neg)" = 251 ] && grep -q "has a negative filament id" o25asm-neg/stderr; then
+    echo "PASS: OrcaSlicer: an assemble list object with no filament or a negative filament id is refused"
+else
+    show o25asm-empty; show o25asm-neg; fail "OrcaSlicer: assemble list filament refusals: exits $(code o25asm-empty), $(code o25asm-neg), want 251"
+fi
 
 # The documents callers code against have the shapes schemas/ states. Every
 # one this script made is checked: the --engine-info documents (info*.json,

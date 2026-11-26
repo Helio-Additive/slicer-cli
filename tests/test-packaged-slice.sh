@@ -19,7 +19,7 @@ if ! "$BINARY" "$FIXTURE" -o "$WORKDIR/out.gcode" > "$WORKDIR/slice.log" 2>&1; t
 fi
 cat "$WORKDIR/slice.log"
 
-# The engine prints the resources root it configured (main.cpp
+# The engine prints the resources root it configured (src/cli_preset_staging.cpp
 # configure_engine_resources()); it must be the package's, not "<not found>".
 grep -E "^  Engine resources: .*[/\\\\]resources$" "$WORKDIR/slice.log"
 # The fixture names all three Bambu presets; the packaged profiles tree and
@@ -43,7 +43,7 @@ echo "PASS: packaged slice resolved presets and read resources"
 # syscall on Linux, which reports EXDEV (Invalid cross-device link) when the
 # packaged vendor JSONs and TMPDIR live on different filesystems — the Linux
 # host that hit this had the profiles tree on btrfs and /tmp on tmpfs. The
-# vendor-JSON copy has to fall back to a stream copy (main.cpp stage_file_copy)
+# vendor-JSON copy has to fall back to a stream copy (src/cli_preset_staging.cpp stage_file_copy)
 # rather than failing the preset load, and a staging failure must never leave
 # the slice running on the flat 3MF config.
 # /dev/shm is tmpfs on Linux hosts and usually a different device from the
@@ -120,11 +120,15 @@ endfacet
 endsolid packaged_test
 STL
     python3 "$SCRIPT_DIR/resolve-orca-profiles.py" "$ORCA_ROOT/resources/profiles-orca/Snapmaker" "$WORKDIR/orca-config.json"
+    # The plate is named: from OrcaSlicer 2.5 the U1's default plate is
+    # Textured PEI, which "Snapmaker PLA @U1" does not print on
+    # (docs/cli-reference.md, "Known upstream behaviour").
     if ! "$ORCA_BINARY" "$WORKDIR/model.stl" \
         --config "$WORKDIR/orca-config.json" \
         --machine "$ORCA_ROOT/resources/profiles-orca/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json" \
         --filament "$ORCA_ROOT/resources/profiles-orca/Snapmaker/filament/Snapmaker PLA @U1.json" \
         --process "$ORCA_ROOT/resources/profiles-orca/Snapmaker/process/0.20 Standard @Snapmaker U1 (0.4 nozzle).json" \
+        --curr-bed-type "High Temp Plate" \
         -o "$WORKDIR/orca.gcode" > "$WORKDIR/orca.log" 2>&1; then
         cat "$WORKDIR/orca.log"
         exit 1
@@ -145,7 +149,7 @@ STL
 fi
 
 # The Snapmaker engine finds its own profiles tree and resources root in the
-# package (resources/snapmaker, main.cpp snapmaker_profiles_dir): a named U1
+# package (resources/snapmaker, src/cli_snapmaker.cpp snapmaker_profiles_dir): a named U1
 # printer must resolve there, and the engine's own data reads beside it
 # (info/, profiles/Snapmaker/filament/) must not be swallowed.
 if [ -n "$SNAP_BINARY" ]; then
@@ -170,6 +174,26 @@ if [ -n "$SNAP_BINARY" ]; then
     test -s "$WORKDIR/snap-range/plate_1.gcode"
     grep -q RangeLayerHeightFilled "$WORKDIR/snap-range.log"
     echo "PASS: packaged snapmaker height range with no layer height keeps the object's"
+    # A filament number past the run's filaments is refused (-2), as the
+    # official command line refuses --load-filament-ids past the loaded
+    # filaments (Snapmaker_Orca.cpp 1543 at the Snapmaker pin). This run names
+    # no filament and has one. The code is read from result.json: Git Bash
+    # shows 127 for every negative exit code.
+    printf '{"plates": [{"plate_name": "past", "need_arrange": true, "objects": [{"path": "snap.stl", "count": 1, "filaments": [2]}]}]}\n' > "$WORKDIR/asm-past.json"
+    if (cd "$WORKDIR" && "$SNAP_ABS" --load-assemble-list asm-past.json --slice 1 \
+        --printer-preset "Snapmaker U1 (0.4 nozzle)" --outputdir snap-past > snap-past.log 2>&1); then
+        cat "$WORKDIR/snap-past.log"
+        echo 'FAIL: a filament number past the loaded filaments was not refused'
+        exit 1
+    fi
+    python3 - "$WORKDIR/snap-past/result.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+assert d["return_code"] == -2, d
+assert "filament 2, but this run has 1 filament(s)" in d["error_string"], d
+PY
+    test ! -e "$WORKDIR/snap-past/plate_1.gcode"
+    echo "PASS: packaged snapmaker refuses a filament number past the loaded filaments (-2)"
     if grep -E 'parse (.*[/\\])?(info|flush|profiles)[/\\]|PresetBundle exception' "$WORKDIR/snap.log"; then
         exit 1
     fi

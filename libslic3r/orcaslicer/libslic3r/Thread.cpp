@@ -6,6 +6,14 @@
 	#include <pthread.h>
 #endif
 
+#include <optional>
+#include <string>
+#include <cstddef>
+#include <cassert>
+#include <sstream>
+#include <locale.h>
+#include <clocale>
+
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -14,7 +22,7 @@
 #include <tbb/task_arena.h>
 
 #include "Thread.hpp"
-#include "Utils.hpp"
+#include <cstring>
 
 namespace Slic3r {
 
@@ -30,6 +38,11 @@ static HMODULE					s_hKernel32 = nullptr;
 static SetThreadDescriptionType s_fnSetThreadDescription = nullptr;
 static GetThreadDescriptionType	s_fnGetThreadDescription = nullptr;
 
+// Convert the FARPROC from GetProcAddress to Fn through a generic function pointer.
+template<typename Fn> static Fn load_proc(HMODULE module, const char* name) {
+	return reinterpret_cast<Fn>(reinterpret_cast<void(*)()>(::GetProcAddress(module, name)));
+}
+
 static bool WindowsGetSetThreadNameAPIInitialize()
 {
 	if (! s_SetGetThreadDescriptionInitialized) {
@@ -37,8 +50,8 @@ static bool WindowsGetSetThreadNameAPIInitialize()
 		// to initialize 
 		s_hKernel32 = LoadLibraryW(L"Kernel32.dll");
 		if (s_hKernel32) {
-			s_fnSetThreadDescription = (SetThreadDescriptionType)::GetProcAddress(s_hKernel32, "SetThreadDescription");
-			s_fnGetThreadDescription = (GetThreadDescriptionType)::GetProcAddress(s_hKernel32, "GetThreadDescription");
+			s_fnSetThreadDescription = load_proc<SetThreadDescriptionType>(s_hKernel32, "SetThreadDescription");
+			s_fnGetThreadDescription = load_proc<GetThreadDescriptionType>(s_hKernel32, "GetThreadDescription");
 		}
 		s_SetGetThreadDescriptionInitialized = true;
 	}
@@ -246,7 +259,7 @@ void name_tbb_thread_pool_threads_set_locale()
         	} else {
         		// Wait for the last thread to wake the others.
 			    // slicer-cli override (the only change from the reference file,
-			    // identical at BambuStudio 926a719, OrcaSlicer 8500fcd and
+			    // identical at BambuStudio 926a719, OrcaSlicer f92a7c0 and
 			    // Snapmaker Orca bac6fd5, with the deadline above and the calling
 			    // thread's assert below): the reference
 			    // waits with no limit, and TBB does not promise to run all

@@ -85,7 +85,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # file(GLOB_RECURSE) — which are always normalized — match the strings we
 # construct for list(REMOVE_ITEM) and EXISTS checks.
 # ─── Engine selection (bambu | orca) ────────────────────────────────────────
-# The CLI driver (main.cpp) compiles against ONE engine's libslic3r at a time:
+# The CLI driver (src/main.cpp) compiles against ONE engine's libslic3r at a time:
 #   -DENGINE=bambu  (default)  → references/BambuStudio  + libslic3r/bambustudio
 #   -DENGINE=orca              → references/OrcaSlicer    + libslic3r/orcaslicer
 # Both are PrusaSlicer forks sharing the same public API (Model, Print, etc.).
@@ -95,7 +95,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 #                     BambuStudio: src/        (admesh, clipper, …)
 #                     OrcaSlicer:  deps_src/   (admesh, clipper, …)
 #   * ENGINE_BAMBU / ENGINE_ORCA compile define → gates the divergent front-end
-#     blocks in main.cpp (preset/staging resolution, toolchanger normalizations).
+#     blocks in the front end (preset/staging resolution, toolchanger normalizations).
 set(ENGINE "bambu" CACHE STRING "Slicing engine source: bambu (BambuStudio), orca (OrcaSlicer) or snapmaker (Snapmaker Orca)")
 set_property(CACHE ENGINE PROPERTY STRINGS bambu orca snapmaker)
 set(ENGINE_EXTRA_LIBS "")   # engine-specific extra link libraries (populated below)
@@ -105,6 +105,24 @@ if(ENGINE STREQUAL "orca")
   get_filename_component(VENDOR      "${CMAKE_CURRENT_SOURCE_DIR}/libslic3r/orcaslicer"    ABSOLUTE)
   set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # Orca bundles sub-libs under deps_src/
   add_compile_definitions(ENGINE_ORCA)
+  # OrcaSlicer 2.5 reads constexpr constants inside lambdas that do not capture
+  # them (FillRectilinear.cpp 2416, GCodeProcessor.cpp 7548 at f92a7c0). MSVC
+  # under /std:c++17 refuses that (C3493) unless it parses lambdas the standard
+  # way; OrcaSlicer's own CMakeLists.txt (391-405 at f92a7c0) sets the same
+  # option. cl.exe only warns about an unknown /Zc: option, so the version is
+  # checked here as upstream does.
+  if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(MSVC_VERSION LESS 1928)
+      message(FATAL_ERROR "OrcaSlicer v2.5.2 needs Visual Studio 2019 16.8 (MSVC 19.28) or newer; found MSVC ${MSVC_VERSION}.")
+    endif()
+    add_compile_options(/Zc:lambda)
+  endif()
+  # MeshRepair.cpp, new in OrcaSlicer 2.5, has more sections than the default
+  # object format holds (C1128 with the Ninja generator). OrcaSlicer's own
+  # CMakeLists.txt sets /bigobj for every target (406-407 at f92a7c0).
+  if(MSVC)
+    add_compile_options(/bigobj)
+  endif()
   message(STATUS "ENGINE = orca (OrcaSlicer)")
 elseif(ENGINE STREQUAL "bambu")
   get_filename_component(ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/references/BambuStudio"  ABSOLUTE)
@@ -118,7 +136,7 @@ elseif(ENGINE STREQUAL "snapmaker")
   set(SUBLIB_DIR "${ENGINE_ROOT}/deps_src")   # OrcaSlicer branch: sub-libs under deps_src/
   # Snapmaker Orca is a Snapmaker fork of OrcaSlicer, so the OrcaSlicer driver
   # paths are the right ones; ENGINE_SNAPMAKER marks the OrcaSlicer-2.4 APIs the
-  # fork does not have (see the ENGINE_SNAPMAKER guards in main.cpp).
+  # fork does not have (see the ENGINE_SNAPMAKER guards in the front end).
   add_compile_definitions(ENGINE_ORCA ENGINE_SNAPMAKER)
   message(STATUS "ENGINE = snapmaker (Snapmaker Orca)")
 else()
@@ -248,20 +266,27 @@ if(ENGINE STREQUAL "bambu" OR ENGINE STREQUAL "snapmaker")
   endif()
 elseif(UNIX AND NOT APPLE)
   if(DEFINED CGAL_DIR)
-    find_package(CGAL 5.6.3 CONFIG REQUIRED)
+    find_package(CGAL 6.2.1 CONFIG REQUIRED)
   else()
-    find_package(CGAL 5.6.3 CONFIG QUIET
+    find_package(CGAL 6.2.1 CONFIG QUIET
       PATHS
-        /opt/slicer-cli/cgal-5.6.3/lib/cmake/CGAL
+        /opt/slicer-cli/cgal-6.2.1/lib/cmake/CGAL
       NO_DEFAULT_PATH)
     if(NOT CGAL_FOUND)
       message(FATAL_ERROR
-        "OrcaSlicer requires CGAL 5.6.3 on Linux. "
+        "OrcaSlicer v2.5.2 requires the CGAL 6.2.1 it pins (deps/CGAL/CGAL.cmake at f92a7c0). "
         "Run ./install_deps.sh, or set CGAL_DIR to its project-managed package.")
     endif()
   endif()
 else()
   find_package(CGAL REQUIRED)
+  # OrcaSlicer v2.5.2 includes CGAL/boost/graph/border.h, which CGAL has from
+  # 6.2 on. Say so here; the compiler would only name the missing header.
+  if(CGAL_VERSION VERSION_LESS "6.2")
+    message(FATAL_ERROR
+      "OrcaSlicer v2.5.2 needs CGAL 6.2 or newer (it pins 6.2.1); found ${CGAL_VERSION} at ${CGAL_DIR}. "
+      "On Windows install it with --overlay-ports=ci/vcpkg-overlays-orca.")
+  endif()
 endif()
 
 # imgproc: the OBJ colour clustering of --load-assemble-list
@@ -277,19 +302,38 @@ else()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Each engine builds with the OpenCASCADE its own source pins: OrcaSlicer
+  # v2.5.2 pins 8.0.1 (deps/OCCT/OCCT.cmake at f92a7c0), Bambu Studio and
+  # Snapmaker Orca pin 7.6.0. install_deps.sh builds the one for ENGINE.
+  if(ENGINE STREQUAL "orca")
+    set(_slicer_cli_occt_version "8.0.1")
+    set(_slicer_cli_occt_prefix "/opt/slicer-cli/occt-8.0")
+  else()
+    set(_slicer_cli_occt_version "7.6.0")
+    set(_slicer_cli_occt_prefix "/opt/slicer-cli/occt-7.6")
+  endif()
   if(NOT DEFINED OpenCASCADE_DIR OR OpenCASCADE_DIR STREQUAL "")
-    set(OpenCASCADE_DIR "/opt/slicer-cli/occt-7.6/lib/cmake/opencascade"
-        CACHE PATH "Pinned Linux OpenCASCADE 7.6.0 package directory")
+    set(OpenCASCADE_DIR "${_slicer_cli_occt_prefix}/lib/cmake/opencascade"
+        CACHE PATH "Pinned Linux OpenCASCADE ${_slicer_cli_occt_version} package directory")
   endif()
   if(NOT EXISTS "${OpenCASCADE_DIR}/OpenCASCADEConfig.cmake")
     message(FATAL_ERROR
-      "Pinned Linux OpenCASCADE 7.6.0 not found at ${OpenCASCADE_DIR}. "
-      "Run ./install_deps.sh before configuring.")
+      "Pinned Linux OpenCASCADE ${_slicer_cli_occt_version} not found at ${OpenCASCADE_DIR}. "
+      "Run ENGINE=${ENGINE} ./install_deps.sh before configuring.")
   endif()
   find_package(OpenCASCADE CONFIG REQUIRED
       PATHS "${OpenCASCADE_DIR}"
       NO_DEFAULT_PATH)
 else()
+  # macOS, OrcaSlicer: the 8.0.1 with OrcaSlicer's patch that
+  # `ENGINE=orca ./install_deps.sh` builds. Windows takes it from the vcpkg
+  # overlay port (ci/vcpkg-overlays-orca/opencascade).
+  if(APPLE AND ENGINE STREQUAL "orca"
+     AND (NOT DEFINED OpenCASCADE_DIR OR OpenCASCADE_DIR STREQUAL "")
+     AND EXISTS "/opt/slicer-cli/occt-8.0/lib/cmake/opencascade/OpenCASCADEConfig.cmake")
+    set(OpenCASCADE_DIR "/opt/slicer-cli/occt-8.0/lib/cmake/opencascade"
+        CACHE PATH "Pinned OpenCASCADE 8.0.1 package directory")
+  endif()
   # OpenCASCADE — Homebrew installs as "opencascade"
   find_package(OpenCASCADE QUIET)
   if(NOT OpenCASCADE_FOUND)
@@ -440,11 +484,27 @@ if(ENGINE STREQUAL "snapmaker" AND NOT TARGET eigen AND EXISTS "${SUBLIB_DIR}/ei
 endif()
 
 add_subdirectory("${SUBLIB_DIR}/admesh"      "${CMAKE_CURRENT_BINARY_DIR}/admesh")
-add_subdirectory("${SUBLIB_DIR}/clipper"     "${CMAKE_CURRENT_BINARY_DIR}/clipper")
+# OrcaSlicer 2.5 dropped the classic Clipper library (deps_src/clipper is gone at
+# f92a7c0; the engine uses Clipper2 only). Bambu Studio and Snapmaker Orca still
+# bundle it.
+if(EXISTS "${SUBLIB_DIR}/clipper/CMakeLists.txt")
+  add_subdirectory("${SUBLIB_DIR}/clipper"   "${CMAKE_CURRENT_BINARY_DIR}/clipper")
+  set(SLICER_CLI_CLIPPER_LIB clipper)
+else()
+  set(SLICER_CLI_CLIPPER_LIB "")
+endif()
 # Snapmaker Orca carries no bundled Clipper2 (its OrcaSlicer base predates the
 # engine's use of it); skip the sub-directory and the link item when absent.
 if(EXISTS "${SUBLIB_DIR}/clipper2/CMakeLists.txt")
   add_subdirectory("${SUBLIB_DIR}/clipper2"  "${CMAKE_CURRENT_BINARY_DIR}/clipper2")
+  # The bundled Clipper2 turns its own warnings into errors
+  # (deps_src/clipper2/CMakeLists.txt:46-51 at f92a7c0). A newer compiler than the
+  # engine's own CI then fails on a warning in engine code we do not edit.
+  if(MSVC)
+    target_compile_options(Clipper2 PRIVATE /WX-)
+  else()
+    target_compile_options(Clipper2 PRIVATE -Wno-error)
+  endif()
   set(SLICER_CLI_CLIPPER2_LIB Clipper2)
 else()
   set(SLICER_CLI_CLIPPER2_LIB "")
@@ -564,6 +624,11 @@ list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*PostProcessor\\.cpp$")
 # pulling <draco/...> (an external find_package(draco) in Orca's build). It is off
 # the .3mf→gcode slice/export path, so exclude it rather than add the Draco dep.
 list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*Format/DRC\\.cpp$")
+# OrcaSlicer 2.5 only: src/libslic3r/CAD is the kernel of the desktop's Design tab.
+# The engine compiles it only with SLIC3R_CAD (src/libslic3r/CMakeLists.txt:583-592
+# at f92a7c0); it needs the SolveSpace solver and OpenCASCADE's ModelingAlgorithms
+# module. The command line never reaches it, so SLIC3R_CAD stays off here.
+list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*/libslic3r/CAD/.*")
 
 if(NOT APPLE)
   list(FILTER LIBSLIC3R_SOURCES EXCLUDE REGEX ".*\\.mm$")
@@ -599,7 +664,7 @@ list(APPEND LIBSLIC3R_SOURCES "${_nsvg}")
 if(NOT ENGINE STREQUAL "snapmaker")
   list(APPEND LIBSLIC3R_SOURCES "${NANOSVG_IMPL}")
 endif()
-list(APPEND LIBSLIC3R_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/standalone_stubs.cpp")
+list(APPEND LIBSLIC3R_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone_stubs.cpp")
 
 # ─── libslic3r_core (main library) ─────────────────────────────────────────
 # Keep engine constructors in the executable's initialization domain so the
@@ -711,6 +776,14 @@ target_include_directories(libslic3r_cgal PRIVATE
 target_include_directories(libslic3r_cgal SYSTEM BEFORE PRIVATE
     "${CGAL_INCLUDE_DIRS}")
 
+# OrcaSlicer 2.5 lets CGAL run on TBB (src/libslic3r/CMakeLists.txt:624-625 at
+# f92a7c0). CGAL changes Kd_tree's member layout with this define, so the engine
+# sets it for every consumer of libslic3r as well (the same file, 687-689).
+if(ENGINE STREQUAL "orca")
+  target_compile_definitions(libslic3r_cgal PRIVATE CGAL_LINKED_WITH_TBB)
+  target_compile_definitions(libslic3r_core PUBLIC CGAL_LINKED_WITH_TBB)
+endif()
+
 # CGAL 5.4's ConicCPA2 header uses CGAL_NTS is_zero without including the
 # declaration itself. Bambu's dependency build exposes it transitively; make
 # that requirement explicit only for the pinned 5.4 builds (Bambu's, and
@@ -758,10 +831,25 @@ else()
   set(OCCT_STEP_LIB TKXDESTEP)
 endif()
 
-# OCCT 7.9+ merged the old TKSTEP/TKSTEPBase/TKSTEPAttr/TKSTEP209 into TKDESTEP + TKDE.
-# Detect which layout is available.
-find_library(_TKSTEP_LIB TKSTEP HINTS "${OpenCASCADE_INSTALL_PREFIX}/lib" /opt/homebrew/lib)
-if(_TKSTEP_LIB)
+# OCCT 7.8 merged the old TKSTEP/TKSTEPBase/TKSTEPAttr/TKSTEP209 into TKDESTEP + TKDE.
+# The layout follows the version of the package that was found, never a library
+# search: a search also looks in every other prefix on the path, so with two
+# OpenCASCADE versions installed it can name the other one's layout.
+if(NOT OpenCASCADE_VERSION)
+  set(OpenCASCADE_VERSION "${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
+endif()
+if(NOT OpenCASCADE_VERSION MATCHES "^[0-9]+\\.[0-9]+")
+  message(FATAL_ERROR "The OpenCASCADE package at ${OpenCASCADE_DIR} states no version.")
+endif()
+message(STATUS "  OpenCASCADE version: ${OpenCASCADE_VERSION}")
+# OrcaSlicer v2.5.2 pins 8.0.1 with one patch (deps/OCCT/OCCT.cmake at f92a7c0).
+# Another version cannot hold that patch, and some STEP files then give no layers.
+if(ENGINE STREQUAL "orca" AND NOT OpenCASCADE_VERSION VERSION_EQUAL "8.0.1")
+  message(FATAL_ERROR
+    "OrcaSlicer needs OpenCASCADE 8.0.1 with its patch; found ${OpenCASCADE_VERSION} at ${OpenCASCADE_DIR}. "
+    "Linux and macOS: ENGINE=orca ./install_deps.sh. Windows: docs/building.md.")
+endif()
+if(OpenCASCADE_VERSION VERSION_LESS "7.8")
   # Old OCCT layout (< 7.8)
   set(OCCT_LIBS
         ${OCCT_STEP_LIB}
@@ -771,7 +859,9 @@ if(_TKSTEP_LIB)
         TKShHealing TKTopAlgo TKGeomAlgo TKBRep
         TKGeomBase TKG3d TKG2d TKMath TKernel)
 else()
-  # New OCCT 7.9+ layout — STEP libs consolidated into TKDESTEP/TKDE
+  # New layout — STEP libs consolidated into TKDESTEP/TKDE. The list is
+  # OrcaSlicer's own for OpenCASCADE 8.0.1 (src/libslic3r/CMakeLists.txt
+  # 698-721 at f92a7c0).
   set(OCCT_LIBS
         TKDESTEP TKDE
         TKXCAF TKXSBase TKVCAF TKCAF TKLCAF TKCDF
@@ -796,7 +886,7 @@ target_link_libraries(libslic3r_core PUBLIC
     Boost::regex
     Boost::atomic
     Boost::locale
-    clipper
+    ${SLICER_CLI_CLIPPER_LIB}
     ${SLICER_CLI_CLIPPER2_LIB}
     nowide
     ${EXPAT_LIBRARIES}
@@ -888,12 +978,62 @@ set_target_properties(libslic3r_core PROPERTIES
 add_library(libslic3r ALIAS libslic3r_core)
 
 # ─── CLI executable ────────────────────────────────────────────────────────
-add_executable(slicer_cli main.cpp startup_logging.cpp calib_args.cpp layout_plan.cpp
-    cli_command_line.cpp cli_flag_support.cpp desktop_presets.cpp cli_model_load.cpp cli_run_steps.cpp cli_load_settings.cpp cli_repetitions.cpp cli_simplify.cpp cli_list_flags.cpp cli_engine_info.cpp
-    cli_assemble.cpp cli_layer_ranges.cpp cli_pipe.cpp cli_failure_reason.cpp cli_snapmaker.cpp
-    cli_nozzle_diameter.cpp cli_gcode_timing.cpp cli_filament_map.cpp cli_nozzle_options.cpp
-    cli_project_load.cpp)
+add_executable(slicer_cli src/cli_result_json.cpp
+    src/cli_run_cleanup.cpp
+    src/cli_plate_report.cpp
+    src/cli_plate_arrange.cpp
+    src/cli_named_presets.cpp
+    src/cli_project_values.cpp
+    src/cli_plate_plan.cpp
+    src/cli_file_info.cpp
+    src/cli_slice_export.cpp
+    src/cli_plate_scope.cpp
+    src/cli_load_slice_inputs.cpp
+    src/cli_load_project_archive.cpp
+    src/cli_plate_print.cpp
+    src/cli_slice_plate.cpp
+    src/cli_check_downward.cpp
+    src/cli_plate_settings.cpp
+    src/cli_slice_run.cpp
+    src/cli_startup.cpp
+    src/cli_layout_command.cpp
+    src/main.cpp src/cli_staging_folders.cpp src/startup_logging.cpp src/calib_args.cpp src/layout_plan.cpp
+    src/cli_command_line.cpp src/cli_flag_support.cpp src/desktop_presets.cpp src/cli_model_load.cpp src/cli_run_steps.cpp src/cli_load_settings.cpp src/cli_repetitions.cpp src/cli_simplify.cpp src/cli_list_flags.cpp src/cli_engine_info.cpp
+    src/cli_assemble.cpp src/cli_layer_ranges.cpp src/cli_pipe.cpp src/cli_failure_reason.cpp src/cli_snapmaker.cpp
+    src/cli_nozzle_diameter.cpp src/cli_gcode_timing.cpp src/cli_filament_map.cpp src/cli_nozzle_options.cpp
+    src/cli_engine_events.cpp
+    src/cli_legacy_gcode.cpp
+    src/cli_json_config.cpp
+    src/cli_filament_config.cpp
+    src/cli_project_archive.cpp
+    src/cli_printer_catalog.cpp
+    src/cli_list_settings.cpp
+    src/cli_setting_overrides.cpp
+    src/cli_arrange_geometry.cpp
+    src/cli_preset_staging.cpp
+    src/cli_percent_widths.cpp
+    src/cli_project_settings.cpp src/cli_project_load.cpp)
 target_link_libraries(slicer_cli PRIVATE libslic3r_core)
+
+# Cache the engine headers shared by the front end. Boost.Log declarations must
+# be visible before Bambu Studio's Log.hpp installs its logging macro.
+if(MSVC)
+  target_precompile_headers(slicer_cli PRIVATE "${_nowide_fwd}")
+endif()
+target_precompile_headers(slicer_cli PRIVATE
+    <boost/log/trivial.hpp>
+    <libslic3r/PrintConfig.hpp>
+    <libslic3r/Model.hpp>
+    <libslic3r/PresetBundle.hpp>
+    <nlohmann/json.hpp>)
+
+# These files compile independently of the engine headers.
+set_source_files_properties(
+    src/cli_failure_reason.cpp src/startup_logging.cpp src/cli_pipe.cpp
+    src/cli_printer_catalog.cpp src/cli_project_archive.cpp
+    src/cli_preset_staging.cpp src/cli_staging_folders.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
 # Both engines build a program called slicer_cli; the package renames the
 # OrcaSlicer one to slicer_cli-orcaslicer. Give the Snapmaker build its own name
 # at build time so it is not mistaken for either.
@@ -912,7 +1052,7 @@ target_include_directories(slicer_cli PRIVATE
 # Provenance: run git with -C <engine dir> and verify the resolved toplevel IS
 # the engine checkout — a vendored engine dir without its own .git must NOT
 # pick up the PARENT repo's SHA (git walks up to find a repo); report the
-# literal "unknown" from layout_plan.cpp instead.
+# literal "unknown" from src/layout_plan.cpp instead.
 find_package(Git QUIET)
 if(GIT_FOUND)
   get_filename_component(ENGINE_ROOT_ABS "${ENGINE_ROOT}" ABSOLUTE)
@@ -949,7 +1089,7 @@ if(ENGINE_COMMIT)
 endif()
 
 # ─── Layout spike (proof harness) ─────────────────────────────────────────
-add_executable(layout_spike layout_spike.cpp arrange_harness.cpp)
+add_executable(layout_spike src/layout_spike.cpp src/arrange_harness.cpp)
 target_link_libraries(layout_spike PRIVATE libslic3r_core)
 target_include_directories(layout_spike PRIVATE
     "${VENDOR}"

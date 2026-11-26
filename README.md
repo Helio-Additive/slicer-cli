@@ -9,7 +9,7 @@ A release package holds three programs:
 | Program | Engine |
 |-|-|
 | `slicer_cli` | Bambu Studio 02.09.01.70 (source pin `56a57d0`) |
-| `slicer_cli-orcaslicer` | OrcaSlicer 2.4.2 (source pin `8500fcd`) |
+| `slicer_cli-orcaslicer` | OrcaSlicer 2.5.2 (source pin `f92a7c0`) |
 | `slicer_cli-snapmaker` | Snapmaker Orca 2.4.1 (source pin `bac6fd5`) |
 
 Each program slices with its engine's own code and its own printer, process
