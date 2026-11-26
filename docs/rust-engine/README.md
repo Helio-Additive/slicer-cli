@@ -62,10 +62,10 @@ below measures libslic3r coverage.
 Run `python3 scripts/parity/rust_safety.py` to count rustc's `unsafe_code`
 diagnostics across the locked production CLI build, including its host build
 dependencies. It checks a fresh build directory and exits 1 when it finds
-unsafe code. On macOS arm64 at R999 it reported 9,104 diagnostics in 85
-packages, including 106 in the slicing engine. Passing
+unsafe code. On macOS arm64 at R1002 it reported 9,102 diagnostics in 85
+packages, including 104 in the slicing engine. Passing
 `--target aarch64-apple-darwin` checks the target code separately and gave
-8,971 diagnostics in 81 packages. These counts cover code Cargo compiles with
+8,969 diagnostics in 81 packages. These counts cover code Cargo compiles with
 the selected features. Prebuilt standard-library code, native build-script
 outputs and the other target configurations require separate verification.
 
@@ -76,7 +76,7 @@ infill, both Linux executables produced the same 469,014 bytes as the macOS
 build. The Windows executable was inspected as an x86_64 PE image. Runtime
 verification on Windows is still open.
 
-The same locked target graph produced these compiler diagnostics with Rust
+At R1001 the locked target graph produced these compiler diagnostics with Rust
 1.95.0. Each row excludes host build dependencies.
 
 | Target | Engine unsafe diagnostics | Full target graph unsafe diagnostics | Packages reporting them |
@@ -200,7 +200,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R1001) |
+| Fixture | As brought over (R808) | Now (R1002) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -210,11 +210,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R1001:
+missing most often. Lines of the oracle's body the port has verbatim, at R1002:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R1001 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R1002 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

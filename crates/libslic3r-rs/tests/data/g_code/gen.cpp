@@ -852,11 +852,52 @@ static void repeated_retractions()
     }
 }
 
+// GCode.hpp 295-327 and GCode.cpp 7106-7148 at BambuStudio 56a57d0.
+// Exercise both sinks of the stream, using one processor for each open file.
+static void output_streams()
+{
+    const std::string nul(1, '\0');
+    const std::vector<std::string> inputs = {
+        "", "G1 X10 Y4 F600", "G1 X10 Y4 F600\n", "G1 X10 Y4 F600\nG1 X20 Y15\n",
+        nul + "G1 X20 Y15\n", "G1 X10 Y4 F600" + nul + "G1 X20 Y15\n",
+        "G1 X10 Y4 F600\n" + nul + "G1 X20 Y15\n", "; café\nG1 X3 F900\n",
+        ";" + std::string(1040, 'a') + "\nG1 X8 F600\n"
+    };
+    for (const auto &input : inputs) {
+        for (const char op : std::string("WLF")) {
+            GCodeProcessor processor;
+            FILE *f = std::tmpfile();
+            GCode::GCodeOutputStream stream(f, processor);
+            if (op == 'W') stream.write(input);
+            if (op == 'L') stream.writeln(input);
+            if (op == 'F') stream.write_format("%s", input.c_str());
+            stream.writeln("G1 X1 Y2 F900");
+            stream.flush();
+            std::rewind(f);
+            std::string file_bytes;
+            char buf[256];
+            while (size_t n = std::fread(buf, 1, sizeof(buf), f)) file_bytes.append(buf, n);
+            std::printf("stream %c %s %s %d %d", op, hex(input).c_str(), hex(file_bytes).c_str(),
+                        int(stream.is_open()), int(stream.is_error()));
+            stream.close();
+            std::printf(" %d", int(stream.is_open()));
+            for (const auto &move : processor.result().moves) {
+                std::printf(" %u:%s:%s", move.gcode_id, f32(move.position.x()).c_str(), f32(move.position.y()).c_str());
+            }
+            std::puts("");
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--output-streams") {
+        output_streams();
+        return 0;
     }
     if (std::string(argv[1]) == "--repeated-retractions") {
         repeated_retractions();

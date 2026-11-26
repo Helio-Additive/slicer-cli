@@ -261,8 +261,7 @@ fn line_of(t: &[&str]) -> Option<String> {
             let path = std::env::temp_dir().join(format!("g_code_native_parity_env_{}.gcode", std::process::id()));
             {
                 let f = std::fs::File::create(&path).unwrap();
-                // SAFETY: the processor outlives the stream.
-                let mut file = unsafe { GCodeOutputStream::new(Some(f), &mut proc_) };
+                let mut file = GCodeOutputStream::new(Some(f), &mut proc_);
                 g.print_machine_envelope(&mut file, extruder_id);
                 file.flush();
                 file.close();
@@ -591,4 +590,49 @@ fn repeated_retractions_match_native() {
         }
         assert!(fields.next().is_none());
     }
+}
+
+// GCode.hpp 295–327 and GCode.cpp 7106–7148. Verify the bytes delivered
+// to the output file and the moves received by its borrowed processor.
+#[test]
+fn output_stream_matches_native_file_and_processor() {
+    use std::io::{Seek, SeekFrom};
+    use slicer::gcode::g_code_processor::GCodeProcessor;
+
+    let mut failures = Vec::new();
+    let mut cases = 0;
+    for row in include_str!("data/g_code/output_streams.txt").lines() {
+        let fields: Vec<_> = row.split_ascii_whitespace().collect();
+        let input = unhex(fields[2]);
+        let mut output = tempfile::tempfile().unwrap();
+        let mut processor = GCodeProcessor::new();
+        let (open, error, still_open);
+        {
+            let mut stream = GCodeOutputStream::new(Some(output.try_clone().unwrap()), &mut processor);
+            match fields[1] {
+                "W" => stream.write(&input),
+                "L" => stream.writeln(&input),
+                "F" => stream.write_format(format_args!("{input}")),
+                op => panic!("unknown stream operation {op}"),
+            }
+            stream.writeln("G1 X1 Y2 F900");
+            stream.flush();
+            (open, error) = (stream.is_open(), stream.is_error());
+            stream.close();
+            still_open = stream.is_open();
+        }
+        output.seek(SeekFrom::Start(0)).unwrap();
+        let mut file = String::new();
+        output.read_to_string(&mut file).unwrap();
+        let mut actual = format!("{} {} {} {}", hex(&file), u8::from(open), u8::from(error), u8::from(still_open));
+        for m in &processor.result().moves {
+            actual += &format!(" {}:{}:{}", m.gcode_id, f32h(m.position[0]), f32h(m.position[1]));
+        }
+        if actual != fields[3..].join(" ") {
+            failures.push((cases, fields[1], actual));
+        }
+        cases += 1;
+    }
+    assert_eq!(cases, 27);
+    assert!(failures.is_empty(), "{failures:?}");
 }

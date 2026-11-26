@@ -13847,6 +13847,7 @@ where
 // module's struct is the C++ class's; the `GCode` above is the output container of the port.
 // ===========================================================================
 pub mod gcode_class {
+    #![forbid(unsafe_code)]
     use super::{pp_bool, pp_float, pp_floats, pp_get_at, pp_int, pp_ints, pp_string, pp_strings};
     use crate::config::{ConfigBase, ConfigOptionPoints, ConfigOptionResolver};
     use crate::g_code_writer::{GCodeWriter, LiftType, TemperatureCommandType};
@@ -14570,23 +14571,19 @@ pub mod gcode_class {
     /// GCode.hpp:295-327 `class GCodeOutputStream`: the G-code file and the processor every text
     /// written to it goes through.
     ///
-    /// The C++ keeps a reference to the `GCode`'s processor; the stream keeps a pointer to it, as the
-    /// writer's extruders keep one to the writer's configuration.
-    pub struct GCodeOutputStream {
+    /// The stream borrows the processor for the duration of its writes.
+    pub struct GCodeOutputStream<'p> {
         f: Option<std::fs::File>,
-        m_processor: *mut GCodeProcessor,
+        m_processor: &'p mut GCodeProcessor,
         // errno captured at the first failed fwrite/fflush, 0 if none.
         m_write_errno: i32,
         // The error indicator of the stream (`ferror`).
         m_error: bool,
     }
 
-    impl GCodeOutputStream {
+    impl<'p> GCodeOutputStream<'p> {
         /// GCode.hpp:297 `GCodeOutputStream(FILE *f, GCodeProcessor &processor)`
-        ///
-        /// # Safety
-        /// `processor` must outlive the stream and not move while it is open.
-        pub unsafe fn new(f: Option<std::fs::File>, processor: *mut GCodeProcessor) -> Self {
+        pub fn new(f: Option<std::fs::File>, processor: &'p mut GCodeProcessor) -> Self {
             GCodeOutputStream { f, m_processor: processor, m_write_errno: 0, m_error: false }
         }
 
@@ -14632,7 +14629,13 @@ pub mod gcode_class {
         /// GCode.cpp:7106-7117 `void GCode::GCodeOutputStream::write(const char *what)`
         pub fn write(&mut self, what: &str) {
             use std::io::Write;
-            let gcode = what;
+            // GCode.cpp:7106-7117 passes the same NUL-terminated text to
+            // fwrite and process_buffer.
+            let gcode = if crate::faithful_gate("GCODE_STREAM_C_STRING") {
+                what.split_once('\0').map_or(what, |(prefix, _)| prefix)
+            } else {
+                what
+            };
             // writes string to file
             if let Some(f) = self.f.as_mut() {
                 if let Err(e) = f.write_all(gcode.as_bytes()) {
@@ -14643,8 +14646,7 @@ pub mod gcode_class {
                 }
             }
             //FIXME don't allocate a string, maybe process a batch of lines?
-            // SAFETY: the processor outlives the stream (`new`).
-            unsafe { (*self.m_processor).process_buffer(gcode) };
+            self.m_processor.process_buffer(gcode);
         }
 
         /// GCode.cpp:7119-7123 `void GCode::GCodeOutputStream::writeln(const std::string &what)`
@@ -15069,7 +15071,7 @@ pub mod gcode_class {
         /// GCode.cpp:4131-4171 `void GCode::print_machine_envelope(GCodeOutputStream &file, Print
         /// &print, int extruder_id)`: the machine envelope G-code for the Marlin firmware, from the
         /// `machine_max_xxx` parameters of `print.config()`.
-        pub fn print_machine_envelope(&self, file: &mut GCodeOutputStream, extruder_id: i32) {
+        pub fn print_machine_envelope(&self, file: &mut GCodeOutputStream<'_>, extruder_id: i32) {
             let pc = &self.m_print_config;
             // get_extruder_id(extruder_id): `filament_map` is 1-based.
             let filament_map = pp_ints(&self.m_config, "filament_map");
@@ -15134,7 +15136,7 @@ pub mod gcode_class {
         /// `first_layer_filaments` is `print.get_slice_used_filaments(true)`.
         pub fn _print_first_layer_bed_temperature(
             &mut self,
-            file: &mut GCodeOutputStream,
+            file: &mut GCodeOutputStream<'_>,
             first_layer_filaments: &[u32],
             gcode: &str,
             first_printing_extruder_id: u32,
@@ -15175,7 +15177,7 @@ pub mod gcode_class {
         /// `print_extruders` is `print.extruders()`.
         pub fn _print_first_layer_extruder_temperatures(
             &mut self,
-            file: &mut GCodeOutputStream,
+            file: &mut GCodeOutputStream<'_>,
             print_extruders: &[u32],
             gcode: &str,
             first_printing_extruder_id: u32,

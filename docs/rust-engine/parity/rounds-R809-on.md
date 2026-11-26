@@ -226,8 +226,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R999 | Keep cooling tiers in safe, exclusively borrowed Rust adjustments. | CoolingBuffer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1000 | Parse NanoSVG coordinate units and convert them to pixels in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1001 | Convert SVG line endpoints to open cubic paths in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1002 | Borrow the G-code stream processor safely and preserve native C-string writes. | GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1002. GCode.cpp 7106–7117 sends the prefix ending at the first NUL
+  to both the file and the processor. R1001 wrote extra bytes in nine
+  of 27 native stream cases. Every file, open/error state and processor
+  move now matches, including a command written after each tested input.
+  `GCODE_STREAM_C_STRING=0` reproduces all nine earlier outputs. An
+  exclusive borrow ties the stream to its processor. The G-code class
+  module now forbids unsafe code. On macOS arm64 the engine's unsafe-code
+  diagnostics fell from 106 to 104, the target graph from 8,971 to 8,969,
+  and the graph including host dependencies from 9,104 to 9,102. All four
+  fixtures match R1001 byte for byte with the gate enabled and disabled.
+  H2D holds at 4,614,342 and 4,614,863.
 
 - R1001. After identical XML callbacks, the line reader follows the pin's
   attribute order. A font-size change affects subsequent endpoints in the

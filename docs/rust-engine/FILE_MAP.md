@@ -4058,25 +4058,25 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 - divergent: `WipeTowerIntegration::append_tcr` :741 and `append_tcr` :655 (19%, 0.81x)
 - divergent: `WipeTowerIntegration::post_process_wipe_tower_moves` :1383 and `post_process_wipe_tower_moves` :503 (11%, 0.02x)
-- divergent: `WipeTowerIntegration::prime` :1477 and `WipeTowerIntegration::prime` :15783 (0%, 0.14x)
-- stub: `WipeTowerIntegration::finalize` :1554 and `WipeTowerIntegration::finalize` :15829 (0%, 0.11x)
-- partial: `validate_custom_gcode` :1895 and `validate_custom_gcode` :16100 (40%, 1.04x)
-- partial: `GCode::first_layer_projection` :1965 and `GCode::first_layer_projection` :16581 (82%, 2.88x)
-- partial: `sort_object_instances_by_max_z` :2406 and `sort_object_instances_by_max_z` :16502 (62%, 0.93x)
-- partial: `sort_object_instances_by_model_order` :2421 and `sort_object_instances_by_model_order` :16521 (68%, 1.31x)
+- divergent: `WipeTowerIntegration::prime` :1477 and `WipeTowerIntegration::prime` :15785 (0%, 0.14x)
+- stub: `WipeTowerIntegration::finalize` :1554 and `WipeTowerIntegration::finalize` :15831 (0%, 0.11x)
+- partial: `validate_custom_gcode` :1895 and `validate_custom_gcode` :16102 (40%, 1.04x)
+- partial: `GCode::first_layer_projection` :1965 and `GCode::first_layer_projection` :16583 (82%, 2.88x)
+- partial: `sort_object_instances_by_max_z` :2406 and `sort_object_instances_by_max_z` :16504 (62%, 0.93x)
+- partial: `sort_object_instances_by_model_order` :2421 and `sort_object_instances_by_model_order` :16523 (68%, 1.31x)
 - divergent: `to_bambu_bed_type` :2461 and `to_bambu_bed_type` :1581 (8%, 1.33x)
-- divergent: `GCode::print_machine_envelope` :4132 and `GCode::print_machine_envelope` :15072 (26%, 1.13x)
-- partial: `get_instance_name` :4568 and `get_instance_name` :14245 (44%, 0.59x)
+- divergent: `GCode::print_machine_envelope` :4132 and `GCode::print_machine_envelope` :15074 (26%, 1.13x)
+- partial: `get_instance_name` :4568 and `get_instance_name` :14246 (44%, 0.59x)
 - partial: `GCode::change_layer` :6473 and `change_layer` :6437 (39%, 1.11x)
-- partial: `GCode::is_enable_overhang_speed` :6601 and `GCode::is_enable_overhang_speed` :15254 (55%, 1.77x)
-- partial: `GCode::get_path_speed` :6615 and `GCode::get_path_speed` :15271 (43%, 1.35x)
+- partial: `GCode::is_enable_overhang_speed` :6601 and `GCode::is_enable_overhang_speed` :15256 (55%, 1.77x)
+- partial: `GCode::get_path_speed` :6615 and `GCode::get_path_speed` :15273 (43%, 1.35x)
 - divergent: `GCode::extrude_loop` :6664 and `extrude_loop` :2179 (19%, 2.52x)
 - divergent: `GCode::extrude_path` :6927 and `extrude_path` :3757 (5%, 0.05x)
 - divergent: `GCode::extrude_perimeters` :6959 and `extrude_perimeters` :4649 (28%, 1.68x)
 - partial: `GCode::extrude_support` :7011 and `extrude_support` :5251 (38%, 2.22x)
-- divergent: `GCode::GCodeOutputStream::write_format` :7125 and `GCodeOutputStream::write_format` :14664 (24%, 0.17x)
+- divergent: `GCode::GCodeOutputStream::write_format` :7125 and `GCodeOutputStream::write_format` :14666 (24%, 0.17x)
 - partial: `GCode::merge_same_speed_paths` :7363 and `merge_same_speed_paths` :13615 (50%, 1.06x)
-- partial: `encodeBase64` :8091 and `encode_base64` :14199 (50%, 0.56x)
+- partial: `encodeBase64` :8091 and `encode_base64` :14200 (50%, 0.56x)
 - divergent: `GCode::travel_to` :8198 and `travel_to` :5585 (11%, 0.21x)
 - partial: `GCode::update_placeholder_parser_with_variant_params` :8551 and `GCodePlaceholders::update_placeholder_parser_with_variant_params` :11155 (42%, 1.12x)
 - divergent: `GCode::set_extruder` :8617 and `set_extruder` :5990 (6%, 0.1x)
@@ -4300,38 +4300,38 @@ Rust only:
 - `point_mul_f64` :13309
 - `path_from` :13316
 - `poly_len` :13349
-- `scale_` :13860 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
-- `unscale` :13866 — C++ has it in `Point`, `libslic3r`
-- `point_from_f64` :13873
-- `pp_points` :13883
-- `strtol10` :14078
-- `base64_encode` :14210
-- `OozePrevention::new` :14266
-- `Wipe::new` :14342
-- `ColorPrintColors::get` :14474 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
-- `LayerToPrint::new` :14496
-- `LayerResult::new` :14557
-- `GCodeOutputStream::new` :14589
-- `GCode::default` :14767
-- `GCode::new` :14774
-- `GCode::origin` :14847
-- `GCode::last_pos` :14861
-- `GCode::last_scarf_seam_flag` :14866
-- `GCode::scarf_seam_start_flag` :14871
-- `GCode::current_extruder_id` :14876
-- `GCode::config` :14901 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `GCode::print_config` :14906 — C++ has it in `SLA/Rotfinder`
-- `GCode::layer_id` :14916
-- `GCode::writer` :14921
-- `GCode::writer_mut` :14926
-- `GCode::filament_config_index` :15042
-- `GCode::nozzle_config_index` :15048
-- `GCode::current_filament_id` :15053
-- `GCode::bed_temperature` :15125
-- `WipeTowerIntegration::new` :15729
-- `Island::by_region_per_copy` :15962
-- `object_by_extruder` :16047
-- `object_islands_by_extruder` :16064
+- `scale_` :13861 — C++ has it in `BoundingBox`, `ExPolygon`, `ExPolygonCollection`
+- `unscale` :13867 — C++ has it in `Point`, `libslic3r`
+- `point_from_f64` :13874
+- `pp_points` :13884
+- `strtol10` :14079
+- `base64_encode` :14211
+- `OozePrevention::new` :14267
+- `Wipe::new` :14343
+- `ColorPrintColors::get` :14475 — C++ has it in `AnyPtr`, `AppConfig`, `Arachne/utils/PolygonsSegmentIndex`
+- `LayerToPrint::new` :14497
+- `LayerResult::new` :14558
+- `GCodeOutputStream::new` :14586
+- `GCode::default` :14769
+- `GCode::new` :14776
+- `GCode::origin` :14849
+- `GCode::last_pos` :14863
+- `GCode::last_scarf_seam_flag` :14868
+- `GCode::scarf_seam_start_flag` :14873
+- `GCode::current_extruder_id` :14878
+- `GCode::config` :14903 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `GCode::print_config` :14908 — C++ has it in `SLA/Rotfinder`
+- `GCode::layer_id` :14918
+- `GCode::writer` :14923
+- `GCode::writer_mut` :14928
+- `GCode::filament_config_index` :15044
+- `GCode::nozzle_config_index` :15050
+- `GCode::current_filament_id` :15055
+- `GCode::bed_temperature` :15127
+- `WipeTowerIntegration::new` :15731
+- `Island::by_region_per_copy` :15964
+- `object_by_extruder` :16049
+- `object_islands_by_extruder` :16066
 
 ### `GCode/AvoidCrossingPerimeters` (.cpp+.hpp) and `gcode/avoid_crossing_perimeters.rs`
 
