@@ -143,14 +143,23 @@ fn common_model_wall_loops(model: &crate::model::Model, config: &DynamicPrintCon
 }
 
 
+mod plate_filament_map;
+pub use plate_filament_map::ManualMapRefusal;
+
+struct ImportedProject {
+    model: crate::model::Model,
+    config: DynamicPrintConfig,
+    plates: crate::format::bbs_3mf::PlateDataPtrs,
+}
+
 /// bbs_3mf.cpp:2263-2331. The importer decides whether to read embedded
 /// settings and custom tool changes based on the project's generator.
-fn load_bbs_model_and_config(path: &Path) -> Result<(crate::model::Model, DynamicPrintConfig)> {
+fn load_bbs_model_and_config(path: &Path) -> Result<ImportedProject> {
     use crate::format::bbs_3mf::LoadStrategy;
     read_bbs_project(path, LoadStrategy::LoadModel | LoadStrategy::LoadConfig)
 }
 
-fn read_bbs_project(path: &Path, strategy: crate::format::bbs_3mf::LoadStrategy) -> Result<(crate::model::Model, DynamicPrintConfig)> {
+fn read_bbs_project(path: &Path, strategy: crate::format::bbs_3mf::LoadStrategy) -> Result<ImportedProject> {
     use crate::config::{ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
     use crate::format::bbs_3mf::load_bbs_3mf;
 
@@ -159,14 +168,15 @@ fn read_bbs_project(path: &Path, strategy: crate::format::bbs_3mf::LoadStrategy)
     model.set_backup_path(backup.path().to_str().context("3MF backup path is not UTF-8")?);
     let mut config = DynamicPrintConfig::new();
     let mut substitutions = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::Enable);
+    let mut plates = Vec::new();
     let loaded = load_bbs_3mf(
         path.to_str().context("3MF model path is not UTF-8")?, &mut config, &mut substitutions,
-        &mut model, &mut Vec::new(), &mut Vec::new(), None, &mut crate::semver::Semver::new(), None,
+        &mut model, &mut plates, &mut Vec::new(), None, &mut crate::semver::Semver::new(), None,
         strategy, None, 0, None, None, None, None,
     )?;
     anyhow::ensure!(loaded, "Failed to load the model settings from {}", path.display());
     model.set_backup_path("detach");
-    Ok((model, config))
+    Ok(ImportedProject { model, config, plates })
 }
 
 /// Slice a model file to G-code using a BambuStudio `project_settings.config` JSON.
@@ -325,7 +335,7 @@ fn resolve_project_printer(input: &Path, path: Option<&Path>, saved: Option<&str
     } else if let Some(config) = imported {
         Some(config)
     } else {
-        saved_config = read_bbs_project(input, crate::format::bbs_3mf::LoadStrategy::LoadConfig)?.1;
+        saved_config = read_bbs_project(input, crate::format::bbs_3mf::LoadStrategy::LoadConfig)?.config;
         Some(&saved_config)
     };
     for key in PRINTER_PROFILE_KEYS {
@@ -1485,7 +1495,7 @@ pub fn slice_3mf_to_gcode_with_job_settings(
         let relative = if needs_project {
             use crate::config::ConfigOptionResolver;
             let loaded = load_bbs_model_and_config(input)?;
-            let mode = loaded.1.option(EXTRUSION_MODE).map(|o| o.get_bool()).transpose()?.unwrap_or(true);
+            let mode = loaded.config.option(EXTRUSION_MODE).map(|o| o.get_bool()).transpose()?.unwrap_or(true);
             imported = Some(loaded);
             mode
         } else {
@@ -1497,10 +1507,25 @@ pub fn slice_3mf_to_gcode_with_job_settings(
     }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
     if nozzle.is_some() || (crate::faithful_gate("PROJECT_PRINTER_PROFILE") && settings_override.is_some()) {
-        resolve_project_printer(input, settings_override, embedded_settings.as_deref(), &mut settings_value, imported.as_ref().map(|loaded| &loaded.1))?;
+        resolve_project_printer(input, settings_override, embedded_settings.as_deref(), &mut settings_value, imported.as_ref().map(|loaded| &loaded.config))?;
     }
     let parent = job.apply_file_parent(settings_override, &mut settings_value)?;
-    let config = checked_job_config(&mut settings_value, overrides, nozzle)?;
+    let mut config = checked_job_config(&mut settings_value, overrides, nozzle)?;
+    // main.cpp 10430-10518. Until slicing selects individual plates, only a
+    // single imported plate gives the merged model a unique physical map.
+    if crate::faithful_gate("PLATE_FILAMENT_ROUTING")
+        && crate::gcode::wipe_tower::cfg_floats(&config, "nozzle_diameter").len() > 1
+    {
+        if imported.is_none() {
+            imported = Some(load_bbs_model_and_config(input)?);
+        }
+        if let Some(ImportedProject { model, plates, .. }) = imported.as_ref() {
+            if let [plate] = plates.as_slice() {
+                plate_filament_map::apply_plate_filament_map(plate, &mut config, &mut settings_value)?;
+                plate_filament_map::check_plate_extruders(&config, model, plate.plate_index)?;
+            }
+        }
+    }
     legacy_gcode.apply(&mut settings_value);
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
         && (scoped.scarf || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"));
@@ -1520,7 +1545,7 @@ pub fn slice_3mf_to_gcode_with_job_settings(
     let mut model_walls = None;
     let mut geometry_regions = None;
     if needs_scarf || needs_filament || scoped.region_geometry {
-        let (model, embedded) = match imported { Some(loaded) => loaded, None => load_bbs_model_and_config(input)? };
+        let ImportedProject { model, config: embedded, .. } = match imported { Some(loaded) => loaded, None => load_bbs_model_and_config(input)? };
         let full = normalized_model_config(if settings_override.is_some() {
             config
         } else {

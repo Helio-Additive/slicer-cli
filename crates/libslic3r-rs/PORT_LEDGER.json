@@ -2838,7 +2838,7 @@
     "loc": 2933,
     "status": "deferred",
     "priority": 5,
-    "notes": "R984 connects physical single-region feature slots to live layer ordering and wiping overrides (167-217,939-1017,1197-1204). Six 3MF jobs cover 768 native layer orders. Support, mixed slots and flush-into-objects remain partial in the live collector."
+    "notes": "R1013 routes single-filament by-layer jobs on fixed multi-extruder printers through the actual grouping and writes the resulting four maps (3536-3543,3601-3614 and Print.cpp 3241-3288). Single-plate Bambu models supply their mode and manual map before ordering. General multi-plate selection, grouping with dynamic nozzle racks, and the no-tower multi-material collector remain partial. R984 connects physical single-region feature slots to live layer ordering and wiping overrides (167-217,939-1017,1197-1204). Six 3MF jobs cover 768 native layer orders. Support, mixed slots and flush-into-objects remain partial in the live collector."
   },
   {
     "cpp": "GCode/WipeTower.cpp",

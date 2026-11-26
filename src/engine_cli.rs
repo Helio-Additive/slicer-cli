@@ -77,6 +77,9 @@ where
             let _ = out.flush();
             return (refusal.stderr_text(), refusal.exit_code());
         }
+        if let Some(refusal) = err.downcast_ref::<slicer::app_slice::ManualMapRefusal>() {
+            return (format!("Error: {refusal}"), 1);
+        }
         if let Some(refusal) = err.downcast_ref::<slicer::app_slice::NozzleVariantRefusal>() {
             let event = serde_json::json!({"event": "config_refused", "tag": "NozzleFlagNotAPrinterVariant",
                 "message": refusal.message, "nozzle": refusal.given, "printer_variant": refusal.printer_variant,

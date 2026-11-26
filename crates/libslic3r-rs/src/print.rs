@@ -3610,7 +3610,15 @@ impl Print {
                 self.config.enable_prime_tower, num_filaments, is_multicolour
             );
         }
-        if by_feature || (self.config.enable_prime_tower && num_filaments > 1 && is_multicolour) {
+        // ToolOrdering.cpp 3536-3543,3601-3614. Even a single filament
+        // needs a nozzle assignment on a printer with two physical heads.
+        let single_filament_grouping = crate::faithful_gate("PLATE_FILAMENT_ROUTING")
+            && crate::faithful_gate("H2D_GROUP_ORDER")
+            && num_filaments == 1
+            && self.objects.len() == 1
+            && self.objects[0].support_layers.is_empty()
+            && self.full_print_config_from_raw_settings().is_some_and(Self::uses_static_extruder_groups);
+        if single_filament_grouping || by_feature || (self.config.enable_prime_tower && num_filaments > 1 && is_multicolour) {
             use crate::gcode::wipe_tower::{WipeTower, WipeTowerConfig};
             let object = &self.objects[0];
             // Per-layer (print_z, height, tool-sequence), rotated for cross-layer
@@ -3861,18 +3869,13 @@ impl Print {
                 crate::print_config::config_def::DynamicPrintConfig,
                 crate::gcode::tool_ordering::FilamentMapsToConfig,
             )> = None;
-            if crate::faithful_gate("H2D_GROUP_ORDER") && num_filaments > 1 {
-                use crate::gcode::wipe_tower::{cfg_enum, cfg_floats, cfg_ints};
+            if crate::faithful_gate("H2D_GROUP_ORDER") && (num_filaments > 1 || single_filament_grouping) {
                 let live_cfg = self
                     .full_print_config
                     .clone()
                     .or_else(|| self.raw_settings.as_ref().map(full_print_config_from_settings));
                 if let Some(cfg) = live_cfg {
-                    let multi_extruder = cfg_floats(&cfg, "nozzle_diameter").len() > 1
-                        && !cfg_ints(&cfg, "extruder_max_nozzle_count").iter().any(|&v| v > 1)
-                        && !cfg.opt_bool("enable_filament_dynamic_map")
-                        && cfg_enum(&cfg, "print_sequence") == 0;
-                    if multi_extruder {
+                    if Self::uses_static_extruder_groups(&cfg) {
                         let layer_filaments: Vec<Vec<u32>> = layer_seqs
                             .iter()
                             .enumerate()
@@ -6765,6 +6768,16 @@ impl Print {
         Some(self.export_set_extruders_ids())
     }
 
+    /// ToolOrdering.cpp 3536-3543. A fixed group on a by-layer printer
+    /// with one nozzle per physical extruder uses the multi-extruder order.
+    fn uses_static_extruder_groups(config: &crate::print_config::config_def::DynamicPrintConfig) -> bool {
+        use crate::gcode::wipe_tower::{cfg_enum, cfg_floats, cfg_ints};
+        cfg_floats(config, "nozzle_diameter").len() > 1
+            && !cfg_ints(config, "extruder_max_nozzle_count").iter().any(|&n| n > 1)
+            && !config.opt_bool("enable_filament_dynamic_map")
+            && cfg_enum(config, "print_sequence") == 0
+    }
+
     /// The nozzle map `ToolOrdering` hands `Print::update_filament_maps_to_config` for a print that
     /// is not sequential and whose group result has no dynamic nozzle map
     /// (`grouping_result.get_nozzle_map(-1)`, Print.cpp:3258-3261), from the group result
@@ -6817,6 +6830,9 @@ impl Print {
                 continue;
             }
             let values = crate::gcode::wipe_tower::cfg_ints(&fp.m_config, key);
+            if key == "filament_map" && crate::faithful_gate("PLATE_FILAMENT_ROUTING") && self.config.num_filaments() == 1 {
+                self.config.filament_map.clone_from(&values);
+            }
             let strings: Vec<serde_json::Value> = values.iter().map(|v| serde_json::Value::String(v.to_string())).collect();
             for settings in [self.raw_settings.as_mut(), self.config_block_settings.as_mut()].into_iter().flatten() {
                 if let Some(obj) = settings.as_object_mut() {

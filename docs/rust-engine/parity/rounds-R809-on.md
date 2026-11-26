@@ -237,8 +237,29 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1010 | Resolve the bundled parent of typed external settings files before CLI overrides. | root settings loader, desktop presets, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1011 | Scope seam placement to the exporter and share prepared geometry with safe ownership. | GCode, GCodeWriter, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1012 | Evaluate final filament and machine G-code with the active writer and final layer. | GCode, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1013 | Apply the Bambu plate filament map and group a single filament on multi-extruder printers. | root CLI, BBS importer, Print, ToolOrdering | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1013. The native and Rust BBS importers read identical plate data, but
+  the Rust loader discarded it. A manual plate that assigned filament one
+  to head two reached Print on head one when the external profile named
+  head one. The loader now hands over the plate mode, map and matching
+  volume rows. ToolOrdering resolves the nozzle on a fixed multi-extruder
+  printer even when the object uses only one filament. The published map,
+  its zero-based counterpart, nozzle and volume agree with the actual
+  terminal G-code. A manual refusal considers printable instances, part
+  and range assignments, support, plate tool changes and mixed components.
+
+  The CLI regression covers 31 projects, including opposite file and plate
+  assignments, omitted and legacy modes, the two printable masks, mixed
+  filament and scoped support. On twelve two-head projects, eleven gained
+  one to 69 native lines in order and one stayed level. All eighteen
+  R1012 terminal sections now match native. The standard four jobs
+  reproduce R1012 with either gate setting. H2D scores are 4,614,342
+  and 4,614,863. The merged-model loader still needs individual plate
+  selection for projects with several plates.
+
 
 - R1012. At the end of a 128-layer cube, the native exporter supplies layer
   127, writer Z 26 and maximum layer Z 25.6. Each filament row receives its

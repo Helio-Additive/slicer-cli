@@ -169,6 +169,7 @@ fi
 if cmp -s "$TMP/3mf/cube.gcode" "$TMP/again.gcode"; then ok deterministic; else fail deterministic "two runs differ"; fi
 
 expect_exit scoped-geometry 0 -- python3 "$ROOT/tests/rust-engine/scoped_geometry.py" "$BIN"
+expect_exit plate-filament-routing 0 -- python3 "$ROOT/tests/rust-engine/plate_filament_routing.py" "$BIN"
 
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
