@@ -240,8 +240,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1013 | Apply the Bambu plate filament map and group a single filament on multi-extruder printers. | root CLI, BBS importer, Print, ToolOrdering | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1014 | Port NanoSVG sharp and rounded rectangles. | crates/nanosvg, nanosvg.h 2411–2464 | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1015 | Remove five unused direct engine dependencies from the locked CLI build. | Cargo graph, STL, FillAdaptive | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1016 | Protect the shared extrusion and retraction state with one lock per operation. | Extruder.cpp, Extruder.hpp | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1016. The earlier port reproduced the native numbers but accessed mutable
+  class-level data through 15 unsafe blocks. The writer regression follows
+  the positions, parks and usage of four extruders over 60 native snapshots
+  in absolute and relative mode, including a reset and an ordered handoff to
+  another thread. All 60 legacy snapshots also replay. Four concurrent
+  Rust workers preserve every extrusion and share one retraction. The
+  regression ran on macOS arm64 and both Linux musl targets. Each of those
+  targets reproduced three complete slices. The Windows x86_64 GNU CLI
+  and regression executable linked and were inspected as PE files. Each full fixture
+  matched R1015 with `EXTRUDER_PIN` on and off. H2D scored 4,614,342
+  and 4,614,863.
 
 - R1015. The Cargo manifest still selected five libraries that the engine,
   CLI, tests, examples and benchmarks did not reference. Removing their

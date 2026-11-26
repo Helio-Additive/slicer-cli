@@ -17,8 +17,8 @@ body follows are those of [`../rust-engine/FILE_MAP.md`](../rust-engine/FILE_MAP
 |-|-|-|-|
 | not started `[ ]` | 411 | 4.3% | 6.3% |
 | partial `[~]` | 1669 | 17.4% | 16.5% |
-| ported `[x]` | 3693 | 38.6% | 23.8% |
-| verified `[v]` | 3801 | 39.7% | 53.4% |
+| ported `[x]` | 3686 | 38.5% | 23.7% |
+| verified `[v]` | 3808 | 39.8% | 53.5% |
 
 | Files (C++ units) | Count |
 |-|-|
@@ -148,7 +148,7 @@ Entries of `port_checklist_verified.json` that match no function now: `_fill_sur
 | `ExPolygonCollection` | 1 | `ex_polygon_collection.rs` | partial | 11 | 0 | 2 | 9 | 0 |
 | `ExPolygonSerialize` | 1 | `ex_polygon_serialize.rs` | ported | 2 | 0 | 0 | 2 | 0 |
 | `ExPolygonsIndex` | 1 | `ex_polygons_index.rs` | partial | 7 | 0 | 1 | 6 | 0 |
-| `Extruder` | 1 | `extruder.rs` | ported | 31 | 0 | 0 | 31 | 0 |
+| `Extruder` | 1 | `extruder.rs` | ported | 31 | 0 | 0 | 24 | 7 |
 | `ExtrusionEntity` | 1 | `extrusion_entity.rs` | partial | 125 | 5 | 24 | 59 | 37 |
 | `ExtrusionEntityCollection` | 1 | `extrusion_entity_collection.rs` | partial | 35 | 1 | 24 | 4 | 6 |
 | `ExtrusionSimulator` | 1 | `extrusion_simulator.rs` | partial | 22 | 0 | 3 | 19 | 0 |
@@ -3805,37 +3805,37 @@ Rust file: `extruder.rs`. Status: **ported**. Not listed: 2 constructors, 1 dest
 
 **class `Extruder`**
 
-- [x] `reset` (line 19) → `extruder.rs:587`
-- [x] `extruder_id` (line 22) → `extruder.rs:624`
-- [x] `id` (line 32) → `extruder.rs:618`
-- [x] `retracted_slot_id` (line 36) → `extruder.rs:638`
-- [x] `E` (line 39) → `extruder.rs:895`
-- [x] `reset_E` (line 40) → `extruder.rs:905`
-- [x] `e_per_mm` (line 41) → `extruder.rs:914`
-- [x] `e_per_mm3` (line 42) → `extruder.rs:920`
-- [x] `filament_crossection` (line 49) → `extruder.rs:959`
-- [x] `get_share_retracted_length` (line 57) → `extruder.rs:1102`
-- [x] `is_share_extruder` (line 61) → `extruder.rs:1090`
-- [x] `nozzle_id` (line 62) → `extruder.rs:676`
-- [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:663`
-- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1096`
-- [x] `extrude` (line 71) → `extruder.rs:720`
-- [x] `retract` (line 100) → `extruder.rs:776`
-- [x] `unretract` (line 133) → `extruder.rs:855`
-- [x] `extruded_volume` (line 152) → `extruder.rs:926`
-- [x] `used_filament` (line 164) → `extruder.rs:939`
-- [x] `filament_diameter` (line 175) → `extruder.rs:952`
-- [x] `filament_density` (line 180) → `extruder.rs:965`
-- [x] `filament_cost` (line 185) → `extruder.rs:972`
-- [x] `filament_flow_ratio` (line 190) → `extruder.rs:979`
-- [x] `retract_before_wipe` (line 196) → `extruder.rs:989`
-- [x] `retraction_length` (line 201) → `extruder.rs:1002`
-- [x] `retract_speed` (line 206) → `extruder.rs:1020`
-- [x] `deretract_speed` (line 211) → `extruder.rs:1032`
-- [x] `retract_restart_extra` (line 217) → `extruder.rs:1050`
-- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1112`
-- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1060`
-- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1075`
+- [v] `reset` (line 19) → `extruder.rs:610` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff
+- [x] `extruder_id` (line 22) → `extruder.rs:638`
+- [x] `id` (line 32) → `extruder.rs:632`
+- [x] `retracted_slot_id` (line 36) → `extruder.rs:652`
+- [v] `E` (line 39) → `extruder.rs:847` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff
+- [v] `reset_E` (line 40) → `extruder.rs:857` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff
+- [x] `e_per_mm` (line 41) → `extruder.rs:864`
+- [x] `e_per_mm3` (line 42) → `extruder.rs:870`
+- [x] `filament_crossection` (line 49) → `extruder.rs:909`
+- [v] `get_share_retracted_length` (line 57) → `extruder.rs:1052` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff
+- [x] `is_share_extruder` (line 61) → `extruder.rs:1040`
+- [x] `nozzle_id` (line 62) → `extruder.rs:679`
+- [x] `set_exclusive_nozzle` (line 63) → `extruder.rs:666`
+- [x] `get_single_retracted_length` (line 64) → `extruder.rs:1046`
+- [v] `extrude` (line 71) → `extruder.rs:736` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff (the body reads as partial to the estimate)
+- [v] `retract` (line 100) → `extruder.rs:768` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff
+- [v] `unretract` (line 133) → `extruder.rs:822` — R1016: tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff
+- [x] `extruded_volume` (line 152) → `extruder.rs:876`
+- [x] `used_filament` (line 164) → `extruder.rs:889`
+- [x] `filament_diameter` (line 175) → `extruder.rs:902`
+- [x] `filament_density` (line 180) → `extruder.rs:915`
+- [x] `filament_cost` (line 185) → `extruder.rs:922`
+- [x] `filament_flow_ratio` (line 190) → `extruder.rs:929`
+- [x] `retract_before_wipe` (line 196) → `extruder.rs:939`
+- [x] `retraction_length` (line 201) → `extruder.rs:952`
+- [x] `retract_speed` (line 206) → `extruder.rs:970`
+- [x] `deretract_speed` (line 211) → `extruder.rs:982`
+- [x] `retract_restart_extra` (line 217) → `extruder.rs:1000`
+- [x] `filament_toolchange_override` (line 222) → `extruder.rs:1058`
+- [x] `retract_length_toolchange` (line 237) → `extruder.rs:1010`
+- [x] `retract_restart_extra_toolchange` (line 244) → `extruder.rs:1025`
 
 ### `ExtrusionEntity` (.cpp+.hpp)
 
@@ -6573,7 +6573,7 @@ Rust file: `gcode/g_code_processor.rs`. Status: **partial**. Not listed: 13 cons
 
 **class `GCodeProcessorResult`**
 
-- [~] `lock` (line 383) → `execution/execution_seq.rs, log.rs, mt_utils.rs` — not in the paired file
+- [~] `lock` (line 383) → `execution/execution_seq.rs, extruder.rs, log.rs` — not in the paired file
 - [~] `unlock` (line 384) → `execution/execution_seq.rs, mt_utils.rs, preset.rs` — not in the paired file
 - [x] `reset` (line 1537) → `gcode/g_code_processor.rs:2402`
 - [~] `reset` (line 1571) → `app_config.rs, bounding_box.rs, clipper.rs` — not in the paired file

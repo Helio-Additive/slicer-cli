@@ -510,15 +510,38 @@ impl GCodeConfig {
 // Extruder.cpp:5-6
 //   std::vector<double> Extruder::m_share_E = {0.,0.};
 //   std::vector<double> Extruder::m_share_retracted = {0.,0.};
-// The C++ uses class statics; mirror them with module-level mutable statics
-// guarded by the same access patterns as the original.
-// ===========================================================================
-static mut M_SHARE_E: [f64; 2] = [0.0, 0.0];
-static mut M_SHARE_RETRACTED: [f64; 2] = [0.0, 0.0];
-// Extruder.cpp:6 at the pin: `m_share_retracted` is indexed by the retraction slot
-// (`retracted_slot_id()`) and grows on demand (`share_retracted()`, Extruder.cpp:38-43).
-static M_SHARE_RETRACTED_SLOTS: std::sync::LazyLock<std::sync::Mutex<Vec<f64>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(vec![0.0, 0.0]));
+// The two E coordinates and the retraction slots are shared across all
+// Extruder instances. Hold their lock for one complete extruder operation.
+struct SharedAxes {
+    e: [f64; 2],
+    retracted: Vec<f64>,
+    legacy_retracted: [f64; 2],
+}
+
+impl SharedAxes {
+    fn lock() -> std::sync::MutexGuard<'static, Self> {
+        static AXES: std::sync::LazyLock<std::sync::Mutex<SharedAxes>> =
+            std::sync::LazyLock::new(|| std::sync::Mutex::new(SharedAxes {
+                e: [0.0; 2],
+                retracted: vec![0.0; 2],
+                legacy_retracted: [0.0; 2],
+            }));
+        AXES.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    // Extruder.cpp 36–59. The pinned vector grows for a new hotend. The
+    // older EXTRUDER_PIN=0 implementation parks on the physical extruder.
+    fn share_retracted(&mut self, extruder: &Extruder) -> &mut f64 {
+        if !extruder_pin() {
+            return &mut self.legacy_retracted[extruder.extruder_id() as usize];
+        }
+        let slot = extruder.retracted_slot_id() as usize;
+        if slot >= self.retracted.len() {
+            self.retracted.resize(slot + 1, 0.0);
+        }
+        &mut self.retracted[slot]
+    }
+}
 
 /// The pin's Extruder (retraction slots, the conditional restart extra, the PVA toolchange
 /// override); `EXTRUDER_PIN=0` restores the earlier body of this file.
@@ -587,21 +610,12 @@ impl Extruder {
     pub fn reset(&mut self) {
         // Extruder.hpp:20-21  BBS
         if self.m_share_extruder {
+            let mut axes = SharedAxes::lock();
+            axes.e = [0.0; 2];
             if extruder_pin() {
-                // Extruder.hpp:19-21  m_share_E = { 0.,0.}; m_share_retracted.assign(m_share_retracted.size(), 0.);
-                unsafe {
-                    M_SHARE_E = [0.0, 0.0];
-                }
-                let mut slots = M_SHARE_RETRACTED_SLOTS.lock().unwrap();
-                let n = slots.len();
-                slots.clear();
-                slots.resize(n, 0.0);
+                axes.retracted.fill(0.0);
             } else {
-                // Extruder.hpp:22-23
-                unsafe {
-                    M_SHARE_E = [0.0, 0.0];
-                    M_SHARE_RETRACTED = [0.0, 0.0];
-                }
+                axes.legacy_retracted.fill(0.0);
             }
         } else {
             // Extruder.hpp:25-26
@@ -645,17 +659,6 @@ impl Extruder {
             }
         }
         self.extruder_id()
-    }
-
-    // Extruder.cpp:38-43
-    // static double& Extruder::share_retracted(unsigned int slot): the slot, the vector grown to hold
-    // it; the reference is the argument of `f`.
-    fn share_retracted<R>(slot: u32, f: impl FnOnce(&mut f64) -> R) -> R {
-        let mut slots = M_SHARE_RETRACTED_SLOTS.lock().unwrap();
-        if slot as usize >= slots.len() {
-            slots.resize(slot as usize + 1, 0.0);
-        }
-        f(&mut slots[slot as usize])
     }
 
     // Extruder.hpp:63
@@ -715,36 +718,25 @@ impl Extruder {
         ExtruderType::EtDirectDrive
     }
 
-    // Extruder.cpp:61
-    // double Extruder::extrude(double dE)
+    // Extruder.cpp 71–81, 133–141. unretract calls the same extrusion with the
+    // shared axes already locked so repayment and clearing the park slot
+    // are one operation.
+    fn extrude_shared(&mut self, d_e: f64, axes: &mut SharedAxes) {
+        let e = &mut axes.e[self.extruder_id() as usize];
+        if self.config().use_relative_e_distances {
+            *e = 0.0;
+        }
+        *e += d_e;
+        self.m_absolute_e += d_e;
+        if d_e < 0.0 {
+            *axes.share_retracted(self) -= d_e;
+        }
+    }
+
     pub fn extrude(&mut self, d_e: f64) -> f64 {
         let config = self.config();
-        // Extruder.cpp:63  BBS
         if self.m_share_extruder {
-            let extruder_id = self.extruder_id() as usize;
-            // Extruder.cpp:65-66
-            if config.use_relative_e_distances {
-                unsafe {
-                    M_SHARE_E[extruder_id] = 0.0;
-                }
-            }
-            // Extruder.cpp:67
-            unsafe {
-                M_SHARE_E[extruder_id] += d_e;
-            }
-            // Extruder.cpp:68
-            self.m_absolute_e += d_e;
-            // Extruder.cpp:69-70
-            if d_e < 0.0 {
-                if extruder_pin() {
-                    // Extruder.cpp:67-68  share_retracted(retracted_slot_id()) -= dE;
-                    Extruder::share_retracted(self.retracted_slot_id(), |r| *r -= d_e);
-                } else {
-                    unsafe {
-                        M_SHARE_RETRACTED[extruder_id] -= d_e;
-                    }
-                }
-            }
+            self.extrude_shared(d_e, &mut SharedAxes::lock());
         } else {
             // Extruder.cpp:72-74  in case of relative E distances we always reset to 0 before any output
             if config.use_relative_e_distances {
@@ -777,48 +769,23 @@ impl Extruder {
         let config = self.config();
         // Extruder.cpp:92  BBS
         if self.m_share_extruder {
+            let mut axes = SharedAxes::lock();
             let extruder_id = self.extruder_id() as usize;
-            // Extruder.cpp:94-95
             if config.use_relative_e_distances {
-                unsafe {
-                    M_SHARE_E[extruder_id] = 0.0;
-                }
+                axes.e[extruder_id] = 0.0;
             }
-            if extruder_pin() {
-                // Extruder.cpp:86-96
-                let slot = self.retracted_slot_id();
-                let retracted = Extruder::share_retracted(slot, |r| *r);
-                let to_retract = (length - retracted).max(0.0);
-                if to_retract > 0.0 || length + crate::libslic3r::EPSILON >= retracted {
-                    self.m_restart_extra = restart_extra;
-                }
-                if to_retract > 0.0 {
-                    unsafe {
-                        M_SHARE_E[extruder_id] -= to_retract;
-                    }
-                    self.m_absolute_e -= to_retract;
-                    Extruder::share_retracted(slot, |r| *r += to_retract);
-                }
-                return to_retract;
+            let retracted = *axes.share_retracted(self);
+            let to_retract = (length - retracted).max(0.0);
+            // Extruder.cpp 103–116. Keep the earlier unconditional restart
+            // extra only when replaying the previous implementation.
+            if !extruder_pin() || to_retract > 0.0 || length + crate::libslic3r::EPSILON >= retracted {
+                self.m_restart_extra = restart_extra;
             }
-            // Extruder.cpp:96
-            let to_retract = (length - unsafe { M_SHARE_RETRACTED[extruder_id] }).max(0.0);
-            // Extruder.cpp:97
-            self.m_restart_extra = restart_extra;
-            // Extruder.cpp:98
             if to_retract > 0.0 {
-                // Extruder.cpp:99
-                unsafe {
-                    M_SHARE_E[extruder_id] -= to_retract;
-                }
-                // Extruder.cpp:100
+                axes.e[extruder_id] -= to_retract;
                 self.m_absolute_e -= to_retract;
-                // Extruder.cpp:101
-                unsafe {
-                    M_SHARE_RETRACTED[extruder_id] += to_retract;
-                }
+                *axes.share_retracted(self) += to_retract;
             }
-            // Extruder.cpp:103
             to_retract
         } else {
             // Extruder.cpp:106-107  in case of relative E distances we always reset to 0 before any output
@@ -855,26 +822,11 @@ impl Extruder {
     pub fn unretract(&mut self) -> f64 {
         // Extruder.cpp:121  BBS
         if self.m_share_extruder {
-            if extruder_pin() {
-                // Extruder.cpp:113-118
-                let d_e = Extruder::share_retracted(self.retracted_slot_id(), |r| *r) + self.m_restart_extra;
-                self.extrude(d_e);
-                Extruder::share_retracted(self.retracted_slot_id(), |r| *r = 0.0);
-                self.m_restart_extra = 0.0;
-                return d_e;
-            }
-            let extruder_id = self.extruder_id() as usize;
-            // Extruder.cpp:123
-            let d_e = unsafe { M_SHARE_RETRACTED[extruder_id] } + self.m_restart_extra;
-            // Extruder.cpp:124
-            self.extrude(d_e);
-            // Extruder.cpp:125
-            unsafe {
-                M_SHARE_RETRACTED[extruder_id] = 0.0;
-            }
-            // Extruder.cpp:126
+            let mut axes = SharedAxes::lock();
+            let d_e = *axes.share_retracted(self) + self.m_restart_extra;
+            self.extrude_shared(d_e, &mut axes);
+            *axes.share_retracted(self) = 0.0;
             self.m_restart_extra = 0.0;
-            // Extruder.cpp:127
             d_e
         } else {
             // Extruder.cpp:129
@@ -894,7 +846,7 @@ impl Extruder {
     // double E() const { return m_share_extruder ? m_share_E[extruder_id()] : m_E; }
     pub fn e(&self) -> f64 {
         if self.m_share_extruder {
-            unsafe { M_SHARE_E[self.extruder_id() as usize] }
+            SharedAxes::lock().e[self.extruder_id() as usize]
         } else {
             self.m_e
         }
@@ -904,9 +856,7 @@ impl Extruder {
     // void reset_E() { m_E = 0.; m_share_E[extruder_id()] = 0.; }
     pub fn reset_e(&mut self) {
         self.m_e = 0.0;
-        unsafe {
-            M_SHARE_E[self.extruder_id() as usize] = 0.0;
-        }
+        SharedAxes::lock().e[self.extruder_id() as usize] = 0.0;
     }
 
     // Extruder.hpp:44
@@ -1100,11 +1050,7 @@ impl Extruder {
     // Extruder.hpp:67
     // double get_share_retracted_length() const { return m_share_retracted[extruder_id()]; }
     pub fn get_share_retracted_length(&self) -> f64 {
-        if extruder_pin() {
-            // Extruder.cpp:45-48  return share_retracted(retracted_slot_id());
-            return Extruder::share_retracted(self.retracted_slot_id(), |r| *r);
-        }
-        unsafe { M_SHARE_RETRACTED[self.extruder_id() as usize] }
+        *SharedAxes::lock().share_retracted(self)
     }
 
     // Extruder.cpp:223-234

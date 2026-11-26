@@ -45,8 +45,8 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
 | matched to a Rust function in the paired file | 7488 (83%) |
-| estimate: faithful | 6549 (87% of matched) |
-| estimate: partial | 620 (8% of matched) |
+| estimate: faithful | 6548 (87% of matched) |
+| estimate: partial | 621 (8% of matched) |
 | estimate: divergent | 287 (4% of matched) |
 | estimate: stub | 32 (0% of matched) |
 | missing in the paired Rust file | 1542 |
@@ -55,13 +55,13 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 91 |
 | of the rest, 25 tokens or more | 277 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8946 |
+| Rust functions with no C++ function of that name in the pair | 8948 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 5764 | 5042 | 489 | 213 | 20 | 1087 |
+| 1 | 180 | 180 | 6851 | 5764 | 5041 | 490 | 213 | 20 | 1087 |
 | 2 | 15 | 15 | 392 | 356 | 305 | 37 | 13 | 1 | 36 |
 | 3 | 92 | 89 | 1374 | 1120 | 982 | 75 | 57 | 6 | 254 |
 | 4 | 23 | 23 | 435 | 248 | 220 | 19 | 4 | 5 | 187 |
@@ -2693,7 +2693,11 @@ Rust only:
 
 ### `Extruder` (.cpp+.hpp) and `extruder.rs`
 
-Tier 1. C++ functions 31 (plus 2 constructors, 1 destructors, 4 operators), Rust functions 61. Matched 31: faithful 31, partial 0, divergent 0, stub 0.
+Tier 1. C++ functions 31 (plus 2 constructors, 1 destructors, 4 operators), Rust functions 63. Matched 31: faithful 30, partial 1, divergent 0, stub 0.
+
+Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
+
+- partial: `Extruder::extrude` :71 and `Extruder::extrude` :736 (55%, 0.85x)
 
 Rust only:
 
@@ -2716,17 +2720,19 @@ Rust only:
 - `GCodeConfig::apply` :428 — C++ has it in `Arrange`, `Config`, `Format/SL1`
 - `GCodeConfig::apply_only` :435 — C++ has it in `Config`, `PlaceholderParser`
 - `GCodeConfig::is_nil` :502 — C++ has it in `Config`
-- `extruder_pin` :525
-- `Extruder::new` :555
-- `Extruder::config` :579 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
-- `Extruder::share_retracted` :653
-- `Extruder::exclusive_nozzle` :670
-- `Extruder::volume_type` :690 — C++ has it in `NozzleInventory`
-- `Extruder::extruder_type` :704
-- `Extruder::retract_lift` :1012
-- `Extruder::eq` :1136
-- `Extruder::partial_cmp` :1142
-- `Extruder::cmp` :1147
+- `SharedAxes::lock` :522 — C++ has it in `Execution/ExecutionSeq`, `GCode/GCodeProcessor`, `MTUtils`
+- `SharedAxes::share_retracted` :534
+- `extruder_pin` :548
+- `Extruder::new` :578
+- `Extruder::config` :602 — C++ has it in `Print`, `PrintApply`, `SLAPrint`
+- `Extruder::exclusive_nozzle` :673
+- `Extruder::volume_type` :693 — C++ has it in `NozzleInventory`
+- `Extruder::extruder_type` :707
+- `Extruder::extrude_shared` :724
+- `Extruder::retract_lift` :962
+- `Extruder::eq` :1082
+- `Extruder::partial_cmp` :1088
+- `Extruder::cmp` :1093
 
 ### `ExtrusionEntity` (.cpp+.hpp) and `extrusion_entity.rs`
 
@@ -4533,7 +4539,7 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 
 Missing in the Rust file:
 
-- `GCodeProcessorResult::lock` :383 (8 tokens) — in `execution/execution_seq.rs`, `log.rs`, `mt_utils.rs`
+- `GCodeProcessorResult::lock` :383 (8 tokens) — in `execution/execution_seq.rs`, `extruder.rs`, `log.rs`
 - `GCodeProcessorResult::unlock` :384 (8 tokens) — in `execution/execution_seq.rs`, `mt_utils.rs`, `preset.rs`
 - `GCodeProcessor::set_filaments` :1301 (6 tokens)
 - `GCodeProcessor::TimeProcessor::handle_offsets_of_first_process` :1307 (391 tokens)

@@ -799,7 +799,8 @@
     "loc": 223,
     "status": "partial",
     "priority": 2,
-    "fidelity": "ok"
+    "fidelity": "ok",
+    "notes": "R1016 matches 60 native shared-axis snapshots across filaments, writers and an ordered thread handoff (Extruder.cpp 5–6, 36–60, 71–149). The shared E and retraction state uses safe Rust. The config pointer still depends on its owner outliving the extruder."
   },
   {
     "cpp": "VariableWidth.cpp",

@@ -5589,5 +5589,19 @@
   "functions": [
    "linearize_path"
   ]
+ },
+ {
+  "unit": "Extruder",
+  "round": "1016",
+  "evidence": "tests/shared_extruder_axes_native_parity.rs compares 60 native shared-axis snapshots across four tools, reset by a non-shared tool and an ordered thread handoff",
+  "functions": [
+   "Extruder::reset",
+   "Extruder::E",
+   "Extruder::reset_E",
+   "Extruder::get_share_retracted_length",
+   "Extruder::extrude",
+   "Extruder::retract",
+   "Extruder::unretract"
+  ]
  }
 ]

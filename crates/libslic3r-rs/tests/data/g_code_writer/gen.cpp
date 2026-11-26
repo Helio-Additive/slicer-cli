@@ -12,6 +12,8 @@
 //       -include $REPO/libslic3r/bambustudio/cgal_54_compat.hpp -c $DATA/gen.cpp -o gen.o
 //   c++ gen.o $BUILD/libslic3r_core.a <the libraries libslic3r_core links> -o gen
 //   ./gen | gzip -9n > $DATA/g_code_writer.txt.gz
+//   ./gen --axis-modes > $DATA/axis_modes.jsonl
+//   ./gen --shared-axes > $DATA/shared_axes.txt
 //
 // Made on macOS arm64 with Apple clang (-ffp-contract=on). The private members are reached by
 // including the libslic3r headers with `private` and `protected` defined as `public`.
@@ -31,6 +33,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -503,8 +506,58 @@ static void axis_modes()
     }
 }
 
+// Extruder.cpp 5-6,38-48,60-146 and Extruder.hpp 19-40 at 56a57d0.
+// All worker calls are joined before the parent's next read.
+static void shared_axes()
+{
+    for (bool relative : {false, true}) {
+        for (bool hotend : {false, true}) {
+            GCodeConfig config;
+            config.use_relative_e_distances.value = relative;
+            config.handle_hotend_as_extruder.value = hotend;
+            config.filament_map.values = {1, 1, 2};
+            config.filament_nozzle_map.values = {4, 3, 4};
+            Extruder a(0, &config, true), b(1, &config, true), c(2, &config, true);
+            Extruder separate(0, &config, false);
+            auto record = [&](const char *op, double result) {
+                std::printf("%d %d %s %s", int(relative), int(hotend), op, hD(result).c_str());
+                for (const Extruder *e : {&a, &b, &c, &separate})
+                    std::printf(" %s %s %s", hD(e->E()).c_str(), hD(e->get_share_retracted_length()).c_str(), hD(e->used_filament()).c_str());
+                std::puts("");
+            };
+            record("init", 0.);
+            record("a-extrude", a.extrude(3.25));
+            record("b-negative", b.extrude(-0.5));
+            record("c-retract", c.retract(1.25, 0.25));
+            record("a-shorter", a.retract(0.125, 0.625));
+            record("b-equal", b.retract(0.5, 0.375));
+            record("b-repay", b.unretract());
+            record("a-longer", a.retract(2., 0.375));
+            record("c-repay", c.unretract());
+            record("a-repay", a.unretract());
+            record("separate", separate.extrude(8.));
+            separate.reset_E();
+            record("reset-e", 0.);
+            std::thread other([&] {
+                Extruder peer(1, &config, true);
+                peer.extrude(7.);
+                peer.retract(1.75, 0.125);
+            });
+            other.join();
+            record("worker", 0.);
+            record("b-worker-repay", b.unretract());
+            a.reset();
+            record("reset", 0.);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--shared-axes") {
+        shared_axes();
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--axis-modes") {
         axis_modes();
         return 0;
