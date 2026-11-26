@@ -874,29 +874,18 @@ fn parse_number_i32(sv: &str) -> Option<i32> {
 }
 
 // ===========================================================================
-// CommandProcessor — GCodeProcessor.cpp:181-226 / hpp:422-437
+// CommandProcessor — GCodeProcessor.cpp 187–233 / GCodeProcessor.hpp 452–468
 // ===========================================================================
-//
-// The C++ `CommandProcessor` is a char-trie that dispatches gcode commands to
-// `std::function` handlers bound to `&GCodeProcessor`. The handler closures
-// borrow the processor mutably, which cannot be modeled as stored
-// `Box<dyn Fn>` fields in Rust without unsafe aliasing. We therefore port the
-// *trie structure and matching algorithm* faithfully (this is the
-// parity-relevant, deterministic part: which registered command, if any,
-// matches a given input and whether early-quit triggers), and expose the match
-// result as the registered command id. The actual dispatch to processor
-// methods is performed by the (blocked) `GCodeProcessor` driver.
 
-/// GCodeProcessor.hpp:426-430  struct TrieNode
-struct TrieNode {
-    /// Index into the registered-handler table; `None` == nullptr handler.
-    handler: Option<usize>,
-    children: HashMap<u8, Box<TrieNode>>,
+/// The native trie stores a callback on each terminal node.
+struct TrieNode<H> {
+    handler: Option<H>,
+    children: HashMap<u8, Box<TrieNode<H>>>,
     /// stop matching, trigger handle immediately
     early_quit: bool,
 }
 
-impl TrieNode {
+impl<H> TrieNode<H> {
     fn new() -> Self {
         TrieNode {
             handler: None,
@@ -906,26 +895,27 @@ impl TrieNode {
     }
 }
 
-/// GCodeProcessor.hpp:422-437  class CommandProcessor
-pub struct CommandProcessor {
-    root: Box<TrieNode>,
+/// GCodeProcessor.hpp 452–468. Standalone callers can register integer handler IDs.
+/// The G-code processor registers its methods directly.
+pub struct CommandProcessor<H = usize> {
+    root: Box<TrieNode<H>>,
 }
 
 impl CommandProcessor {
-    /// GCodeProcessor.cpp:181-184  CommandProcessor::CommandProcessor()
     pub fn new() -> Self {
-        CommandProcessor {
-            root: Box::new(TrieNode::new()),
-        }
+        Self::empty()
+    }
+}
+
+impl<H: Copy> CommandProcessor<H> {
+    /// GCodeProcessor.cpp 187–190.
+    fn empty() -> Self {
+        Self { root: Box::new(TrieNode::new()) }
     }
 
-    /// GCodeProcessor.cpp:186-206  register_command
-    ///
-    /// `handler_id` is the index of the command's handler (replacing the C++
-    /// `command_handler_t` function pointer, which is not portable here).
-    pub fn register_command(&mut self, str: &str, handler_id: usize, early_quit: bool) {
-        // TrieNode* node = root.get();
-        let mut node: &mut TrieNode = &mut self.root;
+    /// GCodeProcessor.cpp 192–212. Each spelling binds to the supplied handler.
+    pub fn register_command(&mut self, str: &str, handler: H, early_quit: bool) {
+        let mut node = self.root.as_mut();
         // for (char ch : str)
         for &ch in str.as_bytes() {
             node = node
@@ -935,17 +925,13 @@ impl CommandProcessor {
         }
         // if (node->handler != nullptr) { assert(false); } // duplicated command
         debug_assert!(node.handler.is_none(), "duplicated command");
-        node.handler = Some(handler_id);
+        node.handler = Some(handler);
         node.early_quit = early_quit;
     }
 
-    /// GCodeProcessor.cpp:208-226  process_comand
-    ///
-    /// Returns `Some(handler_id)` if a registered handler matched (the caller
-    /// should invoke that handler), else `None`.
-    pub fn process_comand(&self, cmd: &str) -> Option<usize> {
-        // TrieNode* node = root.get();
-        let mut node: &TrieNode = &self.root;
+    /// GCodeProcessor.cpp 214–233. Return the registered handler for the caller to invoke.
+    pub fn process_comand(&self, cmd: &str) -> Option<H> {
+        let mut node = self.root.as_ref();
         // for (char ch : cmd)
         for &ch in cmd.as_bytes() {
             // if (node->early_quit && node->handler) { handler(line); return true; }
@@ -2917,121 +2903,64 @@ impl Default for TimeProcessor {
 }
 
 // ===========================================================================
-// Command dispatch ids — mirrors register_commands (GCodeProcessor.cpp:1639)
+// Command handlers — GCodeProcessor.cpp 1699–1783
 // ===========================================================================
-/// Handler ids registered with `CommandProcessor`. The C++ binds
-/// `std::function` closures; we register stable ids and dispatch on them.
-#[repr(usize)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Cmd {
-    G0,
-    G1,
-    G2G3,
-    G4,
-    G10,
-    G11,
-    G20,
-    G21,
-    G22,
-    G23,
-    G28,
-    G29,
-    G90,
-    G91,
-    G92,
-    M1,
-    M82,
-    M83,
-    M104,
-    M106,
-    M107,
-    M108,
-    M109,
-    M132,
-    M135,
-    M140,
-    M190,
-    M191,
-    M201,
-    M203,
-    M204,
-    M205,
-    M221,
-    M400,
-    M401,
-    M402,
-    M566,
-    M702,
-    M1020,
-    T,
-    Sync,
-    M622,
-    M623,
-    VM104,
-    VM109,
-    VG1,
-}
 
-const CMD_TABLE: &[(&str, Cmd, bool)] = &[
-    ("G0", Cmd::G0, false),
-    ("G1", Cmd::G1, false),
-    ("G2", Cmd::G2G3, false),
-    ("G3", Cmd::G2G3, false),
-    ("G4", Cmd::G4, false),
-    ("G10", Cmd::G10, false),
-    ("G11", Cmd::G11, false),
-    ("G20", Cmd::G20, false),
-    ("G21", Cmd::G21, false),
-    ("G22", Cmd::G22, false),
-    ("G23", Cmd::G23, false),
-    ("G28", Cmd::G28, false),
-    ("G29", Cmd::G29, false),
-    ("G90", Cmd::G90, false),
-    ("G91", Cmd::G91, false),
-    ("G92", Cmd::G92, false),
-    ("M1", Cmd::M1, false),
-    ("M82", Cmd::M82, false),
-    ("M83", Cmd::M83, false),
-    ("M104", Cmd::M104, false),
-    ("M106", Cmd::M106, false),
-    ("M107", Cmd::M107, false),
-    ("M108", Cmd::M108, false),
-    ("M109", Cmd::M109, false),
-    ("M132", Cmd::M132, false),
-    ("M135", Cmd::M135, false),
-    ("M140", Cmd::M140, false),
-    ("M190", Cmd::M190, false),
-    ("M191", Cmd::M191, false),
-    ("M201", Cmd::M201, false),
-    ("M203", Cmd::M203, false),
-    ("M204", Cmd::M204, false),
-    ("M205", Cmd::M205, false),
-    ("M221", Cmd::M221, false),
-    ("M400", Cmd::M400, false),
-    ("M401", Cmd::M401, false),
-    ("M402", Cmd::M402, false),
-    ("M566", Cmd::M566, false),
-    ("M702", Cmd::M702, false),
-    ("M1020", Cmd::M1020, false),
-    ("T", Cmd::T, true),
-    ("SYNC", Cmd::Sync, false),
+type CommandHandler = fn(&mut GCodeProcessor, &crate::g_code_reader::GCodeLine);
+
+const CMD_TABLE: &[(&str, CommandHandler, bool)] = &[
+    ("G0", GCodeProcessor::process_g0, false),
+    ("G1", GCodeProcessor::process_g1, false),
+    ("G2", GCodeProcessor::process_g2_g3, false),
+    ("G3", GCodeProcessor::process_g2_g3, false),
+    ("G4", GCodeProcessor::process_g4, false),
+    ("G10", GCodeProcessor::process_g10, false),
+    ("G11", GCodeProcessor::process_g11, false),
+    ("G20", GCodeProcessor::process_g20, false),
+    ("G21", GCodeProcessor::process_g21, false),
+    ("G22", GCodeProcessor::process_g22, false),
+    ("G23", GCodeProcessor::process_g23, false),
+    ("G28", GCodeProcessor::process_g28, false),
+    ("G29", GCodeProcessor::process_g29, false),
+    ("G90", GCodeProcessor::process_g90, false),
+    ("G91", GCodeProcessor::process_g91, false),
+    ("G92", GCodeProcessor::process_g92, false),
+    ("M1", GCodeProcessor::process_m1, false),
+    ("M82", GCodeProcessor::process_m82, false),
+    ("M83", GCodeProcessor::process_m83, false),
+    ("M104", GCodeProcessor::process_m104, false),
+    ("M106", GCodeProcessor::process_m106, false),
+    ("M107", GCodeProcessor::process_m107, false),
+    ("M108", GCodeProcessor::process_m108, false),
+    ("M109", GCodeProcessor::process_m109, false),
+    ("M132", GCodeProcessor::process_m132, false),
+    ("M135", GCodeProcessor::process_m135, false),
+    ("M140", GCodeProcessor::process_m140, false),
+    ("M190", GCodeProcessor::process_m190, false),
+    ("M191", GCodeProcessor::process_m191, false),
+    ("M201", GCodeProcessor::process_m201, false),
+    ("M203", GCodeProcessor::process_m203, false),
+    ("M204", GCodeProcessor::process_m204, false),
+    ("M205", GCodeProcessor::process_m205, false),
+    ("M221", GCodeProcessor::process_m221, false),
+    ("M400", GCodeProcessor::process_m400, false),
+    ("M401", GCodeProcessor::process_m401, false),
+    ("M402", GCodeProcessor::process_m402, false),
+    ("M566", GCodeProcessor::process_m566, false),
+    ("M702", GCodeProcessor::process_m702, false),
+    ("M1020", GCodeProcessor::process_m1020, false),
+    ("T", GCodeProcessor::process_t, true),
+    ("SYNC", GCodeProcessor::process_sync, false),
     // GCodeProcessor.cpp:1762-1763 — M622 / M623 (PROCESS_G4_G29, below).
-    ("M622", Cmd::M622, false),
-    ("M623", Cmd::M623, false),
+    ("M622", GCodeProcessor::process_m622, false),
+    ("M623", GCodeProcessor::process_m623, false),
     // GCodeProcessor.cpp:1757-1758 — VM104 / VM109 (the virtual temperature commands of `;V...`
     // comments).
-    ("VM104", Cmd::VM104, false),
-    ("VM109", Cmd::VM109, false),
+    ("VM104", GCodeProcessor::process_vm104, false),
+    ("VM109", GCodeProcessor::process_vm109, false),
     // GCodeProcessor.cpp:1756 — VG1 (the virtual move of `;VG1` comments).
-    ("VG1", Cmd::VG1, false),
+    ("VG1", GCodeProcessor::process_vg1, false),
 ];
-
-fn cmd_from_id(id: usize) -> Cmd {
-    // Safe: ids are produced only by register; bounded by CMD_TABLE entries.
-    debug_assert!(id < CMD_TABLE.len() || id < 64);
-    // Reconstruct from discriminant.
-    unsafe { std::mem::transmute::<usize, Cmd>(id) }
-}
 
 // ===========================================================================
 // GCodeProcessor (state-machine driver) — hpp:440-1211, cpp:1627-...
@@ -3089,7 +3018,7 @@ impl OptionsZCorrector {
 /// filament lists and the pre-heating context of `post_process`, the data
 /// checkers' members (ENABLE_GCODE_VIEWER_DATA_CHECKING is off at the pin).
 pub struct GCodeProcessor {
-    m_command_processor: CommandProcessor,
+    m_command_processor: CommandProcessor<CommandHandler>,
     m_units: EUnits,
     m_global_positioning_type: EPositioningType,
     m_e_local_positioning_type: EPositioningType,
@@ -3182,7 +3111,7 @@ impl GCodeProcessor {
     /// GCodeProcessor.cpp:1627-1637  GCodeProcessor::GCodeProcessor()
     pub fn new() -> Self {
         let mut p = GCodeProcessor {
-            m_command_processor: CommandProcessor::new(),
+            m_command_processor: CommandProcessor::empty(),
             m_units: EUnits::Millimeters,
             m_global_positioning_type: EPositioningType::Absolute,
             m_e_local_positioning_type: EPositioningType::Absolute,
@@ -3265,16 +3194,16 @@ impl GCodeProcessor {
         p
     }
 
-    /// GCodeProcessor.cpp:1639-1723  void GCodeProcessor::register_commands()
+    /// GCodeProcessor.cpp 1699–1783  void GCodeProcessor::register_commands()
     fn register_commands(&mut self) {
         // !!! registered command must be upper case (and a lowercase alias)
-        for &(cmd, id, early_quit) in CMD_TABLE.iter() {
+        for &(cmd, handler, early_quit) in CMD_TABLE {
             self.m_command_processor
-                .register_command(cmd, id as usize, early_quit);
+                .register_command(cmd, handler, early_quit);
             let lower = cmd.to_lowercase();
             if lower != cmd {
                 self.m_command_processor
-                    .register_command(&lower, id as usize, early_quit);
+                    .register_command(&lower, handler, early_quit);
             }
         }
     }
@@ -3838,7 +3767,7 @@ impl GCodeProcessor {
         self.finalize(false);
     }
 
-    /// GCodeProcessor.cpp:2920-2964  void GCodeProcessor::process_gcode_line(line, producers_enabled)
+    /// GCodeProcessor.cpp 3075–3117  void GCodeProcessor::process_gcode_line(line, producers_enabled)
     pub fn process_gcode_line(&mut self, line: &crate::g_code_reader::GCodeLine, producers_enabled: bool) {
         self.m_line_id += 1;
 
@@ -3853,8 +3782,8 @@ impl GCodeProcessor {
         }
 
         if cmd.len() > 1 {
-            if let Some(handler_id) = self.m_command_processor.process_comand(&cmd) {
-                self.dispatch(cmd_from_id(handler_id), line);
+            if let Some(handler) = self.m_command_processor.process_comand(&cmd) {
+                handler(self, line);
             }
         } else {
             let comment = line.raw();
@@ -3871,8 +3800,8 @@ impl GCodeProcessor {
                     });
                     if let Some(nl) = new_line {
                         let ncmd = nl.cmd().to_string();
-                        if let Some(handler_id) = self.m_command_processor.process_comand(&ncmd) {
-                            self.dispatch(cmd_from_id(handler_id), &nl);
+                        if let Some(handler) = self.m_command_processor.process_comand(&ncmd) {
+                            handler(self, &nl);
                         }
                     }
                 } else {
@@ -3882,59 +3811,6 @@ impl GCodeProcessor {
                     self.process_tags(comment_content, producers_enabled);
                 }
             }
-        }
-    }
-
-    /// Dispatch a matched command id to its handler (replaces the C++
-    /// `std::function` bound in register_commands).
-    fn dispatch(&mut self, cmd: Cmd, line: &crate::g_code_reader::GCodeLine) {
-        match cmd {
-            Cmd::G0 => self.process_g0(line),
-            Cmd::G1 => self.process_g1(line),
-            Cmd::G2G3 => self.process_g2_g3(line),
-            Cmd::G4 => self.process_g4(line),
-            Cmd::G10 => self.process_g10(line),
-            Cmd::G11 => self.process_g11(line),
-            Cmd::G20 => self.process_g20(line),
-            Cmd::G21 => self.process_g21(line),
-            Cmd::G22 => self.process_g22(line),
-            Cmd::G23 => self.process_g23(line),
-            Cmd::G28 => self.process_g28(line),
-            Cmd::G29 => self.process_g29(line),
-            Cmd::G90 => self.process_g90(line),
-            Cmd::G91 => self.process_g91(line),
-            Cmd::G92 => self.process_g92(line),
-            Cmd::M1 => self.process_m1(line),
-            Cmd::M82 => self.process_m82(line),
-            Cmd::M83 => self.process_m83(line),
-            Cmd::M104 => self.process_m104(line),
-            Cmd::M106 => self.process_m106(line),
-            Cmd::M107 => self.process_m107(line),
-            Cmd::M108 => self.process_m108(line),
-            Cmd::M109 => self.process_m109(line),
-            Cmd::M132 => self.process_m132(line),
-            Cmd::M135 => self.process_m135(line),
-            Cmd::M140 => self.process_m140(line),
-            Cmd::M190 => self.process_m190(line),
-            Cmd::M191 => self.process_m191(line),
-            Cmd::M201 => self.process_m201(line),
-            Cmd::M203 => self.process_m203(line),
-            Cmd::M204 => self.process_m204(line),
-            Cmd::M205 => self.process_m205(line),
-            Cmd::M221 => self.process_m221(line),
-            Cmd::M400 => self.process_m400(line),
-            Cmd::M401 => self.process_m401(line),
-            Cmd::M402 => self.process_m402(line),
-            Cmd::M566 => self.process_m566(line),
-            Cmd::M702 => self.process_m702(line),
-            Cmd::M1020 => self.process_m1020(line),
-            Cmd::T => self.process_t(line),
-            Cmd::Sync => self.process_sync(line),
-            Cmd::M622 => self.process_m622(line),
-            Cmd::M623 => self.process_m623(line),
-            Cmd::VM104 => self.process_vm104(line),
-            Cmd::VM109 => self.process_vm109(line),
-            Cmd::VG1 => self.process_vg1(line),
         }
     }
 

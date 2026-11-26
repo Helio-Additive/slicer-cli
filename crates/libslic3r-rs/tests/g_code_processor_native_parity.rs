@@ -335,6 +335,18 @@ fn rust_lines(c: &Case) -> Vec<String> {
     out
 }
 
+/// Ordinary and virtual dispatch, G2/G3's shared handler, and T's prefix match.
+/// GCodeProcessor.cpp 1699–1783, 3096–3110.
+#[test]
+fn command_aliases_match_native() {
+    let input = include_str!("data/g_code_processor/command_aliases.txt");
+    let cases = cases(input);
+    assert_eq!(cases.len(), 4);
+    for case in &cases {
+        assert_eq!(rust_lines(case), case.lines, "{}", case.name);
+    }
+}
+
 #[test]
 fn programs() {
     let text = read_vectors();

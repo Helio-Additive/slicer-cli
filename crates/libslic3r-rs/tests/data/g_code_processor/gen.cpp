@@ -1251,6 +1251,24 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
     }
+    if (std::string(argv[1]) == "--command-aliases") {
+        if (argc != 3) return 1;
+        g_out = stdout;
+        const std::string start = "G90\nM83\nG1 X10 Y10 Z0.2 F2400\n";
+        for (const bool lower : {false, true}) {
+            const std::string arc = lower ? "g2 X14 Y10 I2 J0 E0.12\ng3 X10 Y10 I-2 J0 E0.12\n"
+                                          : "G2 X14 Y10 I2 J0 E0.12\nG3 X10 Y10 I-2 J0 E0.12\n";
+            const std::string commands = lower ? "t1\nm104 S210\n;vm109 S205\n;vg1 X15 Y10 E0.2 F1800\n"
+                                               : "T1\nM104 S210\n;VM109 S205\n;VG1 X15 Y10 E0.2 F1800\n";
+            auto config = limits("marlin");
+            for (auto &[key, value] : config)
+                if (key == "filament_diameter") value = "1.75,1.75";
+            run_case({lower ? "lower_arcs" : "upper_arcs", config, true, start + arc}, argv[2]);
+            run_case({lower ? "lower_virtual" : "upper_virtual", config, true,
+                      start + commands + ";Vm109 S220\nG100 X50\nG1 X20 Y10 E0.2 F1800\n"}, argv[2]);
+        }
+        return 0;
+    }
     if (std::string(argv[1]) == "--preview-layer-times") {
         if (argc != 3) return 1;
         preview_layer_times(argv[2]);

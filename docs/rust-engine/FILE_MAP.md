@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 90 |
 | of the rest, 25 tokens or more | 278 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8922 |
+| Rust functions with no C++ function of that name in the pair | 8921 |
 
 By tier:
 
@@ -4485,37 +4485,37 @@ Rust only:
 
 ### `GCode/GCodeProcessor` (.cpp+.hpp) and `gcode/g_code_processor.rs`
 
-Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 281. Matched 199: faithful 172, partial 23, divergent 4, stub 0.
+Tier 1. C++ functions 213 (plus 13 constructors, 0 destructors, 1 operators), Rust functions 280. Matched 199: faithful 172, partial 23, divergent 4, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
 - partial: `get_object_label_id` :152 and `get_object_label_id` :617 (36%, 0.74x)
 - partial: `get_z_height` :167 and `get_z_height` :636 (40%, 0.71x)
 - partial: `GCodeProcessor::CachedPosition::reset` :234 and `CachedPosition::reset` :506 (50%, 0.96x)
-- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2689 (0%, 0.0x)
-- partial: `GCodeProcessor::OptionsZCorrector::set` :1077 and `OptionsZCorrector::set` :3065 (40%, 1.19x)
-- partial: `GCodeProcessor::OptionsZCorrector::update` :1082 and `OptionsZCorrector::update` :3069 (45%, 1.16x)
-- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1670 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1683 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1696 (43%, 0.72x)
-- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1711 (43%, 0.71x)
-- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3269 (7%, 0.05x)
-- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3383 (53%, 1.23x)
-- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9312 (50%, 1.17x)
-- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7147 (43%, 0.79x)
-- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3842 (74%, 1.44x)
-- divergent: `parse_number` :3137 and `parse_number` :7620 (9%, 0.16x)
-- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9428 (35%, 0.9x)
-- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9487 (44%, 0.93x)
-- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9624 (41%, 0.93x)
-- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9665 (44%, 0.87x)
-- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9719 (40%, 0.83x)
-- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5881 (75%, 1.0x)
-- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6396 (86%, 1.24x)
-- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4241 (66%, 1.01x)
-- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5522 (46%, 0.72x)
-- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9853 (53%, 0.74x)
-- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5824 (23%, 0.27x)
+- divergent: `GCodeProcessor::TimeProcessor::post_process` :571 and `TimeProcessor::post_process` :2675 (0%, 0.0x)
+- partial: `GCodeProcessor::OptionsZCorrector::set` :1077 and `OptionsZCorrector::set` :2994 (40%, 1.19x)
+- partial: `GCodeProcessor::OptionsZCorrector::update` :1082 and `OptionsZCorrector::update` :2998 (45%, 1.16x)
+- partial: `GCodeProcessor::UsedFilaments::process_total_volume_cache` :1434 and `UsedFilaments::process_total_volume_cache` :1656 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_model_cache` :1448 and `UsedFilaments::process_model_cache` :1669 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_wipe_tower_cache` :1462 and `UsedFilaments::process_wipe_tower_cache` :1682 (43%, 0.72x)
+- partial: `GCodeProcessor::UsedFilaments::process_support_cache` :1476 and `UsedFilaments::process_support_cache` :1697 (43%, 0.71x)
+- divergent: `GCodeProcessor::register_commands` :1699 and `GCodeProcessor::register_commands` :3198 (8%, 0.04x)
+- partial: `GCodeProcessor::apply_config` :1964 and `GCodeProcessor::apply_config` :3312 (53%, 1.23x)
+- partial: `GCodeProcessor::initialize` :2763 and `GCodeProcessor::initialize` :9188 (50%, 1.17x)
+- partial: `GCodeProcessor::finalize` :2793 and `GCodeProcessor::finalize` :7023 (43%, 0.79x)
+- partial: `GCodeProcessor::process_gcode_line` :3075 and `GCodeProcessor::process_gcode_line` :3771 (74%, 1.39x)
+- divergent: `parse_number` :3137 and `parse_number` :7496 (9%, 0.16x)
+- partial: `GCodeProcessor::process_cura_tags` :3665 and `GCodeProcessor::process_cura_tags` :9304 (35%, 0.9x)
+- partial: `GCodeProcessor::process_simplify3d_tags` :3739 and `GCodeProcessor::process_simplify3d_tags` :9363 (44%, 0.93x)
+- partial: `GCodeProcessor::process_craftware_tags` :3881 and `GCodeProcessor::process_craftware_tags` :9500 (41%, 0.93x)
+- partial: `GCodeProcessor::process_ideamaker_tags` :3931 and `GCodeProcessor::process_ideamaker_tags` :9541 (44%, 0.87x)
+- partial: `GCodeProcessor::process_kissslicer_tags` :3992 and `GCodeProcessor::process_kissslicer_tags` :9595 (40%, 0.83x)
+- partial: `GCodeProcessor::process_G1` :4118 and `GCodeProcessor::process_g1` :5757 (75%, 1.0x)
+- partial: `GCodeProcessor::process_VG1` :4521 and `GCodeProcessor::process_vg1` :6272 (86%, 1.24x)
+- partial: `GCodeProcessor::process_G2_G3` :4905 and `GCodeProcessor::process_g2_g3` :4117 (66%, 1.01x)
+- partial: `GCodeProcessor::process_M1020` :5919 and `GCodeProcessor::process_m1020` :5398 (46%, 0.72x)
+- partial: `GCodeProcessor::process_custom_gcode_time` :6380 and `GCodeProcessor::process_custom_gcode_time` :9729 (53%, 0.74x)
+- divergent: `GCodeProcessor::simulate_st_synchronize` :6416 and `GCodeProcessor::simulate_st_synchronize` :5700 (23%, 0.27x)
 
 Missing in the Rust file:
 
@@ -4559,65 +4559,64 @@ Rust only:
 - `parse_stof_pin` :719
 - `parse_number_f32` :843
 - `parse_number_i32` :854
-- `TrieNode::new` :900
-- `CommandProcessor::new` :916
-- `CommandProcessor::default` :967
-- `TimeBlock::default` :1050
-- `TimeMachine::default` :1315
-- `reserved_tag` :1883
-- `custom_tags` :1888
-- `trim_spaces` :2011
-- `is_end_of_word` :2210 — C++ has it in `Config`, `GCodeReader`
-- `fast_float_from_chars` :2221
-- `fast_float_from_chars_f64` :2260
-- `trim_leading_spaces_trailing_semis_spaces` :2300
-- `EMovePathType::default` :2321
-- `MoveVertex::default` :2367
-- `GCodeProcessorResult::default` :2487
-- `MachineLimits::machine_envelope_config` :2599
-- `ml_get` :2629
-- `ml_set` :2641
-- `TimeProcessor::post_process_first_pass` :2697
-- `TimeProcessor::default` :2902
-- `cmd_from_id` :3029
-- `GCodeProcessor::new` :3183
-- `GCodeProcessor::get_axis_max_acceleration_extruding` :3583
-- `GCodeProcessor::get_machine_limit_retract_acceleration` :3588
-- `GCodeProcessor::get_machine_limit_travel_acceleration` :3593
-- `GCodeProcessor::result` :3611
-- `GCodeProcessor::result_mut` :3615
-- `GCodeProcessor::process_gcode` :3836
-- `GCodeProcessor::dispatch` :3890
-- `GCodeProcessor::time_processor` :4729
-- `GCodeProcessor::process_t_command` :5563
-- `GCodeProcessor::process_filaments_tool_change` :5793
-- `GCodeProcessor::run_calculate_time` :5836
-- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6957
-- `GCodeProcessor::process_used_filaments_caches` :7253
-- `GCodeProcessor::update_mode` :7300
-- `GCodeProcessor::print_time` :7357
-- `GCodeProcessor::default` :7363
-- `emove_type_from_index` :7372
-- `extrusion_role_from_index` :7389
-- `normalize3` :7420
-- `normalized3` :7430
-- `klipper_regex_value` :7441
-- `parse_klipper_kv` :7475
-- `f32::parse_number_impl` :7586
-- `i32::parse_number_impl` :7595
-- `ExtruderUsageBlcok::default` :7650
-- `FilamentUsageBlock::new` :7741
-- `TimeProcessContext::from_config` :7797 — C++ has it in `Model`
-- `PreCoolingInjector::new` :7897
-- `PreCoolingInjector::sort_free_blocks` :8031
-- `istream_int` :8623
-- `istream_nozzle_after` :8647
-- `nozzle_change_fields` :8657
-- `toolchange_wipe_fields` :8700
-- `TimeProcessor::post_process_with_context` :8728
-- `DataChecker::new` :9078
-- `helio_regex_search` :9203
-- `GCodeProcessor::time_process_inputs` :9330
+- `TrieNode::new` :889
+- `CommandProcessor::new` :905
+- `CommandProcessor::empty` :912 — C++ has it in `AABBTreeIndirect`, `Arachne/utils/ExtrusionLine`, `BoundingBox`
+- `CommandProcessor::default` :953
+- `TimeBlock::default` :1036
+- `TimeMachine::default` :1301
+- `reserved_tag` :1869
+- `custom_tags` :1874
+- `trim_spaces` :1997
+- `is_end_of_word` :2196 — C++ has it in `Config`, `GCodeReader`
+- `fast_float_from_chars` :2207
+- `fast_float_from_chars_f64` :2246
+- `trim_leading_spaces_trailing_semis_spaces` :2286
+- `EMovePathType::default` :2307
+- `MoveVertex::default` :2353
+- `GCodeProcessorResult::default` :2473
+- `MachineLimits::machine_envelope_config` :2585
+- `ml_get` :2615
+- `ml_set` :2627
+- `TimeProcessor::post_process_first_pass` :2683
+- `TimeProcessor::default` :2888
+- `GCodeProcessor::new` :3112
+- `GCodeProcessor::get_axis_max_acceleration_extruding` :3512
+- `GCodeProcessor::get_machine_limit_retract_acceleration` :3517
+- `GCodeProcessor::get_machine_limit_travel_acceleration` :3522
+- `GCodeProcessor::result` :3540
+- `GCodeProcessor::result_mut` :3544
+- `GCodeProcessor::process_gcode` :3765
+- `GCodeProcessor::time_processor` :4605
+- `GCodeProcessor::process_t_command` :5439
+- `GCodeProcessor::process_filaments_tool_change` :5669
+- `GCodeProcessor::run_calculate_time` :5712
+- `GCodeProcessor::process_g1_seams_and_spiral_layers` :6833
+- `GCodeProcessor::process_used_filaments_caches` :7129
+- `GCodeProcessor::update_mode` :7176
+- `GCodeProcessor::print_time` :7233
+- `GCodeProcessor::default` :7239
+- `emove_type_from_index` :7248
+- `extrusion_role_from_index` :7265
+- `normalize3` :7296
+- `normalized3` :7306
+- `klipper_regex_value` :7317
+- `parse_klipper_kv` :7351
+- `f32::parse_number_impl` :7462
+- `i32::parse_number_impl` :7471
+- `ExtruderUsageBlcok::default` :7526
+- `FilamentUsageBlock::new` :7617
+- `TimeProcessContext::from_config` :7673 — C++ has it in `Model`
+- `PreCoolingInjector::new` :7773
+- `PreCoolingInjector::sort_free_blocks` :7907
+- `istream_int` :8499
+- `istream_nozzle_after` :8523
+- `nozzle_change_fields` :8533
+- `toolchange_wipe_fields` :8576
+- `TimeProcessor::post_process_with_context` :8604
+- `DataChecker::new` :8954
+- `helio_regex_search` :9079
+- `GCodeProcessor::time_process_inputs` :9206
 
 ### `GCode/PostProcessor` (.cpp+.hpp) and `gcode/post_processor.rs`
 

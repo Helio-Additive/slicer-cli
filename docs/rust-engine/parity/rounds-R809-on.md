@@ -214,8 +214,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R987 | Port native token handling for the root CLI's supported options and the desktop single-instance compatibility flag. | Root CLI parser | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R988 | Port the root CLI's legacy G-code opt-out and the ordered normalization event. | Root CLI and STL/3MF settings | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R989 | Move Boost.Polygon Voronoi construction and libc++ comparator sorting to safe workspace crates. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R990 | Register the G-code processor's Rust handler methods directly in its command trie. | G-code processor safety | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R990, command dispatch. The native table binds 47 spellings to 46 methods.
+  G2 and G3 share a handler, T matches a prefix and virtual commands inside
+  comments use the same trie. The engine now registers typed Rust methods
+  and calls them directly. The public standalone trie still accepts caller
+  IDs. Four new native programs exercise arcs, tool changes, temperature
+  commands and virtual moves, including lower-case and unrecognized input.
+  All earlier processor vectors, times and postprocessed output still agree.
+  The clean macOS arm64 safety check reports 110 engine diagnostics, down
+  from 111. The full host build has 9,108 across 85 packages, down from
+  9,109. All eight fixture files reproduce R989 and H2D matches 4,614,342
+  and 4,614,863 motion lines against the two native runs.
 
 - R989, the production dependency ports. The engine and Voronoi builder now
   import the same Rust implementation of libc++ comparator sorting. Its native
