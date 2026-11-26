@@ -14,7 +14,7 @@ Linux arm64, macOS arm64 and Windows x86_64. Flags that share a name with the de
 own command lines behave the same way.
 
 A fourth program is in progress and is not packaged: `slicer_cli-rust`, a Rust
-port of the Bambu Studio engine (`crates/`, built by cargo). Its G-code does not
+port of the Bambu Studio engine and front end (`crates/` and root `src/`, built by cargo). Its G-code does not
 match `slicer_cli`'s yet. Its own section is "The Rust engine" below;
 [docs/rust-engine/README.md](docs/rust-engine/README.md) is the authority for it.
 
@@ -39,7 +39,7 @@ Read first, and change here rather than copy: [README.md](README.md),
 | `tests/` | The test scripts, run against built or packaged programs |
 | `docs/` | `cli-reference.md` (every flag, outputs, `result.json`, event lines, return codes), `building.md` |
 | `ci/` | vcpkg overlay port and patches the build applies |
-| `Cargo.toml`, `crates/` | The Rust engine: `libslic3r-rs` (the port, crate `slicer`), four `*-sys` FFI shims, `slicer-cli-rust` (the programs `slicer_cli-rust` and `slicer-parity`) |
+| `Cargo.toml`, `src/`, `crates/` | The root Rust CLI package builds `slicer_cli-rust` and `slicer-parity`. The engine lives in `crates/libslic3r-rs` (crate `slicer`). The four `*-sys` crates supply native test oracles. |
 | `scripts/parity/`, `tests/rust-engine/`, `docs/rust-engine/` | The Rust engine's scoring scripts, tests and job configs, and records |
 | `.github/workflows/slicer-cli-ci.yml` | Build, test, package, release |
 

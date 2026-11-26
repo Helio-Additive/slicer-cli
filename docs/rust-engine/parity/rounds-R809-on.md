@@ -209,9 +209,17 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R982 | Pass the first and first non-support filaments to the startup templates and the virtual tool tag (GCode.cpp 2840–2863, 2898–2927, 3184–3236). Three single-filament cube exports and a support-first header reproduce native startup. | `EXPORT_STARTUP_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R983 | Apply a common physical filament across all unpainted 3MF parts and roles (PrintApply.cpp 1045–1055, 1091 and PrintObject.cpp 3742–3806). Five of 23 supplemental projects gained five in-order lines each. | `SCOPED_MODEL_FILAMENT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R984 | Order and emit a single region's walls, sparse and solid fills by their physical filament. All 768 native layer-order rows are covered by six jobs. | `FEATURE_FILAMENT_ORDER` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R985 | Build the Rust front end from the root Cargo package and forbid unsafe code in its targets. The 12 Rust source files move without edits. | Package layout | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
 
+- R985, the root Cargo package. A default Cargo build produces both previous
+  binaries. The root CLI and parity tool preserve all 13 CLI tests and 43
+  shell checks. All four standard fixture files match R984 byte for byte,
+  including H2D at 4,614,342 and 4,614,863 in-order matches. A separate
+  clean macOS arm64 build succeeded with both build-script C and C++
+  compilers disabled. The root package forbids unsafe code. The production
+  engine and its dependency ports are still being brought under that rule.
 - R984, per-feature filament selection. All 768 input rows agreed on
   region slots, perimeters and fill roles before ordering. At layer 4 of
   the sparse cube both engines assigned sparse fill to slot 3. Only C++
