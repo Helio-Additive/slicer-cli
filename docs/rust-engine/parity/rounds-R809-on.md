@@ -215,8 +215,24 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R988 | Port the root CLI's legacy G-code opt-out and the ordered normalization event. | Root CLI and STL/3MF settings | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R989 | Move Boost.Polygon Voronoi construction and libc++ comparator sorting to safe workspace crates. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R990 | Register the G-code processor's Rust handler methods directly in its command trie. | G-code processor safety | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R991 | Apply the export's printer kind to bed-level timing, estimated-time headers and the M981 startup command. | Root CLI and G-code export | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R991, printer vendor. With identical moves and 12.5 seconds of configured
+  compensation, a generic printer adds the compensation on a plain G29.
+  A Bambu printer adds it within the M622 block. The processor reproduces
+  the native times and substituted header lines across eight programs and
+  keeps independently configured processors separate. On real STL and 3MF
+  jobs the generic printer now gets the generic print-time header and omits
+  Bambu's M981 command. The Bambu controls reproduce R990. The supplemental
+  Cube still has a separate timing difference across engines. The two new
+  dependency checks on macOS arm64 count 108 unsafe-code diagnostics in the
+  engine, 8,973 across target code and 9,106 including host dependencies.
+  Each export supplies its own vendor. Standalone Rust callers that update
+  the public fallback `S_IS_BBL_PRINTER` now use `AtomicBool::store`.
+  All four standard jobs reproduce R990 with the gate on and off. H2D
+  matches 4,614,342 and 4,614,863 motion lines against the saved native runs.
 
 - R990, command dispatch. The native table binds 47 spellings to 46 methods.
   G2 and G3 share a handler, T matches a prefix and virtual commands inside

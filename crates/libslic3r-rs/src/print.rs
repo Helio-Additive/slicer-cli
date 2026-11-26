@@ -409,10 +409,15 @@ impl Print {
     }
 
     pub fn is_bbl_printer(&self) -> bool {
+        Self::settings_are_bbl_printer(self.raw_settings.as_ref())
+    }
+
+    /// main.cpp 11500–11508, machine model precedes the preset name.
+    pub(crate) fn settings_are_bbl_printer(raw_settings: Option<&serde_json::Value>) -> bool {
         if !crate::faithful_gate("BBL_PRINTER_RULE") {
             return true;
         }
-        let Some(settings) = self.raw_settings.as_ref() else {
+        let Some(settings) = raw_settings else {
             return true;
         };
         let text = |key: &str| -> String {
@@ -2279,6 +2284,10 @@ impl Print {
             full_gcode.push_str(&String::from_utf8_lossy(&body));
 
             let mut processor = GCodeProcessor::new();
+
+            if crate::faithful_gate("EXPORT_PRINTER_KIND") {
+                processor.set_is_bbl_printer(is_bbl_printer);
+            }
             // PROCESSOR_NOZZLE_GROUP_CONTEXT (faithful): DoExport::init_gcode_processor hands the print's
             // nozzle group result to the processor before apply_config (GCode.cpp:2193-2202, called at
             // :2489 with `print.get_nozzle_group_result()`), so a tool change back to a filament already in
@@ -2347,6 +2356,9 @@ impl Print {
                         })
                         .collect();
                     let mut replay = GCodeProcessor::new();
+                    if crate::faithful_gate("EXPORT_PRINTER_KIND") {
+                        replay.set_is_bbl_printer(is_bbl_printer);
+                    }
                     if crate::faithful_gate("PROCESSOR_NOZZLE_GROUP_CONTEXT") {
                         if let Some(group) = self.nozzle_group_result.as_deref() {
                             replay.initialize_from_context(Some(group.clone()));
@@ -2476,6 +2488,9 @@ impl Print {
                         }
                     }
                     let mut replay = GCodeProcessor::new();
+                    if crate::faithful_gate("EXPORT_PRINTER_KIND") {
+                        replay.set_is_bbl_printer(is_bbl_printer);
+                    }
                     replay.apply_config(&self.config);
                     crate::gcode::g_code_processor::TIMEDBG_BLOCKS_ARMED
                         .store(true, std::sync::atomic::Ordering::Relaxed);

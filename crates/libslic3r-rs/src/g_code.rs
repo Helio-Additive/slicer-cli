@@ -8469,6 +8469,16 @@ pub struct GCodeHeader {
 }
 
 impl GCodeHeader {
+    /// GCode.cpp 2004 and main.cpp 11500–11508. Standalone headers may have
+    /// no printer profile; those use the processor's standalone default.
+    fn printer_is_bbl(&self) -> bool {
+        if crate::faithful_gate("EXPORT_PRINTER_KIND") && self.raw_settings.is_some() {
+            crate::print::Print::settings_are_bbl_printer(self.raw_settings.as_ref())
+        } else {
+            crate::gcode::g_code_processor::default_bbl_printer()
+        }
+    }
+
     // Create a new header from stats and config.
     pub fn new(stats: GCodeStats, config: PrintConfig) -> Self {
         Self::with_raw_settings(stats, config, None)
@@ -8546,8 +8556,7 @@ impl GCodeHeader {
         // `; estimated printing time (normal mode) = ..` on other printers, the
         // Bambu Lab form `; model printing time: ..; total estimated time: ..`
         // (HEADER_0209) on a Bambu Lab printer.
-        // SAFETY: S_IS_BBL_PRINTER is only written during configuration.
-        let bbl = unsafe { crate::gcode::g_code_processor::S_IS_BBL_PRINTER };
+        let bbl = self.printer_is_bbl();
         match (&self.model_print_time, bbl && crate::faithful_gate("HEADER_0209")) {
             (Some(model), true) => header.push_str(&format!(
                 "; model printing time: {}; total estimated time: {}\n",
@@ -8986,7 +8995,10 @@ impl GCodeHeader {
             s.push_str("G90\n");
             s.push_str("G21\n");
             s.push_str("M83 ; use relative distances for extrusion\n");
-            s.push_str("M981 S1 P20000 ;open spaghetti detector\n");
+            // GCode.cpp 3363.
+            if !crate::faithful_gate("EXPORT_PRINTER_KIND") || self.printer_is_bbl() {
+                s.push_str("M981 S1 P20000 ;open spaghetti detector\n");
+            }
         } else if let Some(ref settings) = self.raw_settings {
             if let Some(start_gcode) = settings.get("machine_start_gcode").and_then(|v| v.as_str())
             {
@@ -9026,7 +9038,10 @@ impl GCodeHeader {
             s.push_str("G21\n");
             s.push_str("M83 ; use relative distances for extrusion\n");
             // Spaghetti detector
-            s.push_str("M981 S1 P20000 ;open spaghetti detector\n");
+            // GCode.cpp 3363.
+            if !crate::faithful_gate("EXPORT_PRINTER_KIND") || self.printer_is_bbl() {
+                s.push_str("M981 S1 P20000 ;open spaghetti detector\n");
+            }
         } else {
             s.push_str("G28 ; home all axes\n");
             s.push_str("G1 Z5 F5000 ; lift nozzle\n");

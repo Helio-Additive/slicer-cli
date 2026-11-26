@@ -1251,6 +1251,26 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
     }
+    if (std::string(argv[1]) == "--processor-printer") {
+        if (argc != 3) return 1;
+        g_out = stdout;
+        auto config = limits("marlin");
+        for (auto &[key, value] : config)
+            if (key == "machine_prepare_compensation_time") value = "12.5";
+        const std::string travel = ";_GP_ESTIMATED_PRINTING_TIME_PLACEHOLDER\nG90\nG1 X10 Y10 F1200\n";
+        for (bool bbl : {true, false}) {
+            GCodeProcessor::s_IsBBLPrinter = bbl;
+            for (bool bed_flag : {false, true}) {
+                const auto label = std::string(bbl ? "bambu" : "other") + (bed_flag ? "_flag" : "_plain");
+                const std::string flag = bed_flag ? "M1002 judge_flag g29_before_print_flag\nM622 J1\n" : "";
+                for (bool stealth : {false, true}) {
+                    run_case({label + (stealth ? "_two" : "_one"), config, stealth,
+                              travel + flag + "G29\nG1 X15 Y10 F1200\n"}, argv[2]);
+                }
+            }
+        }
+        return 0;
+    }
     if (std::string(argv[1]) == "--command-aliases") {
         if (argc != 3) return 1;
         g_out = stdout;

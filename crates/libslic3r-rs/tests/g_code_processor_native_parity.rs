@@ -252,9 +252,16 @@ fn rust_config(cfg: &[(String, String)]) -> slicer::print_config::PrintConfig {
 
 /// The lines of a case as the port gives them, in gen.cpp's format.
 fn rust_lines(c: &Case) -> Vec<String> {
+    rust_lines_with_printer(c, None)
+}
+
+fn rust_lines_with_printer(c: &Case, is_bbl: Option<bool>) -> Vec<String> {
     let config = rust_config(&c.cfg);
     let mut p = GCodeProcessor::new();
     p.reset();
+    if let Some(is_bbl) = is_bbl {
+        p.set_is_bbl_printer(is_bbl);
+    }
     p.apply_config(&config);
     p.enable_stealth_time_estimator(c.stealth);
     p.enable_machine_envelope_processing(c.envelope);
@@ -333,6 +340,39 @@ fn rust_lines(c: &Case) -> Vec<String> {
     }
     out.push(format!("post {}", hex(&p.time_processor().post_process(&c.prog))));
     out
+}
+
+/// GCodeProcessor.cpp 701–720, 5317–5325. Export's printer kind controls
+/// both plain bed leveling and the time placeholder for each active mode.
+#[test]
+fn exported_printer_modes_match_native() {
+    let inputs = cases(include_str!("data/g_code_processor/printer_mode.txt"));
+    assert_eq!(inputs.len(), 8);
+    for case in &inputs {
+        let got = rust_lines_with_printer(case, Some(case.name.starts_with("bambu_")));
+        assert_eq!(got.len(), case.lines.len());
+        for (line, native) in got.iter().zip(&case.lines) {
+            assert_eq!(line, native, "{}", case.name);
+        }
+    }
+}
+
+#[test]
+fn simultaneous_processors_retain_their_printer_kind() {
+    let inputs = cases(include_str!("data/g_code_processor/printer_mode.txt"));
+    let mut jobs = Vec::new();
+    for name in ["other_plain_one", "bambu_plain_one"] {
+        let case = inputs.iter().find(|case| case.name == name).unwrap();
+        let mut p = GCodeProcessor::new();
+        p.apply_config(&rust_config(&case.cfg));
+        p.set_is_bbl_printer(name.starts_with("bambu_"));
+        jobs.push((p, case));
+    }
+    for (mut p, case) in jobs {
+        p.process_gcode(&case.prog);
+        let native = case.lines.iter().find_map(|row| row.strip_prefix("time 0 ")).unwrap();
+        assert_eq!(f32h(p.get_time(ETimeMode::Normal)), native, "{}", case.name);
+    }
 }
 
 /// Ordinary and virtual dispatch, G2/G3's shared handler, and T's prefix match.

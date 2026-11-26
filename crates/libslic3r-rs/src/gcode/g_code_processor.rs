@@ -1880,8 +1880,13 @@ pub const WIPE_WIDTH: f32 = 0.05;
 /// GCodeProcessor.cpp:86  const float GCodeProcessor::Wipe_Height = 0.05f;
 pub const WIPE_HEIGHT: f32 = 0.05;
 
-/// GCodeProcessor.cpp:88  bool GCodeProcessor::s_IsBBLPrinter = true;
-pub static mut S_IS_BBL_PRINTER: bool = true;
+/// GCodeProcessor.cpp 91. Default for standalone consumers without a print context.
+/// Exports set the printer kind on each processor at GCode.cpp 2004.
+pub static S_IS_BBL_PRINTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub(crate) fn default_bbl_printer() -> bool {
+    S_IS_BBL_PRINTER.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 // ===========================================================================
 // Static reserved-tag scanners — GCodeProcessor.cpp:1575-1625
@@ -2640,6 +2645,8 @@ fn ml_set(option: &mut [f32], id: usize, value: f32) {
 /// See BLOCKED notes.
 #[derive(Debug, Clone)]
 pub struct TimeProcessor {
+    /// Printer kind captured by the export that owns this processor.
+    pub is_bbl_printer: Option<bool>,
     pub extruder_unloaded: bool,
     pub machine_envelope_processing_enabled: bool,
     /// MachineEnvelopeConfig machine_limits (GCodeProcessor.hpp:818): the defaults of
@@ -2656,6 +2663,10 @@ pub struct TimeProcessor {
 }
 
 impl TimeProcessor {
+    fn printer_is_bbl(&self) -> bool {
+        self.is_bbl_printer.unwrap_or_else(default_bbl_printer)
+    }
+
     /// GCodeProcessor.hpp:826-833  Planner constants
     const PLANNER_QUEUE_SIZE: usize = 64;
     const PLANNER_REFRESH_THRESHOLD: usize = Self::PLANNER_QUEUE_SIZE * 4;
@@ -2712,6 +2723,7 @@ impl TimeProcessor {
         // :929-931 — `line_id` counts the input lines from 1.
         let mut line_id: u32 = 0;
         let progress_tags = crate::faithful_gate("PROCESSOR_PAUSE_PROGRESS");
+        let printer_time = crate::faithful_gate("EXPORT_PRINTER_KIND");
         // GCodeProcessor.cpp:913-952, 993. Each line ends in LF on export.
         // A CR and LF are consumed together when read in the same 96 KiB block.
         let mut normalized;
@@ -2738,10 +2750,26 @@ impl TimeProcessor {
             line_id += 1;
             // GCodeProcessor.cpp:675-703. The file reader removes the EOL, then
             // process_placeholders compares the text after the first byte.
-            if progress_tags && gcode_line.as_bytes().get(1) == Some(&b'_') {
+            if (progress_tags || printer_time) && gcode_line.as_bytes().get(1) == Some(&b'_') {
                 let tag = gcode_line[1..].trim_end_matches('\n');
                 let first = tag == reserved_tag(ETags::FirstLineM73Placeholder);
-                if first || tag == reserved_tag(ETags::LastLineM73Placeholder) {
+                // GCodeProcessor.cpp 701–720, 790–793. Each enabled mode contributes
+                // a line. Only the first/last M73 placeholders record an extra offset.
+                if printer_time && tag.trim_end_matches('\r') == reserved_tag(ETags::EstimatedPrintingTimePlaceholder) {
+                    for (mode, machine) in machines.iter().enumerate() {
+                        if mode == ETimeMode::Normal as usize || machine.enabled {
+                            let total = crate::utils::get_time_dhms(machine.time);
+                            if self.printer_is_bbl() {
+                                let model = crate::utils::get_time_dhms(machine.time - machine.prepare_time);
+                                out.push_str(&format!("; model printing time: {model}; total estimated time: {total}\n"));
+                            } else {
+                                out.push_str(&format!("; estimated printing time (normal mode) = {total}\n"));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if progress_tags && (first || tag == reserved_tag(ETags::LastLineM73Placeholder)) {
                     let mut emitted = 0;
                     for (mode, machine) in machines.iter().enumerate() {
                         if !machine.enabled { continue; }
@@ -2887,6 +2915,7 @@ impl TimeProcessor {
 impl Default for TimeProcessor {
     fn default() -> Self {
         let mut tp = TimeProcessor {
+            is_bbl_printer: None,
             extruder_unloaded: true,
             machine_envelope_processing_enabled: false,
             machine_limits: MachineLimits::machine_envelope_config(),
@@ -4601,6 +4630,11 @@ impl GCodeProcessor {
         self.store_move_vertex(r#type, path_type);
     }
 
+    /// GCode.cpp 2004 sets the processor's printer kind before each export.
+    pub fn set_is_bbl_printer(&mut self, is_bbl: bool) {
+        self.m_time_processor.is_bbl_printer = Some(is_bbl);
+    }
+
     /// The time processor, for `TimeProcessor::post_process`.
     pub fn time_processor(&self) -> &TimeProcessor {
         &self.m_time_processor
@@ -4747,8 +4781,7 @@ impl GCodeProcessor {
         if !crate::faithful_gate("PROCESS_G4_G29") {
             return;
         }
-        // SAFETY: S_IS_BBL_PRINTER is only written during configuration.
-        if unsafe { S_IS_BBL_PRINTER } {
+        if self.m_time_processor.printer_is_bbl() {
             if self.m_measure_g29_time {
                 let t = self.m_time_processor.prepare_compensation_time;
                 self.simulate_st_synchronize(t, ExtrusionRole::None);
