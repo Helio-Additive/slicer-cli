@@ -11698,6 +11698,23 @@ fn new_export_placeholder_slot(
     ExportPlaceholderSlot { key: export_placeholders_key(settings, max_print_z), installed, inputs, gp }
 }
 
+fn export_placeholder_slot<'a>(
+    slot: &'a mut Option<ExportPlaceholderSlot>,
+    settings: &serde_json::Value,
+    max_print_z: f64,
+    start_of_export: bool,
+) -> &'a mut ExportPlaceholderSlot {
+    let key = export_placeholders_key(settings, max_print_z);
+    if !matches!(slot.as_ref(), Some(current) if current.installed || current.key == key) {
+        return slot.insert(new_export_placeholder_slot(settings, None, max_print_z, false, None));
+    }
+    let current = slot.as_mut().expect("matching export parser");
+    if start_of_export {
+        current.gp.init_export_placeholders(&current.inputs);
+    }
+    current
+}
+
 /// `GCode::placeholder_parser_process` over the export's parser: the one the export installed, or
 /// else one set up for the job's `settings` (again when the settings differ).
 /// `start_of_export`: the template is `machine_start_gcode` or the first filament's start, which
@@ -11723,18 +11740,9 @@ fn export_placeholder_parser_process_at(
     config_override: Option<&crate::config::DynamicConfig>,
     start_of_export: bool,
 ) -> String {
-    let key = export_placeholders_key(settings, max_print_z);
     EXPORT_PLACEHOLDERS.with(|cell| {
         let mut slot = cell.borrow_mut();
-        let keep = matches!(slot.as_ref(), Some(s) if s.installed || s.key == key);
-        if !keep {
-            *slot = Some(new_export_placeholder_slot(settings, None, max_print_z, false, None));
-        } else if start_of_export {
-            let s = slot.as_mut().unwrap();
-            let inputs = s.inputs.clone();
-            s.gp.init_export_placeholders(&inputs);
-        }
-        let gp = &mut slot.as_mut().unwrap().gp;
+        let gp = &mut export_placeholder_slot(&mut slot, settings, max_print_z, start_of_export).gp;
         let filament = current_filament_id.unwrap_or_else(|| {
             pp_int(gp.m_placeholder_parser.config(), "current_extruder").unwrap_or(0).max(0) as u32
         });
@@ -12202,6 +12210,84 @@ fn writeln_to(out: &mut String, what: &str) {
             out.push('\n');
         }
     }
+}
+
+/// GCode.cpp 3602-3629. All end templates share the final layer override.
+/// The machine template receives the writer's filament and the last row's overrides.
+pub(crate) fn process_end_templates(
+    settings: &serde_json::Value,
+    active: u32,
+    layer: i32,
+    z: f64,
+    max_z: f64,
+    group: Option<&crate::multi_nozzle_utils::LayeredNozzleGroupResult>,
+) -> String {
+    use crate::config::{
+        ConfigOptionFloat, ConfigOptionFloats, ConfigOptionInt, ConfigOptionStrings,
+    };
+
+    EXPORT_PLACEHOLDERS.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let current = export_placeholder_slot(&mut slot, settings, 0.0, false);
+        let gp = &mut current.gp;
+        let group = group.or(current.inputs.group_result.as_ref());
+        let nozzle = |f: u32| group.map_or(-1, |g| g.get_nozzle_id(f as i32, layer));
+        let active_nozzle = nozzle(active);
+        let hotend = group.map_or(-1, |g| nozzle_id_for_gcode(g, active_nozzle));
+        gp.set_current_filament(active, hotend, active_nozzle);
+        let mut config = crate::config::DynamicConfig::new();
+        config.set_key_value("layer_num", Box::new(ConfigOptionInt::with_value(layer)));
+        config.set_key_value("layer_z", Box::new(ConfigOptionFloat::with_value(z)));
+        config.set_key_value(
+            "max_layer_z",
+            Box::new(ConfigOptionFloat::with_value(max_z)),
+        );
+        config.set_key_value(
+            "nozzle_diameter_at_nozzle_id",
+            Box::new(ConfigOptionFloats::from_values(
+                get_nozzle_diameters_by_nozzle_id(group),
+            )),
+        );
+        config.set_key_value(
+            "nozzle_volume_types",
+            Box::new(ConfigOptionStrings::from_values(
+                get_nozzle_volume_types_by_nozzle_id(group),
+            )),
+        );
+        let single = pp_bool(&gp.m_config, "single_extruder_multi_material").unwrap_or(false);
+        let rows = pp_strings(&gp.m_config, "filament_end_gcode");
+        let mut out = String::new();
+        let mut write_filament_end = |id: u32, text: &str| {
+            for (key, value) in [
+                ("filament_extruder_id", id as i32),
+                ("current_filament_id", id as i32),
+                ("current_extruder_id", gp.get_extruder_id(id) as i32),
+                ("current_nozzle_id", nozzle(id)),
+            ] {
+                config.set_key_value(key, Box::new(ConfigOptionInt::with_value(value)));
+            }
+            let rendered =
+                gp.placeholder_parser_process("filament_end_gcode", text, id, Some(&config));
+            writeln_to(&mut out, &rendered);
+        };
+        if single {
+            write_filament_end(
+                active,
+                rows.get(active as usize)
+                    .or(rows.first())
+                    .map_or("", String::as_str),
+            );
+        } else {
+            for (id, text) in rows.iter().enumerate() {
+                write_filament_end(id as u32, text);
+            }
+        }
+        let machine = pp_string(&gp.m_config, "machine_end_gcode").unwrap_or_default();
+        let rendered =
+            gp.placeholder_parser_process("machine_end_gcode", &machine, active, Some(&config));
+        writeln_to(&mut out, &rendered);
+        out
+    })
 }
 
 /// Process BambuStudio gcode template, substituting variables.

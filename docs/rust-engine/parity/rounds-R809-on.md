@@ -236,8 +236,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1009 | Check physical nozzle diameters and apply the legacy nozzle override on STL and Bambu 3MF. | root CLI, desktop presets, typed config | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1010 | Resolve the bundled parent of typed external settings files before CLI overrides. | root settings loader, desktop presets, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1011 | Scope seam placement to the exporter and share prepared geometry with safe ownership. | GCode, GCodeWriter, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1012 | Evaluate final filament and machine G-code with the active writer and final layer. | GCode, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1012. At the end of a 128-layer cube, the native exporter supplies layer
+  127, writer Z 26 and maximum layer Z 25.6. Each filament row receives its
+  own filament and nozzle IDs while the global current extruder stays with
+  the writer. The machine template inherits the final row's overrides and
+  gets a terminating newline before the progress command. The root regression
+  compares eleven complete end sections with the native CLI, including
+  identical template strings in different slots. In eighteen supplemental
+  slices, seventeen gained two to four native lines in order and one stayed
+  level. On that 3MF the selected plate and external profile disagree on the
+  physical nozzle. The disagreement occurs before export. The four standard
+  jobs reproduce R1011 with either setting of `END_TEMPLATE_CONTEXT`.
+  H2D scores are 4,614,342 and 4,614,863. Eight additional STL and 3MF
+  controls reproduced the previous behavior with an earlier gate disabled.
 
 - R1011. The pinned GCode owns its seam placer and current layer. Selecting
   layer 0 on exporter A leaves B unset. Selecting layer 1 on B leaves A at

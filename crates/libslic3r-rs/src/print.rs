@@ -1796,6 +1796,7 @@ impl Print {
             );
         }
         let end_filament_id = writer.extruder();
+        let end_z = writer.z();
         let mut layer_gcode = writer.finish();
         let export_t_gen = export_t0.elapsed();
 
@@ -2179,79 +2180,98 @@ impl Print {
 
         // Machine end G-code (before EXECUTABLE_BLOCK_END, matching reference order)
         if let Some(ref settings) = self.raw_settings {
-            // R240: native injects max_layer_z into the end-gcode placeholder
-            // config (GCode.cpp m_max_layer_z) — the H2D end template branches
-            // on it ({if (100.0 - max_layer_z/2) > 0} → the Z124/Z122 park
-            // moves). Without it rust took the wrong branch AND left
-            // `{max_layer_z + 4.0}` unsubstituted. Gated.
-            let mut settings = settings.clone();
-            if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-                // PROCESS_LAYER_NO_EXTRUDERS_SKIP: GCode.cpp:3607 passes `m_max_layer_z`, the float maximum of
-                // the printed layers' `m_last_layer_z = float(print_z)` (:5009-5010); =0 the highest object layer.
-                let max_z = if skip_no_extruders {
-                    (max_layer_z as f32) as f64
-                } else {
-                    self.objects
-                        .iter()
-                        .flat_map(|o| o.layers.iter())
-                        .map(|l| l.print_z)
-                        .fold(0.0_f64, f64::max)
-                };
-                if max_z > 0.0 {
-                    settings["max_layer_z"] = serde_json::Value::String(format!("{}", max_z));
-                }
-            }
-            let settings = &settings;
             body.extend_from_slice(b"; MACHINE_END_GCODE_START\n");
-            // Filament end gcode
-            if crate::faithful_gate("END_SEQUENCE_CPP") {
-                // GCode.cpp 3611-3627: with single_extruder_multi_material the
-                // active filament's filament_end_gcode only, else every
-                // filament's, each through file.writeln (a newline is added when
-                // the text does not end in one).
-                let texts: Vec<String> = match settings.get("filament_end_gcode") {
-                    Some(serde_json::Value::Array(a)) => {
-                        a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()
-                    }
-                    Some(serde_json::Value::String(t)) => vec![t.clone()],
-                    _ => Vec::new(),
-                };
-                // Read from the settings themselves: the typed config does not
-                // carry this key on every load path.
-                let single = match settings.get("single_extruder_multi_material") {
-                    Some(serde_json::Value::String(t)) => t == "1" || t == "true",
-                    Some(serde_json::Value::Bool(b)) => *b,
-                    _ => self.config.single_extruder_multi_material,
-                };
-                let take: Vec<&String> = if single {
-                    let active = end_filament_id.min(texts.len().saturating_sub(1));
-                    texts.get(active).into_iter().collect()
-                } else {
-                    texts.iter().collect()
-                };
-                for text in take {
-                    let processed =
-                        crate::gcode::process_gcode_template(text, settings, &self.config);
-                    body.extend_from_slice(processed.as_bytes());
-                    if !processed.is_empty() && !processed.ends_with('\n') {
-                        body.push(b'\n');
-                    }
-                }
-            } else if let Some(filament_end) =
-                settings.get("filament_end_gcode").and_then(|v| v.as_str())
+            // GCode.cpp 3602-3629. The writer owns the active filament and final
+            // Z. change_layer counts up from -1 in C++ and from zero here.
+            if crate::faithful_gate("END_TEMPLATE_CONTEXT")
+                && crate::faithful_gate("END_SEQUENCE_CPP")
+                && crate::faithful_gate("PLACEHOLDER_PARSER_LIVE")
+                && crate::faithful_gate("ZSMOOTH_FAITHFUL")
+                && skip_no_extruders
             {
-                let processed =
-                    crate::gcode::process_gcode_template(filament_end, settings, &self.config);
-                if !processed.trim().is_empty() {
-                    body.extend_from_slice(b"; filament end gcode \n");
+                let end = crate::g_code::process_end_templates(
+                    settings,
+                    end_filament_id as u32,
+                    layer_index - 1,
+                    end_z,
+                    f64::from(max_layer_z as f32),
+                    self.nozzle_group_result.as_deref(),
+                );
+                body.extend_from_slice(end.as_bytes());
+            } else {
+                // R240: native injects max_layer_z into the end-gcode placeholder
+                // config (GCode.cpp m_max_layer_z) — the H2D end template branches
+                // on it ({if (100.0 - max_layer_z/2) > 0} → the Z124/Z122 park
+                // moves). Without it rust took the wrong branch AND left
+                // `{max_layer_z + 4.0}` unsubstituted. Gated.
+                let mut settings = settings.clone();
+                if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
+                    // PROCESS_LAYER_NO_EXTRUDERS_SKIP: GCode.cpp:3607 passes `m_max_layer_z`, the float maximum of
+                    // the printed layers' `m_last_layer_z = float(print_z)` (:5009-5010); =0 the highest object layer.
+                    let max_z = if skip_no_extruders {
+                        (max_layer_z as f32) as f64
+                    } else {
+                        self.objects
+                            .iter()
+                            .flat_map(|o| o.layers.iter())
+                            .map(|l| l.print_z)
+                            .fold(0.0_f64, f64::max)
+                    };
+                    if max_z > 0.0 {
+                        settings["max_layer_z"] = serde_json::Value::String(format!("{}", max_z));
+                    }
+                }
+                let settings = &settings;
+                // Filament end gcode
+                if crate::faithful_gate("END_SEQUENCE_CPP") {
+                    // GCode.cpp 3611-3627: with single_extruder_multi_material the
+                    // active filament's filament_end_gcode only, else every
+                    // filament's, each through file.writeln (a newline is added when
+                    // the text does not end in one).
+                    let texts: Vec<String> = match settings.get("filament_end_gcode") {
+                        Some(serde_json::Value::Array(a)) => {
+                            a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()
+                        }
+                        Some(serde_json::Value::String(t)) => vec![t.clone()],
+                        _ => Vec::new(),
+                    };
+                    // Read from the settings themselves: the typed config does not
+                    // carry this key on every load path.
+                    let single = match settings.get("single_extruder_multi_material") {
+                        Some(serde_json::Value::String(t)) => t == "1" || t == "true",
+                        Some(serde_json::Value::Bool(b)) => *b,
+                        _ => self.config.single_extruder_multi_material,
+                    };
+                    let take: Vec<&String> = if single {
+                        let active = end_filament_id.min(texts.len().saturating_sub(1));
+                        texts.get(active).into_iter().collect()
+                    } else {
+                        texts.iter().collect()
+                    };
+                    for text in take {
+                        let processed =
+                            crate::gcode::process_gcode_template(text, settings, &self.config);
+                        body.extend_from_slice(processed.as_bytes());
+                        if !processed.is_empty() && !processed.ends_with('\n') {
+                            body.push(b'\n');
+                        }
+                    }
+                } else if let Some(filament_end) =
+                    settings.get("filament_end_gcode").and_then(|v| v.as_str())
+                {
+                    let processed =
+                        crate::gcode::process_gcode_template(filament_end, settings, &self.config);
+                    if !processed.trim().is_empty() {
+                        body.extend_from_slice(b"; filament end gcode \n");
+                        body.extend_from_slice(processed.as_bytes());
+                    }
+                }
+                // Machine end gcode
+                if let Some(end_gcode) = settings.get("machine_end_gcode").and_then(|v| v.as_str()) {
+                    let processed =
+                        crate::gcode::process_gcode_template(end_gcode, settings, &self.config);
                     body.extend_from_slice(processed.as_bytes());
                 }
-            }
-            // Machine end gcode
-            if let Some(end_gcode) = settings.get("machine_end_gcode").and_then(|v| v.as_str()) {
-                let processed =
-                    crate::gcode::process_gcode_template(end_gcode, settings, &self.config);
-                body.extend_from_slice(processed.as_bytes());
             }
         }
 
