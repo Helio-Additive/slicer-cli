@@ -239,8 +239,20 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1012 | Evaluate final filament and machine G-code with the active writer and final layer. | GCode, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1013 | Apply the Bambu plate filament map and group a single filament on multi-extruder printers. | root CLI, BBS importer, Print, ToolOrdering | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1014 | Port NanoSVG sharp and rounded rectangles. | crates/nanosvg, nanosvg.h 2411–2464 | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1015 | Remove five unused direct engine dependencies from the locked CLI build. | Cargo graph, STL, FillAdaptive | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1015. The Cargo manifest still selected five libraries that the engine,
+  CLI, tests, examples and benchmarks did not reference. Removing their
+  dependency edges dropped 39 packages from the workspace lockfile. Every
+  retained package kept its version and checksum. The four target graphs
+  now compile 27–32 fewer packages. The safety table in the Rust engine
+  README gives the diagnostics for each target with the same toolchain.
+  The engine itself still reports 99 or 103, depending on the target.
+  The complete workspace checked with `--all-targets` on macOS. The four
+  standard files in both plate-routing gate settings matched R1014. H2D
+  scored 4,614,342 and 4,614,863.
 
 - R1014. Both parsers reached the same rectangle start callbacks in 43 SVG
   documents. The safe dependency now constructs the path with NanoSVG's

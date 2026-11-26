@@ -4297,7 +4297,7 @@ Rust file: `fill/fill_adaptive.rs`. Status: **partial**. Not listed: 4 construct
 **free functions**
 
 - [x] `triangle_AABB_intersects` (line 42) → `fill/fill_adaptive.rs:66`
-- [x] `adaptive_fill_line_spacing` (line 276) → `fill/fill_adaptive.rs:1904`
+- [x] `adaptive_fill_line_spacing` (line 276) → `fill/fill_adaptive.rs:1902`
 - [~] `transform_to_world` (line 408) → `fill/fill_adaptive.rs:425` — divergent
 - [~] `transform_to_octree` (line 413) → `fill/fill_adaptive.rs:433` — divergent
 - [ ] `verify_traversal_order` (line 421) → `fill/fill_adaptive.rs`
@@ -4308,15 +4308,15 @@ Rust file: `fill/fill_adaptive.rs`. Status: **partial**. Not listed: 4 construct
 - [ ] `mk_rtree_point` (line 664) → `fill/fill_adaptive.rs`
 - [ ] `mk_rtree_seg` (line 667) → `fill/fill_adaptive.rs`
 - [ ] `mk_rtree_seg` (line 670) → `fill/fill_adaptive.rs`
-- [x] `add_hook` (line 675) → `fill/fill_adaptive.rs:888`
+- [x] `add_hook` (line 675) → `fill/fill_adaptive.rs:886`
 - [ ] `validate_intersection_t_joint` (line 786) → `fill/fill_adaptive.rs`
 - [ ] `validate_intersections` (line 798) → `fill/fill_adaptive.rs`
-- [x] `connect_lines_using_hooks` (line 806) → `fill/fill_adaptive.rs:1086`
+- [x] `connect_lines_using_hooks` (line 806) → `fill/fill_adaptive.rs:1084`
 - [ ] `has_no_collinear_lines` (line 1278) → `fill/fill_adaptive.rs`
-- [x] `make_cubes_properties` (line 1437) → `fill/fill_adaptive.rs:1840`
-- [x] `is_overhang_triangle` (line 1457) → `fill/fill_adaptive.rs:1869`
-- [x] `transform_center` (line 1464) → `fill/fill_adaptive.rs:1878`
-- [x] `build_octree` (line 1475) → `fill/fill_adaptive.rs:2052`
+- [x] `make_cubes_properties` (line 1437) → `fill/fill_adaptive.rs:1838`
+- [x] `is_overhang_triangle` (line 1457) → `fill/fill_adaptive.rs:1867`
+- [x] `transform_center` (line 1464) → `fill/fill_adaptive.rs:1876`
+- [x] `build_octree` (line 1475) → `fill/fill_adaptive.rs:2050`
 
 **class `FillContext`**
 

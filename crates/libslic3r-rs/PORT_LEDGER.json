@@ -2475,7 +2475,8 @@
     "loc": 1556,
     "status": "partial",
     "priority": 4,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "The flat segment store implements the queries used at FillAdaptive.cpp 654. R1015 removed the unused rstar crate from the engine dependency graph."
   },
   {
     "cpp": "Fill/FillBase.cpp",

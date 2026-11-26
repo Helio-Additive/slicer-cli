@@ -784,10 +784,8 @@ fn create_offset_line(
 }
 
 // FillAdaptive.cpp:654 -- boost::geometry rtree.
-// rstar is a declared crate dependency but the rtree usage here (nearest segment,
-// all segments intersecting a query segment, point-keyed removal) is straightforward
-// to satisfy exactly with a flat segment store, which keeps query results
-// deterministic and identical to the accelerated structure.
+// Store segments in insertion order for nearest and intersection queries and
+// mark point-keyed removals in place.
 #[derive(Clone, Copy)]
 struct RSeg {
     a: Point,

@@ -120,15 +120,25 @@ exporter now selects its own object layer and shares the prepared geometry
 across layers. `EXPORTER_SEAM_CONTEXT=0` replays the previous thread-local
 selection with owned geometry.
 
-At R1011 the locked target graph produced these compiler diagnostics with Rust
-1.95.0. Each row excludes host build dependencies.
+At R1015 the engine dropped five unused direct dependencies (`tokio`,
+`indicatif`, `rstar`, `stl_io` and `toml`). The table shows Rust 1.95.0
+compiler diagnostics in the locked production target graph before and
+after that manifest change. Each package count includes the CLI and engine.
 
-| Target | Engine unsafe diagnostics | Full target graph unsafe diagnostics | Packages reporting them |
-| --- | ---: | ---: | ---: |
-| macOS arm64 | 103 | 8,968 | 81 |
-| Linux musl x86_64 | 99 | 9,635 | 81 |
-| Linux musl arm64 | 99 | 9,106 | 80 |
-| Windows GNU x86_64 | 103 | 9,969 | 82 |
+| Target | Packages before → after | Engine unsafe diagnostics | Full target unsafe diagnostics before → after | Packages reporting unsafe after |
+| --- | ---: | ---: | ---: | ---: |
+| macOS arm64 | 145 → 118 | 103 | 8,968 → 6,967 | 65 |
+| Linux musl x86_64 | 146 → 117 | 99 | 9,635 → 7,310 | 63 |
+| Linux musl arm64 | 145 → 117 | 99 | 9,106 → 7,048 | 63 |
+| Windows GNU x86_64 | 152 → 120 | 103 | 9,969 → 7,274 | 65 |
+
+With host build dependencies included, macOS arm64 went from 9,101
+unsafe diagnostics in 85 packages to 7,053 in 68. The engine and its
+remaining dependencies still need work for a fully safe build. The CLI
+linked on all four targets. Both Linux binaries and the Mac binary
+produced identical G-code for the nozzle override STL cube and the
+manual and automatically grouped two-head 3MF jobs. The Windows PE was
+inspected. Runtime verification on Windows remains open.
 
 The port was developed on the branch `alex/frame-unify` (1,233 commits, rounds
 R1 to R808), which forked from `main` before the three-engine front end. The
@@ -244,7 +254,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R1014) |
+| Fixture | As brought over (R808) | Now (R1015) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -254,11 +264,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R1014:
+missing most often. Lines of the oracle's body the port has verbatim, at R1015:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R1014 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R1015 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

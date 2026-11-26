@@ -3144,16 +3144,16 @@ Rust only:
 - `point_new_scale` :601
 - `Intersection::new` :635
 - `Intersection::other_hook_intersects_pt` :686
-- `RTree::new` :806
-- `RTree::insert` :810 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
-- `RTree::remove` :819 — C++ has it in `Arachne/utils/ExtrusionLine`, `ExtrusionEntityCollection`, `MutablePolygon`
-- `RTree::nearest` :829 — C++ has it in `SLA/SpatIndex`
-- `RTree::query_intersects` :845
-- `seg_point_dist2_f` :861
-- `sub_sqnorm` :1825
-- `scaled_` :1835 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
-- `vert_d` :2155
-- `generate_infill_lines` :2167
+- `RTree::new` :804
+- `RTree::insert` :808 — C++ has it in `Arachne/utils/ExtrusionLine`, `Arachne/utils/SparseLineGrid`, `Arachne/utils/SparsePointGrid`
+- `RTree::remove` :817 — C++ has it in `Arachne/utils/ExtrusionLine`, `ExtrusionEntityCollection`, `MutablePolygon`
+- `RTree::nearest` :827 — C++ has it in `SLA/SpatIndex`
+- `RTree::query_intersects` :843
+- `seg_point_dist2_f` :859
+- `sub_sqnorm` :1823
+- `scaled_` :1833 — C++ has it in `BoundingBox`, `Fill/FillPlanePath`, `Point`
+- `vert_d` :2153
+- `generate_infill_lines` :2165
 
 ### `Fill/FillBase` (.cpp+.hpp) and `fill/fill_base.rs`
 
