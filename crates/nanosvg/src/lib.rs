@@ -2,6 +2,8 @@
 //! BambuStudio 56a57d0, src/nanosvg/nanosvg.h 221–226 and 241–355.
 #![forbid(unsafe_code)]
 
+pub mod coordinate;
+mod number;
 pub mod path;
 pub mod poly;
 

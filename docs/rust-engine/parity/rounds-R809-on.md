@@ -224,8 +224,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R997 | Apply native CLI geometry options on STL and Bambu 3MF jobs. | Root CLI / config block | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R998 | Route unpainted Bambu part and height-range geometry to live layer regions. | PrintApply / PrintObjectSlice | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R999 | Keep cooling tiers in safe, exclusively borrowed Rust adjustments. | CoolingBuffer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1000 | Parse NanoSVG coordinate units and convert them to pixels in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1000. NanoSVG's raw coordinate parser reads up to 63 number bytes and
+  recognizes the unit at the end of the full token. The conversion uses
+  the viewport axis, DPI or current font size according to the unit. The
+  shared numeric reader also serves the existing polygon/polyline parser.
+  All 319 native unit, raw-value and pixel-value cases agree on macOS arm64
+  and x86_64. Six percentage conversions round differently between the two
+  native builds. The safe crate and its four test targets also compile on
+  Linux musl x86_64 and arm64, and Windows GNU x86_64. The converted values
+  are available to shape readers. Full SVG import and full cross-platform
+  CLI safety remain open. Four standard slicing jobs reproduce R999 with the
+  previous geometry gate enabled and disabled. H2D holds at 4,614,342 and
+  4,614,863.
 
 - R999. The compiled compatibility cooling API collected mutable row pointers
   and dereferenced them to slow down a tier of extruders. It now collects
