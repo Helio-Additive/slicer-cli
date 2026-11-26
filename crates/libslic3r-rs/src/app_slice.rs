@@ -420,12 +420,34 @@ fn apply_inherited_profile(settings: &mut serde_json::Value, inherited: &Dynamic
     Ok(())
 }
 
+/// Root CLI settings for one slice. Only explicit settings files are eligible
+/// for the bundled parent lookup (main.cpp 5459–5517, 9554–9568).
+#[derive(Clone, Copy, Default)]
+pub struct CliJobSettings<'a> {
+    pub overrides: Option<&'a SliceOverrides<'a>>,
+    pub nozzle: Option<&'a NozzleOverride<'a>>,
+    pub load_parent: Option<&'a dyn Fn(&Path, &serde_json::Value) -> Option<DynamicPrintConfig>>,
+}
+
+impl CliJobSettings<'_> {
+    fn apply_file_parent(&self, path: Option<&Path>, settings: &mut serde_json::Value) -> Result<Option<String>> {
+        let resolved = self.load_parent.zip(path).and_then(|(load, file)| load(file, settings));
+        let Some(parent) = resolved.as_ref().or_else(|| self.nozzle.and_then(|n| n.inherited)) else {
+            return Ok(None);
+        };
+        apply_inherited_profile(settings, parent)?;
+        // main.cpp 5508 puts the parent name back into the typed config.
+        Ok(crate::faithful_gate("CLI_FILE_INHERITS")
+            .then(|| settings.get("inherits")?.as_str().map(str::to_owned))
+            .flatten())
+    }
+}
+
 fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&SliceOverrides<'_>>, nozzle: Option<&NozzleOverride<'_>>) -> Result<DynamicPrintConfig> {
     use crate::config::ConfigOptionResolver;
-    if let Some(nozzle) = nozzle {
+    if nozzle.is_some() {
         // main.cpp 1125 initializes this ID even for an unnamed printer.
         if settings.get("printer_settings_id").is_none() { settings["printer_settings_id"] = "".into(); }
-        if let Some(inherited) = nozzle.inherited { apply_inherited_profile(settings, inherited)?; }
     }
     let file = crate::print::full_print_config_from_settings(settings);
     if overrides.is_none() && nozzle.is_none() {
@@ -488,7 +510,14 @@ pub fn slice_to_gcode_with_cli_overrides(
     input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
     nozzle: Option<&NozzleOverride<'_>>,
 ) -> Result<()> {
-    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode, overrides, nozzle)?;
+    slice_to_gcode_with_job_settings(input, settings_json, output, legacy_gcode,
+        CliJobSettings { overrides, nozzle, load_parent: None })
+}
+
+pub fn slice_to_gcode_with_job_settings(
+    input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>, job: CliJobSettings<'_>,
+) -> Result<()> {
+    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode, job)?;
     let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
 
     // Export G-code using Print::export_gcode().
@@ -523,10 +552,11 @@ pub fn slice_to_gcode_with_cli_overrides(
 /// The part of [`slice_to_gcode`] before the G-code export: load and place the STL, build the Print and run
 /// `Print::process()`. Returns the processed Print (for tests that read its objects' layers and support layers).
 pub fn slice_stl_to_print(input: &Path, settings_json: &Path) -> Result<Print> {
-    slice_stl_print(input, settings_json, LegacyGcode::Normalize, None, None).map(|(print, _)| print)
+    slice_stl_print(input, settings_json, LegacyGcode::Normalize, CliJobSettings::default()).map(|(print, _)| print)
 }
 
-fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>, nozzle: Option<&NozzleOverride<'_>>) -> Result<(Print, f64)> {
+fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>, job: CliJobSettings<'_>) -> Result<(Print, f64)> {
+    let CliJobSettings { overrides, nozzle, .. } = job;
     info!("Slicing (in-process): {:?}", input);
 
     // Load mesh — only STL is wired for the library entrypoint.
@@ -562,6 +592,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
         resolve_project_printer(input, Some(settings_json), None, &mut settings_value, None)?;
     }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
+    let parent = job.apply_file_parent(Some(settings_json), &mut settings_value)?;
     let config = checked_job_config(&mut settings_value, overrides, nozzle)?;
     legacy_gcode.apply(&mut settings_value);
     if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM") && profile_can_enable_scarf(&config) {
@@ -710,6 +741,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
     print.apply(print_config, region_config);
     print.raw_settings = raw_settings_json;
     print.config_block_settings = config_block_settings_json;
+    print.cli_profile_parent = parent;
     print.cli_fill_density = overrides.and_then(|o| o.fill_density);
     print.cli_bed_temperature = overrides.and_then(|o| o.values.get("bed_temperature")?.parse().ok());
     if let Some(model) = tree_pin_model {
@@ -1373,6 +1405,14 @@ pub fn slice_3mf_to_gcode_with_cli_overrides(
     input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
     nozzle: Option<&NozzleOverride<'_>>,
 ) -> Result<()> {
+    slice_3mf_to_gcode_with_job_settings(input, settings_override, output, legacy_gcode,
+        CliJobSettings { overrides, nozzle, load_parent: None })
+}
+
+pub fn slice_3mf_to_gcode_with_job_settings(
+    input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>, job: CliJobSettings<'_>,
+) -> Result<()> {
+    let CliJobSettings { overrides, nozzle, .. } = job;
     info!("Slicing 3MF (in-process): {:?}", input);
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
@@ -1459,6 +1499,7 @@ pub fn slice_3mf_to_gcode_with_cli_overrides(
     if nozzle.is_some() || (crate::faithful_gate("PROJECT_PRINTER_PROFILE") && settings_override.is_some()) {
         resolve_project_printer(input, settings_override, embedded_settings.as_deref(), &mut settings_value, imported.as_ref().map(|loaded| &loaded.1))?;
     }
+    let parent = job.apply_file_parent(settings_override, &mut settings_value)?;
     let config = checked_job_config(&mut settings_value, overrides, nozzle)?;
     legacy_gcode.apply(&mut settings_value);
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
@@ -1902,6 +1943,7 @@ pub fn slice_3mf_to_gcode_with_cli_overrides(
     }
     print.raw_settings = raw_settings_json;
     print.config_block_settings = config_block_settings_json;
+    print.cli_profile_parent = parent;
     print.cli_fill_density = overrides.and_then(|o| o.fill_density);
     print.cli_bed_temperature = overrides.and_then(|o| o.values.get("bed_temperature")?.parse().ok());
     print.set_status_callback(|percent, message| {

@@ -234,8 +234,28 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1007 | Apply the official per-extruder nozzle diameters on STL and Bambu 3MF. | root CLI, profile loading | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1008 | Resolve the four printer fields of a partial external profile over the Bambu project. | root file loading, BBS importer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1009 | Check physical nozzle diameters and apply the legacy nozzle override on STL and Bambu 3MF. | root CLI, desktop presets, typed config | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1010 | Resolve the bundled parent of typed external settings files before CLI overrides. | root settings loader, desktop presets, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1010. A settings file inheriting the shipped X1 Carbon 0.6 mm nozzle
+  sliced at 0.4 mm in R1009 unless the legacy nozzle flag was present.
+  The native CLI resolves the file parent for ordinary slices too.
+  Twelve native file snapshots cover machine, process and filament
+  presets, local overrides and unresolved parents. A six-slice root
+  regression covers a nested manifest path, a folder-relative include,
+  defaults filtering, the file's own wall count, a later CLI layer height,
+  both model formats and the verbose notice. It failed against R1009 and
+  passed against the C++ and Rust binaries. On eight real machine-profile
+  jobs, all seven recorded settings match native. The four jobs with a
+  shipped parent gain 1,448 and 98 in-order matches on STL, 515 and 7 on
+  3MF. The four controls retain their prior counts. All eight jobs exactly
+  reproduce R1009 with `CLI_FILE_INHERITS=0`. Sixteen legacy nozzle checks
+  retain the native refusal or printer metadata under both gate settings.
+  On the successful ones, the native parent name is the only added line.
+  All eight standard outputs match R1009. H2D scores against its two
+  saved native runs remain 4,614,342 and 4,614,863. Named preset flags
+  and rebasing all project settings remain separate work.
 
 - R1009. R1008 refused the legacy `--nozzle` flag at the parser. C++ checks
   a fully consumed finite diameter against every resolved nozzle with a

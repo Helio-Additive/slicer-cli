@@ -46,9 +46,14 @@ file selection for these fields.
 
 The legacy `--nozzle` option checks a numeric diameter against every
 physical nozzle on the resolved printer. A mismatch names the printer
-variant to select. If the external settings file inherits a bundled
-preset, that parent supplies the printer settings before the check.
-`CLI_NOZZLE_OVERRIDE=0` restores the earlier refusal of this flag.
+variant to select. `CLI_NOZZLE_OVERRIDE=0` restores the earlier refusal of this flag.
+
+For a `--config` file declaring type `machine`, `process` or `filament`, a
+bundled parent supplies the settings the file inherits. The file's own
+settings take precedence, followed by command-line overrides. When the
+parent resolves, `--verbose` names it and the G-code config block records
+`inherits`. With `CLI_FILE_INHERITS=0` the earlier file-loading path
+resolves parents only for the legacy nozzle check.
 
 On STL and Bambu 3MF jobs, `--temp` sets the regular nozzle temperature.
 The first-layer nozzle temperature keeps its profile setting. `--bed-temp`
@@ -226,7 +231,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R1009) |
+| Fixture | As brought over (R808) | Now (R1010) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -236,11 +241,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R1009:
+missing most often. Lines of the oracle's body the port has verbatim, at R1010:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R1009 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R1010 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

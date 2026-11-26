@@ -158,3 +158,40 @@ pub(crate) fn inherited_settings(root: &Path, file: &Path) -> Option<DynamicPrin
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slicer::config::ConfigOptionResolver;
+
+    #[test]
+    fn external_files_resolve_the_native_machine_process_and_filament_parents() {
+        let profiles = Path::new(env!("CARGO_MANIFEST_DIR")).join("references/BambuStudio/resources/profiles");
+        let work = tempfile::tempdir().unwrap();
+        let file = work.path().join("settings.json");
+        for row in include_str!("../tests/rust-engine/data/desktop_presets/inherited.jsonl").lines() {
+            let case: serde_json::Value = serde_json::from_str(row).unwrap();
+            fs::write(&file, serde_json::to_vec(&case["file"]).unwrap()).unwrap();
+            let config = inherited_settings(&profiles, &file);
+            assert_eq!(config.is_some(), case["resolved"].as_bool().unwrap(), "{}", case["file"]);
+            let Some(config) = config else { continue; };
+            for key in ["inherits", "nozzle_diameter", "printer_model", "printer_variant",
+                "wall_loops", "top_shell_layers", "layer_height", "sparse_infill_density",
+                "filament_type", "filament_diameter", "filament_density", "nozzle_temperature",
+                "printable_area", "use_relative_e_distances", "machine_start_gcode"] {
+                let expected = case["selected"].get(key);
+                let Some(option) = config.option(key) else {
+                    assert!(expected.is_none(), "missing {key} for {}", case["file"]);
+                    continue;
+                };
+                let value = option.serialize().unwrap();
+                let actual = if key == "machine_start_gcode" {
+                    let hash = value.bytes().fold(14695981039346656037u64,
+                        |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(1099511628211));
+                    serde_json::json!([value.len(), hash])
+                } else { value.into() };
+                assert_eq!(Some(&actual), expected, "{key} for {}", case["file"]);
+            }
+        }
+    }
+}

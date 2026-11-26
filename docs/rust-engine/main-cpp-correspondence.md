@@ -9,6 +9,7 @@
 | `main.cpp` 735–756, 770–850, 883, 9550–9596 | `app_slice.rs::external_printer_config` and `resolve_project_printer` | R1008. A partial external bundle overlays the printer model, variant, preset ID and nozzle diameter of the Bambu project. |
 | `cli_command_line.cpp` 561, `main.cpp` 7244–7257, 9696–9790 | `src/cli_command_line.rs`, `src/engine_cli/printer.rs` and `app_slice.rs::apply_command_line_nozzle` | R1009. The raw nozzle option checks every physical diameter after the official option is applied. |
 | `desktop_presets.cpp` 75–152, 197–319, 356–424 and `main.cpp` 2258–2272, 2439–2499, 5459–5517 | `src/desktop_presets.rs` and `src/engine_cli/printer.rs` | R1009. For a nozzle request, resolve the settings file's bundled parent before validation and list this engine's shipped printer variants. |
+| `main.cpp` 5459–5517, 9554–9568 and `desktop_presets.cpp` 197–259, 393–424 | `src/engine_cli.rs`, `src/desktop_presets.rs`, `app_slice.rs::CliJobSettings` | R1010. External `--config` files resolve their bundled parent before flag application on both model formats. The resolved parent is retained in both header passes. |
 
 ## Historical driver at R526
 

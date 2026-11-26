@@ -162,14 +162,19 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     let reject_nozzle = || nozzle_rejected.set(true);
     // main.cpp 9554–9568 applies the file's bundled parent before the
     // physical check. A flat settings file does not require a catalogue.
-    let inherited = request.geometry.overrides.contains_key("nozzle_diameter").then(|| {
-        let path = request.config.as_deref()?;
-        let doc: serde_json::Value = serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(path).ok()?)).ok()?;
-        if doc.get("inherits")?.as_str()?.is_empty() { return None; }
-        crate::desktop_presets::inherited_settings(&printer::profiles_dir()?, path)
-    }).flatten();
+    let file_inherits = slicer::faithful_gate("CLI_FILE_INHERITS");
+    let load_parent = |path: &std::path::Path, doc: &serde_json::Value| {
+        let name = doc.get("inherits")?.as_str()?;
+        if name.is_empty() { return None; }
+        if file_inherits && doc.get("from").is_some_and(|v| !v.is_string()) { return None; }
+        let settings = crate::desktop_presets::inherited_settings(&printer::profiles_dir()?, path)?;
+        if file_inherits && request.verbose {
+            println!("Applied {name}, the preset {} inherits", path.display());
+        }
+        Some(settings)
+    };
     let nozzle = request.geometry.overrides.get("nozzle_diameter").map(|raw| slicer::app_slice::NozzleOverride {
-        given: raw.as_str(), inherited: inherited.as_ref(), check_variant: &printer::check_nozzle_variant, rejected: &reject_nozzle,
+        given: raw.as_str(), inherited: None, check_variant: &printer::check_nozzle_variant, rejected: &reject_nozzle,
     });
     for (key, raw) in &request.geometry.overrides {
         if key == "nozzle_diameter" {
@@ -199,6 +204,11 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     };
     let overrides = slicer::app_slice::SliceOverrides { values: &values, fill_density, report_rejections: &report };
     let overrides = (!values.is_empty() || !rejected.is_empty()).then_some(&overrides);
+    let job = slicer::app_slice::CliJobSettings {
+        overrides,
+        nozzle: nozzle.as_ref(),
+        load_parent: (file_inherits || nozzle.is_some()).then_some(&load_parent),
+    };
     let failed = engine_failure;
     match extension(&request.input).as_str() {
         "stl" => {
@@ -211,16 +221,15 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
                     CLI_INVALID_PARAMS,
                 )
             })?;
-            slicer::app_slice::slice_to_gcode_with_cli_overrides(&request.input, config, &request.output, legacy_gcode, overrides, nozzle.as_ref())
+            slicer::app_slice::slice_to_gcode_with_job_settings(&request.input, config, &request.output, legacy_gcode, job)
                 .map_err(failed)
         }
-        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_cli_overrides(
+        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_job_settings(
             &request.input,
             request.config.as_deref(),
             &request.output,
             legacy_gcode,
-            overrides,
-            nozzle.as_ref(),
+            job,
         )
         .map_err(failed),
         other => Err((
