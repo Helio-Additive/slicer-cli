@@ -1594,7 +1594,7 @@ impl Print {
                 // GCode.cpp:4671-4676 -- brim on first layer, after OBJECT_ID
                 if !brim_done && first_layer && !self.brim.entities.is_empty() {
                     // Retract, travel to brim start, and unretract (like extrude_perimeters)
-                    writer.retract();
+                    writer.retract_for_export();
                     writer.set_travel_acceleration(6000.0);
                     if let Some(first_pt) = exporter::get_entity_first_point(&self.brim.entities[0])
                     {
@@ -1746,7 +1746,7 @@ impl Print {
                 && !writer.is_retracted()
                 && !(last_layer_group && end_sequence_cpp)
             {
-                writer.retract();
+                writer.retract_for_export();
             }
 
             i = j;

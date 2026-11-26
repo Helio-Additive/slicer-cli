@@ -780,7 +780,7 @@ impl GCodeWriter {
         let to = crate::Point::new(crate::scale(x), crate::scale(y));
         let len = ((x - self.x) * (x - self.x) + (y - self.y) * (y - self.y)).sqrt();
         if self.needs_retraction_decision(from, to, ExtrusionRole::Mixed, len) {
-            self.retract();
+            self.retract_for_export();
         } else {
             self.reset_wipe_path();
         }
@@ -1848,7 +1848,7 @@ impl GCodeWriter {
     pub fn retract_for_toolchange_with_lift(&mut self, lift_type: u8, apply_instantly: bool) {
         let prev_lt = self.m_forced_lift_type.replace(lift_type);
         let prev_ai = std::mem::replace(&mut self.m_apply_lift_instantly, apply_instantly);
-        self.retract_for_toolchange();
+        self.retract_for_toolchange_impl(true);
         self.m_forced_lift_type = prev_lt;
         self.m_apply_lift_instantly = prev_ai;
     }
@@ -1889,7 +1889,7 @@ impl GCodeWriter {
     pub fn retract_with_lift_type(&mut self, lift_type: u8, apply_instantly: bool) {
         let prev_lt = self.m_forced_lift_type.replace(lift_type);
         let prev_ai = std::mem::replace(&mut self.m_apply_lift_instantly, apply_instantly);
-        self.retract();
+        self.retract_for_export();
         self.m_forced_lift_type = prev_lt;
         self.m_apply_lift_instantly = prev_ai;
     }
@@ -2477,6 +2477,10 @@ impl GCodeWriter {
     /// entire retract+wipe, so this is the same semantics with no risk to the
     /// ordinary path.
     pub fn retract_for_toolchange(&mut self) {
+        self.retract_for_toolchange_impl(false);
+    }
+
+    fn retract_for_toolchange_impl(&mut self, from_export: bool) {
         // R609: TOWER_ENTRY_WHY=1 — report why this no-ops. R608 assumed the writer
         // was already `retracted` at tower entry; the emitted gcode shows no retract
         // there at all, so the blocker is one of the other guards at `retract()`'s
@@ -2507,7 +2511,7 @@ impl GCodeWriter {
         self.retraction_length = self.config.retract_length_toolchange;
         self.tc_retract_probe = true;
         self.m_toolchange_wipe = true;
-        self.retract();
+        self.retract_impl(from_export);
         self.m_toolchange_wipe = false;
         self.tc_retract_probe = false;
         self.retraction_length = saved;
@@ -2550,6 +2554,18 @@ impl GCodeWriter {
     }
 
     pub fn retract(&mut self) {
+        self.retract_impl(false);
+    }
+
+    /// GCode.cpp 8498–8523. Export retractions reset the extruder coordinate
+    /// before lifting. Direct GCodeWriter retractions retain that coordinate.
+    pub(crate) fn retract_for_export(&mut self) {
+        self.retract_impl(true);
+    }
+
+    fn retract_impl(&mut self, from_export: bool) {
+        let reset_axis = from_export && !self.config.use_relative_e
+            && crate::faithful_gate("EXPORT_EXTRUSION_MODE");
         if self.retracted {
             // GCodeWriter.cpp:892-925, Extruder.cpp:101-132. A tool change
             // can request a longer retraction after the normal one. The writer
@@ -2558,6 +2574,9 @@ impl GCodeWriter {
             if remaining > 0.0 && crate::faithful_gate("RETRACT_TO_REQUESTED_LENGTH") {
                 self.write_retraction(remaining, self.config.retract_speed * 60.0);
                 self.m_retracted_length += remaining;
+            }
+            if reset_axis {
+                self.reset_e_after_retract();
             }
             // GCode.cpp:8513-8523 runs the lift even if the length was already reached.
             if crate::faithful_gate("RETRACT_LIFT_ALWAYS") {
@@ -3018,6 +3037,9 @@ impl GCodeWriter {
             }
         }
 
+        if reset_axis {
+            self.reset_e_after_retract();
+        }
         self.emit_lift_after_retract();
 
         self.retracted = true;

@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
 #define private public
 #define protected public
 #include "libslic3r/GCodeWriter.hpp"
@@ -477,8 +478,38 @@ static void run(const Case &c)
     emit("post", w.postamble(), w);
 }
 
-int main()
+static void axis_modes()
 {
+    const char *flavors[] = {"marlin", "marlin2", "reprap", "reprapfirmware", "repetier", "teacup", "smoothie",
+                             "klipper", "makerware", "sailfish", "mach3", "machinekit", "no-extrusion"};
+    for (bool initial : {false, true}) {
+        for (const char *input : {"0", "1", "true", "false", " 0", "0 ", "", "2", "on", "off"}) {
+            for (const char *flavor : flavors) {
+                ConfigOptionBool value(initial);
+                const bool accepted = value.deserialize(input, false);
+                DynamicPrintConfig config;
+                config.set_deserialize_strict("gcode_flavor", flavor);
+                config.set_key_value("use_relative_e_distances", value.clone());
+                PrintConfig print;
+                print.apply(config, true);
+                GCodeWriter writer;
+                writer.apply_print_config(print);
+                nlohmann::json row = {{"initial", initial}, {"input", input}, {"flavor", flavor},
+                                      {"accepted", accepted}, {"mode", writer.config.use_relative_e_distances.value},
+                                      {"preamble", writer.preamble()}};
+                std::cout << row.dump() << '\n';
+            }
+        }
+    }
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && std::string(argv[1]) == "--axis-modes") {
+        axis_modes();
+        return 0;
+    }
+
     // The machines: a flavor each, and the options the writer and the extruders read.
     const char *flavors[] = {"marlin", "klipper", "reprap", "reprapfirmware", "repetier", "teacup", "makerware",
                              "marlin2", "sailfish", "smoothie", "mach3", "machinekit", "no-extrusion"};

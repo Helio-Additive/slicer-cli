@@ -1,0 +1,260 @@
+{"accepted":true,"flavor":"marlin","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"marlin2","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"reprap","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"reprapfirmware","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"repetier","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"teacup","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"smoothie","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"klipper","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"makerware","initial":false,"input":"0","mode":false,"preamble":""}
+{"accepted":true,"flavor":"sailfish","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"mach3","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"machinekit","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"no-extrusion","initial":false,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"marlin","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"marlin2","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"reprap","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"reprapfirmware","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"repetier","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"teacup","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"smoothie","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"klipper","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"makerware","initial":false,"input":"1","mode":true,"preamble":""}
+{"accepted":true,"flavor":"sailfish","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"mach3","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"machinekit","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"no-extrusion","initial":false,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"true","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"true","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"false","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"false","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":" 0","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":" 0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"0 ","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"0 ","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"2","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"2","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"on","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"on","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"marlin2","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprap","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"repetier","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"teacup","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"smoothie","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"klipper","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":false,"flavor":"makerware","initial":false,"input":"off","mode":false,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":false,"input":"off","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"marlin","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"marlin2","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"reprap","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"reprapfirmware","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"repetier","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"teacup","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"smoothie","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"klipper","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\nM82 ; use absolute distances for extrusion\nG92 E0\n"}
+{"accepted":true,"flavor":"makerware","initial":true,"input":"0","mode":false,"preamble":""}
+{"accepted":true,"flavor":"sailfish","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"mach3","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"machinekit","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"no-extrusion","initial":true,"input":"0","mode":false,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"marlin","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"marlin2","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"reprap","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"reprapfirmware","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"repetier","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"teacup","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"smoothie","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"klipper","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":true,"flavor":"makerware","initial":true,"input":"1","mode":true,"preamble":""}
+{"accepted":true,"flavor":"sailfish","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"mach3","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"machinekit","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":true,"flavor":"no-extrusion","initial":true,"input":"1","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"true","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"true","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"false","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"false","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":" 0","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":" 0","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"0 ","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"0 ","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"2","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"2","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"on","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"on","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"marlin","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"marlin2","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprap","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"reprapfirmware","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"repetier","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"teacup","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"smoothie","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"klipper","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\nM83 ; use relative distances for extrusion\n"}
+{"accepted":false,"flavor":"makerware","initial":true,"input":"off","mode":true,"preamble":""}
+{"accepted":false,"flavor":"sailfish","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"mach3","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"machinekit","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\n"}
+{"accepted":false,"flavor":"no-extrusion","initial":true,"input":"off","mode":true,"preamble":"G90\nG21\n"}

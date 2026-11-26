@@ -229,8 +229,26 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1002 | Borrow the G-code stream processor safely and preserve native C-string writes. | GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1003 | Apply root CLI nozzle and active-plate temperature overrides. | root CLI, Print, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1004 | Retract the departing filament by its tool-change distance with the tower disabled. | GCode, GCodeWriter | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1005 | Use the profile's extrusion mode in the writer preamble and reset absolute E on retraction. | GCode, GCodeWriter, PrintConfig | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1005. The native config block requested absolute extrusion on both an STL
+  and a Bambu 3MF. Rust printed the same setting but emitted the relative
+  command M83. With the profile value applied to the preamble and exporter,
+  the first retraction exposed a second difference. Native reset E before
+  lifting, so the first STL deposition ended at E1.28964. Rust emitted E.88964.
+  The revised exporter matches all 257 STL and 263 3MF resets. STL in-order
+  matches rise from 9,506 to 17,432, and embedded 3MF matches rise from
+  6,187 to 9,010. Relative-mode controls keep the same bytes. The 3MF's
+  remaining object-motion differences are outside this change.
+  The typed writer matches 260 native cases across 13 dialects. On real
+  jobs the preamble and serialized mode agree in 112 cases covering external
+  settings, embedded settings and external overrides of both project modes.
+  Four more jobs cover per-plate metadata and unmarked project generators.
+  `EXPORT_EXTRUSION_MODE=0` reproduces the earlier exporter. All four
+  standard files match R1004 with the gate on and off. H2D stays at
+  4,614,342 and 4,614,863.
 
 - R1004. At the first tower-disabled tool change on the three-slot project,
   both writers had retracted 0 mm and had a 2 mm tool-change setting. Rust

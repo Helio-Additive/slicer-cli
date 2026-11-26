@@ -223,6 +223,52 @@ fn apply_cli_temperature(config: &mut DynamicPrintConfig, key: &str, value: &str
     Ok(keys)
 }
 
+const EXTRUSION_MODE: &str = "use_relative_e_distances";
+
+/// main.cpp 735–756, 808–850, 883: external profiles get a second per-key
+/// pass. Numeric array elements and floating scalars use std::to_string(double).
+fn external_extrusion_mode(path: &Path, value: &serde_json::Value) -> Option<bool> {
+    use crate::config::{config_helpers::enum_looks_like_true_value, ConfigBase, ConfigOptionResolver,
+        ConfigSubstitutionContext, ForwardCompatibilitySubstitutionRule};
+    use serde_json::Value;
+    let token = match value {
+        Value::String(s) => s.clone(),
+        Value::Bool(b) => return Some(*b),
+        Value::Number(n) if n.is_f64() => format!("{:.6}", n.as_f64()?),
+        // main.cpp 847 uses get<int>(), including its 32-bit narrowing.
+        Value::Number(n) => return Some(n.as_i64().map(|v| v as i32)
+            .or_else(|| n.as_u64().map(|v| v as i32))? == 1),
+        Value::Array(items) => items.iter().filter_map(|item| match item {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(format!("{:.6}", n.as_f64()?)),
+            _ => None,
+        }).collect::<Vec<_>>().join(","),
+        _ => return None,
+    };
+    if !token.is_empty() && token != "nil" {
+        // Config.hpp 1866–1878, Config.cpp 692–706 (substitutions enabled).
+        return Some(token == "1" || enum_looks_like_true_value(&token));
+    }
+    // The second pass skips this token. The first file load may still have
+    // applied a string or a nested string array (Config.cpp 900–942, 1074–1084).
+    let mut file = DynamicPrintConfig::new();
+    let mut ctx = ConfigSubstitutionContext::new(ForwardCompatibilitySubstitutionRule::EnableSilent);
+    let mut reason = String::new();
+    file.load_from_json_with_context(path.to_str()?, &mut ctx, false, &mut Default::default(), &mut reason);
+    if reason.is_empty() { file.option(EXTRUSION_MODE)?.get_bool().ok() } else { None }
+}
+
+/// A BBS file consumes strings and string arrays only. The importer also
+/// checks the model's generator before accepting its config (bbs_3mf.cpp
+/// 2263–2331). A project that could request absolute E needs the imported value.
+fn project_can_select_absolute(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        Some(serde_json::Value::String(s)) => s != "1" && !crate::config::config_helpers::enum_looks_like_true_value(s),
+        Some(serde_json::Value::Array(_)) => true,
+        _ => false,
+    }
+}
+
 fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&SliceOverrides<'_>>) -> Result<DynamicPrintConfig> {
     let file = crate::print::full_print_config_from_settings(settings);
     let Some(overrides) = overrides else {
@@ -326,6 +372,12 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
         .with_context(|| format!("Failed to read settings: {:?}", settings_json))?;
     let mut settings_value: serde_json::Value = serde_json::from_str(&settings_str)
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
+    if crate::faithful_gate("EXPORT_EXTRUSION_MODE") {
+        if let Some(value) = settings_value.get(EXTRUSION_MODE) {
+            let relative = external_extrusion_mode(settings_json, value).unwrap_or(true);
+            settings_value[EXTRUSION_MODE] = u8::from(relative).to_string().into();
+        }
+    }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
     let config = checked_job_config(&mut settings_value, overrides)?;
     legacy_gcode.apply(&mut settings_value);
@@ -1168,10 +1220,12 @@ pub fn slice_3mf_to_gcode_with_overrides(
     // sub-meshes share the sliced mesh's frame (layer zs / XY).
 
     // Settings source: an explicit override wins, else the 3MF's embedded config.
+    let external_settings;
     let settings_str = if let Some(path) = settings_override {
         info!("Loading BambuStudio settings from {:?}", path);
-        fs::read_to_string(path).with_context(|| format!("Failed to read settings: {:?}", path))?
-    } else if let Some(embedded) = embedded_settings {
+        external_settings = fs::read_to_string(path).with_context(|| format!("Failed to read settings: {:?}", path))?;
+        external_settings.as_str()
+    } else if let Some(embedded) = embedded_settings.as_deref() {
         info!("Using settings embedded in the 3MF");
         embedded
     } else {
@@ -1183,7 +1237,34 @@ pub fn slice_3mf_to_gcode_with_overrides(
     };
 
     let mut settings_value: serde_json::Value =
-        serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
+        serde_json::from_str(settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
+    let mut imported = None;
+    if crate::faithful_gate("EXPORT_EXTRUSION_MODE") {
+        let requested = settings_value.get(EXTRUSION_MODE);
+        let external = settings_override.and_then(|path| external_extrusion_mode(path, requested?));
+        // main.cpp 9550–9581 overlays the settings file on the project's config.
+        // Inspect the saved option only if the file didn't set it.
+        let needs_project = external.is_none() && if settings_override.is_some() {
+            #[derive(serde::Deserialize)]
+            struct SavedMode { use_relative_e_distances: Option<serde_json::Value> }
+            embedded_settings.as_deref().and_then(|s| serde_json::from_str::<SavedMode>(s).ok())
+                .is_some_and(|saved| project_can_select_absolute(saved.use_relative_e_distances.as_ref()))
+        } else {
+            project_can_select_absolute(requested)
+        };
+        let relative = if needs_project {
+            use crate::config::ConfigOptionResolver;
+            let loaded = load_bbs_model_and_config(input)?;
+            let mode = loaded.1.option(EXTRUSION_MODE).map(|o| o.get_bool()).transpose()?.unwrap_or(true);
+            imported = Some(loaded);
+            mode
+        } else {
+            external.unwrap_or(true)
+        };
+        if requested.is_some() || !relative {
+            settings_value[EXTRUSION_MODE] = u8::from(relative).to_string().into();
+        }
+    }
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
     let config = checked_job_config(&mut settings_value, overrides)?;
     legacy_gcode.apply(&mut settings_value);
@@ -1205,7 +1286,7 @@ pub fn slice_3mf_to_gcode_with_overrides(
     let mut model_walls = None;
     let mut geometry_regions = None;
     if needs_scarf || needs_filament || scoped.region_geometry {
-        let (model, embedded) = load_bbs_model_and_config(input)?;
+        let (model, embedded) = match imported { Some(loaded) => loaded, None => load_bbs_model_and_config(input)? };
         let full = normalized_model_config(if settings_override.is_some() {
             config
         } else {

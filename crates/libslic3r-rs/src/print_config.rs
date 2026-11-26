@@ -2669,6 +2669,19 @@ impl PrintConfig {
     /// Apply a key-value pair from BambuStudio project_settings JSON.
     /// Returns true if the key was recognized and applied.
     pub fn set_deserialize(&mut self, key: &str, value: &str) -> bool {
+        // PrintConfig.cpp 6872–6878 and Config.hpp 1866–1878. Both export
+        // writers use the profile's single Boolean option.
+        if key == "use_relative_e_distances" && crate::faithful_gate("EXPORT_EXTRUSION_MODE") {
+            use crate::config::{ConfigOption, ConfigOptionBool};
+            let mut option = ConfigOptionBool::with_value(self.use_relative_e);
+            if !matches!(option.deserialize(value, false), Ok(true)) {
+                return false;
+            }
+            self.use_relative_e = option.value;
+            self.use_relative_e_distances_cooling = option.value;
+            return true;
+        }
+
         if processor_filament_material_rows_enabled(key) {
             use crate::config::{ConfigOption, ConfigOptionFloats, ConfigOptionInts};
             if key == "filament_cost" {
@@ -5472,6 +5485,9 @@ impl PrintConfig {
     /// Returns a HashMap of key -> value strings.
     pub fn to_key_value_map(&self) -> HashMap<String, String> {
         let mut m = HashMap::new();
+        if crate::faithful_gate("EXPORT_EXTRUSION_MODE") {
+            m.insert("use_relative_e_distances".into(), u8::from(self.use_relative_e).to_string());
+        }
         m.insert("layer_height".into(), format!("{}", self.layer_height));
         m.insert(
             "initial_layer_print_height".into(),
@@ -5648,6 +5664,10 @@ impl PrintConfig {
     /// Apply a single key-value setting.
     /// Returns true if the key was recognized.
     pub fn apply_key_value(&mut self, key: &str, value: &str) -> bool {
+        if key == "use_relative_e_distances" && crate::faithful_gate("EXPORT_EXTRUSION_MODE") {
+            return self.set_deserialize(key, value);
+        }
+
         let parse_f64 =
             |s: &str| -> Option<f64> { s.trim().trim_end_matches('%').parse::<f64>().ok() };
         let parse_u32 = |s: &str| -> Option<u32> { s.trim().parse::<u32>().ok() };

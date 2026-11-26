@@ -360,3 +360,38 @@ fn g_code_writer_programs() {
     assert!(n_cases >= 50 && n_ops >= 5000, "only {n_cases} cases, {n_ops} calls: {per_op:?}");
     let _ = hf(0.0);
 }
+
+// PrintConfig.cpp 6872–6878 and GCodeWriter.cpp 100–125. Propagate
+// the same axis mode through the profile, cooling parser and live header.
+#[test]
+fn export_extrusion_mode_matches_native_preamble() {
+    use slicer::g_code::{GCodeHeader, GCodeStats};
+    use slicer::print_config::PrintConfig;
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        flavor: String,
+        initial: bool,
+        input: String,
+        accepted: bool,
+        mode: bool,
+        preamble: String,
+    }
+    for row in include_str!("data/g_code_writer/axis_modes.jsonl").lines() {
+        let case: Case = serde_json::from_str(row).unwrap();
+        let mut config = PrintConfig::default().use_relative_e(case.initial);
+        config.use_relative_e_distances_cooling = case.initial;
+        assert!(config.set_deserialize("gcode_flavor", &case.flavor), "{row}");
+        let mut restored = config.clone();
+        assert_eq!(config.set_deserialize("use_relative_e_distances", &case.input), case.accepted, "{row}");
+        assert_eq!(restored.apply_key_value("use_relative_e_distances", &case.input), case.accepted, "{row}");
+        for cfg in [&config, &restored] {
+            assert_eq!((cfg.use_relative_e, cfg.use_relative_e_distances_cooling), (case.mode, case.mode), "{row}");
+        }
+        let values = config.to_key_value_map();
+        assert_eq!(values.get("use_relative_e_distances").unwrap(), if case.mode { "1" } else { "0" });
+        let header = GCodeHeader::new(GCodeStats::default(), config).generate_executable_block_content();
+        let (_, preamble) = header.rsplit_once(" ; set nozzle temperature and wait for it to be reached\n").unwrap();
+        assert_eq!(preamble, case.preamble, "{row}");
+    }
+}

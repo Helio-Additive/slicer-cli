@@ -3098,7 +3098,7 @@ pub fn extrude_collection(
                     writer.needs_retraction_for_travel(travel_len)
                 };
                 if did_retract {
-                    writer.retract();
+                    writer.retract_for_export();
                 }
                 if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                     writer.set_travel_acceleration_for(entity_role, travel_len);
@@ -4658,7 +4658,7 @@ pub fn extrude_perimeters(
     }
 
     // Retract and travel to first perimeter point
-    writer.retract();
+    writer.retract_for_export();
     writer.set_travel_acceleration(6000.0);
     let first_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         travel_target_for_entity(&region.perimeters.entities[0], writer_last_pos(writer))
@@ -4775,7 +4775,7 @@ pub fn extrude_infill(
                 true
             };
             if __zs_do_retract {
-                writer.retract();
+                writer.retract_for_export();
             }
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
@@ -4901,7 +4901,7 @@ pub fn extrude_perimeters_entities(
         true
     };
     if do_retract {
-        writer.retract();
+        writer.retract_for_export();
     }
     if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
         if let Some(fp) = first_pt_opt {
@@ -5084,7 +5084,7 @@ pub fn extrude_infill_entities(
                 true
             };
             if __zs_do_retract {
-                writer.retract();
+                writer.retract_for_export();
             }
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
@@ -5383,7 +5383,7 @@ pub fn extrude_support(
                 true
             };
             if __zs_do_retract {
-                writer.retract();
+                writer.retract_for_export();
             }
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
                 let from = writer_last_pos(writer);
@@ -5545,7 +5545,7 @@ fn loop_path_travel_first(writer: &mut GCodeWriter, path: &ExtrusionPath) {
             writer.needs_retraction_for_travel(travel_len)
         };
         if did_retract {
-            writer.retract();
+            writer.retract_for_export();
         }
         writer.set_travel_acceleration_for(path.role, travel_len);
         if crate::gcode::writer::lift_faithful_gate() {
@@ -5690,7 +5690,7 @@ pub fn retract(writer: &mut GCodeWriter, wipe: bool) -> Result<()> {
     /// Call writer's retract method (handles firmware retract or manual retract)
     /// GCode.cpp:6707-6708
     /// C++: gcode += toolchange ? m_writer.retract_for_toolchange() : m_writer.retract();
-    writer.retract();
+    writer.retract_for_export();
 
     /// Reset E position after retraction
     /// GCode.cpp:6710
@@ -8852,6 +8852,16 @@ impl GCodeHeader {
             format!("M73 P0 R{}\n", minutes)
         };
         let c = &self.config;
+        // GCode.cpp 3257, 6458–6469 and GCodeWriter.cpp 100–125. Use the writer preamble
+        // for the selected dialect and extrusion mode.
+        let preamble = if crate::faithful_gate("EXPORT_EXTRUSION_MODE") {
+            let mut writer = crate::g_code_writer::GCodeWriter::new();
+            writer.config.gcode_flavor = c.gcode_flavor;
+            writer.config.use_relative_e_distances = c.use_relative_e;
+            writer.preamble()
+        } else {
+            String::from("G90\nG21\nM83 ; use relative distances for extrusion\n")
+        };
 
         // Machine motion parameters — read from raw_settings if available
         if let Some(ref settings) = self.raw_settings {
@@ -8995,9 +9005,7 @@ impl GCodeHeader {
             } else {
                 s.push_str(&format!(";VT{initial}\n"));
             }
-            s.push_str("G90\n");
-            s.push_str("G21\n");
-            s.push_str("M83 ; use relative distances for extrusion\n");
+            s.push_str(&preamble);
             // GCode.cpp 3363.
             if !crate::faithful_gate("EXPORT_PRINTER_KIND") || self.printer_is_bbl() {
                 s.push_str("M981 S1 P20000 ;open spaghetti detector\n");
@@ -9037,9 +9045,7 @@ impl GCodeHeader {
             } else {
                 s.push_str(";VT0\n");
             }
-            s.push_str("G90\n");
-            s.push_str("G21\n");
-            s.push_str("M83 ; use relative distances for extrusion\n");
+            s.push_str(&preamble);
             // Spaghetti detector
             // GCode.cpp 3363.
             if !crate::faithful_gate("EXPORT_PRINTER_KIND") || self.printer_is_bbl() {
@@ -9059,9 +9065,7 @@ impl GCodeHeader {
                 "M109 S{} ; set nozzle temperature and wait for it to be reached\n",
                 c.extruder_temperature
             ));
-            s.push_str("G90\n");
-            s.push_str("G21\n");
-            s.push_str("M83 ; use relative distances for extrusion\n");
+            s.push_str(&preamble);
         }
         // When using BambuStudio settings, machine_start_gcode handles
         // all temperature/positioning. No extra commands needed.

@@ -1148,3 +1148,59 @@ fn scoped_walls_reach_project_toolpaths() {
         assert!(slice(&model_path, requested) == controls[&effective], "native region {row}");
     }
 }
+
+/// Config.cpp 900–942, 1074–1084 and main.cpp 735–756, 808–850.
+/// Native CLI slices of calib_base.3mf give these modes after applying the
+/// external file over the embedded config, before the writer emits its preamble.
+#[test]
+fn extrusion_mode_follows_the_project_and_external_file_loaders() {
+    use serde_json::{json, Value};
+    use std::{fs, fs::File, io::Write, path::Path};
+    use zip::{write::FileOptions, ZipArchive, ZipWriter};
+
+    let _ids = MODEL_IDS.lock().unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/calib_base.3mf");
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("part.3mf");
+    let settings = dir.path().join("settings.json");
+    let output = dir.path().join("out.gcode");
+    const KEY: &str = "use_relative_e_distances";
+    for (embedded, external, relative) in [
+        (json!("0"), Some(Value::Null), false),
+        (json!("0"), Some(json!("ON")), true),
+        (json!("1"), Some(json!([1])), false),
+        (json!("0"), Some(json!(4294967297_u64)), true),
+        (json!("1"), Some(json!(false)), false),
+        (json!(false), None, true),
+        (json!(" 0"), None, false),
+        (json!(["1", "0"]), None, false),
+    ] {
+        let mut source = ZipArchive::new(File::open(&fixture).unwrap()).unwrap();
+        let mut zip = ZipWriter::new(File::create(&project).unwrap());
+        for i in 0..source.len() {
+            let entry = source.by_index(i).unwrap();
+            if entry.name() != "Metadata/project_settings.config" {
+                zip.raw_copy_file(entry).unwrap();
+                continue;
+            }
+            let mut profile: Value = serde_json::from_reader(entry).unwrap();
+            profile[KEY] = embedded.clone();
+            zip.start_file("Metadata/project_settings.config", FileOptions::default()).unwrap();
+            zip.write_all(&serde_json::to_vec(&profile).unwrap()).unwrap();
+            if let Some(value) = external.as_ref() {
+                profile[KEY] = value.clone();
+                serde_json::to_writer(File::create(&settings).unwrap(), &profile).unwrap();
+            }
+        }
+        zip.finish().unwrap();
+        slicer::app_slice::slice_3mf_to_gcode(
+            &project, external.as_ref().map(|_| settings.as_path()), &output,
+        ).unwrap();
+        let gcode = fs::read_to_string(&output).unwrap();
+        let preamble = if relative { "M83 ; use relative distances for extrusion" }
+                       else { "M82 ; use absolute distances for extrusion" };
+        assert!(gcode.lines().any(|l| l == preamble), "{embedded} / {external:?}");
+        assert_eq!(gcode.lines().find_map(|l| l.strip_prefix("; use_relative_e_distances = ")),
+                   Some(if relative { "1" } else { "0" }), "{embedded} / {external:?}");
+    }
+}
