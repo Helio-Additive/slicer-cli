@@ -93,6 +93,18 @@ fn curve_bounds(curve: &[Point]) -> [f32; 4] {
     bounds
 }
 
+// nsvg__lineTo, nanosvg.h 721–733. Each line uses two controls at thirds.
+pub(crate) fn line_to(points: &mut Vec<Point>, endpoint: Point) {
+    let Some(&last) = points.last() else { return };
+    let dx = endpoint[0] - last[0];
+    let dy = endpoint[1] - last[1];
+    points.extend([
+        [last[0] + dx / 3.0, last[1] + dy / 3.0],
+        [endpoint[0] - dx / 3.0, endpoint[1] - dy / 3.0],
+        endpoint,
+    ]);
+}
+
 /// nsvg__addPath. Consume the parser's start point followed by three
 /// control/end points per cubic segment and apply the current SVG transform.
 pub fn add_path(mut points: Vec<Point>, closed: bool, xform: [f32; 6]) -> Option<Path> {
@@ -101,14 +113,7 @@ pub fn add_path(mut points: Vec<Point>, closed: bool, xform: [f32; 6]) -> Option
     }
     if closed {
         let first = points[0];
-        let last = points[points.len() - 1];
-        let dx = first[0] - last[0];
-        let dy = first[1] - last[1];
-        points.extend([
-            [last[0] + dx / 3.0, last[1] + dy / 3.0],
-            [first[0] - dx / 3.0, first[1] - dy / 3.0],
-            first,
-        ]);
+        line_to(&mut points, first);
     }
     for p in &mut points {
         *p = transform(*p, xform);

@@ -219,8 +219,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R992 | Import and time existing G-code pairs through the root command line. | Root CLI and G-code processor | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R993 | Write binary STL headers, face counts and facets with safe little-endian conversions. | TriangleMesh | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R994 | Build transformed NanoSVG cubic paths and convert them to polygons and polylines in safe Rust. | NanoSVG / NSVGUtils | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R995 | Parse the points geometry of SVG polygon and polyline elements in safe Rust. | NanoSVG | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R995. All 120 SVG documents reproduce the native cubic points, bounds and
+  closure on macOS arm64 and x86_64 under Rosetta. The first numeric
+  difference occurs before geometry. NanoSVG saturates each integer and
+  fractional digit sequence at the signed 64-bit limit and divides the
+  fractional part by ten to the full number of digits. It consumes a long
+  token even after its 63-byte buffer fills. A trailing separator after an
+  unmatched X produces a final Y of zero. The parser takes the resolved
+  element transform, which two documents check with an explicit matrix.
+  Full style, viewport and document handling remain partial. No existing
+  slicing mode calls this new function. The four standard jobs reproduce
+  R994 with the previous STL gate enabled and disabled. H2D holds at
+  4,614,342 and 4,614,863 against the two native runs.
 
 - R994. All 344 native cubic-path vectors reproduce the point and bounds
   bits on macOS arm64 and baseline x86_64 under Rosetta. Clang contracts

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod path;
+pub mod poly;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum XmlEvent<'a> {

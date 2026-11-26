@@ -1184,7 +1184,7 @@
     "status": "partial",
     "priority": 2,
     "fidelity": "fixed",
-    "notes": "R986 ports NanoSVG XML callbacks. R994 ports transformed cubic paths, curve bounds and NSVGUtils::linearize_path. Tests compare all points, bounds and flattened lines with the pin. Parsing styled shapes and images, fill and stroke conversion, and the SVG import path remain partial."
+    "notes": "R986 ports NanoSVG XML callbacks. R994 ports transformed cubic paths, curve bounds and NSVGUtils::linearize_path. Tests compare all points, bounds and flattened lines with the pin. Parsing styled shapes and images, fill and stroke conversion, and the SVG import path remain partial. R995 verifies the path geometry of polygon and polyline elements in 120 complete native SVG documents."
   },
   {
     "cpp": "GCodeSender.cpp",
@@ -3007,7 +3007,7 @@
     "status": "partial",
     "priority": 7,
     "fidelity": "flagged",
-    "notes": "R986 ports NanoSVG XML callbacks in crates/nanosvg. SVG import still needs NanoSVG paths and shapes and OCCT extrusion and meshing."
+    "notes": "The safe NanoSVG dependency handles XML events, cubic path construction and the points geometry of polygon and polyline elements. SVG import still needs styled shape and document parsing and OCCT extrusion and meshing."
   },
   {
     "cpp": "Format/SL1.cpp",
