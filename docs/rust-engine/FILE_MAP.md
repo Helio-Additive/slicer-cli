@@ -44,24 +44,24 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | Rust files with no C++ file of that name | 67 (plus 24 `mod.rs`/`lib.rs`/`main.rs`) |
 | Rust files that share a C++ unit's name with another Rust file | 7 |
 | C++ functions (named, with a body) | 9052 |
-| matched to a Rust function in the paired file | 7489 (83%) |
-| estimate: faithful | 6551 (87% of matched) |
+| matched to a Rust function in the paired file | 7487 (83%) |
+| estimate: faithful | 6549 (87% of matched) |
 | estimate: partial | 619 (8% of matched) |
 | estimate: divergent | 287 (4% of matched) |
 | estimate: stub | 32 (0% of matched) |
-| missing in the paired Rust file | 1541 |
+| missing in the paired Rust file | 1543 |
 | of those, a function of that name exists in another Rust file | 873 |
 | of the rest, another overload of the name is ported | 301 |
-| of the rest, under 25 tokens (accessors, one-liners) | 90 |
-| of the rest, 25 tokens or more | 277 |
+| of the rest, under 25 tokens (accessors, one-liners) | 91 |
+| of the rest, 25 tokens or more | 278 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8932 |
+| Rust functions with no C++ function of that name in the pair | 8931 |
 
 By tier:
 
 | Tier | C++ units | paired | C++ functions | matched | faithful | partial | divergent | stub | missing |
 |-|-|-|-|-|-|-|-|-|-|
-| 1 | 180 | 180 | 6851 | 5766 | 5044 | 489 | 213 | 20 | 1085 |
+| 1 | 180 | 180 | 6851 | 5764 | 5042 | 489 | 213 | 20 | 1087 |
 | 2 | 15 | 15 | 392 | 356 | 305 | 37 | 13 | 1 | 36 |
 | 3 | 92 | 89 | 1374 | 1119 | 982 | 74 | 57 | 6 | 255 |
 | 4 | 23 | 23 | 435 | 248 | 220 | 19 | 4 | 5 | 187 |
@@ -89,6 +89,7 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Line` | `geometry/line.rs` | 56 | 29 | 8 | 7 | 0 | 12 | 0 |
 | 1 | `Polyline` | `geometry/polyline.rs` | 52 | 31 | 3 | 4 | 2 | 12 | 1 |
 | 1 | `Time` | `time.rs` | 22 | 7 | 1 | 2 | 0 | 12 | 5 |
+| 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 108 | 2 | 5 | 0 | 21 | 2 |
 | 1 | `AABBTreeIndirect` | `aabb_tree_indirect.rs` | 41 | 26 | 1 | 5 | 0 | 9 | 1 |
 | 1 | `Color` | `color.rs` | 97 | 74 | 3 | 2 | 4 | 14 | 0 |
 | 1 | `Config` | `config.rs` | 327 | 235 | 32 | 4 | 0 | 56 | 2 |
@@ -98,7 +99,6 @@ Rust file (overloads of a ported name and bodies under 25 tokens left out). *Mis
 | 1 | `Orient` | `orient.rs` | 22 | 7 | 2 | 0 | 0 | 13 | 6 |
 | 1 | `Print` | `print.rs` | 236 | 196 | 15 | 5 | 0 | 20 | 1 |
 | 1 | `SVG` | `svg.rs` | 64 | 17 | 4 | 0 | 0 | 43 | 6 |
-| 1 | `TriangleMesh` | `triangle_mesh.rs` | 136 | 110 | 2 | 5 | 0 | 19 | 1 |
 | 1 | `Algorithm/LineSegmentation/LineSegmentation` | `algorithm/line_segmentation/line_segmentation.rs` | 29 | 5 | 3 | 0 | 0 | 21 | 5 |
 | 1 | `ExtrusionEntity` | `extrusion_entity.rs` | 125 | 91 | 1 | 5 | 0 | 28 | 0 |
 | 1 | `Geometry/VoronoiOffset` | `geometry/voronoi_offset.rs` | 39 | 23 | 2 | 0 | 0 | 14 | 5 |
@@ -9692,17 +9692,17 @@ Rust only:
 
 ### `TriangleMesh` (.cpp+.hpp) and `triangle_mesh.rs`
 
-Tier 1. C++ functions 136 (plus 6 constructors, 0 destructors, 3 operators), Rust functions 187. Matched 117: faithful 110, partial 2, divergent 5, stub 0.
+Tier 1. C++ functions 136 (plus 6 constructors, 0 destructors, 3 operators), Rust functions 184. Matched 115: faithful 108, partial 2, divergent 5, stub 0.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `TriangleMesh::from_stl` :204 and `TriangleMesh::from_stl` :3430 (21%, 1.09x)
-- divergent: `TriangleMesh::volume` :255 and `TriangleMesh::volume` :3703 (0%, 3.5x)
-- divergent: `TriangleMesh::scale` :272 and `TriangleMesh::scale` :3774 (10%, 0.15x)
-- divergent: `TriangleMesh::translate` :296 and `TriangleMesh::translate` :3717 (28%, 0.45x)
-- divergent: `TriangleMesh::transform` :374 and `TriangleMesh::transform` :3636 (0%, 0.44x)
-- partial: `TriangleMesh::memsize` :599 and `ModelMesh::memsize` :3226 (50%, 0.52x)
-- partial: `its_face_edge_ids` :711 and `its_face_edge_ids` :538 (50%, 0.48x)
+- divergent: `TriangleMesh::from_stl` :204 and `TriangleMesh::from_stl` :3409 (21%, 1.09x)
+- divergent: `TriangleMesh::volume` :255 and `TriangleMesh::volume` :3682 (0%, 3.5x)
+- divergent: `TriangleMesh::scale` :272 and `TriangleMesh::scale` :3753 (10%, 0.15x)
+- divergent: `TriangleMesh::translate` :296 and `TriangleMesh::translate` :3696 (28%, 0.45x)
+- divergent: `TriangleMesh::transform` :374 and `TriangleMesh::transform` :3615 (0%, 0.44x)
+- partial: `TriangleMesh::memsize` :599 and `ModelMesh::memsize` :3205 (50%, 0.52x)
+- partial: `its_face_edge_ids` :711 and `its_face_edge_ids` :540 (50%, 0.48x)
 
 Missing in the Rust file:
 
@@ -9725,79 +9725,80 @@ Missing in the Rust file:
 - `TriangleMesh::transformed_bounding_box` :501 (37 tokens, overload) — in `model.rs`
 - `TriangleMesh::convex_hull_3d` :560 (16 tokens) — in `geometry/convex_hull.rs`, `model.rs`
 - `its_convex_hull` :1737 (611 tokens) — in `model.rs`
+- `big_endian_reverse_quads` :1990 (2 tokens)
+- `big_endian_reverse_quads` :1992 (55 tokens)
 
 Rust only:
 
-- `scaled_coord_f32` :56
-- `float_pin` :73
-- `RepairedMeshErrors::default` :105
-- `TriangleMeshStats::default` :183
-- `flip_triangles_detect_reversed_faces` :358
-- `EdgeToFace::eq_edge` :403
-- `eigen_mat3f_mul_vec` :840
-- `eigen_transform3f_mul_vec` :850
-- `its_from` :975
-- `rotate2d` :1116
-- `its_make_float_step` :1253
-- `step_times` :1260
-- `Groove::default` :1659
-- `its_num_open_edges_neighbors` :2130
-- `fmt_e8` :2507
-- `normalize_c_exponent` :2521
-- `bytemuck_u32` :2632
-- `VertexFaceIndex::new` :2655
-- `VertexFaceIndex::faces` :2685
-- `its_write_obj` :2732
-- `rotate_point_2d` :2855
-- `its_rotate_z` :2864
-- `its_rotate_x` :2879
-- `its_rotate_y` :2894
-- `its_memsize` :2988
-- `FaceProperty::default` :3284
-- `Triangle::new` :3314
-- `Triangle::vertex` :3322 — C++ has it in `TriangleSelector`
-- `Triangle::is_degenerate` :3328
-- `Triangle::fmt` :3336
-- `Triangle::from` :3347 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `[u32; 3]::from` :3354 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
-- `TriangleMesh::new` :3456
-- `TriangleMesh::with_capacity` :3466
-- `TriangleMesh::from_parts` :3476
-- `TriangleMesh::vertices` :3489 — C++ has it in `MinimumSpanningTree`
-- `TriangleMesh::vertices_mut` :3495
-- `TriangleMesh::indices` :3502
-- `TriangleMesh::indices_mut` :3508
-- `TriangleMesh::vertex_count` :3514 — C++ has it in `OpenVDBUtils`
-- `TriangleMesh::triangle_count` :3520
-- `TriangleMesh::is_empty` :3526 — C++ has it in `PresetBundle`
-- `TriangleMesh::add_vertex` :3531
-- `TriangleMesh::add_triangle` :3539
-- `TriangleMesh::add_triangle_indices` :3545
-- `TriangleMesh::vertex` :3552 — C++ has it in `TriangleSelector`
-- `TriangleMesh::triangle_vertices` :3558 — C++ has it in `PaintReproject`
-- `TriangleMesh::triangle_indices` :3569
-- `TriangleMesh::triangles` :3575
-- `TriangleMesh::compute_bounding_box` :3597
-- `TriangleMesh::stats` :3610
-- `TriangleMesh::get_property` :3621
-- `TriangleMesh::triangle_normal` :3677
-- `TriangleMesh::triangle_area` :3685
-- `TriangleMesh::surface_area` :3693
-- `TriangleMesh::quantize_f32_center_roundtrip` :3735
-- `TriangleMesh::slice_center_xy` :3754
-- `TriangleMesh::scale_xyz` :3782
-- `TriangleMesh::center_at_origin` :3792
-- `TriangleMesh::place_on_bed` :3798
-- `TriangleMesh::flip_normals` :3805
-- `TriangleMesh::remove_degenerate_triangles` :3812
-- `TriangleMesh::has_degenerate_triangles` :3817
-- `TriangleMesh::merge_close_vertices` :3822
-- `TriangleMesh::remove_unused_vertices` :3858
-- `TriangleMesh::reserve` :3895 — C++ has it in `Fill/FillPlanePath`, `Model`, `MutablePriorityQueue`
-- `TriangleMesh::validate` :3901 — C++ has it in `ExtrusionEntity`, `Print`, `PrintBase`
-- `TriangleMesh::cube` :3917 — C++ has it in `Fill/FillAdaptive`
-- `TriangleMesh::fmt` :3958
-- `TriangleMesh::fmt` :3969
+- `scaled_coord_f32` :58
+- `float_pin` :75
+- `RepairedMeshErrors::default` :107
+- `TriangleMeshStats::default` :185
+- `flip_triangles_detect_reversed_faces` :360
+- `EdgeToFace::eq_edge` :405
+- `eigen_mat3f_mul_vec` :842
+- `eigen_transform3f_mul_vec` :852
+- `its_from` :977
+- `rotate2d` :1118
+- `its_make_float_step` :1255
+- `step_times` :1262
+- `Groove::default` :1661
+- `its_num_open_edges_neighbors` :2132
+- `fmt_e8` :2491
+- `normalize_c_exponent` :2505
+- `VertexFaceIndex::new` :2634
+- `VertexFaceIndex::faces` :2664
+- `its_write_obj` :2711
+- `rotate_point_2d` :2834
+- `its_rotate_z` :2843
+- `its_rotate_x` :2858
+- `its_rotate_y` :2873
+- `its_memsize` :2967
+- `FaceProperty::default` :3263
+- `Triangle::new` :3293
+- `Triangle::vertex` :3301 — C++ has it in `TriangleSelector`
+- `Triangle::is_degenerate` :3307
+- `Triangle::fmt` :3315
+- `Triangle::from` :3326 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `[u32; 3]::from` :3333 — C++ has it in `Arachne/utils/PolygonsSegmentIndex`
+- `TriangleMesh::new` :3435
+- `TriangleMesh::with_capacity` :3445
+- `TriangleMesh::from_parts` :3455
+- `TriangleMesh::vertices` :3468 — C++ has it in `MinimumSpanningTree`
+- `TriangleMesh::vertices_mut` :3474
+- `TriangleMesh::indices` :3481
+- `TriangleMesh::indices_mut` :3487
+- `TriangleMesh::vertex_count` :3493 — C++ has it in `OpenVDBUtils`
+- `TriangleMesh::triangle_count` :3499
+- `TriangleMesh::is_empty` :3505 — C++ has it in `PresetBundle`
+- `TriangleMesh::add_vertex` :3510
+- `TriangleMesh::add_triangle` :3518
+- `TriangleMesh::add_triangle_indices` :3524
+- `TriangleMesh::vertex` :3531 — C++ has it in `TriangleSelector`
+- `TriangleMesh::triangle_vertices` :3537 — C++ has it in `PaintReproject`
+- `TriangleMesh::triangle_indices` :3548
+- `TriangleMesh::triangles` :3554
+- `TriangleMesh::compute_bounding_box` :3576
+- `TriangleMesh::stats` :3589
+- `TriangleMesh::get_property` :3600
+- `TriangleMesh::triangle_normal` :3656
+- `TriangleMesh::triangle_area` :3664
+- `TriangleMesh::surface_area` :3672
+- `TriangleMesh::quantize_f32_center_roundtrip` :3714
+- `TriangleMesh::slice_center_xy` :3733
+- `TriangleMesh::scale_xyz` :3761
+- `TriangleMesh::center_at_origin` :3771
+- `TriangleMesh::place_on_bed` :3777
+- `TriangleMesh::flip_normals` :3784
+- `TriangleMesh::remove_degenerate_triangles` :3791
+- `TriangleMesh::has_degenerate_triangles` :3796
+- `TriangleMesh::merge_close_vertices` :3801
+- `TriangleMesh::remove_unused_vertices` :3837
+- `TriangleMesh::reserve` :3874 — C++ has it in `Fill/FillPlanePath`, `Model`, `MutablePriorityQueue`
+- `TriangleMesh::validate` :3880 — C++ has it in `ExtrusionEntity`, `Print`, `PrintBase`
+- `TriangleMesh::cube` :3896 — C++ has it in `Fill/FillAdaptive`
+- `TriangleMesh::fmt` :3937
+- `TriangleMesh::fmt` :3948
 
 ### `TriangleMeshSlicer` (.cpp+.hpp) and `triangle_mesh_slicer.rs`
 

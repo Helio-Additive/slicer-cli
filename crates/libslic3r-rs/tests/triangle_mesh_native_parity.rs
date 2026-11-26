@@ -615,3 +615,26 @@ fn check(by_op: &mut BTreeMap<String, (usize, usize)>, shown: &mut usize, op: &s
         }
     }
 }
+
+#[test]
+fn binary_stl_header_and_face_count_match_native() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("headers.stl");
+    let path = path.to_str().unwrap();
+    let labels = [
+        String::new(), "cube".to_owned(), "A\0B".to_owned(), "X".repeat(80),
+        format!("{}é", "A".repeat(79)), "Y".repeat(81),
+    ];
+    let mut mesh = its_make_cube(1.0, 2.0, 3.0);
+    let face = mesh.indices[0];
+    let vectors = include_str!("data/triangle_mesh/binary_headers.txt");
+    for row in vectors.lines() {
+        let mut fields = row.split_whitespace();
+        let label: usize = fields.next().unwrap().parse().unwrap();
+        let count: usize = fields.next().unwrap().parse().unwrap();
+        mesh.indices.resize(count, face);
+        assert!(its_write_stl_binary_its::its_write_stl_binary(path, &labels[label], &mesh));
+        assert_eq!(fileh(path), fields.collect::<Vec<_>>().join(" "), "{row}");
+    }
+    assert_eq!(vectors.lines().count(), 24);
+}

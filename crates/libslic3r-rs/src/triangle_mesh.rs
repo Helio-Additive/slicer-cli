@@ -26,6 +26,8 @@
 //! qhull, `TriangleMeshSlicer`, `its_transform`/`its_rotate_*`) and are listed as
 //! blocked in the porter report.
 
+#![forbid(unsafe_code)]
+
 use crate::geometry::{convex_hull_points, BoundingBox3F, Point, Point3F, Polygon, Transform3D};
 pub use crate::normal_utils::indexed_triangle_set;
 use crate::normal_utils::{StlTriangleVertexIndices, StlVertex};
@@ -2414,24 +2416,6 @@ pub fn bounding_box(its: &indexed_triangle_set) -> BoundingBox3F {
 // TriangleMesh.cpp:1947-2020 — STL writers
 // ============================================================================
 
-/// TriangleMesh.cpp:1990-1991 (`#if BOOST_ENDIAN_LITTLE_BYTE`): a no-op on a little-endian host.
-#[cfg(target_endian = "little")]
-#[inline]
-fn big_endian_reverse_quads(_buf: &mut [u8], _cnt: usize) {}
-
-/// TriangleMesh.cpp:1992-1999 (the big-endian host): swap the bytes of every quad.
-#[cfg(target_endian = "big")]
-#[inline]
-fn big_endian_reverse_quads(buf: &mut [u8], cnt: usize) {
-    // TriangleMesh.cpp:1994-1997
-    let mut i = 0usize;
-    while i < cnt {
-        buf.swap(i, i + 3);
-        buf.swap(i + 1, i + 2);
-        i += 4;
-    }
-}
-
 /// TriangleMesh.cpp:1959-1984
 /// C++: `bool its_write_stl_ascii(const char *file, const char *label, const std::vector<stl_triangle_vertex_indices> &indices, const std::vector<stl_vertex> &vertices)`
 pub fn its_write_stl_ascii(
@@ -2556,7 +2540,12 @@ pub fn its_write_stl_binary(
         const HEADER_SIZE: usize = 80;
         let mut header = vec![0u8; HEADER_SIZE];
         // TriangleMesh.cpp:1997 — copy up to 80 bytes of label.
-        let label_bytes = label.as_bytes();
+        // TriangleMesh.cpp 2037-2041 takes the length of a C string.
+        let label_bytes = if crate::faithful_gate("BINARY_STL_LABEL") {
+            label.split('\0').next().unwrap_or_default().as_bytes()
+        } else {
+            label.as_bytes()
+        };
         let header_len = std::cmp::min(label_bytes.len(), HEADER_SIZE);
         if header_len > 0 {
             header[..header_len].copy_from_slice(&label_bytes[..header_len]);
@@ -2567,9 +2556,8 @@ pub fn its_write_stl_binary(
         }
     }
 
-    // TriangleMesh.cpp:2002-2004
-    let mut nfaces: u32 = indices.len() as u32;
-    big_endian_reverse_quads(bytemuck_u32(&mut nfaces), 4);
+    // TriangleMesh.cpp 2044-2046. A single little-endian conversion on every host.
+    let nfaces = indices.len() as u32;
     if fp.write_all(&nfaces.to_le_bytes()).is_err() {
         return false;
     }
@@ -2583,7 +2571,7 @@ pub fn its_write_stl_binary(
         // TriangleMesh.cpp:2013
         let normal = if float_pin() { face_normal(&[v0, v1, v2]) } else { (v1 - v0).cross(&(v2 - v1)).normalize() };
 
-        // 48-byte float block: normal, v0, v1, v2 (big_endian_reverse_quads is a no-op LE).
+        // TriangleMesh.cpp 2048-2057. Each quad in the facet record is little endian.
         let mut buf = [0u8; 50];
         buf[0..4].copy_from_slice(&normal[0].to_le_bytes());
         buf[4..8].copy_from_slice(&normal[1].to_le_bytes());
@@ -2598,7 +2586,6 @@ pub fn its_write_stl_binary(
         buf[40..44].copy_from_slice(&v2[1].to_le_bytes());
         buf[44..48].copy_from_slice(&v2[2].to_le_bytes());
         // buf[48..50] are the two `extra` bytes (0).
-        big_endian_reverse_quads(&mut buf, 48);
         // TriangleMesh.cpp:2015 — fwrite(&f, 50, 1, fp);
         if fp.write_all(&buf).is_err() {
             return false;
@@ -2625,14 +2612,6 @@ pub mod its_write_stl_binary_its {
     pub fn its_write_stl_binary(file: &str, label: &str, its: &indexed_triangle_set) -> bool {
         super::its_write_stl_binary(file, label, &its.indices, &its.vertices)
     }
-}
-
-/// View a `&mut u32` as a `&mut [u8]` for the (LE no-op) byte-swap call.
-#[inline]
-fn bytemuck_u32(v: &mut u32) -> &mut [u8] {
-    // SAFETY: u32 is 4 bytes with no padding; we view it as raw bytes for an in-place
-    // (no-op on LE) byte swap matching the C++ `reinterpret_cast<char*>(&nfaces)`.
-    unsafe { std::slice::from_raw_parts_mut(v as *mut u32 as *mut u8, 4) }
 }
 
 // ============================================================================

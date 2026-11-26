@@ -217,8 +217,21 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R990 | Register the G-code processor's Rust handler methods directly in its command trie. | G-code processor safety | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R991 | Apply the export's printer kind to bed-level timing, estimated-time headers and the M981 startup command. | Root CLI and G-code export | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R992 | Import and time existing G-code pairs through the root command line. | Root CLI and G-code processor | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R993 | Write binary STL headers, face counts and facets with safe little-endian conversions. | TriangleMesh | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R993. The native STL label stops at the first zero byte. With the label
+  `A\0B`, Rust had written `B` at offset 2. This was the only differing
+  byte in the 134-byte single-face file. The writer now uses the native
+  label length and encodes each 32-bit value in little endian once.
+  `BINARY_STL_LABEL=0` restores the previous label bytes. All 24 native
+  files match, including counts 0, 1, 255 and 256, and labels that cross
+  byte 80 inside a UTF-8 character. The TriangleMesh module now forbids
+  unsafe code. On macOS arm64 the engine audit reports 107 unsafe-code
+  diagnostics. The production target graph has 8,972 diagnostics, or
+  9,105 including host dependencies. Both H2D scores hold at 4,614,342
+  and 4,614,863.
 
 - R992. The root Bambu timing command reads the embedded profile before
   motion and reuses the original file's published nozzle grouping. The

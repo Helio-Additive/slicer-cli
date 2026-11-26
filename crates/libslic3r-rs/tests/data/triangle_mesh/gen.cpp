@@ -440,6 +440,25 @@ static indexed_triangle_set transformed(indexed_triangle_set its, Rng &r)
 
 int main(int argc, char **argv)
 {
+    // TriangleMesh.cpp 2028-2059. Check the C-string label, the little-endian
+    // face count and the complete file on both sides of the one-byte count.
+    if (argc == 3 && std::string(argv[1]) == "--binary-headers") {
+        const std::string file = std::string(argv[2]) + "/headers.stl";
+        const std::vector<std::string> labels = {
+            "", "cube", std::string("A\0B", 3), std::string(80, 'X'),
+            std::string(79, 'A') + "\xc3\xa9", std::string(81, 'Y')
+        };
+        auto mesh = its_make_cube(1., 2., 3.);
+        const auto face = mesh.indices.front();
+        for (size_t i = 0; i < labels.size(); ++i) {
+            for (size_t count : {0, 1, 255, 256}) {
+                mesh.indices.assign(count, face);
+                if (!its_write_stl_binary(file.c_str(), labels[i].c_str(), mesh)) return 1;
+                std::printf("%zu %zu %s\n", i, count, FILEH(file).c_str());
+            }
+        }
+        return 0;
+    }
     tmpdir = argc > 1 ? argv[1] : ".";
     Rng r{20240917ull};
 

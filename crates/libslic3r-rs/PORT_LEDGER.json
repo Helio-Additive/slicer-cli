@@ -1664,7 +1664,8 @@
     "loc": 2022,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R993 verifies binary STL header bytes, little-endian face counts and complete facet records against 24 native files. The TriangleMesh module forbids unsafe code."
   },
   {
     "cpp": "ShortestPath.cpp",
