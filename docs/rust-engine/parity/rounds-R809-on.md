@@ -230,8 +230,25 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1003 | Apply root CLI nozzle and active-plate temperature overrides. | root CLI, Print, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1004 | Retract the departing filament by its tool-change distance with the tower disabled. | GCode, GCodeWriter | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1005 | Use the profile's extrusion mode in the writer preamble and reset absolute E on retraction. | GCode, GCodeWriter, PrintConfig | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1006 | Port circle and ellipse paths in the safe NanoSVG crate. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1006. The XML callbacks matched C++ in all 46 complete SVG documents.
+  The missing step was circle and ellipse geometry. Both elements now use
+  the pinned coordinate conversion and closed cubic path builder. Five
+  documents produce no path because a radius is absent or zero. The other
+  41 match every control point and bound on macOS arm64 and x86_64,
+  including the architecture-specific rounding of cubic handles. All six
+  NanoSVG suites run on both architectures. The library and six test
+  targets also compile for Linux musl x86_64 and arm64, and Windows GNU
+  x86_64. The complete CLI also cross-linked for all three targets. A cube
+  with absolute extrusion and nozzle/bed temperature overrides produced the
+  same 21,199 lines on macOS and both Linux targets. The Windows executable
+  was inspected as x86_64 PE. Current compiler unsafe-code counts for each
+  target are in the engine README. Full SVG rendering and mesh import remain open. All
+  four standard jobs match R1005 byte for byte in both settings of the
+  existing extrusion-mode gate. H2D holds at 4,614,342 and 4,614,863.
 
 - R1005. The native config block requested absolute extrusion on both an STL
   and a Bambu 3MF. Rust printed the same setting but emitted the relative

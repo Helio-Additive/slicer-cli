@@ -52,7 +52,7 @@ audit and builds on every supported target. How to build, run and score it in th
 
 ## Test status
 
-R1005 on macOS arm64: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
+R1006 on macOS arm64: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
 test_tree_support_many_layers` gives 2,756 passed, 0 failed, one ignored timing diagnostic and one filtered test (debug profile), and `cargo test -p
 slicer-cli-rust` 31 passed. The two sorting tests that used to run separately in both
 Clipper variants now run in `libcxx-sort`, along with a third native ordering test. R913 settled the 67 that failed in R912 one by one against the pin (a

@@ -3008,7 +3008,7 @@
     "status": "partial",
     "priority": 7,
     "fidelity": "flagged",
-    "notes": "The safe NanoSVG dependency handles XML events, cubic path construction and the points geometry of polygon and polyline elements. SVG import still needs styled shape and document parsing and OCCT extrusion and meshing. R1000 implements nsvg__parseCoordinateRaw and nsvg__convertToPixels for all ten native unit kinds. The 319 raw and converted results match two native architectures. R1001 ports nsvg__parseLine endpoint and path geometry, tested against 32 native SVG documents."
+    "notes": "The safe NanoSVG dependency handles XML events, cubic path construction and the points geometry of polygon and polyline elements. SVG import still needs styled shape and document parsing and OCCT extrusion and meshing. R1000 implements nsvg__parseCoordinateRaw and nsvg__convertToPixels for all ten native unit kinds. The 319 raw and converted results match two native architectures. R1001 ports nsvg__parseLine endpoint and path geometry, tested against 32 native SVG documents. R1006 adds circle and ellipse cubic geometry. On 46 additional documents, each path and bound matches the native floating-point bits on arm64 and x86_64. Rounded rectangles, complete styled shapes and SVG import still need coverage."
   },
   {
     "cpp": "Format/SL1.cpp",

@@ -12,13 +12,13 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    fn coordinate(self, text: &[u8], axis: usize, font_size: f32) -> f32 {
+    pub(crate) fn coordinate(self, text: &[u8], axis: usize, font_size: f32) -> f32 {
         Coordinate::parse(text).to_pixels(self.origin[axis], self.size[axis], self.dpi, font_size)
     }
 
     // nanosvg.h 783-787, 1840-1841. Relative font sizes are resolved as
     // each attribute is encountered, including within a style declaration.
-    fn font_size(self, text: &[u8], inherited: f32) -> f32 {
+    pub(crate) fn diagonal_coordinate(self, text: &[u8], inherited: f32) -> f32 {
         let [w, h] = self.size;
         #[cfg(any(target_arch = "aarch64", target_feature = "fma"))]
         let squared = w.mul_add(w, h * h);
@@ -29,7 +29,7 @@ impl Viewport {
 
     // Font geometry from nsvg__parseStyle / nsvg__parseNameValue
     // (nanosvg.h 1860-1913). The caller supplies the element transform.
-    fn style_font_size(self, text: &[u8], mut font: f32) -> f32 {
+    pub(crate) fn style_font_size(self, text: &[u8], mut font: f32) -> f32 {
         for decl in text.split(|b| *b == b';') {
             let Some(colon) = decl.iter().position(|b| *b == b':') else {
                 continue;
@@ -47,7 +47,7 @@ impl Viewport {
                 .unwrap_or(value.len());
             let value = &value[i..value.len().min(i + 511)];
             match key {
-                b"font-size" => font = self.font_size(value, font),
+                b"font-size" => font = self.diagonal_coordinate(value, font),
                 b"style" => font = self.style_font_size(value, font),
                 _ => {}
             }
@@ -72,7 +72,7 @@ pub fn parse_line(
             b"y1" => first[1] = viewport.coordinate(value, 1, font_size),
             b"x2" => last[0] = viewport.coordinate(value, 0, font_size),
             b"y2" => last[1] = viewport.coordinate(value, 1, font_size),
-            b"font-size" => font_size = viewport.font_size(value, font_size),
+            b"font-size" => font_size = viewport.diagonal_coordinate(value, font_size),
             b"style" => font_size = viewport.style_font_size(value, font_size),
             _ => {}
         }
