@@ -889,11 +889,46 @@ static void output_streams()
     }
 }
 
+// GCode.cpp 8674–8678 calls retract(true, false) on the departing filament.
+static void no_tower_retractions()
+{
+    for (const char* flavor : {"marlin", "sailfish"})
+      for (bool relative : {false, true})
+        for (const char* target : {"0", "0.25", "0.8", "2"})
+          for (bool before : {false, true}) {
+            DynamicPrintConfig settings;
+            for (const auto &kv : KVs{{"gcode_flavor", flavor}, {"wipe", "0"},
+                     {"retraction_length", "0.8"}, {"retract_length_toolchange", target},
+                     {"retraction_speed", "30"}, {"use_relative_e_distances", relative ? "1" : "0"}})
+                settings.set_deserialize_strict(kv.first, kv.second);
+            PrintConfig cfg;
+            cfg.apply(settings, true);
+            GCode gg;
+            gg.apply_print_config(cfg);
+            auto &writer = gg.m_writer;
+            writer.set_extruders({0, 1});
+            writer.toolchange(0, 0);
+            if (before) writer.retract();
+            const std::string result = gg.retract(true, false);
+            std::string moves;
+            std::istringstream in(result);
+            for (std::string line; std::getline(in,line);)
+                if (line.rfind("G1 E", 0) == 0 || line.rfind("G92 E", 0) == 0)
+                    moves += line + "\n";
+            std::printf("%s %d %s %d %s %s\n", flavor, int(relative), target, int(before),
+                        hex(moves).c_str(), f64(writer.get_extruder_retracted_length(0)).c_str());
+          }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;
+    }
+    if (std::string(argv[1]) == "--no-tower-retractions") {
+        no_tower_retractions();
+        return 0;
     }
     if (std::string(argv[1]) == "--output-streams") {
         output_streams();

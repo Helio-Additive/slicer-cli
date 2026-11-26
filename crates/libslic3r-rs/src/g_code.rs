@@ -5991,7 +5991,7 @@ pub fn set_extruder(
     new_extruder_id: usize,
     writer: &mut GCodeWriter,
     _print_z: f64,
-    _config: &PrintConfig,
+    config: &PrintConfig,
 ) -> Result<()> {
     /// Check if tool change is needed
     /// GCode.cpp:6728-6729
@@ -6070,17 +6070,15 @@ pub fn set_extruder(
     /// C++: m_toolchange_count++;
     // Tool change counter would be tracked here
 
-    /// Prepend retraction on the current extruder
-    /// GCode.cpp:6767
-    /// C++: // prepend retraction on the current extruder
-    /// C++: std::string gcode = this->retract(true, false);
-    retract(writer, true)?; // true = with wipe
-
-    /// Reset wipe path to avoid reusing it
-    /// GCode.cpp:6770
-    /// C++: // Always reset the extrusion path, even if the tool change retract is set to zero.
-    /// C++: m_wipe.reset_path();
-    // Note: Wipe path management is handled by caller
+    // GCode.cpp:8674–8678 requests a tool-change retraction, then discards
+    // the departing filament's wipe path even when the requested length is zero.
+    if !config.enable_prime_tower && crate::faithful_gate("NO_TOWER_TOOLCHANGE_RETRACT") {
+        writer.retract_for_toolchange_with_lift(1, false);
+        writer.reset_e_after_retract();
+        writer.reset_wipe_path();
+    } else {
+        retract(writer, true)?;
+    }
 
     /// Insert skip object labels for sequential printing
     /// GCode.cpp:6772-6776

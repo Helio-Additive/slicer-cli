@@ -228,8 +228,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1001 | Convert SVG line endpoints to open cubic paths in safe Rust. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1002 | Borrow the G-code stream processor safely and preserve native C-string writes. | GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1003 | Apply root CLI nozzle and active-plate temperature overrides. | root CLI, Print, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1004 | Retract the departing filament by its tool-change distance with the tower disabled. | GCode, GCodeWriter | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1004. At the first tower-disabled tool change on the three-slot project,
+  both writers had retracted 0 mm and had a 2 mm tool-change setting. Rust
+  retracted 0.8 mm. With identical inputs, the revised writer reaches the
+  native target on all 480 changes across four profiles covering 2 mm,
+  0.25 mm, zero and disabled wiping. The 32 native writer cases also cover
+  a prior retraction and absolute and relative E modes. The project gains
+  422 in-order lines (9,819 to 10,241). The remaining template, temperature
+  and conditional tool-selection steps are partial. The live profile loader
+  also loses the absolute extrusion setting before the writer is initialized.
+  `NO_TOWER_TOOLCHANGE_RETRACT=0` reproduces all six supplemental controls.
+  All four standard fixtures match R1003 byte for byte with the gate on and
+  off. H2D holds at 4,614,342 and 4,614,863.
 
 - R1003. The root CLI accepts `--temp` and `--bed-temp` on STL and Bambu
   3MF inputs (cli_command_line.cpp 562–563, main.cpp 7267–7327).

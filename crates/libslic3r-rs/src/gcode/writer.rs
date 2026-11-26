@@ -3515,6 +3515,21 @@ impl GCodeWriter {
         self.extruder.reset_e();
     }
 
+    // GCode.cpp:8517 and GCodeWriter.cpp:372–391. Retain the outstanding
+    // retraction across an E-axis reset so unretract can repay it.
+    pub(crate) fn reset_e_after_retract(&mut self) {
+        use crate::print_config::GCodeFlavor;
+        if self.e() == 0.0 || matches!(self.config.gcode_flavor,
+            GCodeFlavor::Mach3 | GCodeFlavor::MakerWare | GCodeFlavor::Sailfish)
+        {
+            return;
+        }
+        self.extruder.reset_e();
+        if !self.config.use_relative_e {
+            self.write_raw("G92 E0");
+        }
+    }
+
     /// Set absolute positioning mode.
     pub fn set_absolute_positioning(&mut self, absolute: bool) {
         if absolute != self.absolute_positioning {

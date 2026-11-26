@@ -636,3 +636,40 @@ fn output_stream_matches_native_file_and_processor() {
     assert_eq!(cases, 27);
     assert!(failures.is_empty(), "{failures:?}");
 }
+
+// GCode.cpp 8674–8678 calls retract(true, false) before a multi-filament
+// change with no tower. Compare the E commands and the outstanding length.
+#[test]
+fn no_tower_toolchange_retractions_match_native() {
+    use slicer::print_config::{GCodeFlavor, PrintConfig};
+    use slicer::GCodeWriter;
+
+    for row in include_str!("data/g_code/no_tower_retractions.txt").lines() {
+        let cols: Vec<_> = row.split_whitespace().collect();
+        let config = PrintConfig {
+            gcode_flavor: match cols[0] {
+                "marlin" => GCodeFlavor::MarlinLegacy,
+                "sailfish" => GCodeFlavor::Sailfish,
+                other => panic!("unexpected flavor {other}"),
+            },
+            use_relative_e: cols[1] == "1",
+            retract_length: 0.8,
+            retract_length_toolchange: cols[2].parse().unwrap(),
+            retract_speed: 30.0,
+            retract_lift: 0.0,
+            enable_prime_tower: false,
+            ..PrintConfig::default()
+        };
+        let mut writer = GCodeWriter::with_config(config.clone());
+        writer.set_extruders(&[0, 1]);
+        if cols[3] == "1" {
+            writer.retract();
+        }
+        let start = writer.get_gcode().content().len();
+        slicer::g_code::set_extruder(1, &mut writer, 0.8, &config).unwrap();
+        let moves: Vec<_> = writer.get_gcode().content()[start..].lines()
+            .filter(|s| s.starts_with("G1 E") || s.starts_with("G92 E")).collect();
+        assert_eq!(moves, unhex(cols[4]).lines().collect::<Vec<_>>(), "{row}");
+        assert_eq!(writer.retracted_length_now(), f64of(cols[5]), "{row}");
+    }
+}
