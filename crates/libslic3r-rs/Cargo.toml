@@ -27,6 +27,8 @@ nalgebra = "0.32"
 eigen-transform = { path = "../eigen-transform" }
 ordered-float = "4.2"
 boostvoronoi = "0.12"
+boost-polygon-voronoi = { path = "../boost-polygon-voronoi" }
+libcxx-sort = { path = "../libcxx-sort" }
 # Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.
 # C++ uses native glu-libtess which is not wasm-safe; see src/tesselate.rs.
 earcutr = "0.4"

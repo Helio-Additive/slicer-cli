@@ -1,5 +1,5 @@
 //! `ExPolygon::medial_axis_thick_polylines` (ExPolygon.cpp:263-371, Geometry/MedialAxis.cpp:445-690,
-//! Geometry/VoronoiOffset.cpp:640-967, over `src/boost_polygon_voronoi.rs`) against the C++ it
+//! Geometry/VoronoiOffset.cpp:640-967, over the `boost-polygon-voronoi` crate) against the C++ it
 //! replaces, `clipper_z_sys::medial_axis_native` (crates/clipper-z-sys/shim/medial_axis_shim.cpp,
 //! over boost::polygon): the same polylines in the same order, every point, every width bit for
 //! bit, both endpoint flags.

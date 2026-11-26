@@ -24,7 +24,7 @@
 //!   `__tree_remove`, `__lower_bound`). The circle events are popped from a
 //!   `std::priority_queue`, where events with equal keys leave in heap order: the heap is
 //!   libc++'s `__sift_up` / `__floyd_sift_down`. The sites are sorted with libc++'s
-//!   `std::sort` ([`crate::clipper::libcxx_sort`]).
+//!   `std::sort` ([`libcxx_sort`]).
 //! * **Floating-point contraction.** The reference is compiled with `-ffp-contract=on`, which
 //!   turns `a * b + c` inside one expression into a fused multiply-add. `mul_add` stands
 //!   exactly where the compiler contracts, with the C++ expression next to it.
@@ -49,9 +49,10 @@
 //! * Values the C++ leaves uninitialised (the chunks of `extended_int`, the coordinates of a
 //!   default `circle_event`, `initial_index_`) are zero here; none is read before it is set.
 
+#![forbid(unsafe_code)]
 #![allow(clippy::too_many_arguments, clippy::needless_range_loop, clippy::collapsible_else_if, clippy::many_single_char_names)]
 
-use crate::clipper::libcxx_sort;
+use libcxx_sort::libcxx_sort;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 

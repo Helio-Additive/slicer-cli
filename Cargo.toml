@@ -39,7 +39,9 @@ members = [
     "crates/eigen-transform",
     "crates/eigen-transform-sys",
     "crates/nanosvg",
+    "crates/boost-polygon-voronoi",
     "crates/boost-voronoi-sys",
+    "crates/libcxx-sort",
 ]
 default-members = ["."]
 
@@ -59,6 +61,21 @@ opt-level = 3
 opt-level = 3
 
 [profile.test.package.eigen-transform]
+opt-level = 3
+
+# Keep the geometry and sorting kernels in the same profiles as the engine.
+[profile.dev.package.boost-polygon-voronoi]
+debug-assertions = false
+opt-level = 3
+
+[profile.test.package.boost-polygon-voronoi]
+opt-level = 3
+
+[profile.dev.package.libcxx-sort]
+debug-assertions = false
+opt-level = 3
+
+[profile.test.package.libcxx-sort]
 opt-level = 3
 
 # Tests keep the engine's debug assertions on: several of them guard real

@@ -1,4 +1,4 @@
-//! `src/boost_polygon_voronoi.rs` against `boost::polygon::construct_voronoi` itself, compiled in
+//! The engine’s `boost_polygon_voronoi` API against `boost::polygon::construct_voronoi` itself, compiled in
 //! `boost-voronoi-sys`: every vertex bit for bit and in the same order, every half-edge with its
 //! links and flags, every cell. The inputs are what the engine feeds the builder (closed contours
 //! with holes) and what makes it take its rare paths: exactly and nearly cocircular sites, grids,

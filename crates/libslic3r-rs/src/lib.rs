@@ -127,7 +127,7 @@ pub mod arachne;
 pub mod arc_fitter;
 pub mod arrange;
 pub mod blacklisted_library_check;
-pub mod boost_polygon_voronoi;
+pub use ::boost_polygon_voronoi;
 pub mod bounding_box;
 pub mod bridge_detector;
 pub mod brim;

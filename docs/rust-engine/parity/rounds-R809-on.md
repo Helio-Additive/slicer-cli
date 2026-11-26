@@ -213,8 +213,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R986 | Extract the affine Eigen kernels into a production Rust dependency and port NanoSVG's XML callback parser. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R987 | Port native token handling for the root CLI's supported options and the desktop single-instance compatibility flag. | Root CLI parser | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R988 | Port the root CLI's legacy G-code opt-out and the ordered normalization event. | Root CLI and STL/3MF settings | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R989 | Move Boost.Polygon Voronoi construction and libc++ comparator sorting to safe workspace crates. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R989, the production dependency ports. The engine and Voronoi builder now
+  import the same Rust implementation of libc++ comparator sorting. Its native
+  generator checks the exact order of equal keys in 36 lists, including the
+  insertion-sort and pivot-selection boundaries. The Boost 1.90 oracle agrees
+  on all 110,546 diagrams tested, including 106 Benchy slices. The existing
+  oracle skips four slices with invalid geometry after coordinate rounding.
+  Both crates forbid unsafe code. Two sort tests previously ran once in each
+  Clipper instantiation and now run in the sort crate alongside the native
+  ordering test. The four fixtures match R988 byte for byte in both runs.
+  H2D matches 4,614,342 and 4,614,863 motion lines against the two native runs.
+  One Clipper dependency remains open on macOS. On 250,004 angles, replacing
+  Apple's paired sine/cosine call with Rust's `f64::sin_cos` reproduced every
+  native pair at optimization level 3. At level 0 it changed 207 pairs.
 
 - R988, legacy placeholders. The previous Rust CLI refused
   `--no-normalize-legacy-gcode` and silently rewrote templates by default.

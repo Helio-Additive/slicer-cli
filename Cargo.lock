@@ -134,6 +134,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "boost-polygon-voronoi"
+version = "0.1.0"
+dependencies = [
+ "libcxx-sort",
+]
+
+[[package]]
 name = "boost-voronoi-sys"
 version = "0.1.0"
 dependencies = [
@@ -806,6 +813,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libcxx-sort"
+version = "0.1.0"
+
+[[package]]
 name = "libm"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1426,6 +1437,7 @@ dependencies = [
  "anyhow",
  "approx",
  "bitflags",
+ "boost-polygon-voronoi",
  "boost-voronoi-sys",
  "boostvoronoi",
  "chrono",
@@ -1439,6 +1451,7 @@ dependencies = [
  "env_logger",
  "flate2",
  "indicatif",
+ "libcxx-sort",
  "log",
  "nalgebra",
  "ordered-float 4.6.0",
