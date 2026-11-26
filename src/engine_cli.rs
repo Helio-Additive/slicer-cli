@@ -2,7 +2,7 @@
 //!
 //! The flags it takes are the ones of `slicer_cli`'s default call that the
 //! Rust engine can honour today (`cli_command_line.cpp`, `legacy_flags()`):
-//! `--config`, `-o`/`--output`, `-v`/`--verbose`, `--input`. Every other flag
+//! `--config`, `-o`/`--output`, `-v`/`--verbose`, `--input` and `--single-instance`. Every other flag
 //! is refused by name, before anything loads, with a sentence that names the
 //! program to use instead (the convention of `cli_flag_support.cpp`).
 //!
@@ -10,7 +10,8 @@
 //! (libslic3r `Utils.hpp`, `CLI_*`), as the process exit status; a job
 //! `Print::validate()` refuses exits 1, as `slicer_cli` does (main.cpp:11635-11636).
 
-use std::path::{Path, PathBuf};
+pub use crate::cli_command_line::{parse, refusal, Request, SliceRequest};
+use std::path::Path;
 
 /// `CLI_SUCCESS` (Utils.hpp).
 pub const CLI_SUCCESS: i32 = 0;
@@ -27,7 +28,7 @@ pub fn exit_status(code: i32) -> u8 {
     code as u8
 }
 
-const PROGRAM: &str = "slicer_cli-rust";
+pub(crate) const PROGRAM: &str = "slicer_cli-rust";
 
 const USAGE: &str = "\
 slicer_cli-rust: the Rust slicing engine, an in-progress port of the Bambu Studio engine.
@@ -41,100 +42,14 @@ Usage: slicer_cli-rust [--config FILE] [-o FILE] [-v] MODEL
                         overrides the settings in the file
   -o, --output FILE     Output G-code file (default: output.gcode)
   -v, --verbose         Verbose engine log
-  -h, --help            This text
+";
+
+const USAGE_TAIL: &str = "  -h, --help            This text
 
 Every other flag of slicer_cli is refused by name. slicer_cli (Bambu Studio engine),
 slicer_cli-orcaslicer (OrcaSlicer engine) and slicer_cli-snapmaker (Snapmaker Orca
 engine) take the full command line.
 ";
-
-/// What the command line asked for.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Request {
-    Help,
-    Slice(SliceRequest),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct SliceRequest {
-    pub input: PathBuf,
-    pub config: Option<PathBuf>,
-    pub output: PathBuf,
-    pub verbose: bool,
-}
-
-/// The sentence for a flag this program does not take.
-pub fn refusal(flag: &str) -> String {
-    format!(
-        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only --config, -o/--output, \
-         -v/--verbose and --input so far. Use slicer_cli (the Bambu Studio engine) for {flag}."
-    )
-}
-
-/// Parse the command line. `Err` carries the sentence to print and the
-/// `CLI_*` code to return.
-pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
-    let invalid = |sentence: String| (sentence, CLI_INVALID_PARAMS);
-    let mut input: Option<PathBuf> = None;
-    let mut config: Option<PathBuf> = None;
-    let mut output: Option<PathBuf> = None;
-    let mut verbose = false;
-
-    let mut i = 0;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        i += 1;
-        // `--flag=value` and `--flag value` are both accepted, as in slicer_cli.
-        let (name, inline_value) = match arg.split_once('=') {
-            Some((name, value)) if name.starts_with('-') => (name, Some(value.to_owned())),
-            _ => (arg, None),
-        };
-        let mut value_of = |name: &str| -> Result<PathBuf, (String, i32)> {
-            if let Some(value) = &inline_value {
-                return Ok(PathBuf::from(value));
-            }
-            let value = args
-                .get(i)
-                .ok_or_else(|| invalid(format!("{name} needs a file name after it.")))?;
-            i += 1;
-            Ok(PathBuf::from(value))
-        };
-        match name {
-            "-h" | "--help" => return Ok(Request::Help),
-            "-v" | "--verbose" => verbose = true,
-            "--config" => config = Some(value_of(name)?),
-            "-o" | "--output" => output = Some(value_of(name)?),
-            "--input" => {
-                let value = value_of(name)?;
-                if input.replace(value).is_some() {
-                    return Err(invalid(format!(
-                        "{PROGRAM} slices one model file per call; more than one was given."
-                    )));
-                }
-            }
-            _ if name.starts_with('-') && name.len() > 1 => return Err(invalid(refusal(name))),
-            _ => {
-                if input.replace(PathBuf::from(arg)).is_some() {
-                    return Err(invalid(format!(
-                        "{PROGRAM} slices one model file per call; more than one was given."
-                    )));
-                }
-            }
-        }
-    }
-
-    let input = input.ok_or_else(|| {
-        invalid(format!(
-            "No model file was given. Run {PROGRAM} --help for the call."
-        ))
-    })?;
-    Ok(Request::Slice(SliceRequest {
-        input,
-        config,
-        output: output.unwrap_or_else(|| PathBuf::from("output.gcode")),
-        verbose,
-    }))
-}
 
 fn extension(path: &Path) -> String {
     path.extension()
@@ -240,7 +155,12 @@ pub fn run(args: &[String]) -> u8 {
     };
     let request = match request {
         Request::Help => {
-            print!("{USAGE}");
+            let additional = if crate::cli_command_line::native_tokens() {
+                "      --single-instance Accepted for desktop compatibility\n      --                Treat following words as model paths\n"
+            } else {
+                ""
+            };
+            print!("{USAGE}{additional}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,
@@ -261,6 +181,7 @@ pub fn run(args: &[String]) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_owned()).collect()

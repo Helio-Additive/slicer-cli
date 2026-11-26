@@ -19,6 +19,11 @@ program built from it; it is not packaged.
 | `tests/rust-engine/` | `test_slicer_cli_rust.sh`, `test_semantic_parity.sh`, the job configs, the fixtures |
 | `docs/rust-engine/` | This file; the round log (`PARITY_STATUS.md` to R471, `parity/rounds-R472-R808.md` after); `PORTING_PATTERNS.md`; the working notes of the branch the port was developed on |
 
+The root CLI accepts the native single- and double-dash spellings of its
+supported flags. Use `--` before a model name that starts with a dash.
+It also accepts the desktop compatibility flag `--single-instance`.
+`CLI_OPTION_TOKENS=0` restores the previous parser.
+
 The rewrite covers the Bambu paths in the repository's `main.cpp` and
 `cli_*.cpp`, the slicing engine and the parts of its dependencies those paths
 use. The root Cargo package builds the CLI and forbids unsafe code in its own
@@ -143,7 +148,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R986) |
+| Fixture | As brought over (R808) | Now (R987) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -153,11 +158,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R986:
+missing most often. Lines of the oracle's body the port has verbatim, at R987:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R986 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R987 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

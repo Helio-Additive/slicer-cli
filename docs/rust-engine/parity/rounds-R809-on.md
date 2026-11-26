@@ -211,9 +211,18 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R984 | Order and emit a single region's walls, sparse and solid fills by their physical filament. All 768 native layer-order rows are covered by six jobs. | `FEATURE_FILAMENT_ORDER` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R985 | Build the Rust front end from the root Cargo package and forbid unsafe code in its targets. The 12 Rust source files move without edits. | Package layout | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R986 | Extract the affine Eigen kernels into a production Rust dependency and port NanoSVG's XML callback parser. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R987 | Port native token handling for the root CLI's supported options and the desktop single-instance compatibility flag. | Root CLI parser | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
 
+- R987, the root command line. The native parser accepts `-- -calib.3mf`,
+  one or two dashes before option names, and `--single-instance`. The Rust
+  parser previously refused these calls. The new parser matches all 29
+  vectors generated from the checkout's Bambu `parse_command_line`. A real
+  dash-prefixed project produces identical G-code with the canonical and
+  alternate spellings in each engine. The disabled gate reproduces the
+  earlier help and refusals. All four official jobs reproduce R986 in both
+  gate positions. H2D scores remain 4,614,342 and 4,614,863.
 - R986, the first separate safe Rust dependency crates. The engine uses
   `eigen-transform` through its existing mesh API. Three native Eigen tests
   compare the output bits over 20,000 inputs each. The new `nanosvg` crate

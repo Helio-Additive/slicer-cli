@@ -10,5 +10,6 @@
 //!   one job through `slicer_cli` and through the Rust engine so the two
 //!   G-codes can be scored against each other.
 
+mod cli_command_line;
 pub mod engine_cli;
 pub mod parity;

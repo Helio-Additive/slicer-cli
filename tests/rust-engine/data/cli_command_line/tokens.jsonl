@@ -1,0 +1,29 @@
+{"args":["--","-cube.stl"],"config":"","input":"-cube.stl","output":"output.gcode","verbose":false}
+{"args":["--","--help"],"config":"","input":"--help","output":"output.gcode","verbose":false}
+{"args":["--","--"],"config":"","input":"--","output":"output.gcode","verbose":false}
+{"args":["-"],"config":"","input":"-","output":"output.gcode","verbose":false}
+{"args":["--","-name=value.3mf"],"config":"","input":"-name=value.3mf","output":"output.gcode","verbose":false}
+{"args":["--single-instance","m.stl"],"config":"","input":"m.stl","output":"output.gcode","verbose":false}
+{"args":["-single-instance=yes","m.stl"],"config":"","input":"m.stl","output":"output.gcode","verbose":false}
+{"args":["--single-instance","--single-instance","m.stl"],"config":"","input":"m.stl","output":"output.gcode","verbose":false}
+{"args":["-config=first= profile.json","--o","out.gcode","--v","-input","m.stl"],"config":"first= profile.json","input":"m.stl","output":"out.gcode","verbose":true}
+{"args":["-config","--","-output=out.gcode","-verbose","m.stl"],"config":"--","input":"m.stl","output":"out.gcode","verbose":true}
+{"args":["--config","--help","--","-w.stl"],"config":"--help","input":"-w.stl","output":"output.gcode","verbose":false}
+{"args":["--input","--single-instance"],"config":"","input":"--single-instance","output":"output.gcode","verbose":false}
+{"args":["-input=-a.3mf"],"config":"","input":"-a.3mf","output":"output.gcode","verbose":false}
+{"args":["-help"],"help":true}
+{"args":["--h"],"help":true}
+{"args":["--h=0"],"help":true}
+{"args":["--h="],"help":true}
+{"args":["--help=bad"],"error":"--help: 'bad' is not a value BambuStudio takes for this flag; it takes 1 or 0"}
+{"args":["-h=01"],"error":"--h: '01' is not a value BambuStudio takes for this flag; it takes 1 or 0"}
+{"args":["--help","-config"],"error":"--config needs a value"}
+{"args":["--v=false","m.3mf"],"config":"","input":"m.3mf","output":"output.gcode","verbose":true}
+{"args":["-v","--","-"],"config":"","input":"-","output":"output.gcode","verbose":true}
+{"args":["-config=x","--config","y","m.stl"],"config":"y","input":"m.stl","output":"output.gcode","verbose":false}
+{"args":["--input=","-o","out"],"config":"","input":"","output":"out","verbose":false}
+{"args":["--single-instance","--help"],"help":true}
+{"args":["--config=","m.stl"],"config":"","input":"m.stl","output":"output.gcode","verbose":false}
+{"args":["--help","first","second"],"help":true}
+{"args":["--output"],"error":"--output needs a value"}
+{"args":["--config","-psn_123","m.stl"],"config":"-psn_123","input":"m.stl","output":"output.gcode","verbose":false}
