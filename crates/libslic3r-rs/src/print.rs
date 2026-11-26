@@ -980,7 +980,7 @@ impl Print {
         // can resolve the aligned seam vertex via `SeamPlacer::place_seam`.
         // Skipped under spiral (vase) mode — C++ guards seam placement with
         // `!m_config.spiral_mode` (GCode.cpp:5081).
-        let seam_placers: Vec<crate::gcode::seam_placer::SeamPlacer> = if is_spiral_vase {
+        let seam_placers: Vec<std::sync::Arc<crate::gcode::seam_placer::SeamPlacer>> = if is_spiral_vase {
             Vec::new()
         } else {
             self.objects
@@ -1020,7 +1020,7 @@ impl Print {
                         },
                     );
                     placer.init(obj, mode);
-                    placer
+                    std::sync::Arc::new(placer)
                 })
                 .collect()
         };
@@ -1663,17 +1663,6 @@ impl Print {
                 // GCode.cpp:4668-4749 -- per-region iteration
                 let is_infill_first = false; // TODO: from config
 
-                // Install the active SeamPlacer for this (object, layer) so
-                // `extrude_loop` can resolve the aligned seam vertex via
-                // `SeamPlacer::place_seam` (the C++ `m_seam_placer`/`m_layer`
-                // instance state). The guard scopes the installation to the
-                // per-region extrude below; outside it, `extrude_loop` falls
-                // back to the legacy `find_best_seam_index` heuristic (e.g.
-                // skirt/brim, or spiral mode where no placer was built).
-                let _seam_guard = seam_placers
-                    .get(ltp.object_idx)
-                    .map(|p| exporter::SeamContextGuard::install(p, ltp.layer_idx));
-
                 // Faithful C++ GCode::process_layer island grouping
                 // (GCode.cpp:4340-4392): assign each region's perimeter/infill/thin
                 // EEC to the island (lslice) whose contour contains its first point
@@ -1711,25 +1700,28 @@ impl Print {
                     .iter()
                     .find(|(z, _)| (z - ltp.layer.print_z).abs() < 1e-4)
                     .map(|(_, m)| m);
-                emit_layer_by_island(
-                    ltp.layer,
-                    &mut writer,
-                    &object.config,
-                    &self.config,
-                    is_first_layer,
-                    is_infill_first,
-                    skip_infill,
-                    skip_inner_walls,
-                    &mut prev_last_tool,
-                    wipe_tower_layer,
-                    &mut toolchange_count,
-                    total_tool_changes,
-                    optimized_tools,
-                    &self.feature_tools,
-                    wiping_overrides,
-                    if object_id_per_pass { Some(label_id) } else { None },
-                    self.wipe_tower_cpp_results,
-                );
+                // GCode.cpp 5837, 6682. Scope the layer to this exporter.
+                exporter::with_layer_seam(&mut writer, seam_placers.get(ltp.object_idx), ltp.layer_idx, |writer| {
+                    emit_layer_by_island(
+                        ltp.layer,
+                        writer,
+                        &object.config,
+                        &self.config,
+                        is_first_layer,
+                        is_infill_first,
+                        skip_infill,
+                        skip_inner_walls,
+                        &mut prev_last_tool,
+                        wipe_tower_layer,
+                        &mut toolchange_count,
+                        total_tool_changes,
+                        optimized_tools,
+                        &self.feature_tools,
+                        wiping_overrides,
+                        if object_id_per_pass { Some(label_id) } else { None },
+                        self.wipe_tower_cpp_results,
+                    );
+                });
 
                 // GCode.cpp:4750-4758 -- M625 label object end (only when m_enable_label_object)
                 if self.objects.len() > 1 {

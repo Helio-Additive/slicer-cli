@@ -235,8 +235,28 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1008 | Resolve the four printer fields of a partial external profile over the Bambu project. | root file loading, BBS importer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1009 | Check physical nozzle diameters and apply the legacy nozzle override on STL and Bambu 3MF. | root CLI, desktop presets, typed config | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1010 | Resolve the bundled parent of typed external settings files before CLI overrides. | root settings loader, desktop presets, GCode | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1011 | Scope seam placement to the exporter and share prepared geometry with safe ownership. | GCode, GCodeWriter, Print | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1011. The pinned GCode owns its seam placer and current layer. Selecting
+  layer 0 on exporter A leaves B unset. Selecting layer 1 on B leaves A at
+  0. At this first differing selection R1010 gave 0/0 and 1/1. Both actual
+  native exporters retain their placer addresses across seven transitions.
+  Rust now matches those selections and restores the previous one after
+  nested calls or an unwinding export. Each object prepares its geometry
+  once. Both gate positions pass a reference-counted handle between
+  layers. The public borrowed guard also shares the prepared layers and candidate
+  points. Reinitializing a copy leaves the existing layers intact. The
+  exporter module now forbids unsafe code at compile time.
+  The current and previous outputs are byte-identical on both Benchys,
+  Majora, H2D and six additional aligned, rear, nearest, random, spiral
+  and skirt/brim jobs. H2D scores are 4,614,342 and 4,614,863. The locked
+  production audit has one fewer unsafe-code diagnostic in the engine and
+  in the complete target graph on every supported target.
+  The full CLI linked for all four targets. The macOS arm64 and both Linux
+  binaries reproduced the 468,100-byte R1009 nozzle cube. The Windows
+  x86_64 result was checked as a linked executable.
 
 - R1010. A settings file inheriting the shipped X1 Carbon 0.6 mm nozzle
   sliced at 0.4 mm in R1009 unless the legacy nozzle flag was present.

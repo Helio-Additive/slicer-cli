@@ -17,6 +17,8 @@
 //! helpers that go with them; tests/g_code_native_parity.rs compares them with the C++.
 //! The layer loop of `GCode::process_layer` is still in `print.rs`.
 
+#![forbid(unsafe_code)]
+
 // GCode.cpp:84
 pub const G_MIN_PURGE_VOLUME: f32 = 100.0;
 // GCode.cpp:85
@@ -1853,73 +1855,81 @@ fn unscale(v: crate::Coord) -> crate::CoordF {
 use crate::gcode::seam_placer::SeamPlacer;
 use std::cell::Cell;
 
-// =============================================================================
-// Active seam-placer context (the free-function analogue of C++ `GCode`'s
-// instance state `m_seam_placer` + `m_layer`, GCode.hpp).
-//
-// The Rust gcode pipeline is a chain of free functions (`extrude_perimeters` ->
-// `extrude_collection` -> `extrude_entity` -> `extrude_loop`) rather than
-// methods on a stateful `GCode`. To make the per-object/per-layer SeamPlacer
-// available to `extrude_loop` (which performs the C++
-// `m_seam_placer.place_seam(m_layer, loop, ...)` call, GCode.cpp:5085) without
-// threading it through every signature and every recursive collection, the
-// driver (`print.rs`) installs the active placer + layer index here for the
-// duration of one layer's region extrusion via [`SeamContextGuard`].
-//
-// Export is strictly single-threaded and sequential, so a thread-local pointer
-// scoped by a guard is sound: the borrowed `SeamPlacer` outlives the guard.
-// =============================================================================
+// GCode.hpp 539, 600 and GCode.cpp 3265, 5837, 6682. The exporter initializes
+// the geometry once and selects its layer while emitting the object's regions.
+use std::sync::Arc;
+pub(crate) type LayerSeam = (Arc<SeamPlacer>, usize);
+
+// Free-function callers can explicitly install a seam context. Keep this API
+// and the earlier export gate backed by owned geometry.
 thread_local! {
-    static SEAM_CTX: Cell<Option<(*const SeamPlacer, usize)>> = const { Cell::new(None) };
+    static SEAM_CTX: std::cell::RefCell<Option<LayerSeam>> = const { std::cell::RefCell::new(None) };
 }
 
-/// RAII guard installing `(placer, layer_idx)` as the active seam context.
-/// On drop it restores the previously-installed context.
-///
-/// Mirrors C++ setting `m_layer`/`m_seam_placer` before the per-region extrude
-/// in `GCode::process_layer` (GCode.cpp:4570+). The borrow of `placer` is tied
-/// to the guard's lifetime, so the pointer stored in the thread-local is valid
-/// for as long as the guard lives (and the guard strictly encloses every
-/// `extrude_loop` call that can observe the context).
 pub struct SeamContextGuard<'a> {
-    prev: Option<(*const SeamPlacer, usize)>,
-    _marker: std::marker::PhantomData<&'a SeamPlacer>,
+    prev: Option<LayerSeam>,
+    _thread: std::marker::PhantomData<(&'a SeamPlacer, std::rc::Rc<()>)>,
 }
 
 impl<'a> SeamContextGuard<'a> {
+    /// Install a borrowed placer for free-function callers, sharing its prepared layers.
     pub fn install(placer: &'a SeamPlacer, layer_idx: usize) -> Self {
-        let prev =
-            SEAM_CTX.with(|c| c.replace(Some((placer as *const SeamPlacer, layer_idx))));
-        Self {
-            prev,
-            _marker: std::marker::PhantomData,
+        Self::install_shared(Arc::new(placer.clone()), layer_idx)
+    }
+
+    /// Install prepared geometry by reference count and restore the previous
+    /// selection when this thread's guard leaves scope.
+    pub fn install_shared(placer: Arc<SeamPlacer>, layer_idx: usize) -> Self {
+        let prev = SEAM_CTX.with(|ctx| ctx.replace(Some((placer, layer_idx))));
+        Self { prev, _thread: std::marker::PhantomData }
+    }
+}
+
+impl Drop for SeamContextGuard<'_> {
+    fn drop(&mut self) {
+        SEAM_CTX.with(|ctx| ctx.replace(self.prev.take()));
+    }
+}
+
+pub(crate) fn with_layer_seam<R>(
+    writer: &mut GCodeWriter, placer: Option<&Arc<SeamPlacer>>, layer_idx: usize,
+    emit: impl FnOnce(&mut GCodeWriter) -> R,
+) -> R {
+    if !crate::faithful_gate("EXPORTER_SEAM_CONTEXT") {
+        let _guard = placer.map(|p| SeamContextGuard::install_shared(Arc::clone(p), layer_idx));
+        return emit(writer);
+    }
+
+    struct LayerScope<'a> {
+        writer: &'a mut GCodeWriter,
+        previous: Option<LayerSeam>,
+    }
+    impl Drop for LayerScope<'_> {
+        fn drop(&mut self) {
+            self.writer.layer_seam = self.previous.take();
         }
     }
+
+    let layer = placer.map(|p| (Arc::clone(p), layer_idx));
+    let previous = std::mem::replace(&mut writer.layer_seam, layer);
+    let scope = LayerScope { writer, previous };
+    emit(scope.writer)
 }
 
-impl<'a> Drop for SeamContextGuard<'a> {
-    fn drop(&mut self) {
-        SEAM_CTX.with(|c| c.set(self.prev));
+fn with_seam_context<R>(writer: &GCodeWriter, use_layer: impl FnOnce(&SeamPlacer, usize) -> R) -> Option<R> {
+    if let Some((placer, layer)) = &writer.layer_seam {
+        return Some(use_layer(placer, *layer));
     }
+    SEAM_CTX.with(|ctx| ctx.borrow().as_ref().map(|(placer, layer)| use_layer(placer, *layer)))
 }
 
-/// Look up the active seam point for `polygon` (a CCW perimeter loop) via the
-/// installed [`SeamPlacer`], mirroring C++ `m_seam_placer.place_seam(...)`.
-/// Returns `None` when no context is installed or the placer has no data for
-/// the loop (caller falls back to the legacy `find_best_seam_index` heuristic).
 fn active_place_seam(
+    writer: &GCodeWriter,
     loop_ref: &crate::extrusion_entity::ExtrusionLoop,
     polygon: &crate::geometry::Polygon,
     last_pos: Point,
 ) -> Option<Point> {
-    SEAM_CTX.with(|c| {
-        let (placer_ptr, layer_idx) = c.get()?;
-        // SAFETY: the pointer is valid for the lifetime of the installed
-        // `SeamContextGuard`, which strictly encloses every `extrude_loop` call
-        // that can observe this context (single-threaded sequential export).
-        let placer: &SeamPlacer = unsafe { &*placer_ptr };
-        placer.place_seam(layer_idx, loop_ref, polygon, last_pos)
-    })
+    with_seam_context(writer, |placer, layer| placer.place_seam(layer, loop_ref, polygon, last_pos)).flatten()
 }
 
 /// LOOP_SPLIT_NONPERIMETER (on unless =0): GCode.cpp:6679-6684. Only a loop
@@ -2227,7 +2237,7 @@ pub fn extrude_loop(
     // SeamPlacer integration (GCode.cpp:5081-5088)
     // C++: m_seam_placer.place_seam(m_layer, loop, is_outer_wall_first, last_pos, ...)
     // When a per-object SeamPlacer has been installed by the driver
-    // (`print.rs` via `with_seam_context`), use its aligned-mode result
+    // (`print.rs` via `with_layer_seam`), use its aligned-mode result
     // (SeamPlacer.cpp:1463). Otherwise fall back to the legacy per-loop
     // angle/nearest heuristic (`find_best_seam_index`).
     let polygon = loop_copy.as_polygon();
@@ -2235,7 +2245,7 @@ pub fn extrude_loop(
     let seam_point = if split_at_last_pos {
         last_pos
     } else {
-        match active_place_seam(&loop_copy, &polygon, last_pos) {
+        match active_place_seam(writer, &loop_copy, &polygon, last_pos) {
             Some(p) => p,
             None => {
                 let seam_idx = crate::gcode::seam_placer::find_best_seam_index(
@@ -2252,7 +2262,7 @@ pub fn extrude_loop(
     // `make_counter_clockwise`) against the one used here (after it, as GCode.cpp:6673).
     if !split_at_last_pos && crate::probe_enabled("LOOP_SEAM_ORIENT_PROBE") {
         let orig_poly = loop_entity.as_polygon();
-        let orig_seam = active_place_seam(loop_entity, &orig_poly, last_pos);
+        let orig_seam = active_place_seam(writer, loop_entity, &orig_poly, last_pos);
         if orig_seam.is_some() && orig_seam != Some(seam_point) {
             eprintln!(
                 "LOOP_SEAM_ORIENT role={:?} ccw_before={} n={} orig_seam={:?} ccw_seam=({},{}) last_pos=({},{})",
@@ -2555,7 +2565,7 @@ pub fn extrude_loop(
         // discontinuities, then emit each with its smoothed feedrate.
         // R803 SSD_LID probe (cpp twin: ssd_dump in GCode::extrude_loop).
         let ssd_on = std::env::var("SSD_LID").ok().and_then(|w| w.parse::<usize>().ok())
-            .map(|want| SEAM_CTX.with(|c| c.get().map(|(_, idx)| idx == want).unwrap_or(false)))
+            .map(|want| with_seam_context(writer, |_, idx| idx == want).unwrap_or(false))
             .unwrap_or(false)
             && loop_role == Some(ExtrusionRole::ExternalPerimeter);
         let ssd_dump = |tag: &str, ps: &[ExtrusionPath], v_of: &dyn Fn(&ExtrusionPath) -> f64| {
@@ -3054,7 +3064,7 @@ pub fn extrude_collection(
             LOOP_SEAM_PRE_TRAVEL_POS.with(|c| c.set(pre));
         }
         let travel_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-            travel_target_for_entity(entity, seam_from)
+            travel_target_for_entity(writer, entity, seam_from)
         } else {
             get_entity_first_point(entity)
         };
@@ -3130,7 +3140,7 @@ pub fn extrude_collection(
                 let seam_pos = LOOP_SEAM_PRE_TRAVEL_POS
                     .with(|c| c.get())
                     .unwrap_or_else(|| writer_last_pos(writer));
-                if let Some(r) = loop_first_role_as_extruded(l, seam_pos) {
+                if let Some(r) = loop_first_role_as_extruded(writer, l, seam_pos) {
                     tag_role = r;
                 }
                 pending_markers = Some(tag_role) != prev_role;
@@ -3405,6 +3415,7 @@ pub fn extrude_collection(
 /// position-independent (final_seam_position), so resolving it here and again
 /// inside extrude_loop yields the same point.
 fn travel_target_for_entity(
+    writer: &GCodeWriter,
     entity: &crate::extrusion_entity::ExtrusionEntityType,
     last_pos: Point,
 ) -> Option<Point> {
@@ -3442,7 +3453,7 @@ fn travel_target_for_entity(
             l
         };
         let polygon = l.as_polygon();
-        if let Some(seam) = active_place_seam(l, &polygon, last_pos) {
+        if let Some(seam) = active_place_seam(writer, l, &polygon, last_pos) {
             // R228: native travels to loop.first_point() AFTER split_at
             // (GCode.cpp:5085-5090). For outer walls the placed seam IS a
             // loop vertex, but for inner walls place_seam can return a point
@@ -3512,6 +3523,7 @@ fn writer_last_pos(writer: &GCodeWriter) -> Point {
 /// collection-level tag wrote: a seam inside or next to an overhang piece put
 /// "Overhang wall" on the inner-wall path (or the reverse).
 fn loop_first_role_as_extruded(
+    writer: &GCodeWriter,
     l: &crate::extrusion_entity::ExtrusionLoop,
     last_pos: Point,
 ) -> Option<ExtrusionRole> {
@@ -3522,7 +3534,7 @@ fn loop_first_role_as_extruded(
     if split_at_last_pos {
         probe.split_at(&last_pos, false, crate::scale(0.001) as f64);
     } else {
-        let seam_point = match active_place_seam(&probe, &polygon, last_pos) {
+        let seam_point = match active_place_seam(writer, &probe, &polygon, last_pos) {
             Some(p) => p,
             None => {
                 if polygon.points().is_empty() {
@@ -4661,7 +4673,7 @@ pub fn extrude_perimeters(
     writer.retract_for_export();
     writer.set_travel_acceleration(6000.0);
     let first_target = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-        travel_target_for_entity(&region.perimeters.entities[0], writer_last_pos(writer))
+        travel_target_for_entity(writer, &region.perimeters.entities[0], writer_last_pos(writer))
     } else {
         get_entity_first_point(&region.perimeters.entities[0])
     };
@@ -4751,7 +4763,7 @@ pub fn extrude_infill(
         // Retract and travel to the (now reordered) first infill point.
         let Some(first_pt) = extrusions.first().and_then(|e| {
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-                travel_target_for_entity(e, writer_last_pos(writer))
+                travel_target_for_entity(writer, e, writer_last_pos(writer))
             } else {
                 get_entity_first_point(e)
             }
@@ -4881,7 +4893,7 @@ pub fn extrude_perimeters_entities(
     // unconditional behavior (byte-locked).
     let bucket_from = writer_last_pos(writer);
     let first_pt_opt = if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-        travel_target_for_entity(&entities[first_idx], writer_last_pos(writer))
+        travel_target_for_entity(writer, &entities[first_idx], writer_last_pos(writer))
     } else {
         get_entity_first_point(&entities[first_idx])
     };
@@ -5036,7 +5048,7 @@ pub fn extrude_infill_entities(
         };
         let Some(first_pt) = first_leaf.and_then(|e| {
             if crate::faithful_gate("ZSMOOTH_FAITHFUL") {
-                travel_target_for_entity(e, writer_last_pos(writer))
+                travel_target_for_entity(writer, e, writer_last_pos(writer))
             } else {
                 get_entity_first_point(e)
             }
@@ -5358,7 +5370,7 @@ pub fn extrude_support(
             } else {
                 writer_last_pos(writer)
             };
-            travel_target_for_entity(e, from)
+            travel_target_for_entity(writer, e, from)
         } else {
             get_entity_first_point(e)
         }
@@ -11418,7 +11430,7 @@ struct ExportPlaceholderSlot {
 thread_local! {
     /// The export's placeholder parser (GCode.hpp `m_placeholder_parser` and its companions).
     /// `print.rs` hands every template its settings rather than the export's `GCode`, so the
-    /// parser is kept here for the export, as the seam context is (`SeamContextGuard`): the
+    /// parser is kept here for the export, as the free-function seam context is (`SeamContextGuard`): the
     /// export is single-threaded and sequential. A new export writer drops it
     /// ([`reset_export_placeholders`]).
     static EXPORT_PLACEHOLDERS: std::cell::RefCell<Option<ExportPlaceholderSlot>> =
@@ -16944,11 +16956,11 @@ mod loop_role_pin_tests {
         }
         let l = two_role_loop();
         assert_eq!(
-            loop_first_role_as_extruded(&l, Point::new_scale(4.0, 14.0)),
+            loop_first_role_as_extruded(&GCodeWriter::new(), &l, Point::new_scale(4.0, 14.0)),
             Some(ExtrusionRole::SolidInfill)
         );
         assert_eq!(
-            loop_first_role_as_extruded(&l, Point::new_scale(14.0, 4.0)),
+            loop_first_role_as_extruded(&GCodeWriter::new(), &l, Point::new_scale(14.0, 4.0)),
             Some(ExtrusionRole::GapFill)
         );
     }
@@ -17071,4 +17083,84 @@ mod tower_xform_tc_start_tests {
             assert_eq!(last_none, "G1  X13.000 Y50.000  E0.1630 F990", "{out_none}");
         }
     }
+}
+
+#[cfg(test)]
+mod seam_context_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn the_exporters_keep_their_own_seam_layer() {
+        let mut a = GCodeWriter::new();
+        let mut b = GCodeWriter::new();
+        let first = Arc::new(SeamPlacer::default());
+        let second = Arc::new(SeamPlacer::default());
+        if !crate::faithful_gate("EXPORTER_SEAM_CONTEXT") {
+            // R1010 sampled the same thread-local layer from either writer.
+            let current = |writer: &GCodeWriter| with_seam_context(writer, |_, layer| layer);
+            with_layer_seam(&mut a, Some(&first), 0, |a| {
+                assert_eq!((current(a), current(&b)), (Some(0), Some(0)));
+                with_layer_seam(&mut b, Some(&second), 1, |b| {
+                    assert_eq!((current(a), current(b)), (Some(1), Some(1)));
+                });
+                assert_eq!(current(a), Some(0));
+            });
+            assert_eq!(current(&b), None);
+            return;
+        }
+        let layer = |writer: &GCodeWriter, owner: &Arc<SeamPlacer>| {
+            with_seam_context(writer, |placer, layer| {
+                assert!(std::ptr::eq(placer, owner.as_ref()));
+                layer as i32
+            }).unwrap_or(-1)
+        };
+        let state = |label: &str, a: &GCodeWriter, b: &GCodeWriter| {
+            let distinct = u8::from(!Arc::ptr_eq(&first, &second));
+            format!("{label} {} {} {distinct}", layer(a, &first), layer(b, &second))
+        };
+        let mut rows = vec![state("start", &a, &b)];
+        with_layer_seam(&mut a, Some(&first), 0, |a| {
+            rows.push(state("a0", a, &b));
+            with_layer_seam(&mut b, Some(&second), 1, |b| {
+                rows.push(state("b1", a, b));
+                with_layer_seam(a, Some(&first), 1, |a| {
+                    rows.push(state("a1", a, b));
+                    with_layer_seam(a, None, 0, |a| {
+                        rows.push(state("clear_a", a, b));
+                        with_layer_seam(b, Some(&second), 0, |b| {
+                            rows.push(state("b0", a, b));
+                            with_layer_seam(b, None, 0, |b| rows.push(state("clear_b", a, b)));
+                            assert_eq!(layer(b, &second), 0);
+                        });
+                    });
+                    assert_eq!(layer(a, &first), 1);
+                });
+                assert_eq!(layer(a, &first), 0);
+            });
+            assert_eq!(layer(&b, &second), -1);
+        });
+        assert_eq!(layer(&a, &first), -1);
+        let native = include_str!("../tests/data/g_code/seam_contexts.txt");
+        assert_eq!(rows.join("\n") + "\n", native);
+        assert_eq!((Arc::strong_count(&first), Arc::strong_count(&second)), (1, 1));
+    }
+    #[test]
+    fn seam_selection_is_restored_on_unwind() {
+        let mut writer = GCodeWriter::new();
+        let placer = Arc::new(SeamPlacer::default());
+        let previous = SeamContextGuard::install_shared(Arc::clone(&placer), 4);
+        let selected = |writer: &GCodeWriter| with_seam_context(writer, |_, layer| layer);
+        let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_layer_seam(&mut writer, Some(&placer), 6, |writer| {
+                assert_eq!(selected(writer), Some(6));
+                panic!("cancelled export");
+            });
+        }));
+        assert!(stopped.is_err());
+        assert_eq!(selected(&writer), Some(4));
+        drop(previous);
+        assert_eq!(selected(&writer), None);
+        assert_eq!(Arc::strong_count(&placer), 1);
+    }
+
 }

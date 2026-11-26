@@ -920,8 +920,33 @@ static void no_tower_retractions()
           }
 }
 
+// GCode.hpp 539, 600 and GCode.cpp 5837, 6682. The same exporter keeps
+// its seam placer as it switches layers, independently of a second exporter.
+static void seam_contexts()
+{
+    GCode a, b;
+    Layer l0(0, nullptr, 0.2, 0.2, 0.1), l1(1, nullptr, 0.2, 0.4, 0.3);
+    const SeamPlacer *pa = &a.m_seam_placer, *pb = &b.m_seam_placer;
+    auto state = [&](const char *step) {
+        auto layer = [](const GCode &g) { return g.layer() ? int(g.layer()->id()) : -1; };
+        std::cout << step << " " << layer(a) << " " << layer(b) << " "
+                  << (pa != pb && pa == &a.m_seam_placer && pb == &b.m_seam_placer) << "\n";
+    };
+    state("start");
+    a.m_layer = &l0; state("a0");
+    b.m_layer = &l1; state("b1");
+    a.m_layer = &l1; state("a1");
+    a.m_layer = nullptr; state("clear_a");
+    b.m_layer = &l0; state("b0");
+    b.m_layer = nullptr; state("clear_b");
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--seam-contexts") {
+        seam_contexts();
+        return 0;
+    }
     if (argc < 2) {
         fprintf(stderr, "usage: gen <out dir>\n");
         return 1;

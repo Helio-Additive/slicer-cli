@@ -66,6 +66,7 @@ use crate::unscale;
 use crate::utils::{next_idx_modulo, prev_idx_modulo};
 use nalgebra::{Vector2, Vector3};
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 /// R734 — stage census for `SeamPlacer::init`, proven at 1,100.7 ms = 42% of the
 /// whole benchy slice. `SPPROF=1` prints at exit.
@@ -2771,7 +2772,9 @@ pub struct SeamPlacerStats {
 #[derive(Clone, Debug, Default)]
 pub struct SeamPlacer {
     config_mode: SeamPositionMode,
-    seam_data: PrintObjectSeamData,
+    // GCode.cpp 3265 initializes once, before any layer selects its seam.
+    // A handle to prepared layers can be copied without copying the candidates.
+    seam_data: Arc<PrintObjectSeamData>,
     /// R191 (ZSMOOTH_FAITHFUL): scaled-int XY offset rust-frame -> centered
     /// seam frame, captured at init; (0,0) when the gate is off.
     frame_offset_xy: (i64, i64),
@@ -2781,7 +2784,7 @@ impl SeamPlacer {
     pub fn new(config: SeamPlacerConfig) -> Self {
         Self {
             config_mode: config.seam_position,
-            seam_data: PrintObjectSeamData::default(),
+            seam_data: Arc::default(),
             frame_offset_xy: (0, 0),
         }
     }
@@ -2807,14 +2810,15 @@ impl SeamPlacer {
 
     /// Build per-layer candidate data from simple polygon layers.
     pub fn init_simple(&mut self, layers: &[(f64, Vec<Polygon>)], flow_width: f64) {
-        self.seam_data.clear();
+        let mut data = PrintObjectSeamData { layers: Vec::with_capacity(layers.len()) };
         for (z, polygons) in layers {
             let mut layer = LayerSeams::default();
             for polygon in polygons {
                 gather_layer_perimeter(&mut layer, polygon, *z as f32, flow_width as f32);
             }
-            self.seam_data.layers.push(layer);
+            data.layers.push(layer);
         }
+        self.seam_data = Arc::new(data);
     }
 
     /// Parallel process and extract each perimeter polygon of the given print object.
@@ -2850,11 +2854,9 @@ impl SeamPlacer {
         configured_seam_preference: SeamPosition,
     ) {
         // SeamPlacer.cpp:930-931 — fresh emplace + resize(po->layer_count()).
-        let seam_data = &mut self.seam_data;
-        seam_data.layers.clear();
-        seam_data
-            .layers
-            .resize(po.layers().len(), LayerSeams::default());
+        let mut seam_data = PrintObjectSeamData {
+            layers: vec![LayerSeams::default(); po.layers().len()],
+        };
 
         // SeamPlacer.cpp:933-934 — C++ runs this under `tbb::parallel_for`.
         // R521 MEASURED: rayon here is INERT (export_gcode 4.131 -> 4.130s, i.e.
@@ -2918,6 +2920,7 @@ impl SeamPlacer {
             // builds it on demand via `LayerSeams::build_points_tree` (the KD
             // tree borrows the coordinate functor closure).
         }
+        self.seam_data = Arc::new(seam_data);
     }
 
     /// SeamPlacer.cpp:950-960
@@ -2936,7 +2939,7 @@ impl SeamPlacer {
         // is empty the tree is empty and every visibility is 1.0.
         let mesh_samples_tree = global_model_info.build_mesh_samples_tree();
         // SeamPlacer.cpp:954
-        let layers = &mut self.seam_data.layers;
+        let layers = &mut Arc::make_mut(&mut self.seam_data).layers;
         // SeamPlacer.cpp:955-959 — C++ runs this under `tbb::parallel_for` over
         // the layer range. R521: ported to rayon to match. Every point's
         // visibility is an independent pure function of (mesh_samples_tree,
@@ -2984,7 +2987,7 @@ impl SeamPlacer {
             out
         };
         // SeamPlacer.cpp:965
-        let layers = &mut self.seam_data.layers;
+        let layers = &mut Arc::make_mut(&mut self.seam_data).layers;
         // SeamPlacer.cpp:966 — C++ runs this under `tbb::parallel_for` over layer
         // RANGES, and each range seeds its own `prev_layer_distancer` from
         // `r.begin() - 1` (SeamPlacer.cpp:967-970). R522 mirrors that with
@@ -3555,9 +3558,10 @@ impl SeamPlacer {
             );
 
             // SeamPlacer.cpp:1267-1283 — apply alignment, store into Perimeter.
+            let layers = &mut Arc::make_mut(&mut self.seam_data).layers;
             for index in 0..n {
                 let pair = seam_string[index];
-                let pt = &self.seam_data.layers[pair.0].points[pair.1];
+                let pt = &layers[pair.0].points[pair.1];
                 // SeamPlacer.cpp:1269
                 let mut t = (pt.local_ccw_angle.abs() / SHARP_ANGLE_SNAPPING_THRESHOLD)
                     .powf(3.0)
@@ -3577,8 +3581,8 @@ impl SeamPlacer {
                 let final_position = t * current_pos + (1.0 - t) * fitted_3d;
 
                 // SeamPlacer.cpp:1279-1282
-                let perim_idx = self.seam_data.layers[pair.0].points[pair.1].perimeter;
-                let perimeter = &mut self.seam_data.layers[pair.0].perimeters[perim_idx];
+                let perim_idx = layers[pair.0].points[pair.1].perimeter;
+                let perimeter = &mut layers[pair.0].perimeters[perim_idx];
                 perimeter.seam_index = pair.1;
                 perimeter.final_seam_position = final_position;
                 perimeter.finalized = true;
@@ -3896,7 +3900,7 @@ impl SeamPlacer {
         // `pick_nearest_seam_point_index` / `pick_random_seam_point` dispatch on
         // `m_seam_position`). Ported serially with identical results.
         let comparator = SeamComparator::new(configured_seam_preference);
-        for layer in self.seam_data.layers.iter_mut() {
+        for layer in &mut Arc::make_mut(&mut self.seam_data).layers {
             let LayerSeams {
                 perimeters, points, ..
             } = layer;
@@ -4637,5 +4641,27 @@ mod tests {
         }
         assert!(fused_differs > 0, "the inputs never tell the two arms apart");
         assert_eq!(OVERHANG_ANGLE_THRESHOLD.tan().to_bits(), 1.0_f32.to_bits());
+    }
+}
+
+#[cfg(test)]
+mod prepared_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn seam_placer_snapshots_share_prepared_layers_until_reinitialized() {
+        let mut original = SeamPlacer::default();
+        let ring = Polygon::from_points(vec![
+            Point::new(0, 0), Point::new(1000000, 0), Point::new(0, 1000000),
+        ]);
+        original.init_simple(&[(0.2, vec![ring]), (0.4, Vec::new())], 0.4);
+        let mut snapshot = original.clone();
+        assert_eq!(original.seam_data.layers.as_ptr(), snapshot.seam_data.layers.as_ptr());
+        let points = &original.seam_data.layers[0].points;
+        assert!(!points.is_empty());
+        assert_eq!(points.as_ptr(), snapshot.seam_data.layers[0].points.as_ptr());
+        snapshot.init_simple(&[(0.3, Vec::new())], 0.4);
+        assert_eq!(original.stats().layer_count, 2);
+        assert_eq!(snapshot.stats().layer_count, 1);
     }
 }

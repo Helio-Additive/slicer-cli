@@ -232,6 +232,9 @@ impl Extruder {
 /// and other parameters, and provides methods for generating G-code
 /// commands while tracking this state.
 pub struct GCodeWriter {
+    /// GCode.hpp 539, 600. Exporter-owned seam geometry and active object layer.
+    pub(crate) layer_seam: Option<crate::g_code::LayerSeam>,
+
     /// The G-code being built.
     gcode: GCode,
 
@@ -525,6 +528,7 @@ impl GCodeWriter {
             extruder_index: 0,
             multiple_extruders: false,
             m_extruder_ids: None,
+            layer_seam: None,
             last_path_end: None,
             position_known: false,
             // GCodeWriter.hpp:164 — defaults to FALSE, so the first lift of the

@@ -103,19 +103,24 @@ override, both Linux binaries produced the same 474,289 bytes as the Mac
 binary on the 25.6 mm cube. The Windows binary was checked as an x86_64 PE
 executable. Windows runtime verification is still open.
 
-At R1009 the root CLI again linked on all four targets. With the legacy
+At R1009 and R1011 the root CLI linked on all four targets. With the legacy
 `--nozzle 0.6mm` argument, the macOS and both Linux binaries produced
 identical 468,100-byte cube files. The Windows executable was inspected.
 
-At R1009 the locked target graph produced these compiler diagnostics with Rust
+R1011 removed an unsafe pointer dereference from seam placement. Each
+exporter now selects its own object layer and shares the prepared geometry
+across layers. `EXPORTER_SEAM_CONTEXT=0` replays the previous thread-local
+selection with owned geometry.
+
+At R1011 the locked target graph produced these compiler diagnostics with Rust
 1.95.0. Each row excludes host build dependencies.
 
 | Target | Engine unsafe diagnostics | Full target graph unsafe diagnostics | Packages reporting them |
 | --- | ---: | ---: | ---: |
-| macOS arm64 | 104 | 8,969 | 81 |
-| Linux musl x86_64 | 100 | 9,636 | 81 |
-| Linux musl arm64 | 100 | 9,107 | 80 |
-| Windows GNU x86_64 | 104 | 9,970 | 82 |
+| macOS arm64 | 103 | 8,968 | 81 |
+| Linux musl x86_64 | 99 | 9,635 | 81 |
+| Linux musl arm64 | 99 | 9,106 | 80 |
+| Windows GNU x86_64 | 103 | 9,969 | 82 |
 
 The port was developed on the branch `alex/frame-unify` (1,233 commits, rounds
 R1 to R808), which forked from `main` before the three-engine front end. The
@@ -231,7 +236,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R1010) |
+| Fixture | As brought over (R808) | Now (R1011) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -241,11 +246,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R1010:
+missing most often. Lines of the oracle's body the port has verbatim, at R1011:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R1010 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R1011 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.
