@@ -237,10 +237,13 @@ pub fn run(args: &[String]) -> u8 {
             let geometry = if crate::cli_command_line::geometry_options_enabled() {
                 "      --layer-height MM  Set the layer height\n      --wall-loops N, --perimeters N  Set the wall count\n      --sparse-infill-density PERCENT, --infill N  Set sparse infill density\n"
             } else { "" };
+            let diameter = if crate::cli_command_line::nozzle_diameter_enabled() {
+                "      --nozzle-diameter MM[,MM...]  Set the per-extruder nozzle diameters\n"
+            } else { "" };
             let thermal = if crate::cli_command_line::temperature_options_enabled() {
                 "      --temp C           Set the nozzle temperature after the first layer\n      --bed-temp C       Set the selected plate temperature for both phases\n"
             } else { "" };
-            print!("{USAGE}{additional}{geometry}{thermal}{legacy}{timing}{USAGE_TAIL}");
+            print!("{USAGE}{additional}{geometry}{diameter}{thermal}{legacy}{timing}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,

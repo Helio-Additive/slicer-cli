@@ -34,6 +34,10 @@ pub(crate) fn geometry_options_enabled() -> bool {
     native_tokens() && slicer::faithful_gate("CLI_GEOMETRY_OPTIONS")
 }
 
+pub(crate) fn nozzle_diameter_enabled() -> bool {
+    native_tokens() && slicer::faithful_gate("CLI_NOZZLE_DIAMETER")
+}
+
 pub(crate) fn temperature_options_enabled() -> bool {
     native_tokens() && slicer::faithful_gate("CLI_TEMPERATURE_OPTIONS")
 }
@@ -46,10 +50,11 @@ pub fn refusal(flag: &str) -> String {
     };
     let extra = if slicer::faithful_gate("CLI_LEGACY_GCODE") { ", plus --no-normalize-legacy-gcode" } else { "" };
     let geometry = if geometry_options_enabled() { ", --layer-height, --wall-loops, --sparse-infill-density, --perimeters and --infill" } else { "" };
+    let diameter = if nozzle_diameter_enabled() { ", --nozzle-diameter" } else { "" };
     let temperatures = if temperature_options_enabled() { ", --temp and --bed-temp" } else { "" };
     let timing = if slicer::faithful_gate("CLI_GCODE_TIMING") { ", and --gcode-timing" } else { "" };
     format!(
-        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{temperatures}{extra}{timing} so far. \
+        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{diameter}{temperatures}{extra}{timing} so far. \
          Use slicer_cli (the Bambu Studio engine) for {flag}."
     )
 }
@@ -166,6 +171,30 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
                         }
                     };
                     geometry.extra_config.insert(key.into(), decoded);
+                }
+                "nozzle-diameter" if nozzle_diameter_enabled() => {
+                    // cli_command_line.cpp 227–252: clear defaults on the first
+                    // occurrence, then append typed rows on each subsequent one.
+                    use slicer::config::ConfigOptionFloatsNullable;
+                    let key = "nozzle_diameter";
+                    let word = value()?;
+                    let text = word.to_str().expect("arguments are UTF-8 strings");
+                    let append = official.has(key);
+                    official.set_deserialize_strict(key, text, append).map_err(|_| (
+                        format!("Error: --{flag}: '{text}' is not a value BambuStudio takes for this flag; it takes a numbers, comma separated"), 1,
+                    ))?;
+                    let rows = official.option(key).and_then(|opt| opt.as_any().downcast_ref::<ConfigOptionFloatsNullable>())
+                        .expect("PrintConfig.cpp 5223–5230 defines a nullable float vector");
+                    // The profile loader needs each double before the config
+                    // block rounds it to six significant digits for display.
+                    let mut values = Vec::with_capacity(rows.values.len());
+                    for &diameter in &rows.values {
+                        if diameter.is_infinite() {
+                            return Err((format!("Error: --{flag}: Serializing invalid number"), 1));
+                        }
+                        values.push(if diameter.is_nan() { "nil".into() } else { diameter.to_string() });
+                    }
+                    geometry.extra_config.insert(key.into(), values.join(","));
                 }
                 "infill" | "perimeters" if geometry_options_enabled() => {
                     let key = if flag == "infill" { "fill_density" } else { "perimeters" };

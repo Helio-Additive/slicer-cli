@@ -40,6 +40,24 @@ static void sample(std::vector<std::string> words, bool geometry = false)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--nozzle-options") {
+        for (const char *flag : {"--nozzle", "--nozzle-diameter"})
+            for (const char *value : {"0.4", "0.6,0.4", "0.4,bad", "", "bad", " 0.2", "0.6mm",
+                                     "3e-1", "+0.4", "-0.1", "0", "0.4 ", "0.40000099"}) {
+                sample({flag, value, "model.stl"}, true);
+                sample({std::string(flag) + "=" + value, "model.stl"}, true);
+            }
+        sample({"--nozzle", ".6", "--nozzle=.4", "model.stl"}, true);
+        sample({"--nozzle-diameter", ".6", "--nozzle=.4", "model.3mf"}, true);
+        sample({"--nozzle", ".4", "--nozzle-diameter=.6", "model.3mf"}, true);
+        sample({"--nozzle-diameter", ".6,.4", "--nozzle-diameter=.4,.6", "model.3mf"}, true);
+        for (const char *value : {"nil", "0.4,nil", "nil,0.6", "1.00001", "1e-9999"})
+            sample({"--nozzle-diameter", value, "model.3mf"}, true);
+        sample({"-nozzle-diameter=.4,.6", "model.stl"}, true);
+        sample({"model.3mf", "--nozzle"}, true);
+        sample({"model.3mf", "--nozzle-diameter"}, true);
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--geometry-options") {
         for (const char* flag : {"--layer-height", "--infill", "--perimeters", "--wall-loops", "--sparse-infill-density", "--nozzle", "--temp", "--bed-temp"}) {
             for (const char* value : {"0.25", "35%", "3", "", "bad", "0.2mm", " -2", "0.55,0.6", "8e-2", "+3.5"}) {

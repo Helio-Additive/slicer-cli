@@ -276,7 +276,11 @@ fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&Slice
         return Ok(file);
     };
     for (key, value) in overrides.values {
-        if !matches!(key.as_str(), "bed_temperature" | "nozzle_temperature") {
+        if key == "nozzle_diameter" && crate::faithful_gate("CLI_NOZZLE_DIAMETER") {
+            // main.cpp 9687, 10614–10681: the official extra_config supplies
+            // the complete vector to the same consumers as a profile array.
+            settings[key] = value.split(',').collect::<Vec<_>>().into();
+        } else if !matches!(key.as_str(), "bed_temperature" | "nozzle_temperature") {
             settings[key] = serde_json::Value::String(value.clone());
         }
     }

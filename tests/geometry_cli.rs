@@ -101,3 +101,83 @@ fn bad_legacy_geometry_option_emits_native_event_and_continues() {
         .lines()
         .any(|s| s == "; wall_loops = 2"));
 }
+
+#[test]
+fn nozzle_diameter_vector_reaches_stl_and_bambu_project() {
+    use serde_json::{json, Value};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let defaults =
+        fs::read(root.join("crates/libslic3r-rs/tests/data/cube_arachne_settings.json")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile.json");
+    let output = dir.path().join("out.gcode");
+    for model in [
+        "tests/rust-engine/fixtures/Cube_25.6.stl",
+        "tests/fixtures/calib_base.3mf",
+    ] {
+        for (baseline, requested) in [(json!(["0.4"]), "0.6"), (json!(["0.4", "0.4"]), "0.4,0.6")] {
+            let slice = |rows: Value, flags: &[&str]| {
+                let mut settings: Value = serde_json::from_slice(&defaults).unwrap();
+                settings["nozzle_diameter"] = rows;
+                fs::write(&profile, serde_json::to_vec(&settings).unwrap()).unwrap();
+                let run = Command::new(env!("CARGO_BIN_EXE_slicer_cli-rust"))
+                    .current_dir(dir.path())
+                    .arg("--config")
+                    .arg(&profile)
+                    .args(flags)
+                    .arg("-o")
+                    .arg(&output)
+                    .arg(root.join(model))
+                    .output()
+                    .unwrap();
+                assert!(
+                    run.status.success(),
+                    "{model} {flags:?}: {}",
+                    String::from_utf8_lossy(&run.stderr)
+                );
+                let gcode = fs::read_to_string(&output).unwrap();
+                assert_eq!(
+                    gcode
+                        .lines()
+                        .find_map(|l| l.strip_prefix("; nozzle_diameter = ")),
+                    Some(requested)
+                );
+                let motion: Vec<_> = gcode
+                    .lines()
+                    .filter(|l| {
+                        matches!(l.split_whitespace().next(), Some("G0" | "G1" | "G2" | "G3"))
+                    })
+                    .map(str::to_owned)
+                    .collect();
+                assert!(!motion.is_empty());
+                motion
+            };
+            let control = slice(requested.split(',').collect::<Vec<_>>().into(), &[]);
+            let flagged = slice(baseline, &["--nozzle-diameter", requested]);
+            assert!(
+                flagged == control,
+                "{model} {requested}: motion differs from the equivalent profile"
+            );
+        }
+    }
+}
+
+#[test]
+fn nozzle_diameter_validation_precedes_model_loading_and_replays_the_old_refusal() {
+    let run = |gate: &str| {
+        Command::new(env!("CARGO_BIN_EXE_slicer_cli-rust"))
+            .env("CLI_NOZZLE_DIAMETER", gate)
+            .args(["--nozzle-diameter=0.4,bad", "missing.stl"])
+            .output()
+            .unwrap()
+    };
+    let enabled = run("1");
+    assert_eq!(enabled.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&enabled.stderr)
+        .contains("Params in command line error: nozzle_diameter: invalid value 0.4,0"));
+    let disabled = run("0");
+    assert_eq!(disabled.status.code(), Some(254));
+    assert!(disabled
+        .stderr
+        .starts_with(b"--nozzle-diameter is not a flag"));
+}

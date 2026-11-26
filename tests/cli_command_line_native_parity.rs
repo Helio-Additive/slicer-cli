@@ -113,10 +113,10 @@ fn geometry_options_match_native_parse_state() {
         extra_config: Option<BTreeMap<String, String>>,
         overrides: Option<BTreeMap<String, String>>,
     }
-    for row in include_str!("rust-engine/data/cli_command_line/geometry-options.jsonl").lines() {
+    for row in include_str!("rust-engine/data/cli_command_line/geometry-options.jsonl").lines()
+        .chain(include_str!("rust-engine/data/cli_command_line/nozzle-options.jsonl").lines()) {
         let case: GeometryCase = serde_json::from_str(row).unwrap();
         // The physical nozzle setting still has a named refusal.
-        // Their native vectors also exercise shared option tokenization.
         if let Some(flag) = case.args.iter().filter_map(|arg| arg.split('=').next())
             .find(|flag| *flag == "--nozzle") {
             assert!(parse(&case.args).unwrap_err().0.starts_with(flag), "{row}");
@@ -143,7 +143,8 @@ fn geometry_options_match_native_parse_state() {
 #[test]
 fn geometry_settings_keep_full_precision_before_serialization() {
     let Ok(Request::Slice(slice)) = parse(&["--layer-height=0.123456789".into(),
-        "--sparse-infill-density=27.123456789%".into(), "model.stl".into()]) else { panic!("native numeric options") };
+        "--sparse-infill-density=27.123456789%".into(), "--nozzle-diameter=0.400000123456789,0.6".into(), "model.stl".into()]) else { panic!("native numeric options") };
+    assert_eq!(slice.geometry.extra_config["nozzle_diameter"], "0.400000123456789,0.6");
     assert_eq!(slice.geometry.extra_config["layer_height"], "0.123456789");
     assert_eq!(slice.geometry.extra_config["sparse_infill_density"], "27.123456789%");
 }

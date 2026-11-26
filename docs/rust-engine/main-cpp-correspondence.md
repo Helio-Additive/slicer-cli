@@ -1,5 +1,14 @@
 # `main.cpp` → Rust correspondence
 
+## Root Bambu CLI
+
+| Native source | Rust implementation | Verified behavior |
+|---|---|---|
+| `cli_command_line.cpp` 227–252, 496–516, 705–716 | `src/cli_command_line.rs::parse` | R1007. The official nozzle diameter option replaces the default vector on first use, appends repeated rows and validates before model loading. |
+| `main.cpp` 9687–9688, 10676–10681 | `src/engine_cli.rs::slice`, `crates/libslic3r-rs/src/app_slice.rs::checked_job_config` | R1007. Both the STL and Bambu 3MF entry points pass all typed diameters to the profile loader. |
+
+## Historical driver at R526
+
 Where each symbol of the C++ CLI driver `libslic3r/bambustudio/main.cpp` (the
 BambuStudio-embedding entry point this project wraps) lives in the Rust rewrite.
 Maintainers used to the C++ file can use this to find the equivalent Rust code.

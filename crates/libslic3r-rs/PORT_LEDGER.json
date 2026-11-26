@@ -1812,7 +1812,7 @@
     "loc": 7703,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed R997 preserves the typed legacy fill_density option in both config-block header passes when the root CLI applies --infill (main.cpp 7261-7263). The native flag and equivalent-profile motion controls agree on STL and Bambu 3MF. R1003 publishes the legacy bed_temperature key for --bed-temp in both headers. The typed application of --bed-temp and --temp matches 144 native configuration snapshots (root main.cpp 7267-7327). The eight STL and Bambu 3MF jobs reproduce the motion and heat commands of equivalent file settings in each engine. The tower-disabled three-filament job still lacks commands during tool changes."
+    "fidelity": "fixed R997 preserves the typed legacy fill_density option in both config-block header passes when the root CLI applies --infill (main.cpp 7261-7263). The native flag and equivalent-profile motion controls agree on STL and Bambu 3MF. R1003 publishes the legacy bed_temperature key for --bed-temp in both headers. The typed application of --bed-temp and --temp matches 144 native configuration snapshots (root main.cpp 7267-7327). The eight STL and Bambu 3MF jobs reproduce the motion and heat commands of equivalent file settings in each engine. R1007 publishes the complete typed nozzle_diameter vector in the STL and Bambu 3MF config block, including nullable rows. The seven flag and file controls agree within each engine (cli_command_line.cpp 227-252, main.cpp 10676-10681). The tower-disabled three-filament job still lacks commands during tool changes."
   },
   {
     "cpp": "PrintConfig.cpp",

@@ -231,8 +231,28 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R1004 | Retract the departing filament by its tool-change distance with the tower disabled. | GCode, GCodeWriter | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1005 | Use the profile's extrusion mode in the writer preamble and reset absolute E on retraction. | GCode, GCodeWriter, PrintConfig | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R1006 | Port circle and ellipse paths in the safe NanoSVG crate. | NanoSVG | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R1007 | Apply the official per-extruder nozzle diameters on STL and Bambu 3MF. | root CLI, profile loading | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R1007. The C++ CLI accepts `--nozzle-diameter` before loading a model.
+  R1006 refused it with exit 254. The native option is a nullable double
+  vector (PrintConfig.cpp 5223–5230). The first occurrence replaces the
+  default and subsequent occurrences append (cli_command_line.cpp 227–252).
+  The Rust CLI carries full precision into the profile array and engine.
+  The generator records 64 parser cases across the typed and legacy flags.
+  Seven successful STL and Bambu 3MF comparisons reproduce the motion and
+  nozzle header of an equivalent profile within each engine. These include
+  mixed diameters, a nullable second row and a value with 15 decimal places.
+  On the embedded-only project, C++ emits 9,118 motion commands in both
+  forms and Rust emits 16,784 in both. Switching
+  `CLI_NOZZLE_DIAMETER` off reproduces R1006's named refusal. For an
+  overflowing exponent the native build aborts during serialization. Rust
+  exits 1 with the serialization error. Interior empty CSV fields can read
+  an uninitialized native double and have no deterministic numeric target.
+  All eight standard files match R1006. H2D scores 4,614,342 and 4,614,863
+  against the two saved runs. The legacy printer-variant guard belongs to
+  the separate `--nozzle` flag.
 
 - R1006. The XML callbacks matched C++ in all 46 complete SVG documents.
   The missing step was circle and ellipse geometry. Both elements now use
