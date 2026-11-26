@@ -19,6 +19,19 @@ pub struct SliceRequest {
     pub output: PathBuf,
     pub verbose: bool,
     pub normalize_legacy_gcode: bool,
+    pub geometry: GeometryOptions,
+}
+
+/// cli_command_line.cpp 496-563 keeps official settings and raw legacy
+/// overrides separately. main.cpp 10676-10681 applies the latter last.
+#[derive(Default, Debug, Eq, PartialEq)]
+pub struct GeometryOptions {
+    pub extra_config: std::collections::BTreeMap<String, String>,
+    pub overrides: std::collections::BTreeMap<String, String>,
+}
+
+pub(crate) fn geometry_options_enabled() -> bool {
+    native_tokens() && slicer::faithful_gate("CLI_GEOMETRY_OPTIONS")
 }
 
 pub fn refusal(flag: &str) -> String {
@@ -28,9 +41,10 @@ pub fn refusal(flag: &str) -> String {
         "--config, -o/--output, -v/--verbose and --input"
     };
     let extra = if slicer::faithful_gate("CLI_LEGACY_GCODE") { ", plus --no-normalize-legacy-gcode" } else { "" };
+    let geometry = if geometry_options_enabled() { ", --layer-height, --wall-loops, --sparse-infill-density, --perimeters and --infill" } else { "" };
     let timing = if slicer::faithful_gate("CLI_GCODE_TIMING") { ", and --gcode-timing" } else { "" };
     format!(
-        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{extra}{timing} so far. \
+        "{flag} is not a flag of {PROGRAM}: the Rust engine takes only {flags}{geometry}{extra}{timing} so far. \
          Use slicer_cli (the Bambu Studio engine) for {flag}."
     )
 }
@@ -39,6 +53,9 @@ pub fn refusal(flag: &str) -> String {
 /// 751–752 and 781–782. A parse refusal before slicing exits 1 (main.cpp
 /// 13580–13617). Unsupported Rust flags retain their named refusal.
 pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
+    use slicer::config::{ConfigBase, ConfigOptionResolver};
+    let mut official = slicer::print_config::config_def::DynamicPrintConfig::new();
+    let mut geometry = GeometryOptions::default();
     let native = native_tokens();
     let mut inputs = Vec::new();
     let mut config = None;
@@ -122,6 +139,33 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
                 }
                 "o" | "output" => output = Some(value()?),
                 "input" => inputs.push(value()?),
+                "layer-height" | "wall-loops" | "sparse-infill-density" if geometry_options_enabled() => {
+                    let (key, kind) = match flag {
+                        "layer-height" => ("layer_height", "a number"),
+                        "wall-loops" => ("wall_loops", "a whole number"),
+                        _ => ("sparse_infill_density", "a percentage such as 15%"),
+                    };
+                    let word = value()?;
+                    let text = word.to_str().expect("arguments are UTF-8 strings");
+                    official.set_deserialize_strict(key, text, false).map_err(|_| (
+                        format!("Error: --{flag}: '{text}' is not a value BambuStudio takes for this flag; it takes {kind}"), 1,
+                    ))?;
+                    // Keep the typed value through slicing. ConfigOption::serialize
+                    // deliberately rounds floats to six significant digits for output.
+                    let decoded = match key {
+                        "wall_loops" => official.opt_int(key).to_string(),
+                        _ => {
+                            let value = official.option(key).and_then(|opt| opt.get_float().ok())
+                                .ok_or_else(|| (format!("Error: missing numeric setting {key}"), 1))?;
+                            if key == "layer_height" { value.to_string() } else { format!("{value}%") }
+                        }
+                    };
+                    geometry.extra_config.insert(key.into(), decoded);
+                }
+                "infill" | "perimeters" if geometry_options_enabled() => {
+                    let key = if flag == "infill" { "fill_density" } else { "perimeters" };
+                    geometry.overrides.insert(key.into(), value()?.to_string_lossy().into_owned());
+                }
                 "single-instance" if native => {}
                 // cli_command_line.cpp 572, cli_options.hpp 29.
                 "no-normalize-legacy-gcode" if slicer::faithful_gate("CLI_LEGACY_GCODE") => {
@@ -132,6 +176,14 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
         }
         if !native && inputs.len() > 1 {
             return Err(multiple_models());
+        }
+    }
+    // cli_command_line.cpp 705-716 validates the final values after repeats.
+    if !geometry.extra_config.is_empty() {
+        let findings = official.validate(true).map_err(|e| (e.to_string(), 1))?;
+        if !findings.is_empty() {
+            let message = findings.iter().map(|(key, why)| format!("{key}: {why}")).collect::<Vec<_>>().join("; ");
+            return Err((format!("Error: Params in command line error: {message}"), 1));
         }
     }
     if help {
@@ -152,6 +204,7 @@ pub fn parse(args: &[String]) -> Result<Request, (String, i32)> {
         output: output.unwrap_or_else(|| PathBuf::from("output.gcode")),
         verbose,
         normalize_legacy_gcode,
+        geometry,
     }))
 }
 

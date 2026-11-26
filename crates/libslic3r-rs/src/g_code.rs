@@ -8455,6 +8455,7 @@ pub struct GCodeHeader {
     /// The settings the CONFIG_BLOCK writes when they differ from `raw_settings` (the job's settings
     /// before the port's filament-override patch, `Print::config_block_settings`).
     pub config_block_settings: Option<serde_json::Value>,
+    pub cli_fill_density: Option<i32>,
 
     /// `print.get_slice_used_filaments(false)` (0-based), which the header's `; filament:` line
     /// lists (GCode.cpp:2646-2655); `None` writes the configured filament count. Set by the export
@@ -8522,6 +8523,7 @@ impl GCodeHeader {
             config,
             raw_settings,
             config_block_settings: None,
+            cli_fill_density: None,
             used_filaments: None,
             filament_nozzle_map: None,
         }
@@ -8675,7 +8677,7 @@ impl GCodeHeader {
         if crate::faithful_gate("GCODE_CONFIG_BLOCK_PIN") {
             if let Some(ref settings) = self.config_block_settings.as_ref().or(self.raw_settings.as_ref()) {
                 if settings.is_object() {
-                    return GCode::config_block_pin_with_nozzle_map(settings, self.filament_nozzle_map.as_deref());
+                    return GCode::config_block_with_cli_settings(settings, self.filament_nozzle_map.as_deref(), self.cli_fill_density);
                 }
             }
         }
@@ -10076,10 +10078,18 @@ impl GCode {
     /// `config_block_pin` with the nozzle map of the tool ordering (`f_nozzle_maps`,
     /// `GCodeHeader::filament_nozzle_map`).
     pub fn config_block_pin_with_nozzle_map(settings: &serde_json::Value, f_nozzle_maps: Option<&[i32]>) -> String {
+        Self::config_block_with_cli_settings(settings, f_nozzle_maps, None)
+    }
+
+    fn config_block_with_cli_settings(settings: &serde_json::Value, f_nozzle_maps: Option<&[i32]>, fill_density: Option<i32>) -> String {
         use crate::config::{ConfigBase, ConfigOptionFloats, ConfigOptionStrings};
         let mut out = String::from("; CONFIG_BLOCK_START\n");
         let mut full_config = String::new();
         let mut print_cfg_temp = full_print_config_from_settings(settings);
+        // main.cpp 7261-7263 adds this dynamic option only for --infill.
+        if let Some(density) = fill_density {
+            print_cfg_temp.set_key_value("fill_density", Box::new(crate::config::ConfigOptionPercent::with_value(f64::from(density))));
+        }
         // main.cpp:9678: the roster, read before the padding.
         let project_filaments = front_end_project_filament_count(&print_cfg_temp.base);
         // The front end's own values (slicer_cli main.cpp), which reach `print.full_print_config()`

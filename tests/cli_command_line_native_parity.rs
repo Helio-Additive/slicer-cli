@@ -102,3 +102,48 @@ fn slice_dash_prefixed_model_and_replay_old_refusal() {
         .stderr
         .starts_with(b"--single-instance is not a flag"));
 }
+
+#[test]
+fn geometry_options_match_native_parse_state() {
+    use std::collections::BTreeMap;
+    #[derive(Deserialize)]
+    struct GeometryCase {
+        args: Vec<String>,
+        error: Option<String>,
+        extra_config: Option<BTreeMap<String, String>>,
+        overrides: Option<BTreeMap<String, String>>,
+    }
+    for row in include_str!("rust-engine/data/cli_command_line/geometry-options.jsonl").lines() {
+        let case: GeometryCase = serde_json::from_str(row).unwrap();
+        // Physical nozzle and temperature settings still have a named refusal.
+        // Their native vectors also exercise shared option tokenization.
+        if let Some(flag) = case.args.iter().filter_map(|arg| arg.split('=').next())
+            .find(|flag| matches!(*flag, "--nozzle" | "--temp" | "--bed-temp")) {
+            assert!(parse(&case.args).unwrap_err().0.starts_with(flag), "{row}");
+            continue;
+        }
+        let result = parse(&case.args);
+        if let Some(error) = case.error {
+            assert_eq!(result, Err((format!("Error: {error}"), 1)), "{row}");
+            continue;
+        }
+        let Ok(Request::Slice(slice)) = result else { panic!("{row}: {result:?}") };
+        use slicer::config::ConfigBase;
+        let mut typed = slicer::print_config::config_def::DynamicPrintConfig::new();
+        let mut published = BTreeMap::new();
+        for (key, value) in &slice.geometry.extra_config {
+            typed.set_deserialize_strict(key, value, false).unwrap();
+            published.insert(key.clone(), typed.opt_serialize(key).unwrap());
+        }
+        assert_eq!(published, case.extra_config.unwrap(), "{row}");
+        assert_eq!(slice.geometry.overrides, case.overrides.unwrap(), "{row}");
+    }
+}
+
+#[test]
+fn geometry_settings_keep_full_precision_before_serialization() {
+    let Ok(Request::Slice(slice)) = parse(&["--layer-height=0.123456789".into(),
+        "--sparse-infill-density=27.123456789%".into(), "model.stl".into()]) else { panic!("native numeric options") };
+    assert_eq!(slice.geometry.extra_config["layer_height"], "0.123456789");
+    assert_eq!(slice.geometry.extra_config["sparse_infill_density"], "27.123456789%");
+}

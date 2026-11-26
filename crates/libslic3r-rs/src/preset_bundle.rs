@@ -2909,7 +2909,7 @@ fn sanitize_mixed_gradient_curve_array(vals: &mut [String]) {
 
 /// `std::stoi(s)`: leading white space, a sign, decimal digits; `std::invalid_argument` without a
 /// digit and `std::out_of_range` beyond int (both escape the C++ callers).
-fn std_stoi(s: &str) -> CfgResult<i32> {
+pub fn std_stoi(s: &str) -> CfgResult<i32> {
     let b = s.as_bytes();
     let mut i = 0;
     while i < b.len() && (b[i] == b' ' || (b'\t'..=b'\r').contains(&b[i])) {

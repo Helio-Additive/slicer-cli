@@ -1812,7 +1812,7 @@
     "loc": 7703,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed"
+    "fidelity": "fixed R997 preserves the typed legacy fill_density option in both config-block header passes when the root CLI applies --infill (main.cpp 7261-7263). The native flag and equivalent-profile motion controls agree on STL and Bambu 3MF."
   },
   {
     "cpp": "PrintConfig.cpp",

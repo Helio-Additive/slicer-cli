@@ -170,6 +170,8 @@ pub struct Print {
     /// what the CONFIG_BLOCK writes (GCode.cpp:2686-2720). `None`: the block writes `raw_settings`.
     /// Gate CONFIG_BLOCK_UNPATCHED_SETTINGS (set by app_slice.rs).
     pub config_block_settings: Option<serde_json::Value>,
+    /// main.cpp 7261-7263: dynamic legacy option from --infill.
+    pub cli_fill_density: Option<i32>,
 
     /// G-code export origin (mm), subtracted from absolute XY at export
     /// (C++ GCode::m_origin). FRAME_PAIR: = the slice center_offset applied by
@@ -452,6 +454,7 @@ impl Print {
             min_skirt_length: 0.0,
             raw_settings: None,
             config_block_settings: None,
+            cli_fill_density: None,
             gcode_origin: (0.0, 0.0),
             wipe_tower_results: Vec::new(),
             wipe_tower_bbx: None,
@@ -2276,6 +2279,7 @@ impl Print {
                 raw_settings_with_bbox.clone(),
             );
             provisional_header.config_block_settings = self.config_block_settings.clone();
+            provisional_header.cli_fill_density = self.cli_fill_density;
             // R943 (worker C): the used filaments and the tool ordering's nozzle map the header and
             // the CONFIG_BLOCK write (GCode.cpp:2646-2655, Print.cpp:3258-3261).
             provisional_header.used_filaments = self.export_header_used_filaments();
@@ -2324,6 +2328,7 @@ impl Print {
             prepare_time_seconds,
         );
         header.config_block_settings = self.config_block_settings.clone();
+        header.cli_fill_density = self.cli_fill_density;
         header.used_filaments = self.export_header_used_filaments();
         header.filament_nozzle_map = self.export_header_filament_nozzle_map();
         let header_str = header.complete_header_with_progress(defer_progress, startup_filaments.as_ref());

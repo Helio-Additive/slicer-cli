@@ -5,7 +5,7 @@
 #include <iostream>
 #include <set>
 
-static void sample(std::vector<std::string> words)
+static void sample(std::vector<std::string> words, bool geometry = false)
 {
     using nlohmann::json;
     std::string program = "slicer_cli";
@@ -24,6 +24,12 @@ static void sample(std::vector<std::string> words)
     else if (mode.help)
         row["help"] = true;
     else {
+        if (geometry) {
+            row["overrides"] = opts.overrides;
+            row["extra_config"] = json::object();
+            for (const auto& key : opts.extra_config.keys())
+                row["extra_config"][key] = opts.extra_config.opt_serialize(key);
+        }
         row["input"] = opts.input_file;
         row["config"] = opts.bundle_config;
         row["output"] = opts.output_file;
@@ -34,6 +40,21 @@ static void sample(std::vector<std::string> words)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--geometry-options") {
+        for (const char* flag : {"--layer-height", "--infill", "--perimeters", "--wall-loops", "--sparse-infill-density", "--nozzle", "--temp", "--bed-temp"}) {
+            for (const char* value : {"0.25", "35%", "3", "", "bad", "0.2mm", " -2", "0.55,0.6", "8e-2", "+3.5"}) {
+                sample({flag, value, "model.stl"}, true);
+                sample({std::string(flag) + "=" + value, "model.stl"}, true);
+            }
+            sample({"model.stl", flag}, true);
+        }
+        sample({"--layer-height=0.125", "--layer-height", "0.2", "model.stl"}, true);
+        sample({"--infill=15", "--sparse-infill-density=23%", "--infill=27", "model.stl"}, true);
+        sample({"--wall-loops=2", "--perimeters=3", "model.stl"}, true);
+        sample({"--perimeters=3", "--wall-loops=2", "model.stl"}, true);
+        sample({"--layer-height", "0.25", "--infill", "27", "--perimeters", "3", "model.stl"}, true);
+        return 0;
+    }
     // cli_command_line.cpp 388-422. A timing token consumed as the value
     // of a preceding switch never selects the early timing command.
     if (argc == 2 && std::string(argv[1]) == "--timing-options") {

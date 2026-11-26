@@ -1,0 +1,173 @@
+{"args":["--layer-height","0.25","model.stl"],"config":"","extra_config":{"layer_height":"0.25"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=0.25","model.stl"],"config":"","extra_config":{"layer_height":"0.25"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height","35%","model.stl"],"config":"","extra_config":{"layer_height":"35"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=35%","model.stl"],"config":"","extra_config":{"layer_height":"35"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height","3","model.stl"],"config":"","extra_config":{"layer_height":"3"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=3","model.stl"],"config":"","extra_config":{"layer_height":"3"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height","","model.stl"],"error":"--layer-height: '' is not a value BambuStudio takes for this flag; it takes a number"}
+{"args":["--layer-height=","model.stl"],"error":"--layer-height: '' is not a value BambuStudio takes for this flag; it takes a number"}
+{"args":["--layer-height","bad","model.stl"],"error":"--layer-height: 'bad' is not a value BambuStudio takes for this flag; it takes a number"}
+{"args":["--layer-height=bad","model.stl"],"error":"--layer-height: 'bad' is not a value BambuStudio takes for this flag; it takes a number"}
+{"args":["--layer-height","0.2mm","model.stl"],"config":"","extra_config":{"layer_height":"0.2"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=0.2mm","model.stl"],"config":"","extra_config":{"layer_height":"0.2"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height"," -2","model.stl"],"error":"Params in command line error: layer_height: invalid value -2.000000"}
+{"args":["--layer-height= -2","model.stl"],"error":"Params in command line error: layer_height: invalid value -2.000000"}
+{"args":["--layer-height","0.55,0.6","model.stl"],"config":"","extra_config":{"layer_height":"0.55"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=0.55,0.6","model.stl"],"config":"","extra_config":{"layer_height":"0.55"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height","8e-2","model.stl"],"config":"","extra_config":{"layer_height":"0.08"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=8e-2","model.stl"],"config":"","extra_config":{"layer_height":"0.08"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height","+3.5","model.stl"],"config":"","extra_config":{"layer_height":"3.5"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--layer-height=+3.5","model.stl"],"config":"","extra_config":{"layer_height":"3.5"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["model.stl","--layer-height"],"error":"--layer-height needs a value"}
+{"args":["--infill","0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"0.25"},"verbose":false}
+{"args":["--infill=0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"0.25"},"verbose":false}
+{"args":["--infill","35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"35%"},"verbose":false}
+{"args":["--infill=35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"35%"},"verbose":false}
+{"args":["--infill","3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"3"},"verbose":false}
+{"args":["--infill=3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"3"},"verbose":false}
+{"args":["--infill","","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":""},"verbose":false}
+{"args":["--infill=","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":""},"verbose":false}
+{"args":["--infill","bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"bad"},"verbose":false}
+{"args":["--infill=bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"bad"},"verbose":false}
+{"args":["--infill","0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"0.2mm"},"verbose":false}
+{"args":["--infill=0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"0.2mm"},"verbose":false}
+{"args":["--infill"," -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":" -2"},"verbose":false}
+{"args":["--infill= -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":" -2"},"verbose":false}
+{"args":["--infill","0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"0.55,0.6"},"verbose":false}
+{"args":["--infill=0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"0.55,0.6"},"verbose":false}
+{"args":["--infill","8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"8e-2"},"verbose":false}
+{"args":["--infill=8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"8e-2"},"verbose":false}
+{"args":["--infill","+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"+3.5"},"verbose":false}
+{"args":["--infill=+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"+3.5"},"verbose":false}
+{"args":["model.stl","--infill"],"error":"--infill needs a value"}
+{"args":["--perimeters","0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"0.25"},"verbose":false}
+{"args":["--perimeters=0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"0.25"},"verbose":false}
+{"args":["--perimeters","35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"35%"},"verbose":false}
+{"args":["--perimeters=35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"35%"},"verbose":false}
+{"args":["--perimeters","3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"3"},"verbose":false}
+{"args":["--perimeters=3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"3"},"verbose":false}
+{"args":["--perimeters","","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":""},"verbose":false}
+{"args":["--perimeters=","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":""},"verbose":false}
+{"args":["--perimeters","bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"bad"},"verbose":false}
+{"args":["--perimeters=bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"bad"},"verbose":false}
+{"args":["--perimeters","0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"0.2mm"},"verbose":false}
+{"args":["--perimeters=0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"0.2mm"},"verbose":false}
+{"args":["--perimeters"," -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":" -2"},"verbose":false}
+{"args":["--perimeters= -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":" -2"},"verbose":false}
+{"args":["--perimeters","0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"0.55,0.6"},"verbose":false}
+{"args":["--perimeters=0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"0.55,0.6"},"verbose":false}
+{"args":["--perimeters","8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"8e-2"},"verbose":false}
+{"args":["--perimeters=8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"8e-2"},"verbose":false}
+{"args":["--perimeters","+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"+3.5"},"verbose":false}
+{"args":["--perimeters=+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"+3.5"},"verbose":false}
+{"args":["model.stl","--perimeters"],"error":"--perimeters needs a value"}
+{"args":["--wall-loops","0.25","model.stl"],"config":"","extra_config":{"wall_loops":"0"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=0.25","model.stl"],"config":"","extra_config":{"wall_loops":"0"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops","35%","model.stl"],"config":"","extra_config":{"wall_loops":"35"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=35%","model.stl"],"config":"","extra_config":{"wall_loops":"35"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops","3","model.stl"],"config":"","extra_config":{"wall_loops":"3"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=3","model.stl"],"config":"","extra_config":{"wall_loops":"3"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops","","model.stl"],"error":"--wall-loops: '' is not a value BambuStudio takes for this flag; it takes a whole number"}
+{"args":["--wall-loops=","model.stl"],"error":"--wall-loops: '' is not a value BambuStudio takes for this flag; it takes a whole number"}
+{"args":["--wall-loops","bad","model.stl"],"error":"--wall-loops: 'bad' is not a value BambuStudio takes for this flag; it takes a whole number"}
+{"args":["--wall-loops=bad","model.stl"],"error":"--wall-loops: 'bad' is not a value BambuStudio takes for this flag; it takes a whole number"}
+{"args":["--wall-loops","0.2mm","model.stl"],"config":"","extra_config":{"wall_loops":"0"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=0.2mm","model.stl"],"config":"","extra_config":{"wall_loops":"0"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops"," -2","model.stl"],"error":"Params in command line error: wall_loops: invalid value -2"}
+{"args":["--wall-loops= -2","model.stl"],"error":"Params in command line error: wall_loops: invalid value -2"}
+{"args":["--wall-loops","0.55,0.6","model.stl"],"config":"","extra_config":{"wall_loops":"0"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=0.55,0.6","model.stl"],"config":"","extra_config":{"wall_loops":"0"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops","8e-2","model.stl"],"config":"","extra_config":{"wall_loops":"8"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=8e-2","model.stl"],"config":"","extra_config":{"wall_loops":"8"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops","+3.5","model.stl"],"config":"","extra_config":{"wall_loops":"3"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--wall-loops=+3.5","model.stl"],"config":"","extra_config":{"wall_loops":"3"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["model.stl","--wall-loops"],"error":"--wall-loops needs a value"}
+{"args":["--sparse-infill-density","0.25","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.25%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=0.25","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.25%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density","35%","model.stl"],"config":"","extra_config":{"sparse_infill_density":"35%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=35%","model.stl"],"config":"","extra_config":{"sparse_infill_density":"35%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density","3","model.stl"],"config":"","extra_config":{"sparse_infill_density":"3%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=3","model.stl"],"config":"","extra_config":{"sparse_infill_density":"3%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density","","model.stl"],"error":"--sparse-infill-density: '' is not a value BambuStudio takes for this flag; it takes a percentage such as 15%"}
+{"args":["--sparse-infill-density=","model.stl"],"error":"--sparse-infill-density: '' is not a value BambuStudio takes for this flag; it takes a percentage such as 15%"}
+{"args":["--sparse-infill-density","bad","model.stl"],"error":"--sparse-infill-density: 'bad' is not a value BambuStudio takes for this flag; it takes a percentage such as 15%"}
+{"args":["--sparse-infill-density=bad","model.stl"],"error":"--sparse-infill-density: 'bad' is not a value BambuStudio takes for this flag; it takes a percentage such as 15%"}
+{"args":["--sparse-infill-density","0.2mm","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.2%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=0.2mm","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.2%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density"," -2","model.stl"],"error":"Params in command line error: sparse_infill_density: -2% not in range [0.000000,100.000000]"}
+{"args":["--sparse-infill-density= -2","model.stl"],"error":"Params in command line error: sparse_infill_density: -2% not in range [0.000000,100.000000]"}
+{"args":["--sparse-infill-density","0.55,0.6","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.55%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=0.55,0.6","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.55%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density","8e-2","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.08%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=8e-2","model.stl"],"config":"","extra_config":{"sparse_infill_density":"0.08%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density","+3.5","model.stl"],"config":"","extra_config":{"sparse_infill_density":"3.5%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--sparse-infill-density=+3.5","model.stl"],"config":"","extra_config":{"sparse_infill_density":"3.5%"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["model.stl","--sparse-infill-density"],"error":"--sparse-infill-density needs a value"}
+{"args":["--nozzle","0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"0.25"},"verbose":false}
+{"args":["--nozzle=0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"0.25"},"verbose":false}
+{"args":["--nozzle","35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"35%"},"verbose":false}
+{"args":["--nozzle=35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"35%"},"verbose":false}
+{"args":["--nozzle","3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"3"},"verbose":false}
+{"args":["--nozzle=3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"3"},"verbose":false}
+{"args":["--nozzle","","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":""},"verbose":false}
+{"args":["--nozzle=","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":""},"verbose":false}
+{"args":["--nozzle","bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"bad"},"verbose":false}
+{"args":["--nozzle=bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"bad"},"verbose":false}
+{"args":["--nozzle","0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"0.2mm"},"verbose":false}
+{"args":["--nozzle=0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"0.2mm"},"verbose":false}
+{"args":["--nozzle"," -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":" -2"},"verbose":false}
+{"args":["--nozzle= -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":" -2"},"verbose":false}
+{"args":["--nozzle","0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"0.55,0.6"},"verbose":false}
+{"args":["--nozzle=0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"0.55,0.6"},"verbose":false}
+{"args":["--nozzle","8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"8e-2"},"verbose":false}
+{"args":["--nozzle=8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"8e-2"},"verbose":false}
+{"args":["--nozzle","+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"+3.5"},"verbose":false}
+{"args":["--nozzle=+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_diameter":"+3.5"},"verbose":false}
+{"args":["model.stl","--nozzle"],"error":"--nozzle needs a value"}
+{"args":["--temp","0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"0.25"},"verbose":false}
+{"args":["--temp=0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"0.25"},"verbose":false}
+{"args":["--temp","35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"35%"},"verbose":false}
+{"args":["--temp=35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"35%"},"verbose":false}
+{"args":["--temp","3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"3"},"verbose":false}
+{"args":["--temp=3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"3"},"verbose":false}
+{"args":["--temp","","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":""},"verbose":false}
+{"args":["--temp=","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":""},"verbose":false}
+{"args":["--temp","bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"bad"},"verbose":false}
+{"args":["--temp=bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"bad"},"verbose":false}
+{"args":["--temp","0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"0.2mm"},"verbose":false}
+{"args":["--temp=0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"0.2mm"},"verbose":false}
+{"args":["--temp"," -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":" -2"},"verbose":false}
+{"args":["--temp= -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":" -2"},"verbose":false}
+{"args":["--temp","0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"0.55,0.6"},"verbose":false}
+{"args":["--temp=0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"0.55,0.6"},"verbose":false}
+{"args":["--temp","8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"8e-2"},"verbose":false}
+{"args":["--temp=8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"8e-2"},"verbose":false}
+{"args":["--temp","+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"+3.5"},"verbose":false}
+{"args":["--temp=+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"nozzle_temperature":"+3.5"},"verbose":false}
+{"args":["model.stl","--temp"],"error":"--temp needs a value"}
+{"args":["--bed-temp","0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"0.25"},"verbose":false}
+{"args":["--bed-temp=0.25","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"0.25"},"verbose":false}
+{"args":["--bed-temp","35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"35%"},"verbose":false}
+{"args":["--bed-temp=35%","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"35%"},"verbose":false}
+{"args":["--bed-temp","3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"3"},"verbose":false}
+{"args":["--bed-temp=3","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"3"},"verbose":false}
+{"args":["--bed-temp","","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":""},"verbose":false}
+{"args":["--bed-temp=","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":""},"verbose":false}
+{"args":["--bed-temp","bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"bad"},"verbose":false}
+{"args":["--bed-temp=bad","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"bad"},"verbose":false}
+{"args":["--bed-temp","0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"0.2mm"},"verbose":false}
+{"args":["--bed-temp=0.2mm","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"0.2mm"},"verbose":false}
+{"args":["--bed-temp"," -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":" -2"},"verbose":false}
+{"args":["--bed-temp= -2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":" -2"},"verbose":false}
+{"args":["--bed-temp","0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"0.55,0.6"},"verbose":false}
+{"args":["--bed-temp=0.55,0.6","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"0.55,0.6"},"verbose":false}
+{"args":["--bed-temp","8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"8e-2"},"verbose":false}
+{"args":["--bed-temp=8e-2","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"8e-2"},"verbose":false}
+{"args":["--bed-temp","+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"+3.5"},"verbose":false}
+{"args":["--bed-temp=+3.5","model.stl"],"config":"","extra_config":{},"input":"model.stl","output":"output.gcode","overrides":{"bed_temperature":"+3.5"},"verbose":false}
+{"args":["model.stl","--bed-temp"],"error":"--bed-temp needs a value"}
+{"args":["--layer-height=0.125","--layer-height","0.2","model.stl"],"config":"","extra_config":{"layer_height":"0.2"},"input":"model.stl","output":"output.gcode","overrides":{},"verbose":false}
+{"args":["--infill=15","--sparse-infill-density=23%","--infill=27","model.stl"],"config":"","extra_config":{"sparse_infill_density":"23%"},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"27"},"verbose":false}
+{"args":["--wall-loops=2","--perimeters=3","model.stl"],"config":"","extra_config":{"wall_loops":"2"},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"3"},"verbose":false}
+{"args":["--perimeters=3","--wall-loops=2","model.stl"],"config":"","extra_config":{"wall_loops":"2"},"input":"model.stl","output":"output.gcode","overrides":{"perimeters":"3"},"verbose":false}
+{"args":["--layer-height","0.25","--infill","27","--perimeters","3","model.stl"],"config":"","extra_config":{"layer_height":"0.25"},"input":"model.stl","output":"output.gcode","overrides":{"fill_density":"27","perimeters":"3"},"verbose":false}

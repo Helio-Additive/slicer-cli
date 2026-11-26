@@ -221,8 +221,22 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R994 | Build transformed NanoSVG cubic paths and convert them to polygons and polylines in safe Rust. | NanoSVG / NSVGUtils | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R995 | Parse the points geometry of SVG polygon and polyline elements in safe Rust. | NanoSVG | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R996 | Preserve unanimous object and part wall counts in Bambu 3MF toolpaths. | PrintApply / PrintObject | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R997 | Apply native CLI geometry options on STL and Bambu 3MF jobs. | Root CLI / config block | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R997. The root driver now parses the three official height, wall and sparse
+  density settings, validates the final typed values and applies the two
+  legacy integer overrides last. In both engines the geometry flags produce
+  103 layers on the test cube. With equivalent profiles, all 10,956 native
+  and 10,853 Rust STL motions match each engine's flagged run. On the Bambu
+  project the corresponding counts are 11,367 and 10,561. The legacy density
+  option is published alongside the canonical density. Rejected legacy values
+  retain the native event, key order and exit status. The 173 native parser
+  vectors include still-refused nozzle and temperature controls. Forty
+  supplemental calls cover scopes, precedence, diagnostics and gate-off
+  behavior. All eight standard outputs reproduce R996. The H2D scores
+  remain 4,614,342 and 4,614,863. Multi-region geometry remains partial.
 
 - R996. On the calibrated Bambu cube, native model resolution and the Rust
   importer both returned five walls for object and part overrides of five.

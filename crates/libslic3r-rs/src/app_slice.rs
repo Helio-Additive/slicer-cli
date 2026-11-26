@@ -175,11 +175,44 @@ pub fn slice_to_gcode(input: &Path, settings_json: &Path, output: &Path) -> Resu
     slice_to_gcode_with_legacy_gcode(input, settings_json, output, LegacyGcode::Normalize)
 }
 
+/// Settings from the root command line, applied after selecting the job profile
+/// (main.cpp 10614-10681). The legacy fill_density key is a separate dynamic
+/// option in the exported config alongside sparse_infill_density.
+pub struct SliceOverrides<'a> {
+    pub values: &'a std::collections::BTreeMap<String, String>,
+    pub fill_density: Option<i32>,
+    pub report_rejections: &'a dyn Fn(),
+}
+
+fn checked_job_config(settings: &mut serde_json::Value, overrides: Option<&SliceOverrides<'_>>) -> Result<DynamicPrintConfig> {
+    let file = crate::print::full_print_config_from_settings(settings);
+    let Some(overrides) = overrides else {
+        check_config_values(&file, &file)?;
+        return Ok(file);
+    };
+    for (key, value) in overrides.values {
+        settings[key] = serde_json::Value::String(value.clone());
+    }
+    if let Some(density) = overrides.fill_density {
+        settings["fill_density"] = format!("{density}%").into();
+    }
+    let config = crate::print::full_print_config_from_settings(settings);
+    check_config_values(&config, &file)?;
+    (overrides.report_rejections)();
+    Ok(config)
+}
+
 /// Slice an STL with the caller's per-job G-code template policy.
 pub fn slice_to_gcode_with_legacy_gcode(
     input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>,
 ) -> Result<()> {
-    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode)?;
+    slice_to_gcode_with_overrides(input, settings_json, output, legacy_gcode, None)
+}
+
+pub fn slice_to_gcode_with_overrides(
+    input: &Path, settings_json: &Path, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
+) -> Result<()> {
+    let (print, __proc_s) = slice_stl_print(input, settings_json, legacy_gcode, overrides)?;
     let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
 
     // Export G-code using Print::export_gcode().
@@ -214,10 +247,10 @@ pub fn slice_to_gcode_with_legacy_gcode(
 /// The part of [`slice_to_gcode`] before the G-code export: load and place the STL, build the Print and run
 /// `Print::process()`. Returns the processed Print (for tests that read its objects' layers and support layers).
 pub fn slice_stl_to_print(input: &Path, settings_json: &Path) -> Result<Print> {
-    slice_stl_print(input, settings_json, LegacyGcode::Normalize).map(|(print, _)| print)
+    slice_stl_print(input, settings_json, LegacyGcode::Normalize, None).map(|(print, _)| print)
 }
 
-fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>) -> Result<(Print, f64)> {
+fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>) -> Result<(Print, f64)> {
     info!("Slicing (in-process): {:?}", input);
 
     // Load mesh — only STL is wired for the library entrypoint.
@@ -244,8 +277,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
     let mut settings_value: serde_json::Value = serde_json::from_str(&settings_str)
         .with_context(|| format!("Failed to parse settings JSON: {:?}", settings_json))?;
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
-    let config = crate::print::full_print_config_from_settings(&settings_value);
-    check_config_values(&config)?;
+    let config = checked_job_config(&mut settings_value, overrides)?;
     legacy_gcode.apply(&mut settings_value);
     if crate::faithful_gate("PRINT_APPLY_SCARF_SEAM") && profile_can_enable_scarf(&config) {
         use crate::model::{Model, ModelMesh, ModelVolume, ModelVolumeType};
@@ -393,6 +425,7 @@ fn slice_stl_print(input: &Path, settings_json: &Path, legacy_gcode: LegacyGcode
     print.apply(print_config, region_config);
     print.raw_settings = raw_settings_json;
     print.config_block_settings = config_block_settings_json;
+    print.cli_fill_density = overrides.and_then(|o| o.fill_density);
     if let Some(model) = tree_pin_model {
         // After `apply`, which clears the live Print's model (print.rs).
         print.set_model(model);
@@ -635,11 +668,10 @@ impl ConfigRefusal {
 /// (PrintConfig.cpp:8969-9007, `validate(const FullPrintConfig&, true)` :10641-10916) over the settings as the
 /// file states them; a finding the desktop's check (`validate(false)`) makes the same way is the file's own and
 /// only noted (the `InvalidValuesNoted` warning, main.cpp:9512-9547: stdout event, `Warning: <sentence>` on
-/// stderr, main.cpp:7894-7897); any other (the spiral-vase checks) refuses the job ([`ConfigRefusal`]). This
-/// program takes no setting on its command line, so the settings are both the checked and the file's ones
-/// (`with_overrides` and `file_only` of main.cpp are the same configuration). Gate FRONT_END_CONFIG_VALIDATE_PIN
+/// stderr, main.cpp:7894-7897); any other (the spiral-vase checks) refuses the job ([`ConfigRefusal`]). The checked config includes CLI overrides.
+/// The desktop baseline is the file before those overrides (main.cpp 9858-9899). Gate FRONT_END_CONFIG_VALIDATE_PIN
 /// (faithful, R949); off, no check.
-fn check_config_values(config: &DynamicPrintConfig) -> Result<()> {
+fn check_config_values(config: &DynamicPrintConfig, file: &DynamicPrintConfig) -> Result<()> {
     if !crate::faithful_gate("FRONT_END_CONFIG_VALIDATE_PIN") {
         return Ok(());
     }
@@ -647,7 +679,7 @@ fn check_config_values(config: &DynamicPrintConfig) -> Result<()> {
     let mut validity: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     let mut noted: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
     if !found.is_empty() {
-        let desktop = config.validate(false).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let desktop = file.validate(false).map_err(|e| anyhow::anyhow!("{}", e))?;
         for (key, why) in found {
             if desktop.get(&key) == Some(&why) {
                 noted.insert(key, why);
@@ -1042,6 +1074,12 @@ pub fn slice_3mf_to_gcode(
 pub fn slice_3mf_to_gcode_with_legacy_gcode(
     input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>,
 ) -> Result<()> {
+    slice_3mf_to_gcode_with_overrides(input, settings_override, output, legacy_gcode, None)
+}
+
+pub fn slice_3mf_to_gcode_with_overrides(
+    input: &Path, settings_override: Option<&Path>, output: &Path, legacy_gcode: LegacyGcode<'_>, overrides: Option<&SliceOverrides<'_>>,
+) -> Result<()> {
     info!("Slicing 3MF (in-process): {:?}", input);
 
     // Load the merged mesh + embedded settings + per-instance identify_ids.
@@ -1096,8 +1134,7 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
     let mut settings_value: serde_json::Value =
         serde_json::from_str(&settings_str).with_context(|| "Failed to parse 3MF settings JSON")?;
     // main.cpp:9438-9593: the check of the settings' values before anything slices (FRONT_END_CONFIG_VALIDATE_PIN).
-    let config = crate::print::full_print_config_from_settings(&settings_value);
-    check_config_values(&config)?;
+    let config = checked_job_config(&mut settings_value, overrides)?;
     legacy_gcode.apply(&mut settings_value);
     let needs_scarf = crate::faithful_gate("PRINT_APPLY_SCARF_SEAM")
         && (scoped.scarf || profile_can_enable_scarf(&config) || config.opt_bool("has_scarf_joint_seam"));
@@ -1120,7 +1157,14 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
         let full = normalized_model_config(if settings_override.is_some() {
             config
         } else {
-            crate::print_config::config_def::full_print_config_of(&embedded)?
+            let mut base = crate::print_config::config_def::full_print_config_of(&embedded)?;
+            if let Some(overrides) = overrides {
+                use crate::config::ConfigBase;
+                for (key, value) in overrides.values {
+                    base.set_deserialize_strict(key, value, false)?;
+                }
+            }
+            base
         })?;
         if needs_scarf {
             apply_model_scarf_flag(&mut settings_value, &full, &model);
@@ -1519,6 +1563,7 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
     }
     print.raw_settings = raw_settings_json;
     print.config_block_settings = config_block_settings_json;
+    print.cli_fill_density = overrides.and_then(|o| o.fill_density);
     print.set_status_callback(|percent, message| {
         info!("Progress: {}% - {}", percent, message);
     });

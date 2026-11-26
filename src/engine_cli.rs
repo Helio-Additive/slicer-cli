@@ -143,6 +143,33 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
     } else {
         LegacyGcode::Normalize
     };
+    // main.cpp 7237-7328. Both legacy overrides use std::stoi: a decimal
+    // integer prefix is sufficient. Report rejections only when slicing
+    // reaches the application step, after the config has been validated.
+    let mut values = request.geometry.extra_config.clone();
+    let mut rejected = Vec::new();
+    let mut fill_density = None;
+    for (key, raw) in &request.geometry.overrides {
+        match slicer::preset_bundle::std_stoi(raw) {
+            Ok(value) if key == "fill_density" => {
+                values.insert("sparse_infill_density".into(), format!("{value}%"));
+                fill_density = Some(value);
+            }
+            Ok(value) => { values.insert("wall_loops".into(), value.to_string()); }
+            Err(_) => rejected.push((key, raw)),
+        }
+    }
+    let report = || {
+        for &(key, value) in &rejected {
+            let message = format!("Command-line override for '{key}' was rejected and had no effect");
+            let event = serde_json::json!({"event": "override_rejected", "message": message,
+                "opt_key": key, "tag": "InvalidOverrideValue", "value": value});
+            println!("[[SLICER_EVENT]] {event}");
+            eprintln!("Warning: Invalid value for {key}: {value}");
+        }
+    };
+    let overrides = slicer::app_slice::SliceOverrides { values: &values, fill_density, report_rejections: &report };
+    let overrides = (!values.is_empty() || !rejected.is_empty()).then_some(&overrides);
     let failed = engine_failure;
     match extension(&request.input).as_str() {
         "stl" => {
@@ -155,14 +182,15 @@ fn slice(request: &SliceRequest) -> Result<(), (String, i32)> {
                     CLI_INVALID_PARAMS,
                 )
             })?;
-            slicer::app_slice::slice_to_gcode_with_legacy_gcode(&request.input, config, &request.output, legacy_gcode)
+            slicer::app_slice::slice_to_gcode_with_overrides(&request.input, config, &request.output, legacy_gcode, overrides)
                 .map_err(failed)
         }
-        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_legacy_gcode(
+        "3mf" => slicer::app_slice::slice_3mf_to_gcode_with_overrides(
             &request.input,
             request.config.as_deref(),
             &request.output,
             legacy_gcode,
+            overrides,
         )
         .map_err(failed),
         other => Err((
@@ -205,7 +233,10 @@ pub fn run(args: &[String]) -> u8 {
             } else {
                 ""
             };
-            print!("{USAGE}{additional}{legacy}{timing}{USAGE_TAIL}");
+            let geometry = if crate::cli_command_line::geometry_options_enabled() {
+                "      --layer-height MM  Set the layer height\n      --wall-loops N, --perimeters N  Set the wall count\n      --sparse-infill-density PERCENT, --infill N  Set sparse infill density\n"
+            } else { "" };
+            print!("{USAGE}{additional}{geometry}{legacy}{timing}{USAGE_TAIL}");
             return exit_status(CLI_SUCCESS);
         }
         Request::Slice(request) => request,
@@ -270,6 +301,7 @@ mod tests {
                 output: "out.gcode".into(),
                 verbose: true,
                 normalize_legacy_gcode: true,
+                geometry: Default::default(),
             }))
         );
     }
