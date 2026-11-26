@@ -2728,7 +2728,8 @@
     "loc": 351,
     "status": "done",
     "priority": 5,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R999 also removes the raw pointer conversion in the compiled cooling.rs compatibility implementation of calculate_layer_slowdown. The module and cooling_buffer.rs forbid unsafe code. Native totals and every adjusted row agree over 24 input-order and disabled-slot cases."
   },
   {
     "cpp": "GCode/PostProcessor.cpp",

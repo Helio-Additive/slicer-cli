@@ -223,8 +223,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R996 | Preserve unanimous object and part wall counts in Bambu 3MF toolpaths. | PrintApply / PrintObject | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R997 | Apply native CLI geometry options on STL and Bambu 3MF jobs. | Root CLI / config block | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R998 | Route unpainted Bambu part and height-range geometry to live layer regions. | PrintApply / PrintObjectSlice | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R999 | Keep cooling tiers in safe, exclusively borrowed Rust adjustments. | CoolingBuffer | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R999. The compiled compatibility cooling API collected mutable row pointers
+  and dereferenced them to slow down a tier of extruders. It now collects
+  exclusive references once and processes a sorted slice of them, preserving
+  the caller's row order. The cooling module and its editor-based child now
+  forbid unsafe code. The previous implementation fails that compiler check.
+  Across all six permutations of three extruders and four disabled-slot
+  configurations, the returned time and each row's elapsed time match native
+  float bits before and after the change. The active G-code editor uses the
+  child implementation. With no change to the slicing behavior, the four
+  fixtures reproduce R998 with its geometry gate enabled and disabled. H2D
+  holds at 4,614,342 and 4,614,863. Fresh macOS arm64 compiler audits count
+  106 engine diagnostics (previously 107), 8,971 across the target graph
+  (previously 8,972), and 9,104 including host builds (previously 9,105).
 
 - R998. In two disjoint cubes, switching their three-wall and five-wall
   overrides swaps the native inner-wall move counts (10 and 20 at each of

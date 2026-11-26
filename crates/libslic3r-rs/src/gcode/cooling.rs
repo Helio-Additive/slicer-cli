@@ -5,6 +5,8 @@
 //! - Controls fan speed based on layer time thresholds
 //! - Supports per-extruder cooling adjustments
 
+#![forbid(unsafe_code)]
+
 use crate::print_config::PerExtruderCoolingConfig;
 use crate::{CoordF, ExtrusionRole};
 
@@ -1045,17 +1047,15 @@ impl CoolingBuffer {
         per_extruder_adjustments: &mut [PerExtruderAdjustments],
     ) -> f32 {
         // Sort extruders by slow_down_layer_time
-        let mut by_slowdown_time: Vec<usize> = Vec::new();
+        let mut by_slowdown_time = Vec::new();
         let mut elapsed_time_total0 = 0.0f32;
 
         // Collect adjustable extruders
-        for (idx, adj) in per_extruder_adjustments.iter_mut().enumerate() {
+        for adj in per_extruder_adjustments {
             adj.time_total = adj.elapsed_time_total();
             adj.time_maximum = adj.maximum_time_after_slowdown(true);
 
             if adj.cooling_slow_down_enabled && !adj.moves.is_empty() {
-                by_slowdown_time.push(idx);
-
                 // For ConsistentSurface, prepare non-adjustable segments
                 if adj.cooling_slowdown_logic == CoolingSlowdownLogic::ConsistentSurface {
                     // Initialize adjustable fields
@@ -1072,71 +1072,63 @@ impl CoolingBuffer {
                 if !self.config.slowdown_proportional {
                     adj.sort_lines_by_decreasing_feedrate();
                 }
+                by_slowdown_time.push(adj);
             } else {
                 elapsed_time_total0 += adj.elapsed_time_total();
             }
         }
 
         // Sort by slow_down_layer_time
-        by_slowdown_time.sort_by(|&a, &b| {
-            per_extruder_adjustments[a]
-                .slow_down_layer_time
-                .partial_cmp(&per_extruder_adjustments[b].slow_down_layer_time)
+        by_slowdown_time.sort_by(|a, b| {
+            a.slow_down_layer_time
+                .partial_cmp(&b.slow_down_layer_time)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Process each extruder tier
         for cur_begin in 0..by_slowdown_time.len() {
-            let begin_idx = by_slowdown_time[cur_begin];
+            let tier = &mut by_slowdown_time[cur_begin..];
 
             // Calculate current total time
             let mut total = elapsed_time_total0;
-            for &idx in &by_slowdown_time[cur_begin..] {
-                total += per_extruder_adjustments[idx].time_total;
+            for adj in tier.iter() {
+                total += adj.time_total;
             }
 
-            let slow_down_layer_time =
-                per_extruder_adjustments[begin_idx].slow_down_layer_time * 1.001;
+            let slow_down_layer_time = tier[0].slow_down_layer_time * 1.001;
 
             if total > slow_down_layer_time {
                 // CoolingBuffer.cpp:311-312: nothing is adjusted for this tier,
                 // but the C++ still falls through to CoolingBuffer.cpp:346 and
                 // counts the extruder's time (an earlier `continue` skipped it
                 // and the layer time came back short).
-                elapsed_time_total0 += per_extruder_adjustments[begin_idx].elapsed_time_total();
+                elapsed_time_total0 += tier[0].elapsed_time_total();
                 continue;
             }
 
             // Check if we can reach target by slowing down
             let mut max_time = elapsed_time_total0;
-            for &idx in &by_slowdown_time[cur_begin..] {
-                max_time += per_extruder_adjustments[idx].time_maximum;
+            for adj in tier.iter() {
+                max_time += adj.time_maximum;
             }
 
             if max_time > slow_down_layer_time {
                 let time_stretch = slow_down_layer_time - total;
 
-                // Collect mutable references for this range
-                let mut adj_ptrs: Vec<&mut PerExtruderAdjustments> = by_slowdown_time[cur_begin..]
-                    .iter()
-                    .map(|&idx| &mut per_extruder_adjustments[idx] as *mut PerExtruderAdjustments)
-                    .map(|ptr| unsafe { &mut *ptr })
-                    .collect();
-
                 // Choose algorithm based on cooling logic
-                let first_logic = per_extruder_adjustments[begin_idx].cooling_slowdown_logic;
+                let first_logic = tier[0].cooling_slowdown_logic;
 
                 if first_logic == CoolingSlowdownLogic::ConsistentSurface {
                     // Two-phase ConsistentSurface slowdown
                     let remaining = Self::extruder_range_slow_down_consistent_surface(
-                        &mut adj_ptrs,
+                        tier,
                         time_stretch,
                         AdjustableFeatureType::NONE,
                     );
 
                     if remaining > 0.0 {
                         Self::extruder_range_slow_down_consistent_surface(
-                            &mut adj_ptrs,
+                            tier,
                             remaining,
                             AdjustableFeatureType::EXTERNAL_PERIMETERS
                                 | AdjustableFeatureType::FIRST_INTERNAL_PERIMETERS,
@@ -1145,23 +1137,23 @@ impl CoolingBuffer {
                 } else if self.config.slowdown_proportional {
                     // Proportional slowdown
                     Self::extruder_range_slow_down_proportional(
-                        &mut adj_ptrs,
+                        tier,
                         elapsed_time_total0,
                         total,
                         slow_down_layer_time,
                     );
                 } else {
                     // Non-proportional slowdown
-                    Self::extruder_range_slow_down_non_proportional(&mut adj_ptrs, time_stretch);
+                    Self::extruder_range_slow_down_non_proportional(tier, time_stretch);
                 }
             } else {
                 // Slow down to maximum
-                for &idx in &by_slowdown_time[cur_begin..] {
-                    per_extruder_adjustments[idx].slowdown_to_minimum_feedrate(true);
+                for adj in tier.iter_mut() {
+                    adj.slowdown_to_minimum_feedrate(true);
                 }
             }
 
-            elapsed_time_total0 += per_extruder_adjustments[begin_idx].elapsed_time_total();
+            elapsed_time_total0 += tier[0].elapsed_time_total();
         }
 
         elapsed_time_total0
@@ -3535,6 +3527,31 @@ mod tests {
         // Should find a feedrate between min and current speeds
         assert!(feedrate >= 15.0);
         assert!(feedrate <= 50.0);
+    }
+
+    /// GCode/CoolingBuffer.cpp 259-350. The caller retains its extruder order
+    /// while the slowdown tiers operate on the same adjustments sorted by time.
+    #[test]
+    fn sorted_tiers_match_native_times_in_input_order() {
+        let buffer = CoolingBuffer::new(CoolingConfig::default());
+        for row in include_str!("../../tests/data/cooling/sorted_tiers.txt").lines() {
+            let mut fields = row.split_whitespace();
+            let order: [usize; 3] = std::array::from_fn(|_| fields.next().unwrap().parse().unwrap());
+            let disabled: i32 = fields.next().unwrap().parse().unwrap();
+            let expected: Vec<u32> = fields.map(|field| u32::from_str_radix(field, 16).unwrap()).collect();
+            let mut adjustments: Vec<_> = order.into_iter().map(|id| {
+                let mut adj = PerExtruderAdjustments::new(id);
+                adj.cooling_slow_down_enabled = id as i32 != disabled;
+                adj.slow_down_layer_time = [12., 3., 8.][id];
+                adj.slow_down_min_speed = 10.;
+                adj.add_move(CoolingMove::extrusion([150., 100., 50.][id], 50., ExtrusionRole::Perimeter));
+                adj
+            }).collect();
+            let total = buffer.calculate_layer_slowdown(&mut adjustments);
+            let actual: Vec<_> = std::iter::once(total.to_bits())
+                .chain(adjustments.iter().map(|adj| adj.elapsed_time_total().to_bits())).collect();
+            assert_eq!(actual, expected, "{row}");
+        }
     }
 
     /// Test multi-extruder coordination
