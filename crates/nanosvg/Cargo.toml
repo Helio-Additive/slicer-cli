@@ -1,0 +1,6 @@
+[package]
+name = "nanosvg"
+version = "0.1.0"
+edition = "2021"
+license = "Zlib"
+description = "Partial safe Rust port of the Bambu engine's NanoSVG parser"

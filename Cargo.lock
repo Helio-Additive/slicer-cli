@@ -461,6 +461,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "eigen-transform"
+version = "0.1.0"
+
+[[package]]
 name = "eigen-transform-sys"
 version = "0.1.0"
 dependencies = [
@@ -891,6 +895,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "nanosvg"
+version = "0.1.0"
 
 [[package]]
 name = "num-complex"
@@ -1426,6 +1434,7 @@ dependencies = [
  "clipper2-z-sys",
  "criterion",
  "earcutr",
+ "eigen-transform",
  "eigen-transform-sys",
  "env_logger",
  "flate2",

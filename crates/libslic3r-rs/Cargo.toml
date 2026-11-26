@@ -24,9 +24,7 @@ path = "src/bin/generate-test-meshes.rs"
 [dependencies]
 # Geometry & Math
 nalgebra = "0.32"
-# Eigen FFI shim for the bit-exact slice-time vertex transform (R86): calls the
-# real Eigen so the f32 matmul matches C++ exactly (sidesteps the pure-rust
-# Eigen-reproduction 1-ULP wall, R85).
+eigen-transform = { path = "../eigen-transform" }
 ordered-float = "4.2"
 boostvoronoi = "0.12"
 # Polygon tessellation (pure-Rust earcut; wasm-safe). Backend for Tesselate.cpp.

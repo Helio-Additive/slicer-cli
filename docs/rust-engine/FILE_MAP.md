@@ -55,7 +55,7 @@ engine's, because it is the one `slicer_cli` compiles: `Fill/FillFloatingConcent
 | of the rest, under 25 tokens (accessors, one-liners) | 90 |
 | of the rest, 25 tokens or more | 278 |
 | in a C++ unit with no Rust file | 22 |
-| Rust functions with no C++ function of that name in the pair | 8940 |
+| Rust functions with no C++ function of that name in the pair | 8937 |
 
 By tier:
 
@@ -9792,7 +9792,7 @@ Rust only:
 
 ### `TriangleMeshSlicer` (.cpp+.hpp) and `triangle_mesh_slicer.rs`
 
-Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 97. Matched 44: faithful 33, partial 8, divergent 2, stub 1.
+Tier 1. C++ functions 45 (plus 4 constructors, 0 destructors, 0 operators), Rust functions 94. Matched 44: faithful 33, partial 8, divergent 2, stub 1.
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
@@ -9803,10 +9803,10 @@ Not estimated faithful (shared identifiers and constants, Rust size over C++ siz
 - partial: `make_slab_loops` :1589 and `make_slab_loops` :2813 (38%, 0.44x)
 - partial: `make_expolygons_simple` :1716 and `make_expolygons_simple` :1322 (46%, 0.44x)
 - partial: `make_expolygons` :1852 and `make_expolygons` :1376 (43%, 1.4x)
-- partial: `make_trafo_for_slicing` :1945 and `make_trafo_for_slicing` :3410 (50%, 1.32x)
+- partial: `make_trafo_for_slicing` :1945 and `make_trafo_for_slicing` :3400 (50%, 1.32x)
 - partial: `slice_mesh` :1982 and `indexed_triangle_set::slice_mesh` :3031 (41%, 0.54x)
 - partial: `slice_mesh_slabs` :2177 and `slice_mesh_slabs` :2890 (34%, 0.4x)
-- divergent: `cut_mesh` :2727 and `indexed_triangle_set::cut_mesh` :4437 (9%, 0.04x)
+- divergent: `cut_mesh` :2727 and `indexed_triangle_set::cut_mesh` :4395 (9%, 0.04x)
 
 Missing in the Rust file:
 
@@ -9855,18 +9855,15 @@ Rust only:
 - `slice_make_lines_raw` :3259
 - `make_expolygons_simple_at_plane` :3297
 - `_unscale_marker` :3315
-- `transform3d_cast_float` :3396
-- `transform3f_mul_vec3f` :3426
-- `transform3f_mul_transform3f` :3438
-- `transform_flat` :3453
-- `transform_verts_unified` :3469
-- `slice_mesh_slabs_trafo` :3522
-- `transform_verts_for_slicing` :3581
-- `transform_verts_affine_f32_pair` :3596
-- `is_equal_vec3f` :3616
-- `to_2d_f` :3622
-- `lower_bound_by_predicate` :3809 — C++ has it in `libslic3r`
-- `cut_mesh_plane_points` :4454
+- `transform_flat` :3411
+- `transform_verts_unified` :3427
+- `slice_mesh_slabs_trafo` :3480
+- `transform_verts_for_slicing` :3539
+- `transform_verts_affine_f32_pair` :3554
+- `is_equal_vec3f` :3574
+- `to_2d_f` :3580
+- `lower_bound_by_predicate` :3767 — C++ has it in `libslic3r`
+- `cut_mesh_plane_points` :4412
 
 ### `TriangleSelector` (.cpp+.hpp) and `triangle_selector.rs`
 
@@ -12649,8 +12646,8 @@ Tier 3. C++ functions 8 (plus 1 constructors, 0 destructors, 0 operators), Rust 
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `get_svg_profile` :124 and `get_svg_profile` :321 (3%, 0.02x)
-- divergent: `load_svg` :302 and `load_svg` :368 (7%, 0.07x)
+- divergent: `get_svg_profile` :124 and `get_svg_profile` :320 (3%, 0.02x)
+- divergent: `load_svg` :302 and `load_svg` :366 (7%, 0.07x)
 
 Rust only:
 
@@ -13121,7 +13118,7 @@ Tier 3. C++ functions 16 (plus 2 constructors, 0 destructors, 0 operators), Rust
 
 Not estimated faithful (shared identifiers and constants, Rust size over C++ size):
 
-- divergent: `read_from_disk` :99 and `read_from_disk` :515 (28%, 0.74x)
+- divergent: `read_from_disk` :99 and `read_from_disk` :510 (28%, 0.74x)
 
 Missing in the Rust file:
 
@@ -13138,15 +13135,15 @@ Missing in the Rust file:
 
 Rust only:
 
-- `NSVGLineParams::new` :115
-- `Vec2f::new` :157
-- `Vec2f::x` :161 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Vec2f::y` :165 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
-- `Vec2f::squared_norm` :170
-- `Vec2f::add` :178 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
-- `Vec2f::sub` :186 — C++ has it in `CutUtils`
-- `Vec2f::mul` :194
-- `is_approx_f32` :274
+- `NSVGLineParams::new` :112
+- `Vec2f::new` :154
+- `Vec2f::x` :158 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Vec2f::y` :162 — C++ has it in `Color`, `GCode/WipeTower`, `GCodeReader`
+- `Vec2f::squared_norm` :167
+- `Vec2f::add` :175 — C++ has it in `Config`, `GCode/SpiralVase`, `PrintApply`
+- `Vec2f::sub` :183 — C++ has it in `CutUtils`
+- `Vec2f::mul` :191
+- `is_approx_f32` :271
 
 ### `NormalUtils` (.cpp+.hpp) and `normal_utils.rs`
 

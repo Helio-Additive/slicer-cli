@@ -36,7 +36,9 @@ members = [
     "crates/libslic3r-rs",
     "crates/clipper-z-sys",
     "crates/clipper2-z-sys",
+    "crates/eigen-transform",
     "crates/eigen-transform-sys",
+    "crates/nanosvg",
     "crates/boost-voronoi-sys",
 ]
 default-members = ["."]
@@ -50,6 +52,13 @@ default-members = ["."]
 # Benchy slice takes minutes.
 [profile.dev.package.slicer]
 debug-assertions = false
+opt-level = 3
+
+# The affine kernels formerly compiled inside slicer with this optimization level.
+[profile.dev.package.eigen-transform]
+opt-level = 3
+
+[profile.test.package.eigen-transform]
 opt-level = 3
 
 # Tests keep the engine's debug assertions on: several of them guard real

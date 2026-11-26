@@ -10,12 +10,9 @@
 //!
 //! The bulk of this translation unit consumes the `nanosvg` C library's
 //! `NSVGimage` / `NSVGshape` / `NSVGpath` structures (and the `nsvgParse` /
-//! `nsvgParseFromFile` / `nsvgDelete` entry points). `nanosvg` is a native C
-//! header (`src/nanosvg/nanosvg.h`) that has no Rust port and cannot be added as
-//! a system/dylib dependency under the wasm-safe constraint. This is confirmed
-//! by the sibling modules [`crate::emboss_shape`] ("There is no `NSVGimage` type
-//! ported yet") and [`crate::format::svg`] ("nanosvg is a native C header with no
-//! Rust port"). nanosvg is the single root blocker for this file.
+//! `nsvgParseFromFile` / `nsvgDelete` entry points). The `nanosvg` workspace
+//! crate ports the XML tokenizer. Its SVG image, shape and path construction
+//! are still needed by this module and by [`crate::format::svg`].
 //!
 //! The other dependencies that earlier blocked this file are now AVAILABLE and
 //! are no longer blockers:
@@ -345,9 +342,7 @@ pub fn flatten_cubic_bez(
 /// NOTE: The constructor `DashesParam(const NSVGshape &shape, double scale)`
 /// (NSVGUtils.cpp:408-436) reads the `NSVGshape` fields `strokeDashCount`,
 /// `strokeDashArray`, and `strokeDashOffset`. The `NSVGshape` type is part of the
-/// native `nanosvg` C library, which has no Rust port (and cannot be added as a
-/// system/dylib dependency under the wasm-safe rule — see the module-level docs).
-/// The constructor therefore stays BLOCKED. The struct fields and the
+/// NanoSVG shape parser, which is still pending. The struct fields and the
 /// dependency-free `to_dashes` consumer below are ported faithfully so they are
 /// ready the moment nanosvg parsing becomes available.
 #[derive(Debug, Clone)]

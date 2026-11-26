@@ -210,9 +210,18 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R983 | Apply a common physical filament across all unpainted 3MF parts and roles (PrintApply.cpp 1045–1055, 1091 and PrintObject.cpp 3742–3806). Five of 23 supplemental projects gained five in-order lines each. | `SCOPED_MODEL_FILAMENT` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R984 | Order and emit a single region's walls, sparse and solid fills by their physical filament. All 768 native layer-order rows are covered by six jobs. | `FEATURE_FILAMENT_ORDER` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R985 | Build the Rust front end from the root Cargo package and forbid unsafe code in its targets. The 12 Rust source files move without edits. | Package layout | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R986 | Extract the affine Eigen kernels into a production Rust dependency and port NanoSVG's XML callback parser. | Dependency ports | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
 
+- R986, the first separate safe Rust dependency crates. The engine uses
+  `eigen-transform` through its existing mesh API. Three native Eigen tests
+  compare the output bits over 20,000 inputs each. The new `nanosvg` crate
+  matches the pinned XML callbacks, including attribute truncation, NUL input
+  and tag spelling. Four pinned SVG assets and 256 generated inputs produced
+  418 identical native and Rust callbacks. SVG shape construction and OCCT
+  meshing are still pending. Both crates forbid unsafe code. The four fixture
+  files match R985 byte for byte, including H2D at 4,614,342 and 4,614,863.
 - R985, the root Cargo package. A default Cargo build produces both previous
   binaries. The root CLI and parity tool preserve all 13 CLI tests and 43
   shell checks. All four standard fixture files match R984 byte for byte,

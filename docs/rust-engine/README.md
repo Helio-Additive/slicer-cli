@@ -11,6 +11,8 @@ program built from it; it is not packaged.
 |-|-|
 | `crates/libslic3r-rs/` | The port. `src/` mirrors libslic3r's file layout. `HANDOFF.md` has the test status |
 | `docs/rust-engine/FILE_MAP.md` | Every libslic3r source file and its Rust file, function by function: what is missing, what exists only in Rust, and an estimate of how closely each body follows. Written by `scripts/parity/file_map.py` |
+| `crates/eigen-transform/` | Safe Rust port of the affine Eigen operations used to transform mesh vertices and compose transforms during slicing |
+| `crates/nanosvg/` | Safe Rust port of NanoSVG's XML callbacks. Building SVG paths, shapes and images from those events is pending |
 | `crates/clipper-z-sys/`, `clipper2-z-sys/`, `eigen-transform-sys/`, `boost-voronoi-sys/` | The C++ the port replaced, behind C shims: Bambu's ClipperLib and ClipperLib_Z, Clipper2 with `USINGZ`, Eigen's f32 transforms, boost::polygon voronoi. None is a dependency of the engine any more (R883, R884, R903, R906); they are dev-dependencies, the reference the `*_native_parity` tests compare the Rust with |
 | Root `Cargo.toml` and `src/` | `slicer_cli-rust` (`src/engine_cli.rs`) and `slicer-parity` (`src/parity/`) |
 | `scripts/parity/` | The scoring scripts |
@@ -141,7 +143,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R985) |
+| Fixture | As brought over (R808) | Now (R986) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -151,11 +153,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R985:
+missing most often. Lines of the oracle's body the port has verbatim, at R986:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R985 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R986 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

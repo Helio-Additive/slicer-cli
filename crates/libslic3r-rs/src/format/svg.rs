@@ -14,8 +14,8 @@
 //! - **nanosvg** (`#include "nanosvg/nanosvg.h"`, svg.cpp:7) supplies the
 //!   `NSVGimage` / `NSVGshape` / `NSVGpath` structures and the
 //!   `nsvgParseFromFile` / `nsvgDelete` entry points that feed
-//!   [`get_svg_profile`]. It is a native C header (`src/nanosvg/nanosvg.h`) with
-//!   no Rust port (same blocker documented in [`crate::nsvg_utils`]).
+//!   [`get_svg_profile`]. The `nanosvg` workspace crate handles XML events.
+//!   Building the image and its shapes and paths remains pending.
 //! - **OpenCascade / OCCT** (svg.cpp:13-22) supplies `gp_Pnt`,
 //!   `BRepBuilderAPI_MakeWire` / `MakeEdge` / `MakeFace`,
 //!   `BRepPrimAPI_MakePrism`, `BRepMesh_IncrementalMesh`, `TopExp_Explorer`,
@@ -307,9 +307,8 @@ fn get_profile_area(profile_line_points: &[([f64; 3], [f64; 3])]) -> f64 {
 ///
 /// The C++ body (svg.cpp:127-300) first calls `nsvgParseFromFile(path, "mm",
 /// 96.0f)` (svg.cpp:128) to obtain the `NSVGimage*` and iterates its
-/// `NSVGshape*` / `NSVGpath*` lists. nanosvg is a native C header with no Rust
-/// port and cannot be added (wasm-safe constraint — same blocker as
-/// [`crate::nsvg_utils`]). The downstream geometry (svg.cpp:257-296) then builds
+/// `NSVGshape*` / `NSVGpath*` lists. The NanoSVG shape parser is still pending
+/// ([`crate::nsvg_utils`]). The downstream geometry (svg.cpp:257-296) then builds
 /// each profile via OCCT `BRepBuilderAPI_MakeWire` / `MakeEdge` / `MakeFace` and
 /// extrudes it with `BRepPrimAPI_MakePrism`, none of which have a binding crate
 /// (same blocker as [`crate::format::step`]).
@@ -324,9 +323,8 @@ fn get_svg_profile(
     message: &mut String,
 ) -> bool {
     // svg.cpp:127-128  svg_data = nsvgParseFromFile(path, "mm", 96.0f);
-    // BLOCKED: nanosvg is a native C header (`nanosvg/nanosvg.h`, svg.cpp:7) with
-    // no Rust port — same blocker as `crate::nsvg_utils` (`NSVGimage`/`NSVGshape`/
-    // `NSVGpath` and `nsvgParseFromFile`/`nsvgDelete` are unavailable). Without the
+    // The XML tokenizer is ported. Constructing the NanoSVG image and its
+    // shapes and paths remains pending. Without the
     // parsed `NSVGimage*` there is no `shape->paths` / `path->pts` to iterate, so
     // the entire body (svg.cpp:139-297) has no input. We mirror the parse-failure
     // branch (svg.cpp:129-132) exactly.

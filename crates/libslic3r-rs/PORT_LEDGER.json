@@ -1183,7 +1183,8 @@
     "loc": 543,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R986 ports the NanoSVG XML tokenizer in crates/nanosvg. Constructing the SVG image, shapes and paths for the stroke and fill consumers is pending."
   },
   {
     "cpp": "GCodeSender.cpp",
@@ -1711,7 +1712,8 @@
     "loc": 2635,
     "status": "partial",
     "priority": 2,
-    "fidelity": "fixed"
+    "fidelity": "fixed",
+    "notes": "R986 uses the safe eigen-transform crate for affine f32 composition and vertex multiplication. The three vertex_transform_native_parity cases compare 20,000 inputs each with Eigen."
   },
   {
     "cpp": "MultiMaterialSegmentation.cpp",
@@ -3003,7 +3005,8 @@
     "loc": 402,
     "status": "partial",
     "priority": 7,
-    "fidelity": "flagged"
+    "fidelity": "flagged",
+    "notes": "R986 ports NanoSVG XML callbacks in crates/nanosvg. SVG import still needs NanoSVG paths and shapes and OCCT extrusion and meshing."
   },
   {
     "cpp": "Format/SL1.cpp",
