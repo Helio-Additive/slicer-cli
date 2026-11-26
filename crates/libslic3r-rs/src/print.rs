@@ -632,6 +632,12 @@ impl Print {
         self.print_regions.push(Arc::new(live_print_region(config, 0)));
     }
 
+    pub(crate) fn add_geometry_regions(&mut self, configs: impl IntoIterator<Item = crate::region_config::PrintRegionConfig>) {
+        for config in configs {
+            self.print_regions.push(Arc::new(live_print_region(config, self.print_regions.len() as i32)));
+        }
+    }
+
     /// Install one additional print region per painted extruder, cloned from
     /// the default region config with its filament fields retargeted.
     ///

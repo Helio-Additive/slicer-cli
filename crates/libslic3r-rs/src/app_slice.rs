@@ -1152,7 +1152,8 @@ pub fn slice_3mf_to_gcode_with_overrides(
             settings_value[*key].as_array().is_some_and(|values| values.len() > 1));
     let mut model_slots = None;
     let mut model_walls = None;
-    if needs_scarf || needs_filament || scoped.walls {
+    let mut geometry_regions = None;
+    if needs_scarf || needs_filament || scoped.region_geometry {
         let (model, embedded) = load_bbs_model_and_config(input)?;
         let full = normalized_model_config(if settings_override.is_some() {
             config
@@ -1169,7 +1170,7 @@ pub fn slice_3mf_to_gcode_with_overrides(
         if needs_scarf {
             apply_model_scarf_flag(&mut settings_value, &full, &model);
         }
-        if scoped.walls {
+        if scoped.region_geometry {
             model_walls = common_model_wall_loops(&model, &full);
         }
         if needs_filament {
@@ -1182,6 +1183,9 @@ pub fn slice_3mf_to_gcode_with_overrides(
             {
                 model_slots = None;
             }
+        }
+        if scoped.region_geometry && crate::faithful_gate("MODEL_GEOMETRY_REGIONS") && mmu_facets.is_empty() {
+            geometry_regions = crate::print_object_slice::ModelGeometryRegions::new(model, full, -mesh.bounding_box().min.z);
         }
     }
     let config_block_settings_json = config_block_settings_before_patch(&settings_value);
@@ -1554,7 +1558,12 @@ pub fn slice_3mf_to_gcode_with_overrides(
     let mut print = Print::new();
     // main.cpp:1456 — print.apply(model, config). Applies the resolved config +
     // default region config; objects are added separately below.
-    print.apply(print_config, region_config);
+    let mut live_regions = geometry_regions.as_ref().and_then(|plan| plan.live_configs(&region_config))
+        .unwrap_or_default().into_iter();
+    let first = live_regions.next().unwrap_or(region_config);
+    let split_geometry = !live_regions.as_slice().is_empty();
+    print.apply(print_config, first);
+    print.add_geometry_regions(live_regions);
     print.region_filaments_resolved = route_features && model_slots.is_some();
     // Declare one region per painted extruder (PrintApply.cpp:1062-1078 shape)
     // BEFORE add_object so they share into PrintObjectRegions::all_regions.
@@ -1576,6 +1585,11 @@ pub fn slice_3mf_to_gcode_with_overrides(
         return Err(validation_refusal(validation));
     }
 
+    // This live CLI Print owns the object until export. Slice its regions
+    // before process() advances to perimeters; the Slice step is idempotent.
+    if let Some(plan) = geometry_regions.as_ref().filter(|_| split_geometry) {
+        print.objects_mut()[0].slice_with_model_regions(Some(plan))?;
+    }
     info!("Running Print::process() pipeline...");
     let __timing = crate::probe_enabled("SLICE_PHASE_TIMING");
     let __t_proc = std::time::Instant::now();
@@ -1690,7 +1704,7 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
 }
 
 struct ScopedModelSettings {
-    walls: bool,
+    region_geometry: bool,
     scarf: bool,
     filament: bool,
 }
@@ -1762,25 +1776,26 @@ fn load_3mf_model(path: &Path, inspect_settings: bool) -> Result<(Loaded3mf, Sco
         && crate::faithful_gate("REGION_CONFIG_WALL_FILAMENT")
         && crate::faithful_gate("REGION_CONFIG_INFILL_FILAMENTS")
         && crate::faithful_gate("REGION_CONFIG_FILAMENT_CLAMP");
-    let check_walls = inspect_settings && crate::faithful_gate("MODEL_REGION_WALL_LOOPS");
-    let may_set_walls = |xml: &str| quick_xml::escape::unescape(xml)
-        .map_or(true, |text| text.contains("wall_loops"));
+    let check_region_geometry = inspect_settings && crate::faithful_gate("MODEL_REGION_WALL_LOOPS");
+    let split_geometry = check_region_geometry && crate::faithful_gate("MODEL_GEOMETRY_REGIONS");
+    let may_set_geometry = |xml: &str| quick_xml::escape::unescape(xml).map_or(true, |text|
+        text.contains("wall_loops") || (split_geometry && text.contains("sparse_infill_density")));
     let mut scoped = ScopedModelSettings {
-        walls: check_walls && may_set_walls(&model_settings),
+        region_geometry: check_region_geometry && may_set_geometry(&model_settings),
         scarf: check_scarf && may_override(&model_settings),
         filament: check_filament && has_scoped_filament_setting(&model_settings),
     };
-    if (check_scarf && !scoped.scarf) || (check_filament && !scoped.filament) || (check_walls && !scoped.walls) {
+    if (check_scarf && !scoped.scarf) || (check_filament && !scoped.filament) || (check_region_geometry && !scoped.region_geometry) {
         use crate::format::bbs_3mf::{BBS_MODEL_CONFIG_FILE, LAYER_CONFIG_RANGES_FILE};
         let config_entries: Vec<String> = archive.file_names().filter(|name| {
             let normalized = name.replace('\\', "/");
-            (check_scarf && !scoped.scarf && normalized.eq_ignore_ascii_case(LAYER_CONFIG_RANGES_FILE))
+            (((check_scarf && !scoped.scarf) || split_geometry) && normalized.eq_ignore_ascii_case(LAYER_CONFIG_RANGES_FILE))
                 || (*name != BBS_MODEL_CONFIG_FILE && normalized.eq_ignore_ascii_case(BBS_MODEL_CONFIG_FILE))
         }).map(str::to_owned).collect();
         for name in config_entries {
             let mut xml = String::new();
             archive.by_name(&name)?.read_to_string(&mut xml)?;
-            scoped.walls |= check_walls && may_set_walls(&xml);
+            scoped.region_geometry |= check_region_geometry && may_set_geometry(&xml);
             scoped.scarf |= check_scarf && may_override(&xml);
             if check_filament && !scoped.filament && name.replace('\\', "/").eq_ignore_ascii_case(BBS_MODEL_CONFIG_FILE) {
                 scoped.filament = has_scoped_filament_setting(&xml);

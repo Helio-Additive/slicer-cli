@@ -1,0 +1,258 @@
+{
+  "base": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    }
+  },
+  "three-five": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        20
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        10,
+        20
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        20
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    }
+  },
+  "five-three": {
+    "2mm": {
+      "Inner wall": [
+        20,
+        10
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        20,
+        10
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        20,
+        10
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    }
+  },
+  "three-three": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        25,
+        25
+      ]
+    }
+  },
+  "five-in-band": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        20,
+        0
+      ],
+      "Sparse infill": [
+        21,
+        0
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    }
+  },
+  "hollow-left": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        0,
+        51
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        0,
+        51
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        0,
+        51
+      ]
+    }
+  },
+  "hollow-right": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        51,
+        0
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        51,
+        0
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        10
+      ],
+      "Sparse infill": [
+        51,
+        0
+      ]
+    }
+  },
+  "hollow-in-band": {
+    "2mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    },
+    "4mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        0,
+        0
+      ]
+    },
+    "8mm": {
+      "Inner wall": [
+        10,
+        0
+      ],
+      "Sparse infill": [
+        22,
+        0
+      ]
+    }
+  }
+}

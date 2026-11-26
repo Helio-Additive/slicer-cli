@@ -78,6 +78,191 @@ impl std::fmt::Display for PrintObjectSliceError {
 /// `CanceledException`.
 pub type ThrowOnCancel<'a> = &'a dyn Fn() -> Result<(), CanceledException>;
 
+// PrintApply.cpp 1045-1091: each volume and height range has an effective
+// PrintRegion. Keep native region indices until the live layer surfaces have
+// been assigned. Different wall/density settings cannot share a live region.
+pub(crate) struct ModelGeometryRegions {
+    model: crate::model::Model,
+    full: DynamicPrintConfig,
+    instances: Vec<GeometryInstance>,
+    regional_defaults: DynamicPrintConfig,
+    configs: Vec<DynamicPrintConfig>,
+}
+
+struct GeometryInstance {
+    object_index: usize,
+    transform: Transform3d,
+    object_config: DynamicPrintConfig,
+    regions: crate::print::faithful::PrintObjectRegionsPtr,
+    live_indices: Vec<usize>,
+}
+
+impl ModelGeometryRegions {
+    pub(crate) fn new(model: crate::model::Model, full: DynamicPrintConfig, bed_shift: f64) -> Option<Self> {
+        use crate::config::ConfigBase;
+        use crate::print_apply::{generate_print_object_regions, object_config_from_model_object, LayerRanges};
+        let count = crate::gcode::wipe_tower::cfg_floats(&full, "filament_diameter").len();
+        let mut base = crate::print::faithful::static_config_defaults("PrintRegionConfig");
+        base.apply_only(&full, &base.keys(), true).ok()?;
+        let changes_geometry =
+            |config: &crate::model::ModelConfig| config.has("wall_loops") || config.has("sparse_infill_density");
+        if model
+            .objects
+            .iter()
+            .flat_map(|o| &o.volumes)
+            .any(|v| v.is_negative_volume())
+            && !crate::faithful_gate("NEGATIVE_VOLUMES")
+        {
+            return None;
+        }
+        if !model.objects.iter().any(|o| {
+            changes_geometry(&o.config)
+                || o.layer_config_ranges.values().any(&changes_geometry)
+                || o.volumes.iter().any(|v| {
+                    changes_geometry(&v.config) || v.material(&model).is_some_and(|m| changes_geometry(&m.config))
+                })
+        }) {
+            return None;
+        }
+        let mut configs: Vec<DynamicPrintConfig> = Vec::new();
+        let mut instances = Vec::new();
+        for (object_index, object) in model.objects.iter().enumerate() {
+            if !object.printable
+                || object.instances.iter().any(|i| !i.printable)
+                || object.volumes.iter().any(|v| !v.printable() || v.is_mm_painted())
+            {
+                return None;
+            }
+            let ranges = LayerRanges::new(&object.layer_config_ranges);
+            let cfg = object_config_from_model_object(&full, object, count, &mut Vec::new());
+            for instance in &object.instances {
+                let mut transform = instance.get_matrix(false, false, false, false);
+                transform[(2, 3)] += bed_shift;
+                let regions = generate_print_object_regions(
+                    None,
+                    object,
+                    Some(&model),
+                    &ranges,
+                    &base,
+                    &transform,
+                    count,
+                    cfg_float(&cfg, "xy_contour_compensation") as f32,
+                    &[],
+                    &mut Vec::new(),
+                    false,
+                    &[],
+                );
+                let mut live_indices = Vec::new();
+                for region in &regions.borrow().all_regions {
+                    let r = region.borrow();
+                    let id = match configs
+                        .iter()
+                        .position(|cfg| cfg.equals(r.config(), None).unwrap_or(false))
+                    {
+                        Some(id) => id,
+                        None => {
+                            configs.push(r.config().clone());
+                            configs.len() - 1
+                        }
+                    };
+                    live_indices.push(id);
+                }
+                instances.push(GeometryInstance {
+                    object_index,
+                    transform,
+                    object_config: cfg.clone(),
+                    regions,
+                    live_indices,
+                });
+            }
+        }
+        if configs.is_empty() {
+            return None;
+        }
+        Some(Self {
+            model,
+            full,
+            instances,
+            regional_defaults: base,
+            configs,
+        })
+    }
+
+    /// PrintObject.cpp 3742-3806 resolves each region against the print
+    /// defaults. Preserve the live profile's existing conversions for keys
+    /// inherited without a change.
+    pub(crate) fn live_configs(
+        &self,
+        base: &crate::region_config::PrintRegionConfig,
+    ) -> Option<Vec<crate::region_config::PrintRegionConfig>> {
+        use crate::config::{ConfigBase, ConfigOptionResolver};
+        self.configs
+            .iter()
+            .map(|native| {
+                let mut live = base.clone();
+                for key in native.diff(&self.regional_defaults).ok()? {
+                    match key.as_str() {
+                        "wall_loops" => live.perimeters = native.opt_int(&key).try_into().ok()?,
+                        "sparse_infill_density" => live.fill_density = native.option(&key)?.get_float().ok()? / 100.,
+                        _ => {
+                            live.set_deserialize(&key, &native.opt_serialize(&key).ok()?);
+                        }
+                    }
+                }
+                Some(live)
+            })
+            .collect()
+    }
+
+    /// PrintObjectSlice.cpp 645-690 slices each volume at the layer centers
+    /// before distributing its surfaces to the registered regions.
+    pub(crate) fn assign(
+        &self,
+        layers: &mut [Layer],
+        center: (f64, f64),
+        cancel: ThrowOnCancel,
+    ) -> Result<(), CanceledException> {
+        let zs: Vec<_> = layers.iter().map(|l| l.slice_z as f32).collect();
+        for layer in layers.iter_mut() {
+            for region in layer.regions_mut() {
+                region.slices.clear();
+            }
+        }
+        for instance in &self.instances {
+            let volumes = &self.model.objects[instance.object_index].volumes;
+            let regions = instance.regions.borrow();
+            let mut transform = instance.transform;
+            transform[(0, 3)] -= center.0;
+            transform[(1, 3)] -= center.1;
+            let sliced = slice_volumes_inner(
+                &self.full,
+                &instance.object_config,
+                &transform,
+                volumes,
+                &regions.layer_ranges,
+                &zs,
+                cancel,
+                None,
+            )?;
+            let regions = slices_to_regions(
+                volumes,
+                &regions,
+                &zs,
+                sliced,
+                clip_multipart_objects.load(Ordering::Relaxed),
+                self.full.opt_bool("enable_order_independent_overlap_carving"),
+                cancel,
+            )?;
+            for (by_layer, &id) in regions.into_iter().zip(&instance.live_indices) {
+                for (layer, contours) in layers.iter_mut().zip(by_layer) {
+                    layer.regions_mut()[id].slices.append(contours, SurfaceType::Internal);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The units `PrintObject::slice_volumes` calls that have no port over the faithful Print yet.
 pub trait SliceVolumesCores {
     /// MultiMaterialSegmentation.cpp `std::vector<std::vector<ExPolygons>>

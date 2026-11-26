@@ -222,8 +222,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R995 | Parse the points geometry of SVG polygon and polyline elements in safe Rust. | NanoSVG | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R996 | Preserve unanimous object and part wall counts in Bambu 3MF toolpaths. | PrintApply / PrintObject | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 | R997 | Apply native CLI geometry options on STL and Bambu 3MF jobs. | Root CLI / config block | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
+| R998 | Route unpainted Bambu part and height-range geometry to live layer regions. | PrintApply / PrintObjectSlice | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R998. In two disjoint cubes, switching their three-wall and five-wall
+  overrides swaps the native inner-wall move counts (10 and 20 at each of
+  three heights). R997 produced 10 in both parts. A five-wall height band
+  likewise produced 10 until its own region reached the live slicing path.
+  The 3MF driver now uses the imported model's volume and height ranges
+  to assign slices to the corresponding layer regions. The same pipeline
+  handles hollow and 30% infill parts in either order, plus a hollow band.
+  All 96 sampled feature/side/height counts across eight jobs match native,
+  including the unchanged controls. All eight regional jobs reproduce R997
+  byte for byte with `MODEL_GEOMETRY_REGIONS=0`. The four standard fixtures
+  reproduce R997 both ways and the H2D scores hold at 4,614,342 and 4,614,863.
+  Painted projects and independently scheduled objects with different layer
+  grids remain separate porting units.
 
 - R997. The root driver now parses the three official height, wall and sparse
   density settings, validates the final typed values and applies the two

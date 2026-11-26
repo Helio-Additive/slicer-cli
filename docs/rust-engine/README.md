@@ -29,6 +29,9 @@ For STL or Bambu 3MF, `--layer-height`, `--wall-loops` and
 `--sparse-infill-density` set the official typed options. The legacy
 `--perimeters` and `--infill` overrides apply last. For example,
 `--wall-loops=2 --perimeters=3` requests three walls globally.
+Unpainted Bambu projects can override walls and sparse density on an object,
+part or height range. `MODEL_GEOMETRY_REGIONS=0` replays the earlier merged
+region geometry. The exported config records the global request.
 `CLI_GEOMETRY_OPTIONS=0` reproduces the earlier named refusals.
 
 Run `cargo run --bin slicer_cli-rust -- --gcode-timing ORIGINAL OPTIMIZED`
@@ -180,7 +183,7 @@ status is [`../parity/PORT_CHECKLIST.md`](../parity/PORT_CHECKLIST.md); work is 
 behind the shims, what the port does differently by construction and what it lacks is listed in
 [`parity/not-ported.md`](parity/not-ported.md).
 
-| Fixture | As brought over (R808) | Now (R997) |
+| Fixture | As brought over (R808) | Now (R998) |
 |-|-|-|
 | Benchy classic | 30,486 (15.72%) | 190,680 (100.00%) |
 | Benchy arachne | 32,769 (13.68%) | 243,167 (100.00%) |
@@ -190,11 +193,11 @@ behind the shims, what the port does differently by construction and what it lac
 `seq_parity.py` scores the moves and leaves comments, empty lines and most
 M-codes out. `python3 scripts/parity/exact_lines.py <rust.gcode> <oracle.gcode> [n]`
 counts every line of the body as written; with `n` it lists the line shapes
-missing most often. Lines of the oracle's body the port has verbatim, at R997:
+missing most often. Lines of the oracle's body the port has verbatim, at R998:
 Benchy classic 196,495 of 196,495 (100.0%), Benchy arachne 248,190 of 248,190
 (100.0%), Majora 3,022,796 of 3,024,752 (99.9%).
 
-On the H2D Majora job, R997 matches 4,614,342 and 4,614,863 motion lines in order against the
+On the H2D Majora job, R998 matches 4,614,342 and 4,614,863 motion lines in order against the
 two saved C++ runs (99.96% and 99.97% of the Rust body). The R960 short-wipe fix added
 809 and 458 matches. Preserving the native vertical-shell polygon order in R961 adds one
 match against each run and makes layer 671 byte-identical apart from M73 progress.

@@ -513,6 +513,10 @@ impl PrintObject {
     /// Slice mesh into layers using the real slicing algorithm
     /// PrintObjectSlice.cpp:791-843
     pub fn slice(&mut self) -> Result<()> {
+        self.slice_with_model_regions(None)
+    }
+
+    pub(crate) fn slice_with_model_regions(&mut self, model_regions: Option<&crate::print_object_slice::ModelGeometryRegions>) -> Result<()> {
         // Check if already sliced - avoid re-slicing
         // PrintObjectSlice.cpp:792-793
         if self.is_step_done(PrintObjectStep::Slice) {
@@ -629,6 +633,14 @@ impl PrintObject {
             }
         }
 
+        if let Some(plan) = model_regions {
+            let center = if crate::faithful_gate("SLICE_CENTER") { self.slice_center_offset } else { (0., 0.) };
+            let canceled = &self.canceled;
+            plan.assign(&mut self.layers, center, &|| {
+                if canceled.load(Ordering::Relaxed) { Err(crate::print_base::CanceledException) } else { Ok(()) }
+            }).map_err(|_| Error::Cancelled)?;
+        }
+
         // R704 — NEGATIVE VOLUMES. C++ slices them like any other volume
         // (`model_volume_needs_slicing`, PrintObjectSlice.cpp:110) and then, in
         // `slices_to_regions` (:403-421), subtracts each from every PRECEDING
@@ -651,7 +663,7 @@ impl PrintObject {
         // to C++'s 2,781,977 by 14,732. Both rates dip 0.11pp purely because the
         // denominator grew faster than the matches; every absolute measure improves
         // and the geometry is now the same geometry C++ slices.
-        if crate::faithful_gate("NEGATIVE_VOLUMES") {
+        if model_regions.is_none() && crate::faithful_gate("NEGATIVE_VOLUMES") {
             if let Some(neg) = self.negative_mesh.clone() {
                 use crate::surface::{Surface, SurfaceType};
                 use crate::surface_collection::SurfaceCollection;

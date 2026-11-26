@@ -1615,7 +1615,7 @@
     "status": "partial",
     "priority": 2,
     "fidelity": "fixed",
-    "notes": "R970: smooth_overhang_level traverses nonzero paths across the full 6.5 mm window, including many passes around a short wall (PerimeterGenerator.cpp 548-590). The four Majora paths and the 401 native smoothing vectors agree."
+    "notes": "R970: smooth_overhang_level traverses nonzero paths across the full 6.5 mm window, including many passes around a short wall (PerimeterGenerator.cpp 548-590). The four Majora paths and the 401 native smoothing vectors agree. R998 connects slice_volumes_inner and slices_to_regions to live unpainted 3MF layers when an authored wall count or sparse density creates distinct regions. All 96 sampled deposition counts across eight native jobs agree. Painted region composition and independent object layer grids remain partial."
   },
   {
     "cpp": "Config.cpp",
@@ -1640,7 +1640,7 @@
     "status": "partial",
     "priority": 2,
     "fidelity": "fixed",
-    "notes": "R978 ports the model-derived scarf-seam flag at PrintApply.cpp 1339-1435. All 20 full/typed native model results match after normalization, including tool changes and scoped filament, circle and seam options. The live STL and 3MF entries reproduce the native flag on 14 supplemental jobs. R983 connects the live 3MF path to the existing region resolver when all parts and roles agree on one physical filament (PrintApply.cpp 1045-1055,1091 and PrintObject.cpp 3742-3806). Six native region vectors and 23 real projects cover the assignment. Differing part or role slots, modifiers and layer-specific settings still need separate live regions and tool ordering. R984 additionally carries a common physical wall/sparse/solid tuple across unpainted parts. Different tuples between parts and layer or modifier assignments still need separate regions. R996 passes the resolved wall_loops to the live merged 3MF region when all parts agree. Native Print::apply vectors and full motion controls cover global, object, and part precedence. Heterogeneous part and height-range geometry remains partial."
+    "notes": "R978 ports the model-derived scarf-seam flag at PrintApply.cpp 1339-1435. All 20 full/typed native model results match after normalization, including tool changes and scoped filament, circle and seam options. The live STL and 3MF entries reproduce the native flag on 14 supplemental jobs. R983 connects the live 3MF path to the existing region resolver when all parts and roles agree on one physical filament (PrintApply.cpp 1045-1055,1091 and PrintObject.cpp 3742-3806). Six native region vectors and 23 real projects cover the assignment. Differing part or role slots, modifiers and layer-specific settings still need separate live regions and tool ordering. R984 additionally carries a common physical wall/sparse/solid tuple across unpainted parts. Different tuples between parts and layer or modifier assignments still need separate regions. R996 passes the resolved wall_loops to the live merged 3MF region when all parts agree. Native Print::apply vectors and full motion controls cover global, object, and part precedence. Heterogeneous part and height-range geometry remains partial. R998 uses native region generation for scoped walls and sparse density on the unpainted Bambu 3MF path. Distinct effective configurations keep separate live regions, including height ranges."
   },
   {
     "cpp": "Brim.cpp",
