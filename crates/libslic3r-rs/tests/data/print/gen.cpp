@@ -11,6 +11,7 @@
 //       -include $REPO/libslic3r/bambustudio/cgal_54_compat.hpp -c $DATA/gen.cpp -o gen.o
 //   c++ gen.o $BUILD/libslic3r_core.a <the libraries libslic3r_core links> -o gen
 //   ./gen > vectors.txt
+//   ./gen --scoped-walls scoped_walls.txt
 //   ./gen --scarf-flags scarf_flags.txt
 //   ./gen --region-infill-filaments region_infill_filaments.txt
 //   ./gen --feature-tool-orders tests/fixtures/calib_base.3mf <temporary-directory> feature_tool_orders.txt
@@ -707,8 +708,30 @@ static void feature_tool_orders(const char *fixture, const char *tmpdir, const c
     }
 }
 
+// PrintApply.cpp 1045-1091, PrintObject.cpp 3742-3806. Apply the global
+// setting and the object's and part's overrides to a real Print.
+static void scoped_walls(const char *filename)
+{
+    std::ofstream out(filename);
+    for (int object_walls : {0, 5})
+        for (int part_walls : {0, 4, 5})
+            for (int requested : {3, 5}) {
+                Model model = build_model(0);
+                ModelObject &object = *model.objects.front();
+                if (object_walls) object.config.set("wall_loops", object_walls);
+                if (part_walls) object.volumes.front()->config.set("wall_loops", part_walls);
+                DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+                config.set_key_value("wall_loops", new ConfigOptionInt(requested));
+                Print print;
+                print.apply(model, config);
+                out << object_walls << ' ' << part_walls << ' ' << requested << ' '
+                    << print.get_print_region(0).config().wall_loops.value << '\n';
+            }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 3 && std::string(argv[1]) == "--scoped-walls") { scoped_walls(argv[2]); return 0; }
     if (argc == 5 && std::string(argv[1]) == "--feature-tool-orders") { feature_tool_orders(argv[2], argv[3], argv[4]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--scoped-region-filaments") { scoped_region_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--startup-filaments") { startup_filaments(argv[2]); return 0; }

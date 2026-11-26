@@ -220,8 +220,23 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R993 | Write binary STL headers, face counts and facets with safe little-endian conversions. | TriangleMesh | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R994 | Build transformed NanoSVG cubic paths and convert them to polygons and polylines in safe Rust. | NanoSVG / NSVGUtils | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R995 | Parse the points geometry of SVG polygon and polyline elements in safe Rust. | NanoSVG | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R996 | Preserve unanimous object and part wall counts in Bambu 3MF toolpaths. | PrintApply / PrintObject | 190,680 (same bytes) | 243,167 (same bytes) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R996. On the calibrated Bambu cube, native model resolution and the Rust
+  importer both returned five walls for object and part overrides of five.
+  The live Rust region received the global count instead. The 3MF entry now
+  passes the resolved wall count to the region when every part agrees.
+  All 12 combinations in the native Print::apply vectors reproduce the
+  complete motions of their effective-count control. The exported config
+  retains the requested count. Changing the global count from three to five
+  changes the plate control in both engines. For the five-wall job the native
+  emits 10,738 motion lines and Rust emits 10,559. Different counts across
+  parts, modifiers and height ranges still require per-layer geometry.
+  Disabling `MODEL_REGION_WALL_LOOPS` reproduces all six R995 scope files.
+  All four standard jobs match R995 byte for byte with the gate on and off.
+  The two H2D scores remain 4,614,342 and 4,614,863.
 
 - R995. All 120 SVG documents reproduce the native cubic points, bounds and
   closure on macOS arm64 and x86_64 under Rosetta. The first numeric

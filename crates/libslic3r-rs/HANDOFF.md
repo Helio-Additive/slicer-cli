@@ -3,13 +3,14 @@
 **Goal:** faithful, line-by-line 1:1 port of C++ `libslic3r` (BambuStudio) to Rust in
 `crates/libslic3r-rs`, so the Rust engine produces G-code **byte-identical** to the C++
 slicer. No shortcuts: same functions, same order, same names (snake_case), same control
-flow / constants / rounding / locations. wasm-safe where possible (the four `*-sys` shims
-are the exception). How to build, run and score it in this repository:
+flow / constants / rounding / locations. The four native `*-sys` shims serve as development-only
+comparison oracles. The production dependency graph still needs its safe-Rust
+audit and builds on every supported target. How to build, run and score it in this repository:
 `docs/rust-engine/README.md`.
 
 ## Where things stand
 
-- **Parity (R995), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
+- **Parity (R996), against this repository's `slicer_cli` (Bambu Studio 02.09.01.70):**
   Benchy classic 190,680 lines in order (100.00%), Benchy arachne 243,167 (100.00%), Majora
   2,864,040 (99.86%), prime tower 99.96%. `docs/rust-engine/README.md` has what the numbers
   rest on and where each fixture stands; `docs/rust-engine/parity/rounds-R809-on.md` is the
@@ -51,8 +52,8 @@ are the exception). How to build, run and score it in this repository:
 
 ## Test status
 
-R995 on macOS arm64: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
-test_tree_support_many_layers` gives 2,749 passed, 0 failed, one ignored timing diagnostic and one filtered test (debug profile), and `cargo test -p
+R996 on macOS arm64: `cargo test -p slicer --lib --tests --no-fail-fast -- --skip
+test_tree_support_many_layers` gives 2,750 passed, 0 failed, one ignored timing diagnostic and one filtered test (debug profile), and `cargo test -p
 slicer-cli-rust` 23 passed. The two sorting tests that used to run separately in both
 Clipper variants now run in `libcxx-sort`, along with a third native ordering test. R913 settled the 67 that failed in R912 one by one against the pin (a
 standalone generator calling the pin's function): most expected values of an older, invented API

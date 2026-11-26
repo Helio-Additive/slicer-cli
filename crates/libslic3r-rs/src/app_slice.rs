@@ -107,6 +107,42 @@ fn common_model_feature_slots(model: &crate::model::Model, config: &DynamicPrint
     selected
 }
 
+/// PrintApply.cpp 1045-1091, PrintObject.cpp 3742-3806. A single live
+/// region can represent the model's walls if every printing part agrees.
+fn common_model_wall_loops(model: &crate::model::Model, config: &DynamicPrintConfig) -> Option<u32> {
+    let mut base = crate::print::faithful::static_config_defaults("PrintRegionConfig");
+    *base.opt_int_mut("wall_loops") = config.opt_int("wall_loops");
+    let count = crate::gcode::wipe_tower::cfg_floats(config, "filament_diameter").len();
+    let mut selected = None;
+    let mut variant = Vec::new();
+    let mut overridden = false;
+    for object in &model.objects {
+        if !object.printable || object.instances.is_empty()
+            || object.instances.iter().any(|instance| !instance.printable)
+            || !object.layer_config_ranges.is_empty()
+        {
+            return None;
+        }
+        for volume in &object.volumes {
+            if !volume.is_model_part() || !volume.printable() {
+                return None;
+            }
+            overridden |= object.config.has("wall_loops") || volume.config.has("wall_loops")
+                || volume.material(model).is_some_and(|m| m.config.has("wall_loops"));
+            let region = crate::print_apply::region_config_from_model_volume(
+                &base, None, volume, object, Some(model), count, &mut variant,
+            );
+            let walls = u32::try_from(region.opt_int("wall_loops")).ok()?;
+            if selected.is_some_and(|prev| prev != walls) {
+                return None;
+            }
+            selected = Some(walls);
+        }
+    }
+    selected.filter(|_| overridden)
+}
+
+
 /// bbs_3mf.cpp:2263-2331. The importer decides whether to read embedded
 /// settings and custom tool changes based on the project's generator.
 fn load_bbs_model_and_config(path: &Path) -> Result<(crate::model::Model, DynamicPrintConfig)> {
@@ -1078,7 +1114,8 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
         && ["filament_diameter", "filament_colour"].iter().any(|key|
             settings_value[*key].as_array().is_some_and(|values| values.len() > 1));
     let mut model_slots = None;
-    if needs_scarf || needs_filament {
+    let mut model_walls = None;
+    if needs_scarf || needs_filament || scoped.walls {
         let (model, embedded) = load_bbs_model_and_config(input)?;
         let full = normalized_model_config(if settings_override.is_some() {
             config
@@ -1087,6 +1124,9 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
         })?;
         if needs_scarf {
             apply_model_scarf_flag(&mut settings_value, &full, &model);
+        }
+        if scoped.walls {
+            model_walls = common_model_wall_loops(&model, &full);
         }
         if needs_filament {
             model_slots = common_model_feature_slots(&model, &full);
@@ -1105,6 +1145,9 @@ pub fn slice_3mf_to_gcode_with_legacy_gcode(
     patch_filament_overrides_in_json(&mut settings_value);
     let raw_settings_json = Some(settings_value.clone());
     let (print_config, object_config, mut region_config) = load_bambustudio_settings(&settings_value)?;
+    if let Some(walls) = model_walls {
+        region_config.perimeters = walls;
+    }
     let route_features = route_features && !print_config.flush_into_objects
         && !object_config.enable_support && object_config.enforce_support_layers == 0
         && object_config.raft_layers == 0;
@@ -1602,6 +1645,7 @@ pub fn load_3mf(path: &Path) -> Result<Loaded3mf> {
 }
 
 struct ScopedModelSettings {
+    walls: bool,
     scarf: bool,
     filament: bool,
 }
@@ -1673,11 +1717,15 @@ fn load_3mf_model(path: &Path, inspect_settings: bool) -> Result<(Loaded3mf, Sco
         && crate::faithful_gate("REGION_CONFIG_WALL_FILAMENT")
         && crate::faithful_gate("REGION_CONFIG_INFILL_FILAMENTS")
         && crate::faithful_gate("REGION_CONFIG_FILAMENT_CLAMP");
+    let check_walls = inspect_settings && crate::faithful_gate("MODEL_REGION_WALL_LOOPS");
+    let may_set_walls = |xml: &str| quick_xml::escape::unescape(xml)
+        .map_or(true, |text| text.contains("wall_loops"));
     let mut scoped = ScopedModelSettings {
+        walls: check_walls && may_set_walls(&model_settings),
         scarf: check_scarf && may_override(&model_settings),
         filament: check_filament && has_scoped_filament_setting(&model_settings),
     };
-    if (check_scarf && !scoped.scarf) || (check_filament && !scoped.filament) {
+    if (check_scarf && !scoped.scarf) || (check_filament && !scoped.filament) || (check_walls && !scoped.walls) {
         use crate::format::bbs_3mf::{BBS_MODEL_CONFIG_FILE, LAYER_CONFIG_RANGES_FILE};
         let config_entries: Vec<String> = archive.file_names().filter(|name| {
             let normalized = name.replace('\\', "/");
@@ -1687,6 +1735,7 @@ fn load_3mf_model(path: &Path, inspect_settings: bool) -> Result<(Loaded3mf, Sco
         for name in config_entries {
             let mut xml = String::new();
             archive.by_name(&name)?.read_to_string(&mut xml)?;
+            scoped.walls |= check_walls && may_set_walls(&xml);
             scoped.scarf |= check_scarf && may_override(&xml);
             if check_filament && !scoped.filament && name.replace('\\', "/").eq_ignore_ascii_case(BBS_MODEL_CONFIG_FILE) {
                 scoped.filament = has_scoped_filament_setting(&xml);

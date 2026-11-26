@@ -1091,3 +1091,60 @@ fn feature_filament_changes_match_native_layer_order() {
         }
     }
 }
+
+/// PrintApply.cpp 1045-1091, PrintObject.cpp 3742-3806. Compare actual
+/// deposition against an unscoped slice using the native effective count.
+/// The exported project config still carries the requested global setting.
+#[test]
+fn scoped_walls_reach_project_toolpaths() {
+    use std::collections::BTreeMap;
+    use std::fs::{self, File};
+    use std::io::{Read, Write};
+    use std::path::Path;
+    use zip::{write::FileOptions, ZipArchive, ZipWriter};
+
+    let _ids = MODEL_IDS.lock().unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/calib_base.3mf");
+    let dir = tempfile::tempdir().unwrap();
+    let model_path = dir.path().join("model.3mf");
+    let settings_path = dir.path().join("settings.json");
+    let output = dir.path().join("out.gcode");
+    let slice = |path: &Path, walls: u32| {
+        let mut profile: serde_json::Value = serde_json::from_str(include_str!("data/cube_arachne_settings.json")).unwrap();
+        profile["wall_loops"] = walls.to_string().into();
+        serde_json::to_writer(File::create(&settings_path).unwrap(), &profile).unwrap();
+        slicer::app_slice::slice_3mf_to_gcode(path, Some(&settings_path), &output).unwrap();
+        let gcode = fs::read_to_string(&output).unwrap();
+        let requested = format!("; wall_loops = {walls}");
+        assert!(gcode.lines().any(|line| line == requested));
+        gcode.lines().filter(|line| matches!(line.split_once(' '), Some(("G0" | "G1" | "G2" | "G3", _))))
+            .map(str::to_owned).collect::<Vec<_>>()
+    };
+    let controls: BTreeMap<_, _> = [3, 4, 5].into_iter().map(|walls| (walls, slice(&fixture, walls))).collect();
+    assert_ne!(controls[&3], controls[&5]);
+    for row in include_str!("data/print/scoped_walls.txt").lines() {
+        let fields: Vec<_> = row.split_whitespace().map(|s| s.parse::<u32>().unwrap()).collect();
+        let [object, part, requested, effective]: [u32; 4] = fields.try_into().unwrap();
+        let mut archive = ZipArchive::new(File::open(&fixture).unwrap()).unwrap();
+        let mut dest = ZipWriter::new(File::create(&model_path).unwrap());
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i).unwrap();
+            if entry.name() == "Metadata/model_settings.config" {
+                let mut xml = String::new();
+                entry.read_to_string(&mut xml).unwrap();
+                for (scope, walls) in [(r#"<object id="2">"#, object), (r#"<part id="1" subtype="normal_part">"#, part), ("<plate>", 5)] {
+                    if walls != 0 {
+                        assert!(xml.contains(scope));
+                        xml = xml.replace(scope, &format!(r#"{scope}<metadata key="wall_loops" value="{walls}"/>"#));
+                    }
+                }
+                dest.start_file(entry.name(), FileOptions::default()).unwrap();
+                dest.write_all(xml.as_bytes()).unwrap();
+            } else {
+                dest.raw_copy_file(entry).unwrap();
+            }
+        }
+        dest.finish().unwrap();
+        assert!(slice(&model_path, requested) == controls[&effective], "native region {row}");
+    }
+}
