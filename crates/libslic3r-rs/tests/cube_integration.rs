@@ -601,3 +601,41 @@ fn test_top_one_wall_type_parsing() {
     assert!(!TopOneWallType::TopMost.is_all_top());
     assert!(!TopOneWallType::None.is_all_top());
 }
+
+/// GCode.cpp 2840-2863, 2898-2927 and 3184-3236. Three physical filaments
+/// share one nozzle. Each export assigns a different filament to all roles.
+#[test]
+fn single_filament_startup_matches_native() {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let cube = manifest.join("../../tests/rust-engine/fixtures/Cube_25.6.stl");
+    let tmp = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let profile_path = tmp.join("single_filament_startup.json");
+    let out = tmp.join("single_filament_startup.gcode");
+    let expected = include_str!("data/print/startup_filaments.txt");
+    let mut profile = serde_json::json!({
+        "filament_diameter": ["1.75", "1.75", "1.75"],
+        "filament_colour": ["#FF0000", "#00FF00", "#0000FF"],
+        "filament_type": ["PLA", "PLA", "PLA"],
+        "filament_map": ["1", "1", "1"],
+        "nozzle_diameter": ["0.4"],
+        "machine_start_gcode": "; STARTUP [initial_tool] [initial_filament_id] [initial_no_support_tool] [initial_no_support_filament_id] [current_extruder] [initial_extruder_id] [initial_no_support_extruder_id] [initial_nozzle_id] [initial_no_support_nozzle_id]\nT[initial_tool]",
+    });
+    let scripts: Vec<String> = (0..3).map(|slot| format!(
+        "; STARTFIL {slot} [current_extruder] [filament_extruder_id] [current_filament_id] [current_extruder_id] [current_nozzle_id]"
+    )).collect();
+    profile["filament_start_gcode"] = serde_json::json!(scripts);
+    let mut actual = Vec::new();
+    for id in 0..3 {
+        for key in ["wall_filament", "sparse_infill_filament", "solid_infill_filament"] {
+            profile[key] = serde_json::json!((id + 1).to_string());
+        }
+        fs::write(&profile_path, profile.to_string()).unwrap();
+        slicer::app_slice::slice_to_gcode(&cube, &profile_path, &out).unwrap();
+        let gcode = fs::read_to_string(&out).unwrap();
+        for line in gcode.lines().filter(|l| l.starts_with("; STARTUP ") || l.starts_with("; STARTFIL ") || l.starts_with(";VT")) {
+            actual.push(format!("{id} {line}"));
+        }
+    }
+    let single_filament_cases: Vec<_> = expected.lines().filter(|line| !line.starts_with("3 ")).collect();
+    assert_eq!(actual, single_filament_cases);
+}

@@ -206,8 +206,24 @@ The Rust engine as it came from R808, against the kept oracle files:
 | R979 | Apply the S temperature on M104, M109 and their virtual commands to the filament indicated by I, to every filament on the physical extruder indicated by T, or to the active filament (GCodeProcessor.cpp 5449–5485, 5534–5542). All 400 native command/profile cases agree. | `PROCESSOR_TEMPERATURE_TARGETS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R980 | Finalize preview times for consecutive extrusion heights (GCodeProcessor.cpp 2881–2883, 6456–6507). The native mixed-color cube export has 381 preview runs for 128 logical layers. All run times agree in both modes. | `PROCESSOR_PREVIEW_LAYER_TIMES` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 | R981 | Read the global sparse- and solid-infill filament slots and resolve their defaults through the applied region (PrintConfig.cpp 4680–4687, 6090–6100 and PrintObject.cpp 3742–3806). All 72 native cases agree. | `REGION_CONFIG_INFILL_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
+| R982 | Pass the first and first non-support filaments to the startup templates and the virtual tool tag (GCode.cpp 2840–2863, 2898–2927, 3184–3236). Three single-filament cube exports and a support-first header reproduce native startup. | `EXPORT_STARTUP_FILAMENTS` (on) | 190,680 (byte-identical) | 243,167 (byte-identical) | 2,864,040 (same bytes) |
 
 ## Findings
+
+- R982, startup filament selection. The native layer tool ordering selected
+  zero-based slot 1 for a cube assigned entirely to filament 2. Rust had the
+  correct applied region but passed slot 0 to the startup templates. Both
+  the provisional header used for statistics and the final header now read
+  the ordered slots. The three physical-slot STL exports reproduce all nine
+  native startup lines. A support-first ordering reproduces the three native
+  lines with different slots for the machine and filament starts. Across 12
+  supplemental 3MFs the gate restores the earlier file on every job. With
+  it enabled, three exports select the correct filament and report 5,531.59
+  mm³ where their volume lists were empty. Native reports 5,534.84 mm³.
+  Unplanned multi-material jobs still need the per-feature ordering. In the
+  wall-2, infill-1 cube its first layer is ordered 1, 0 by native and Rust
+  still starts on 0. Both gate settings reproduce the four R981 files. H2D
+  retains 4,614,342 and 4,614,863 matches in order.
 
 - R981, global infill filament selection. On an unpainted 3MF with explicit
   wall, sparse and solid slots of 2, 3 and 2, Rust previously applied 2, 1

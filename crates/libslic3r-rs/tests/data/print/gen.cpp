@@ -13,6 +13,7 @@
 //   ./gen > vectors.txt
 //   ./gen --scarf-flags scarf_flags.txt
 //   ./gen --region-infill-filaments region_infill_filaments.txt
+//   ./gen --startup-filaments <temporary-directory> > startup_filaments.txt
 //
 // PrintApply.cpp is compiled into this file (its helpers are static), with the private members
 // of Print, PrintObject and PrintRegion made public to read the state `Print::apply` builds.
@@ -46,6 +47,7 @@
 #undef private
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/GCode/ConflictChecker.hpp"
+#include "libslic3r/GCode/GCodeProcessor.hpp"
 
 using namespace Slic3r;
 
@@ -574,8 +576,57 @@ static void region_infill_filaments(const char *filename)
     }
 }
 
+// GCode.cpp 2840-2847,2898-2927,3184-3236. Select each physical filament
+// for all roles and export a cube with distinct startup templates per slot.
+static void startup_filaments(const std::string &dir)
+{
+    const std::string profile = "; STARTUP [initial_tool] [initial_filament_id] [initial_no_support_tool] [initial_no_support_filament_id]"
+                                " [current_extruder] [initial_extruder_id] [initial_no_support_extruder_id] [initial_nozzle_id] [initial_no_support_nozzle_id]\nT[initial_tool]";
+    for (int scenario : {0, 1, 2, 3}) {
+        const bool first_is_support = scenario == 3;
+        DynamicPrintConfig cfg = base_config(0);
+        cfg.option<ConfigOptionFloats>("filament_diameter")->values = {1.75, 1.75, 1.75};
+        cfg.option<ConfigOptionFloats>("flush_volumes_matrix")->values.assign(9, 100.);
+        cfg.set_key_value("machine_start_gcode", new ConfigOptionString(profile));
+        auto *scripts = cfg.option<ConfigOptionStrings>("filament_start_gcode");
+        scripts->values.clear();
+        for (int slot : {0, 1, 2}) {
+            std::string start = "; STARTFIL " + std::to_string(slot) + " [current_extruder]";
+            if (!first_is_support)
+                start += " [filament_extruder_id] [current_filament_id] [current_extruder_id] [current_nozzle_id]";
+            scripts->values.push_back(start);
+        }
+        for (const auto *k : {"wall_filament", "sparse_infill_filament", "solid_infill_filament"})
+            cfg.set_key_value(k, new ConfigOptionInt(first_is_support ? 1 : scenario + 1));
+        if (first_is_support) {
+            cfg.set_key_value("wall_filament", new ConfigOptionInt(2));
+            cfg.option<ConfigOptionBools>("filament_is_support")->values = {0, 1, 0};
+        }
+        Model model = build_model(0);
+        Print print;
+        // Recreate the dynamic options through the definitions used by profile loading.
+        // The enum-vector serializers need their option definitions.
+        DynamicPrintConfig profile_options;
+        profile_options.apply_only(cfg, cfg.keys());
+        print.apply(model, profile_options);
+        print.process();
+        const std::string path = dir + "/startup-" + std::to_string(scenario) + ".gcode";
+        GCodeProcessorResult result;
+        print.export_gcode(path, &result);
+        std::ifstream gcode(path);
+        std::string line;
+        for (const char *prefix : {"; STARTUP ", "; STARTFIL ", ";VT"}) {
+            while (std::getline(gcode, line) && line.rfind(prefix, 0) != 0) {}
+            if (!gcode)
+                throw std::runtime_error("Missing startup command in native export");
+            std::cout << scenario << ' ' << line << '\n';
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 3 && std::string(argv[1]) == "--startup-filaments") { startup_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--region-infill-filaments") { region_infill_filaments(argv[2]); return 0; }
     if (argc == 3 && std::string(argv[1]) == "--scarf-flags") { scarf_flags(argv[2]); return 0; }
     for (int scenario = 0; scenario < 5; ++scenario) {

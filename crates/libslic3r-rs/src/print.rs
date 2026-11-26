@@ -2009,6 +2009,7 @@ impl Print {
         // Matches BambuStudio GCode.cpp:1550-1570 first_layer_projection():
         //   bbox = merge of all object instance bounding boxes (XY projection of mesh)
         //   bbox.merge(first_layer_convex_hull) // includes skirt, brim, supports
+        let mut startup_filaments = None;
         let mut raw_settings_with_bbox = self.raw_settings.clone();
         if let Some(ref mut settings) = raw_settings_with_bbox {
             if let Some(obj) = settings.as_object_mut() {
@@ -2138,7 +2139,22 @@ impl Print {
                 // (`ExportPlaceholderInputs::from_settings`). Without a planned order (one filament) the
                 // inputs keep the initial filament on its nozzle, which is what the call gives there.
                 // =0 leaves only the initial filament's nozzle set.
-                if crate::faithful_gate("FIRST_FILAMENTS_TOOL_ORDERING") && !self.optimized_layer_tools.is_empty() {
+                let first_lists = crate::faithful_gate("FIRST_FILAMENTS_TOOL_ORDERING");
+                let export_startup = crate::faithful_gate("EXPORT_STARTUP_FILAMENTS");
+                let has_order = !self.optimized_layer_tools.is_empty();
+                // Print.cpp:438-465. Without a tower plan, every object role must use
+                // the same physical filament before its first tool is unambiguous.
+                let can_select_slot = self.config().num_filaments() > 1
+                    || self.nozzle_group_result.as_deref().is_some_and(|g| g.is_support_dynamic_nozzle_map());
+                let single = if export_startup && !has_order && can_select_slot && self.objects.iter().all(|o| o.support_layers.is_empty()) {
+                    match self.all_extruders().as_slice() {
+                        [id] => Some(*id as u32),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if (has_order && (first_lists || export_startup)) || single.is_some() {
                     use crate::gcode::tool_ordering::{LayerTools, ToolOrdering, ToolOrderingConfig};
                     let cfg = crate::g_code::full_print_config_from_settings(&serde_json::Value::Object(obj.clone()));
                     let mut tool_ordering = ToolOrdering::new(ToolOrderingConfig::default());
@@ -2146,6 +2162,15 @@ impl Print {
                         let mut lt = LayerTools::new(*print_z);
                         lt.extruders = tools.iter().map(|&t| t as u32).collect();
                         tool_ordering.layer_tools_mut().push(lt);
+                    }
+                    if let Some(id) = single {
+                        // ToolOrdering.cpp:829-869. A mixed slot expands into components.
+                        let mixed = crate::gcode::wipe_tower::cfg_bools(&cfg, "filament_is_mixed");
+                        if !mixed.get(id as usize).copied().unwrap_or(false) {
+                            let mut first = LayerTools::new(0.);
+                            first.extruders.push(id);
+                            tool_ordering.layer_tools_mut().push(first);
+                        }
                     }
                     tool_ordering.collect_extruder_statistics(false);
                     if let Some(group) = self.nozzle_group_result.as_deref() {
@@ -2162,21 +2187,35 @@ impl Print {
                     let mut first_filaments = vec![-1i32; num_nozzles];
                     let mut initial_non_support_extruder_id = u32::MAX;
                     // GCode.cpp:2841-2847: only when the ordering has a first extruder.
-                    if tool_ordering.first_extruder().is_some() {
+                    if let Some(initial) = tool_ordering.first_extruder() {
                         tool_ordering.cal_non_support_filaments(
                             &cfg,
                             &mut initial_non_support_extruder_id,
                             &mut first_non_support_filaments,
                             &mut first_filaments,
                         );
-                        obj.insert(
-                            crate::g_code::EXPORT_FIRST_FILAMENTS_KEY.to_string(),
-                            serde_json::json!(first_filaments),
-                        );
-                        obj.insert(
-                            crate::g_code::EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY.to_string(),
-                            serde_json::json!(first_non_support_filaments),
-                        );
+                        if export_startup {
+                            let non_support = if initial_non_support_extruder_id == u32::MAX {
+                                initial
+                            } else {
+                                initial_non_support_extruder_id
+                            };
+                            startup_filaments = Some(crate::g_code::ExportStartupFilaments {
+                                initial,
+                                non_support,
+                                group_result: self.nozzle_group_result.clone(),
+                            });
+                        }
+                        if first_lists {
+                            obj.insert(
+                                crate::g_code::EXPORT_FIRST_FILAMENTS_KEY.to_string(),
+                                serde_json::json!(first_filaments),
+                            );
+                            obj.insert(
+                                crate::g_code::EXPORT_FIRST_NON_SUPPORT_FILAMENTS_KEY.to_string(),
+                                serde_json::json!(first_non_support_filaments),
+                            );
+                        }
                     }
                 }
             }
@@ -2303,7 +2342,7 @@ impl Print {
             // the CONFIG_BLOCK write (GCode.cpp:2646-2655, Print.cpp:3258-3261).
             provisional_header.used_filaments = self.export_header_used_filaments();
             provisional_header.filament_nozzle_map = self.export_header_filament_nozzle_map();
-            let mut full_gcode = provisional_header.complete_header_with_progress(defer_progress);
+            let mut full_gcode = provisional_header.complete_header_with_progress(defer_progress, startup_filaments.as_ref());
             full_gcode.push_str(&String::from_utf8_lossy(&body));
 
             let mut processor = GCodeProcessor::new();
@@ -2345,7 +2384,7 @@ impl Print {
         header.config_block_settings = self.config_block_settings.clone();
         header.used_filaments = self.export_header_used_filaments();
         header.filament_nozzle_map = self.export_header_filament_nozzle_map();
-        let header_str = header.complete_header_with_progress(defer_progress);
+        let header_str = header.complete_header_with_progress(defer_progress, startup_filaments.as_ref());
         // HEADER_USED_FILAMENT_PROCESSOR (faithful, R950): the header's three used-filament lines are the
         // placeholders `TimeProcessor::post_process` fills from the processor's
         // `used_filaments.total_volumes_per_filament` (GCodeProcessor.cpp:728-766), which counts every

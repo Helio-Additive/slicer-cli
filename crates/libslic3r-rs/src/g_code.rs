@@ -8823,10 +8823,10 @@ impl GCodeHeader {
     /// and the first CHANGE_LAYER.  Matches the BambuStudio C++ output for
     /// Bambu Lab H2D + PLA Basic.
     pub fn generate_executable_block_content(&self) -> String {
-        self.executable_block_content(false)
+        self.executable_block_content(false, None)
     }
 
-    fn executable_block_content(&self, defer_progress: bool) -> String {
+    fn executable_block_content(&self, defer_progress: bool, startup: Option<&ExportStartupFilaments>) -> String {
         let mut s = if defer_progress {
             use crate::gcode::g_code_processor::{reserved_tag, ETags};
             // GCode.cpp:2762. The postprocessor has the time and stops for each mode.
@@ -8919,6 +8919,10 @@ impl GCodeHeader {
         s.push_str("; FEATURE: Custom\n");
         let pp_live = crate::faithful_gate("PLACEHOLDER_PARSER_LIVE");
         if let (true, Some(settings)) = (pp_live, self.raw_settings.as_ref()) {
+            if startup.is_some() {
+                let slot = new_export_placeholder_slot(settings, None, self.stats.max_z_height, false, startup);
+                EXPORT_PLACEHOLDERS.with(|cell| *cell.borrow_mut() = Some(slot));
+            }
             // PLACEHOLDER_PARSER_LIVE (on): GCode.cpp:3184 `placeholder_parser_process(
             // "machine_start_gcode", ..., initial_extruder_id)` over the export's parser, and
             // `file.writeln(machine_start_gcode)` (:3205). `max_print_z` is the highest layer of
@@ -8930,9 +8934,9 @@ impl GCodeHeader {
                     &templ,
                     settings,
                     self.stats.max_z_height,
+                    startup.map(|start| start.initial),
                     None,
-                    None,
-                    true,
+                    startup.is_none(),
                 );
                 writeln_to(&mut s, &machine_start_gcode);
             }
@@ -8940,7 +8944,7 @@ impl GCodeHeader {
             // GCode.cpp:3214-3233: the start G-code of the first non-support filament, with the
             // filament in the override and `layer_num` the export's `m_layer_index` (-1 before the
             // first layer), through `file.writeln`.
-            let initial_non_support_extruder_id = 0usize;
+            let initial_non_support_extruder_id = startup.map_or(0, |start| start.non_support) as usize;
             let filament_start = match settings.get("filament_start_gcode") {
                 Some(serde_json::Value::Array(a)) => {
                     a.get(initial_non_support_extruder_id).and_then(|x| x.as_str()).map(str::to_owned)
@@ -8952,14 +8956,15 @@ impl GCodeHeader {
                 let mut config =
                     export_template_override("filament_start_gcode", &serde_json::Value::Null, Some(initial_non_support_extruder_id as u32));
                 let extruder = match settings.get("filament_map") {
-                    Some(serde_json::Value::Array(a)) => a.first().and_then(injected_number),
+                    Some(serde_json::Value::Array(a)) => a.get(initial_non_support_extruder_id).or(a.first()).and_then(injected_number),
                     Some(v) => injected_number(v),
                     None => None,
                 }
                 .map(|m| (m as i32 - 1).max(0))
                 .unwrap_or(0);
                 config.set_key_value("current_extruder_id", Box::new(crate::config::ConfigOptionInt::with_value(extruder)));
-                config.set_key_value("current_nozzle_id", Box::new(crate::config::ConfigOptionInt::with_value(extruder)));
+                let nozzle = startup.and_then(|start| start.nozzle(start.non_support)).map_or(extruder, |n| n.group_id);
+                config.set_key_value("current_nozzle_id", Box::new(crate::config::ConfigOptionInt::with_value(nozzle)));
                 config.set_key_value("layer_num", Box::new(crate::config::ConfigOptionInt::with_value(-1)));
                 let filament_start_gcode = export_placeholder_parser_process(
                     "filament_start_gcode",
@@ -8971,10 +8976,12 @@ impl GCodeHeader {
                 );
                 writeln_to(&mut s, &filament_start_gcode);
             }
+            let initial = startup.map_or(0, |start| start.initial);
             if crate::faithful_gate("VT_HOTEND") {
-                s.push_str(";VT0 H-1\n");
+                let hotend = startup.map_or(-1, ExportStartupFilaments::initial_hotend);
+                s.push_str(&format!(";VT{initial} H{hotend}\n"));
             } else {
-                s.push_str(";VT0\n");
+                s.push_str(&format!(";VT{initial}\n"));
             }
             s.push_str("G90\n");
             s.push_str("G21\n");
@@ -9046,15 +9053,15 @@ impl GCodeHeader {
 
     /// Generate the complete header (all blocks).
     pub fn generate_complete_header(&self) -> String {
-        self.complete_header_with_progress(false)
+        self.complete_header_with_progress(false, None)
     }
 
-    pub(crate) fn complete_header_with_progress(&self, defer_progress: bool) -> String {
+    pub(crate) fn complete_header_with_progress(&self, defer_progress: bool, startup: Option<&ExportStartupFilaments>) -> String {
         let mut header = String::new();
         header.push_str(&self.generate_header_block());
         header.push_str(&self.generate_config_block());
         header.push_str(&self.generate_executable_block_start());
-        header.push_str(&self.executable_block_content(defer_progress));
+        header.push_str(&self.executable_block_content(defer_progress, startup));
         header
     }
 }
@@ -11404,6 +11411,26 @@ fn injected_number(v: &serde_json::Value) -> Option<f64> {
     }
 }
 
+/// GCode.cpp:2840-2863. The layer tool ordering selects both startup filaments.
+pub(crate) struct ExportStartupFilaments {
+    pub initial: u32,
+    pub non_support: u32,
+    pub group_result: Option<std::sync::Arc<crate::multi_nozzle_utils::LayeredNozzleGroupResult>>,
+}
+
+impl ExportStartupFilaments {
+    fn nozzle(&self, filament: u32) -> Option<crate::multi_nozzle_utils::NozzleInfo> {
+        self.group_result.as_deref()?.get_first_nozzle_for_filament(filament as i32)
+    }
+
+    fn initial_hotend(&self) -> i32 {
+        match (self.group_result.as_deref(), self.nozzle(self.initial)) {
+            (Some(group), Some(nozzle)) => nozzle_id_for_gcode(group, nozzle.group_id),
+            _ => -1,
+        }
+    }
+}
+
 impl ExportPlaceholderInputs {
     /// The inputs as far as the job's settings tell them, for the templates `print.rs` hands
     /// over with the settings only: one filament prints first (the first, `initial_extruder_id`
@@ -11414,16 +11441,30 @@ impl ExportPlaceholderInputs {
     /// the wipe tower are not handed to the template code; the placeholders built from them take
     /// the values of a print that has none (GCode.cpp:2859-2866).
     pub fn from_settings(full: &crate::print_config::config_def::DynamicPrintConfig, settings: &serde_json::Value, max_print_z: f64) -> Self {
+        Self::from_settings_for_startup(full, settings, max_print_z, None)
+    }
+
+    fn from_settings_for_startup(
+        full: &crate::print_config::config_def::DynamicPrintConfig,
+        settings: &serde_json::Value,
+        max_print_z: f64,
+        startup: Option<&ExportStartupFilaments>,
+    ) -> Self {
         let nozzle_diameter = pp_floats(full, "nozzle_diameter");
         let num_nozzles = nozzle_diameter.len().max(1);
         let num_filaments = pp_strings(full, "filament_type").len().max(1);
         let mut inputs = ExportPlaceholderInputs::new(num_nozzles);
         let filament_map = pp_ints(full, "filament_map");
         let extruder_of = |f: usize| -> usize { (pp_get_at(&filament_map, f) - 1).max(0) as usize };
+        if let Some(start) = startup {
+            inputs.initial_extruder_id = start.initial;
+            inputs.initial_non_support_extruder_id = start.non_support;
+        }
         let initial = inputs.initial_extruder_id as usize;
         let e = extruder_of(initial).min(num_nozzles - 1);
         inputs.first_filaments[e] = initial as i32;
-        inputs.first_non_support_filaments[e] = initial as i32;
+        let non_support = inputs.initial_non_support_extruder_id as usize;
+        inputs.first_non_support_filaments[extruder_of(non_support).min(num_nozzles - 1)] = non_support as i32;
         // FIRST_FILAMENTS_TOOL_ORDERING (print.rs): the lists `cal_non_support_filaments` found over the
         // print's layer tools (GCode.cpp:2846), one per nozzle, when the export handed them over.
         let injected_list = |key: &str| -> Option<Vec<i32>> {
@@ -11459,6 +11500,10 @@ impl ExportPlaceholderInputs {
         }
         // The nozzles of a printer without a dynamic nozzle map: one per extruder, each
         // filament on its extruder's (`filament_map`).
+        if let Some(group) = startup.and_then(|start| start.group_result.as_deref()) {
+            inputs.group_result = Some(group.clone());
+            return inputs;
+        }
         let volume_types = pp_ints(full, "nozzle_volume_type");
         let nozzle_list: Vec<crate::multi_nozzle_utils::NozzleInfo> = (0..num_nozzles)
             .map(|id| crate::multi_nozzle_utils::NozzleInfo {
@@ -11483,6 +11528,29 @@ impl ExportPlaceholderInputs {
 #[cfg(test)]
 mod first_filaments_tests {
     use super::*;
+
+    /// GCode.cpp:2846, 3184-3236. With a support filament first in the
+    /// ordering, the machine and filament-start templates use different slots.
+    #[test]
+    fn startup_with_support_first_matches_native() {
+        let settings = serde_json::json!({
+            "filament_diameter": ["1.75", "1.75", "1.75"],
+            "filament_type": ["PLA", "PLA", "PLA"],
+            "filament_map": ["1", "1", "1"],
+            "filament_is_support": ["0", "1", "0"],
+            "machine_start_gcode": "; STARTUP [initial_tool] [initial_filament_id] [initial_no_support_tool] [initial_no_support_filament_id] [current_extruder] [initial_extruder_id] [initial_no_support_extruder_id] [initial_nozzle_id] [initial_no_support_nozzle_id]",
+            "filament_start_gcode": ["; STARTFIL 0 [current_extruder]", "; STARTFIL 1 [current_extruder]", "; STARTFIL 2 [current_extruder]"],
+        });
+        let start = ExportStartupFilaments { initial: 1, non_support: 0, group_result: None };
+        let header = GCodeHeader::with_raw_settings(GCodeStats::default(), PrintConfig::default(), Some(settings));
+        let gcode = header.executable_block_content(false, Some(&start));
+        let actual: Vec<_> = gcode.lines().filter(|line| {
+            line.starts_with("; STARTUP ") || line.starts_with("; STARTFIL ") || line.starts_with(";VT")
+        }).collect();
+        let expected: Vec<_> = include_str!("../tests/data/print/startup_filaments.txt")
+            .lines().filter_map(|line| line.strip_prefix("3 ")).collect();
+        assert_eq!(actual, expected);
+    }
 
     /// A two-nozzle job with eight filaments, mapped 1,2,2,1,2,2,2,1 (the H2D Majora job).
     fn h2d_like_settings() -> serde_json::Value {
@@ -11564,6 +11632,7 @@ fn new_export_placeholder_slot(
     inputs: Option<ExportPlaceholderInputs>,
     max_print_z: f64,
     installed: bool,
+    startup: Option<&ExportStartupFilaments>,
 ) -> ExportPlaceholderSlot {
     let mut base = settings.clone();
     if let Some(map) = base.as_object_mut() {
@@ -11572,7 +11641,7 @@ fn new_export_placeholder_slot(
         }
     }
     let full = full_print_config_from_settings(&base);
-    let inputs = inputs.unwrap_or_else(|| ExportPlaceholderInputs::from_settings(&full, settings, max_print_z));
+    let inputs = inputs.unwrap_or_else(|| ExportPlaceholderInputs::from_settings_for_startup(&full, settings, max_print_z, startup));
     let mut gp = GCodePlaceholders::new(full, &inputs);
     gp.init_export_placeholders(&inputs);
     ExportPlaceholderSlot { key: export_placeholders_key(settings, max_print_z), installed, inputs, gp }
@@ -11608,7 +11677,7 @@ fn export_placeholder_parser_process_at(
         let mut slot = cell.borrow_mut();
         let keep = matches!(slot.as_ref(), Some(s) if s.installed || s.key == key);
         if !keep {
-            *slot = Some(new_export_placeholder_slot(settings, None, max_print_z, false));
+            *slot = Some(new_export_placeholder_slot(settings, None, max_print_z, false, None));
         } else if start_of_export {
             let s = slot.as_mut().unwrap();
             let inputs = s.inputs.clone();
@@ -11695,7 +11764,7 @@ fn template_name_and_filament(templ: &str, settings: &serde_json::Value) -> (&'s
 /// [`ExportPlaceholderInputs::from_settings`]). Until then, and without it, the parser is set up by
 /// the first template [`process_gcode_template`] hands over.
 pub fn install_export_placeholders(settings: &serde_json::Value, inputs: Option<ExportPlaceholderInputs>, max_print_z: f64) {
-    let slot = new_export_placeholder_slot(settings, inputs, max_print_z, true);
+    let slot = new_export_placeholder_slot(settings, inputs, max_print_z, true, None);
     EXPORT_PLACEHOLDERS.with(|cell| *cell.borrow_mut() = Some(slot));
 }
 
